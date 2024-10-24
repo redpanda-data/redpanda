@@ -69,7 +69,11 @@ struct instance_generator<cluster::errc> {
            cluster::errc::feature_disabled,
            cluster::errc::invalid_request,
            cluster::errc::no_update_in_progress,
-           cluster::errc::unknown_update_interruption_error});
+           cluster::errc::unknown_update_interruption_error,
+           cluster::errc::topic_invalid_partitions_core_limit,
+           cluster::errc::topic_invalid_partitions_memory_limit,
+           cluster::errc::topic_invalid_partitions_fd_limit,
+           cluster::errc::topic_invalid_partitions_decreased});
     }
 
     static std::vector<cluster::errc> limits() { return {}; }
@@ -286,27 +290,10 @@ struct instance_generator<cluster::feature_barrier_response> {
 };
 
 template<>
-struct instance_generator<cluster::join_request> {
-    static cluster::join_request random() {
-        return cluster::join_request{model::random_broker()};
-    }
-
-    static std::vector<cluster::join_request> limits() { return {}; }
-};
-
-template<>
-struct instance_generator<cluster::join_reply> {
-    static cluster::join_reply random() {
-        return cluster::join_reply{tests::random_bool()};
-    }
-
-    static std::vector<cluster::join_reply> limits() { return {}; }
-};
-
-template<>
 struct instance_generator<cluster::join_node_request> {
     static cluster::join_node_request random() {
         return cluster::join_node_request{
+          tests::random_named_int<cluster::cluster_version>(),
           tests::random_named_int<cluster::cluster_version>(),
           tests::random_vector(
             [] { return random_generators::get_int<uint8_t>(); }),
@@ -320,7 +307,9 @@ template<>
 struct instance_generator<cluster::join_node_reply> {
     static cluster::join_node_reply random() {
         return cluster::join_node_reply{
-          tests::random_bool(), tests::random_named_int<model::node_id>()};
+          tests::random_bool() ? cluster::join_node_reply::status_code::success
+                               : cluster::join_node_reply::status_code::error,
+          tests::random_named_int<model::node_id>()};
     }
 
     static std::vector<cluster::join_node_reply> limits() { return {}; }
@@ -421,68 +410,6 @@ struct instance_generator<cluster::reconciliation_state_request> {
 
     static std::vector<cluster::reconciliation_state_request> limits() {
         return {{}};
-    }
-};
-
-template<>
-struct instance_generator<cluster::non_replicable_topic> {
-    static cluster::non_replicable_topic random() {
-        return {
-          .source = model::random_topic_namespace(),
-          .name = model::random_topic_namespace(),
-        };
-    }
-
-    static std::vector<cluster::non_replicable_topic> limits() { return {}; }
-};
-
-template<>
-struct instance_generator<cluster::create_non_replicable_topics_request> {
-    static cluster::create_non_replicable_topics_request random() {
-        return {
-          .topics = tests::random_vector([] {
-              return instance_generator<
-                cluster::non_replicable_topic>::random();
-          }),
-          .timeout = tests::random_duration<model::timeout_clock::duration>(),
-        };
-    }
-
-    static std::vector<cluster::create_non_replicable_topics_request> limits() {
-        return {
-          {
-            .topics = tests::random_vector([] {
-                return instance_generator<
-                  cluster::non_replicable_topic>::random();
-            }),
-            .timeout = min_duration(),
-          },
-          {
-            .topics = tests::random_vector([] {
-                return instance_generator<
-                  cluster::non_replicable_topic>::random();
-            }),
-            .timeout = max_duration(),
-          },
-          {
-            .topics = {},
-            .timeout = tests::random_duration<model::timeout_clock::duration>(),
-          }};
-    }
-};
-
-template<>
-struct instance_generator<cluster::create_non_replicable_topics_reply> {
-    static cluster::create_non_replicable_topics_reply random() {
-        return {.results = tests::random_vector([] {
-                    return instance_generator<cluster::topic_result>::random();
-                })};
-    }
-
-    static std::vector<cluster::create_non_replicable_topics_reply> limits() {
-        return {
-          {}, // empty list
-        };
     }
 };
 
@@ -594,15 +521,15 @@ struct instance_generator<cluster::backend_operation> {
           .source_shard = random_generators::get_int<unsigned>(),
           .p_as = instance_generator<cluster::partition_assignment>::random(),
           .type = random_generators::random_choice(
-            {cluster::topic_table_delta::op_type::add,
-             cluster::topic_table_delta::op_type::add_non_replicable,
-             cluster::topic_table_delta::op_type::del_non_replicable,
-             cluster::topic_table_delta::op_type::cancel_update,
-             cluster::topic_table_delta::op_type::force_abort_update,
-             cluster::topic_table_delta::op_type::update,
-             cluster::topic_table_delta::op_type::update_finished,
-             cluster::topic_table_delta::op_type::update_properties,
-             cluster::topic_table_delta::op_type::del}),
+            {cluster::partition_operation_type::add,
+             cluster::partition_operation_type::add_non_replicable,
+             cluster::partition_operation_type::del_non_replicable,
+             cluster::partition_operation_type::cancel_update,
+             cluster::partition_operation_type::force_cancel_update,
+             cluster::partition_operation_type::update,
+             cluster::partition_operation_type::finish_update,
+             cluster::partition_operation_type::update_properties,
+             cluster::partition_operation_type::remove}),
         };
     }
 
@@ -614,7 +541,7 @@ struct instance_generator<cluster::ntp_reconciliation_state> {
     static cluster::ntp_reconciliation_state random() {
         return {
           model::random_ntp(),
-          tests::random_vector([] {
+          tests::random_chunked_fifo([] {
               return instance_generator<cluster::backend_operation>::random();
           }),
           random_generators::random_choice(
@@ -625,7 +552,7 @@ struct instance_generator<cluster::ntp_reconciliation_state> {
     }
 
     static std::vector<cluster::ntp_reconciliation_state> limits() {
-        return {{}};
+        return {};
     }
 };
 
@@ -641,7 +568,7 @@ struct instance_generator<cluster::reconciliation_state_reply> {
     }
 
     static std::vector<cluster::reconciliation_state_reply> limits() {
-        return {{}};
+        return {};
     }
 };
 
@@ -658,6 +585,14 @@ struct instance_generator<cluster::remote_topic_properties> {
 
 template<>
 struct instance_generator<cluster::topic_properties> {
+    static xid random_xid() {
+        auto data = random_generators::get_bytes(12);
+        xid::data_t array;
+        std::copy(std::begin(data), std::end(data), array.begin());
+
+        return xid{array};
+    }
+
     static cluster::topic_properties random() {
         return {
           tests::random_optional(
@@ -682,13 +617,43 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional([] { return tests::random_bool(); }),
           tests::random_optional(
             [] { return tests::random_named_string<ss::sstring>(); }),
+          model::random_topic_namespace(),
           instance_generator<cluster::remote_topic_properties>::random(),
           tests::random_optional(
             [] { return random_generators::get_int<uint32_t>(1024 * 1024); }),
           tests::random_tristate(
             [] { return random_generators::get_int<size_t>(); }),
           tests::random_tristate([] { return tests::random_duration_ms(); }),
-        };
+          // Remote delete always false to enable ADL roundtrip (ADL
+          // always decodes to false for legacy topics)
+          false,
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          tests::random_tristate(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
+          tests::random_optional(
+            [] { return model::vcluster_id(random_xid()); }),
+          tests::random_optional([] {
+              return random_generators::random_choice(
+                {model::write_caching_mode::default_true,
+                 model::write_caching_mode::default_false,
+                 model::write_caching_mode::disabled});
+          }),
+          tests::random_optional([] { return tests::random_duration_ms(); }),
+          tests::random_optional(
+            [] { return random_generators::get_int<size_t>(); }),
+          false,
+          std::nullopt,
+          false,
+          std::nullopt};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }
@@ -701,6 +666,7 @@ struct instance_generator<cluster::topic_configuration> {
         tc.tp_ns = model::random_topic_namespace();
         tc.partition_count = random_generators::get_int<int32_t>();
         tc.replication_factor = random_generators::get_int<int16_t>();
+        tc.is_migrated = tests::random_bool();
         tc.properties = instance_generator<cluster::topic_properties>::random();
         return tc;
     }
@@ -710,11 +676,13 @@ struct instance_generator<cluster::topic_configuration> {
           {model::ns(""),
            model::topic(""),
            std::numeric_limits<int32_t>::max(),
-           std::numeric_limits<int16_t>::max()},
+           std::numeric_limits<int16_t>::max(),
+           std::numeric_limits<bool>::max()},
           {model::ns(""),
            model::topic(""),
            std::numeric_limits<int32_t>::min(),
-           std::numeric_limits<int16_t>::min()}};
+           std::numeric_limits<int16_t>::min(),
+           std::numeric_limits<bool>::min()}};
     }
 };
 
@@ -722,9 +690,12 @@ template<>
 struct instance_generator<cluster::create_topics_request> {
     static cluster::create_topics_request random() {
         return {
-          .topics = tests::random_vector([] {
-              return instance_generator<cluster::topic_configuration>::random();
-          }),
+          .topics = tests::random_chunked_vector(
+            [] {
+                return instance_generator<
+                  cluster::topic_configuration>::random();
+            },
+            5),
           .timeout = tests::random_duration_ms()};
     }
 
@@ -739,7 +710,7 @@ struct instance_generator<cluster::create_topics_reply> {
             [] { return instance_generator<cluster::topic_result>::random(); }),
           tests::random_vector(
             [] { return instance_generator<model::topic_metadata>::random(); }),
-          tests::random_vector([] {
+          tests::random_chunked_vector([] {
               return instance_generator<cluster::topic_configuration>::random();
           })};
     }
@@ -764,11 +735,11 @@ auto random_property_update(Func f) {
     return tests::random_bool()
              ? cluster::property_update<T>()
              : cluster::property_update<T>(
-               f(),
-               random_generators::random_choice(
-                 {cluster::incremental_update_operation::none,
-                  cluster::incremental_update_operation::set,
-                  cluster::incremental_update_operation::remove}));
+                 f(),
+                 random_generators::random_choice(
+                   {cluster::incremental_update_operation::none,
+                    cluster::incremental_update_operation::set,
+                    cluster::incremental_update_operation::remove}));
 }
 
 template<>
@@ -790,47 +761,52 @@ struct instance_generator<cluster::incremental_topic_custom_updates> {
 template<>
 struct instance_generator<cluster::incremental_topic_updates> {
     static cluster::incremental_topic_updates random() {
-        return {
-          .compression = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<model::compression>::random();
-              });
-          }),
-          .cleanup_policy_bitflags = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::cleanup_policy_bitflags>::random();
-              });
-          }),
-          .compaction_strategy = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::compaction_strategy>::random();
-              });
-          }),
-          .timestamp_type = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<model::timestamp_type>::random();
-              });
-          }),
-          .segment_size = random_property_update([] {
-              return tests::random_optional(
-                [] { return random_generators::get_int<size_t>(); });
-          }),
-          .retention_bytes = random_property_update([] {
-              return tests::random_tristate(
-                [] { return random_generators::get_int<size_t>(); });
-          }),
-          .retention_duration = random_property_update([] {
-              return tests::random_tristate(
-                [] { return tests::random_duration_ms(); });
-          }),
-          .shadow_indexing = random_property_update([] {
-              return tests::random_optional([] {
-                  return instance_generator<
-                    model::shadow_indexing_mode>::random();
-              });
-          })};
+        cluster::incremental_topic_updates updates;
+        updates.compression = random_property_update([] {
+            return tests::random_optional(
+              [] { return instance_generator<model::compression>::random(); });
+        });
+        updates.cleanup_policy_bitflags = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<
+                  model::cleanup_policy_bitflags>::random();
+            });
+        });
+        updates.compaction_strategy = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<model::compaction_strategy>::random();
+            });
+        });
+        updates.timestamp_type = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<model::timestamp_type>::random();
+            });
+        });
+        updates.segment_size = random_property_update([] {
+            return tests::random_optional(
+              [] { return random_generators::get_int<size_t>(); });
+        });
+        updates.retention_bytes = random_property_update([] {
+            return tests::random_tristate(
+              [] { return random_generators::get_int<size_t>(); });
+        });
+        updates.retention_duration = random_property_update([] {
+            return tests::random_tristate(
+              [] { return tests::random_duration_ms(); });
+        });
+        updates.get_shadow_indexing() = random_property_update([] {
+            return tests::random_optional([] {
+                return instance_generator<
+                  model::shadow_indexing_mode>::random();
+            });
+        });
+        updates.remote_delete = random_property_update([] {
+            // Enable ADL roundtrip, which always decodes as false
+            // for legacy topics
+            return false;
+        });
+
+        return updates;
     }
 
     static std::vector<cluster::incremental_topic_updates> limits() {
@@ -854,7 +830,7 @@ struct instance_generator<cluster::topic_properties_update> {
 template<>
 struct instance_generator<cluster::update_topic_properties_request> {
     static cluster::update_topic_properties_request random() {
-        return {.updates = tests::random_vector([] {
+        return {.updates = tests::random_chunked_vector([] {
                     return instance_generator<
                       cluster::topic_properties_update>::random();
                 })};

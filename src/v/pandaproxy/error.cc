@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "error.h"
+#include "pandaproxy/error.h"
 
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/json/error.h"
@@ -41,6 +41,8 @@ struct reply_error_category final : std::error_category {
             return "HTTP 204 No Content";
         case reply_error_code::reset_content:
             return "HTTP 205 Reset Content";
+        case reply_error_code::partial_content:
+            return "HTTP 206 Partial Content";
         case reply_error_code::multiple_choices:
             return "HTTP 300 Multiple Choices";
         case reply_error_code::moved_permanently:
@@ -125,6 +127,12 @@ struct reply_error_category final : std::error_category {
             return "subject_version_soft_deleted";
         case reply_error_code::subject_version_not_deleted:
             return "subject_version_not_deleted";
+        case reply_error_code::compatibility_not_found:
+            return "compatibility_not_found";
+        case reply_error_code::mode_not_found:
+            return "mode_not_found";
+        case reply_error_code::serialization_error:
+            return "serialization_error";
         case reply_error_code::consumer_already_exists:
             return "Consumer with specified consumer ID already exists in the "
                    "specified consumer group.";
@@ -134,8 +142,14 @@ struct reply_error_category final : std::error_category {
             return "Invalid schema version";
         case reply_error_code::compatibility_level_invalid:
             return "Invalid compatibility level";
+        case reply_error_code::mode_invalid:
+            return "Invalid mode";
+        case reply_error_code::subject_version_operation_not_permitted:
+            return "Overwrite new schema is not permitted.";
         case reply_error_code::subject_version_has_references:
             return "One or more references exist to the schema";
+        case reply_error_code::subject_version_schema_id_already_exists:
+            return "Schema already registered with another id";
         case reply_error_code::write_collision:
             return "write_collision";
         case reply_error_code::zookeeper_error:
@@ -228,6 +242,7 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::group_max_size_reached:
         case kec::fenced_instance_id:
         case kec::invalid_record:
+        case kec::transactional_id_not_found:
             return rec::kafka_bad_request;
         case kec::not_enough_replicas:
         case kec::coordinator_not_available:
@@ -238,7 +253,9 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::operation_not_attempted:
         case kec::kafka_storage_error:
         case kec::unknown_server_error:
+        case kec::group_subscribed_to_topic:
         case kec::unstable_offset_commit:
+        case kec::no_reassignment_in_progress:
             return rec::kafka_error;
         case kec::network_exception:
         case kec::coordinator_load_in_progress:
@@ -282,6 +299,8 @@ std::error_condition make_error_condition(std::error_code ec) {
         switch (static_cast<jec>(ec.value())) {
         case jec::invalid_json:
             return rec::unprocessable_entity;
+        case jec::unable_to_serialize:
+            return rec::serialization_error;
         }
         return {};
     }
@@ -292,9 +311,9 @@ std::error_condition make_error_condition(reply_error_code ec) {
     return {static_cast<int>(ec), reply_error_category};
 }
 
-std::error_condition make_error_condition(ss::httpd::reply::status_type st) {
+std::error_condition make_error_condition(ss::http::reply::status_type st) {
     using rec = reply_error_code;
-    using sec = ss::httpd::reply::status_type;
+    using sec = ss::http::reply::status_type;
 
     switch (st) {
     case sec::continue_:
@@ -377,6 +396,8 @@ std::error_condition make_error_condition(ss::httpd::reply::status_type st) {
         return rec::http_version_not_supported;
     case sec::insufficient_storage:
         return rec::insufficient_storage;
+    case sec::partial_content:
+        return rec::partial_content;
     }
     return rec::kafka_bad_request;
 }

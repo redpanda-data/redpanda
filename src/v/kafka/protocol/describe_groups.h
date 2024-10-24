@@ -13,8 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
-#include "kafka/server/group.h"
-#include "kafka/types.h"
 
 #include <seastar/core/future.hh>
 
@@ -25,11 +23,11 @@ struct describe_groups_request final {
 
     describe_groups_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -44,7 +42,7 @@ struct describe_groups_response final {
 
     describe_groups_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -67,7 +65,7 @@ struct describe_groups_response final {
         return described_group{
           .error_code = error_code::none,
           .group_id = std::move(g),
-          .group_state = group_state_to_kafka_name(group_state::dead),
+          .group_state = ss::sstring(group_state_name_dead),
           .protocol_type = kafka::protocol_type(),
           .protocol_data = "",
         };

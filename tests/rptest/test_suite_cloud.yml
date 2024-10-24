@@ -1,0 +1,20 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+# Tests to run on a Redpanda Cloud cluster.
+cloud:
+  included:
+    - redpanda_cloud_tests/config_profile_verify_test.py
+    - redpanda_cloud_tests/high_throughput_test.py::HighThroughputTest.test_add_and_decommission
+    - redpanda_cloud_tests/high_throughput_test.py::HighThroughputTest.test_decommission_and_add
+    - redpanda_cloud_tests/observe_test.py
+    - redpanda_cloud_tests/rolling_restart_test.py
+    - redpanda_cloud_tests/omb_validation_test.py::OMBValidationTest
+    - redpanda_cloud_tests/cloud_self_test.py
+    - tests/services_self_test.py::SimpleSelfTest.test_cloud

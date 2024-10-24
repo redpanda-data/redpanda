@@ -1,0 +1,57 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/recovery",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/recovery/migrate_tx_manager",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Execute tx manager partition count migration",
+                    "nickname": "migrate_tx_manager",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Migration completed successfully"
+                        }
+                    }
+                },
+                {
+                    "method": "GET",
+                    "summary": "Get migration status. Indicates whether the migration is required",
+                    "nickname": "get_tx_manager_migration_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Migration completed successfully"
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "models": {
+        "tx_manager_migration_status": {
+            "id": "tx_manager_migration_status",
+            "properties": {
+                "required": {
+                    "type": "boolean",
+                    "description": "Indicates if migration is still required. Will return true if previous migration did not finish successfully"
+                },
+                "in_progress": {
+                    "type": "boolean",
+                    "description": "Indicates if there is an ongoing migration happening"
+                }
+            }
+        }
+    }
+}

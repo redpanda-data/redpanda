@@ -17,12 +17,15 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/twmb/franz-go/pkg/kadm"
 )
+
+func norm(header string) string { return strings.TrimSpace(strings.ToUpper(header)) }
 
 // Confirm prompts the user to confirm the formatted message and returns the
 // confirmation result or an error.
@@ -34,24 +37,121 @@ func Confirm(msg string, args ...interface{}) (bool, error) {
 	}, &confirmation)
 }
 
+// Sections is a helper to print separate sections out output.
+type Sections struct {
+	m          map[string]struct{}
+	skipHeader bool
+}
+
+// NewMaybeHeaderSections returns a Sections that only includes the headers if
+// there is more than one header.
+func NewMaybeHeaderSections(headers ...string) *Sections {
+	s := NewSections(headers...)
+	s.skipHeader = len(s.m) <= 1
+	return s
+}
+
+// NewSections returns a Sections that always prints headers.
+func NewSections(headers ...string) *Sections {
+	s := &Sections{
+		m: make(map[string]struct{}),
+	}
+	for _, h := range headers {
+		s.m[norm(h)] = struct{}{}
+	}
+	return s
+}
+
+// ConditionalSectionHeaders is a helper to return section headers given a
+// condition -- this is meant to be used as a helper with boolean flags.
+func ConditionalSectionHeaders(m map[string]bool) []string {
+	var s []string
+	for k, v := range m {
+		if v {
+			s = append(s, k)
+		}
+	}
+	return s
+}
+
+// Add calls fn for the given header. If the header does not exist, this
+// is a no-op.
+//
+// A header cannot be added twice. Newlines are added between headers,
+// a newline is not printed after the last header has been added.
+func (s *Sections) Add(header string, fn func()) {
+	header = norm(header)
+	if _, ok := s.m[header]; !ok {
+		return
+	}
+	if !s.skipHeader {
+		Section(header)
+	}
+	fn()
+	if len(s.m) > 1 {
+		fmt.Println()
+	}
+	delete(s.m, header)
+}
+
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
 func Pick(options []string, msg string, args ...interface{}) (string, error) {
+	idx, err := PickIndex(options, msg, args...)
+	if err != nil {
+		return "", err
+	}
+	return options[idx], nil
+}
+
+// PickIndex is like Pick, but returns the index of the selected option.
+func PickIndex(options []string, msg string, args ...interface{}) (int, error) {
 	var selected int
 	err := survey.AskOne(&survey.Select{
 		Message: fmt.Sprintf(msg, args...),
 		Options: options,
 	}, &selected)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return options[selected], nil
+	return selected, nil
+}
+
+// Prompt prompts the user for input, returning the input or an error.
+func Prompt(msg string, args ...interface{}) (string, error) {
+	return PromptWithSuggestion("", msg, args...)
+}
+
+// PromptWithSuggestion prompts the user for input, giving a default choice, returning the input or an error.
+func PromptWithSuggestion(defaultInput string, msg string, args ...interface{}) (string, error) {
+	var input string
+	err := survey.AskOne(&survey.Input{
+		Message: fmt.Sprintf(msg, args...),
+		Default: defaultInput,
+	}, &input)
+	return input, err
+}
+
+// PromptPassword is like Prompt but the text shows up as *'s.
+func PromptPassword(msg string, args ...interface{}) (string, error) {
+	var input string
+	err := survey.AskOne(&survey.Password{
+		Message: fmt.Sprintf(msg, args...),
+	}, &input)
+	return input, err
 }
 
 // Die formats the message with a suffixed newline to stderr and exits the
 // process with 1.
 func Die(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
+	os.Exit(1)
+}
+
+// DieString is like Die, but does not format the message. This still adds
+// a newline.
+func DieString(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
 }
 
@@ -87,10 +187,15 @@ func HandleShardError(name string, err error) {
 
 	case errors.As(err, &se):
 		if se.AllFailed {
-			fmt.Printf("all %d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+			fmt.Printf("all %d %s requests failed, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
 			os.Exit(1)
 		}
-		fmt.Printf("%d %s request failures, first error: %s\n", len(se.Errs), se.Name, se.Errs[0].Err)
+		var bs []int32
+		for _, e := range se.Errs {
+			bs = append(bs, e.Broker.NodeID)
+		}
+		sort.Slice(bs, func(i, j int) bool { return bs[i] < bs[j] })
+		fmt.Printf("%s request failed to broker IDs %v, first error: %s\n", se.Name, bs, se.Errs[0].Err)
 
 	case errors.As(err, &ae):
 		fmt.Printf("%s authorization problem: %s\n", name, err)
@@ -112,15 +217,8 @@ func args2strings(args []interface{}) []string {
 
 // Section prints header in uppercase, followed by a line of =.
 func Section(header string) {
-	fmt.Println(strings.ToUpper(header))
+	fmt.Println(norm(header))
 	fmt.Println(strings.Repeat("=", len(header)))
-}
-
-// SectionFn prints header in uppercase, followed by a line of = as long as the
-// header, and then calls fn.
-func SectionFn(header string, fn func()) {
-	Section(header)
-	fn()
 }
 
 // TabWriter writes tab delimited output.
@@ -139,10 +237,12 @@ func NewTable(headers ...string) *TabWriter {
 func NewTableTo(w io.Writer, headers ...string) *TabWriter {
 	var iheaders []interface{}
 	for _, header := range headers {
-		iheaders = append(iheaders, strings.ToUpper(header))
+		iheaders = append(iheaders, norm(header))
 	}
 	t := NewTabWriterTo(w)
-	t.Print(iheaders...)
+	if len(iheaders) > 0 {
+		t.Print(iheaders...)
+	}
 	return t
 }
 
@@ -161,16 +261,24 @@ func NewTabWriterTo(w io.Writer) *TabWriter {
 // Print stringifies the arguments and prints them tab-delimited and
 // newline-suffixed to the tab writer.
 func (t *TabWriter) Print(args ...interface{}) {
-	fmt.Fprint(t.Writer, strings.Join(args2strings(args), "\t")+"\n")
+	t.PrintStrings(args2strings(args)...)
 }
 
-// PrintStructFields prints the values stored in fields in a struct.
+// PrintStrings prints args tab-delimited and newline-suffixed to the tab
+// writer.
+func (t *TabWriter) PrintStrings(args ...string) {
+	fmt.Fprint(t.Writer, strings.Join(args, "\t")+"\n")
+}
+
+// StructFields returns the fields in an input struct s.
 //
-// This is a function meant to allow users to define helper structs that have
-// defined field types. Rather than passing arguments blindly to Print, you can
-// put those arguments in your helper struct to *ensure* there are no breaking
-// output changes if any field changes types.
-func (t *TabWriter) PrintStructFields(s interface{}) {
+// This is the logic for the PrintStructFields function, and its purpose is the
+// same: rather than passing type-blind arguments, you can ensure compile-time
+// type checking with StructFields, and then receive all fields as a slice.
+//
+// The purpose of this function is for progressive building of output arguments
+// while still ensuring type checking.
+func StructFields(s interface{}) []interface{} {
 	v := reflect.ValueOf(s)
 	if v.Kind() == reflect.Ptr {
 		v = reflect.Indirect(v)
@@ -186,13 +294,23 @@ func (t *TabWriter) PrintStructFields(s interface{}) {
 		}
 		fields = append(fields, v.Field(i).Interface())
 	}
-	t.Print(fields...)
+	return fields
+}
+
+// PrintStructFields prints the values stored in fields in a struct.
+//
+// This is a function meant to allow users to define helper structs that have
+// defined field types. Rather than passing arguments blindly to Print, you can
+// put those arguments in your helper struct to *ensure* there are no breaking
+// output changes if any field changes types.
+func (t *TabWriter) PrintStructFields(s interface{}) {
+	t.Print(StructFields(s)...)
 }
 
 // PrintColumn is the same as Print, but prints header uppercased as the first
 // argument.
 func (t *TabWriter) PrintColumn(header string, args ...interface{}) {
-	header = strings.ToUpper(header)
+	header = norm(header)
 	t.Print(append([]interface{}{header}, args...)...)
 }
 

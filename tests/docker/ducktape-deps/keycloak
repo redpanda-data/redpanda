@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+# get keycloak binary
+KC_VERSION=23.0.3
+wget "https://github.com/keycloak/keycloak/releases/download/${KC_VERSION}/keycloak-${KC_VERSION}.tar.gz"
+
+tar -xvzf keycloak-${KC_VERSION}.tar.gz
+rm keycloak-${KC_VERSION}.tar.gz
+
+mv keycloak-${KC_VERSION} /opt/keycloak

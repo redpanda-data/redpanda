@@ -12,7 +12,6 @@
 #pragma once
 
 #include "storage/log_appender.h"
-#include "storage/segment.h"
 
 #include <seastar/core/rwlock.hh>
 
@@ -38,7 +37,7 @@ public:
     ss::future<append_result> end_of_stream() final;
 
 private:
-    bool needs_to_roll_log(model::term_id) const;
+    bool segment_is_appendable(model::term_id) const;
     void release_lock();
     ss::future<ss::stop_iteration>
     append_batch_to_segment(const model::record_batch&);

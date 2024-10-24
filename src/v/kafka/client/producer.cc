@@ -9,33 +9,36 @@
 
 #include "kafka/client/producer.h"
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
-#include "kafka/client/retry_with_mitigation.h"
+#include "kafka/client/utils.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/gate.hh>
 
+#include <chrono>
 #include <exception>
+
+using namespace std::chrono_literals;
 
 namespace kafka::client {
 
-produce_request
-make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
-    std::vector<produce_request::partition> partitions;
+produce_request make_produce_request(
+  model::topic_partition tp, model::record_batch&& batch, int16_t acks) {
+    chunked_vector<produce_request::partition> partitions;
     partitions.emplace_back(produce_request::partition{
       .partition_index{tp.partition},
       .records = produce_request_record_data(std::move(batch))});
 
-    std::vector<produce_request::topic> topics;
+    chunked_vector<produce_request::topic> topics;
     topics.emplace_back(produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
-    int16_t acks = -1;
     return produce_request(t_id, acks, std::move(topics));
 }
 
@@ -56,6 +59,10 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
         response.error_code = error_code::operation_not_attempted;
+    } catch (const ss::abort_requested_exception&) {
+        /// Could only occur when abort_source is triggered via stop()
+        vlog(kclog.debug, "sleep_aborted / abort_requested exception");
+        response.error_code = error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
         response.error_code = error_code::unknown_server_error;
@@ -63,32 +70,89 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     return response;
 }
 
+ss::future<> producer::stop() {
+    vlog(kclog.debug, "Stopping kafka/client producer");
+    /// Stop new messages from entering the system, the second abort source is
+    /// triggered when the timeout below expires
+    _ingest_as.request_abort();
+
+    /// produce_partition::drain() will invoke send(), it is a last chance best
+    /// effort attempt for the current queued records to be sent.
+    co_await ssx::parallel_transform(
+      _partitions,
+      [](partitions_t::value_type p) { return p.second->maybe_drain(); });
+
+    /// send() is wrapped by a gate, and can be aborted with the internal
+    /// abort source (_as). This future triggers the abort source after the
+    /// configured interval or when the gate is eventually closed whichever
+    /// comes first.
+    ss::abort_source exit;
+    if (_config.produce_shutdown_delay() > 0ms) {
+        vlog(
+          kclog.debug,
+          "Waiting {}ms to allow final flush of producers batched records",
+          _config.produce_shutdown_delay());
+    }
+    auto abort = ss::sleep_abortable(_config.produce_shutdown_delay(), exit)
+                   .then([this] {
+                       if (_config.produce_shutdown_delay() > 0ms) {
+                           vlog(
+                             kclog.warn,
+                             "Forcefully stopping kafka client producer after "
+                             "waiting {}ms for its gate to close",
+                             _config.produce_shutdown_delay());
+                       }
+                       _as.request_abort();
+                   })
+                   .handle_exception_type([](ss::sleep_aborted) {
+                       vlog(kclog.debug, "Producer shutdown cleanly");
+                   });
+    co_await _gate.close();
+    exit.request_abort();
+    co_await std::move(abort);
+    vlog(kclog.debug, "Waiting for inflight state of false");
+    /// Wait until the produce_partition has no inflight records. That is
+    /// because if in_flight is true, drain() and stop() will actually not call
+    /// consume -> send(). This may have been the case when maybe_drain() above
+    /// was called.
+    co_await ssx::parallel_transform(
+      _partitions,
+      [](partitions_t::value_type p) { return p.second->await_in_flight(); });
+    vlog(kclog.debug, "Calling produce_partition::stop()");
+    /// At this point in time there are no inflight requests, for any data that
+    /// remains in the buffers stop() will be guaranteed to call send() which
+    /// will return error responses to the initial caller
+    co_await ssx::parallel_transform(
+      _partitions, [](partitions_t::value_type p) { return p.second->stop(); });
+    vlog(kclog.debug, "Producer stopped");
+}
+
 ss::future<produce_response::partition>
 producer::produce(model::topic_partition tp, model::record_batch&& batch) {
+    if (_ingest_as.abort_requested()) {
+        return ss::make_ready_future<produce_response::partition>(
+          make_produce_response(
+            tp.partition,
+            std::make_exception_ptr(ss::abort_requested_exception())));
+    }
     return get_context(std::move(tp))->produce(std::move(batch));
 }
 
 ss::future<produce_response::partition>
-producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
-    return _topic_cache.leader(tp)
-      .then([this](model::node_id leader) { return _brokers.find(leader); })
-      .then([tp{std::move(tp)},
-             batch{std::move(batch)}](shared_broker_t broker) mutable {
-          return broker->dispatch(
-            make_produce_request(std::move(tp), std::move(batch)));
-      })
-      .then([](produce_response res) mutable {
-          auto topic = std::move(res.data.responses[0]);
-          auto partition = std::move(topic.partitions[0]);
-          if (partition.error_code != error_code::none) {
-              return ss::make_exception_future<produce_response::partition>(
-                partition_error(
-                  model::topic_partition(topic.name, partition.partition_index),
-                  partition.error_code));
-          }
-          return ss::make_ready_future<produce_response::partition>(
-            std::move(partition));
-      });
+producer::do_send(model::topic_partition tp, model::record_batch batch) {
+    auto leader = co_await _topic_cache.leader(tp);
+    auto broker = co_await _brokers.find(leader);
+    auto res = co_await broker->dispatch(
+      make_produce_request(std::move(tp), std::move(batch), _acks));
+    auto topic = std::move(res.data.responses[0]);
+    auto partition = std::move(topic.partitions[0]);
+    if (partition.error_code != error_code::none) {
+        throw partition_error(
+          model::topic_partition(topic.name, partition.partition_index),
+          partition.error_code);
+    }
+
+    co_return partition;
 }
 
 ss::future<>
@@ -103,20 +167,25 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
     return ss::do_with(
              std::move(batch),
              [this, tp](model::record_batch& batch) mutable {
-                 return retry_with_mitigation(
-                   _config.retries(),
-                   _config.retry_base_backoff(),
-                   [this, tp{std::move(tp)}, &batch]() {
-                       return do_send(tp, batch.share());
-                   },
-                   [this](std::exception_ptr ex) {
-                       return _error_handler(std::move(ex))
-                         .handle_exception([](std::exception_ptr ex) {
-                             vlog(
-                               kclog.trace, "Error during mitigation: {}", ex);
-                             // ignore failed mitigation
-                         });
-                   });
+                 return ss::with_gate(_gate, [this, tp, &batch]() {
+                     return retry_with_mitigation(
+                       _config.retries(),
+                       _config.retry_base_backoff(),
+                       [this, tp{std::move(tp)}, &batch]() {
+                           return do_send(tp, batch.share());
+                       },
+                       [this](std::exception_ptr ex) {
+                           return _error_handler(std::move(ex))
+                             .handle_exception([](std::exception_ptr ex) {
+                                 vlog(
+                                   kclog.trace,
+                                   "Error during mitigation: {}",
+                                   ex);
+                                 // ignore failed mitigation
+                             });
+                       },
+                       _as);
+                 });
              })
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));

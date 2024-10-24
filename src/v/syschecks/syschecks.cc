@@ -9,9 +9,9 @@
 
 #include "syschecks/syschecks.h"
 
-#include "likely.h"
-#include "seastarx.h"
-#include "version.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
+#include "version/version.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/memory.hh>
@@ -20,18 +20,56 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/net/api.hh>
 
+namespace {
+ss::sstring to_string(ss::fs_type fs) {
+    switch (fs) {
+    case ss::fs_type::other:
+        return "other";
+    case ss::fs_type::xfs:
+        return "xfs";
+    case ss::fs_type::ext2:
+        return "ext2";
+    case ss::fs_type::ext3:
+        return "ext3";
+    case ss::fs_type::ext4:
+        return "ext4";
+    case ss::fs_type::btrfs:
+        return "btrfs";
+    case ss::fs_type::hfs:
+        return "hfs";
+    case ss::fs_type::tmpfs:
+        return "tmpfs";
+    };
+    return "bad_enum";
+}
+} // namespace
+
 namespace syschecks {
 ss::logger checklog{"syschecks"};
 
 ss::future<> disk(const ss::sstring& path) {
     return ss::check_direct_io_support(path).then([path] {
         return ss::file_system_at(path).then([path](auto fs) {
-            if (fs != ss::fs_type::xfs) {
-                checklog.error(
-                  "Path: `{}' is not on XFS. This is a non-supported "
-                  "setup. "
-                  "Expect poor performance.",
+            checklog.info0("Detected file system type is {}", to_string(fs));
+            // Currently, all of ext2, 3 and 4 are detected as ext2, so we just
+            // assume an ext2 detection means ext4 for now, see:
+            // https://github.com/redpanda-data/redpanda/issues/13469
+            // We also still check for ext4, since if that is returned it means
+            // that seastar has been fixed to be able to detect ext4.
+            if (fs == ss::fs_type::ext2 || fs == ss::fs_type::ext4) {
+                checklog.warn(
+                  "Path: `{}' is on ext4, not XFS. This will probably work, "
+                  "but Redpanda is only tested on XFS and XFS is recommended "
+                  "for best performance.",
                   path);
+            } else if (fs != ss::fs_type::xfs) {
+                checklog.error(
+                  "Path: `{}' uses {} filesystem which is not XFS or ext4. "
+                  "This is a unsupported "
+                  "configuration. You may experience poor performance or "
+                  "instability.",
+                  path,
+                  to_string(fs));
             }
         });
     });
@@ -94,6 +132,23 @@ ss::future<> systemd_raw_message(ss::sstring out) {
     auto fd = ss::file_desc::socket(AF_UNIX, SOCK_DGRAM, 0);
     fd.sendto(addr, out.data(), out.length(), 0);
     co_return;
+}
+
+void directory_must_exist(
+  std::string_view name, const std::filesystem::path& dir) {
+    // check that the data directory exists
+    auto dir_str = dir.string();
+    std::optional<ss::directory_entry_type> data_dir_type
+      = ss::file_type(dir_str).get();
+    auto throw_bad_dir = [=](auto detail) {
+        throw std::invalid_argument(
+          fmt::format("Configured {} {}: {}", name, detail, dir_str));
+    };
+    if (!data_dir_type) {
+        throw_bad_dir("did not exist");
+    } else if (*data_dir_type != ss::directory_entry_type::directory) {
+        throw_bad_dir("is not a directory");
+    }
 }
 
 } // namespace syschecks

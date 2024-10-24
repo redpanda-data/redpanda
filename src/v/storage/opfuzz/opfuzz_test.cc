@@ -9,11 +9,11 @@
 
 #include "model/fundamental.h"
 #include "random/generators.h"
+#include "storage/file_sanitizer.h"
 #include "storage/opfuzz/opfuzz.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -34,13 +34,11 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
     std::cout.setf(std::ios::unitbuf);
     storage::log_manager mngr = make_log_manager(storage::log_config(
-      storage::log_config::storage_type::disk,
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
-    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
+    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get(); });
 
     // Test parameters
     const size_t ntp_count = 4;
@@ -65,7 +63,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
             cfg = storage::ntp_config(
               ntp, mngr.config().base_dir, std::move(overrides));
         }
-        auto log = mngr.manage(std::move(cfg)).get0();
+        auto log = mngr.manage(std::move(cfg)).get();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
@@ -77,19 +75,17 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
               vassert(false, "Error:{} fuzzing log: {}", e, w->log());
           });
       })
-      .get0();
+      .get();
 }
 FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
     std::cout.setf(std::ios::unitbuf);
     storage::log_manager mngr = make_log_manager(storage::log_config(
-      storage::log_config::storage_type::disk,
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
-    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
+    auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get(); });
 
     // Test parameters
     const size_t ntp_count = 10;
@@ -109,7 +105,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     for (const auto& ntp : ntps_to_fuzz) {
         auto directory = ssx::sformat(
           "{}/{}", mngr.config().base_dir, ntp.path());
-        auto log = mngr.manage(storage::ntp_config(ntp, directory)).get0();
+        auto log = mngr.manage(storage::ntp_config(ntp, directory)).get();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
@@ -122,7 +118,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
               vassert(false, "Error:{} fuzzing log: {}", e, w->log());
           });
       })
-      .get0();
+      .get();
 
     std::vector<size_t> random_ntp_removal_sequence;
     std::generate_n(
@@ -135,7 +131,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
         const model::ntp& ntp = ntps_to_fuzz[i];
         info("test... removing: {}", ntp);
         mngr.remove(ntp).get();
-        BOOST_REQUIRE(mngr.get(ntp) == std::nullopt);
+        BOOST_REQUIRE(!mngr.get(ntp));
     }
     std::sort(
       random_ntp_removal_sequence.begin(), random_ntp_removal_sequence.end());

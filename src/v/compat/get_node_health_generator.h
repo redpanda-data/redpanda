@@ -21,10 +21,7 @@ namespace compat {
 template<>
 struct instance_generator<cluster::get_node_health_request> {
     static cluster::get_node_health_request random() {
-        return cluster::get_node_health_request{
-          {},
-          cluster::random_node_report_filter(),
-          random_generators::get_int<int8_t>()};
+        return cluster::get_node_health_request{};
     }
     static std::vector<cluster::get_node_health_request> limits() { return {}; }
 };
@@ -34,8 +31,10 @@ struct instance_generator<cluster::get_node_health_reply> {
     static cluster::get_node_health_reply random() {
         return {
           .error = instance_generator<cluster::errc>::random(),
-          .report = tests::random_optional(
-            [] { return cluster::random_node_health_report(); }),
+          .report = tests::random_optional([] {
+              return cluster::node_health_report_serde{
+                cluster::random_node_health_report()};
+          }),
         };
     }
     static std::vector<cluster::get_node_health_reply> limits() { return {}; }

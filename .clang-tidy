@@ -1,8 +1,7 @@
 ---
-Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,hicpp-*,modernize-*,performance-*,misc-*,bugprone-*,-modernize-use-trailing-return-type,-modernize-use-nodiscard,-hicpp-named-parameter'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,hicpp-*,modernize-*,performance-*,misc-*,bugprone-*,-modernize-use-trailing-return-type,-modernize-use-nodiscard,-hicpp-named-parameter,-misc-include-cleaner,-clang-analyzer-optin.core.EnumCastOutOfRange'
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*'
-AnalyzeTemporaryDtors: false
+HeaderFilterRegex: '^(?!external/.*).*'
 FormatStyle:    file
 CheckOptions:
   - key:             cert-dcl16-c.NewSuffixes
@@ -23,5 +22,13 @@ CheckOptions:
     value:           llvm
   - key:             modernize-use-nullptr.NullMacros
     value:           NULL
+  - key:             readability-identifier-length.IgnoredVariableNames
+    value:           ^it$
+  - key:             readability-identifier-length.IgnoredParameterNames
+    value:           ^(it|a|b)$
+  - key:             readability-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
+  - key:             hicpp-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
 ...
 

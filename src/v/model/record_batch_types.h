@@ -39,8 +39,44 @@ enum class record_batch_type : int8_t {
     archival_metadata = 19,          // archival metadata updates
     cluster_config_cmd = 20,         // cluster config deltas and status
     feature_update = 21,             // Node logical versions updates
+    cluster_bootstrap_cmd = 22,      // cluster bootsrap command
+    version_fence = 23,              // version fence/epoch
+    tx_tm_hosted_trasactions = 24,   // tx_tm_hosted_trasactions_batch_type
+    prefix_truncate = 25,            // log prefix truncation type
+    plugin_update = 26,              // Wasm plugin update
+    tx_registry = 27,                // tx_registry_batch_type
+    cluster_recovery_cmd = 28,       // cluster recovery command
+    compaction_placeholder
+    = 29, // place holder for last batch in a segment that was aborted
+    role_management_cmd = 30, // role management command
+    client_quota = 31,        // client quota command
+    data_migration_cmd = 32,  // data migration manipulation command
+    group_fence_tx = 33,      // fence batch in group transactions
+    partition_properties_update
+    = 34, // special batch type used to update partition properties
+    datalake_coordinator = 35, // datalake::coordinator::*
+    dl_placeholder = 36,       // placeholder batch type used by cloud topics
+    dl_stm_command = 37,       // dl_stm command batch
+    datalake_translation_state = 38, // maintains state for translation progress
+    MAX = datalake_translation_state,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
+
+// The set of batch types that may appear in a data partition that aren't
+// assigned a new translated offset. When translated, such batches are given an
+// offset matching the next batch of type outside this set.
+//
+// Put simply, batches of these types do not increment the offset that would be
+// returned upon translating offsets for Kafka fetches.
+inline std::vector<model::record_batch_type> offset_translator_batch_types() {
+    return {
+      model::record_batch_type::raft_configuration,
+      model::record_batch_type::archival_metadata,
+      model::record_batch_type::version_fence,
+      model::record_batch_type::prefix_truncate,
+      model::record_batch_type::partition_properties_update,
+      model::record_batch_type::datalake_translation_state};
+}
 
 } // namespace model

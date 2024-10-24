@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/bounded_property.h"
 #include "config/config_store.h"
 #include "config/tls_config.h"
 
@@ -33,8 +34,12 @@ struct configuration final : public config::config_store {
     config::property<int32_t> produce_batch_record_count;
     config::property<int32_t> produce_batch_size_bytes;
     config::property<std::chrono::milliseconds> produce_batch_delay;
+    config::property<ss::sstring> produce_compression_type;
+    config::property<std::chrono::milliseconds> produce_shutdown_delay;
+    config::property<int16_t> produce_ack_level;
     config::property<std::chrono::milliseconds> consumer_request_timeout;
-    config::property<int32_t> consumer_request_max_bytes;
+    config::bounded_property<int32_t> consumer_request_min_bytes;
+    config::bounded_property<int32_t> consumer_request_max_bytes;
     config::property<std::chrono::milliseconds> consumer_session_timeout;
     config::property<std::chrono::milliseconds> consumer_rebalance_timeout;
     config::property<std::chrono::milliseconds> consumer_heartbeat_interval;

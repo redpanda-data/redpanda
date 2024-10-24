@@ -11,14 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/end_txn_request.h"
 #include "kafka/protocol/schemata/end_txn_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -29,11 +28,11 @@ struct end_txn_request final {
 
     end_txn_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -48,7 +47,10 @@ struct end_txn_response final {
 
     end_txn_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    end_txn_response() = default;
+    explicit end_txn_response(error_code error) { data.error_code = error; }
+
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

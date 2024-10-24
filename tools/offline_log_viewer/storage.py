@@ -135,6 +135,10 @@ class BatchType(Enum):
     archival_metadata = 19
     cluster_config_cmd = 20
     feature_update = 21
+    cluster_bootstrap_cmd = 22
+    version_fence = 23
+    tx_tm_hosted_trasactions = 24
+    prefix_truncate = 25
     unknown = -1
 
     @classmethod
@@ -217,7 +221,10 @@ class Batch:
                 return None
             assert len(data) == records_size
             return Batch(index, header, data)
-        assert len(data) == 0
+
+        if len(data) < HEADER_SIZE:
+            # Short read, probably log being actively written or unclean shutdown
+            return None
 
     def __len__(self):
         return self.header.record_count
@@ -295,7 +302,9 @@ class Store:
             for topic in listdirs(join(self.base_dir, nspace)):
                 for part_ntp_id in listdirs(join(self.base_dir, nspace,
                                                  topic)):
-                    assert re.match("^\\d+_\\d+$", part_ntp_id)
+                    assert re.match("^\\d+_\\d+$", part_ntp_id), \
+                        "ntp dir at {} does not match expected format. Wrong --path or extra directories present?"\
+                        .format(join(self.base_dir, nspace, topic, part_ntp_id))
                     [part, ntp_id] = part_ntp_id.split("_")
                     ntp = Ntp(self.base_dir, nspace, topic, int(part),
                               int(ntp_id))

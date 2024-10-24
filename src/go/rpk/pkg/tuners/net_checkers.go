@@ -20,8 +20,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type NetCheckersFactory interface {
@@ -340,11 +340,11 @@ func isSet(
 	nic network.Nic, hwCheckFunction func(network.Nic) (bool, error),
 ) (bool, error) {
 	if nic.IsHwInterface() {
-		log.Debugf("'%s' is HW interface", nic.Name())
+		zap.L().Sugar().Debugf("'%s' is HW interface", nic.Name())
 		return hwCheckFunction(nic)
 	}
 	if nic.IsBondIface() {
-		log.Debugf("'%s' is bond interface", nic.Name())
+		zap.L().Sugar().Debugf("'%s' is bond interface", nic.Name())
 		slaves, err := nic.Slaves()
 		if err != nil {
 			return false, err
@@ -369,7 +369,7 @@ func (f *netCheckersFactory) forNonVirtualInterfaces(
 	for _, iface := range interfaces {
 		nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
 		if !nic.IsHwInterface() && !nic.IsBondIface() {
-			log.Debugf("Skipping '%s' virtual interface", nic.Name())
+			zap.L().Sugar().Debugf("Skipping '%s' virtual interface", nic.Name())
 			continue
 		}
 		chkrs = append(chkrs, checkerFactory(nic))

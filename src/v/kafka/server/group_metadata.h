@@ -10,112 +10,19 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
-#include "kafka/types.h"
+#include "kafka/protocol/wire.h"
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "reflection/adl.h"
-#include "seastarx.h"
+#include "serde/rw/rw.h"
 #include "utils/named_type.h"
 
 #include <seastar/util/noncopyable_function.hh>
 
 namespace kafka {
-namespace old {
-/**
- * the key type for group membership log records.
- *
- * the opaque key field is decoded based on the actual type.
- *
- * TODO: The `noop` type indicates a control structure used to synchronize raft
- * state in a transition to leader state so that a consistent read is made. this
- * is a temporary work-around until we fully address consistency semantics in
- * raft.
- */
-struct group_log_record_key {
-    enum class type : int8_t { group_metadata, offset_commit, noop };
-
-    type record_type;
-    iobuf key;
-};
-
-/// \addtogroup kafka-groups
-/// @{
-
-/**
- * Member state.
- *
- * This structure is used in-memory at runtime to hold member state. It is also
- * serialized to stable storage to checkpoint group state, and is therefore
- * sensitive to change.
- */
-struct member_state {
-    kafka::member_id id;
-    std::chrono::milliseconds session_timeout;
-    std::chrono::milliseconds rebalance_timeout;
-    std::optional<kafka::group_instance_id> instance_id;
-    kafka::protocol_type protocol_type;
-    std::vector<member_protocol> protocols;
-    iobuf assignment;
-    kafka::client_id client_id;
-    kafka::client_host client_host;
-
-    member_state copy() const {
-        return member_state{
-          .id = id,
-          .session_timeout = session_timeout,
-          .rebalance_timeout = rebalance_timeout,
-          .instance_id = instance_id,
-          .protocol_type = protocol_type,
-          .protocols = protocols,
-          .assignment = assignment.copy(),
-          .client_id = client_id,
-          .client_host = client_host,
-        };
-    }
-
-    friend bool operator==(const member_state&, const member_state&) = default;
-};
-/**
- * the value type of a group metadata log record.
- */
-struct group_log_group_metadata {
-    kafka::protocol_type protocol_type;
-    kafka::generation_id generation;
-    std::optional<kafka::protocol_name> protocol;
-    std::optional<kafka::member_id> leader;
-    int32_t state_timestamp;
-    std::vector<member_state> members;
-};
-
-/**
- * the key type for offset commit records.
- */
-struct group_log_offset_key {
-    kafka::group_id group;
-    model::topic topic;
-    model::partition_id partition;
-
-    bool operator==(const group_log_offset_key& other) const = default;
-
-    friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
-};
-
-/**
- * the value type for offset commit records.
- */
-struct group_log_offset_metadata {
-    model::offset offset;
-    int32_t leader_epoch;
-    std::optional<ss::sstring> metadata;
-
-    friend std::ostream&
-    operator<<(std::ostream&, const group_log_offset_metadata&);
-};
-}; // namespace old
 
 enum group_metadata_type {
     offset_commit,
@@ -123,7 +30,7 @@ enum group_metadata_type {
     noop,
 };
 
-group_metadata_type decode_metadata_type(request_reader& key_reader);
+group_metadata_type decode_metadata_type(protocol::decoder& key_reader);
 
 using group_metadata_version = named_type<int16_t, struct md_versio_tag>;
 
@@ -154,8 +61,8 @@ struct member_state {
 
     friend bool operator==(const member_state&, const member_state&) = default;
 
-    static member_state decode(request_reader&);
-    static void encode(response_writer&, const member_state&);
+    static member_state decode(protocol::decoder&);
+    static void encode(protocol::encoder&, const member_state&);
 };
 
 /**
@@ -168,8 +75,8 @@ struct group_metadata_key {
     friend std::ostream& operator<<(std::ostream&, const group_metadata_key&);
     friend bool operator==(const group_metadata_key&, const group_metadata_key&)
       = default;
-    static group_metadata_key decode(request_reader&);
-    static void encode(response_writer&, const group_metadata_key&);
+    static group_metadata_key decode(protocol::decoder&);
+    static void encode(protocol::encoder&, const group_metadata_key&);
 };
 
 /**
@@ -207,8 +114,8 @@ struct group_metadata_value {
     operator==(const group_metadata_value&, const group_metadata_value&)
       = default;
 
-    static group_metadata_value decode(request_reader&);
-    static void encode(response_writer&, const group_metadata_value&);
+    static group_metadata_value decode(protocol::decoder&);
+    static void encode(protocol::encoder&, const group_metadata_value&);
 };
 
 struct offset_metadata_key {
@@ -221,27 +128,37 @@ struct offset_metadata_key {
     friend bool
     operator==(const offset_metadata_key&, const offset_metadata_key&)
       = default;
-    static offset_metadata_key decode(request_reader&);
-    static void encode(response_writer&, const offset_metadata_key&);
+    static offset_metadata_key decode(protocol::decoder&);
+    static void encode(protocol::encoder&, const offset_metadata_key&);
 };
 
 /**
  * The value type for offset commit records, consistent with Kafka format
  */
 struct offset_metadata_value {
-    static constexpr group_metadata_version version{3};
+    static constexpr group_metadata_version latest_version{3};
     model::offset offset;
+    // present only in version >= 3
     kafka::leader_epoch leader_epoch = invalid_leader_epoch;
     ss::sstring metadata;
     model::timestamp commit_timestamp;
+    // present only in version 1
+    model::timestamp expiry_timestamp{-1};
+
+    /*
+     * this field is not written, and is only meaningful when filled in by the
+     * the consumer offset recovery process. see group::offset_metadata for more
+     * information on how it is used.
+     */
+    bool non_reclaimable{true};
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_metadata_value&);
     friend bool
     operator==(const offset_metadata_value&, const offset_metadata_value&)
       = default;
-    static offset_metadata_value decode(request_reader&);
-    static void encode(response_writer&, const offset_metadata_value&);
+    static offset_metadata_value decode(protocol::decoder&);
+    static void encode(protocol::encoder&, const offset_metadata_value&);
 };
 
 struct offset_metadata_kv {
@@ -252,9 +169,11 @@ struct offset_metadata_kv {
 struct group_metadata_kv {
     group_metadata_key key;
     std::optional<group_metadata_value> value;
+
+    group_metadata_kv copy() const;
 };
 
-inline group_metadata_version read_metadata_version(request_reader& reader) {
+inline group_metadata_version read_metadata_version(protocol::decoder& reader) {
     return group_metadata_version{reader.read_int16()};
 }
 
@@ -300,13 +219,68 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-group_metadata_serializer make_backward_compatible_serializer();
-
 group_metadata_serializer make_consumer_offsets_serializer();
 
 using group_metadata_serializer_factory
   = ss::noncopyable_function<group_metadata_serializer()>;
+namespace group_tx {
+struct fence_metadata_v0 {
+    kafka::group_id group_id;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v0&);
+};
 
+struct fence_metadata_v1 {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata_v1&);
+};
+/**
+ * Fence is set by the transaction manager when consumer adds an offset to
+ * transaction.
+ */
+struct fence_metadata {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
+    model::partition_id tm_partition;
+    friend std::ostream& operator<<(std::ostream&, const fence_metadata&);
+};
+/**
+ * Single partition committed offset
+ */
+struct partition_offset {
+    model::topic_partition tp;
+    model::offset offset;
+    int32_t leader_epoch;
+    std::optional<ss::sstring> metadata;
+    friend std::ostream& operator<<(std::ostream&, const partition_offset&);
+};
+/**
+ * Consumer offsets commited as a part of transaction
+ */
+struct offsets_metadata {
+    kafka::group_id group_id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    std::vector<partition_offset> offsets;
+    friend std::ostream& operator<<(std::ostream&, const offsets_metadata&);
+};
+
+/**
+ * Content of transaction commit batch
+ */
+struct commit_metadata {
+    kafka::group_id group_id;
+};
+/**
+ * Content of transaction abort batch
+ */
+struct abort_metadata {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+};
+} // namespace group_tx
 } // namespace kafka
 
 namespace std {
@@ -322,23 +296,3 @@ struct hash<kafka::offset_metadata_key> {
 };
 
 } // namespace std
-
-namespace reflection {
-
-/*
- * new code + new version: will see extra bytes for client host/id
- * new code + old version: will observe no extra bytes
- * old code + old/new version: will not read new appended fields
- *
- * on the wire we write out a version that is compatible with old code and then
- * append the additional client host/id information for each member. then when
- * deserializing we process the appended data by updating the old versions from
- * disk in the new in-memory structs which contain the extra member metadata.
- * old code skips over the appended data.
- */
-template<>
-struct adl<kafka::old::group_log_group_metadata> {
-    void to(iobuf& out, kafka::old::group_log_group_metadata&& data);
-    kafka::old::group_log_group_metadata from(iobuf_parser& in);
-};
-} // namespace reflection

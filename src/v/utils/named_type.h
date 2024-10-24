@@ -8,13 +8,12 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
-#include <seastar/core/sstring.hh>
+#include <fmt/ostream.h>
 
 #include <cstdint>
-#include <functional> // needed for std::hash
 #include <limits>
+#include <ostream>
 #include <type_traits>
 #include <utility>
 
@@ -36,24 +35,14 @@ public:
     base_named_type& operator=(base_named_type&& o) noexcept = default;
     base_named_type(const base_named_type& o) noexcept = default;
     base_named_type& operator=(const base_named_type& o) noexcept = default;
-    constexpr bool operator==(const base_named_type& other) const {
-        return _value == other._value;
-    }
-    constexpr bool operator!=(const base_named_type& other) const {
-        return _value != other._value;
-    }
-    constexpr bool operator<(const base_named_type& other) const {
-        return _value < other._value;
-    }
-    constexpr bool operator>(const base_named_type& other) const {
-        return _value > other._value;
-    }
-    constexpr bool operator<=(const base_named_type& other) const {
-        return _value <= other._value;
-    }
-    constexpr bool operator>=(const base_named_type& other) const {
-        return _value >= other._value;
-    }
+
+    friend constexpr bool
+    operator==(const base_named_type&, const base_named_type&) noexcept
+      = default;
+    friend constexpr auto
+    operator<=>(const base_named_type&, const base_named_type&) noexcept
+      = default;
+
     constexpr base_named_type& operator++() {
         ++_value;
         return *this;
@@ -89,19 +78,13 @@ public:
     }
 
     // provide overloads for naked type
-    constexpr bool operator==(const type& other) const {
-        return _value == other;
+    friend constexpr bool
+    operator==(const base_named_type& lhs, const type& rhs) noexcept {
+        return lhs._value == rhs;
     }
-    constexpr bool operator!=(const type& other) const {
-        return _value != other;
-    }
-    constexpr bool operator<(const type& other) const { return _value < other; }
-    constexpr bool operator>(const type& other) const { return _value > other; }
-    constexpr bool operator<=(const type& other) const {
-        return _value <= other;
-    }
-    constexpr bool operator>=(const type& other) const {
-        return _value >= other;
+    friend constexpr auto
+    operator<=>(const base_named_type& lhs, const type& rhs) noexcept {
+        return lhs._value <=> rhs;
     }
 
     // explicit getter
@@ -118,7 +101,12 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        return o << "{" << t() << "}";
+        fmt::print(o, "{}", t._value);
+        return o;
+    };
+
+    friend std::istream& operator>>(std::istream& i, base_named_type& t) {
+        return i >> t._value;
     };
 
 protected:
@@ -135,7 +123,7 @@ public:
 
     template<typename... Args>
     requires std::constructible_from<T, Args...>
-    explicit base_named_type(Args&&... args)
+    explicit constexpr base_named_type(Args&&... args)
       : _value(std::forward<Args>(args)...) {}
 
     base_named_type(base_named_type&& o) noexcept(move_noexcept) = default;
@@ -147,42 +135,53 @@ public:
 
     base_named_type& operator=(const base_named_type& o) = default;
 
-    bool operator==(const base_named_type& other) const {
-        return _value == other._value;
-    }
-    bool operator!=(const base_named_type& other) const {
-        return _value != other._value;
-    }
-    bool operator<(const base_named_type& other) const {
-        return _value < other._value;
-    }
-    bool operator>(const base_named_type& other) const {
-        return _value > other._value;
-    }
-    bool operator<=(const base_named_type& other) const {
-        return _value <= other._value;
-    }
-    bool operator>=(const base_named_type& other) const {
-        return _value >= other._value;
+    // provide overloads for naked type
+    friend bool
+    operator==(const base_named_type& lhs, const type& rhs) noexcept {
+        return lhs._value == rhs;
     }
 
-    // provide overloads for naked type
-    bool operator==(const type& other) const { return _value == other; }
-    bool operator!=(const type& other) const { return _value != other; }
-    bool operator<(const type& other) const { return _value < other; }
-    bool operator>(const type& other) const { return _value > other; }
-    bool operator<=(const type& other) const { return _value <= other; }
-    bool operator>=(const type& other) const { return _value >= other; }
+    friend auto operator<=>(
+      const base_named_type& lhs,
+      const type& rhs) noexcept -> std::strong_ordering {
+        // roundabout way to cope with type when it does not provide <=>
+        if constexpr (std::three_way_comparable_with<type, type>)
+            return lhs._value <=> rhs;
+        else {
+            if (lhs._value == rhs) {
+                return std::strong_ordering::equal;
+            } else if (lhs._value < rhs) {
+                return std::strong_ordering::less;
+            } else {
+                return std::strong_ordering::greater;
+            }
+        }
+    }
+
+    // these can be constexpr in c++23
+    friend bool
+    operator==(const base_named_type& lhs, const base_named_type& rhs) noexcept
+      = default;
+    friend auto operator<=>(
+      const base_named_type& lhs, const base_named_type& rhs) noexcept {
+        // delegate to <=> type version
+        return lhs <=> rhs._value;
+    }
 
     // explicit getter
-    const type& operator()() const& { return _value; }
-    type operator()() && { return std::move(_value); }
+    constexpr const type& operator()() const& { return _value; }
+    constexpr type operator()() && { return std::move(_value); }
     // implicit conversion operator
-    operator const type&() const& { return _value; }
-    operator type() && { return std::move(_value); }
+    constexpr operator const type&() const& { return _value; }
+    constexpr operator type() && { return std::move(_value); }
 
     friend std::ostream& operator<<(std::ostream& o, const base_named_type& t) {
-        return o << "{" << t() << "}";
+        fmt::print(o, "{}", t._value);
+        return o;
+    };
+
+    friend std::istream& operator>>(std::istream& i, base_named_type& t) {
+        return i >> t._value;
     };
 
 protected:

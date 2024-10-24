@@ -9,18 +9,18 @@
 
 #include "storage/parser.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "bytes/utils.h"
-#include "likely.h"
+#include "bytes/iostream.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "reflection/adl.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "storage/parser_utils.h"
-#include "storage/segment_appender_utils.h"
-#include "vlog.h"
+#include "storage/record_batch_utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -35,78 +35,36 @@
 
 namespace storage {
 using stop_parser = batch_consumer::stop_parser;
-
-static model::record_batch_header header_from_iobuf(iobuf b) {
-    iobuf_parser parser(std::move(b));
-    auto header_crc = reflection::adl<uint32_t>{}.from(parser);
-    auto sz = reflection::adl<int32_t>{}.from(parser);
-    using offset_t = model::offset::type;
-    auto off = model::offset(reflection::adl<offset_t>{}.from(parser));
-    auto type = reflection::adl<model::record_batch_type>{}.from(parser);
-    auto crc = reflection::adl<int32_t>{}.from(parser);
-    using attr_t = model::record_batch_attributes::type;
-    auto attrs = model::record_batch_attributes(
-      reflection::adl<attr_t>{}.from(parser));
-    auto delta = reflection::adl<int32_t>{}.from(parser);
-    using tmstmp_t = model::timestamp::type;
-    auto first = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
-    auto max = model::timestamp(reflection::adl<tmstmp_t>{}.from(parser));
-    auto producer_id = reflection::adl<int64_t>{}.from(parser);
-    auto producer_epoch = reflection::adl<int16_t>{}.from(parser);
-    auto base_sequence = reflection::adl<int32_t>{}.from(parser);
-    auto record_count = reflection::adl<int32_t>{}.from(parser);
-    vassert(
-      parser.bytes_consumed() == model::packed_record_batch_header_size,
-      "Error in header parsing. Must consume:{} bytes, but consumed:{}",
-      model::packed_record_batch_header_size,
-      parser.bytes_consumed());
-    auto hdr = model::record_batch_header{
-      .header_crc = header_crc,
-      .size_bytes = sz,
-      .base_offset = off,
-      .type = type,
-      .crc = crc,
-      .attrs = attrs,
-      .last_offset_delta = delta,
-      .first_timestamp = first,
-      .max_timestamp = max,
-      .producer_id = producer_id,
-      .producer_epoch = producer_epoch,
-      .base_sequence = base_sequence,
-      .record_count = record_count};
-    hdr.ctx.owner_shard = ss::this_shard_id();
-    return hdr;
-}
-
+// make sure that `msg` parameter is a static string or it is not removed before
+// this function finishes
 static ss::future<result<iobuf>> verify_read_iobuf(
   ss::input_stream<char>& in,
   size_t expected,
-  ss::sstring msg,
+  const char* msg,
   bool recover = false) {
-    return read_iobuf_exactly(in, expected)
-      .then([msg = std::move(msg), expected, recover](iobuf b) {
-          if (likely(b.size_bytes() == expected)) {
-              return ss::make_ready_future<result<iobuf>>(std::move(b));
-          }
-          if (!recover) {
-              stlog.error(
-                "cannot continue parsing. recived size:{} bytes, expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          } else {
-              stlog.debug(
-                "recovery ended with short read. recived size:{} bytes, "
-                "expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          }
-          return ss::make_ready_future<result<iobuf>>(
-            parser_errc::input_stream_not_enough_bytes);
-      });
+    auto b = co_await read_iobuf_exactly(in, expected);
+
+    if (likely(b.size_bytes() == expected)) {
+        co_return b;
+    }
+    if (!recover) {
+        vlog(
+          stlog.error,
+          "Stopping parser, short read. Expected to read {} bytes, but read {} "
+          "bytes. context: {}",
+          expected,
+          b.size_bytes(),
+          msg);
+    } else {
+        vlog(
+          stlog.debug,
+          "Recovery ended with short read. Expected to read {} bytes, but read "
+          "{} bytes. context: {}",
+          expected,
+          b.size_bytes(),
+          msg);
+    }
+    co_return parser_errc::input_stream_not_enough_bytes;
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
@@ -182,11 +140,11 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
     }
     // check if iobuf is filled is zeros, this means that we are reading
     // fallocated range filled with zeros
-    if (unlikely(is_zero(b))) {
+    if (unlikely(storage::internal::is_zero(b))) {
         // happens when we fallocate the file
         co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
     }
-    auto header = header_from_iobuf(std::move(b));
+    auto header = batch_header_from_disk_iobuf(std::move(b));
 
     if (auto computed_crc = model::internal_header_only_crc(header);
         unlikely(header.header_crc != computed_crc)) {
@@ -246,17 +204,27 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(
              get_stream(), sz, "parser::consume_records", _recovery)
-      .then([this](result<iobuf> record) -> result<stop_parser> {
+      .then([this](result<iobuf> record) -> ss::future<result<stop_parser>> {
           if (!record) {
-              return record.error();
+              return ss::make_ready_future<result<stop_parser>>(record.error());
           }
           _consumer->consume_records(std::move(record.value()));
-          return result<stop_parser>(_consumer->consume_batch_end());
+          return _consumer->consume_batch_end().then([](stop_parser sp) {
+              return ss::make_ready_future<result<stop_parser>>(sp);
+          });
       });
 }
 
+static constexpr std::array<parser_errc, 3> benign_error_codes{
+  {parser_errc::none,
+   parser_errc::end_of_stream,
+   parser_errc::fallocated_file_read_zero_bytes_for_header}};
+
 ss::future<result<size_t>> continuous_batch_parser::consume() {
-    if (unlikely(_err != parser_errc::none)) {
+    if (unlikely(!std::any_of(
+          benign_error_codes.begin(),
+          benign_error_codes.end(),
+          [v = _err](parser_errc e) { return e == v; }))) {
         return ss::make_ready_future<result<size_t>>(_err);
     }
     return ss::repeat([this] {
@@ -279,10 +247,6 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
               // support partial reads
               return result<size_t>(_bytes_consumed);
           }
-          constexpr std::array<parser_errc, 3> benign_error_codes{
-            {parser_errc::none,
-             parser_errc::end_of_stream,
-             parser_errc::fallocated_file_read_zero_bytes_for_header}};
           if (std::any_of(
                 benign_error_codes.begin(),
                 benign_error_codes.end(),
@@ -348,7 +312,7 @@ public:
                 // might change it in-place (this is a low level tool)
                 // we're also need to update header only crc
                 _header.header_crc = model::internal_header_only_crc(_header);
-                iobuf hdr = disk_header_to_iobuf(_header);
+                iobuf hdr = batch_header_to_disk_iobuf(_header);
                 co_await write_iobuf_to_output_stream(std::move(hdr), _output);
                 co_await write_iobuf_to_output_stream(
                   std::move(body.value()), _output);

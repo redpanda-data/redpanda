@@ -11,14 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_request.h"
 #include "kafka/protocol/schemata/add_offsets_to_txn_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -29,11 +28,11 @@ struct add_offsets_to_txn_request final {
 
     add_offsets_to_txn_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 };
@@ -47,8 +46,12 @@ struct add_offsets_to_txn_response final {
     using api_type = add_offsets_to_txn_api;
 
     add_offsets_to_txn_response_data data;
+    add_offsets_to_txn_response() = default;
+    explicit add_offsets_to_txn_response(error_code error) {
+        data.error_code = error;
+    }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

@@ -11,17 +11,20 @@
 
 #pragma once
 
-#include "outcome.h"
+#include "base/outcome.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <fmt/format.h>
 
-#include <type_traits>
-
 namespace pandaproxy::schema_registry {
 
+/// \brief error_info stores an error_code and custom message.
+///
+/// This class is useful for transporting via an outcome::result
+/// and automatic conversion to an `exception`.
+/// See `outcome_throw_as_system_error_with_payload`.
 class error_info {
 public:
     error_info() = default;
@@ -69,6 +72,13 @@ inline error_info not_found(const subject& sub) {
     return error_info{
       error_code::subject_not_found,
       fmt::format("Subject '{}' not found.", sub())};
+}
+
+inline error_info not_found(const subject& sub, mode) {
+    return error_info{
+      error_code::mode_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level mode configured.", sub())};
 }
 
 inline error_info not_found(const subject&, schema_version id) {
@@ -140,6 +150,10 @@ inline error_info invalid_schema(const canonical_schema& schema) {
       error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
 }
 
+inline error_info invalid_schema(std::string msg) {
+    return {error_code::schema_invalid, std::move(msg)};
+}
+
 inline error_info has_references(const subject& sub, schema_version ver) {
     return {
       error_code::subject_version_has_references,
@@ -148,6 +162,37 @@ inline error_info has_references(const subject& sub, schema_version ver) {
         "{{magic=1,keytype=SCHEMA,subject={},version={}}}",
         sub(),
         ver())};
+}
+
+error_info no_reference_found_for(
+  const canonical_schema& schema, const subject& sub, schema_version ver);
+
+inline error_info compatibility_not_found(const subject& sub) {
+    return error_info{
+      error_code::compatibility_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level compatibility configured",
+        sub())};
+}
+
+inline error_info mode_not_found(const subject& sub) {
+    return error_info{
+      error_code::mode_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level mode configured", sub())};
+}
+
+inline error_info mode_not_readwrite(const subject& sub) {
+    return error_info{
+      error_code::subject_version_operation_not_permitted,
+      fmt::format("Subject {} is not in read-write mode", sub())};
+}
+
+inline error_info mode_is_readonly(const std::optional<subject>& sub) {
+    return error_info{
+      error_code::subject_version_operation_not_permitted,
+      fmt::format(
+        "Subject {} is in read-only mode", sub.value_or(subject{"null"}))};
 }
 
 } // namespace pandaproxy::schema_registry

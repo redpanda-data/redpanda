@@ -1,0 +1,319 @@
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "apis": [
+    {
+      "path": "/v1/transform/deploy",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Deploy a transform based on the provided metadata and wasm binary in the request payload. The payload should be the transform metadata in JSON format immediately followed by the WebAssembly binary without any delimiters.",
+          "nickname": "deploy_transform",
+          "consumes": [
+            "application/json+wasm"
+          ],
+          "type": "void",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/{name}",
+      "operations": [
+        {
+          "method": "DELETE",
+          "summary": "Delete a transform.",
+          "type": "void",
+          "nickname": "delete_transform",
+          "consumes": [
+            "application/json"
+          ],
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/{name}/meta",
+      "operations": [
+        {
+          "method": "PUT",
+          "summary": "Patch transform metadata.",
+          "type": "void",
+          "nickname": "patch_transform_metadata",
+          "consumes": [
+            "application/json"
+          ],
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "metadata",
+              "in": "body",
+              "required": true,
+              "type": "transform_metadata_patch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform",
+      "operations": [
+        {
+          "method": "GET",
+          "type": "array",
+          "items": {
+            "type": "transform_metadata"
+          },
+          "summary": "List all transforms, the status report contains a cluster wide aggregated view of the live transform execution state.",
+          "nickname": "list_transforms",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/debug/committed_offsets",
+      "operations": [
+        {
+          "method": "GET",
+          "type": "array",
+          "items": {
+            "type": "committed_offset"
+          },
+          "summary": "List all the committed offsets for transforms.",
+          "nickname": "list_committed_offsets",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/transform/debug/committed_offsets/garbage_collect",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Cleanup unknown commits for transforms that where deleted.",
+          "nickname": "garbage_collect_committed_offsets",
+          "produces": [
+            "application/json"
+          ]
+        }
+      ]
+    }
+  ],
+  "models": {
+    "deploy_transform_request": {
+      "id": "deploy_transform_request",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "input_topic": {
+          "type": "string"
+        },
+        "output_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          },
+          "description": "The environment variable configuration for a transform"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
+        },
+        "offset": {
+          "type": "consume_offset",
+          "required": false,
+          "description": "Start reading from this offset"
+        }
+      }
+    },
+    "transform_metadata": {
+      "id": "transform_metadata",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "input_topic": {
+          "type": "string"
+        },
+        "output_topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "partition_transform_status"
+          }
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          },
+          "description": "The environment variable configuration for a transform"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "description": "Output batch compression mode"
+        } 
+      }
+    },
+    "partition_transform_status": {
+      "id": "partition_transform_status",
+      "description": "The status of a single partition's transform",
+      "properties": {
+        "node_id": {
+          "type": "int",
+          "description": "id of a node"
+        },
+        "partition": {
+          "type": "int",
+          "description": "partition in the input topic"
+        },
+        "lag": {
+          "type": "int",
+          "description": "number of records to be processed"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "inactive",
+            "errored",
+            "unknown"
+          ],
+          "description": "the status of a transform"
+        }
+      }
+    },
+    "environment_variable": {
+      "id": "environment_variable",
+      "description": "Single key value pair for an environment",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "consume_offset": {
+      "id": "consume_offset",
+      "description": "The offset at which the transform will begin consuming records",
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "from_start",
+            "from_end",
+            "timestamp"
+          ],
+          "required": true
+        },
+        "value": {
+          "type": "int",
+          "required": true
+        }
+      }
+    },
+    "committed_offset": {
+      "id": "committed_offset",
+      "description": "A committed offset for a single partition and transform",
+      "properties": {
+        "transform_name": {
+          "type": "string",
+          "description": "name of the transform"
+        },
+        "partition": {
+          "type": "int",
+          "description": "partition in the input topic"
+        },
+        "offset": {
+          "type": "int",
+          "description": "The offset within the input topic that has been committed"
+        }
+      }
+    },
+    "transform_metadata_patch": {
+      "id": "transform_metadata_patch",
+      "description": "A partial update to transform metadata. See individual field descriptions for semantics.",
+      "properties": {
+        "env": {
+          "required": false,
+          "description": "If present, overrides the transform's existing environment map, wholesale. If not present, the existing map is unchanged.",
+          "type": "array",
+          "items": {
+            "type": "environment_variable"
+          }
+        },
+        "is_paused": {
+          "required": false,
+          "description": "If present, sets the transform's 'paused' state. If not present, paused state is unchanged.",
+          "type": "boolean"
+        },
+        "compression" :{
+          "type": "string",
+          "enum": [
+            "none",
+            "gzip",
+            "snappy",
+            "lz4",
+            "zstd"
+          ],
+          "required": false,
+          "description": "Output batch compression mode"
+        }
+      }
+    }
+  }
+}

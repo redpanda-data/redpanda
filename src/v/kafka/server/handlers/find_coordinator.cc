@@ -13,6 +13,7 @@
 #include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/find_coordinator.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "model/metadata.h"
@@ -27,13 +28,15 @@ namespace kafka {
 
 static ss::future<response_ptr>
 handle_leader(request_context& ctx, model::node_id leader) {
-    auto broker = ctx.metadata_cache().get_broker(leader);
+    auto broker = ctx.metadata_cache().get_node_metadata(leader);
     if (broker) {
         auto& b = *broker;
-        for (const auto& listener : b->kafka_advertised_listeners()) {
+        for (const auto& listener : b.broker.kafka_advertised_listeners()) {
             if (listener.name == ctx.listener()) {
                 return ctx.respond(find_coordinator_response(
-                  b->id(), listener.address.host(), listener.address.port()));
+                  b.broker.id(),
+                  listener.address.host(),
+                  listener.address.port()));
             }
         }
     }
@@ -71,21 +74,7 @@ ss::future<response_ptr> find_coordinator_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
-
-    if (request.data.key_type == coordinator_type::group) {
-        if (!ctx.authorized(
-              security::acl_operation::describe, group_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::group_authorization_failed));
-        }
-    } else if (request.data.key_type == coordinator_type::transaction) {
-        if (!ctx.authorized(
-              security::acl_operation::describe,
-              transactional_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::transactional_id_authorization_failed));
-        }
-    }
+    log_request(ctx.header(), request);
 
     if (request.data.key_type == coordinator_type::transaction) {
         if (!ctx.are_transactions_enabled()) {
@@ -93,13 +82,29 @@ ss::future<response_ptr> find_coordinator_handler::handle(
               find_coordinator_response(error_code::unsupported_version));
         }
 
+        transactional_id tx_id(request.data.key);
+
+        auto authz = ctx.authorized(security::acl_operation::describe, tx_id);
+
+        if (!ctx.audit()) {
+            return ctx.respond(find_coordinator_response(
+              error_code::broker_not_available,
+              "Broker not available - audit system failure"));
+        }
+
+        if (!authz) {
+            return ctx.respond(find_coordinator_response(
+              error_code::transactional_id_authorization_failed));
+        }
+
         return ss::do_with(
           std::move(ctx),
-          [request = std::move(request)](request_context& ctx) mutable {
-              return ctx.tx_gateway_frontend().get_tx_broker().then(
-                [&ctx](std::optional<model::node_id> tx_id) {
-                    if (tx_id) {
-                        return handle_leader(ctx, *tx_id);
+          [request = std::move(request),
+           tx_id = std::move(tx_id)](request_context& ctx) mutable {
+              return ctx.tx_gateway_frontend().find_coordinator(tx_id).then(
+                [&ctx](cluster::find_coordinator_reply r) {
+                    if (r.coordinator) {
+                        return handle_leader(ctx, *r.coordinator);
                     }
                     return ctx.respond(find_coordinator_response(
                       error_code::coordinator_not_available));
@@ -107,10 +112,23 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           });
     }
 
-    // other types include txn coordinators which are unsupported
     if (request.data.key_type != coordinator_type::group) {
         return ctx.respond(
           find_coordinator_response(error_code::unsupported_version));
+    }
+
+    auto authz = ctx.authorized(
+      security::acl_operation::describe, group_id(request.data.key));
+
+    if (!ctx.audit()) {
+        return ctx.respond(find_coordinator_response(
+          error_code::broker_not_available,
+          "Broker not available - audit system failure"));
+    }
+
+    if (!authz) {
+        return ctx.respond(
+          find_coordinator_response(error_code::group_authorization_failed));
     }
 
     return ss::do_with(
@@ -130,7 +148,7 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           return try_create_consumer_group_topic(
                    ctx.coordinator_mapper(),
                    ctx.topics_frontend(),
-                   (int16_t)ctx.metadata_cache().all_brokers().size())
+                   (int16_t)ctx.metadata_cache().node_count())
             .then([&ctx, request = std::move(request)](bool created) {
                 /*
                  * if the topic is successfully created then the metadata cache

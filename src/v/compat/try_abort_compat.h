@@ -17,6 +17,8 @@
 #include "compat/try_abort_generator.h"
 #include "test_utils/randoms.h"
 
+#include <vector>
+
 namespace compat {
 
 /*
@@ -45,10 +47,10 @@ struct compat_check<cluster::try_abort_request> {
     }
     static std::vector<compat_binary>
     to_binary(cluster::try_abort_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::try_abort_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -75,10 +77,10 @@ struct compat_check<cluster::try_abort_reply> {
         return obj;
     }
     static std::vector<compat_binary> to_binary(cluster::try_abort_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::try_abort_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 

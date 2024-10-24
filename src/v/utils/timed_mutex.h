@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/future.hh>
@@ -83,7 +83,7 @@ public:
 
     ss::future<> start_tracing() {
         return this->lock("timed_mutex:start_tracing")
-          .then([this](locked_token t) {
+          .then([this](locked_token) {
               if (!this->_is_tracing) {
                   this->_is_tracing = true;
                   _lock_counter += 1;
@@ -94,7 +94,7 @@ public:
 
     ss::future<> stop_tracing() {
         return this->lock("timed_mutex:stop_tracing")
-          .then([this](locked_token t) { this->_is_tracing = false; });
+          .then([this](locked_token) { this->_is_tracing = false; });
     }
 
     template<typename Func>

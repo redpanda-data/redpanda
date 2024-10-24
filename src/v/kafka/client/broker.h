@@ -16,6 +16,7 @@
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
+#include "net/connection.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
@@ -27,7 +28,7 @@ namespace kafka::client {
 
 struct gated_mutex {
     gated_mutex()
-      : _mutex{}
+      : _mutex{"gated_mutex"}
       , _gate{} {}
 
     template<typename Func>
@@ -44,7 +45,7 @@ struct gated_mutex {
 
     ss::future<> close() { return _gate.close(); }
 
-    mutex _mutex;
+    mutex _mutex{"gated_mutex"};
     ss::gate _gate;
 };
 
@@ -56,13 +57,26 @@ public:
       , _gated_mutex{} {}
 
     template<typename T, typename Ret = typename T::api_type::response_type>
-    requires(KafkaApi<typename T::api_type>) ss::future<Ret> dispatch(T r) {
+    requires(KafkaApi<typename T::api_type>)
+    ss::future<Ret> dispatch(T r) {
         using api_t = typename T::api_type;
         return _gated_mutex
           .with([this, r{std::move(r)}]() mutable {
-              vlog(kclog.debug, "Dispatch: {} req: {}", api_t::name, r);
-              return _client.dispatch(std::move(r)).then([](Ret res) {
-                  vlog(kclog.debug, "Dispatch: {} res: {}", api_t::name, res);
+              vlog(
+                kcwire.debug,
+                "{}Dispatch to node {}: {} req: {}",
+                *this,
+                _node_id,
+                api_t::name,
+                r);
+              return _client.dispatch(std::move(r)).then([this](Ret res) {
+                  vlog(
+                    kcwire.debug,
+                    "{}Dispatch from node {}: {} res: {}",
+                    *this,
+                    _node_id,
+                    api_t::name,
+                    res);
                   return res;
               });
           })
@@ -72,6 +86,13 @@ public:
                 return ss::make_exception_future<Ret>(
                   broker_error(_node_id, error_code::broker_not_available));
             })
+          .handle_exception_type([this](const std::system_error& e) {
+              if (net::is_reconnect_error(e)) {
+                  return ss::make_exception_future<Ret>(
+                    broker_error(_node_id, error_code::broker_not_available));
+              }
+              return ss::make_exception_future<Ret>(e);
+          })
           .finally([b = shared_from_this()]() {});
     }
 
@@ -83,6 +104,14 @@ public:
     }
 
 private:
+    /// \brief Log the client ID if it exists, otherwise don't log
+    friend std::ostream& operator<<(std::ostream& os, const broker& b) {
+        if (b._client.client_id().has_value()) {
+            fmt::print(os, "{}: ", b._client.client_id().value());
+        }
+        return os;
+    }
+
     model::node_id _node_id;
     transport _client;
     // TODO(Ben): allow overlapped requests

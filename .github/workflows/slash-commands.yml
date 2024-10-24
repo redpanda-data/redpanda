@@ -1,3 +1,4 @@
+---
 name: Slash Command Dispatch
 on:
   issue_comment:
@@ -5,17 +6,36 @@ on:
 jobs:
   slashCommandDispatch:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Slash Command Dispatch
-        uses: peter-evans/slash-command-dispatch@v2
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          token: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
+      - uses: peter-evans/slash-command-dispatch@v4
+        with:
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
           permission: read
           issue-type: both
           commands: |
             backport
+            cdt
             ci-repeat
+            dt
+            microbench
+            publish-to-install-pack
+            rp-unit-test
+            test-arm64
             test-codecov
+            test-rc-pipeline
+            test-release-pipeline
           static-args: |
             org=redpanda-data
             repo=redpanda

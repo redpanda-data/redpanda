@@ -3,4 +3,6 @@ build/*
 vtools/*
 depot_tools/*
 src/v/dashboard/node_modules/*
+tests/rptest/remote_scripts/payload_pb2*
 go/*
+.git/*

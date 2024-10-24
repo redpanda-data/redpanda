@@ -1,0 +1,6 @@
+pointer-overflow:aead.c
+nonnull-attribute:aead.c
+alignment:crc32c_arm64.cc
+function:openssl/*.c
+function:openssl-fips/*.c
+alignment:arrow/util/ubsan.h

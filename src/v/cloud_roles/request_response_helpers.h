@@ -14,33 +14,37 @@
 #include "http/client.h"
 #include "json/document.h"
 
-#include <boost/property_tree/ptree.hpp>
-
 namespace cloud_roles {
-
-inline constexpr std::chrono::milliseconds default_request_timeout{5000};
 
 ss::future<api_response> make_request(
   http::client client,
   http::client::request_header req,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-ss::future<api_response> post_request(
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   iobuf content,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-ss::future<api_response> post_request(
+ss::future<api_response> request_with_payload(
   http::client client,
   http::client::request_header req,
   ss::sstring content,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
 ss::future<boost::beast::http::status>
 get_status(http::client::response_stream_ref& resp);
 
 json::Document parse_json_response(iobuf resp);
+
+using validate_and_parse_res = std::variant<
+  json::Document,
+  malformed_api_response_error,
+  api_response_parse_error>;
+/// performs parsing and validation of the response with a json schema v4
+validate_and_parse_res
+parse_json_response_and_validate(std::string_view schema, iobuf resp);
 
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
 

@@ -10,18 +10,32 @@
 package disk
 
 import (
-	log "github.com/sirupsen/logrus"
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
 func NewDevice(dev uint64, fs afero.Fs) (BlockDevice, error) {
 	maj := unix.Major(dev)
 	min := unix.Minor(dev)
-	log.Debugf("Creating block device from number {%d, %d}", maj, min)
+	zap.L().Sugar().Debugf("Creating block device from number {%d, %d}", maj, min)
 	syspath, err := readSyspath(maj, min)
 	if err != nil {
 		return nil, err
 	}
 	return deviceFromSystemPath(syspath, fs)
+}
+
+func readSyspath(major, minor uint32) (string, error) {
+	blockBasePath := "/sys/dev/block"
+	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
+	linkpath, err := os.Readlink(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(blockBasePath, linkpath))
 }

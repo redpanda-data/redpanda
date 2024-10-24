@@ -9,25 +9,28 @@
 
 #include "cluster/members_manager.h"
 
+#include "base/seastarx.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/controller_stm.h"
 #include "cluster/drain_manager.h"
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
+#include "raft/consensus_utils.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/group_configuration.h"
 #include "random/generators.h"
-#include "redpanda/application.h"
 #include "reflection/adl.h"
-#include "seastarx.h"
 #include "storage/api.h"
 
 #include <seastar/core/coroutine.hh>
@@ -39,7 +42,10 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <fmt/ranges.h>
+
 #include <chrono>
+#include <exception>
 #include <system_error>
 namespace cluster {
 
@@ -52,7 +58,9 @@ members_manager::members_manager(
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<partition_balancer_state>& pb_state,
+  ss::sharded<ss::abort_source>& as,
+  std::chrono::milliseconds application_start_time)
   : _seed_servers(config::node().seed_servers())
   , _self(make_self_broker(config::node()))
   , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
@@ -65,10 +73,12 @@ members_manager::members_manager(
   , _allocator(allocator)
   , _storage(storage)
   , _drain_manager(drain_manager)
+  , _pb_state(pb_state)
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _update_queue(max_updates_queue_size)
-  , _next_assigned_id(model::node_id(1)) {
+  , _next_assigned_id(model::node_id(1))
+  , _application_start_time(application_start_time) {
     auto sub = _as.local().subscribe([this]() noexcept {
         _update_queue.abort(
           std::make_exception_ptr(ss::abort_requested_exception{}));
@@ -81,8 +91,23 @@ members_manager::members_manager(
     }
 }
 
-ss::future<> members_manager::start() {
-    vlog(clusterlog.info, "starting cluster::members_manager...");
+ss::future<> members_manager::start(std::vector<model::broker> brokers) {
+    vlog(
+      clusterlog.info,
+      "starting  members manager with founding brokers: {}",
+      brokers);
+    // no initial brokers, cluster already exists, read members from kv-store
+    if (brokers.empty()) {
+        if (unlikely(_raft0->config().is_with_brokers())) {
+            brokers = _raft0->config().brokers();
+            _last_connection_update_offset
+              = _raft0->get_latest_configuration_offset();
+        } else {
+            auto snapshot = read_members_from_kvstore();
+            brokers = std::move(snapshot.members);
+            _last_connection_update_offset = snapshot.update_offset;
+        }
+    }
 
     /*
      * Initialize connections to cluster members. Since raft0 is a cluster-wide
@@ -92,7 +117,7 @@ ss::future<> members_manager::start() {
      * more information about how this signal is used. A short timeout is used
      * for the 'hello' request as this is a best effort optimization.
      */
-    for (auto c = _raft0->config(); auto& b : c.brokers()) {
+    for (auto& b : brokers) {
         if (b.id() == _self.id()) {
             continue;
         }
@@ -100,7 +125,6 @@ ss::future<> members_manager::start() {
             return initialize_broker_connection(b);
         });
     }
-    _last_connection_update_offset = _raft0->get_latest_configuration_offset();
     co_return;
 }
 
@@ -116,23 +140,24 @@ ss::future<> members_manager::join_cluster() {
 }
 
 bool members_manager::is_already_member() const {
-    return _raft0->config().contains_broker(_self.id());
+    return _members_table.local().contains(_self.id());
 }
 
 ss::future<> members_manager::maybe_update_current_node_configuration() {
-    auto active_configuration = _raft0->config().find_broker(_self.id());
+    auto current_properties = _members_table.local().get_node_metadata_ref(
+      _self.id());
     vassert(
-      active_configuration.has_value(),
+      current_properties.has_value(),
       "Current broker is expected to be present in members configuration");
 
     // configuration is up to date, do nothing
-    if (active_configuration.value() == _self) {
+    if (current_properties->get().broker == _self) {
         return ss::now();
     }
     vlog(
       clusterlog.debug,
       "Redpanda broker configuration changed from {} to {}",
-      active_configuration.value(),
+      current_properties.value().get().broker,
       _self);
     return dispatch_configuration_update(_self)
       .then([] {
@@ -144,74 +169,111 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
       });
 }
 
-cluster::patch<broker_ptr>
-calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
-    std::vector<broker_ptr> new_list;
-    cfg.for_each_broker([&new_list](const model::broker& br) {
-        new_list.push_back(ss::make_lw_shared<model::broker>(br));
-    });
-    std::vector<broker_ptr> old_list = m.all_brokers();
+members_manager::changed_nodes members_manager::calculate_changed_nodes(
+  const raft::group_configuration& cfg) const {
+    changed_nodes ret;
+    for (auto& cfg_broker : cfg.brokers()) {
+        // current members table doesn't contain configuration broker, it was
+        // added
+        auto node = _members_table.local().get_node_metadata_ref(
+          cfg_broker.id());
 
-    return calculate_changed_brokers(std::move(new_list), std::move(old_list));
+        if (!node) {
+            ret.added.push_back(cfg_broker);
+        } else if (node->get().broker != cfg_broker) {
+            ret.updated.push_back(cfg_broker);
+        }
+    }
+    for (auto [id, broker] : _members_table.local().nodes()) {
+        if (!cfg.contains_broker(id)) {
+            ret.removed.push_back(id);
+        }
+    }
+
+    return ret;
 }
 
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
-    // distribute to all cluster::members_table
-    vlog(
-      clusterlog.debug,
-      "updating cluster configuration with {}",
-      cfg.brokers());
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [cfg](partition_allocator& allocator) {
-            allocator.update_allocation_nodes(cfg.brokers());
-        })
-      .then([this, cfg = std::move(cfg), update_offset]() mutable {
-          auto diff = calculate_brokers_diff(_members_table.local(), cfg);
-          auto added_brokers = diff.additions;
-          return _members_table
-            .invoke_on_all(
-              [cfg = std::move(cfg), update_offset](members_table& m) mutable {
-                  m.update_brokers(update_offset, cfg.brokers());
-              })
-            .then([this, diff = std::move(diff), update_offset]() mutable {
-                if (update_offset <= _last_connection_update_offset) {
-                    return ss::now();
-                }
-                // update internode connections
+    absl::flat_hash_set<model::node_id> fully_removed_nodes;
 
-                return update_connections(std::move(diff))
-                  .then([this, update_offset] {
-                      _last_connection_update_offset = update_offset;
-                  });
-            })
-            .then([this,
-                   added_nodes = std::move(added_brokers),
-                   update_offset]() mutable {
-                return ss::do_with(
-                  std::move(added_nodes),
-                  [this, update_offset](std::vector<broker_ptr>& added_nodes) {
-                      return ss::do_for_each(
-                        added_nodes,
-                        [this, update_offset](const broker_ptr& broker) {
-                            return _update_queue.push_eventually(node_update{
-                              .id = broker->id(),
-                              .type = node_update_type::added,
-                              .offset = update_offset,
-                            });
-                        });
-                  });
-            });
-      });
+    // skip if configuration does not contain brokers
+    if (unlikely(
+          cfg.is_with_brokers()
+          && update_offset < _first_node_operation_command_offset)) {
+        vlog(
+          clusterlog.info,
+          "processing raft-0 configuration at offset: {} with brokers: {}",
+          update_offset,
+          cfg.brokers());
+
+        auto diff = calculate_changed_nodes(cfg);
+        for (auto& broker : diff.added) {
+            vlog(
+              clusterlog.debug,
+              "node addition from raft-0 configuration: {}",
+              broker);
+            co_await do_apply_add_node(
+              add_node_cmd(0, std::move(broker)), update_offset);
+        }
+        for (auto& broker : diff.updated) {
+            vlog(
+              clusterlog.debug,
+              "node update from raft-0 configuration: {}",
+              broker);
+            co_await do_apply_update_node(
+              update_node_cfg_cmd(0, std::move(broker)), update_offset);
+        }
+        for (auto& id : diff.removed) {
+            vlog(
+              clusterlog.debug,
+              "node deletion from raft-0 configuration: {}",
+              id);
+            co_await do_apply_remove_node(
+              remove_node_cmd(id, 0), update_offset);
+        }
+
+        // The cluster hasn't yet switched to using node management commands so
+        // all nodes that were just removed in do_apply_remove_node are
+        // considered fully removed. We can immediately close connections to
+        // them.
+        std::swap(_removed_nodes_still_in_raft0, fully_removed_nodes);
+    } else {
+        for (const auto& id : _removed_nodes_still_in_raft0) {
+            if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
+                fully_removed_nodes.insert(id);
+            }
+        }
+
+        for (auto id : fully_removed_nodes) {
+            _removed_nodes_still_in_raft0.erase(id);
+        }
+    }
+
+    for (auto id : fully_removed_nodes) {
+        _in_progress_updates.erase(id);
+    }
+
+    if (update_offset >= _last_connection_update_offset) {
+        for (auto id : fully_removed_nodes) {
+            if (id != _self.id()) {
+                co_await remove_broker_client(
+                  _self.id(), _connection_cache, id);
+            }
+        }
+
+        _last_connection_update_offset = update_offset;
+    }
+}
+
+bool members_manager::is_batch_applicable(const model::record_batch& b) const {
+    return b.header().type == model::record_batch_type::node_management_cmd
+           || b.header().type == model::record_batch_type::raft_configuration;
 }
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
-    vlog(clusterlog.info, "Applying update to members_manager");
     if (b.header().type == model::record_batch_type::raft_configuration) {
-        vlog(clusterlog.info, "Raft config update");
         co_return co_await apply_raft_configuration_batch(std::move(b));
     }
 
@@ -223,31 +285,79 @@ members_manager::apply_update(model::record_batch b) {
       cmd,
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.info,
+            "applying decommission_node_cmd, offset: {}, node id: {}",
+            update_offset,
+            id);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().decommission_node(id);
-                    f = _update_queue.push_eventually(node_update{
+                    auto update = node_update{
                       .id = id,
                       .type = node_update_type::decommissioned,
                       .offset = update_offset,
-                    });
+                    };
+                    _in_progress_updates[id] = update;
+                    f = _update_queue.push_eventually(std::move(update));
                 }
                 return f.then([error] { return error; });
             });
       },
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.info,
+            "applying recommission_node_cmd, offset: {}, node id: {}",
+            update_offset,
+            id);
+
+          // TODO: remove this part after we introduce simplified raft
+          // configuration handling as this will be commands driven
+          auto raft0_cfg = _raft0->config();
+          if (raft0_cfg.get_state() == raft::configuration_state::joint) {
+              auto it = std::find_if(
+                raft0_cfg.old_config()->learners.begin(),
+                raft0_cfg.old_config()->learners.end(),
+                [id](const raft::vnode& vn) { return vn.id() == id; });
+              /**
+               * If a node is a demoted voter and about to be removed, do not
+               * allow for recommissioning.
+               */
+              if (it != raft0_cfg.old_config()->learners.end()) {
+                  return ss::make_ready_future<std::error_code>(
+                    errc::invalid_node_operation);
+              }
+          }
+
+          auto update_it = _in_progress_updates.find(id);
+          if (update_it == _in_progress_updates.end()) {
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          if (update_it->second.type != node_update_type::decommissioned) {
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          auto corresponding_decom_rev = model::revision_id{
+            update_it->second.offset};
+
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id, update_offset](std::error_code error) {
+            .then([this, id, update_offset, corresponding_decom_rev](
+                    std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().recommission_node(id);
-                    f = _update_queue.push_eventually(node_update{
+                    auto update = node_update{
                       .id = id,
                       .type = node_update_type::recommissioned,
-                      .offset = update_offset});
+                      .offset = update_offset,
+                      .decommission_update_revision = corresponding_decom_rev};
+                    _in_progress_updates[id] = update;
+                    f = _update_queue.push_eventually(std::move(update));
                 }
                 return f.then([error] { return error; });
             });
@@ -256,29 +366,92 @@ members_manager::apply_update(model::record_batch b) {
           // we do not have to dispatch this command to members table since this
           // command is only used by a backend to signal successfully finished
           // node reallocations
+
+          model::node_id id = cmd.key;
+          vlog(
+            clusterlog.info,
+            "applying finish_reallocations_cmd, offset: {}, node id: {}",
+            update_offset,
+            id);
+
+          if (auto it = _in_progress_updates.find(id);
+              it != _in_progress_updates.end()) {
+              auto update_type = it->second.type;
+              // We could have started decommissioning the node while we
+              // were finishing reallocations for node addition or
+              // recommissioning so we need to verify the update type before
+              // deleting. Unfortunately, there is no way to verify that this
+              // command really comes from processing the it->second update and
+              // not from some earlier one, but it will be stopped anyway so we
+              // can safely delete it.
+
+              if (
+                update_type == node_update_type::added
+                || update_type == node_update_type::recommissioned) {
+                  _in_progress_updates.erase(it);
+              }
+          }
+
+          _pb_state.local().remove_node_to_rebalance(id);
+
           return _update_queue
             .push_eventually(node_update{
-              .id = cmd.key,
+              .id = id,
               .type = node_update_type::reallocation_finished,
               .offset = update_offset})
             .then([] { return make_error_code(errc::success); });
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
+          vlog(
+            clusterlog.info,
+            "applying maintenance_mode_cmd, offset: {}, node id: {}, enabled: "
+            "{}",
+            update_offset,
+            cmd.key,
+            cmd.value);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, cmd](std::error_code error) {
                 auto f = ss::now();
                 if (!error && cmd.key == _self.id()) {
-                    f = _drain_manager.invoke_on_all(
-                      [enabled = cmd.value](cluster::drain_manager& dm) {
-                          if (enabled) {
-                              return dm.drain();
-                          } else {
-                              return dm.restore();
-                          }
-                      });
+                    if (cmd.value) {
+                        f = _drain_manager.local().drain();
+                    } else {
+                        f = _drain_manager.local().restore();
+                    }
                 }
                 return f.then([error] { return error; });
             });
+      },
+      [this, update_offset](add_node_cmd cmd) {
+          vlog(
+            clusterlog.info,
+            "applying node add command - broker: {}, offset: {}",
+            cmd.value,
+            update_offset);
+          _first_node_operation_command_offset = std::min(
+            update_offset, _first_node_operation_command_offset);
+          return do_apply_add_node(std::move(cmd), update_offset);
+      },
+      [this, update_offset](update_node_cfg_cmd cmd) {
+          vlog(
+            clusterlog.info,
+            "applying node update command - broker: {}, offset: {}",
+            cmd.value,
+            update_offset);
+          _first_node_operation_command_offset = std::min(
+            update_offset, _first_node_operation_command_offset);
+          return do_apply_update_node(std::move(cmd), update_offset);
+      },
+      [this, update_offset](remove_node_cmd cmd) {
+          vlog(
+            clusterlog.info,
+            "applying node delete command - node: {}, offset: {}",
+            cmd.key,
+            update_offset);
+          _first_node_operation_command_offset = std::min(
+            update_offset, _first_node_operation_command_offset);
+          return do_apply_remove_node(cmd, update_offset);
       },
       [this](register_node_uuid_cmd cmd) {
           const auto& node_uuid = cmd.key;
@@ -288,7 +461,7 @@ members_manager::apply_update(model::record_batch b) {
                                      : fmt::to_string(*requested_node_id);
           vlog(
             clusterlog.info,
-            "Applying registration of UUID {} with {}",
+            "Applying registration of node UUID {} with {}",
             node_uuid,
             node_id_str);
           if (requested_node_id) {
@@ -297,7 +470,7 @@ members_manager::apply_update(model::record_batch b) {
               }
               vlog(
                 clusterlog.warn,
-                "Couldn't register UUID {}, node ID {} already taken",
+                "Couldn't register node UUID {}, node ID {} already taken",
                 node_uuid,
                 requested_node_id);
               return ss::make_ready_future<std::error_code>(
@@ -314,6 +487,117 @@ members_manager::apply_update(model::record_batch b) {
           return ss::make_ready_future<std::error_code>(errc::success);
       });
 }
+
+ss::future<std::error_code> members_manager::do_apply_add_node(
+  add_node_cmd cmd, model::offset update_offset) {
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+    co_await persist_members_in_kvstore(update_offset);
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.upsert_allocation_node(cmd.value);
+      });
+
+    // update internode connections
+    auto target_id = cmd.value.id();
+    if (
+      update_offset >= _last_connection_update_offset
+      && target_id != _self.id()) {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          target_id,
+          cmd.value.rpc_address(),
+          _rpc_tls_config);
+
+        _last_connection_update_offset = update_offset;
+    }
+
+    auto update = node_update{
+      .id = cmd.value.id(),
+      .type = node_update_type::added,
+      .offset = update_offset,
+      .need_raft0_update = update_offset
+                           >= _first_node_operation_command_offset,
+    };
+    _in_progress_updates[update.id] = update;
+
+    _pb_state.local().add_node_to_rebalance(update.id);
+
+    co_await _update_queue.push_eventually(std::move(update));
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code> members_manager::do_apply_update_node(
+  update_node_cfg_cmd cmd, model::offset update_offset) {
+    vlog(
+      clusterlog.info,
+      "processing node update command - broker: {}, offset: {}",
+      cmd.value,
+      update_offset);
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+    co_await persist_members_in_kvstore(update_offset);
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.upsert_allocation_node(cmd.value);
+      });
+
+    // update internode connections
+    auto target_id = cmd.value.id();
+    if (
+      update_offset >= _last_connection_update_offset
+      && target_id != _self.id()) {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          target_id,
+          cmd.value.rpc_address(),
+          _rpc_tls_config);
+
+        _last_connection_update_offset = update_offset;
+    }
+    co_return errc::success;
+}
+ss::future<std::error_code> members_manager::do_apply_remove_node(
+  remove_node_cmd cmd, model::offset update_offset) {
+    // update members table
+    auto ec = co_await dispatch_updates_to_cores(update_offset, cmd);
+    if (ec) {
+        co_return ec;
+    }
+
+    _removed_nodes_still_in_raft0.insert(cmd.key);
+
+    co_await persist_members_in_kvstore(update_offset);
+
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard, [cmd](partition_allocator& allocator) {
+          allocator.remove_allocation_node(cmd.key);
+      });
+
+    auto update = node_update{
+      .id = cmd.key,
+      .type = node_update_type::removed,
+      .offset = update_offset,
+      .need_raft0_update = update_offset
+                           >= _first_node_operation_command_offset,
+    };
+    _in_progress_updates[update.id] = update;
+    co_await _update_queue.push_eventually(std::move(update));
+
+    co_return errc::success;
+}
 ss::future<std::error_code>
 members_manager::apply_raft_configuration_batch(model::record_batch b) {
     vassert(
@@ -321,13 +605,215 @@ members_manager::apply_raft_configuration_batch(model::record_batch b) {
       "raft configuration batches are expected to have exactly one record. "
       "Current batch contains {} records",
       b.record_count());
-
-    auto cfg = reflection::from_iobuf<raft::group_configuration>(
-      b.copy_records().front().release_value());
+    iobuf_parser parser(b.copy_records().front().release_value());
+    auto cfg = raft::details::deserialize_configuration(parser);
 
     co_await handle_raft0_cfg_update(std::move(cfg), b.base_offset());
 
     co_return make_error_code(errc::success);
+}
+
+ss::future<>
+members_manager::fill_snapshot(controller_snapshot& controller_snap) const {
+    auto& snap = controller_snap.members;
+    snap.node_ids_by_uuid = _id_by_uuid;
+    snap.next_assigned_id = _next_assigned_id;
+
+    _members_table.local().fill_snapshot(controller_snap);
+
+    snap.removed_nodes_still_in_raft0 = _removed_nodes_still_in_raft0;
+
+    for (const auto& [id, update] : _in_progress_updates) {
+        snap.in_progress_updates.emplace(
+          id,
+          controller_snapshot_parts::members_t::update_t{
+            .type = update.type,
+            .offset = update.offset,
+            .decommission_update_revision
+            = update.decommission_update_revision});
+    }
+
+    snap.first_node_operation_command_offset
+      = _first_node_operation_command_offset;
+
+    co_return;
+}
+
+ss::future<> members_manager::apply_snapshot(
+  model::offset snap_offset, const controller_snapshot& controller_snap) {
+    const auto& snap = controller_snap.members;
+
+    // 1. update uuid map
+
+    _id_by_uuid = snap.node_ids_by_uuid;
+    _next_assigned_id = snap.next_assigned_id;
+
+    // 2. calculate brokers diff to update inter-node connections
+
+    changed_nodes diff;
+    for (const auto& [id, new_node] : snap.nodes) {
+        auto old_node = _members_table.local().get_node_metadata_ref(id);
+        if (!old_node) {
+            diff.added.push_back(new_node.broker);
+        } else if (old_node->get().broker != new_node.broker) {
+            diff.updated.push_back(new_node.broker);
+        }
+    }
+    for (const auto& [id, old_node] : _members_table.local().nodes()) {
+        if (!snap.nodes.contains(id)) {
+            if (!snap.removed_nodes_still_in_raft0.contains(id)) {
+                diff.removed.push_back(id);
+            } else {
+                auto new_node = snap.removed_nodes.find(id);
+                vassert(
+                  new_node != snap.removed_nodes.end(),
+                  "info about removed node {} must be present in the snapshot",
+                  id);
+                if (new_node->second.broker != old_node.broker) {
+                    diff.updated.push_back(new_node->second.broker);
+                }
+            }
+        }
+    }
+    for (auto id : _removed_nodes_still_in_raft0) {
+        if (!snap.removed_nodes_still_in_raft0.contains(id)) {
+            diff.removed.push_back(id);
+        }
+    }
+
+    // 3. calculate self maintenance state diff
+
+    std::optional<model::maintenance_state> old_self_maintenance_state;
+    std::optional<model::maintenance_state> new_self_maintenance_state;
+    if (auto it = _members_table.local().nodes().find(_self.id());
+        it != _members_table.local().nodes().end()) {
+        old_self_maintenance_state = it->second.state.get_maintenance_state();
+    }
+    if (auto it = snap.nodes.find(_self.id()); it != snap.nodes.end()) {
+        new_self_maintenance_state = it->second.state.get_maintenance_state();
+    }
+
+    // 4. update members table
+
+    _first_node_operation_command_offset
+      = snap.first_node_operation_command_offset;
+
+    co_await _members_table.invoke_on_all(
+      [snap_offset, &controller_snap](members_table& mt) {
+          return mt.apply_snapshot(snap_offset, controller_snap);
+      });
+
+    _removed_nodes_still_in_raft0 = snap.removed_nodes_still_in_raft0;
+
+    co_await persist_members_in_kvstore(snap_offset);
+
+    // partition allocator will be updated by topic_updates_dispatcher
+
+    // 5. reconcile _in_progress_updates and generate corresponding
+    // members_backend updates
+
+    std::vector<node_update> updates;
+
+    auto interrupt_previous_update = [&](model::node_id id) {
+        updates.push_back(node_update{
+          .id = id,
+          .type = node_update_type::interrupted,
+          .offset = snap_offset,
+        });
+    };
+
+    for (const auto& [id, update] : snap.in_progress_updates) {
+        bool need_raft0_update
+          = (update.type == node_update_type::added
+             || update.type == node_update_type::removed)
+            && update.offset >= snap.first_node_operation_command_offset;
+
+        auto new_update = node_update{
+          .id = id,
+          .type = update.type,
+          .offset = update.offset,
+          .need_raft0_update = need_raft0_update,
+          .decommission_update_revision = update.decommission_update_revision};
+
+        auto old_it = _in_progress_updates.find(id);
+        if (old_it == _in_progress_updates.end()) {
+            _in_progress_updates[id] = new_update;
+            updates.push_back(new_update);
+        } else {
+            auto& old_update = old_it->second;
+            if (old_update.offset != new_update.offset) {
+                interrupt_previous_update(id);
+                old_update = new_update;
+                updates.push_back(new_update);
+            }
+        }
+
+        if (update.type == node_update_type::added) {
+            _pb_state.local().add_node_to_rebalance(id);
+        }
+    }
+
+    for (auto old_it = _in_progress_updates.begin();
+         old_it != _in_progress_updates.end();) {
+        auto it_copy = old_it++;
+        model::node_id node_id = it_copy->first;
+        if (!snap.in_progress_updates.contains(node_id)) {
+            interrupt_previous_update(node_id);
+            _pb_state.local().remove_node_to_rebalance(node_id);
+            _in_progress_updates.erase(it_copy);
+        }
+    }
+
+    for (auto& update : updates) {
+        co_await _update_queue.push_eventually(std::move(update));
+    }
+
+    // 6. update drain_mamager
+
+    if (old_self_maintenance_state != new_self_maintenance_state) {
+        bool should_drain = new_self_maintenance_state
+                            == model::maintenance_state::active;
+        bool should_restore = old_self_maintenance_state
+                              == model::maintenance_state::active;
+        if (should_drain) {
+            co_return co_await _drain_manager.local().drain();
+        } else if (should_restore) {
+            co_return co_await _drain_manager.local().restore();
+        }
+    }
+
+    // 7. update connections
+
+    if (snap_offset >= _last_connection_update_offset) {
+        for (auto& broker : diff.added) {
+            if (broker.id() != _self.id()) {
+                co_await update_broker_client(
+                  _self.id(),
+                  _connection_cache,
+                  broker.id(),
+                  broker.rpc_address(),
+                  _rpc_tls_config);
+            }
+        }
+        for (auto& broker : diff.updated) {
+            if (broker.id() != _self.id()) {
+                co_await update_broker_client(
+                  _self.id(),
+                  _connection_cache,
+                  broker.id(),
+                  broker.rpc_address(),
+                  _rpc_tls_config);
+            }
+        }
+        for (model::node_id id : diff.removed) {
+            if (id != _self.id()) {
+                co_await remove_broker_client(
+                  _self.id(), _connection_cache, id);
+            }
+        }
+
+        _last_connection_update_offset = snap_offset;
+    }
 }
 
 ss::future<std::vector<members_manager::node_update>>
@@ -354,59 +840,109 @@ model::node_id members_manager::get_node_id(const model::node_uuid& node_uuid) {
     return it->second;
 }
 
+ss::future<> members_manager::set_initial_state(
+  std::vector<model::broker> initial_brokers,
+  uuid_map_t id_by_uuid,
+  model::offset update_offset) {
+    vassert(_id_by_uuid.empty(), "will not overwrite existing data");
+
+    vlog(
+      clusterlog.info,
+      "initializing cluster state with initial brokers {}, and node UUID map: "
+      "{} at offset: {}",
+      initial_brokers,
+      id_by_uuid,
+      update_offset);
+    // Start the node ID assignment counter just past the highest node ID. This
+    // helps ensure removed seed servers are accounted for when auto-assigning
+    // node IDs, since seed servers don't call get_or_assign_node_id().
+    for (const auto& [uuid, id] : id_by_uuid) {
+        if (id == INT_MAX) {
+            _next_assigned_id = id;
+            break;
+        }
+        _next_assigned_id = std::max(_next_assigned_id, id + 1);
+    }
+    _id_by_uuid = std::move(id_by_uuid);
+
+    co_await _members_table.invoke_on_all(
+      [initial_brokers](members_table& table) {
+          table.set_initial_brokers(initial_brokers);
+      });
+
+    co_await persist_members_in_kvstore(update_offset);
+    // update partition allocator
+    co_await _allocator.invoke_on(
+      partition_allocator::shard,
+      [&brokers = initial_brokers](partition_allocator& allocator) {
+          for (auto& b : brokers) {
+              allocator.upsert_allocation_node(b);
+          }
+      });
+
+    // update internode connections
+    if (_last_connection_update_offset < update_offset) {
+        for (auto& b : initial_brokers) {
+            if (b.id() == _self.id()) {
+                continue;
+            }
+            co_await update_broker_client(
+              _self.id(),
+              _connection_cache,
+              b.id(),
+              b.rpc_address(),
+              _rpc_tls_config);
+        }
+
+        _last_connection_update_offset = update_offset;
+    }
+    for (auto& b : initial_brokers) {
+        auto update = node_update{
+          .id = b.id(),
+          .type = node_update_type::added,
+          .offset = model::offset{0},
+          .need_raft0_update = false,
+        };
+        _in_progress_updates[b.id()] = update;
+        co_await _update_queue.push_eventually(std::move(update));
+    }
+}
+
 template<typename Cmd>
 ss::future<std::error_code> members_manager::dispatch_updates_to_cores(
   model::offset update_offset, Cmd cmd) {
-    return _members_table
-      .map([cmd, update_offset](members_table& mt) {
+    auto results = co_await _members_table.map(
+      [cmd = std::move(cmd), update_offset](members_table& mt) {
           return mt.apply(update_offset, cmd);
-      })
-      .then([](std::vector<std::error_code> results) {
-          auto sentinel = results.front();
-          auto state_consistent = std::all_of(
-            results.begin(), results.end(), [sentinel](std::error_code res) {
-                return sentinel == res;
-            });
-
-          vassert(
-            state_consistent,
-            "State inconsistency across shards detected, "
-            "expected result: {}, have: {}",
-            sentinel,
-            results);
-
-          return sentinel;
       });
+
+    auto error = results.front();
+    auto state_consistent = std::all_of(
+      results.begin(), results.end(), [error](std::error_code res) {
+          return error == res;
+      });
+
+    vassert(
+      state_consistent,
+      "State inconsistency across shards detected, "
+      "expected result: {}, have: {}",
+      error,
+      results);
+    if (error) {
+        vlog(
+          clusterlog.warn,
+          "error applying command with type {} at offset {} - {}",
+          Cmd::type,
+          update_offset,
+          error.message());
+    }
+
+    co_return error;
 }
 
 ss::future<> members_manager::stop() {
     vlog(clusterlog.info, "stopping cluster::members_manager...");
     return _gate.close();
-}
-
-ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
-    return ss::do_with(std::move(diff), [this](patch<broker_ptr>& diff) {
-        return ss::do_for_each(
-                 diff.deletions,
-                 [this](broker_ptr removed) {
-                     return remove_broker_client(
-                       _self.id(), _connection_cache, removed->id());
-                 })
-          .then([this, &diff] {
-              return ss::do_for_each(diff.additions, [this](broker_ptr b) {
-                  if (b->id() == _self.id()) {
-                      // Do not create client to local broker
-                      return ss::make_ready_future<>();
-                  }
-                  return update_broker_client(
-                    _self.id(),
-                    _connection_cache,
-                    b->id(),
-                    b->rpc_address(),
-                    _rpc_tls_config);
-              });
-          });
-    });
 }
 
 static inline ss::future<>
@@ -422,13 +958,35 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
       });
 }
 
+ss::future<join_node_reply>
+members_manager::make_join_node_success_reply(model::node_id id) {
+    // Provide the joining node with a controller snapshot, so
+    // that it may load correct configuration + feature table
+    // before applying the controller log.
+    return _controller_stm.local().maybe_make_join_snapshot().then(
+      [id](std::optional<iobuf> snapshot) {
+          vlog(
+            clusterlog.debug,
+            "Responding to node {} join with {} byte snapshot",
+            id,
+            snapshot.has_value() ? snapshot.value().size_bytes() : 0);
+          return join_node_reply(
+            join_node_reply::status_code::success, id, std::move(snapshot));
+      });
+}
+
 ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
   const config::seed_server& target, join_node_request&& req) {
-    vlog(clusterlog.info, "Sending join request to {}", target.addr);
+    vlog(
+      clusterlog.info,
+      "Sending join request to {} timeout: {}",
+      target.addr,
+      _join_timeout / 1ms);
     return do_with_client_one_shot<controller_client_protocol>(
       target.addr,
       _rpc_tls_config,
       _join_timeout,
+      rpc::transport_version::v2,
       [req = std::move(req), timeout = rpc::clock_type::now() + _join_timeout](
         controller_client_protocol c) mutable {
           return c.join_node(std::move(req), rpc::client_opts(timeout))
@@ -445,6 +1003,8 @@ void members_manager::join_raft0() {
                             std::move(join_node_request{
                               features::feature_table::
                                 get_latest_logical_version(),
+                              features::feature_table::
+                                get_earliest_logical_version(),
                               _storage.local().node_uuid()().to_vector(),
                               _self}))
                      .then([this](result<join_node_reply> r) {
@@ -477,7 +1037,7 @@ void members_manager::join_raft0() {
 bool members_manager::try_register_node_id(
   const model::node_id& requested_node_id,
   const model::node_uuid& requested_node_uuid) {
-    vassert(requested_node_id != model::node_id(-1), "invalid node ID");
+    vassert(requested_node_id != model::unassigned_node_id, "invalid node ID");
     vlog(
       clusterlog.info,
       "Registering node ID {} as node UUID {}",
@@ -505,11 +1065,17 @@ std::optional<model::node_id>
 members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
     const auto it = _id_by_uuid.find(node_uuid);
     if (it == _id_by_uuid.end()) {
-        while (_members_table.local().contains(_next_assigned_id)) {
+        while (_members_table.local().contains(_next_assigned_id)
+               || _members_table.local()
+                    .get_removed_node_metadata_ref(_next_assigned_id)
+                    .has_value()) {
             if (_next_assigned_id == INT_MAX) {
                 return std::nullopt;
             }
             ++_next_assigned_id;
+        }
+        if (_next_assigned_id == INT_MAX) {
+            return std::nullopt;
         }
         _id_by_uuid.emplace(node_uuid, _next_assigned_id);
         vlog(
@@ -524,7 +1090,7 @@ members_manager::get_or_assign_node_id(const model::node_uuid& node_uuid) {
 
 ss::future<result<join_node_reply>>
 members_manager::dispatch_join_to_seed_server(
-  seed_iterator it, join_node_request const& req) {
+  seed_iterator it, const join_node_request& req) {
     using ret_t = result<join_node_reply>;
     auto f = ss::make_ready_future<ret_t>(errc::seed_servers_exhausted);
     if (it == std::cend(_seed_servers)) {
@@ -543,9 +1109,35 @@ members_manager::dispatch_join_to_seed_server(
 
     return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
-            auto r = fut.get0();
-            if (r && r.value().success) {
-                return ss::make_ready_future<ret_t>(r);
+            auto r = fut.get();
+            if (r.has_error()) {
+                vlog(
+                  clusterlog.warn,
+                  "Error joining cluster using {} seed server - {}",
+                  it->addr,
+                  r.error().message());
+            } else if (
+              r.value().status() != join_node_reply::status_code::success) {
+                if (r.value().retryable()) {
+                    // This is normal: when many nodes try to join during
+                    // cluster creation, some of them will get `busy` responses
+                    // because the seed server is already in the middle of
+                    // a raft0 config change.
+                    vlog(
+                      clusterlog.info,
+                      "Can't joining cluster yet via {} seed server ({})",
+                      it->addr,
+                      r.value().status_msg());
+                } else {
+                    vlog(
+                      clusterlog.warn,
+                      "Error joining cluster using {} seed server ({})",
+                      it->addr,
+                      r.value().status_msg());
+                }
+
+            } else {
+                return ss::make_ready_future<ret_t>(std::move(r));
             }
         } catch (...) {
             // just log an exception, we will retry joining cluster in next loop
@@ -573,7 +1165,8 @@ auto members_manager::dispatch_rpc_to_leader(
         return fut_t::convert(errc::no_leader_controller);
     }
 
-    auto leader = _raft0->config().find_broker(*leader_id);
+    auto leader = _members_table.local().get_node_metadata_ref(
+      leader_id.value());
 
     if (!leader) {
         return fut_t::convert(errc::no_leader_controller);
@@ -583,7 +1176,7 @@ auto members_manager::dispatch_rpc_to_leader(
       _self.id(),
       _connection_cache,
       *leader_id,
-      leader->rpc_address(),
+      leader->get().broker.rpc_address(),
       _rpc_tls_config,
       connection_timeout,
       std::forward<Func>(f));
@@ -597,19 +1190,18 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
                                       : "no node ID";
     vlog(
       clusterlog.debug,
-      "Replicating registration of UUID {} with {}",
+      "Replicating registration of node UUID {} with {}",
       node_uuid,
       node_id_str);
     // Otherwise, replicate a request to register the UUID.
     auto errc = co_await replicate_and_wait(
       _controller_stm,
-      _feature_table,
       _as,
       register_node_uuid_cmd(node_uuid, node_id),
       model::timeout_clock::now() + 30s);
     vlog(
       clusterlog.debug,
-      "Registration replication completed for UUID '{}': {}",
+      "Registration replication completed for node UUID '{}': {}",
       node_uuid,
       errc);
     if (errc != errc::success) {
@@ -619,7 +1211,7 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
     if (node_id && assigned_node_id != *node_id) {
         vlog(
           clusterlog.warn,
-          "Node registration for UUID {} as {} completed but already already "
+          "Node registration for node UUID {} as {} completed but already "
           "assigned as {}",
           node_uuid,
           *node_id,
@@ -628,12 +1220,26 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
     }
 
     // On success, return the node ID.
-    co_return ret_t(join_node_reply{true, get_node_id(node_uuid)});
+    co_return ret_t(
+      co_await make_join_node_success_reply(get_node_id(node_uuid)));
+}
+
+static bool contains_address(
+  const net::unresolved_address& address,
+  const members_table::cache_t& brokers) {
+    return std::find_if(
+             brokers.begin(),
+             brokers.end(),
+             [&address](const auto& p) {
+                 return p.second.broker.rpc_address() == address;
+             })
+           != brokers.end();
 }
 
 ss::future<result<join_node_reply>>
-members_manager::handle_join_request(join_node_request const req) {
+members_manager::handle_join_request(const join_node_request req) {
     using ret_t = result<join_node_reply>;
+    using status_t = join_node_reply::status_code;
 
     bool node_id_assignment_supported = _feature_table.local().is_active(
       features::feature::node_id_assignment);
@@ -661,7 +1267,8 @@ members_manager::handle_join_request(join_node_request const req) {
       && req.node_uuid.size() != model::node_uuid::type::length) {
         vlog(
           clusterlog.warn,
-          "Invalid join request, expected UUID or empty; got {}-byte value",
+          "Invalid join request, expected node UUID or empty; got {}-byte "
+          "value",
           req.node_uuid.size());
         co_return errc::invalid_request;
     }
@@ -678,10 +1285,11 @@ members_manager::handle_join_request(join_node_request const req) {
     }
     vlog(
       clusterlog.info,
-      "Processing node '{} ({})' join request (version {})",
+      "Processing node '{} ({})' join request (version {}-{})",
       req.node.id(),
       node_uuid_str,
-      req.logical_version);
+      req.earliest_logical_version,
+      req.latest_logical_version);
 
     if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Not the leader; dispatching to leader node");
@@ -704,6 +1312,18 @@ members_manager::handle_join_request(join_node_request const req) {
           });
     }
 
+    if (!_controller_stm.local().ready_to_snapshot()) {
+        vlog(
+          clusterlog.info,
+          "Rejecting node '{} ({})' join request, cluster is not yet ready to "
+          "add nodes",
+          req.node.id(),
+          node_uuid_str);
+
+        co_return ret_t(
+          join_node_reply{status_t::not_ready, model::unassigned_node_id});
+    }
+
     if (likely(node_id_assignment_supported && req_has_node_uuid)) {
         const auto it = _id_by_uuid.find(node_uuid);
         if (!req_node_id) {
@@ -716,7 +1336,7 @@ members_manager::handle_join_request(join_node_request const req) {
             }
             // The requested UUID already exists; this is a duplicate request
             // to assign a node ID. Just return the registered node ID.
-            co_return ret_t(join_node_reply{true, it->second});
+            co_return ret_t(co_await make_join_node_success_reply(it->second));
         }
         // We've been passed a node ID. The caller expects to be added to the
         // Raft group by the end of this function.
@@ -730,9 +1350,25 @@ members_manager::handle_join_request(join_node_request const req) {
         } else {
             // Validate that the node ID matches the one in our table.
             if (*req_node_id != it->second) {
-                co_return ret_t(join_node_reply{false, model::node_id(-1)});
+                co_return ret_t(join_node_reply{
+                  status_t::id_changed, model::unassigned_node_id});
+            }
+            // if node was removed from the cluster doesn't allow it to rejoin
+            // with the same UUID
+            if (_members_table.local()
+                  .get_removed_node_metadata_ref(it->second)
+                  .has_value()) {
+                vlog(
+                  clusterlog.warn,
+                  "Preventing decommissioned node {} with UUID {} from joining "
+                  "the cluster",
+                  it->second,
+                  it->first);
+                co_return ret_t(join_node_reply{
+                  status_t::bad_rejoin, model::unassigned_node_id});
             }
         }
+
         // Proceed to adding the node ID to the controller Raft group.
         // Presumably the node that made this join request started its Raft
         // subsystem with the node ID and is waiting to join the group.
@@ -741,7 +1377,7 @@ members_manager::handle_join_request(join_node_request const req) {
     // if configuration contains the broker already just update its config
     // with data from join request
 
-    if (_raft0->config().contains_broker(req.node.id())) {
+    if (_members_table.local().contains(req.node.id())) {
         vlog(
           clusterlog.info,
           "Broker {} is already member of a cluster, updating "
@@ -751,28 +1387,36 @@ members_manager::handle_join_request(join_node_request const req) {
         auto update_req = configuration_update_request(req.node, _self.id());
         co_return co_await handle_configuration_update_request(
           std::move(update_req))
-          .then([node_id](result<configuration_update_reply> r) {
-              if (r) {
-                  auto success = r.value().success;
-                  return ret_t(join_node_reply{
-                    success, success ? node_id : model::node_id{-1}});
-              }
-              return ret_t(r.error());
-          });
+          .then(
+            [this, node_id](
+              result<configuration_update_reply> r) -> ss::future<ret_t> {
+                if (r) {
+                    if (r.value().success) {
+                        return make_join_node_success_reply(node_id).then(
+                          [](join_node_reply r) { return ret_t(r); });
+                    } else {
+                        return ss::make_ready_future<ret_t>(join_node_reply{
+                          status_t::error, model::unassigned_node_id});
+                    }
+                }
+                return ss::make_ready_future<ret_t>(r.error());
+            });
     }
 
     // Older versions of Redpanda don't support having multiple servers pointed
     // at the same address.
     if (
       !node_id_assignment_supported
-      && _raft0->config().contains_address(req.node.rpc_address())) {
+      && contains_address(
+        req.node.rpc_address(), _members_table.local().nodes())) {
         vlog(
           clusterlog.info,
           "Broker {} address ({}) conflicts with the address of another "
           "node",
           req.node.id(),
           req.node.rpc_address());
-        co_return ret_t(join_node_reply{false, model::node_id(-1)});
+        co_return ret_t(
+          join_node_reply{status_t::conflict, model::unassigned_node_id});
     }
 
     if (req.node.id() != _self.id()) {
@@ -783,112 +1427,51 @@ members_manager::handle_join_request(join_node_request const req) {
           req.node.rpc_address(),
           _rpc_tls_config);
     }
-    // Just update raft0 configuration
-    // we do not use revisions in raft0 configuration, it is always revision
-    // 0 which is perfectly fine. this will work like revision less raft
-    // protocol.
-    co_return co_await _raft0
-      ->add_group_members({req.node}, model::revision_id(0))
-      .then([broker = req.node](std::error_code ec) {
+
+    co_return co_await add_node(req.node).then(
+      [this, node = req.node](std::error_code ec) {
           if (!ec) {
-              return ret_t(join_node_reply{true, broker.id()});
+              vlog(
+                clusterlog.info,
+                "Added node {} to cluster, preparing response",
+                node.id());
+
+              return make_join_node_success_reply(node.id()).then(
+                [](join_node_reply r) { return ret_t(r); });
           }
           vlog(
             clusterlog.warn,
-            "Error adding node {} to cluster - {}",
-            broker,
+            "Error adding node {} with id {} to cluster - {}",
+            node,
+            node.id(),
             ec.message());
-          return ret_t(ec);
+          return ss::make_ready_future<ret_t>(ret_t(ec));
       });
-}
-
-/**
- * Validate that:
- * - node_id never changes
- * - core count only increases, never decreases.
- *
- * Core count decreases are forbidden because our partition placement
- * code does not know how to re-assign partitions away from non-existent
- * cores if some cores are removed.  This may be improved in future, at
- * which time we may remove this restriction on core count decreases.
- *
- * These checks are applied early during startup based on a locally
- * stored record from previous startup, to prevent a misconfigured node
- * from startup up far enough to disrupt the rest of the cluster.
- * @return
- */
-ss::future<> members_manager::validate_configuration_invariants() {
-    static const bytes invariants_key("configuration_invariants");
-    auto invariants_buf = _storage.local().kvs().get(
-      storage::kvstore::key_space::controller, invariants_key);
-
-    auto current = configuration_invariants(_self.id(), ss::smp::count);
-
-    if (!invariants_buf) {
-        // store configuration invariants
-        return _storage.local().kvs().put(
-          storage::kvstore::key_space::controller,
-          invariants_key,
-          reflection::to_iobuf(std::move(current)));
-    }
-    auto invariants = reflection::from_iobuf<configuration_invariants>(
-      std::move(*invariants_buf));
-    // node id changed
-
-    if (invariants.node_id != current.node_id) {
-        vlog(
-          clusterlog.error,
-          "Detected node id change from {} to {}. Node id change is not "
-          "supported",
-          invariants.node_id,
-          current.node_id);
-        return ss::make_exception_future(
-          configuration_invariants_changed(invariants, current));
-    }
-    if (invariants.core_count > current.core_count) {
-        vlog(
-          clusterlog.error,
-          "Detected change in number of cores dedicated to run redpanda."
-          "Decreasing redpanda core count is not allowed. Expected core "
-          "count "
-          "{}, currently have {} cores.",
-          invariants.core_count,
-          ss::smp::count);
-        return ss::make_exception_future(
-          configuration_invariants_changed(invariants, current));
-    } else if (invariants.core_count != current.core_count) {
-        // Update the persistent invariants to reflect increased core
-        // count -- this tracks the high water mark of core count, to
-        // reject subsequent decreases.
-        return _storage.local().kvs().put(
-          storage::kvstore::key_space::controller,
-          invariants_key,
-          reflection::to_iobuf(std::move(current)));
-    }
-    return ss::now();
 }
 
 ss::future<result<configuration_update_reply>>
 members_manager::do_dispatch_configuration_update(
-  model::broker target, model::broker updated_cfg) {
-    if (target.id() == _self.id()) {
+  model::node_id target_id,
+  net::unresolved_address address,
+  model::broker updated_cfg) {
+    if (target_id == _self.id()) {
         return handle_configuration_update_request(
           configuration_update_request(std::move(updated_cfg), _self.id()));
     }
     vlog(
       clusterlog.trace,
       "dispatching configuration update request to {}",
-      target);
+      target_id);
     return with_client<controller_client_protocol>(
       _self.id(),
       _connection_cache,
-      target.id(),
-      target.rpc_address(),
+      target_id,
+      std::move(address),
       _rpc_tls_config,
       _join_timeout,
       [broker = std::move(updated_cfg),
        timeout = rpc::clock_type::now() + _join_timeout,
-       target_id = target.id()](controller_client_protocol c) mutable {
+       target_id](controller_client_protocol c) mutable {
           return c
             .update_node_configuration(
               configuration_update_request(std::move(broker), target_id),
@@ -899,20 +1482,19 @@ members_manager::do_dispatch_configuration_update(
 
 model::broker get_update_request_target(
   std::optional<model::node_id> current_leader,
-  const std::vector<model::broker>& brokers) {
+  const members_table::cache_t& brokers) {
     if (current_leader) {
-        auto it = std::find_if(
-          brokers.cbegin(),
-          brokers.cend(),
-          [current_leader](const model::broker& b) {
-              return b.id() == current_leader;
-          });
+        auto it = brokers.find(*current_leader);
 
-        if (it != brokers.cend()) {
-            return *it;
+        if (it != brokers.end()) {
+            return it->second.broker;
         }
     }
-    return brokers[random_generators::get_int(brokers.size() - 1)];
+
+    return std::next(
+             brokers.begin(),
+             random_generators::get_int<size_t>(0, brokers.size() - 1))
+      ->second.broker;
 }
 
 ss::future<>
@@ -923,10 +1505,11 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     // forward it to current leader
     bool update_success = false;
     while (!update_success) {
-        auto brokers = _raft0->config().brokers();
+        const auto& brokers = _members_table.local().nodes();
         auto target = get_update_request_target(
           _raft0->get_leader_id(), brokers);
-        auto r = co_await do_dispatch_configuration_update(target, broker);
+        auto r = co_await do_dispatch_configuration_update(
+          target.id(), std::move(target.rpc_address()), broker);
         if (r.has_error() || r.value().success == false) {
             co_await ss::sleep_abortable(
               _join_retry_jitter.base_duration(), _as.local());
@@ -936,65 +1519,9 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     }
 }
 
-/**
- * @brief Check that the configuration is valid, if not return a string with the
- * error cause.
- *
- * @param current_brokers current broker vector
- * @param to_update broker being added
- * @return std::optional<ss::sstring> - present if there is an error, nullopt
- * otherwise
- */
-std::optional<ss::sstring> check_result_configuration(
-  const std::vector<broker_ptr>& current_brokers,
-  const model::broker& to_update) {
-    for (auto& current : current_brokers) {
-        if (current->id() == to_update.id()) {
-            /**
-             * do no allow to decrease node core count
-             */
-            if (current->properties().cores > to_update.properties().cores) {
-                return "core count must not decrease on any broker";
-            }
-            continue;
-        }
-
-        /**
-         * validate if any two of the brokers would listen on the same addresses
-         * after applying configuration update
-         */
-        if (current->rpc_address() == to_update.rpc_address()) {
-            // error, nodes would listen on the same rpc addresses
-            return fmt::format(
-              "duplicate rpc endpoint {} with existing node {}",
-              to_update.rpc_address(),
-              current->id());
-        }
-        for (auto& current_ep : current->kafka_advertised_listeners()) {
-            auto any_is_the_same = std::any_of(
-              to_update.kafka_advertised_listeners().begin(),
-              to_update.kafka_advertised_listeners().end(),
-              [&current_ep](const model::broker_endpoint& ep) {
-                  return current_ep == ep;
-              });
-            // error, kafka endpoint would point to the same addresses
-            if (any_is_the_same) {
-                return fmt::format(
-                  "duplicate kafka advertised endpoint {} with existing node "
-                  "{}",
-                  current_ep,
-                  current->id());
-                ;
-            }
-        }
-    }
-    return {};
-}
-
 ss::future<result<configuration_update_reply>>
 members_manager::handle_configuration_update_request(
   configuration_update_request req) {
-    using ret_t = result<configuration_update_reply>;
     if (req.target_node != _self.id()) {
         vlog(
           clusterlog.warn,
@@ -1002,11 +1529,11 @@ members_manager::handle_configuration_update_request(
           "configuration update.",
           _self,
           req.target_node);
-        return ss::make_ready_future<ret_t>(configuration_update_reply{false});
+        co_return configuration_update_reply{false};
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
-    auto all_brokers = _members_table.local().all_brokers();
+    auto& all_brokers = _members_table.local().nodes();
     if (auto err = check_result_configuration(all_brokers, req.node); err) {
         vlog(
           clusterlog.warn,
@@ -1015,12 +1542,25 @@ members_manager::handle_configuration_update_request(
           err.value(),
           req.node,
           all_brokers);
-        return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
+        co_return errc::invalid_configuration_update;
     }
-    auto node_ptr = ss::make_lw_shared(std::move(req.node));
-    patch<broker_ptr> broker_update_patch{
-      .additions = {node_ptr}, .deletions = {}};
-    auto f = update_connections(std::move(broker_update_patch));
+
+    try {
+        co_await update_broker_client(
+          _self.id(),
+          _connection_cache,
+          req.node.id(),
+          req.node.rpc_address(),
+          _rpc_tls_config);
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Unable to handle configuration update due to broker update error: "
+          "{}",
+          std::current_exception());
+        co_return configuration_update_reply{false};
+    }
+
     // Current node is not the leader have to send an RPC to leader
     // controller
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();
@@ -1029,79 +1569,75 @@ members_manager::handle_configuration_update_request(
           clusterlog.warn,
           "Unable to handle configuration update, no leader controller",
           req.node.id());
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
     // curent node is a leader
     if (leader_id == _self.id()) {
         // Just update raft0 configuration
-        return _raft0->update_group_member(*node_ptr).then(
-          [node_ptr](std::error_code ec) {
-              if (ec) {
-                  vlog(
-                    clusterlog.warn,
-                    "Unable to handle configuration update - {}",
-                    ec.message());
-                  return ss::make_ready_future<ret_t>(ec);
-              }
-              return ss::make_ready_future<ret_t>(
-                configuration_update_reply{true});
-          });
+        std::error_code ec = co_await update_node(std::move(req.node));
+        if (ec) {
+            vlog(
+              clusterlog.warn,
+              "Unable to handle configuration update - {}",
+              ec.message());
+            co_return ec;
+        }
+        co_return configuration_update_reply{true};
     }
 
-    auto leader = _members_table.local().get_broker(*leader_id);
+    auto leader = _members_table.local().get_node_metadata_ref(*leader_id);
     if (!leader) {
-        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+        co_return errc::no_leader_controller;
     }
 
-    return with_client<controller_client_protocol>(
-             _self.id(),
-             _connection_cache,
-             *leader_id,
-             (*leader)->rpc_address(),
-             _rpc_tls_config,
-             _join_timeout,
-             [tout = ss::lowres_clock::now() + _join_timeout,
-              node = *node_ptr,
-              target = *leader_id](controller_client_protocol c) mutable {
-                 return c
-                   .update_node_configuration(
-                     configuration_update_request(std::move(node), target),
-                     rpc::client_opts(tout))
-                   .then(&rpc::get_ctx_data<configuration_update_reply>);
-             })
-      .handle_exception([](const std::exception_ptr& e) {
-          vlog(
-            clusterlog.warn,
-            "Error while dispatching configuration update request - {}",
-            e);
-          return ss::make_ready_future<ret_t>(
-            errc::join_request_dispatch_error);
-      });
-}
-std::ostream&
-operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
-    switch (tp) {
-    case members_manager::node_update_type::added:
-        return o << "added";
-    case members_manager::node_update_type::decommissioned:
-        return o << "decommissioned";
-    case members_manager::node_update_type::recommissioned:
-        return o << "recommissioned";
-    case members_manager::node_update_type::reallocation_finished:
-        return o << "reallocation_finished";
+    try {
+        co_return co_await with_client<controller_client_protocol>(
+          _self.id(),
+          _connection_cache,
+          *leader_id,
+          leader->get().broker.rpc_address(),
+          _rpc_tls_config,
+          _join_timeout,
+          [tout = ss::lowres_clock::now() + _join_timeout,
+           node = req.node,
+           target = *leader_id](controller_client_protocol c) mutable {
+              return c
+                .update_node_configuration(
+                  configuration_update_request(std::move(node), target),
+                  rpc::client_opts(tout))
+                .then(&rpc::get_ctx_data<configuration_update_reply>);
+          });
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Error while dispatching configuration update request - {}",
+          std::current_exception());
+        co_return errc::join_request_dispatch_error;
     }
-    return o << "unknown";
 }
 
 std::ostream&
 operator<<(std::ostream& o, const members_manager::node_update& u) {
-    fmt::print(o, "{{node_id: {}, type: {}}}", u.id, u.type);
+    fmt::print(
+      o,
+      "{{node_id: {}, type: {}, offset: {}, update_raft0: {}, "
+      "decom_upd_revision: {}}}",
+      u.id,
+      u.type,
+      u.offset,
+      u.need_raft0_update,
+      u.decommission_update_revision);
     return o;
 }
 
 ss::future<>
 members_manager::initialize_broker_connection(const model::broker& broker) {
     auto broker_id = broker.id();
+    vlog(
+      clusterlog.trace,
+      "initializing connection to broker {} at {}",
+      broker_id,
+      broker.rpc_address());
     co_await with_client<controller_client_protocol>(
       _self.id(),
       _connection_cache,
@@ -1109,10 +1645,10 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
       broker.rpc_address(),
       _rpc_tls_config,
       2s,
-      [self = _self.id()](controller_client_protocol c) {
+      [self = _self.id(), this](controller_client_protocol c) {
           hello_request req{
             .peer = self,
-            .start_time = redpanda_start_time,
+            .start_time = _application_start_time,
           };
           return c.hello(std::move(req), rpc::client_opts(2s))
             .then(&rpc::get_ctx_data<hello_reply>);
@@ -1138,7 +1674,7 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
                 clusterlog.debug,
                 "Ignoring failed hello request to {}: {}",
                 broker_id,
-                r.error());
+                r.error().message());
               return;
           }
 
@@ -1148,6 +1684,69 @@ members_manager::initialize_broker_connection(const model::broker& broker) {
             broker_id,
             r.error().message());
       });
+}
+
+ss::future<std::error_code> members_manager::add_node(model::broker broker) {
+    if (!command_based_membership_active()) {
+        return _raft0->add_group_member(
+          std::move(broker), model::revision_id(0));
+    }
+    return replicate_and_wait(
+      _controller_stm,
+      _as,
+      add_node_cmd(0, std::move(broker)),
+      _join_timeout + model::timeout_clock::now());
+}
+
+ss::future<std::error_code> members_manager::update_node(model::broker broker) {
+    if (!command_based_membership_active()) {
+        return _raft0->update_group_member(std::move(broker));
+    }
+
+    return replicate_and_wait(
+      _controller_stm,
+      _as,
+      update_node_cfg_cmd(0, std::move(broker)),
+      _join_timeout + model::timeout_clock::now());
+}
+
+ss::future<>
+members_manager::persist_members_in_kvstore(model::offset update_offset) {
+    static const auto cluster_members_key = bytes::from_string(
+      "cluster_members");
+    auto current_members_snapshot = read_members_from_kvstore();
+    if (current_members_snapshot.update_offset >= update_offset) {
+        return ss::now();
+    }
+    std::vector<model::broker> brokers;
+    brokers.reserve(_members_table.local().node_count());
+    for (auto& [_, node_metadata] : _members_table.local().nodes()) {
+        brokers.push_back(node_metadata.broker);
+    }
+    for (auto id : _removed_nodes_still_in_raft0) {
+        // we persist broker info for removed nodes that are still part of the
+        // controller group because after restart we still need to open
+        // connections to these nodes.
+        auto node_md = _members_table.local().get_removed_node_metadata_ref(id);
+        vassert(node_md, "metadata for removed node {} must be present", id);
+        brokers.push_back(node_md.value().get().broker);
+    }
+    return _storage.local().kvs().put(
+      storage::kvstore::key_space::controller,
+      cluster_members_key,
+      serde::to_iobuf(members_snapshot{
+        .members = std::move(brokers), .update_offset = update_offset}));
+}
+
+members_manager::members_snapshot members_manager::read_members_from_kvstore() {
+    static const auto cluster_members_key = bytes::from_string(
+      "cluster_members");
+    auto buffer = _storage.local().kvs().get(
+      storage::kvstore::key_space::controller, cluster_members_key);
+    if (buffer) {
+        return serde::from_iobuf<members_snapshot>(std::move(*buffer));
+    }
+    return {};
 }
 
 } // namespace cluster

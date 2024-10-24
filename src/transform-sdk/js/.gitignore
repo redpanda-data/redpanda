@@ -1,0 +1,6 @@
+build/
+.vim/
+Testing/
+*.wasm
+*.wat
+binaryen/

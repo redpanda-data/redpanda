@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using describe_acls_handler = single_stage_handler<describe_acls_api, 0, 1>;
+using describe_acls_handler = single_stage_handler<describe_acls_api, 0, 2>;
 
 }

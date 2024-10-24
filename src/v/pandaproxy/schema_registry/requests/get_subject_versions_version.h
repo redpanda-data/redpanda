@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "json/iobuf_writer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -22,8 +23,9 @@ struct post_subject_versions_version_response {
     schema_version version;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+template<typename Buffer>
+void rjson_serialize(
+  ::json::iobuf_writer<Buffer>& w,
   const post_subject_versions_version_response& res) {
     w.StartObject();
     w.Key("subject");
@@ -37,10 +39,10 @@ inline void rjson_serialize(
         w.Key("schemaType");
         ::json::rjson_serialize(w, to_string_view(type));
     }
-    if (!res.schema.refs().empty()) {
+    if (!res.schema.def().refs().empty()) {
         w.Key("references");
         w.StartArray();
-        for (const auto& ref : res.schema.refs()) {
+        for (const auto& ref : res.schema.def().refs()) {
             w.StartObject();
             w.Key("name");
             ::json::rjson_serialize(w, ref.name);

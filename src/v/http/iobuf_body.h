@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -73,8 +73,8 @@ struct iobuf_body {
         ~value_type() = default;
         value_type(value_type&&) = default;
         value_type& operator=(value_type&&) = default;
-        value_type(value_type const&) = delete;
-        const value_type& operator=(value_type const&) = delete;
+        value_type(const value_type&) = delete;
+        const value_type& operator=(const value_type&) = delete;
 
         size_t size() const;
 
@@ -118,7 +118,7 @@ struct iobuf_body {
           boost::beast::http::header<isRequest, Fields>&, value_type& b);
 
         void init(
-          boost::optional<std::uint64_t> const&, boost::beast::error_code& ec);
+          const boost::optional<std::uint64_t>&, boost::beast::error_code& ec);
 
         /// Generic 'put' implementation that work with any ConstBufferSequence
         template<class ConstBufferSequence>
@@ -132,7 +132,7 @@ struct iobuf_body {
     };
 
     /// Returns the body's payload size
-    static std::uint64_t size(value_type const& body);
+    static std::uint64_t size(const value_type& body);
 };
 
 template<bool isRequest, class Fields>

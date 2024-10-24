@@ -37,8 +37,8 @@ class parse_error final : public exception_base {
 public:
     explicit parse_error(size_t offset)
       : exception_base(
-        make_error_code(error_code::invalid_json),
-        fmt::format("parse error at offset {}", offset)) {}
+          make_error_code(error_code::invalid_json),
+          fmt::format("parse error at offset {}", offset)) {}
 };
 
 class serialize_error final : public exception_base {

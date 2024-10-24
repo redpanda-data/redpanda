@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
-#include "seastarx.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -34,6 +34,10 @@ class post_subject_versions_request_handler
         empty = 0,
         record,
         schema,
+        id,
+        version,
+        metadata,
+        ruleset,
         schema_type,
         references,
         reference,
@@ -47,13 +51,17 @@ class post_subject_versions_request_handler
         subject sub{invalid_subject};
         unparsed_schema_definition::raw_string def;
         schema_type type{schema_type::avro};
-        unparsed_schema::references refs;
+        unparsed_schema_definition::references refs;
     };
     mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
-    using rjson_parse_result = unparsed_schema;
+    struct rjson_parse_result {
+        unparsed_schema def;
+        std::optional<schema_id> id;
+        std::optional<schema_version> version;
+    };
     rjson_parse_result result;
 
     explicit post_subject_versions_request_handler(subject sub)
@@ -66,6 +74,10 @@ public:
         case state::record: {
             std::optional<state> s{string_switch<std::optional<state>>(sv)
                                      .match("schema", state::schema)
+                                     .match("id", state::id)
+                                     .match("version", state::version)
+                                     .match("metadata", state::metadata)
+                                     .match("ruleSet", state::ruleset)
                                      .match("schemaType", state::schema_type)
                                      .match("references", state::references)
                                      .default_match(std::nullopt)};
@@ -87,6 +99,10 @@ public:
         }
         case state::empty:
         case state::schema:
+        case state::id:
+        case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference_name:
@@ -97,8 +113,40 @@ public:
         return false;
     }
 
+    bool Null() {
+        switch (_state) {
+        case state::metadata:
+        case state::ruleset:
+            _state = state::record;
+            return true;
+        case state::empty:
+        case state::record:
+        case state::schema:
+        case state::id:
+        case state::version:
+        case state::schema_type:
+        case state::references:
+        case state::reference:
+        case state::reference_name:
+        case state::reference_subject:
+        case state::reference_version:
+            break;
+        }
+        return false;
+    }
+
     bool Uint(int i) {
         switch (_state) {
+        case state::id: {
+            result.id = schema_id{i};
+            _state = state::record;
+            return true;
+        }
+        case state::version: {
+            result.version = schema_version{i};
+            _state = state::record;
+            return true;
+        }
         case state::reference_version: {
             _schema.refs.back().version = schema_version{i};
             _state = state::reference;
@@ -107,6 +155,8 @@ public:
         case state::empty:
         case state::record:
         case state::schema:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference:
@@ -121,8 +171,10 @@ public:
         auto sv = std::string_view{str, len};
         switch (_state) {
         case state::schema: {
+            iobuf buf;
+            buf.append(sv.data(), sv.size());
             _schema.def = unparsed_schema_definition::raw_string{
-              ss::sstring{sv}};
+              std::move(buf)};
             _state = state::record;
             return true;
         }
@@ -146,6 +198,10 @@ public:
         }
         case state::empty:
         case state::record:
+        case state::id:
+        case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::references:
         case state::reference:
         case state::reference_version:
@@ -167,6 +223,10 @@ public:
         }
         case state::record:
         case state::schema:
+        case state::id:
+        case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::reference:
         case state::reference_name:
@@ -181,10 +241,9 @@ public:
         switch (_state) {
         case state::record: {
             _state = state::empty;
-            result = {
+            result.def = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type},
-              std::move(_schema.refs)};
+              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
             return true;
         }
         case state::reference: {
@@ -195,6 +254,10 @@ public:
         }
         case state::empty:
         case state::schema:
+        case state::id:
+        case state::version:
+        case state::metadata:
+        case state::ruleset:
         case state::schema_type:
         case state::references:
         case state::reference_name:
@@ -216,8 +279,9 @@ struct post_subject_versions_response {
     schema_id id;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
   const schema_registry::post_subject_versions_response& res) {
     w.StartObject();
     w.Key("id");

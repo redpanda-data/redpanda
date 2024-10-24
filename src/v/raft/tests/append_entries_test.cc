@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/bytes.h"
+#include "bytes/random.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -16,6 +17,7 @@
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
+#include "raft/errc.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -23,6 +25,7 @@
 #include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/async.h"
 
 #include <system_error>
@@ -31,7 +34,7 @@ FIXTURE_TEST(test_entries_are_replicated_to_all_nodes, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
 
-    bool success = replicate_random_batches(gr, 10).get0();
+    bool success = replicate_random_batches(gr, 10).get();
 
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
@@ -42,7 +45,7 @@ FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
     for (int i = 0; i < 5; ++i) {
-        bool success = replicate_random_batches(gr, 5).get0();
+        bool success = replicate_random_batches(gr, 5).get();
         BOOST_REQUIRE(success);
     }
 
@@ -62,7 +65,7 @@ FIXTURE_TEST(
     for (int i = 0; i < 5; ++i) {
         bool success = replicate_random_batches(
                          gr, 5, raft::consistency_level::leader_ack)
-                         .get0();
+                         .get();
         BOOST_REQUIRE(success);
     }
 
@@ -84,7 +87,7 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
     for (int i = 0; i < 5; ++i) {
-        bool success = replicate_random_batches(gr, 5).get0();
+        bool success = replicate_random_batches(gr, 5).get();
         BOOST_REQUIRE(success);
     }
 
@@ -104,7 +107,7 @@ FIXTURE_TEST(test_replicate_with_expected_term_leader, raft_test_fixture) {
     auto term = leader_raft->term();
     bool success = replicate_random_batches(
                      term, gr, 5, raft::consistency_level::leader_ack)
-                     .get0();
+                     .get();
     // check term to make sure there were no leader elections
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
@@ -124,7 +127,7 @@ FIXTURE_TEST(test_replicate_with_expected_term_quorum, raft_test_fixture) {
 
     bool success = replicate_random_batches(
                      term, gr, 5, raft::consistency_level::quorum_ack)
-                     .get0();
+                     .get();
     // check term to make sure there were no leader elections
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
@@ -143,7 +146,7 @@ FIXTURE_TEST(test_replicate_violating_expected_term_leader, raft_test_fixture) {
     auto term = leader_raft->term() + model::term_id(100);
     bool success = replicate_random_batches(
                      term, gr, 5, raft::consistency_level::leader_ack)
-                     .get0();
+                     .get();
     // check term to make sure there were no leader elections
     leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
@@ -162,7 +165,7 @@ FIXTURE_TEST(test_replicate_violating_expected_term_quorum, raft_test_fixture) {
     auto term = leader_raft->term() + model::term_id(100);
     bool success = replicate_random_batches(
                      term, gr, 5, raft::consistency_level::quorum_ack)
-                     .get0();
+                     .get();
     BOOST_REQUIRE(!success);
 };
 
@@ -179,7 +182,7 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
             break;
         }
     }
-    bool success = replicate_random_batches(gr, 8).get0();
+    bool success = replicate_random_batches(gr, 8).get();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
@@ -199,7 +202,7 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
 FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -233,7 +236,7 @@ FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
     gr.enable_all();
     bool success = replicate_random_batches(
                      gr, 5, raft::consistency_level::leader_ack)
-                     .get0();
+                     .get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -275,17 +278,17 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
         }
     }
     // append some entries in current term
-    auto success = replicate_random_batches(gr, 5).get0();
+    auto success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
 
     // roll the term
     retry_with_leader(gr, 5, 1s, [](raft_node& leader) {
         return leader.consensus
-          ->step_down(leader.consensus->term() + model::term_id(1))
+          ->step_down(leader.consensus->term() + model::term_id(1), "test")
           .then([] { return true; });
-    }).get0();
+    }).get();
     // append some entries in next term
-    success = replicate_random_batches(gr, 5).get0();
+    success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -319,7 +322,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
     auto f = leader_raft->replicate(
-      random_batches_reader(2), default_replicate_opts);
+      random_batches_reader(2).get(), default_replicate_opts);
     leader_raft.release();
     // since replicate doesn't accept timeout client have to deal with it.
     ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
@@ -328,7 +331,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
             rpc::errc::client_request_timeout);
       })
       .discard_result()
-      .get0();
+      .get();
 
     // shut down the leader
     info("shutting down leader {}", first_leader_id);
@@ -343,7 +346,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
 
     // append some entries via new leader so old one has some data to
     // truncate
-    bool success = replicate_random_batches(gr, 2).get0();
+    bool success = replicate_random_batches(gr, 2).get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -366,7 +369,7 @@ FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
 
     bool success = replicate_random_batches(
                      gr, 2, raft::consistency_level::leader_ack)
-                     .get0();
+                     .get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -385,7 +388,7 @@ FIXTURE_TEST(
     gr.enable_all();
     bool success = replicate_random_batches(
                      gr, 10, raft::consistency_level::leader_ack)
-                     .get0();
+                     .get();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
@@ -420,11 +423,7 @@ FIXTURE_TEST(
  */
 FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
-      raft::group_id(0),
-      3,
-      storage::log_config::storage_type::disk,
-      model::cleanup_policy_bitflags::compaction,
-      10_MiB);
+      raft::group_id(0), 3, model::cleanup_policy_bitflags::compaction, 10_MiB);
 
     auto cfg = storage::log_builder_config();
     cfg.base_dir = ssx::sformat("{}/{}", gr.get_data_dir(), 0);
@@ -443,24 +442,24 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
 
     builder | storage::start(std::move(ntp_config)) | storage::add_segment(0);
     auto batch = model::test::make_random_batch(model::offset(0), 1, false);
-    builder.add_batch(std::move(batch)).get0();
+    builder.add_batch(std::move(batch)).get();
     // roll term - this was triggering ch1284 (ghost batches influencing
     // segments roll)
-    builder.add_segment(model::offset(1), model::term_id(1)).get0();
+    builder.add_segment(model::offset(1), model::term_id(1)).get();
     batch = model::test::make_random_batch(model::offset(1), 5, false);
     batch.set_term(model::term_id(1));
-    builder.add_batch(std::move(batch)).get0();
+    builder.add_batch(std::move(batch)).get();
     // gap from 6 to 19
     batch = model::test::make_random_batch(model::offset(20), 30, false);
     batch.set_term(model::term_id(1));
-    builder.add_batch(std::move(batch)).get0();
+    builder.add_batch(std::move(batch)).get();
     // gap from 50 to 67, at term boundary
-    builder.add_segment(model::offset(68), model::term_id(2)).get0();
+    builder.add_segment(model::offset(68), model::term_id(2)).get();
     batch = model::test::make_random_batch(model::offset(68), 11, false);
     batch.set_term(model::term_id(2));
-    builder.add_batch(std::move(batch)).get0();
-    builder.get_log().flush().get0();
-    builder.stop().get0();
+    builder.add_batch(std::move(batch)).get();
+    builder.get_log()->flush().get();
+    builder.stop().get();
 
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
@@ -510,11 +509,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
  */
 FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
-      raft::group_id(0),
-      3,
-      storage::log_config::storage_type::disk,
-      model::cleanup_policy_bitflags::deletion,
-      1_KiB);
+      raft::group_id(0), 3, model::cleanup_policy_bitflags::deletion, 1_KiB);
 
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
@@ -532,12 +527,12 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     auto first_ts = model::timestamp::now();
     // append some entries
     [[maybe_unused]] bool res
-      = replicate_compactible_batches(gr, first_ts).get0();
+      = replicate_compactible_batches(gr, first_ts).get();
 
     auto second_ts = model::timestamp(first_ts() + 100);
     info("Triggerring log collection with timestamp {}", first_ts);
     // append some more entries
-    res = replicate_compactible_batches(gr, second_ts).get0();
+    res = replicate_compactible_batches(gr, second_ts).get();
 
     validate_logs_replication(gr);
 
@@ -545,15 +540,16 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     info("Compacting log of node: {}", leader_id);
     retry_with_leader(gr, 5, 2s, [first_ts, &as](raft_node& n) {
         return n.log
-          ->compact(storage::compaction_config(
+          ->housekeeping(storage::housekeeping_config(
             first_ts,
             100_MiB,
             model::offset::max(),
+            std::nullopt,
             ss::default_priority_class(),
             as,
-            storage::debug_sanitize_files::yes))
+            storage::ntp_sanitizer_config{.sanitize_only = true}))
           .then([] { return true; });
-    }).get0();
+    }).get();
 
     gr.enable_node(disabled_id);
 
@@ -581,7 +577,7 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
             break;
         }
     }
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
@@ -592,17 +588,20 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
             return false;
         }
         return are_all_commit_indexes_the_same(gr);
-    }).get0();
+    }).get();
 
     // store snapshot
     for (auto& [_, member] : gr.get_members()) {
         member.consensus
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
-          .get0();
+          .get();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
-    success = replicate_random_batches(gr, 5).get0();
+    success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
@@ -613,6 +612,11 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
     validate_offset_translation(gr);
+    for (auto& [_, member] : gr.get_members()) {
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
+    }
 };
 
 FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
@@ -629,11 +633,12 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
         }
     }
     // append some entries
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
     // step down so last entry in snapshot will be a configuration
     auto leader_raft = get_leader_raft(gr);
-    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
+    leader_raft->step_down(leader_raft->term() + model::term_id(1), "test")
+      .get();
 
     validate_logs_replication(gr);
     tests::cooperative_spin_wait_with_timeout(2s, [&gr] {
@@ -643,17 +648,20 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
             return false;
         }
         return are_all_commit_indexes_the_same(gr);
-    }).get0();
+    }).get();
 
     // store snapshot
     for (auto& [_, member] : gr.get_members()) {
         member.consensus
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
-          .get0();
+          .get();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
-    success = replicate_random_batches(gr, 5).get0();
+    success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
@@ -669,7 +677,7 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
 FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    gr.wait_for_leader().get0();
+    gr.wait_for_leader().get();
     // disable two nodes
     std::vector<model::node_id> disabled;
     model::node_id leader_id;
@@ -687,8 +695,7 @@ FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
     auto last_visible = leader_raft->last_visible_index();
 
     // replicate some batches with relaxed consistency
-    replicate_random_batches(gr, 20, raft::consistency_level::leader_ack)
-      .get0();
+    replicate_random_batches(gr, 20, raft::consistency_level::leader_ack).get();
 
     // check last visible offset, make sure it is
     auto new_last_visible = leader_raft->last_visible_index();
@@ -717,7 +724,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
         auto lvl = random_generators::get_int(0, 10) > 5
                      ? raft::consistency_level::leader_ack
                      : raft::consistency_level::quorum_ack;
-        success = replicate_random_batches(gr, 2, lvl).get0();
+        success = replicate_random_batches(gr, 2, lvl).get();
         BOOST_REQUIRE(success);
     }
 
@@ -730,39 +737,48 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
     validate_offset_translation(gr);
 };
 
-FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
 
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(
+                     gr, 500, raft::consistency_level::leader_ack, 10s)
+                     .get();
     BOOST_REQUIRE(success);
-
-    leader_id = wait_for_group_leader(gr);
     leader_raft = gr.get_member(leader_id).consensus;
-    auto r = leader_raft->linearizable_barrier().get();
+    result<model::offset> r(raft::errc::timeout);
+    auto leader_offsets = leader_raft->log()->offsets();
+    retry_with_leader(
+      gr,
+      5,
+      30s,
+      [&r, &leader_offsets](raft_node& leader_node) {
+          return leader_node.consensus->linearizable_barrier().then(
+            [&r, &leader_offsets, &leader_node](
+              result<model::offset> l_offset) {
+                r = l_offset;
+                leader_offsets = leader_node.log->offsets();
+                return l_offset.has_value()
+                       && l_offset.value() == leader_offsets.dirty_offset;
+            });
+      })
+      .get();
 
-    std::vector<size_t> sizes;
-    if (r) {
-        auto logs = gr.read_all_logs();
-        for (auto& l : logs) {
-            sizes.push_back(l.second.size());
-        }
-        std::sort(sizes.begin(), sizes.end());
-        // at least 2 out of 3 nodes MUST have all entries replicated
-        BOOST_REQUIRE_GT(sizes[2], 1);
-        BOOST_REQUIRE_EQUAL(sizes[2], sizes[1]);
-    }
+    // linerizable barrier must succeed with stable leader
+    BOOST_REQUIRE(r.has_value());
+    BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.committed_offset);
+    BOOST_REQUIRE_EQUAL(r.value(), leader_offsets.dirty_offset);
 };
 
-FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
+FIXTURE_TEST(test_linearizable_barrier_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
 
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
 
     leader_id = wait_for_group_leader(gr);
@@ -830,7 +846,7 @@ struct request_ordering_test_fixture : public raft_test_fixture {
               raft::replicate_options(consistency));
             // wait for request to be enqueued before dispatching next one
             // (comenting this out should cause this test to fail)
-            r.request_enqueued.get0();
+            r.request_enqueued.get();
             results.push_back(std::move(r.replicate_finished));
         }
         return ss::when_all_succeed(results.begin(), results.end())
@@ -861,7 +877,7 @@ FIXTURE_TEST(test_quorum_ack_write_ordering, request_ordering_test_fixture) {
     auto leader_raft = gr.get_member(leader_id).consensus;
     replicate_indexed_batches(
       leader_raft, 20, raft::consistency_level::quorum_ack)
-      .get0();
+      .get();
     validate_logs_replication(gr);
 
     validate_batch_ordering(20, gr);
@@ -874,7 +890,7 @@ FIXTURE_TEST(test_leader_ack_write_ordering, request_ordering_test_fixture) {
     auto leader_raft = gr.get_member(leader_id).consensus;
     replicate_indexed_batches(
       leader_raft, 20, raft::consistency_level::quorum_ack)
-      .get0();
+      .get();
     validate_logs_replication(gr);
 
     validate_batch_ordering(20, gr);

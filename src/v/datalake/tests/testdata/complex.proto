@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+enum State {
+    ACTIVE = 0;
+    DISABLED = 1;
+}
+
+message BrokerShard {
+    int64 id = 1;
+    int32 shard = 2;
+}
+
+message Partition {
+    int32 id = 1;
+    repeated BrokerShard replicas = 2;
+    State state = 3;
+}
+
+message Topic {
+    string name = 1;
+    repeated Partition partitions = 2;
+}
+
+message Metadata {
+    map<string, Topic> topics = 1;
+    repeated int64 nodes = 2;
+}
+
+message TopLevel {
+    message NestedLevelOne {
+        message NestedLevelTwo {
+            string field = 1;
+        }
+        NestedLevelTwo nested_level_two = 1;
+    }
+    NestedLevelOne nested_level_one = 1;
+}
+
+message StructWithUnsignedInt {
+    int64 valid = 1;
+    uint64 invalid = 2;
+}
+
+message StructWithUnsignedFixed {
+    int64 valid = 1;
+    fixed64 invalid = 2;
+}
+
+message StructWithOneOf {
+    oneof oneof_field {
+        uint32 oneof_uint32 = 1;
+        string oneof_string = 2;
+        bytes oneof_bytes = 3;
+        bool oneof_bool = 4;
+    }
+}

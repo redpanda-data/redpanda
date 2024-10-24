@@ -10,9 +10,14 @@
  */
 #include "kafka/server/group_router.h"
 
+#include "kafka/server/logger.h"
+
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/core/with_scheduling_group.hh>
+
+#include <algorithm>
+#include <iterator>
 
 namespace kafka {
 
@@ -26,7 +31,7 @@ auto group_router::route(Request&& r, FwdFunc func) {
     using resp_type = typename return_type::value_type;
 
     auto m = shard_for(r.data.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         vlog(klog.trace, "in route() not coordinator for {}", r.data.group_id);
         return ss::make_ready_future<resp_type>(
           resp_type(r, error_code::not_coordinator));
@@ -48,13 +53,13 @@ auto group_router::route_tx(Request&& r, FwdFunc func) {
     using resp_type = typename return_type::value_type;
 
     auto m = shard_for(r.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         resp_type reply;
         // route_tx routes internal intra cluster so it uses
-        // cluster::tx_errc instead of kafka::error_code
+        // cluster::tx::errc instead of kafka::error_code
         // because the latter is part of the kafka protocol
         // we can't extend it
-        reply.ec = cluster::tx_errc::not_coordinator;
+        reply.ec = cluster::tx::errc::not_coordinator;
         return ss::make_ready_future<resp_type>(reply);
     }
     r.ntp = std::move(m->first);
@@ -72,7 +77,7 @@ auto group_router::route_stages(Request r, FwdFunc func) {
       Request&&>;
     using resp_type = typename return_type::value_type;
     auto m = shard_for(r.data.group_id);
-    if (!m || _disabled) {
+    if (!m) {
         return group::stages(resp_type(r, error_code::not_coordinator));
     }
     r.ntp = std::move(m->first);
@@ -189,21 +194,13 @@ ss::future<> group_router::parallel_route_delete_groups(
 }
 
 ss::future<std::vector<deletable_group_result>>
-group_router::delete_groups(std::vector<group_id> groups) {
+group_router::delete_groups(chunked_vector<group_id> groups) {
     // partial results
     std::vector<deletable_group_result> results;
 
     // partition groups by owner shard
     sharded_groups groups_by_shard;
     for (auto& group : groups) {
-        if (unlikely(_disabled)) {
-            results.push_back(deletable_group_result{
-              .group_id = std::move(group),
-              .error_code = error_code::not_coordinator,
-            });
-            continue;
-        }
-
         if (auto m = shard_for(group); m) {
             groups_by_shard[m->second].emplace_back(
               std::make_pair(std::move(m->first), std::move(group)));
@@ -269,6 +266,11 @@ group_router::offset_fetch(offset_fetch_request&& request) {
     return route(std::move(request), &group_manager::offset_fetch);
 }
 
+ss::future<offset_delete_response>
+group_router::offset_delete(offset_delete_request&& request) {
+    return route(std::move(request), &group_manager::offset_delete);
+}
+
 group::offset_commit_stages
 group_router::offset_commit(offset_commit_request&& request) {
     return route_stages(std::move(request), &group_manager::offset_commit);
@@ -289,28 +291,28 @@ group_router::begin_tx(cluster::begin_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::begin_tx);
 }
 
-ss::future<cluster::prepare_group_tx_reply>
-group_router::prepare_tx(cluster::prepare_group_tx_request request) {
-    return route_tx(std::move(request), &group_manager::prepare_tx);
-}
-
 ss::future<cluster::abort_group_tx_reply>
 group_router::abort_tx(cluster::abort_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::abort_tx);
 }
 
-ss::future<std::pair<error_code, std::vector<listed_group>>>
-group_router::list_groups() {
-    using type = std::pair<error_code, std::vector<listed_group>>;
+ss::future<std::pair<error_code, chunked_vector<listed_group>>>
+group_router::list_groups(group_manager::list_groups_filter_data filter_data) {
+    using type = std::pair<error_code, chunked_vector<listed_group>>;
     return get_group_manager().map_reduce0(
-      [](group_manager& mgr) { return mgr.list_groups(); },
+      [filter_data = std::move(filter_data)](group_manager& mgr) {
+          return mgr.list_groups(filter_data);
+      },
       type{},
       [](type a, type b) {
           // reduce errors into `a` and retain the first
           if (a.first == error_code::none) {
               a.first = b.first;
           }
-          a.second.insert(a.second.end(), b.second.begin(), b.second.end());
+          auto& av = a.second;
+          auto& bv = b.second;
+          av.reserve(av.size() + bv.size());
+          std::copy(bv.begin(), bv.end(), std::back_inserter(av));
           return a;
       });
 }

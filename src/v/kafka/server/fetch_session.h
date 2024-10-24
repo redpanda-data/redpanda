@@ -10,10 +10,10 @@
  */
 #pragma once
 #include "kafka/protocol/errors.h"
-#include "kafka/types.h"
+#include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/timeout_clock.h"
-#include "model/timestamp.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/iterator/iterator_adaptor.hpp>
@@ -23,13 +23,22 @@
 namespace kafka {
 
 struct fetch_session_partition {
-    model::topic topic;
-    model::partition_id partition;
+    model::ktp_with_hash topic_partition;
     int32_t max_bytes;
+    model::offset start_offset;
     model::offset fetch_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
     kafka::leader_epoch current_leader_epoch = invalid_leader_epoch;
+
+    fetch_session_partition(
+      const model::topic& tp, const fetch_request::partition& p)
+      : topic_partition(tp, p.partition_index)
+      , max_bytes(p.max_bytes)
+      , fetch_offset(p.fetch_offset)
+      , high_watermark(model::offset(-1))
+      , last_stable_offset(model::offset(-1))
+      , current_leader_epoch(p.current_leader_epoch) {}
 };
 /**
  * Map of partitions that is kept by fetch session. This map is using intrusive
@@ -100,7 +109,9 @@ private:
 
     static auto make_partition_iterator(io_list_t::const_iterator it) {
         return boost::iterators::make_transform_iterator(
-          it, [](const entry& e) { return e.partition; });
+          it, [](const entry& e) -> const kafka::fetch_session_partition& {
+              return e.partition;
+          });
     }
 
 public:
@@ -117,15 +128,11 @@ public:
     void emplace(kafka::fetch_session_partition v) {
         auto e = std::make_unique<entry>(std::move(v));
         auto [it, success] = partitions.emplace(
-          model::topic_partition_view(
-            e->partition.topic, e->partition.partition),
-          std::move(e));
+          e->partition.topic_partition.as_tp_view(), std::move(e));
         vassert(
           success,
-          "Can not insert topic {} partition {} to partitions map as it is "
-          "already present.",
-          it->second->partition.topic,
-          it->second->partition.partition);
+          "Can not insert {} to partitions map as it is already present.",
+          it->second->partition.topic_partition);
         insertion_order.push_back(*it->second);
     }
 

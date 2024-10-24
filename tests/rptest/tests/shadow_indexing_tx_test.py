@@ -7,26 +7,19 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from ducktape.mark import matrix
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.util import (
     segments_count,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
 )
-from rptest.utils.si_utils import Producer
-
-from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
-
-import confluent_kafka as ck
-
-import uuid
-import random
-from itertools import zip_longest
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 
 
 class ShadowIndexingTxTest(RedpandaTest):
@@ -42,7 +35,7 @@ class ShadowIndexingTxTest(RedpandaTest):
             group_initial_rebalance_delay=300,
         )
 
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+        si_settings = SISettings(test_context,
                                  cloud_storage_max_connections=5,
                                  log_segment_size=self.segment_size)
 
@@ -57,75 +50,106 @@ class ShadowIndexingTxTest(RedpandaTest):
             rpk.alter_topic_config(topic.name, 'redpanda.remote.write', 'true')
             rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5651
-    @cluster(num_nodes=3)
-    def test_shadow_indexing_aborted_txs(self):
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @skip_debug_mode
+    def test_shadow_indexing_aborted_txs(self, cloud_storage_type):
         """Check that messages belonging to aborted transaction are not seen by clients
         when fetching from remote segments."""
-        topic = self.topics[0]
+        msg_size = 16384
+        msg_count = 10000
+        per_transaction = 10
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count,
+                                       use_transactions=True,
+                                       transaction_abort_rate=0.1,
+                                       msgs_per_transaction=per_transaction,
+                                       debug_logs=True)
+        producer.start()
+        producer.wait()
+        pstatus = producer.produce_status
+        self.logger.info(f"Produce status: {pstatus}")
+        committed_messages = pstatus.acked - pstatus.aborted_transaction_messages
+        assert pstatus.acked == msg_count
+        assert 0 < committed_messages < msg_count
 
-        producer = Producer(self.redpanda.brokers(), "shadow-indexing-tx-test",
-                            self.logger)
+        # Re-use node for consumer later
+        traffic_node = producer.nodes[0]
 
-        def done():
-            for _ in range(100):
-                try:
-                    producer.produce(topic.name)
-                except ck.KafkaException as err:
-                    self.logger.warn(f"producer error: {err}")
-                    producer.reconnect()
-            self.logger.info("producer iteration complete")
-            topic_partitions = segments_count(self.redpanda,
-                                              topic.name,
-                                              partition_idx=0)
-            partitions = []
-            for p in topic_partitions:
-                partitions.append(p >= 10)
-            return all(partitions)
+        kafka_tools = KafkaCliTools(self.redpanda)
+        local_retention = 3 * self.segment_size
+        kafka_tools.alter_topic_config(
+            self.topic,
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
+        )
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
 
-        wait_until(done,
-                   timeout_sec=120,
-                   backoff_sec=1,
-                   err_msg="producing failed")
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          self.topic,
+                                          msg_size,
+                                          loop=False,
+                                          nodes=[traffic_node],
+                                          use_transactions=True)
+        consumer.start(clean=False)
+        consumer.wait()
+        status = consumer.consumer_status
 
-        assert producer.num_aborted > 0
+        assert status.validator.valid_reads == committed_messages
+        assert status.validator.invalid_reads == 0
+        assert status.validator.out_of_scope_invalid_reads == 0
 
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @skip_debug_mode
+    def test_txless_segments(self, cloud_storage_type):
+        """
+        Check that for segments _without_ aborted transactions, we don't
+        waste resources issuing object storage GETs or writing empty
+        manifests to the cache.
+        """
+
+        local_retention = 3 * self.segment_size
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                3 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
 
-        consumer = ck.Consumer(
-            {
-                'bootstrap.servers': self.redpanda.brokers(),
-                'group.id': 'shadow-indexing-tx-test',
-                'auto.offset.reset': 'earliest',
-            },
-            logger=self.logger)
-        consumer.subscribe([topic.name])
+        KgoVerifierProducer.oneshot(self.test_context,
+                                    self.redpanda,
+                                    self.topic,
+                                    msg_size=16384,
+                                    msg_count=((10 * self.segment_size) //
+                                               16384))
 
-        consumed = []
-        while True:
-            msgs = consumer.consume(timeout=5.0)
-            if len(msgs) == 0:
-                break
-            consumed.extend([(m.key(), m.offset()) for m in msgs])
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
 
-        first_mismatch = ''
-        for p_key, (c_key, c_offset) in zip_longest(producer.keys, consumed):
-            if p_key != c_key:
-                first_mismatch = f"produced: {p_key}, consumed: {c_key} (offset: {c_offset})"
-                break
+        KgoVerifierSeqConsumer.oneshot(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       16384,
+                                       loop=False)
 
-        assert (not first_mismatch), (
-            f"produced and consumed messages differ, "
-            f"produced length: {len(producer.keys)}, consumed length: {len(consumed)}, "
-            f"first mismatch: {first_mismatch}")
+        # There should have been no failures to download
+        # vectorized_cloud_storage_failed_manifest_downloads
+        metric = self.redpanda.metrics_sample(
+            "vectorized_cloud_storage_failed_manifest_downloads")
+        assert len(metric.samples)
+        for sample in metric.samples:
+            assert sample.value == 0, f"Saw >0 failed manifest downloads {sample}"
+
+        # There should be zero .tx files in the cache
+        for node in self.redpanda.nodes:
+            cached_tx_manifests = int(
+                node.account.ssh_output(
+                    f"find \"{self.redpanda.cache_dir}\" -type f -name \"*.tx\" | wc -l",
+                    combine_stderr=False).strip())
+            assert cached_tx_manifests == 0, f"Found {cached_tx_manifests} cached manifests on {node.name}"

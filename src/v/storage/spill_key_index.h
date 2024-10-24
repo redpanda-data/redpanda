@@ -49,8 +49,8 @@ public:
       ss::sstring filename,
       ss::io_priority_class,
       bool truncate,
-      storage::debug_sanitize_files debug,
-      storage_resources&);
+      storage_resources&,
+      std::optional<ntp_sanitizer_config> sanitizer_config);
 
     spill_key_index(
       ss::sstring name,
@@ -66,10 +66,18 @@ public:
 
     // public
     ss::future<> index(
-      model::record_batch_type, const iobuf& key, model::offset, int32_t) final;
+      model::record_batch_type,
+      bool is_control_batch,
+      const iobuf& key,
+      model::offset,
+      int32_t) final;
     ss::future<> index(const compaction_key& b, model::offset, int32_t) final;
-    ss::future<>
-    index(model::record_batch_type, bytes&&, model::offset, int32_t) final;
+    ss::future<> index(
+      model::record_batch_type,
+      bool is_control_batch,
+      bytes&&,
+      model::offset,
+      int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> append(compacted_index::entry) final;
     ss::future<> close() final;
@@ -113,7 +121,7 @@ private:
     ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
-    storage::debug_sanitize_files _debug;
+    std::optional<ntp_sanitizer_config> _sanitizer_config;
     storage_resources& _resources;
     ss::io_priority_class _pc;
     bool _truncate;

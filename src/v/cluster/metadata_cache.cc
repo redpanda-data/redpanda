@@ -16,6 +16,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -35,10 +36,12 @@ namespace cluster {
 
 metadata_cache::metadata_cache(
   ss::sharded<topic_table>& tp,
+  ss::sharded<data_migrations::migrated_resources>& mr,
   ss::sharded<members_table>& m,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<health_monitor_frontend>& health_monitor)
   : _topics_state(tp)
+  , _migrated_resources(mr)
   , _members_table(m)
   , _leaders(leaders)
   , _health_monitor(health_monitor) {}
@@ -52,16 +55,6 @@ void fill_partition_leaders(
     for (auto& p : tp_md.partitions) {
         p.leader_node = leaders.get_leader(tp_md.tp_ns, p.id);
     }
-}
-
-std::optional<model::topic>
-metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
-    auto& topics_map = _topics_state.local().topics_map();
-    auto mt = topics_map.find(tp);
-    if (mt == topics_map.end() || mt->second.is_topic_replicable()) {
-        return std::nullopt;
-    }
-    return mt->second.get_source_topic();
 }
 
 std::optional<cluster::topic_metadata>
@@ -83,7 +76,7 @@ std::optional<model::topic_metadata> metadata_cache::get_model_topic_metadata(
 
     model::topic_metadata metadata(md->get_configuration().tp_ns);
     metadata.partitions.reserve(md->get_assignments().size());
-    for (const auto& p_as : md->get_assignments()) {
+    for (const auto& [_, p_as] : md->get_assignments()) {
         metadata.partitions.push_back(p_as.create_partition_metadata());
     }
 
@@ -107,57 +100,67 @@ const topic_table::underlying_t& metadata_cache::all_topics_metadata() const {
     return _topics_state.local().all_topics_metadata();
 }
 
-std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
-    return _members_table.local().get_broker(nid);
+std::optional<node_metadata>
+metadata_cache::get_node_metadata(model::node_id nid) const {
+    return _members_table.local().get_node_metadata(nid);
 }
-
-std::vector<broker_ptr> metadata_cache::all_brokers() const {
-    return _members_table.local().all_brokers();
-}
-
-ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
-    std::vector<broker_ptr> brokers;
-    auto res = co_await _health_monitor.local().get_nodes_status(
-      config::shard_local_cfg().metadata_status_wait_timeout_ms()
-      + model::timeout_clock::now());
-    if (!res) {
-        // if we were not able to refresh the cache, return all brokers
-        // (controller may be unreachable)
-        co_return _members_table.local().all_brokers();
+std::optional<model::rack_id>
+metadata_cache::get_node_rack_id(model::node_id nid) const {
+    auto ref = _members_table.local().get_node_metadata_ref(nid);
+    if (ref) {
+        return ref->get().broker.rack();
     }
+    return std::nullopt;
+}
 
-    std::set<model::node_id> brokers_with_health;
-    for (auto& st : res.value()) {
-        brokers_with_health.insert(st.id);
-        if (st.is_alive) {
-            auto broker = _members_table.local().get_broker(st.id);
-            if (broker) {
-                brokers.push_back(std::move(*broker));
-            }
+const members_table::cache_t& metadata_cache::nodes() const {
+    return _members_table.local().nodes();
+}
+
+size_t metadata_cache::node_count() const {
+    return _members_table.local().node_count();
+}
+
+ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
+    std::vector<node_metadata> brokers;
+    for (auto& st : _members_table.local().node_list()) {
+        auto is_alive = _health_monitor.local().is_alive(st.broker.id());
+        /**
+         * if node is not alive we skip adding it to the list of brokers. If
+         * there is no information or the node is healthy we include it into the
+         * list of alive brokers.
+         */
+        if (is_alive == alive::no) {
+            continue;
         }
+        brokers.push_back(st);
     }
 
-    // Corner case during node joins:
-    // If a node appears in the members table but not in the health report,
-    // presume it is newly added and assume it is alive.  This avoids
-    // newly added nodes being inconsistently excluded from metadata
-    // responses until all nodes' health caches update.
-    for (const auto& broker : _members_table.local().all_brokers()) {
-        if (!brokers_with_health.contains(broker->id())) {
-            brokers.push_back(broker);
-        }
-    }
-
-    co_return !brokers.empty() ? brokers : _members_table.local().all_brokers();
+    co_return !brokers.empty() ? brokers : _members_table.local().node_list();
 }
 
-std::vector<model::node_id> metadata_cache::all_broker_ids() const {
-    return _members_table.local().all_broker_ids();
+std::vector<node_metadata> metadata_cache::all_nodes() const {
+    return _members_table.local().node_list();
+}
+
+std::vector<model::node_id> metadata_cache::node_ids() const {
+    return _members_table.local().node_ids();
 }
 
 bool metadata_cache::should_reject_writes() const {
     return _health_monitor.local().get_cluster_disk_health()
            == storage::disk_space_alert::degraded;
+}
+
+bool metadata_cache::should_reject_reads(model::topic_namespace_view tp) const {
+    return _migrated_resources.local().get_topic_state(tp)
+           >= data_migrations::migrated_resource_state::create_only;
+}
+
+bool metadata_cache::should_reject_writes(
+  model::topic_namespace_view tp) const {
+    return _migrated_resources.local().get_topic_state(tp)
+           >= data_migrations::migrated_resource_state::read_only;
 }
 
 bool metadata_cache::contains(
@@ -167,6 +170,11 @@ bool metadata_cache::contains(
 
 bool metadata_cache::contains(model::topic_namespace_view tp) const {
     return _topics_state.local().contains(tp);
+}
+
+topic_table::topic_state metadata_cache::get_topic_state(
+  model::topic_namespace_view tp, model::revision_id id) const {
+    return _topics_state.local().get_topic_state(tp, id);
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(
@@ -202,10 +210,20 @@ std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
 
 void metadata_cache::reset_leaders() { _leaders.local().reset(); }
 
-cluster::partition_leaders_table::leaders_info_t
+ss::future<> metadata_cache::refresh_health_monitor() {
+    co_await _health_monitor.local().refresh_info();
+}
+
+ss::future<cluster::partition_leaders_table::leaders_info_t>
 metadata_cache::get_leaders() const {
     return _leaders.local().get_leaders();
 }
+
+void metadata_cache::set_is_node_isolated_status(bool is_node_isolated) {
+    _is_node_isolated = is_node_isolated;
+}
+
+bool metadata_cache::is_node_isolated() { return _is_node_isolated; }
 
 /**
  * hard coded defaults
@@ -239,7 +257,7 @@ std::optional<size_t> metadata_cache::get_default_retention_bytes() const {
 }
 std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_retention_duration() const {
-    return config::shard_local_cfg().delete_retention_ms();
+    return config::shard_local_cfg().log_retention_ms();
 }
 std::optional<size_t>
 metadata_cache::get_default_retention_local_target_bytes() const {
@@ -248,6 +266,16 @@ metadata_cache::get_default_retention_local_target_bytes() const {
 std::chrono::milliseconds
 metadata_cache::get_default_retention_local_target_ms() const {
     return config::shard_local_cfg().retention_local_target_ms_default();
+}
+std::optional<size_t>
+metadata_cache::get_default_initial_retention_local_target_bytes() const {
+    return config::shard_local_cfg()
+      .initial_retention_local_target_bytes_default();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_initial_retention_local_target_ms() const {
+    return config::shard_local_cfg()
+      .initial_retention_local_target_ms_default();
 }
 
 uint32_t metadata_cache::get_default_batch_max_bytes() const {
@@ -265,6 +293,29 @@ metadata_cache::get_default_shadow_indexing_mode() const {
           m, model::shadow_indexing_mode::fetch);
     }
     return m;
+}
+
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_segment_ms() const {
+    return config::shard_local_cfg().log_segment_ms();
+}
+
+bool metadata_cache::get_default_record_key_schema_id_validation() const {
+    return false;
+}
+
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache::get_default_record_key_subject_name_strategy() const {
+    return pandaproxy::schema_registry::subject_name_strategy::topic_name;
+}
+
+bool metadata_cache::get_default_record_value_schema_id_validation() const {
+    return false;
+}
+
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache::get_default_record_value_subject_name_strategy() const {
+    return pandaproxy::schema_registry::subject_name_strategy::topic_name;
 }
 
 topic_properties metadata_cache::get_default_properties() const {
@@ -286,6 +337,49 @@ topic_properties metadata_cache::get_default_properties() const {
       get_default_retention_local_target_ms()};
 
     return tp;
+}
+
+std::optional<partition_assignment>
+metadata_cache::get_partition_assignment(const model::ntp& ntp) const {
+    return _topics_state.local().get_partition_assignment(ntp);
+}
+
+std::optional<std::vector<model::broker_shard>>
+metadata_cache::get_previous_replica_set(const model::ntp& ntp) const {
+    return _topics_state.local().get_previous_replica_set(ntp);
+}
+
+const topic_table::updates_t& metadata_cache::updates_in_progress() const {
+    return _topics_state.local().updates_in_progress();
+}
+
+bool metadata_cache::is_update_in_progress(const model::ntp& ntp) const {
+    return _topics_state.local().is_update_in_progress(ntp);
+}
+
+bool metadata_cache::is_disabled(
+  model::topic_namespace_view ns_tp, model::partition_id p_id) const {
+    return _topics_state.local().is_disabled(ns_tp, p_id);
+}
+
+const topic_disabled_partitions_set* metadata_cache::get_topic_disabled_set(
+  model::topic_namespace_view ns_tp) const {
+    return _topics_state.local().get_topic_disabled_set(ns_tp);
+}
+
+std::optional<model::write_caching_mode>
+metadata_cache::get_topic_write_caching_mode(
+  model::topic_namespace_view tp) const {
+    auto topic = get_topic_cfg(tp);
+    if (!topic) {
+        return std::nullopt;
+    }
+    if (
+      config::shard_local_cfg().write_caching_default()
+      == model::write_caching_mode::disabled) {
+        return model::write_caching_mode::disabled;
+    }
+    return topic->properties.write_caching;
 }
 
 } // namespace cluster

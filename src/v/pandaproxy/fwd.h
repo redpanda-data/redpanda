@@ -14,6 +14,5 @@
 namespace pandaproxy {
 
 class kafka_client_cache;
-class sharded_client_cache;
 
 } // namespace pandaproxy

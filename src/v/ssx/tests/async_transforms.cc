@@ -7,13 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <numeric>
-#include <seastarx.h>
 
 auto plus(int inc) {
     return [inc](auto val) { return val + inc; };
@@ -31,7 +31,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_iter_test) {
     std::iota(expected.begin(), expected.end(), 2);
 
     std::vector<int> out_iter
-      = ssx::async_transform(input.begin(), input.end(), plus(2)).get0();
+      = ssx::async_transform(input.begin(), input.end(), plus(2)).get();
     BOOST_TEST(std::equal(
       out_iter.begin(), out_iter.end(), expected.begin(), expected.end()));
 }
@@ -43,7 +43,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_range_test) {
     std::vector<int> expected(10);
     std::iota(expected.begin(), expected.end(), 2);
 
-    std::vector<int> out_range = ssx::async_transform(input, plus(2)).get0();
+    std::vector<int> out_range = ssx::async_transform(input, plus(2)).get();
     BOOST_TEST(std::equal(
       out_range.begin(), out_range.end(), expected.begin(), expected.end()));
 }
@@ -55,7 +55,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_move_test) {
                                           input_copy.begin(),
                                           input_copy.end(),
                                           [](ss::sstring s) { return s; })
-                                          .get0();
+                                          .get();
     BOOST_TEST(
       std::equal(input.begin(), input.end(), expected.begin(), expected.end()));
 }
@@ -83,7 +83,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_noncopyable_test) {
                                              [](noncopyable_foo& ncf) {
                                                  return std::move(ncf);
                                              })
-                                             .get0();
+                                             .get();
     BOOST_TEST(results[0].value() == 1);
     BOOST_TEST(results[1].value() == 2);
     BOOST_TEST(results[2].value() == 3);
@@ -97,7 +97,7 @@ SEASTAR_THREAD_TEST_CASE(parallel_transform_iter_test) {
     std::iota(expected.begin(), expected.end(), 2);
 
     std::vector<int> out_iter
-      = ssx::parallel_transform(input.begin(), input.end(), plus(2)).get0();
+      = ssx::parallel_transform(input.begin(), input.end(), plus(2)).get();
     BOOST_TEST(std::equal(
       out_iter.begin(), out_iter.end(), expected.begin(), expected.end()));
 }
@@ -110,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(parallel_transform_range_test) {
     std::iota(expected.begin(), expected.end(), 2);
 
     std::vector<int> out_range
-      = ssx::parallel_transform(std::move(input), plus(2)).get0();
+      = ssx::parallel_transform(std::move(input), plus(2)).get();
     BOOST_TEST(std::equal(
       out_range.begin(), out_range.end(), expected.begin(), expected.end()));
 }

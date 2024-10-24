@@ -11,13 +11,13 @@
 
 #pragma once
 
-#include "cluster/logger.h"
+#include "cluster/fwd.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_state.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/types.h"
 #include "config/property.h"
-#include "vlog.h"
+#include "features/fwd.h"
 
 namespace cluster {
 
@@ -32,11 +32,66 @@ public:
     static constexpr ss::shard_id shard = 0;
     partition_allocator(
       ss::sharded<members_table>&,
-      config::binding<std::optional<size_t>>,
-      config::binding<std::optional<int32_t>>,
-      config::binding<uint32_t>,
-      config::binding<uint32_t>,
-      config::binding<bool>);
+      ss::sharded<features::feature_table>&,
+      config::binding<std::optional<size_t>> memory_per_partition,
+      config::binding<std::optional<int32_t>> fds_per_partition,
+      config::binding<uint32_t> partitions_per_shard,
+      config::binding<uint32_t> partitions_reserve_shard0,
+      config::binding<std::vector<ss::sstring>>
+        kafka_topics_skipping_allocation,
+      config::binding<bool> enable_rack_awareness);
+
+    // Replica placement APIs
+
+    /**
+     * Return an allocation_units object wrapping the result of the allocating
+     * the given allocation request, or an error if it was not possible.
+     */
+    ss::future<result<allocation_units::pointer>> allocate(allocation_request);
+
+    /// Reallocate some replicas of an already existing partition without
+    /// changing its replication factor.
+    ///
+    /// If existing_replica_counts is non-null, new replicas will be allocated
+    /// using topic-aware counts objective and (if all allocations are
+    /// successful) existing_replica_counts will be updated with newly allocated
+    /// replicas.
+    result<allocated_partition> reallocate_partition(
+      model::ntp ntp,
+      std::vector<model::broker_shard> current_replicas,
+      const std::vector<model::node_id>& replicas_to_reallocate,
+      allocation_constraints,
+      node2count_t* existing_replica_counts);
+
+    /// Create allocated_partition object from current replicas for use with the
+    /// allocate_replica method.
+    allocated_partition make_allocated_partition(
+      model::ntp ntp, std::vector<model::broker_shard> replicas) const;
+
+    /// try to substitute an existing replica with a newly allocated one and add
+    /// it to the allocated_partition object. If the request fails,
+    /// allocated_partition remains unchanged.
+    ///
+    /// Note: if after reallocation the replica ends up on a node from the
+    /// original replica set (doesn't matter if the same as `previous` or a
+    /// different one), its shard id is preserved.
+    result<reallocation_step> reallocate_replica(
+      allocated_partition&, model::node_id previous, allocation_constraints);
+
+    // State accessors
+
+    bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
+
+    bool is_empty(model::node_id id) const { return _state->is_empty(id); }
+    bool contains_node(model::node_id n) const {
+        return _state->contains_node(n);
+    }
+
+    const allocation_state& state() const { return *_state; }
+
+    // State update functions called when processing controller commands
+
+    // Node state updates
 
     void register_node(allocation_state::node_ptr n) {
         _state->register_node(std::move(n));
@@ -45,108 +100,56 @@ public:
     void update_allocation_nodes(const std::vector<model::broker>& brokers) {
         _state->update_allocation_nodes(brokers);
     }
+
+    void upsert_allocation_node(const model::broker& broker) {
+        _state->upsert_allocation_node(broker);
+    }
+
+    void remove_allocation_node(model::node_id id) {
+        _state->remove_allocation_node(id);
+    }
     void decommission_node(model::node_id id) { _state->decommission_node(id); }
     void recommission_node(model::node_id id) { _state->recommission_node(id); }
 
-    bool is_empty(model::node_id id) const { return _state->is_empty(id); }
-    bool contains_node(model::node_id n) const {
-        return _state->contains_node(n);
+    // Partition state updates
+
+    /// Best effort. Do not throw if we cannot find the replicas.
+    void add_allocations(const std::vector<model::broker_shard>&);
+    void remove_allocations(const std::vector<model::broker_shard>&);
+    void add_final_counts(const std::vector<model::broker_shard>&);
+    void remove_final_counts(const std::vector<model::broker_shard>&);
+
+    void add_allocations_for_new_partition(
+      const std::vector<model::broker_shard>& replicas,
+      raft::group_id group_id) {
+        add_allocations(replicas);
+        add_final_counts(replicas);
+        _state->update_highest_group_id(group_id);
     }
 
-    result<allocation_units> allocate(allocation_request);
-
-    /// Reallocates partition replicas, moving them away from decommissioned
-    /// nodes. Replicas on nodes that were left untouched are not changed.
-    /// Allocation domain must match the one used to allocate the partition.
-    ///
-    /// Returns an error it reallocation is impossible
-    result<allocation_units> reassign_decommissioned_replicas(
-      const partition_assignment&, partition_allocation_domain);
-
-    result<allocation_units> reallocate_partition(
-      partition_constraints,
-      const partition_assignment&,
-      partition_allocation_domain);
-
-    /// Best effort. Does not throw if we cannot find the replicas.
-    /// Allocation domain must match the one used to allocate the partition.
-    void deallocate(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-
-    /// updates the state of allocation, it is used during recovery and
-    /// when processing raft0 committed notifications.
-    /// Allocation domain must match the one used to allocate the partition.
-    void update_allocation_state(
-      const std::vector<model::broker_shard>&,
-      raft::group_id,
-      partition_allocation_domain);
-
-    void add_allocations(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-    void remove_allocations(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-
-    allocation_state& state() { return *_state; }
+    ss::future<> apply_snapshot(const controller_snapshot&);
 
 private:
-    template<typename T>
-    class intermediate_allocation {
-    public:
-        intermediate_allocation(
-          allocation_state& state,
-          size_t res,
-          const partition_allocation_domain domain)
-          : _state(state)
-          , _domain(domain) {
-            _partial.reserve(res);
-        }
-        void push_back(T t) { _partial.push_back(std::move(t)); }
-
-        template<typename... Args>
-        void emplace_back(Args&&... args) {
-            _partial.emplace_back(std::forward<Args>(args)...);
-        }
-
-        const std::vector<T>& get() const { return _partial; }
-        std::vector<T> finish() && { return std::exchange(_partial, {}); }
-        intermediate_allocation(intermediate_allocation&&) noexcept = default;
-
-        intermediate_allocation(
-          const intermediate_allocation&) noexcept = delete;
-        intermediate_allocation&
-        operator=(intermediate_allocation&&) noexcept = default;
-        intermediate_allocation&
-        operator=(const intermediate_allocation&) noexcept = delete;
-
-        ~intermediate_allocation() { _state.rollback(_partial, _domain); }
-
-    private:
-        std::vector<T> _partial;
-        allocation_state& _state;
-        partition_allocation_domain _domain;
-    };
-
     std::error_code
-    check_cluster_limits(allocation_request const& request) const;
+    check_cluster_limits(const allocation_request& request) const;
 
-    result<std::vector<model::broker_shard>> allocate_partition(
-      partition_constraints,
-      partition_allocation_domain,
-      const std::vector<model::broker_shard>& not_changed_replicas = {});
+    result<reallocation_step> do_allocate_replica(
+      allocated_partition&,
+      std::optional<model::node_id> previous,
+      const allocation_constraints&);
 
-    result<std::vector<model::broker_shard>> do_reallocate_partition(
-      partition_constraints,
-      partition_allocation_domain,
-      const std::vector<model::broker_shard>&);
+    allocation_constraints default_constraints();
 
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;
     ss::sharded<members_table>& _members;
+    features::feature_table& _feature_table;
 
     config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
+    config::binding<std::vector<ss::sstring>> _internal_kafka_topics;
     config::binding<bool> _enable_rack_awareness;
 };
 } // namespace cluster

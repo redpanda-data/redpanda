@@ -12,6 +12,7 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 BreakBeforeBinaryOperators: All
 BreakBeforeBraces: Attach
+BreakBeforeConceptDeclarations: Always
 ColumnLimit: 80
 ContinuationIndentWidth: 2
 Cpp11BracedListStyle: true
@@ -31,11 +32,20 @@ IncludeCategories:
   - Regex:    '.h'
     Priority: 1
 IndentCaseLabels: false
+IndentRequires: false
+IndentRequiresClause: false
 IndentWidth: 4
+InsertNewlineAtEOF: true
 KeepEmptyLinesAtTheStartOfBlocks: false
 PenaltyBreakAssignment: 80
 PenaltyBreakBeforeFirstCallParameter: 10
 PenaltyReturnTypeOnItsOwnLine: 60
+PointerAlignment: Left
+QualifierAlignment: Custom
+QualifierOrder: [static, inline, const, type]
+ReferenceAlignment: Left
+RequiresClausePosition: OwnLine
+RequiresExpressionIndentation: OuterScope
 ---
 Language: JavaScript
 # Use 100 columns for JS.
@@ -55,3 +65,8 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 BreakBeforeBinaryOperators: All
 BreakBeforeBraces: Attach
+---
+Language: Proto
+BasedOnStyle: Google
+ColumnLimit: 80
+IndentWidth: 4

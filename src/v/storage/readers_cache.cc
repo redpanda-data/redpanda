@@ -10,12 +10,13 @@
  */
 #include "storage/readers_cache.h"
 
+#include "base/vlog.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
+#include "storage/logger.h"
 #include "storage/types.h"
-#include "utils/gate_guard.h"
 #include "utils/mutex.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
@@ -27,22 +28,27 @@
 namespace storage {
 
 readers_cache::readers_cache(
-  model::ntp ntp, std::chrono::milliseconds eviction_timeout)
+  model::ntp ntp,
+  std::chrono::milliseconds eviction_timeout,
+  config::binding<size_t> target_max_size)
   : _ntp(std::move(ntp))
-  , _eviction_timeout(eviction_timeout) {
+  , _eviction_timeout(eviction_timeout)
+  , _target_max_size(std::move(target_max_size))
+  , _eviction_jitter(eviction_timeout) {
     _probe.setup_metrics(_ntp);
     // setup eviction timer
     _eviction_timer.set_callback([this] {
         ssx::spawn_with_gate(_gate, [this] {
             return maybe_evict().finally([this] {
                 if (!_gate.is_closed()) {
-                    _eviction_timer.arm(_eviction_timeout);
+                    _eviction_timer.arm(
+                      _eviction_jitter.next_jitter_duration());
                 }
             });
         });
     });
 
-    _eviction_timer.arm(_eviction_timeout);
+    _eviction_timer.arm(_eviction_jitter.next_jitter_duration());
 }
 
 model::record_batch_reader
@@ -77,6 +83,7 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
     auto ptr = new entry{.reader = std::move(reader)}; // NOLINT
     _in_use.push_back(*ptr);
     _probe.reader_added();
+    maybe_evict_size();
     return ptr->make_cached_reader(this);
 }
 
@@ -98,8 +105,13 @@ readers_cache::get_reader(const log_reader_config& cfg) {
     if (_gate.is_closed()) {
         return std::nullopt;
     }
+    vassert(
+      cfg.skip_readers_cache == false,
+      "{} - invalid readers_cache request {}",
+      _ntp,
+      cfg);
     vlog(stlog.trace, "{} - trying to get reader for: {}", _ntp, cfg);
-    intrusive_list<entry, &entry::_hook> to_evict;
+    uncounted_intrusive_list<entry, &entry::_hook> to_evict;
     /**
      * We use linear search since _readers intrusive list is small.
      */
@@ -137,7 +149,7 @@ readers_cache::get_reader(const log_reader_config& cfg) {
 
     // we use cached_reader wrapper to track reader usage, when cached_reader is
     // destroyed we unlock reader and trigger eviction
-    e._hook.unlink();
+    _readers.erase(_readers.iterator_to(e));
     _in_use.push_back(e);
     return e.make_cached_reader(this);
 }
@@ -185,9 +197,10 @@ readers_cache::evict_segment_readers(ss::lw_shared_ptr<segment> s) {
       stlog.debug,
       "{} - evicting reader from cache, segment [{},{}] removal",
       _ntp,
-      s->offsets().base_offset,
-      s->offsets().dirty_offset);
-    return evict_range(s->offsets().base_offset, s->offsets().dirty_offset);
+      s->offsets().get_base_offset(),
+      s->offsets().get_dirty_offset());
+    return evict_range(
+      s->offsets().get_base_offset(), s->offsets().get_dirty_offset());
 }
 
 ss::future<readers_cache::range_lock_holder>
@@ -246,8 +259,8 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
         cached_reader_impl& operator=(cached_reader_impl&&) noexcept = default;
 
         cached_reader_impl(const cached_reader_impl&) noexcept = delete;
-        cached_reader_impl&
-        operator=(const cached_reader_impl&) noexcept = delete;
+        cached_reader_impl& operator=(const cached_reader_impl&) noexcept
+          = delete;
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();
@@ -277,8 +290,8 @@ readers_cache::~readers_cache() {
       "readers cache have to be closed before destorying");
 }
 
-ss::future<>
-readers_cache::dispose_entries(intrusive_list<entry, &entry::_hook> entries) {
+ss::future<> readers_cache::dispose_entries(
+  uncounted_intrusive_list<entry, &entry::_hook> entries) {
     for (auto& e : entries) {
         co_await e.reader->finally();
     }
@@ -297,7 +310,7 @@ readers_cache::dispose_entries(intrusive_list<entry, &entry::_hook> entries) {
 }
 
 void readers_cache::dispose_in_background(
-  intrusive_list<entry, &entry::_hook> entries) {
+  uncounted_intrusive_list<entry, &entry::_hook> entries) {
     ssx::spawn_with_gate(_gate, [this, entries = std::move(entries)]() mutable {
         return dispose_entries(std::move(entries));
     });
@@ -340,6 +353,31 @@ ss::future<> readers_cache::maybe_evict() {
         const auto outdated = e.last_used + _eviction_timeout < now;
         return invalid || outdated;
     });
+}
+
+inline bool readers_cache::over_size_limit() const {
+    return !_readers.empty()
+           && _readers.size() + _in_use.size() > _target_max_size();
+}
+
+void readers_cache::maybe_evict_size() {
+    /**
+     * exit early if there is nothing to clean
+     */
+    if (!over_size_limit()) [[likely]] {
+        return;
+    }
+
+    uncounted_intrusive_list<entry, &entry::_hook> to_evict;
+    _readers.pop_front_and_dispose(
+      [&to_evict](entry* e) { to_evict.push_back(*e); });
+
+    dispose_in_background(std::move(to_evict));
+}
+
+readers_cache::stats readers_cache::get_stats() const {
+    return readers_cache::stats{
+      .in_use_readers = _in_use.size(), .cached_readers = _readers.size()};
 }
 
 } // namespace storage

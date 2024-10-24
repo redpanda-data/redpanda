@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "pandaproxy/json/requests/partition_offsets.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

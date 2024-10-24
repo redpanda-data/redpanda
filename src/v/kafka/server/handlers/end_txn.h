@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using end_txn_handler = single_stage_handler<end_txn_api, 0, 2>;
+using end_txn_handler = single_stage_handler<end_txn_api, 0, 3>;
 
 }

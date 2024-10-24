@@ -1,0 +1,53 @@
+---
+name: Lint golang
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/go/**'
+      - '.github/workflows/lint-golang.yml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - 'src/go/**'
+      - '.github/workflows/lint-golang.yml'
+jobs:
+  go:
+    name: Lint go files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: src/go/rpk/go.mod
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout 10m --verbose
+          working-directory: src/go/rpk/
+      - name: Install gofumpt
+        env:
+          GOFUMPT_VER: 0.5.0
+        run: |
+          mkdir -v -p "$HOME/.local/bin"
+          wget -O "$HOME/.local/bin/gofumpt" "https://github.com/mvdan/gofumpt/releases/download/v${GOFUMPT_VER}/gofumpt_v${GOFUMPT_VER}_linux_amd64"
+          chmod 0700 "$HOME/.local/bin/gofumpt"
+      - name: Run gofumpt
+        run: |
+          find src/go -type f  -not -name '*.connect.go' -not -name '*.pb.go' -not -name 'zz*' -name '*.go' | xargs -n1 "$HOME/.local/bin/gofumpt" -w -lang=1.20
+          git diff --exit-code
+      - name: go mod tidy (rpk)
+        working-directory: src/go/rpk
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Check goreleaser configuration file
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          version: v1.24.0
+          args: check src/go/.goreleaser.yaml

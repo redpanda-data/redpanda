@@ -11,14 +11,15 @@
 
 #pragma once
 
+#include "base/units.h"
+#include "group_configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus_utils.h"
+#include "raft/fundamental.h"
 #include "raft/logger.h"
-#include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
-#include "units.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -129,7 +130,8 @@ public:
      * last append. Configuration manager tracks number of bytes that were
      * appended since last write of `highest_known_offset` to kv-store
      */
-    ss::future<> maybe_store_highest_known_offset(model::offset, size_t);
+    void maybe_store_highest_known_offset_in_background(
+      model::offset, size_t bytes, ss::gate&);
 
     /**
      * Returns the highest offset for which the configuration manager
@@ -166,10 +168,27 @@ public:
 
     ss::future<> adjust_configuration_idx(configuration_idx);
 
+    /**
+     * Sets a forced override for current configuration. The override is active
+     * and returned as latest configuration until it is cleared by adding a new
+     * configuration to group configuration manage.
+     *
+     * @param cfg the configuration to override with
+     */
+    void set_override(group_configuration);
+
+    /**
+     * Checks if configuration override is active
+     */
+    bool has_configuration_override() const {
+        return _configuration_force_override != nullptr;
+    }
+
     friend std::ostream&
     operator<<(std::ostream&, const configuration_manager&);
 
 private:
+    void reset_override(model::revision_id);
     ss::future<> store_configurations();
     ss::future<> store_highest_known_offset();
     bytes configurations_map_key() const {
@@ -189,6 +208,8 @@ private:
 
     void add_configuration(model::offset, group_configuration);
 
+    ss::future<> do_maybe_store_highest_known_offset(size_t bytes);
+
     raft::group_id _group;
     underlying_t _configurations;
     /**
@@ -199,7 +220,7 @@ private:
     model::offset _highest_known_offset;
     storage::api& _storage;
     ss::condition_variable _config_changed;
-    mutex _lock;
+    mutex _lock{"configuration_manager"};
     /**
      * We will persist highest known offset every 64MB, given this during
      * bootstrap redpanda will have to read up to 64MB per raft group.
@@ -210,8 +231,13 @@ private:
     // of data is currently pending checkpoint.
     ssx::semaphore_units _bytes_since_last_offset_update_units;
 
+    // set to true when we checkpoint the highest known offset.
+    bool _hko_checkpoint_in_progress = false;
+
     model::revision_id _initial_revision{};
     ctx_log& _ctxlog;
     configuration_idx _next_index{0};
+    std::unique_ptr<group_configuration> _configuration_force_override
+      = nullptr;
 };
 } // namespace raft

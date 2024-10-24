@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
@@ -29,15 +30,41 @@
 
 namespace storage::internal {
 
+// Rebuilds the compaction index for a segment, if it is needed.
+// Requires a rwlock::holder to be passed in, which is likely to be the
+// segment's read_lock(). The lock owned by the holder will be held after this
+// function call completes, allowing the caller to proceed to self compaction or
+// other destructive operations.
+//
+// Returns the recovery_state, indicating status of the compaction index and
+// whether self-compaction should be executed or not.
+ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  const compaction_config& cfg,
+  ss::rwlock::holder& read_holder,
+  storage_resources& resources,
+  storage::probe& pb);
+
 /// \brief, this method will acquire it's own locks on the segment
 ///
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
   ss::lw_shared_ptr<storage::stm_manager>,
-  storage::compaction_config,
+  const storage::compaction_config&,
   storage::probe&,
   storage::readers_cache&,
-  storage::storage_resources&);
+  storage::storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
+
+/// \brief, rebuilds a given segment's compacted index. This method acquires
+/// locks on the segment.
+ss::future<> rebuild_compaction_index(
+  ss::lw_shared_ptr<segment> s,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  compaction_config cfg,
+  storage::probe& pb,
+  storage_resources& resources);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -59,10 +86,11 @@ ss::future<compaction_result> self_compact_segment(
 ss::future<
   std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
 make_concatenated_segment(
-  std::filesystem::path,
+  segment_full_path,
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config,
-  storage_resources& resources);
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,
@@ -92,30 +120,31 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
 /// make file handle with default opts
 ss::future<ss::file> make_writer_handle(
   const std::filesystem::path&,
-  storage::debug_sanitize_files,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
   bool truncate = false);
 /// make file handle with default opts
-ss::future<ss::file>
-make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
+ss::future<ss::file> make_reader_handle(
+  const std::filesystem::path&,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 ss::future<ss::file> make_handle(
-  const std::filesystem::path path,
+  std::filesystem::path path,
   ss::open_flags flags,
   ss::file_open_options opt,
-  debug_sanitize_files debug);
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
-  storage::debug_sanitize_files debug,
   ss::io_priority_class iopc,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<segment_appender_ptr> make_segment_appender(
-  const std::filesystem::path& path,
-  storage::debug_sanitize_files debug,
+  const segment_full_path& path,
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
 uint64_t segment_size_from_config(const storage::ntp_config&);
@@ -151,6 +180,11 @@ ss::future<compacted_offset_list>
 ss::future<bool>
   detect_if_segment_already_compacted(std::filesystem::path, compaction_config);
 
+bool compacted_index_needs_rebuild(compacted_index::recovery_state state);
+
+ss::future<compacted_index::recovery_state>
+detect_compaction_index_state(segment_full_path p, compaction_config cfg);
+
 /// \brief creates a model::record_batch_reader from segment meta
 ///
 model::record_batch_reader create_segment_full_reader(
@@ -172,8 +206,6 @@ ss::future<> do_swap_data_file_handles(
   storage::compaction_config,
   probe&);
 
-std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
-
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.
 float random_jitter(jitter_percents);
@@ -193,12 +225,79 @@ struct clean_segment_value
       serde::version<0>,
       serde::compat_version<0>> {
     ss::sstring segment_name;
+    auto serde_fields() { return std::tie(segment_name); }
 };
 
+inline bool
+is_compactible_control_batch(const model::record_batch_type batch_type) {
+    // Control batches in consumer offsets are special compared to
+    // the ones in data partitions can be safely compacted away.
+    return batch_type == model::record_batch_type::group_fence_tx
+           || batch_type == model::record_batch_type::group_prepare_tx
+           || batch_type == model::record_batch_type::group_abort_tx
+           || batch_type == model::record_batch_type::group_commit_tx;
+}
+
+inline bool is_compactible(const model::record_batch_header& h) {
+    if (
+      (h.attrs.is_control() && !is_compactible_control_batch(h.type))
+      || h.type == model::record_batch_type::compaction_placeholder) {
+        // Keep control batches to ensure we maintain transaction boundaries.
+        // They should be rare.
+        return false;
+    }
+    static const auto filtered_types = model::offset_translator_batch_types();
+    auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
+    return n == 0;
+}
+
 inline bool is_compactible(const model::record_batch& b) {
-    return !(
-      b.header().type == model::record_batch_type::raft_configuration
-      || b.header().type == model::record_batch_type::archival_metadata);
+    return is_compactible(b.header());
+}
+
+offset_delta_time should_apply_delta_time_offset(
+  ss::sharded<features::feature_table>& feature_table);
+
+// Checks if a segment is past the tombstone deletion horizon.
+//
+// Returns true iff the segment `s` has been marked as cleanly
+// compacted, the `compaction_config` has a value assigned for
+// `tombstone_retention_ms`, and the current timestamp is greater than
+// `clean_compact_timestamp + tombstone_retention_ms`. In all other cases,
+// the returned value is false, indicating that tombstone records in the segment
+// are not yet eligible for removal.
+bool is_past_tombstone_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
+// Checks if a segment may have any tombstones currently eligible for deletion.
+//
+// Returns true if the segment is marked as potentially having tombstone
+// records, and if the result of evaluating
+// `is_past_tombstone_delete_horizon(seg, cfg)` is also true. This can return
+// false-positives, since segments that have not yet gone through the compaction
+// process are assumed to potentially contain tombstones until proven otherwise.
+bool may_have_removable_tombstones(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
+// Mark a segment as completed window compaction, and whether it is "clean" (in
+// which case the `clean_compact_timestamp` is set in the segment's index).
+void mark_segment_as_finished_window_compaction(
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp);
+
+template<typename Func>
+auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+
+    return ss::do_with(
+      std::move(handle),
+      [func = std::move(func)](segment_reader_handle& handle) {
+          return ss::futurize_invoke(func, handle).finally([&handle] {
+              return handle.close().then(
+                [] { return ss::make_ready_future<>(); });
+          });
+      });
 }
 
 } // namespace storage::internal

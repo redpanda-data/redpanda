@@ -20,8 +20,7 @@ public:
     static constexpr uint16_t default_port = 80;
 
     gcp_refresh_impl(
-      ss::sstring api_host,
-      uint16_t api_port,
+      net::unresolved_address address,
       aws_region_name region,
       ss::abort_source& as,
       retry_params retry_params = default_retry_params);

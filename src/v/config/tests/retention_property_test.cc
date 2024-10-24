@@ -25,12 +25,12 @@ struct test_config : public config::config_store {
 
     test_config()
       : valid_retention(
-        *this,
-        "valid_retention",
-        "A positive value",
-        {.needs_restart = config::needs_restart::no,
-         .visibility = config::visibility::user},
-        10080min)
+          *this,
+          "valid_retention",
+          "A positive value",
+          {.needs_restart = config::needs_restart::no,
+           .visibility = config::visibility::user},
+          10080min)
       , inf_retention(
           *this,
           "inf_retention",

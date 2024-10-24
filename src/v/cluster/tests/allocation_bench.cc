@@ -7,9 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/outcome.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "cluster/types.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
@@ -18,41 +19,59 @@
 #include <vector>
 
 PERF_TEST_F(partition_allocator_fixture, allocation_3) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     auto req = make_allocation_request(1, 3);
 
     perf_tests::start_measuring_time();
-    auto vals = allocator.allocate(std::move(req));
-    perf_tests::do_not_optimize(vals);
-    perf_tests::stop_measuring_time();
+    return allocator().allocate(std::move(req)).then([](auto vals) {
+        perf_tests::do_not_optimize(vals);
+        perf_tests::stop_measuring_time();
+    });
 }
 PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     auto req = make_allocation_request(1, 3);
 
     std::vector<model::broker_shard> replicas;
-    {
-        auto vals = std::move(allocator.allocate(std::move(req)).value());
-        replicas = vals.get_assignments().front().replicas;
-        allocator.update_allocation_state(
-          vals.get_assignments().front().replicas,
-          vals.get_assignments().front().group,
-          cluster::partition_allocation_domains::common);
-    }
-    perf_tests::do_not_optimize(replicas);
-    perf_tests::start_measuring_time();
-    allocator.deallocate(
-      replicas, cluster::partition_allocation_domains::common);
-    perf_tests::stop_measuring_time();
+
+    return allocator().allocate(std::move(req)).then([this](auto r) {
+        std::vector<model::broker_shard> replicas;
+        {
+            auto units = std::move(r.value());
+            replicas = units->get_assignments().front().replicas;
+            allocator().add_allocations_for_new_partition(
+              units->get_assignments().front().replicas,
+              units->get_assignments().front().group);
+        }
+        perf_tests::do_not_optimize(replicas);
+        perf_tests::start_measuring_time();
+        allocator().remove_allocations(replicas);
+        perf_tests::stop_measuring_time();
+    });
 }
 PERF_TEST_F(partition_allocator_fixture, recovery) {
-    register_node(0, 24);
-    register_node(1, 24);
-    register_node(2, 24);
+    static bool initialized = false;
+    if (!initialized) {
+        register_node(0, 24);
+        register_node(1, 24);
+        register_node(2, 24);
+        initialized = true;
+    }
+
     const auto node_capacity = max_capacity();
 
     std::vector<model::broker_shard> replicas;
@@ -63,9 +82,7 @@ PERF_TEST_F(partition_allocator_fixture, recovery) {
     }
 
     perf_tests::start_measuring_time();
-    allocator.update_allocation_state(
-      replicas,
-      raft::group_id(replicas.size() / 3),
-      cluster::partition_allocation_domains::common);
+    allocator().add_allocations_for_new_partition(
+      replicas, raft::group_id(replicas.size() / 3));
     perf_tests::stop_measuring_time();
 }

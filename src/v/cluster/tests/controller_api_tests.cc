@@ -45,13 +45,13 @@ FIXTURE_TEST(test_querying_ntp_status, cluster_test_fixture) {
     auto leader = get_node_application(*leader_id);
 
     // create topic
-    std::vector<cluster::topic_configuration> topics;
+    cluster::topic_configuration_vector topics;
     topics.emplace_back(test_ntp.ns, test_ntp.tp.topic, 3, 1);
 
     leader->controller->get_topics_frontend()
       .local()
       .create_topics(
-        cluster::without_custom_assignments(topics),
+        cluster::without_custom_assignments(std::move(topics)),
         1s + model::timeout_clock::now())
       .get();
 

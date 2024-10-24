@@ -9,12 +9,15 @@
 
 #include "http/client.h"
 
+#include "base/likely.h"
+#include "base/vlog.h"
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
+#include "bytes/scattered_message.h"
 #include "config/base_property.h"
 #include "http/logger.h"
+#include "http/utils.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -38,16 +41,22 @@
 #include <limits>
 #include <stdexcept>
 
-namespace {
-using field_type = std::variant<boost::beast::http::field, std::string>;
-
-const std::unordered_set<field_type> redacted_fields{
-  boost::beast::http::field::authorization,
-  "x-amz-content-sha256",
-  "x-amz-security-token"};
-} // namespace
-
 namespace http {
+
+std::string_view content_type_string(content_type type) {
+    switch (type) {
+    case content_type::json:
+        return "application/json";
+    }
+}
+
+const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
+redacted_fields() {
+    return {
+      boost::beast::http::field::authorization,
+      "x-amz-content-sha256",
+      "x-amz-security-token"};
+}
 
 // client implementation //
 static constexpr ss::lowres_clock::duration default_max_idle_time = 1s;
@@ -64,7 +73,9 @@ client::client(
   const ss::abort_source* as,
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
-  : net::base_transport(cfg)
+  : net::base_transport(cfg, &http_log)
+  , _host_with_port(
+      fmt::format("{}:{}", cfg.server_addr.host(), cfg.server_addr.port()))
   , _connect_gate()
   , _as(as)
   , _probe(std::move(probe))
@@ -82,6 +93,19 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
+    if (unlikely(_stopped)) {
+        std::runtime_error err("client is stopped");
+        return ss::make_exception_future<client::request_response_t>(err);
+    }
+    // Set request HTTP-version to 1.1
+    constexpr unsigned http_version = 11;
+    header.version(http_version);
+
+    // The default host is derived from the transport configuration
+    if (header.find(boost::beast::http::field::host) == header.end()) {
+        header.insert(boost::beast::http::field::host, _host_with_port);
+    }
+
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
@@ -122,19 +146,24 @@ ss::future<client::request_response_t> client::make_request(
           return ss::make_ready_future<request_response_t>(
             std::make_tuple(req, res));
       })
-      .handle_exception_type([this](ss::tls::verification_error err) {
-          return stop().then([err = std::move(err)] {
-              return ss::make_exception_future<client::request_response_t>(err);
-          });
+      .handle_exception_type([this, ctxlog](ss::tls::verification_error err) {
+          vlog(ctxlog.warn, "make_request tls verification error {}", err);
+          shutdown();
+          return ss::make_exception_future<client::request_response_t>(err);
       });
 }
 
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
+    if (unlikely(_stopped)) {
+        throw std::runtime_error("client is stopped");
+    }
     vlog(
       ctxlog.debug,
-      "about to start connecting, {}, is-closed {}",
+      "about to start connecting, is_valid: {}, connect gate closed: {}, "
+      "dispatch gate closed: {}",
       is_valid(),
+      _connect_gate.is_closed(),
       _dispatch_gate.is_closed());
     auto current = ss::lowres_clock::now();
     const auto deadline = current + timeout;
@@ -172,6 +201,13 @@ ss::future<reconnect_result_t> client::get_connected(
 }
 
 ss::future<> client::stop() {
+    if (_stopped) {
+        // Prevent double call to stop() as constructs such as with_client()
+        // will unconditionally call stop(), while exception handlers in this
+        // file may also call stop()
+        co_return;
+    }
+    _stopped = true;
     co_await _connect_gate.close();
     // Can safely stop base_transport
     co_return co_await base_transport::stop();
@@ -195,6 +231,7 @@ ss::future<ss::temporary_buffer<char>> client::receive() {
 ss::future<> client::send(ss::scattered_message<char> msg) {
     _probe->add_outbound_bytes(msg.size());
     return _out.write(std::move(msg))
+      .discard_result()
       .handle_exception([this](std::exception_ptr e) {
           _probe->register_transport_error();
           return ss::make_exception_future<>(e);
@@ -218,7 +255,7 @@ static client_probe::verb convert_to_pverb(client::response_stream::verb v) {
 client::response_stream::response_stream(
   client* client, client::response_stream::verb v, ss::sstring target)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{{}}", std::move(target)))
+  , _ctxlog(http_log, ssx::sformat("{}", std::move(target)))
   , _parser()
   , _buffer()
   , _sprobe(client->_probe->create_request_subprobe(convert_to_pverb(v))) {
@@ -244,14 +281,12 @@ const client::response_header& client::response_stream::get_headers() const {
 static std::vector<boost::asio::const_buffer>
 iobuf_to_constbufseq(const iobuf& iobuf) {
     std::vector<boost::asio::const_buffer> seq;
-    for (auto const& fragm : iobuf) {
+    for (const auto& fragm : iobuf) {
         boost::asio::const_buffer cbuf{fragm.get(), fragm.size()};
         seq.push_back(cbuf);
     }
     return seq;
 }
-
-ss::future<> client::response_stream::shutdown() { return _client->stop(); }
 
 /// Return failed future if ec is set, otherwise return future in ready state
 static ss::future<iobuf>
@@ -280,7 +315,11 @@ ss::future<> client::response_stream::prefetch_headers() {
 }
 
 ss::future<iobuf> client::response_stream::recv_some() {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future<iobuf>();
+    }
     if (!_prefetch.empty()) {
         // This code will only be executed if 'prefetch_headers' was called. It
         // can only be called once.
@@ -297,10 +336,10 @@ ss::future<iobuf> client::response_stream::recv_some() {
               // we'll have to manually check the headers and the last chunk
               // status.
               boost::beast::error_code ec;
-              if (!_parser.is_header_done()) {
-                  // We can't put EOF before all header bytes are received
+              if (!_parser.got_some()) {
+                  // We can't put EOF if no bytes were received yet.
                   ec = boost::beast::http::make_error_code(
-                    boost::beast::http::error::short_read);
+                    boost::beast::http::error::end_of_stream);
               } else {
                   _parser.put_eof(ec);
               }
@@ -357,11 +396,27 @@ ss::future<iobuf> client::response_stream::recv_some() {
       })
       .handle_exception_type([this](const ss::tls::verification_error& err) {
           _client->_probe->register_transport_error();
-          return _client->stop().then(
-            [err] { return ss::make_exception_future<iobuf>(err); });
+          vlog(_ctxlog.warn, "receive tls verification error {}", err);
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(err);
+      })
+      .handle_exception_type([this](const boost::system::system_error& ec) {
+          vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(ec);
       })
       .handle_exception_type([this](const std::system_error& ec) {
           vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
           _client->shutdown();
           return ss::make_exception_future<iobuf>(ec);
       });
@@ -371,7 +426,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
 
 client::request_stream::request_stream(client* client, request_header&& hdr)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{{}}", hdr.target()))
+  , _ctxlog(http_log, ssx::sformat("{}", hdr.target()))
   , _request(std::move(hdr))
   , _serializer{_request}
   , _chunk_encode(true, max_chunk_size) {
@@ -406,7 +461,11 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 }
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future();
+    }
     vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
@@ -435,8 +494,9 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
             })
             .handle_exception_type(
               [this](const ss::tls::verification_error& err) {
-                  return _client->stop().then(
-                    [err] { return ss::make_exception_future<>(err); });
+                  vlog(_ctxlog.warn, "send tls verification error {}", err);
+                  _client->shutdown();
+                  return ss::make_exception_future<>(err);
               })
             .handle_exception_type([this](const std::system_error& ec) {
                 // Things like EPIPE, ERESET.  This happens routinely
@@ -564,7 +624,7 @@ ss::future<client::response_stream_ref> client::request(
               fsend = ss::do_with(
                 request->as_output_stream(),
                 [&input](ss::output_stream<char>& output) {
-                    return ss::copy(input, output).then([&output] {
+                    return ss::copy(input, output).finally([&output] {
                         return output.close();
                     });
                 });
@@ -577,15 +637,25 @@ ss::future<client::response_stream_ref> client::request(
 
 ss::future<client::response_stream_ref> client::request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
-      .then([](request_response_t reqresp) mutable {
-          auto [request, response] = std::move(reqresp);
-          return request->send_some(iobuf())
-            .then([request = request]() { return request->send_eof(); })
-            .then([response = response] {
-                return ss::make_ready_future<response_stream_ref>(response);
-            });
-      });
+    return request(std::move(header), iobuf(), timeout);
+}
+
+ss::future<http::downloaded_response> client::request_and_collect_response(
+  request_header&& req,
+  std::optional<iobuf> payload,
+  ss::lowres_clock::duration timeout) {
+    response_stream_ref response;
+    if (payload.has_value()) {
+        response = co_await request(
+          std::move(req), std::move(payload.value()), timeout);
+    } else {
+        response = co_await request(std::move(req), timeout);
+    }
+
+    auto status_code = co_await status(response);
+    auto body = co_await drain(response);
+    co_return downloaded_response{
+      .status = status_code, .body = std::move(body)};
 }
 
 ss::output_stream<char> client::request_stream::as_output_stream() {
@@ -602,7 +672,7 @@ ss::input_stream<char> client::response_stream::as_input_stream() {
 
 client::request_header redacted_header(client::request_header original) {
     auto h{std::move(original)};
-    for (const auto& field : redacted_fields) {
+    for (const auto& field : redacted_fields()) {
         std::visit(
           [&h](const auto& f) {
               if (h.find(f) != h.end()) {
@@ -613,6 +683,46 @@ client::request_header redacted_header(client::request_header original) {
     }
 
     return h;
+}
+
+seastar::future<client::response_stream_ref> client::request(
+  request_header header, iobuf body, seastar::lowres_clock::duration timeout) {
+    auto [request, response] = co_await make_request(
+      std::move(header), timeout);
+    co_await request->send_some(std::move(body));
+    co_await request->send_eof();
+    co_return response;
+}
+
+seastar::future<client::response_stream_ref> client::post(
+  std::string_view path,
+  iobuf body,
+  content_type type,
+  seastar::lowres_clock::duration timeout) {
+    request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target(std::string(path));
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", body.size_bytes()));
+    header.insert(
+      boost::beast::http::field::content_type,
+      std::string(content_type_string(type)));
+    return request(std::move(header), std::move(body), timeout);
+}
+
+ss::future<boost::beast::http::status>
+status(client::response_stream_ref response) {
+    co_await response->prefetch_headers();
+    co_return response->get_headers().result();
+}
+
+ss::future<iobuf> drain(client::response_stream_ref response) {
+    iobuf buffer;
+    while (!response->is_done()) {
+        buffer.append(co_await response->recv_some());
+    }
+    co_return buffer;
 }
 
 } // namespace http

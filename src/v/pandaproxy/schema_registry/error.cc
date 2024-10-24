@@ -13,6 +13,9 @@
 
 #include "pandaproxy/error.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
+
+#include <ranges>
 
 namespace pandaproxy::schema_registry {
 
@@ -50,8 +53,17 @@ struct error_category final : std::error_category {
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";
+        case error_code::compatibility_not_found:
+            return "Subject does not have subject-level compatibility "
+                   "configured";
+        case error_code::mode_not_found:
+            return "Subject does not have subject-level mode configured";
+        case error_code::subject_version_operation_not_permitted:
+            return "Overwrite new schema is not permitted.";
         case error_code::subject_version_has_references:
             return "One or more references exist to the schema";
+        case error_code::subject_version_schema_id_already_exists:
+            return "Schema already registered with another id";
         case error_code::subject_schema_invalid:
             return "Error while looking up schema under subject";
         case error_code::write_collision:
@@ -59,9 +71,11 @@ struct error_category final : std::error_category {
         case error_code::topic_parse_error:
             return "Unexpected data found in topic";
         case error_code::compatibility_level_invalid:
-            return "Invalid compatibility level. Valid values are none, "
-                   "backward, forward, full, backward_transitive, "
-                   "forward_transitive, and full_transitive";
+            return "Invalid compatibility level. Valid values are NONE, "
+                   "BACKWARD, FORWARD, FULL, BACKWARD_TRANSITIVE, "
+                   "FORWARD_TRANSITIVE, and FULL_TRANSITIVE";
+        case error_code::mode_invalid:
+            return "Invalid mode. Valid values are READWRITE, READONLY";
         }
         return "(unrecognized error)";
     }
@@ -84,6 +98,10 @@ struct error_category final : std::error_category {
             return reply_error_code::subject_version_soft_deleted; // 40406
         case error_code::subject_version_not_deleted:
             return reply_error_code::subject_version_not_deleted; // 40407
+        case error_code::compatibility_not_found:
+            return reply_error_code::compatibility_not_found; // 40408
+        case error_code::mode_not_found:
+            return reply_error_code::mode_not_found; // 40409
         case error_code::subject_schema_invalid:
             return reply_error_code::internal_server_error; // 500
         case error_code::write_collision:
@@ -94,14 +112,22 @@ struct error_category final : std::error_category {
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202
+        case error_code::subject_version_operation_not_permitted:
+            return reply_error_code::
+              subject_version_operation_not_permitted; // 42205
         case error_code::subject_version_has_references:
             return reply_error_code::subject_version_has_references; // 42206
+        case error_code::subject_version_schema_id_already_exists:
+            return reply_error_code::
+              subject_version_schema_id_already_exists; // 42207
         case error_code::schema_incompatible:
             return reply_error_code::conflict; // 409
         case error_code::topic_parse_error:
             return reply_error_code::zookeeper_error; // 50001
         case error_code::compatibility_level_invalid:
             return reply_error_code::compatibility_level_invalid; // 42203
+        case error_code::mode_invalid:
+            return reply_error_code::mode_invalid; // 42204
         }
         return {};
     }
@@ -113,6 +139,30 @@ const error_category pps_error_category{};
 
 std::error_code make_error_code(error_code e) {
     return {static_cast<int>(e), pps_error_category};
+}
+
+error_info no_reference_found_for(
+  const canonical_schema& schema, const subject& sub, schema_version ver) {
+    // fmt v8 doesn't support formatting for elements in a range
+    auto fmt_refs = schema.def().refs()
+                    | std::views::transform([](const auto& ref) {
+                          return fmt::format("{{{:e}}}", ref);
+                      });
+    return {
+      error_code::schema_empty,
+      fmt::format(
+        "Invalid schema "
+        "{{subject={},version=0,id=-1,schemaType={},references=[{}],metadata="
+        "null,ruleSet=null,schema={}}} with refs [{}] of type {}, details: No "
+        "schema reference found for subject \"{}\" and version {}",
+        schema.sub()(),
+        to_string_view(schema.def().type()),
+        fmt::join(fmt_refs, ", "),
+        schema.def().raw()(),
+        fmt::join(fmt_refs, ", "),
+        to_string_view(schema.type()),
+        sub(),
+        ver())};
 }
 
 } // namespace pandaproxy::schema_registry

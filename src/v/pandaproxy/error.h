@@ -11,8 +11,7 @@
 
 #pragma once
 
-#include "kafka/protocol/errors.h"
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/http/reply.hh>
 
@@ -35,6 +34,7 @@ enum class reply_error_code : uint16_t {
     nonauthoritative_information = 203,
     no_content = 204,
     reset_content = 205,
+    partial_content = 206,
     multiple_choices = 300,
     moved_permanently = 301,
     moved_temporarily = 302,
@@ -77,11 +77,17 @@ enum class reply_error_code : uint16_t {
     subject_not_deleted = 40405,
     subject_version_soft_deleted = 40406,
     subject_version_not_deleted = 40407,
+    compatibility_not_found = 40408,
+    mode_not_found = 40409,
+    serialization_error = 40801,
     consumer_already_exists = 40902,
     schema_empty = 42201,
     schema_version_invalid = 42202,
     compatibility_level_invalid = 42203,
+    mode_invalid = 42204,
+    subject_version_operation_not_permitted = 42205,
     subject_version_has_references = 42206,
+    subject_version_schema_id_already_exists = 42207,
     write_collision = 50301,
     zookeeper_error = 50001,
     kafka_error = 50002,
@@ -92,7 +98,7 @@ enum class reply_error_code : uint16_t {
 
 std::error_condition make_error_condition(reply_error_code);
 std::error_condition make_error_condition(std::error_code ec);
-std::error_condition make_error_condition(ss::httpd::reply::status_type ec);
+std::error_condition make_error_condition(ss::http::reply::status_type ec);
 const std::error_category& reply_category() noexcept;
 
 } // namespace pandaproxy

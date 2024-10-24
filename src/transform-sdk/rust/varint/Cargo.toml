@@ -1,0 +1,15 @@
+[package]
+name = "redpanda-transform-sdk-varint"
+description = "Varint decoding for redpanda-transform-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dev-dependencies]
+quickcheck = { workspace = true }

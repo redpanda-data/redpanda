@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"text/template"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
@@ -31,28 +30,28 @@ set -o pipefail
 CMD=${1}
 PID=${3}
 TIMESTAMP_UTC=$(date --utc +'%Y-%m-%d_%H:%M:%S.%N_%Z')
-COREDUMP_PATH={{.CoredumpDir}}/core."${CMD}"-"${TIMESTAMP_UTC}"-"${PID}"
+COREDUMP_PATH={{.}}/core."${CMD}"-"${TIMESTAMP_UTC}"-"${PID}"
 
-mkdir -p {{.CoredumpDir}}
+mkdir -p {{.}}
 logger -p user.err "Saving ${CMD} coredump to ${COREDUMP_PATH}"
 cat - > "${COREDUMP_PATH}"
-`
+` // input variable is the CoredumpDir
 )
 
 type tuner struct {
-	fs       afero.Fs
-	conf     config.Config
-	executor executors.Executor
+	fs          afero.Fs
+	coredumpDir string
+	executor    executors.Executor
 }
 
 func NewCoredumpTuner(
-	fs afero.Fs, conf config.Config, executor executors.Executor,
+	fs afero.Fs, coredumpDir string, executor executors.Executor,
 ) tuners.Tunable {
-	return &tuner{fs, conf, executor}
+	return &tuner{fs, coredumpDir, executor}
 }
 
 func (t *tuner) Tune() tuners.TuneResult {
-	script, err := renderTemplate(coredumpScriptTmpl, t.conf.Rpk)
+	script, err := renderTemplate(coredumpScriptTmpl, t.coredumpDir)
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}
@@ -71,13 +70,13 @@ func (*tuner) CheckIfSupported() (supported bool, reason string) {
 	return true, ""
 }
 
-func renderTemplate(templateStr string, conf config.RpkConfig) (string, error) {
+func renderTemplate(templateStr string, input string) (string, error) {
 	tmpl, err := template.New("template").Parse(templateStr)
 	if err != nil {
 		return "", err
 	}
 	var buf bytes.Buffer
-	if err = tmpl.Execute(&buf, conf); err != nil {
+	if err = tmpl.Execute(&buf, input); err != nil {
 		return "", err
 	}
 	return buf.String(), nil

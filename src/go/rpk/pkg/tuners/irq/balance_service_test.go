@@ -10,8 +10,6 @@
 package irq
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -58,18 +56,18 @@ func (m *balanceServiceMock) IsRunning() bool {
 }
 
 func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
-	irqFile := "/irqbalance"
 	running := func(_ string) bool {
 		return true
 	}
 	tests := []struct {
-		name       string
-		proc       os.Proc
-		configFile []string
-		bannedIRQs []int
-		dir        string
-		before     func(afero.Fs, string, []string)
-		assert     func(afero.Fs, string, []string, []string)
+		name                  string
+		proc                  os.Proc
+		bannedIRQs            []int
+		testadataInitFilename string
+		configFilename        string
+		backupFilename        string
+		before                func(afero.Fs)
+		assert                func(afero.Fs, string, []string)
 	}{
 		{
 			name: "Shall update the config and then restart IRQ " +
@@ -82,19 +80,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs: []int{5, 12, 15},
-			dir:        "/etc/sysconfig/",
-			before: func(fs afero.Fs, dir string, configFile []string) {
-				_ = utils.WriteFileLines(fs,
-					configFile,
-					dir+"/irqbalance",
-				)
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-00-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
+			before: func(fs afero.Fs) {
 			},
-			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -110,20 +105,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{
-				"ONE_SHOT=true",
-				"#IRQBALANCE_BANNED_CPUS=",
-				"IRQBALANCE_ARGS=\" --banirq=5\"",
+			bannedIRQs:            []int{12, 15},
+			testadataInitFilename: "testdata/irqbalance-01-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.0716a9160d4e30cc6d859900076c4dc8.bk",
+			before: func(fs afero.Fs) {
 			},
-			bannedIRQs: []int{12, 15},
-			dir:        "/etc/sysconfig",
-			before: func(fs afero.Fs, dir string, configFile []string) {
-				_ = utils.WriteFileLines(fs, configFile, dir+irqFile)
-			},
-			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -139,23 +130,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{
-				"ONE_SHOT=true",
-				"#IRQBALANCE_BANNED_CPUS=",
-				// IRQ 5 is already banned
-				"IRQBALANCE_ARGS=\" --banirq=5\"",
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-02-init",
+			configFilename:        "/etc/sysconfig/irqbalance",
+			backupFilename:        "/etc/sysconfig/irqbalance.vectorized.0716a9160d4e30cc6d859900076c4dc8.bk",
+			before: func(fs afero.Fs) {
 			},
-			bannedIRQs: []int{5, 12, 15},
-			dir:        "/etc/sysconfig",
-			before: func(fs afero.Fs, dir string, configFile []string) {
-				_ = utils.WriteFileLines(fs,
-					configFile,
-					dir+irqFile)
-			},
-			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 3, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_ARGS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -172,21 +156,17 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs: []int{5, 12, 15},
-			dir:        "/etc/conf.d",
-			before: func(fs afero.Fs, dir string, configFile []string) {
-				_ = utils.WriteFileLines(fs,
-					configFile,
-					dir+irqFile)
-				_ = utils.WriteFileLines(fs,
-					[]string{"systemd"},
-					"/proc/1/comm")
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-03-init",
+			configFilename:        "/etc/conf.d/irqbalance",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs, []string{"systemd"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -203,21 +183,17 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 					return nil, nil
 				},
 			},
-			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs: []int{5, 12, 15},
-			dir:        "/etc/conf.d",
-			before: func(fs afero.Fs, dir string, configFile []string) {
-				_ = utils.WriteFileLines(fs,
-					configFile,
-					dir+irqFile)
-				_ = utils.WriteFileLines(fs,
-					[]string{"init"},
-					"/proc/1/comm")
+			bannedIRQs:            []int{5, 12, 15},
+			testadataInitFilename: "testdata/irqbalance-04-init",
+			configFilename:        "/etc/conf.d/irqbalance",
+			backupFilename:        "/etc/conf.d/irqbalance.vectorized.911727b5a516f8e315b36f97e54facda.bk",
+			before: func(fs afero.Fs) {
+				_ = utils.WriteFileLines(fs, []string{"init"}, "/proc/1/comm")
 			},
-			assert: func(fs afero.Fs, dir string, configFile, backupContent []string) {
+			assert: func(fs afero.Fs, configFilename string, backupContent []string) {
 				require.Equal(t, 2, len(backupContent))
 				// Check if IRQs were banned in the file
-				fileContent, err := utils.ReadFileLines(fs, dir+irqFile)
+				fileContent, err := utils.ReadFileLines(fs, configFilename)
 				require.NoError(t, err)
 				require.Equal(t, 3, len(fileContent))
 				require.Equal(t, "IRQBALANCE_OPTS=\" --banirq=5 --banirq=12 --banirq=15\"", fileContent[2])
@@ -225,27 +201,27 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for i, tt := range tests {
+		t.Run(fmt.Sprintf("test %02d %s", i, tt.name), func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			t.Log(tt.dir)
-			tt.before(fs, tt.dir, tt.configFile)
+			osfs := afero.NewOsFs()
+			testdataLines, err := utils.ReadFileLines(osfs, tt.testadataInitFilename)
+			require.NoError(t, err)
+			err = utils.WriteFileLines(fs, testdataLines, tt.configFilename)
+			require.NoError(t, err)
+			tt.before(fs)
 			balanceService := NewBalanceService(
 				fs,
 				tt.proc,
 				executors.NewDirectExecutor(),
 				time.Duration(10)*time.Second,
 			)
-			err := balanceService.BanIRQsAndRestart(tt.bannedIRQs)
+			err = balanceService.BanIRQsAndRestart(tt.bannedIRQs)
 			require.NoError(t, err)
-			md5 := calcMd5(tt.configFile)
 			// Check if backup is created
-			backupFileContent, err := utils.ReadFileLines(
-				fs,
-				fmt.Sprintf(tt.dir+"/irqbalance.vectorized.%s.bk", md5),
-			)
+			backupFileContent, err := utils.ReadFileLines(fs, tt.backupFilename)
 			require.NoError(t, err)
-			tt.assert(fs, tt.dir, tt.configFile, backupFileContent)
+			tt.assert(fs, tt.configFilename, backupFileContent)
 		})
 	}
 }
@@ -355,13 +331,4 @@ func TestAreIRQsStaticallyAssigned(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func calcMd5(lines []string) string {
-	var data []byte
-	for _, line := range lines {
-		data = append(data, []byte(line+"\n")...)
-	}
-	hash := md5.Sum(data)
-	return hex.EncodeToString(hash[:16])
 }

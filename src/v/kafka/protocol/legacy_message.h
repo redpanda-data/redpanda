@@ -9,11 +9,17 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "hashing/crc32.h"
-#include "kafka/server/logger.h"
-#include "model/record.h"
-#include "vlog.h"
+#include "kafka/protocol/logger.h"
+#include "model/compression.h"
+#include "model/fundamental.h"
+#include "model/timestamp.h"
+#include "utils/to_string.h"
+
+#include <fmt/chrono.h>
 
 namespace kafka {
 

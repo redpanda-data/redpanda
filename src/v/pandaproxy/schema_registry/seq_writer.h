@@ -9,8 +9,9 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "kafka/client/client.h"
-#include "outcome.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -39,13 +40,22 @@ public:
 
     ss::future<> read_sync();
 
+    // Throws 42205 if the subject cannot be modified
+    ss::future<> check_mutable(const std::optional<subject>& sub);
+
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
-    ss::future<schema_id> write_subject_version(canonical_schema ref);
+    ss::future<schema_id> write_subject_version(subject_schema schema);
 
     ss::future<bool>
     write_config(std::optional<subject> sub, compatibility_level compat);
+
+    ss::future<bool> delete_config(subject sub);
+
+    ss::future<bool> write_mode(std::optional<subject> sub, mode m, force f);
+
+    ss::future<bool> delete_mode(subject sub);
 
     ss::future<bool>
     delete_subject_version(subject sub, schema_version version);
@@ -66,7 +76,30 @@ private:
 
     void advance_offset_inner(model::offset offset);
 
-    ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
+    ss::future<std::optional<schema_id>>
+    do_write_subject_version(subject_schema schema, model::offset write_at);
+
+    ss::future<std::optional<bool>> do_write_config(
+      std::optional<subject> sub,
+      compatibility_level compat,
+      model::offset write_at);
+
+    ss::future<std::optional<bool>> do_delete_config(subject sub);
+
+    ss::future<std::optional<bool>> do_write_mode(
+      std::optional<subject> sub, mode m, force f, model::offset write_at);
+
+    ss::future<std::optional<bool>>
+    do_delete_mode(subject sub, model::offset write_at);
+
+    ss::future<std::optional<bool>> do_delete_subject_version(
+      subject sub, schema_version version, model::offset write_at);
+
+    ss::future<std::optional<std::vector<schema_version>>>
+    do_delete_subject_impermanent(subject sub, model::offset write_at);
+
+    ss::future<std::optional<std::vector<schema_version>>>
+    delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
 
     simple_time_jitter<ss::lowres_clock> _jitter{std::chrono::milliseconds{50}};
@@ -77,8 +110,22 @@ private:
     auto sequenced_write(F f) {
         auto base_backoff = _jitter.next_duration();
         auto remote = [base_backoff, f](seq_writer& seq) {
+            if (auto waiters = seq._write_sem.waiters(); waiters != 0) {
+                vlog(
+                  plog.trace,
+                  "sequenced_write waiting for {} waiters",
+                  waiters);
+            }
             return ss::with_semaphore(
               seq._write_sem, 1, [&seq, f, base_backoff]() {
+                  if (auto waiters = seq._wait_for_sem.waiters();
+                      waiters != 0) {
+                      vlog(
+                        plog.debug,
+                        "sequenced_write acquired write_sem with {} "
+                        "wait_for_sem waiters",
+                        waiters);
+                  }
                   return retry_with_backoff(
                     max_retries,
                     [f, &seq]() { return seq.sequenced_write_inner(f); },
@@ -126,8 +173,8 @@ private:
         }
     }
 
-    ss::future<bool>
-    produce_and_check(model::offset write_at, model::record_batch batch);
+    ss::future<bool> produce_and_apply(
+      std::optional<model::offset> write_at, model::record_batch batch);
 
     /// Block until this offset is available, fetching if necessary
     ss::future<> wait_for(model::offset offset);

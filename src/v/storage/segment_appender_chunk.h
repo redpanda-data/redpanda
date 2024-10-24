@@ -10,10 +10,10 @@
  */
 
 #pragma once
-#include "config/configuration.h"
-#include "seastarx.h"
-#include "units.h"
-#include "utils/intrusive_list_helpers.h"
+#include "base/seastarx.h"
+#include "base/units.h"
+#include "container/intrusive_list_helpers.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/align.hh>
 #include <seastar/core/aligned_buffer.hh>
@@ -23,9 +23,12 @@
 #include <ostream>
 
 namespace storage {
+
+using alignment = named_type<size_t, struct alignment_type>;
+
 class segment_appender_chunk {
 public:
-    explicit segment_appender_chunk(size_t size, size_t alignment)
+    explicit segment_appender_chunk(size_t size, alignment alignment)
       : _chunk_size(size)
       , _alignment(alignment)
       , _buf(ss::allocate_aligned_buffer<char>(_chunk_size, alignment)) {
@@ -37,13 +40,13 @@ public:
     segment_appender_chunk(const segment_appender_chunk&) = delete;
     segment_appender_chunk& operator=(const segment_appender_chunk&) = delete;
     segment_appender_chunk(segment_appender_chunk&&) noexcept = delete;
-    segment_appender_chunk&
-    operator=(segment_appender_chunk&&) noexcept = delete;
+    segment_appender_chunk& operator=(segment_appender_chunk&&) noexcept
+      = delete;
     ~segment_appender_chunk() noexcept = default;
 
     bool is_full() const { return _pos == _chunk_size; }
     bool is_empty() const { return _pos == 0; }
-    size_t alignment() const { return _alignment; }
+    alignment alignment() const { return _alignment; }
     size_t space_left() const { return _chunk_size - _pos; }
     size_t size() const { return _pos; }
 
@@ -60,9 +63,19 @@ public:
         // must be 8192 bytes, starting at the bottom of the _flushed_pos
         // page, in this example, at offset 0.
         //
-        const auto prev_sz = ss::align_down<size_t>(_flushed_pos, _alignment);
-        const auto curr_sz = ss::align_up<size_t>(_pos, _alignment);
-        return curr_sz - prev_sz;
+        return pending_aligned_end() - pending_aligned_begin();
+    }
+
+    // The aligned start (inclusive) position within the chunk of the pending
+    // (unflushed) region, i.e., align_down(_pos).
+    size_t pending_aligned_begin() const {
+        return ss::align_down<size_t>(_flushed_pos, _alignment);
+    }
+
+    // The aligned end (exclusive) position within the chunk of the pending
+    // (unflushed) region, i.e., align_up(_pos).
+    size_t pending_aligned_end() const {
+        return ss::align_up<size_t>(_pos, _alignment);
     }
 
     const char* data() const { return _buf.get(); }
@@ -97,7 +110,7 @@ public:
 
 private:
     size_t _chunk_size{0};
-    size_t _alignment{0};
+    storage::alignment _alignment{0};
     size_t _pos{0};
     size_t _flushed_pos{0};
     std::unique_ptr<char[], ss::free_deleter> _buf;

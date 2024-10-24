@@ -11,18 +11,19 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/types.h"
 
 namespace pandaproxy::schema_registry {
 
 struct get_schemas_ids_id_versions_response {
-    std::vector<subject_version> subject_versions;
+    chunked_vector<subject_version> subject_versions;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const get_schemas_ids_id_versions_response& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const get_schemas_ids_id_versions_response& res) {
     w.StartArray();
     for (const auto& sv : res.subject_versions) {
         w.StartObject();

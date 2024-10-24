@@ -11,15 +11,17 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "outcome.h"
+#include "model/record_batch_reader.h"
+#include "raft/consensus.h"
 #include "raft/fwd.h"
-#include "raft/group_configuration.h"
 #include "raft/logger.h"
-#include "seastarx.h"
+#include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "storage/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -34,46 +36,34 @@ namespace raft {
 /// return ptr->apply()
 ///            .then([ptr]{
 ///                 // wait in background.
-///                (void)ptr->wait().finally([ptr]{});
+///                (void)ptr->wait_for_majority().finally([ptr]{});
 ///            });
 ///
 /// Replicate STM implements following algorithm
 ///
-///  Stop conditions:
-///    1) leader commit_index > offset of an entry that was replicated
-///       to the leader log (SUCCESS)
-///    2) term has changed (FAILURE)
-///    3) current node is not the leader (FAILURE)
-///
-///  Algorithm steps:
 ///    1) Append entry to leader log without flush
-///    2) Dispatch append entries RPC calls to followers and in parallel flush
-///       entries to leader disk
-///    3) Wait for (1),(2) or (3)
-///    4) When
-///       ->(1) reply with success
-///       ->(2) or (3) check if entry with given offset and term exists in log
-///         if entry exists reply with success, reply with false otherwise
-///
-///
-///   Wait is realized with condition variable that is only notified when commit
-///   index change
-///
+///    ->   wait for (1) to finish successfully.
+///    2) Dispatch append entries RPC calls to followers and in parallel.
+///    Entries are flushed if write caching is disabled or the caller
+///    decides to force flush.
+///    3) Rely on the replication monitor to wait until the entries are
+///    successfully replicated or truncated. See replication_monitor for
+///    details.
 ///
 ///
 ///                            N1 (Leader)        +
 ///                            +-------+          |
-///                        +-->| Flush |--------->+     OK
-///                        |   +-------+          |     +----(1)----> SUCCESS
-///                        |                      |     |
-///      N1 (Leader)       |   N2                 |     |
-/// +-------------------+  |   +--------+-------+ |     |
-/// |Replicate |Append  |--+-->+ Append | Flush |-+---->+
-/// +-------------------+  |   +--------+-------+ |     |
-///                     |  |                      |     |
-///                     |  |   N3                 |     |
-///                     |  |   +--------+-------+ |     +-(2)-(3)---> FAILURE
-///                     |  +-->| Append | Flush |-+     ERR
+///                        +-->| Flush |--------->+
+///                        |   +-------+          |              +->SUCCESS
+///                        |                      |            OK|
+///      N1 (Leader)       |   N2                 |              |
+/// +-------------------+  |   +--------+-------+ |     +---------------------+
+/// |Replicate |Append  |--+-->+ Append | Flush |-+---->| replication_monitor |
+/// +-------------------+  |   +--------+-------+ |     +---------------------+
+///                     |  |                      |              |
+///                     |  |   N3                 |              |
+///                     |  |   +--------+-------+ |              +--> FAILURE
+///                     |  +-->| Append | Flush |-+
 ///                     |      +--------+-------+ |
 ///                     |                         +
 ///                     v               Wait for (1) or (2)
@@ -106,15 +96,17 @@ public:
     ss::future<> wait_for_shutdown();
 
 private:
-    ss::future<append_entries_request> share_request();
+    ss::future<model::record_batch_reader> share_batches();
 
     ss::future<> dispatch_one(vnode);
-    ss::future<result<append_entries_reply>> dispatch_single_retry(vnode);
-    ss::future<result<append_entries_reply>> flush_log();
+    ss::future<> dispatch_remote_append_entries(vnode);
+    ss::future<> flush_log();
 
     ss::future<result<append_entries_reply>>
-      send_append_entries_request(vnode, append_entries_request);
-    result<replicate_result> process_result(model::offset, model::term_id);
+      send_append_entries_request(vnode, model::record_batch_reader);
+
+    result<replicate_result>
+      process_result(raft::errc, model::offset, model::term_id);
     bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
@@ -124,9 +116,13 @@ private:
 
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
-    std::unique_ptr<append_entries_request> _req;
+    protocol_metadata _meta;
+    flush_after_append _is_flush_required;
+    std::optional<model::record_batch_reader> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
-    ssx::semaphore _share_sem;
+    absl::flat_hash_map<vnode, consensus::inflight_appends_guard>
+      _inflight_appends;
+    mutex _share_mutex{"replicate_entries_stm::share"};
     ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
     ctx_log _ctxlog;

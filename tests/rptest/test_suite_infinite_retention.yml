@@ -1,0 +1,14 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+tiered_storage_retention:
+  included:
+    - infinite_retention/infinite_retention_test.py
+
+  excluded:
+    - infinite_retention/infinite_retention_test.py::InfiniteRetentionTest.long_retention_with_spillover_and_failure_injection_test # failure injection tests turned off

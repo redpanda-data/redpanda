@@ -1,0 +1,54 @@
+---
+name: Release rp-storage-tool
+on:
+  push:
+    tags: ['v*']
+jobs:
+  release-rp-storage-tool:
+    if: ${{ github.repository == 'redpanda-data/redpanda' }}
+    name: Release - ${{ matrix.platform.release_for }}
+    strategy:
+      matrix:
+        platform:
+          - release_for: linux-amd64
+            os: ubuntu-latest
+          - release_for: linux-arm64
+            os: ubuntu-latest-2-arm64
+    runs-on: ${{ matrix.platform.os }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: actions/checkout@v4
+      - name: Build binary
+        run: |
+          export DOCKER_BUILDKIT=1
+          docker build -f tests/docker/Dockerfile \
+            -t rp-storage-tool \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from redpandadata/redpanda-test-node:cache-amd64 \
+            --cache-from redpandadata/redpanda-test-node:cache-arm64 \
+            --target rp-storage-tool . \
+            --load
+      - name: Get binary
+        run: |
+          id=$(docker create rp-storage-tool)
+          docker cp $id:/usr/local/bin/rp-storage-tool ./
+          ./rp-storage-tool --help
+      - name: Push to public bucket
+        run: |
+          arch=$(uname -m)
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          if [[ $arch == "x86_64" || $arch == "amd64" ]]; then
+            arch="amd64"
+          elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
+            arch="arm64"
+          else
+            echo "unknown arch: $arch"
+            exit 1
+          fi
+          aws s3 cp ./rp-storage-tool s3://vectorized-public/releases/rp-storage-tool/${{ github.ref_name }}/$os/$arch/rp-storage-tool --acl public-read

@@ -7,10 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/random.h"
 #include "config/configuration.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/kvstore.h"
+#include "storage/tests/kvstore_fixture.h"
+#include "test_utils/fixture.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -20,45 +23,13 @@ template<typename T>
 static void set_configuration(ss::sstring p_name, T v) {
     ss::smp::invoke_on_all([p_name, v = std::move(v)] {
         config::shard_local_cfg().get(p_name).set_value(v);
-    }).get0();
+    }).get();
 }
 
-/// Call this at end of tests to avoid leaving garbage
-/// directories behind
-static ss::future<> cleanup_store(ss::sstring& dir) {
-    std::filesystem::path dir_path{dir};
-    return ss::recursive_remove_directory(dir_path);
-}
-
-/// Remove any existing store at this path, and return a config
-/// for constructing a new store.
-static ss::future<storage::kvstore_config> prepare_store(ss::sstring dir) {
-    if (co_await ss::file_exists(dir)) {
-        // Tests can fail in mysterious ways if there's already a store
-        // in the location they're trying to use.  Even though tests
-        // clean up on success, they might leave directories behind
-        // on failure.
-        co_await cleanup_store(dir);
-    }
-
-    co_return storage::kvstore_config(
-      8192,
-      config::mock_binding(std::chrono::milliseconds(10)),
-      dir,
-      storage::debug_sanitize_files::yes);
-}
-
-SEASTAR_THREAD_TEST_CASE(key_space) {
+FIXTURE_TEST(key_space, kvstore_test_fixture) {
     set_configuration("disable_metrics", true);
 
-    auto dir = ssx::sformat(
-      "kvstore_test_{}", random_generators::get_int(4000));
-
-    auto conf = prepare_store(dir).get();
-
-    // empty started then stopped
-    storage::storage_resources resources;
-    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
+    auto kvs = make_kvstore();
     kvs->start().get();
 
     const auto value_a = bytes_to_iobuf(random_generators::get_bytes(100));
@@ -88,10 +59,22 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
       kvs->get(storage::kvstore::key_space::consensus, empty_key).value()
       == value_d);
 
+    std::map<bytes, iobuf> testing_kvs;
+    kvs
+      ->for_each(
+        storage::kvstore::key_space::testing,
+        [&](bytes_view key, const iobuf& val) {
+            BOOST_REQUIRE(testing_kvs.emplace(key, val.copy()).second);
+        })
+      .get();
+    BOOST_REQUIRE_EQUAL(testing_kvs.size(), 2);
+    BOOST_REQUIRE(testing_kvs.at(key) == value_a);
+    BOOST_REQUIRE(testing_kvs.at(empty_key) == value_c);
+
     kvs->stop().get();
 
     // still all true after recovery
-    kvs = std::make_unique<storage::kvstore>(conf, resources);
+    kvs = make_kvstore();
     kvs->start().get();
 
     BOOST_REQUIRE(
@@ -106,33 +89,26 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
       == value_d);
 
     kvs->stop().get();
-
-    cleanup_store(dir).get();
 }
 
-SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
+FIXTURE_TEST(kvstore_empty, kvstore_test_fixture) {
     set_configuration("disable_metrics", true);
-
-    auto dir = ssx::sformat(
-      "kvstore_test_{}", random_generators::get_int(4000));
-
-    auto conf = prepare_store(dir).get();
 
     // empty started then stopped
     storage::storage_resources resources;
-    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
+    auto kvs = make_kvstore();
     kvs->start().get();
     kvs->stop().get();
 
     // and can restart from empty
-    kvs = std::make_unique<storage::kvstore>(conf, resources);
+    kvs = make_kvstore();
     kvs->start().get();
     kvs->stop().get();
 
     std::unordered_map<bytes, iobuf> truth;
 
     // now fill it up with some key value pairs
-    kvs = std::make_unique<storage::kvstore>(conf, resources);
+    kvs = make_kvstore();
     kvs->start().get();
 
     std::vector<ss::future<>> batch;
@@ -144,12 +120,12 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
         batch.push_back(kvs->put(
           storage::kvstore::key_space::testing, key, std::move(value)));
         if (batch.size() > 10) {
-            ss::when_all(batch.begin(), batch.end()).get0();
+            ss::when_all(batch.begin(), batch.end()).get();
             batch.clear();
         }
     }
     if (!batch.empty()) {
-        ss::when_all(batch.begin(), batch.end()).get0();
+        ss::when_all(batch.begin(), batch.end()).get();
         batch.clear();
     }
 
@@ -172,26 +148,19 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     kvs->stop().get();
 
     // now restart the db and ensure still empty
-    kvs = std::make_unique<storage::kvstore>(conf, resources);
+    kvs = make_kvstore();
     kvs->start().get();
     BOOST_REQUIRE(kvs->empty());
     kvs->stop().get();
-
-    cleanup_store(dir).get();
 }
 
-SEASTAR_THREAD_TEST_CASE(kvstore) {
+FIXTURE_TEST(kvstore, kvstore_test_fixture) {
     set_configuration("disable_metrics", true);
-
-    auto dir = ssx::sformat(
-      "kvstore_test_{}", random_generators::get_int(4000));
-
-    auto conf = prepare_store(dir).get();
 
     std::unordered_map<bytes, iobuf> truth;
 
     storage::storage_resources resources;
-    auto kvs = std::make_unique<storage::kvstore>(conf, resources);
+    auto kvs = make_kvstore();
     kvs->start().get();
     for (int i = 0; i < 500; i++) {
         auto key = random_generators::get_bytes(2);
@@ -222,7 +191,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
     kvs.reset(nullptr);
 
     // shutdown, restart, and verify all the original key-value pairs
-    kvs = std::make_unique<storage::kvstore>(conf, resources);
+    kvs = make_kvstore();
     kvs->start().get();
     for (auto& e : truth) {
         BOOST_REQUIRE(
@@ -230,6 +199,4 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
           == e.second);
     }
     kvs->stop().get();
-
-    cleanup_store(dir).get();
 }

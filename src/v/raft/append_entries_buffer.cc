@@ -2,7 +2,6 @@
 
 #include "raft/consensus.h"
 #include "raft/types.h"
-#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
@@ -22,7 +21,7 @@ append_entries_buffer::append_entries_buffer(
 
 ss::future<append_entries_reply>
 append_entries_buffer::enqueue(append_entries_request&& r) {
-    gate_guard guard(_gate);
+    auto guard = _gate.hold();
 
     // we normally do not want to wait as it would cause requests
     // reordering. Reordering may only happend if we would wait on condition
@@ -91,13 +90,13 @@ ss::future<> append_entries_buffer::flush() {
 ss::future<> append_entries_buffer::do_flush(
   request_t requests, response_t response_promises, ssx::semaphore_units u) {
     bool needs_flush = false;
-    std::vector<reply_t> replies;
+    reply_list_t replies;
     auto f = ss::now();
     {
         ssx::semaphore_units op_lock_units = std::move(u);
         replies.reserve(requests.size());
         for (auto& req : requests) {
-            if (req.flush) {
+            if (req.is_flush_required()) {
                 needs_flush = true;
             }
             try {
@@ -110,7 +109,7 @@ ss::future<> append_entries_buffer::do_flush(
             }
         }
         if (needs_flush) {
-            f = _consensus.flush_log();
+            f = _consensus.flush_log().discard_result();
         }
     }
 
@@ -123,7 +122,7 @@ ss::future<> append_entries_buffer::do_flush(
 }
 
 void append_entries_buffer::propagate_results(
-  std::vector<reply_t> replies, response_t response_promises) {
+  reply_list_t replies, response_t response_promises) {
     vassert(
       replies.size() == response_promises.size(),
       "Number of requests and response promiseshave to be equal. Have {} "

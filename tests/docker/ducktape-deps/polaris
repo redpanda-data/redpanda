@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+git -C /opt clone https://github.com/apache/polaris.git
+cd /opt/polaris
+git reset --hard 1a6b3eb3963355f78c5ca916cc1d66ecd1493092
+ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
+JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${ARCH}" ./gradlew --no-daemon --info shadowJar

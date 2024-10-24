@@ -22,15 +22,39 @@ rp_test(
   LABELS kafka
 )
 
+v_cc_library(
+  NAME kc_test_utils
+  HDRS
+    utils.h
+  SRCS
+    utils.cc
+  DEPS
+    v::utils
+)
+
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_kafka_client_fixture
+  GTEST
+  BINARY_NAME test_kc_record_batcher
+  SOURCES
+    record_batcher_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::kc_record_batcher
+    v::kc_test_utils
+  LABELS kafka
+)
+
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME kafka_client
   SOURCES
     consumer_group.cc
     fetch.cc
     produce.cc
     reconnect.cc
     retry.cc
+    test_config_utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     v::seastar_testing_main

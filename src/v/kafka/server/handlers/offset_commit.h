@@ -18,6 +18,6 @@ namespace kafka {
 // in version 0 kafka stores offsets in zookeeper. if we ever need to
 // support version 0 then we need to do some code review to see if this has
 // any implications on semantics.
-using offset_commit_handler = two_phase_handler<offset_commit_api, 1, 7>;
+using offset_commit_handler = two_phase_handler<offset_commit_api, 1, 8>;
 
 } // namespace kafka

@@ -11,14 +11,14 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "cluster/fwd.h"
 #include "cluster/rm_group_proxy.h"
-#include "cluster/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/fwd.h"
-#include "kafka/types.h"
-#include "model/metadata.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
+
+#include <seastar/core/sharded.hh>
 
 namespace kafka {
 
@@ -40,17 +40,10 @@ public:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::partition_id tm);
     ss::future<cluster::begin_group_tx_reply>
       begin_group_tx_locally(cluster::begin_group_tx_request);
-    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(
-      kafka::group_id,
-      model::term_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<cluster::prepare_group_tx_reply>
-      prepare_group_tx_locally(cluster::prepare_group_tx_request);
     ss::future<cluster::commit_group_tx_reply> commit_group_tx(
       kafka::group_id,
       model::producer_identity,
@@ -80,14 +73,8 @@ private:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<cluster::prepare_group_tx_reply> dispatch_prepare_group_tx(
-      model::node_id,
-      kafka::group_id,
-      model::term_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::partition_id);
     ss::future<cluster::commit_group_tx_reply> dispatch_commit_group_tx(
       model::node_id,
       kafka::group_id,
@@ -113,28 +100,15 @@ public:
       kafka::group_id group_id,
       model::producer_identity pid,
       model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout) override {
-        return _target.local().begin_group_tx(group_id, pid, tx_seq, timeout);
+      model::timeout_clock::duration timeout,
+      model::partition_id tm) override {
+        return _target.local().begin_group_tx(
+          group_id, pid, tx_seq, timeout, tm);
     }
 
     ss::future<cluster::begin_group_tx_reply>
     begin_group_tx_locally(cluster::begin_group_tx_request req) override {
         return _target.local().begin_group_tx_locally(std::move(req));
-    }
-
-    ss::future<cluster::prepare_group_tx_reply> prepare_group_tx(
-      kafka::group_id group_id,
-      model::term_id etag,
-      model::producer_identity pid,
-      model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout) override {
-        return _target.local().prepare_group_tx(
-          group_id, etag, pid, tx_seq, timeout);
-    }
-
-    ss::future<cluster::prepare_group_tx_reply>
-    prepare_group_tx_locally(cluster::prepare_group_tx_request req) override {
-        return _target.local().prepare_group_tx_locally(std::move(req));
     }
 
     ss::future<cluster::commit_group_tx_reply> commit_group_tx(

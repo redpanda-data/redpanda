@@ -9,6 +9,9 @@
 
 #include "cluster/metadata_dissemination_service.h"
 
+#include "base/likely.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
@@ -17,24 +20,21 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "cluster/metadata_dissemination_types.h"
-#include "cluster/metadata_dissemination_utils.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
 #include "config/configuration.h"
-#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "utils/retry.h"
-#include "vassert.h"
-#include "vlog.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -54,7 +54,8 @@ metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<members_table>& members,
   ss::sharded<topic_table>& topics,
   ss::sharded<rpc::connection_cache>& clients,
-  ss::sharded<health_monitor_frontend>& health_monitor)
+  ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<features::feature_table>& feature_table)
   : _raft_manager(raft_manager)
   , _partition_manager(partition_manager)
   , _leaders(leaders)
@@ -62,6 +63,7 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _topics(topics)
   , _clients(clients)
   , _health_monitor(health_monitor)
+  , _feature_table(feature_table)
   , _self(make_self_broker(config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
@@ -83,8 +85,10 @@ void metadata_dissemination_service::disseminate_leadership(
   std::optional<model::node_id> leader_id) {
     vlog(
       clusterlog.trace,
-      "Dissemination request for {}, leader {}",
+      "Dissemination request for {}, revision {}, term {}, leader {}",
       ntp,
+      revision,
+      term,
       leader_id.value());
 
     _requests.emplace_back(std::move(ntp), term, leader_id, revision);
@@ -114,13 +118,13 @@ ss::future<> metadata_dissemination_service::start() {
     }
     _dispatch_timer.arm(_dissemination_interval);
     // poll either seed servers or configuration
-    auto all_brokers = _members_table.local().all_brokers();
+    const auto& all_brokers = _members_table.local().nodes();
     // use hash set to deduplicate ids
     absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
     all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
-    for (auto& b : all_brokers) {
-        all_broker_addresses.emplace(b->rpc_address());
+    for (auto& [_, b] : all_brokers) {
+        all_broker_addresses.emplace(b.broker.rpc_address());
     }
     for (auto& id : _seed_servers) {
         all_broker_addresses.emplace(id);
@@ -178,6 +182,7 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
     return ss::with_gate(
       _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
           // update partition leaders
+          vlog(clusterlog.trace, "updating {} leadership locally", ntp);
           auto f = _leaders.invoke_on_all(
             [ntp, lid, revision, term](partition_leaders_table& leaders) {
                 leaders.update_partition_leader(ntp, revision, term, lid);
@@ -244,7 +249,7 @@ ss::future<> metadata_dissemination_service::do_request_metadata_update(
 
 ss::future<> metadata_dissemination_service::process_get_update_reply(
   result<get_leadership_reply> reply_result, request_retry_meta& meta) {
-    if (!reply_result) {
+    if (!reply_result || !reply_result.value().success) {
         vlog(
           clusterlog.debug,
           "Unable to initialize metadata using node {}",
@@ -252,13 +257,19 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
         return ss::make_ready_future<>();
     }
     // Update all NTP leaders
-    return _leaders
-      .invoke_on_all([reply = std::move(reply_result.value())](
-                       partition_leaders_table& leaders) mutable {
-          for (auto& l : reply.leaders) {
-              leaders.update_partition_leader(l.ntp, l.term, l.leader_id);
-          }
-      })
+    vlog(clusterlog.trace, "updating leadership from get_metadata");
+
+    return ss::do_with(
+             std::move(reply_result.value().leaders),
+             [this](auto& reply) {
+                 return _leaders.invoke_on_all(
+                   [&reply](partition_leaders_table& leaders) {
+                       for (const auto& l : reply) {
+                           leaders.update_partition_leader(
+                             l.ntp, l.term, l.leader_id);
+                       }
+                   });
+             })
       .then([&meta] { meta.success = true; });
 }
 
@@ -270,6 +281,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
       address,
       _rpc_tls_config,
       _dissemination_interval,
+      rpc::transport_version::v2,
       [this](metadata_dissemination_rpc_client_protocol c) {
           return c
             .get_leadership(
@@ -281,7 +293,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& ntp_leader : _requests) {
         auto assignment = _topics.local().get_partition_assignment(
           ntp_leader.ntp);
@@ -290,22 +302,15 @@ void metadata_dissemination_service::collect_pending_updates() {
             // Partition was removed, skip dissemination
             continue;
         }
-        auto non_overlapping = calculate_non_overlapping_nodes(
-          *assignment, brokers);
 
-        /**
-         * remove current node from non overlapping list, current node may be
-         * included into non overlapping node when new metadata set is used to
-         * calculate non overlapping nodes but partition replica still exists on
-         * current node (it is being moved)
-         */
-        std::erase_if(non_overlapping, [this](model::node_id n) {
-            return n == _self.id();
-        });
-        for (auto& id : non_overlapping) {
+        for (auto& id : brokers) {
+            if (id == _self.id()) {
+                continue;
+            }
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(
-                  id, update_retry_meta{std::vector<ntp_leader_revision>{}});
+                  id,
+                  update_retry_meta{ss::chunked_fifo<ntp_leader_revision>{}});
             }
             vlog(
               clusterlog.trace,
@@ -321,15 +326,18 @@ void metadata_dissemination_service::collect_pending_updates() {
 void metadata_dissemination_service::cleanup_finished_updates() {
     std::vector<model::node_id> _to_remove;
     _to_remove.reserve(_pending_updates.size());
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& [node_id, meta] : _pending_updates) {
         auto it = std::find(brokers.begin(), brokers.end(), node_id);
-        if (meta.finished || it == brokers.end()) {
+        if (meta.finished) {
+            vlog(clusterlog.trace, "node {} update finished", node_id);
+            _to_remove.push_back(node_id);
+        } else if (it == brokers.end()) {
+            vlog(clusterlog.trace, "node {} isn't found", node_id);
             _to_remove.push_back(node_id);
         }
     }
     for (auto id : _to_remove) {
-        vlog(clusterlog.trace, "node {} update finished", id);
         _pending_updates.erase(id);
     }
 }
@@ -340,6 +348,7 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
      * information. If report would contain stale data they will be ignored by
      * term check in partition leaders table
      */
+    vlog(clusterlog.trace, "disseminating leadership info");
     return _health_monitor.local()
       .get_cluster_health(
         cluster_report_filter{},
@@ -366,61 +375,38 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
             });
       })
       .then([this] { cleanup_finished_updates(); })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(clusterlog.warn, "failed to disseminate leadership: {}", e);
+      })
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
 }
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
-    for (const auto& node_report : report.node_reports) {
+    vlog(clusterlog.trace, "updating leadership from health report");
+    for (const auto& report : report.node_reports) {
         co_await _leaders.invoke_on_all(
-          [&node_report](partition_leaders_table& leaders) {
-              for (auto& tp : node_report.topics) {
-                  for (auto& p : tp.partitions) {
-                      // Nodes may report a null leader if they're out of
-                      // touch, even if the leader is actually still up.  Only
-                      // trust leadership updates from health reports if
-                      // they're non-null (non-null updates are safe to apply
-                      // in any order because update_partition leader will
-                      // ignore old terms)
-                      if (p.leader_id.has_value()) {
-                          leaders.update_partition_leader(
-                            model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
-                            p.revision_id,
-                            p.term,
-                            p.leader_id);
-                      }
-                  }
-              }
+          [&report](partition_leaders_table& leaders) {
+              return leaders.update_with_node_report(report);
           });
     }
 }
 
-namespace {
-std::vector<cluster::ntp_leader> from_ntp_leader_revision_vector(
-  std::vector<cluster::ntp_leader_revision> leaders) {
-    std::vector<cluster::ntp_leader> old_leaders;
-    old_leaders.reserve(leaders.size());
-    std::transform(
-      leaders.begin(),
-      leaders.end(),
-      std::back_inserter(old_leaders),
-      [](cluster::ntp_leader_revision& leader) {
-          return cluster::ntp_leader(
-            std::move(leader.ntp), leader.term, leader.leader_id);
-      });
-    return old_leaders;
-}
-} // namespace
-
 ss::future<> metadata_dissemination_service::dispatch_one_update(
   model::node_id target_id, update_retry_meta& meta) {
+    // copy updates to make retries possible
+    chunked_vector<ntp_leader_revision> updates;
+    updates.reserve(meta.updates.size());
+    std::copy(
+      meta.updates.begin(), meta.updates.end(), std::back_inserter(updates));
+
     return _clients.local()
       .with_node_client<metadata_dissemination_rpc_client_protocol>(
         _self.id(),
         ss::this_shard_id(),
         target_id,
         _dissemination_interval,
-        [this, updates = meta.updates, target_id](
+        [this, updates = std::move(updates), target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(
               clusterlog.trace,
@@ -434,36 +420,12 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);
         })
-      .then([this, target_id, &meta](result<update_leadership_reply> r) {
-          if (r.has_error() && r.error() == rpc::errc::method_not_found) {
-              // old version of redpanda, not yet having the v2 method,
-              // fallback to old request
-              return _clients.local()
-                .with_node_client<metadata_dissemination_rpc_client_protocol>(
-                  _self.id(),
-                  ss::this_shard_id(),
-                  target_id,
-                  _dissemination_interval,
-                  [this, updates = meta.updates, target_id](
-                    metadata_dissemination_rpc_client_protocol proto) mutable {
-                      vlog(
-                        clusterlog.trace,
-                        "Falling back to old version to send {} metadata "
-                        "updates to {}",
-                        updates,
-                        target_id);
-                      return proto.update_leadership(
-                        update_leadership_request(
-                          from_ntp_leader_revision_vector(std::move(updates))),
-                        rpc::client_opts(
-                          _dissemination_interval + rpc::clock_type::now()));
-                  })
-                .then(&rpc::get_ctx_data<update_leadership_reply>);
-          }
-          return ss::make_ready_future<result<update_leadership_reply>>(r);
-      })
       .then([target_id, &meta](result<update_leadership_reply> r) {
           if (r) {
+              vlog(
+                clusterlog.trace,
+                "Got ack to metadata update from {}",
+                target_id);
               meta.finished = true;
               return;
           }

@@ -28,8 +28,8 @@ class FullDiskHelper:
         wait_until(lambda: match(key, value), timeout_sec=15)
         self.logger.debug(f"Verified val {value} for {key}.")
 
-    def _set_low_space(self, degraded):
-        victim = random.choice(self.redpanda.nodes)
+    def _set_low_space(self, degraded, *, node=None):
+        victim = node or random.choice(self.redpanda.nodes)
         new_threshold: int = 0
         if degraded:
             new_threshold = 2**60  # arbitrary huge value
@@ -45,8 +45,8 @@ class FullDiskHelper:
         self._wait_for_node_config_value(self.CONF_MIN_FREE_BYTES,
                                          new_threshold)
 
-    def trigger_low_space(self):
-        self._set_low_space(True)
+    def trigger_low_space(self, node=None):
+        self._set_low_space(True, node=node)
 
     def clear_low_space(self):
         self._set_low_space(False)

@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/fetch_session_cache.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
@@ -21,19 +21,21 @@
 #include <boost/range/iterator_range_core.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
+#include <boost/test/unit_test_suite.hpp>
 
 #include <tuple>
 
 using namespace std::chrono_literals; // NOLINT
 struct fixture {
-    static kafka::fetch_session_partition make_fetch_partition(
-      model::topic topic, model::partition_id p_id, model::offset offset) {
-        return kafka::fetch_session_partition{
-          .topic = std::move(topic),
-          .partition = p_id,
-          .max_bytes = 1_MiB,
-          .fetch_offset = offset,
-          .high_watermark = offset};
+    static kafka::fetch_partition
+    make_fetch_partition(const model::partition_id p_id) {
+        return {
+          .partition_index = p_id,
+          .current_leader_epoch = kafka::leader_epoch(
+            random_generators::get_int(100)),
+          .fetch_offset = model::offset(random_generators::get_int(10000)),
+          .max_bytes = random_generators::get_int(1024, 1024 * 1024),
+        };
     }
 
     static kafka::fetch_request::topic
@@ -45,11 +47,7 @@ struct fixture {
 
         for (int i = 0; i < partitions_count; ++i) {
             fetch_topic.fetch_partitions.push_back(
-              kafka::fetch_request::partition{
-                .partition_index = model::partition_id(i),
-                .fetch_offset = model::offset(i * 10),
-                .max_bytes = 100_KiB,
-              });
+              make_fetch_partition(model::partition_id(i)));
         }
         return fetch_topic;
     }
@@ -71,20 +69,26 @@ FIXTURE_TEST(test_next_epoch, fixture) {
 
 FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
     kafka::fetch_session session(kafka::fetch_session_id(123));
-    std::vector<std::tuple<model::topic, model::partition_id, model::offset>>
-      expected;
+    struct tpo {
+        model::ktp ktp;
+        model::offset offset;
+    };
+    std::vector<tpo> expected;
     expected.reserve(20);
 
     for (int i = 0; i < 20; ++i) {
-        expected.emplace_back(
-          model::topic(random_generators::gen_alphanum_string(5)),
-          model::partition_id(
-            random_generators::get_int(i * 10, ((i + 1) * 10) - 1)),
-          model::offset(random_generators::get_int(10000)));
+        auto req = make_fetch_request_topic(
+          model::topic(random_generators::gen_alphanum_string(5)), 1);
+        req.fetch_partitions[0].partition_index = model::partition_id(
+          random_generators::get_int(i * 10, ((i + 1) * 10) - 1));
 
-        auto& t = expected.back();
+        expected.push_back(tpo{
+          model::ktp{
+            model::topic(req.name),
+            model::partition_id(req.fetch_partitions[0].partition_index)},
+          model::offset(req.fetch_partitions[0].fetch_offset)});
         session.partitions().emplace(
-          std::apply(fixture::make_fetch_partition, t));
+          kafka::fetch_session_partition(req.name, req.fetch_partitions[0]));
     }
 
     BOOST_TEST_MESSAGE("test insertion order iteration");
@@ -94,15 +98,14 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
       session.partitions().cend_insertion_order());
 
     for (auto fp : rng) {
-        BOOST_REQUIRE_EQUAL(fp.topic, std::get<0>(expected[i]));
-        BOOST_REQUIRE_EQUAL(fp.partition, std::get<1>(expected[i]));
-        BOOST_REQUIRE_EQUAL(fp.fetch_offset, std::get<2>(expected[i]));
+        BOOST_REQUIRE_EQUAL(fp.topic_partition, expected[i].ktp);
+        BOOST_REQUIRE_EQUAL(fp.fetch_offset, expected[i].offset);
         ++i;
     }
 
     BOOST_TEST_MESSAGE("test lookup");
     for (auto& t : expected) {
-        auto key = model::topic_partition_view(std::get<0>(t), std::get<1>(t));
+        const auto& key = t.ktp.as_tp_view();
         BOOST_REQUIRE(session.partitions().contains(key));
         BOOST_REQUIRE(
           session.partitions().find(key) != session.partitions().end());
@@ -117,8 +120,7 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
 
     BOOST_TEST_MESSAGE("test erase");
 
-    auto key = model::topic_partition_view(
-      std::get<0>(expected[0]), std::get<1>(expected[0]));
+    const auto& key = expected[0].ktp.as_tp_view();
     auto mem_usage_before = session.mem_usage();
     session.partitions().erase(key);
     BOOST_REQUIRE(!session.partitions().contains(key));
@@ -132,7 +134,8 @@ FIXTURE_TEST(test_session_operations, fixture) {
     kafka::fetch_request req;
     req.data.session_epoch = kafka::initial_fetch_session_epoch;
     req.data.session_id = kafka::invalid_fetch_session_id;
-    req.data.topics = {make_fetch_request_topic(model::topic("test"), 3)};
+    req.data.topics.emplace_back(
+      make_fetch_request_topic(model::topic("test"), 3));
     {
         BOOST_TEST_MESSAGE("create new session");
         auto ctx = cache.maybe_get_session(req);
@@ -149,10 +152,14 @@ FIXTURE_TEST(test_session_operations, fixture) {
         auto i = 0;
         BOOST_REQUIRE_EQUAL(ctx.session()->partitions().size(), 3);
         for (const auto& fp : rng) {
-            BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[0].name);
             BOOST_REQUIRE_EQUAL(
-              fp.partition,
+              fp.topic_partition.get_topic(), req.data.topics[0].name);
+            BOOST_REQUIRE_EQUAL(
+              fp.topic_partition.get_partition(),
               req.data.topics[0].fetch_partitions[i].partition_index);
+            BOOST_REQUIRE_EQUAL(
+              fp.current_leader_epoch,
+              req.data.topics[0].fetch_partitions[i].current_leader_epoch);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
               req.data.topics[0].fetch_partitions[i].fetch_offset);
@@ -167,13 +174,24 @@ FIXTURE_TEST(test_session_operations, fixture) {
 
     BOOST_TEST_MESSAGE("test updating session");
     {
-        req.data.topics[0].fetch_partitions.erase(
-          std::next(req.data.topics[0].fetch_partitions.begin()));
-        // add 2 partitons from new topic, forget one from the first topic
-        req.data.topics.push_back(
-          make_fetch_request_topic(model::topic("test-new"), 2));
+        // Remove and forget about the first partition.
+        auto fp_v = std::vector<
+          decltype(req.data.topics[0].fetch_partitions)::value_type>{
+          req.data.topics[0].fetch_partitions.begin(),
+          req.data.topics[0].fetch_partitions.end()};
+        fp_v.erase(std::next(fp_v.begin()));
+
+        req.data.topics[0].fetch_partitions = {
+          std::make_move_iterator(fp_v.begin()),
+          std::make_move_iterator(fp_v.end())};
         req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
           .name = model::topic("test"), .forgotten_partition_indexes = {1}});
+        // Update the second partition.
+        req.data.topics[0].fetch_partitions[0] = make_fetch_partition(
+          req.data.topics[0].fetch_partitions[0].partition_index);
+        // Add 2 partitions from new topic.
+        req.data.topics.push_back(
+          make_fetch_request_topic(model::topic("test-new"), 2));
 
         auto ctx = cache.maybe_get_session(req);
 
@@ -195,10 +213,16 @@ FIXTURE_TEST(test_session_operations, fixture) {
             auto t_idx = i < 2 ? 0 : 1;
             auto p_idx = i < 2 ? i : i - 2;
 
-            BOOST_REQUIRE_EQUAL(fp.topic, req.data.topics[t_idx].name);
             BOOST_REQUIRE_EQUAL(
-              fp.partition,
+              fp.topic_partition.get_topic(), req.data.topics[t_idx].name);
+            BOOST_REQUIRE_EQUAL(
+              fp.topic_partition.get_partition(),
               req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
+            BOOST_REQUIRE_EQUAL(
+              fp.current_leader_epoch,
+              req.data.topics[t_idx]
+                .fetch_partitions[p_idx]
+                .current_leader_epoch);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
               req.data.topics[t_idx].fetch_partitions[p_idx].fetch_offset);

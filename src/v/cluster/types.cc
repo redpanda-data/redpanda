@@ -10,6 +10,8 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "cluster/remote_topic_properties.h"
+#include "cluster/topic_properties.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -17,9 +19,10 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
-#include "tristate.h"
 #include "utils/to_string.h"
+#include "utils/tristate.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 
 #include <fmt/ostream.h>
@@ -33,6 +36,51 @@
 
 namespace cluster {
 
+std::ostream& operator<<(std::ostream& o, const recovery_stage& s) {
+    switch (s) {
+    case recovery_stage::initialized:
+        o << "recovery_stage::initialized";
+        break;
+    case recovery_stage::starting:
+        o << "recovery_stage::starting";
+        break;
+    case recovery_stage::recovered_license:
+        o << "recovery_stage::recovered_license";
+        break;
+    case recovery_stage::recovered_cluster_config:
+        o << "recovery_stage::recovered_cluster_config";
+        break;
+    case recovery_stage::recovered_users:
+        o << "recovery_stage::recovered_users";
+        break;
+    case recovery_stage::recovered_acls:
+        o << "recovery_stage::recovered_acls";
+        break;
+    case recovery_stage::recovered_remote_topic_data:
+        o << "recovery_stage::recovered_remote_topic_data";
+        break;
+    case recovery_stage::recovered_topic_data:
+        o << "recovery_stage::recovered_topic_data";
+        break;
+    case recovery_stage::recovered_controller_snapshot:
+        o << "recovery_stage::recovered_controller_snapshot";
+        break;
+    case recovery_stage::recovered_offsets_topic:
+        o << "recovery_stage::recovered_offsets_topic";
+        break;
+    case recovery_stage::recovered_tx_coordinator:
+        o << "recovery_stage::recovered_tx_coordinator";
+        break;
+    case recovery_stage::complete:
+        o << "recovery_stage::complete";
+        break;
+    case recovery_stage::failed:
+        o << "recovery_stage::failed";
+        break;
+    }
+    return o;
+}
+
 kafka_stages::kafka_stages(
   ss::future<> enq, ss::future<result<kafka_result>> offset_future)
   : request_enqueued(std::move(enq))
@@ -41,142 +89,18 @@ kafka_stages::kafka_stages(
 kafka_stages::kafka_stages(raft::errc ec)
   : request_enqueued(ss::now())
   , replicate_finished(
-      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))){};
-
-bool topic_properties::is_compacted() const {
-    if (!cleanup_policy_bitflags) {
-        return false;
-    }
-    return (cleanup_policy_bitflags.value()
-            & model::cleanup_policy_bitflags::compaction)
-           == model::cleanup_policy_bitflags::compaction;
-}
-
-bool topic_properties::has_overrides() const {
-    return cleanup_policy_bitflags || compaction_strategy || segment_size
-           || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value() || retention_duration.is_disabled()
-           || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value() || batch_max_bytes.has_value()
-           || retention_local_target_bytes.has_value()
-           || retention_local_target_ms.has_value();
-}
-
-storage::ntp_config::default_overrides
-topic_properties::get_ntp_cfg_overrides() const {
-    storage::ntp_config::default_overrides ret;
-    ret.cleanup_policy_bitflags = cleanup_policy_bitflags;
-    ret.compaction_strategy = compaction_strategy;
-    ret.retention_bytes = retention_bytes;
-    ret.retention_time = retention_duration;
-    ret.segment_size = segment_size;
-    ret.shadow_indexing_mode = shadow_indexing;
-    ret.read_replica = read_replica;
-    ret.retention_local_target_bytes = retention_local_target_bytes;
-    ret.retention_local_target_ms = retention_local_target_ms;
-    return ret;
-}
-
-storage::ntp_config topic_configuration::make_ntp_config(
-  const ss::sstring& work_dir,
-  model::partition_id p_id,
-  model::revision_id rev,
-  model::initial_revision_id init_rev) const {
-    auto has_overrides = properties.has_overrides() || is_internal();
-    std::unique_ptr<storage::ntp_config::default_overrides> overrides = nullptr;
-
-    if (has_overrides) {
-        overrides = std::make_unique<storage::ntp_config::default_overrides>(
-          storage::ntp_config::default_overrides{
-            .cleanup_policy_bitflags = properties.cleanup_policy_bitflags,
-            .compaction_strategy = properties.compaction_strategy,
-            .segment_size = properties.segment_size,
-            .retention_bytes = properties.retention_bytes,
-            .retention_time = properties.retention_duration,
-            // we disable cache for internal topics as they are read only once
-            // during bootstrap.
-            .cache_enabled = storage::with_cache(!is_internal()),
-            .recovery_enabled = storage::topic_recovery_enabled(
-              properties.recovery ? *properties.recovery : false),
-            .shadow_indexing_mode = properties.shadow_indexing,
-            .read_replica = properties.read_replica,
-            .retention_local_target_bytes
-            = properties.retention_local_target_bytes,
-            .retention_local_target_ms = properties.retention_local_target_ms});
-    }
-    return {
-      model::ntp(tp_ns.ns, tp_ns.tp, p_id),
-      work_dir,
-      std::move(overrides),
-      rev,
-      init_rev};
-}
-
-void topic_configuration::maybe_adjust_retention_policies(
-  std::optional<model::shadow_indexing_mode> topic_shadow_indexing_mode,
-  tristate<std::size_t>& retention_bytes,
-  tristate<std::chrono::milliseconds>& retention_ms,
-  tristate<std::size_t>& local_target_bytes,
-  tristate<std::chrono::milliseconds>& local_target_ms) {
-    auto cloud_storage_enabled
-      = config::shard_local_cfg().cloud_storage_enabled();
-
-    // Note that `remote_write_enabled` true when either of the topic
-    // config or cluster config are set to true. This includes the case
-    // when the topic property is explicitly set to false. This is confusing
-    // and may require revisiting.
-    auto remote_write_enabled
-      = model::is_archival_enabled(topic_shadow_indexing_mode.value_or(
-          model::shadow_indexing_mode::disabled))
-        || config::shard_local_cfg().cloud_storage_enable_remote_write();
-
-    if (cloud_storage_enabled && remote_write_enabled) {
-        local_target_bytes = retention_bytes;
-        local_target_ms = retention_ms;
-
-        retention_bytes = tristate<size_t>{};
-        retention_ms = tristate<std::chrono::milliseconds>{};
-    }
-}
-
-model::topic_metadata topic_configuration_assignment::get_metadata() const {
-    model::topic_metadata ret(cfg.tp_ns);
-    ret.partitions.reserve(assignments.size());
-    std::transform(
-      std::cbegin(assignments),
-      std::cend(assignments),
-      std::back_inserter(ret.partitions),
-      [](const partition_assignment& pd) {
-          return pd.create_partition_metadata();
-      });
-
-    return ret;
-}
-
-topic_table_delta::topic_table_delta(
-  model::ntp ntp,
-  cluster::partition_assignment new_assignment,
-  model::offset o,
-  op_type tp,
-  std::optional<std::vector<model::broker_shard>> previous,
-  std::optional<revision_map_t> replica_revisions)
-  : ntp(std::move(ntp))
-  , new_assignment(std::move(new_assignment))
-  , offset(o)
-  , type(tp)
-  , previous_replica_set(std::move(previous))
-  , replica_revisions(std::move(replica_revisions)) {}
+      ss::make_ready_future<result<kafka_result>>(make_error_code(ec))) {};
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
-  std::vector<backend_operation> ops,
+  ss::chunked_fifo<backend_operation> ops,
   reconciliation_status status)
   : ntp_reconciliation_state(
-    std::move(ntp), std::move(ops), status, errc::success) {}
+      std::move(ntp), std::move(ops), status, errc::success) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
-  std::vector<backend_operation> ops,
+  ss::chunked_fifo<backend_operation> ops,
   reconciliation_status status,
   errc ec)
   : _ntp(std::move(ntp))
@@ -187,7 +111,7 @@ ntp_reconciliation_state::ntp_reconciliation_state(
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp, cluster::errc ec)
   : ntp_reconciliation_state(
-    std::move(ntp), {}, reconciliation_status::error, ec) {}
+      std::move(ntp), {}, reconciliation_status::error, ec) {}
 
 create_partitions_configuration::create_partitions_configuration(
   model::topic_namespace tp_ns, int32_t cnt)
@@ -213,48 +137,6 @@ std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
       tpu.tp_ns,
       tpu.properties,
       tpu.custom_properties);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
-    fmt::print(
-      o,
-      "{{ topic: {}, partition_count: {}, replication_factor: {}, "
-      "properties: "
-      "{}}}",
-      cfg.tp_ns,
-      cfg.partition_count,
-      cfg.replication_factor,
-      cfg.properties);
-
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
-    fmt::print(
-      o,
-      "{{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
-      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
-      "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
-      "batch_max_bytes: {}, retention_local_target_bytes: {}, "
-      "retention_local_target_ms: {}}}",
-      properties.compression,
-      properties.cleanup_policy_bitflags,
-      properties.compaction_strategy,
-      properties.retention_bytes,
-      properties.retention_duration,
-      properties.segment_size,
-      properties.timestamp_type,
-      properties.recovery,
-      properties.shadow_indexing,
-      properties.read_replica,
-      properties.read_replica_bucket,
-      properties.remote_topic_properties,
-      properties.batch_max_bytes,
-      properties.retention_local_target_bytes,
-      properties.retention_local_target_ms);
-
     return o;
 }
 
@@ -295,42 +177,88 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
+std::ostream& operator<<(std::ostream& o, const shard_placement_target& spt) {
+    fmt::print(
+      o,
+      "{{group: {}, log_revision: {}, shard: {}}}",
+      spt.group,
+      spt.log_revision,
+      spt.shard);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const partition_operation_type& tp) {
     switch (tp) {
-    case topic_table_delta::op_type::add:
+    case partition_operation_type::add:
         return o << "addition";
-    case topic_table_delta::op_type::del:
+    case partition_operation_type::remove:
         return o << "deletion";
-    case topic_table_delta::op_type::update:
+    case partition_operation_type::reset:
+        return o << "reset";
+    case partition_operation_type::update:
         return o << "update";
-    case topic_table_delta::op_type::update_finished:
+    case partition_operation_type::force_update:
+        return o << "force_update";
+    case partition_operation_type::finish_update:
         return o << "update_finished";
-    case topic_table_delta::op_type::update_properties:
+    case partition_operation_type::update_properties:
         return o << "update_properties";
-    case topic_table_delta::op_type::add_non_replicable:
+    case partition_operation_type::add_non_replicable:
         return o << "add_non_replicable_addition";
-    case topic_table_delta::op_type::del_non_replicable:
+    case partition_operation_type::del_non_replicable:
         return o << "del_non_replicable_deletion";
-    case topic_table_delta::op_type::cancel_update:
+    case partition_operation_type::cancel_update:
         return o << "cancel_update";
-    case topic_table_delta::op_type::force_abort_update:
+    case partition_operation_type::force_cancel_update:
         return o << "force_abort_update";
     }
     __builtin_unreachable();
 }
 
-std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
+std::ostream&
+operator<<(std::ostream& o, const topic_table_topic_delta_type& tp) {
+    switch (tp) {
+    case topic_table_topic_delta_type::added:
+        return o << "added";
+    case topic_table_topic_delta_type::removed:
+        return o << "removed";
+    case topic_table_topic_delta_type::properties_updated:
+        return o << "properties_updated";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_table_topic_delta& d) {
     fmt::print(
       o,
-      "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
-      "previous_replica_set: {}}}",
+      "{{creation_revision:{}, ns_tp: {}, type: {}, revision: {}}}",
+      d.creation_revision,
+      d.ns_tp,
       d.type,
-      d.ntp,
-      d.offset,
-      d.new_assignment,
-      d.previous_replica_set);
+      d.revision);
+    return o;
+}
 
+std::ostream&
+operator<<(std::ostream& o, const topic_table_ntp_delta_type& tp) {
+    switch (tp) {
+    case topic_table_ntp_delta_type::added:
+        return o << "added";
+    case topic_table_ntp_delta_type::removed:
+        return o << "removed";
+    case topic_table_ntp_delta_type::replicas_updated:
+        return o << "replicas_updated";
+    case topic_table_ntp_delta_type::properties_updated:
+        return o << "properties_updated";
+    case topic_table_ntp_delta_type::disabled_flag_updated:
+        return o << "disabled_flag_updated";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_table_ntp_delta& d) {
+    fmt::print(
+      o, "{{ntp: {}, type: {}, revision: {}}}", d.ntp, d.type, d.revision);
     return o;
 }
 
@@ -341,70 +269,6 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
       op.p_as,
       op.source_shard,
       op.type);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
-    fmt::print(o, "{{ ntp: {}, pid: {}, tx_seq: {} }}", r.ntp, r.pid, r.tx_seq);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const begin_tx_reply& r) {
-    fmt::print(o, "{{ ntp: {}, etag: {}, ec: {} }}", r.ntp, r.etag, r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const prepare_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ ntp: {}, etag: {}, tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
-      r.ntp,
-      r.etag,
-      r.tm,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const prepare_tx_reply& r) {
-    fmt::print(o, "{{ ec: {} }}", r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const init_tm_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ tx_id: {}, transaction_timeout_ms: {}, timeout: {} }}",
-      r.tx_id,
-      r.transaction_timeout_ms,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const init_tm_tx_reply& r) {
-    fmt::print(o, "{{ pid: {}, ec: {} }}", r.pid, r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const try_abort_request& r) {
-    fmt::print(
-      o,
-      "{{ tm: {}, pid: {}, tx_seq: {}, timeout: {} }}",
-      r.tm,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const try_abort_reply& r) {
-    fmt::print(
-      o,
-      "{{ commited: {}, aborted: {}, ec: {} }}",
-      bool(r.commited),
-      bool(r.aborted),
-      r.ec);
     return o;
 }
 
@@ -498,7 +362,20 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
       "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
-      "{}, retention_local_target_ms: {}}}",
+      "{}, retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}, "
+      "record_key_schema_id_validation: {}"
+      "record_key_schema_id_validation_compat: {}"
+      "record_key_subject_name_strategy: {}"
+      "record_key_subject_name_strategy_compat: {}"
+      "record_value_schema_id_validation: {}"
+      "record_value_schema_id_validation_compat: {}"
+      "record_value_subject_name_strategy: {}"
+      "record_value_subject_name_strategy_compat: {}, "
+      "initial_retention_local_target_bytes: {}, "
+      "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
+      "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}, "
+      "remote_read: {}, remote_write: {}",
+      "iceberg_translation_interval_ms: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -506,42 +383,90 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.segment_size,
       i.retention_bytes,
       i.retention_duration,
-      i.shadow_indexing,
+      i.get_shadow_indexing(),
       i.batch_max_bytes,
       i.retention_local_target_bytes,
-      i.retention_local_target_ms);
+      i.retention_local_target_ms,
+      i.remote_delete,
+      i.segment_ms,
+      i.record_key_schema_id_validation,
+      i.record_key_schema_id_validation_compat,
+      i.record_key_subject_name_strategy,
+      i.record_key_subject_name_strategy_compat,
+      i.record_value_schema_id_validation,
+      i.record_value_schema_id_validation_compat,
+      i.record_value_subject_name_strategy,
+      i.record_value_subject_name_strategy_compat,
+      i.initial_retention_local_target_bytes,
+      i.initial_retention_local_target_ms,
+      i.write_caching,
+      i.flush_ms,
+      i.flush_bytes,
+      i.iceberg_enabled,
+      i.leaders_preference,
+      i.remote_read,
+      i.remote_write,
+      i.iceberg_translation_interval_ms);
     return o;
+}
+
+std::istream& operator>>(std::istream& i, replication_factor& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = replication_factor(boost::lexical_cast<replication_factor::type>(s));
+    return i;
+};
+
+replication_factor parsing_replication_factor(const ss::sstring& value) {
+    auto raw_value = boost::lexical_cast<int32_t>(value);
+    if (
+      raw_value
+      > std::numeric_limits<cluster::replication_factor::type>::max()) {
+        throw boost::bad_lexical_cast();
+    }
+
+    return cluster::replication_factor(raw_value);
 }
 
 std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(
       o,
-      "{{incremental_topic_custom_updates: data_policy: {}}}",
-      i.data_policy);
+      "{{incremental_topic_custom_updates: data_policy: {}, "
+      "replication_factor: {}}}",
+      i.data_policy,
+      i.replication_factor);
     return o;
 }
 
 namespace {
 cluster::assignments_set to_assignments_map(
-  std::vector<cluster::partition_assignment> assignment_vector) {
+  ss::chunked_fifo<cluster::partition_assignment> assignment_vector) {
     cluster::assignments_set ret;
     for (auto& p_as : assignment_vector) {
-        ret.emplace(std::move(p_as));
+        const auto id = p_as.id;
+        ret.emplace(id, std::move(p_as));
     }
     return ret;
 }
 } // namespace
 
+topic_metadata_fields::topic_metadata_fields(
+  topic_configuration cfg,
+  std::optional<model::topic> st,
+  model::revision_id rid,
+  std::optional<model::initial_revision_id> remote_revision_id) noexcept
+  : configuration(std::move(cfg))
+  , source_topic(std::move(st))
+  , revision(rid)
+  , remote_revision(remote_revision_id) {}
+
 topic_metadata::topic_metadata(
   topic_configuration_assignment c,
   model::revision_id rid,
   std::optional<model::initial_revision_id> remote_revision_id) noexcept
-  : _configuration(std::move(c.cfg))
-  , _assignments(to_assignments_map(std::move(c.assignments)))
-  , _source_topic(std::nullopt)
-  , _revision(rid)
-  , _remote_revision(remote_revision_id) {}
+  : _fields(std::move(c.cfg), std::nullopt, rid, remote_revision_id)
+  , _assignments(to_assignments_map(std::move(c.assignments))) {}
 
 topic_metadata::topic_metadata(
   topic_configuration cfg,
@@ -549,37 +474,25 @@ topic_metadata::topic_metadata(
   model::revision_id rid,
   model::topic st,
   std::optional<model::initial_revision_id> remote_revision_id) noexcept
-  : _configuration(std::move(cfg))
-  , _assignments(std::move(assignments))
-  , _source_topic(st)
-  , _revision(rid)
-  , _remote_revision(remote_revision_id) {}
+  : _fields(std::move(cfg), std::move(st), rid, remote_revision_id)
+  , _assignments(std::move(assignments)) {}
 
-bool topic_metadata::is_topic_replicable() const {
-    return _source_topic.has_value() == false;
-}
+topic_metadata::topic_metadata(
+  topic_metadata_fields fields, assignments_set assignments) noexcept
+  : _fields(std::move(fields))
+  , _assignments(std::move(assignments)) {}
 
 model::revision_id topic_metadata::get_revision() const {
-    vassert(
-      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return _revision;
+    return _fields.revision;
 }
 
 std::optional<model::initial_revision_id>
 topic_metadata::get_remote_revision() const {
-    vassert(
-      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
-    return _remote_revision;
-}
-
-const model::topic& topic_metadata::get_source_topic() const {
-    vassert(
-      !is_topic_replicable(), "Query for source_topic on a replicable topic");
-    return _source_topic.value();
+    return _fields.remote_revision;
 }
 
 const topic_configuration& topic_metadata::get_configuration() const {
-    return _configuration;
+    return _fields.configuration;
 }
 
 const assignments_set& topic_metadata::get_assignments() const {
@@ -587,15 +500,23 @@ const assignments_set& topic_metadata::get_assignments() const {
 }
 
 topic_configuration& topic_metadata::get_configuration() {
-    return _configuration;
+    return _fields.configuration;
 }
 
 assignments_set& topic_metadata::get_assignments() { return _assignments; }
 
-std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
-    fmt::print(
-      o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);
-    return o;
+replication_factor topic_metadata::get_replication_factor() const {
+    // The main idea is do not use anymore replication_factor from topic_config.
+    // replication factor is dynamic property. And it is size of assigments set.
+    // So we will return rf for 0 partition, becasue it should exist for each
+    // topic
+    auto it = _assignments.find(model::partition_id(0));
+    return replication_factor(
+      static_cast<replication_factor::type>(it->second.replicas.size()));
+}
+
+topic_metadata topic_metadata::copy() const {
+    return {_fields, _assignments.copy()};
 }
 
 std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
@@ -630,13 +551,6 @@ operator<<(std::ostream& o, const create_partitions_configuration& cfg) {
       cfg.tp_ns,
       cfg.new_total_partition_count,
       cfg.custom_assignments);
-    return o;
-}
-
-std::ostream& operator<<(
-  std::ostream& o, const create_partitions_configuration_assignment& cpca) {
-    fmt::print(
-      o, "{{configuration: {}, assignments: {}}}", cpca.cfg, cpca.assignments);
     return o;
 }
 
@@ -715,15 +629,25 @@ std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
-    fmt::print(o, "{{topics: {} timeout: {}}}", r.topics, r.timeout);
+std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
+    fmt::print(o, "{{partition: {}, replicas: {}}}", r.partition, r.replicas);
     return o;
 }
 
 std::ostream&
-operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
-    fmt::print(o, "{{results: {}}}", r.results);
+operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
+    fmt::print(o, "{{target replicas: {}}}", r.replicas);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_topic_partitions_disabled_cmd_data& r) {
+    fmt::print(
+      o,
+      "{{topic: {}, partition_id: {}, disabled: {}}}",
+      r.ns_tp,
+      r.partition_id,
+      r.disabled);
     return o;
 }
 
@@ -743,107 +667,6 @@ std::ostream& operator<<(std::ostream& o, const config_status_reply& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const commit_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const commit_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const abort_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const begin_group_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} group_id {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.group_id,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const begin_group_tx_reply& r) {
-    fmt::print(o, "{{etag {} ec {}}}", r.etag, r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const prepare_group_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} group_id {} etag {} pid {} tx_seq {} timeout {}}}",
-      r.ntp,
-      r.group_id,
-      r.etag,
-      r.pid,
-      r.tx_seq,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const prepare_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const commit_group_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.group_id,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const commit_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const abort_group_tx_request& r) {
-    fmt::print(
-      o,
-      "{{ntp {} pid {} tx_seq {} group_id {} timeout {}}}",
-      r.ntp,
-      r.pid,
-      r.tx_seq,
-      r.group_id,
-      r.timeout);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
-    fmt::print(o, "{{ec {}}}", r.ec);
-    return o;
-}
-
 std::ostream&
 operator<<(std::ostream& o, const configuration_update_request& cr) {
     fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
@@ -856,156 +679,170 @@ operator<<(std::ostream& o, const configuration_update_reply& cr) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
+std::ostream& operator<<(std::ostream& o, const broker_state& state) {
     fmt::print(
       o,
-      "{{remote_revision: {} remote_partition_count: {}}}",
-      rtps.remote_revision,
-      rtps.remote_partition_count);
+      "{{membership_state: {}, maintenance_state: {}}}",
+      state._membership_state,
+      state._maintenance_state);
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
+    fmt::print(o, "{{broker: {}, state: {} }}", nm.broker, nm.state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const node_update_type& tp) {
+    switch (tp) {
+    case node_update_type::added:
+        return o << "added";
+    case node_update_type::decommissioned:
+        return o << "decommissioned";
+    case node_update_type::recommissioned:
+        return o << "recommissioned";
+    case node_update_type::reallocation_finished:
+        return o << "reallocation_finished";
+    case node_update_type::removed:
+        return o << "removed";
+    case node_update_type::interrupted:
+        return o << "interrupted";
+    }
+    return o << "unknown";
+}
+
+std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
+    switch (update) {
+    case reconfiguration_state::in_progress:
+        return o << "in_progress";
+    case reconfiguration_state::force_update:
+        return o << "force_update";
+    case reconfiguration_state::cancelled:
+        return o << "cancelled";
+    case reconfiguration_state::force_cancelled:
+        return o << "force_cancelled";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
+    switch (mode) {
+    case cloud_storage_mode::disabled:
+        return o << "disabled";
+    case cloud_storage_mode::write_only:
+        return o << "write_only";
+    case cloud_storage_mode::read_only:
+        return o << "read_only";
+    case cloud_storage_mode::full:
+        return o << "full";
+    case cloud_storage_mode::read_replica:
+        return o << "read_replica";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
+    fmt::print(
+      o,
+      "{{ns: {}, topic: {}, revision: {}}}",
+      ntr.nt.ns,
+      ntr.nt.tp,
+      ntr.initial_revision_id);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, reconfiguration_policy policy) {
+    switch (policy) {
+    case reconfiguration_policy::full_local_retention:
+        return o << "full_local_retention";
+    case reconfiguration_policy::target_initial_retention:
+        return o << "target_initial_retention";
+    case reconfiguration_policy::min_local_retention:
+        return o << "min_local_retention";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream&
+operator<<(std::ostream& o, const update_partition_replicas_cmd_data& data) {
+    fmt::print(
+      o,
+      "{{ntp: {}, replicas: {} policy: {}}}",
+      data.ntp,
+      data.replicas,
+      data.policy);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_disabled_partitions_set& disabled) {
+    if (disabled.partitions) {
+        fmt::print(
+          o,
+          "{{partitions: {}}}",
+          std::vector(
+            disabled.partitions->begin(), disabled.partitions->end()));
+    } else {
+        fmt::print(o, "{{partitions: all}}");
+    }
+    return o;
+}
+
+void topic_disabled_partitions_set::add(model::partition_id id) {
+    if (partitions) {
+        partitions->insert(id);
+    } else {
+        // do nothing, std::nullopt means all partitions are already
+        // disabled.
+    }
+}
+
+void topic_disabled_partitions_set::remove(
+  model::partition_id id, const assignments_set& all_partitions) {
+    if (!all_partitions.contains(id)) {
+        return;
+    }
+    if (!partitions) {
+        partitions = absl::node_hash_set<model::partition_id>{};
+        partitions->reserve(all_partitions.size());
+        for (const auto& [_, p] : all_partitions) {
+            partitions->insert(p.id);
+        }
+    }
+    partitions->erase(id);
+}
+
+std::ostream& operator<<(std::ostream& o, const ntp_with_majority_loss& entry) {
+    fmt::print(
+      o,
+      "{{ ntp: {}, topic_revision: {}, replicas: {}, dead nodes: {} }}",
+      entry.ntp,
+      entry.topic_revision,
+      entry.assignment,
+      entry.dead_nodes);
+    return o;
+}
+
+bulk_force_reconfiguration_cmd_data&
+bulk_force_reconfiguration_cmd_data::operator=(
+  const bulk_force_reconfiguration_cmd_data& other) {
+    if (this != &other) {
+        from_nodes = other.from_nodes;
+        user_approved_force_recovery_partitions
+          = other.user_approved_force_recovery_partitions.copy();
+    }
+    return *this;
+}
+
+bulk_force_reconfiguration_cmd_data::bulk_force_reconfiguration_cmd_data(
+  const bulk_force_reconfiguration_cmd_data& other)
+  : from_nodes(other.from_nodes) {
+    user_approved_force_recovery_partitions
+      = other.user_approved_force_recovery_partitions.copy();
+}
 } // namespace cluster
 
 namespace reflection {
-
-// note: adl serialization doesn't support read replica fields since serde
-// should be used for new versions.
-void adl<cluster::topic_configuration>::to(
-  iobuf& out, cluster::topic_configuration&& t) {
-    int32_t version = -1;
-    reflection::serialize(
-      out,
-      version,
-      t.tp_ns,
-      t.partition_count,
-      t.replication_factor,
-      t.properties.compression,
-      t.properties.cleanup_policy_bitflags,
-      t.properties.compaction_strategy,
-      t.properties.timestamp_type,
-      t.properties.segment_size,
-      t.properties.retention_bytes,
-      t.properties.retention_duration,
-      t.properties.recovery,
-      t.properties.shadow_indexing);
-}
-
-// note: adl deserialization doesn't support read replica fields since serde
-// should be used for new versions.
-cluster::topic_configuration
-adl<cluster::topic_configuration>::from(iobuf_parser& in) {
-    // NOTE: The first field of the topic_configuration is a
-    // model::ns which has length prefix which is always
-    // positive.
-    // We're using negative length value to encode version. So if
-    // the first int32_t value is positive then we're dealing with
-    // the old format. The negative value means that the new format
-    // was used.
-    auto version = adl<int32_t>{}.from(in.peek(4));
-    if (version < 0) {
-        // Consume version from stream
-        in.skip(4);
-        vassert(
-          -1 == version,
-          "topic_configuration version {} is not supported",
-          version);
-    } else {
-        version = 0;
-    }
-    auto ns = model::ns(adl<ss::sstring>{}.from(in));
-    auto topic = model::topic(adl<ss::sstring>{}.from(in));
-    auto partition_count = adl<int32_t>{}.from(in);
-    auto rf = adl<int16_t>{}.from(in);
-
-    auto cfg = cluster::topic_configuration(
-      std::move(ns), std::move(topic), partition_count, rf);
-
-    cfg.properties.compression = adl<std::optional<model::compression>>{}.from(
-      in);
-    cfg.properties.cleanup_policy_bitflags
-      = adl<std::optional<model::cleanup_policy_bitflags>>{}.from(in);
-    cfg.properties.compaction_strategy
-      = adl<std::optional<model::compaction_strategy>>{}.from(in);
-    cfg.properties.timestamp_type
-      = adl<std::optional<model::timestamp_type>>{}.from(in);
-    cfg.properties.segment_size = adl<std::optional<size_t>>{}.from(in);
-    cfg.properties.retention_bytes = adl<tristate<size_t>>{}.from(in);
-    cfg.properties.retention_duration
-      = adl<tristate<std::chrono::milliseconds>>{}.from(in);
-    if (version < 0) {
-        cfg.properties.recovery = adl<std::optional<bool>>{}.from(in);
-        cfg.properties.shadow_indexing
-          = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
-    }
-
-    cluster::topic_configuration::maybe_adjust_retention_policies(
-      cfg.properties.shadow_indexing,
-      cfg.properties.retention_bytes,
-      cfg.properties.retention_duration,
-      cfg.properties.retention_local_target_bytes,
-      cfg.properties.retention_local_target_ms);
-
-    return cfg;
-}
-
-void adl<cluster::join_request>::to(iobuf& out, cluster::join_request&& r) {
-    adl<model::broker>().to(out, std::move(r.node));
-}
-
-cluster::join_request adl<cluster::join_request>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::join_request>(std::move(io));
-}
-
-cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
-    return cluster::join_request(adl<model::broker>().from(in));
-}
-
-void adl<cluster::join_node_request>::to(
-  iobuf& out, cluster::join_node_request&& r) {
-    adl<uint8_t>().to(out, r.current_version);
-    adl<cluster::cluster_version>().to(out, r.logical_version);
-    adl<std::vector<uint8_t>>().to(out, r.node_uuid);
-    adl<model::broker>().to(out, std::move(r.node));
-}
-
-cluster::join_node_request adl<cluster::join_node_request>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::join_node_request>(std::move(io));
-}
-
-cluster::join_node_request
-adl<cluster::join_node_request>::from(iobuf_parser& in) {
-    auto version = adl<uint8_t>().from(in);
-    vassert(version >= 1, "Malformed join_node_request");
-    auto logical_version = adl<cluster::cluster_version>().from(in);
-    auto node_uuid = adl<std::vector<uint8_t>>().from(in);
-    auto node = adl<model::broker>().from(in);
-
-    return cluster::join_node_request{logical_version, node_uuid, node};
-}
-
-void adl<cluster::configuration_update_request>::to(
-  iobuf& out, cluster::configuration_update_request&& r) {
-    serialize(out, r.node, r.target_node);
-}
-
-cluster::configuration_update_request
-adl<cluster::configuration_update_request>::from(iobuf_parser& in) {
-    auto broker = adl<model::broker>().from(in);
-    auto target_id = adl<model::node_id>().from(in);
-    return cluster::configuration_update_request(broker, target_id);
-}
-
-void adl<cluster::configuration_update_reply>::to(
-  iobuf& out, cluster::configuration_update_reply&& r) {
-    serialize(out, r.success);
-}
-
-cluster::configuration_update_reply
-adl<cluster::configuration_update_reply>::from(iobuf_parser& in) {
-    auto success = adl<bool>().from(in);
-    return cluster::configuration_update_reply(success);
-}
 
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
     reflection::serialize(out, std::move(t.tp_ns), t.ec);
@@ -1015,104 +852,6 @@ cluster::topic_result adl<cluster::topic_result>::from(iobuf_parser& in) {
     auto tp_ns = adl<model::topic_namespace>{}.from(in);
     auto ec = adl<cluster::errc>{}.from(in);
     return cluster::topic_result(std::move(tp_ns), ec);
-}
-
-void adl<cluster::create_topics_request>::to(
-  iobuf& out, cluster::create_topics_request&& r) {
-    reflection::serialize(out, std::move(r.topics), r.timeout);
-}
-
-cluster::create_topics_request
-adl<cluster::create_topics_request>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::create_topics_request>(
-      std::move(io));
-}
-
-cluster::create_topics_request
-adl<cluster::create_topics_request>::from(iobuf_parser& in) {
-    using underlying_t = std::vector<cluster::topic_configuration>;
-    auto configs = adl<underlying_t>().from(in);
-    auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_topics_request{
-      .topics = std::move(configs), .timeout = timeout};
-}
-
-void adl<cluster::create_non_replicable_topics_request>::to(
-  iobuf& out, cluster::create_non_replicable_topics_request&& r) {
-    reflection::serialize(
-      out,
-      cluster::create_non_replicable_topics_request::current_version,
-      std::move(r.topics),
-      r.timeout);
-}
-
-cluster::create_non_replicable_topics_request
-adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::create_non_replicable_topics_request::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::create_non_replicable_topics_request::current_version);
-    auto topics = adl<std::vector<cluster::non_replicable_topic>>().from(in);
-    auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_non_replicable_topics_request{
-      .topics = std::move(topics), .timeout = timeout};
-}
-
-void adl<cluster::create_non_replicable_topics_reply>::to(
-  iobuf& out, cluster::create_non_replicable_topics_reply&& r) {
-    reflection::serialize(
-      out,
-      cluster::create_non_replicable_topics_reply::current_version,
-      std::move(r.results));
-}
-
-cluster::create_non_replicable_topics_reply
-adl<cluster::create_non_replicable_topics_reply>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::create_non_replicable_topics_reply::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::create_non_replicable_topics_reply::current_version);
-    auto results = adl<std::vector<cluster::topic_result>>().from(in);
-    return cluster::create_non_replicable_topics_reply{
-      .results = std::move(results)};
-}
-
-void adl<cluster::create_topics_reply>::to(
-  iobuf& out, cluster::create_topics_reply&& r) {
-    reflection::serialize(
-      out, std::move(r.results), std::move(r.metadata), std::move(r.configs));
-}
-
-cluster::create_topics_reply adl<cluster::create_topics_reply>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::create_topics_reply>(std::move(io));
-}
-
-cluster::create_topics_reply
-adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
-    auto results = adl<std::vector<cluster::topic_result>>().from(in);
-    auto md = adl<std::vector<model::topic_metadata>>().from(in);
-    auto cfg = adl<std::vector<cluster::topic_configuration>>().from(in);
-    return cluster::create_topics_reply{
-      std::move(results), std::move(md), std::move(cfg)};
-}
-
-void adl<cluster::topic_configuration_assignment>::to(
-  iobuf& b, cluster::topic_configuration_assignment&& assigned_cfg) {
-    reflection::serialize(
-      b, std::move(assigned_cfg.cfg), std::move(assigned_cfg.assignments));
-}
-
-cluster::topic_configuration_assignment
-adl<cluster::topic_configuration_assignment>::from(iobuf_parser& in) {
-    auto cfg = adl<cluster::topic_configuration>{}.from(in);
-    auto assignments = adl<std::vector<cluster::partition_assignment>>{}.from(
-      in);
-    return cluster::topic_configuration_assignment(
-      std::move(cfg), std::move(assignments));
 }
 
 void adl<cluster::configuration_invariants>::to(
@@ -1225,12 +964,12 @@ struct adl<security::acl_host> {
             if (ipv4) {
                 ::in_addr addr{};
                 vassert(data.size() == sizeof(addr), "Unexpected ipv4 size");
-                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                std::memcpy(&addr, data.data(), sizeof(addr));
                 return security::acl_host(ss::net::inet_address(addr));
             } else {
                 ::in6_addr addr{};
                 vassert(data.size() == sizeof(addr), "Unexpected ipv6 size");
-                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                std::memcpy(&addr, data.data(), sizeof(addr));
                 return security::acl_host(ss::net::inet_address(addr));
             }
         }
@@ -1419,43 +1158,6 @@ adl<cluster::delete_acls_cmd_data>::from(iobuf_parser& in) {
     };
 }
 
-void adl<cluster::delete_acls_result>::to(
-  iobuf& out, cluster::delete_acls_result&& result) {
-    serialize(out, result.error, std::move(result.bindings));
-}
-
-cluster::delete_acls_result
-adl<cluster::delete_acls_result>::from(iobuf_parser& in) {
-    auto error = adl<cluster::errc>{}.from(in);
-    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
-    return cluster::delete_acls_result{
-      .error = error,
-      .bindings = std::move(bindings),
-    };
-}
-
-void adl<cluster::ntp_reconciliation_state>::to(
-  iobuf& b, cluster::ntp_reconciliation_state&& state) {
-    auto ntp = state.ntp();
-    reflection::serialize(
-      b,
-      std::move(ntp),
-      state.pending_operations(),
-      state.status(),
-      state.cluster_errc());
-}
-
-cluster::ntp_reconciliation_state
-adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
-    auto ntp = adl<model::ntp>{}.from(in);
-    auto ops = adl<std::vector<cluster::backend_operation>>{}.from(in);
-    auto status = adl<cluster::reconciliation_status>{}.from(in);
-    auto error = adl<cluster::errc>{}.from(in);
-
-    return cluster::ntp_reconciliation_state(
-      std::move(ntp), std::move(ops), status, error);
-}
-
 void adl<cluster::create_partitions_configuration>::to(
   iobuf& out, cluster::create_partitions_configuration&& pc) {
     return serialize(
@@ -1476,64 +1178,10 @@ adl<cluster::create_partitions_configuration>::from(iobuf_parser& in) {
     return ret;
 }
 
-void adl<cluster::create_partitions_configuration_assignment>::to(
-  iobuf& out, cluster::create_partitions_configuration_assignment&& ca) {
-    return serialize(out, std::move(ca.cfg), std::move(ca.assignments));
-}
-
-cluster::create_partitions_configuration_assignment
-adl<cluster::create_partitions_configuration_assignment>::from(
-  iobuf_parser& in) {
-    auto cfg = adl<cluster::create_partitions_configuration>{}.from(in);
-    auto p_as = adl<std::vector<cluster::partition_assignment>>{}.from(in);
-
-    return cluster::create_partitions_configuration_assignment(
-      std::move(cfg), std::move(p_as));
-};
-
-void adl<cluster::create_data_policy_cmd_data>::to(
-  iobuf& out, cluster::create_data_policy_cmd_data&& dp_cmd_data) {
-    return serialize(
-      out, dp_cmd_data.current_version, std::move(dp_cmd_data.dp));
-}
-
-cluster::create_data_policy_cmd_data
-adl<cluster::create_data_policy_cmd_data>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::create_data_policy_cmd_data::current_version,
-      "Unexpected set_data_policy_cmd version {} (expected {})",
-      version,
-      cluster::create_data_policy_cmd_data::current_version);
-    auto dp = adl<v8_engine::data_policy>{}.from(in);
-    return cluster::create_data_policy_cmd_data{.dp = std::move(dp)};
-}
-
-void adl<cluster::non_replicable_topic>::to(
-  iobuf& out, cluster::non_replicable_topic&& cm_cmd_data) {
-    return serialize(
-      out,
-      cm_cmd_data.current_version,
-      std::move(cm_cmd_data.source),
-      std::move(cm_cmd_data.name));
-}
-
-cluster::non_replicable_topic
-adl<cluster::non_replicable_topic>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::non_replicable_topic::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::non_replicable_topic::current_version);
-    auto source = adl<model::topic_namespace>{}.from(in);
-    auto name = adl<model::topic_namespace>{}.from(in);
-    return cluster::non_replicable_topic{
-      .source = std::move(source), .name = std::move(name)};
-}
-
 void adl<cluster::incremental_topic_updates>::to(
   iobuf& out, cluster::incremental_topic_updates&& t) {
+    // NOTE: no need to serialize new fields with ADL, as this format is no
+    // longer used for new messages.
     reflection::serialize(
       out,
       cluster::incremental_topic_updates::version,
@@ -1544,10 +1192,25 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing,
+      t.get_shadow_indexing(),
       t.batch_max_bytes,
       t.retention_local_target_bytes,
-      t.retention_local_target_ms);
+      t.retention_local_target_ms,
+      t.remote_delete,
+      t.segment_ms,
+      t.record_key_schema_id_validation,
+      t.record_key_schema_id_validation_compat,
+      t.record_key_subject_name_strategy,
+      t.record_key_subject_name_strategy_compat,
+      t.record_value_schema_id_validation,
+      t.record_value_schema_id_validation_compat,
+      t.record_value_subject_name_strategy,
+      t.record_value_subject_name_strategy_compat,
+      t.initial_retention_local_target_bytes,
+      t.initial_retention_local_target_ms,
+      t.write_caching,
+      t.flush_ms,
+      t.flush_bytes);
 }
 
 cluster::incremental_topic_updates
@@ -1606,9 +1269,9 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
     if (
       version
       <= cluster::incremental_topic_updates::version_with_shadow_indexing) {
-        updates.shadow_indexing = adl<cluster::property_update<
+        updates.get_shadow_indexing() = adl<cluster::property_update<
           std::optional<model::shadow_indexing_mode>>>{}
-                                    .from(in);
+                                          .from(in);
     }
 
     if (
@@ -1621,6 +1284,65 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.retention_local_target_ms
           = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
               .from(in);
+        updates.remote_delete = adl<cluster::property_update<bool>>{}.from(in);
+    }
+
+    if (
+      version <= cluster::incremental_topic_updates::version_with_segment_ms) {
+        updates.segment_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+    }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_schema_id_validation) {
+        updates.record_key_schema_id_validation
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_key_schema_id_validation_compat
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_key_subject_name_strategy = adl<cluster::property_update<
+          std::optional<pandaproxy::schema_registry::subject_name_strategy>>>{}
+                                                     .from(in);
+        updates.record_key_subject_name_strategy_compat
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+        updates.record_value_schema_id_validation
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_value_schema_id_validation_compat
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_value_subject_name_strategy
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+        updates.record_value_subject_name_strategy_compat
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+    }
+
+    if (
+      version
+      <= cluster::incremental_topic_updates::version_with_initial_retention) {
+        updates.initial_retention_local_target_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.initial_retention_local_target_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+    }
+
+    if (
+      version
+      <= cluster::incremental_topic_updates::version_with_write_caching) {
+        updates.write_caching = adl<cluster::property_update<
+          std::optional<model::write_caching_mode>>>{}
+                                  .from(in);
+        updates.flush_ms = adl<cluster::property_update<
+          std::optional<std::chrono::milliseconds>>>{}
+                             .from(in);
+        updates.flush_bytes
+          = adl<cluster::property_update<std::optional<size_t>>>{}.from(in);
     }
 
     return updates;
@@ -1745,88 +1467,6 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     return {.logical_version = logical_version, .actions = std::move(actions)};
 }
 
-void adl<cluster::feature_barrier_request>::to(
-  iobuf& out, cluster::feature_barrier_request&& r) {
-    reflection::serialize(out, r.current_version, r.tag, r.peer, r.entered);
-}
-
-cluster::feature_barrier_request
-adl<cluster::feature_barrier_request>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::feature_barrier_request::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::feature_barrier_request::current_version);
-
-    auto tag = adl<cluster::feature_barrier_tag>{}.from(parser);
-    auto peer = adl<model::node_id>{}.from(parser);
-    auto entered = adl<bool>{}.from(parser);
-
-    return cluster::feature_barrier_request{
-      .tag = std::move(tag), .peer = peer, .entered = entered};
-}
-
-void adl<cluster::feature_barrier_response>::to(
-  iobuf& out, cluster::feature_barrier_response&& r) {
-    reflection::serialize(out, r.current_version, r.entered, r.complete);
-}
-
-cluster::feature_barrier_response
-adl<cluster::feature_barrier_response>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::feature_barrier_response::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::feature_barrier_response::current_version);
-
-    auto entered = adl<bool>{}.from(parser);
-    auto complete = adl<bool>{}.from(parser);
-
-    return cluster::feature_barrier_response{
-      .entered = entered, .complete = complete};
-}
-
-void adl<cluster::set_maintenance_mode_request>::to(
-  iobuf& out, cluster::set_maintenance_mode_request&& r) {
-    reflection::serialize(out, r.current_version, r.id, r.enabled);
-}
-
-cluster::set_maintenance_mode_request
-adl<cluster::set_maintenance_mode_request>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::set_maintenance_mode_request::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::set_maintenance_mode_request::current_version);
-
-    auto id = adl<model::node_id>{}.from(parser);
-    auto enabled = adl<bool>{}.from(parser);
-
-    return cluster::set_maintenance_mode_request{.id = id, .enabled = enabled};
-}
-
-void adl<cluster::set_maintenance_mode_reply>::to(
-  iobuf& out, cluster::set_maintenance_mode_reply&& r) {
-    reflection::serialize(out, r.current_version, r.error);
-}
-
-cluster::set_maintenance_mode_reply
-adl<cluster::set_maintenance_mode_reply>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::set_maintenance_mode_reply::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::set_maintenance_mode_reply::current_version);
-
-    auto error = adl<cluster::errc>{}.from(parser);
-
-    return cluster::set_maintenance_mode_reply{.error = error};
-}
-
 void adl<cluster::partition_assignment>::to(
   iobuf& out, cluster::partition_assignment&& p_as) {
     reflection::serialize(out, p_as.group, p_as.id, std::move(p_as.replicas));
@@ -1836,87 +1476,9 @@ cluster::partition_assignment
 adl<cluster::partition_assignment>::from(iobuf_parser& parser) {
     auto group = reflection::adl<raft::group_id>{}.from(parser);
     auto id = reflection::adl<model::partition_id>{}.from(parser);
-    auto replicas = reflection::adl<std::vector<model::broker_shard>>{}.from(
-      parser);
+    auto replicas = reflection::adl<cluster::replicas_t>{}.from(parser);
 
     return {group, id, std::move(replicas)};
-}
-
-void adl<cluster::remote_topic_properties>::to(
-  iobuf& out, cluster::remote_topic_properties&& p) {
-    reflection::serialize(out, p.remote_revision, p.remote_partition_count);
-}
-
-cluster::remote_topic_properties
-adl<cluster::remote_topic_properties>::from(iobuf_parser& parser) {
-    auto remote_revision = reflection::adl<model::initial_revision_id>{}.from(
-      parser);
-    auto remote_partition_count = reflection::adl<int32_t>{}.from(parser);
-
-    return {remote_revision, remote_partition_count};
-}
-
-void adl<cluster::topic_properties>::to(
-  iobuf& out, cluster::topic_properties&& p) {
-    reflection::serialize(
-      out,
-      p.compression,
-      p.cleanup_policy_bitflags,
-      p.compaction_strategy,
-      p.timestamp_type,
-      p.segment_size,
-      p.retention_bytes,
-      p.retention_duration,
-      p.recovery,
-      p.shadow_indexing,
-      p.read_replica,
-      p.read_replica_bucket,
-      p.remote_topic_properties);
-}
-
-cluster::topic_properties
-adl<cluster::topic_properties>::from(iobuf_parser& parser) {
-    auto compression
-      = reflection::adl<std::optional<model::compression>>{}.from(parser);
-    auto cleanup_policy_bitflags
-      = reflection::adl<std::optional<model::cleanup_policy_bitflags>>{}.from(
-        parser);
-    auto compaction_strategy
-      = reflection::adl<std::optional<model::compaction_strategy>>{}.from(
-        parser);
-    auto timestamp_type
-      = reflection::adl<std::optional<model::timestamp_type>>{}.from(parser);
-    auto segment_size = reflection::adl<std::optional<size_t>>{}.from(parser);
-    auto retention_bytes = reflection::adl<tristate<size_t>>{}.from(parser);
-    auto retention_duration
-      = reflection::adl<tristate<std::chrono::milliseconds>>{}.from(parser);
-    auto recovery = reflection::adl<std::optional<bool>>{}.from(parser);
-    auto shadow_indexing
-      = reflection::adl<std::optional<model::shadow_indexing_mode>>{}.from(
-        parser);
-    auto read_replica = reflection::adl<std::optional<bool>>{}.from(parser);
-    auto read_replica_bucket
-      = reflection::adl<std::optional<ss::sstring>>{}.from(parser);
-    auto remote_topic_properties
-      = reflection::adl<std::optional<cluster::remote_topic_properties>>{}.from(
-        parser);
-
-    return {
-      compression,
-      cleanup_policy_bitflags,
-      compaction_strategy,
-      timestamp_type,
-      segment_size,
-      retention_bytes,
-      retention_duration,
-      recovery,
-      shadow_indexing,
-      read_replica,
-      read_replica_bucket,
-      remote_topic_properties,
-      std::nullopt,
-      tristate<size_t>{std::nullopt},
-      tristate<std::chrono::milliseconds>{std::nullopt}};
 }
 
 void adl<cluster::cluster_property_kv>::to(

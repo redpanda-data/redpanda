@@ -11,9 +11,15 @@
 
 #pragma once
 
+#include "features/fwd.h"
+#include "storage/batch_cache.h"
+#include "storage/file_sanitizer_types.h"
+#include "storage/fs_utils.h"
+#include "storage/fwd.h"
 #include "storage/segment.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/sharded.hh>
 
 #include <deque>
 
@@ -45,7 +51,7 @@ public:
     using iterator = underlying_t::iterator;
 
     explicit segment_set(underlying_t);
-    ~segment_set() noexcept = default;
+    ~segment_set() noexcept;
     segment_set(segment_set&&) noexcept = default;
     segment_set& operator=(segment_set&& o) noexcept = default;
     segment_set(const segment_set&) = delete;
@@ -90,8 +96,7 @@ private:
 };
 
 ss::future<segment_set> recover_segments(
-  std::filesystem::path path,
-  debug_sanitize_files sanitize_fileops,
+  partition_path path,
   bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> batch_cache_factory,
   ss::abort_source& as,
@@ -99,6 +104,7 @@ ss::future<segment_set> recover_segments(
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
   storage_resources&,
-  bool is_internal_topic);
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 } // namespace storage

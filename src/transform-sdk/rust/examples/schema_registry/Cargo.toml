@@ -1,0 +1,18 @@
+[package]
+name = "schema_registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+redpanda-transform-sdk-sr = { path = "../../sr" }
+redpanda-transform-sdk = { path = "../.." }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+apache-avro = { workspace = true }
+
+[[bin]]
+name = "schema_registry"
+path = "main.rs"

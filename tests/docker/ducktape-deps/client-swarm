@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+pushd /tmp
+git clone https://github.com/redpanda-data/client-swarm.git
+
+pushd client-swarm
+git reset --hard 7ba96b8a78717c03392a3959a31e3c5a36cda472
+cargo build --release
+cp target/release/client-swarm /usr/local/bin
+popd
+
+rm -rf client-swarm
+popd

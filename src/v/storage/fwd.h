@@ -14,15 +14,25 @@
 namespace storage {
 
 class api;
-class node_api;
+class compacted_index_writer;
+class compaction_controller;
+class key_offset_map;
 class kvstore;
-class log_manager;
+class node_api;
 class ntp_config;
+class log;
+class log_manager;
+class probe;
+class offset_translator;
+class offset_translator_state;
+class readers_cache;
 class segment;
+class segment_appender;
 class simple_snapshot_manager;
 class snapshot_manager;
-class readers_cache;
-class compaction_controller;
-class offset_translator_state;
+class storage_resources;
+struct compaction_config;
+struct log_reader_config;
+struct timequery_config;
 
 } // namespace storage

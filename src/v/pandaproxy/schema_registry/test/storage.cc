@@ -49,12 +49,13 @@ constexpr std::string_view avro_schema_value_sv{
   "schema": "{\"type\":\"string\"}",
   "deleted": true
 })"};
-const pps::schema_value avro_schema_value{
+const pps::canonical_schema_value avro_schema_value{
   .schema{
     pps::subject{"my-kafka-value"},
     pps::canonical_schema_definition{
-      R"({"type":"string"})", pps::schema_type::avro},
-    {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}},
+      R"({"type":"string"})",
+      pps::schema_type::avro,
+      {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}}},
   .version{pps::schema_version{1}},
   .id{pps::schema_id{1}},
   .deleted = pps::is_deleted::yes};
@@ -94,6 +95,16 @@ constexpr std::string_view config_value_sv{
 const pps::config_value config_value{
   .compat = pps::compatibility_level::forward_transitive};
 
+constexpr std::string_view config_value_sub_sv{
+  R"({
+  "subject": "my-kafka-value",
+  "compatibilityLevel": "FORWARD_TRANSITIVE"
+})"};
+const pps::config_value config_value_sub{
+
+  .compat = pps::compatibility_level::forward_transitive,
+  .sub{pps::subject{"my-kafka-value"}}};
+
 constexpr std::string_view delete_subject_key_sv{
   R"({
   "keytype": "DELETE_SUBJECT",
@@ -116,66 +127,75 @@ const pps::delete_subject_value delete_subject_value{
 
 BOOST_AUTO_TEST_CASE(test_storage_serde) {
     {
-        auto key = ppj::rjson_parse(
+        auto key = ppj::impl::rjson_parse(
           avro_schema_key_sv.data(), pps::schema_key_handler<>{});
         BOOST_CHECK_EQUAL(avro_schema_key, key);
 
-        auto str = ppj::rjson_serialize(avro_schema_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(avro_schema_key_sv));
+        auto str = ppj::rjson_serialize_str(avro_schema_key);
+        BOOST_CHECK_EQUAL(str, ::json::minify(avro_schema_key_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
-          avro_schema_value_sv.data(), pps::schema_value_handler<>{});
+        auto val = ppj::impl::rjson_parse(
+          avro_schema_value_sv.data(), pps::canonical_schema_value_handler<>{});
         BOOST_CHECK_EQUAL(avro_schema_value, val);
 
-        auto str = ppj::rjson_serialize(avro_schema_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(avro_schema_value_sv));
+        auto str = ppj::rjson_serialize_str(avro_schema_value);
+        BOOST_CHECK_EQUAL(str, ::json::minify(avro_schema_value_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_key_sv.data(), pps::config_key_handler<>{});
         BOOST_CHECK_EQUAL(config_key, val);
 
-        auto str = ppj::rjson_serialize(config_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sv));
+        auto str = ppj::rjson_serialize_str(config_key);
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_key_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_key_sub_sv.data(), pps::config_key_handler<>{});
         BOOST_CHECK_EQUAL(config_key_sub, val);
 
-        auto str = ppj::rjson_serialize(config_key_sub);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_key_sub_sv));
+        auto str = ppj::rjson_serialize_str(config_key_sub);
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_key_sub_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           config_value_sv.data(), pps::config_value_handler<>{});
         BOOST_CHECK_EQUAL(config_value, val);
 
-        auto str = ppj::rjson_serialize(config_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(config_value_sv));
+        auto str = ppj::rjson_serialize_str(config_value);
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_value_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
+          config_value_sub_sv.data(), pps::config_value_handler<>{});
+        BOOST_CHECK_EQUAL(config_value_sub, val);
+
+        auto str = ppj::rjson_serialize_str(config_value_sub);
+        BOOST_CHECK_EQUAL(str, ::json::minify(config_value_sub_sv));
+    }
+
+    {
+        auto val = ppj::impl::rjson_parse(
           delete_subject_key_sv.data(), pps::delete_subject_key_handler<>{});
         BOOST_CHECK_EQUAL(delete_subject_key, val);
 
-        auto str = ppj::rjson_serialize(delete_subject_key);
-        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_key_sv));
+        auto str = ppj::rjson_serialize_str(delete_subject_key);
+        BOOST_CHECK_EQUAL(str, ::json::minify(delete_subject_key_sv));
     }
 
     {
-        auto val = ppj::rjson_parse(
+        auto val = ppj::impl::rjson_parse(
           delete_subject_value_sv.data(),
           pps::delete_subject_value_handler<>{});
         BOOST_CHECK_EQUAL(delete_subject_value, val);
 
-        auto str = ppj::rjson_serialize(delete_subject_value);
-        BOOST_CHECK_EQUAL(str, ppj::minify(delete_subject_value_sv));
+        auto str = ppj::rjson_serialize_str(delete_subject_value);
+        BOOST_CHECK_EQUAL(str, ::json::minify(delete_subject_value_sv));
     }
 }

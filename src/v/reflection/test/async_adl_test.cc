@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/hash.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
@@ -82,7 +83,7 @@ bool ser_deser_verify_hash(T&& type) {
 
     // Deserialize
     iobuf_parser in(std::move(out));
-    auto result = reflection::async_adl<T>{}.from(in).get0();
+    auto result = reflection::async_adl<T>{}.from(in).get();
 
     // Reserialize
     iobuf second_out;
@@ -99,7 +100,7 @@ bool ser_deser_verify(T type) {
 
     // Deserialize
     iobuf_parser in(std::move(out));
-    auto result = reflection::async_adl<T>{}.from(in).get0();
+    auto result = reflection::async_adl<T>{}.from(in).get();
     return result == type;
 }
 

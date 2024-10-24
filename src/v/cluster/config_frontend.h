@@ -13,9 +13,12 @@
 
 #include "cluster/controller_stm.h"
 
+#include <seastar/core/sharded.hh>
+
 namespace cluster {
 
-class config_frontend final {
+class config_frontend final
+  : public ss::peering_sharded_service<config_frontend> {
 public:
     // Shard ID that will track the next available version and serialize
     // writes to hand out sequential versions.
@@ -39,15 +42,17 @@ public:
     ss::future<patch_result>
       patch(config_update_request, model::timeout_clock::time_point);
 
-    ss::future<patch_result>
-    do_patch(config_update_request&&, model::timeout_clock::time_point);
-
     ss::future<std::error_code>
     set_status(config_status&, model::timeout_clock::time_point);
 
-    void set_next_version(config_version v);
+    ss::future<> set_next_version(config_version v);
 
 private:
+    ss::future<patch_result>
+    do_patch(config_update_request&&, model::timeout_clock::time_point);
+
+    void do_set_next_version(config_version v);
+
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
@@ -60,7 +65,7 @@ private:
       config_version_unset}; // Only maintained on `version_shard`
 
     // Serialize writes to generate version numbers.
-    mutex _write_lock;
+    mutex _write_lock{"config_frontend::write"};
 
     // Set once at construction to enable unit testing
     model::node_id _self;

@@ -15,9 +15,10 @@
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
 #include "storage/lock_manager.h"
+#include "storage/offset_translator_state.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
-#include "storage/segment_reader.h"
+#include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/types.h"
 
@@ -74,7 +75,7 @@ public:
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
     void consume_records(iobuf&&) override;
-    stop_parser consume_batch_end() override;
+    ss::future<stop_parser> consume_batch_end() override;
     void print(std::ostream&) const override;
 
 private:
@@ -93,8 +94,8 @@ public:
     log_segment_batch_reader(
       segment&, log_reader_config& config, probe& p) noexcept;
     log_segment_batch_reader(log_segment_batch_reader&&) noexcept = default;
-    log_segment_batch_reader&
-    operator=(log_segment_batch_reader&&) noexcept = delete;
+    log_segment_batch_reader& operator=(log_segment_batch_reader&&) noexcept
+      = delete;
     log_segment_batch_reader(const log_segment_batch_reader&) = delete;
     log_segment_batch_reader& operator=(const log_segment_batch_reader&)
       = delete;
@@ -135,7 +136,10 @@ public:
     using storage_t = model::record_batch_reader::storage_t;
 
     log_reader(
-      std::unique_ptr<lock_manager::lease>, log_reader_config, probe&) noexcept;
+      std::unique_ptr<lock_manager::lease>,
+      log_reader_config,
+      probe&,
+      ss::lw_shared_ptr<const storage::offset_translator_state>) noexcept;
 
     ~log_reader() final {
         vassert(!_iterator.reader, "log reader destroyed with live reader");
@@ -167,6 +171,9 @@ public:
     void reset_config(log_reader_config cfg) {
         _config = cfg;
         _iterator.next_seg = _iterator.current_reader_seg;
+        _expected_next = _config.fill_gaps ? std::make_optional<model::offset>(
+                                               _config.start_offset)
+                                           : std::nullopt;
     };
 
     /**
@@ -183,7 +190,7 @@ public:
         if (_lease->range.empty()) {
             return model::offset{};
         }
-        return _lease->range.front()->offsets().base_offset;
+        return _lease->range.front()->offsets().get_base_offset();
     }
     /**
      * Last offset of last locked segment in read lock lease
@@ -192,7 +199,7 @@ public:
         if (_lease->range.empty()) {
             return model::offset{};
         }
-        return _lease->range.back()->offsets().dirty_offset;
+        return _lease->range.back()->offsets().get_dirty_offset();
     }
 
     /**
@@ -228,24 +235,58 @@ private:
         const auto& offsets() const { return (*next_seg)->offsets(); }
     };
 
+    ss::future<storage_t> load_slice(model::timeout_clock::time_point);
+    unsigned _load_slice_depth{0};
+    bool log_load_slice_depth_warning() const;
+    void maybe_log_load_slice_depth_warning(std::string_view) const;
+
     std::unique_ptr<lock_manager::lease> _lease;
     iterator_pair _iterator;
+
+    // NOTE: this is not a const config, and is updated to reflect its
+    // progression.
     log_reader_config _config;
+
+    // The base offset of the previous batch processed.
     model::offset _last_base;
+
+    // The expected next offset to be processed, used to detect and fill gaps.
+    std::optional<model::offset> _expected_next;
     probe& _probe;
     ss::abort_source::subscription _as_sub;
+
+    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
 };
 
 /**
  * Assuming caller has already determined that this batch contains
- * the record that should be the result to the timequery, traverse
- * the batch to find which record matches.
+ * the record that should be the result to the timequery (critical!),
+ * traverse the batch to find the record with with timestamp >= \ref t.
+ *
+ * The min and max offsets are used to limit the search to a specific
+ * range inside the batch. This is necessary to support the case where
+ * log was requested to be prefix-truncated (trim-prefix) to an offset
+ * which lies in the middle of a batch.
+ *
+ * If the preconditions aren't met, the result is the timestamp of the first
+ * record in the batch.
  *
  * This is used by both storage's disk_log_impl and by cloud_storage's
  * remote_partition, to seek to their final result after finding
  * the batch.
+ *
+ * To read more about trim-prefix:
+ * https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-trim-prefix/
+ *
+ * \param b The batch to search in.
+ * \param min_offset The minimum offset to consider
+ * \param t The timestamp to search for
+ * \param max_offset The maximum offset to consider
  */
-timequery_result
-batch_timequery(const model::record_batch& b, model::timestamp t);
+timequery_result batch_timequery(
+  const model::record_batch& b,
+  model::offset min_offset,
+  model::timestamp t,
+  model::offset max_offset);
 
 } // namespace storage

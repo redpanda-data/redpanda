@@ -13,6 +13,7 @@
 #include "bytes/bytes.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
+#include "storage/compaction.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,25 +22,19 @@
 namespace storage {
 // simple types shared among readers and writers
 
-/**
- * Type representing a record key prefixed with batch_type
- */
-struct compaction_key : bytes {
-    explicit compaction_key(bytes b)
-      : bytes(std::move(b)) {}
-};
-
-inline compaction_key
-prefix_with_batch_type(model::record_batch_type type, bytes_view key) {
+inline compaction_key enhance_key(
+  model::record_batch_type type, bool is_control_batch, bytes_view key) {
     auto bt_le = ss::cpu_to_le(
       static_cast<std::underlying_type<model::record_batch_type>::type>(type));
-    auto enriched_key = ss::uninitialized_string<bytes>(
-      sizeof(bt_le) + key.size());
+    auto ctrl_le = ss::cpu_to_le(static_cast<int8_t>(is_control_batch));
+    auto total_size = sizeof(bt_le) + key.size() + sizeof(ctrl_le);
+    bytes enriched_key(bytes::initialized_later{}, total_size);
     auto out = enriched_key.begin();
     out = std::copy_n(
       reinterpret_cast<const char*>(&bt_le), sizeof(bt_le), out);
+    out = std::copy_n(
+      reinterpret_cast<const char*>(&ctrl_le), sizeof(ctrl_le), out);
     std::copy_n(key.begin(), key.size(), out);
-
     return compaction_key(std::move(enriched_key));
 }
 
@@ -65,17 +60,32 @@ struct compacted_index {
         incomplete = 1U << 2U,
     };
     struct footer {
-        // initial version of footer
-        static constexpr int8_t base_version = 0;
-        // introduced a key being a tuple of batch_type and the key content
-        static constexpr int8_t key_prefixed_with_batch_type = 1;
+        // footer versions:
+        // 0 - initial version
+        // 1 - introduced a key being a tuple of batch_type and the key content
+        //  of footer
+        // 2 - 64-bit size and keys fields
+        // 3 - add control bit to the key prefix so control batches cannot
+        // compact
+        //  data batches with same key
+        static constexpr int8_t current_version = 3;
 
-        uint32_t size{0};
-        uint32_t keys{0};
+        uint64_t size{0};
+        uint64_t keys{0};
+        // must be kept for backwards compatibility with pre-version 2 code
+        // (that allows using an index with a version greater than current).
+        uint32_t size_deprecated{0};
+        uint32_t keys_deprecated{0};
         footer_flags flags{0};
         uint32_t crc{0}; // crc32
-        // version *must* be the last value
-        int8_t version{key_prefixed_with_batch_type};
+        // version *must* be the last field
+        int8_t version{current_version};
+
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(size_deprecated)
+                                              + sizeof(keys_deprecated)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
 
         friend std::ostream&
         operator<<(std::ostream& o, const compacted_index::footer& f) {
@@ -84,6 +94,19 @@ struct compacted_index {
                      << ", version: " << (int)f.version << "}";
         }
     };
+
+    struct footer_v1 {
+        uint32_t size{0};
+        uint32_t keys{0};
+        footer_flags flags{0};
+        uint32_t crc{0}; // crc32
+        int8_t version{1};
+
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
+    };
+
     enum class recovery_state {
         /**
          * Index may be missing when either was deleted or not stored when
@@ -103,11 +126,13 @@ struct compacted_index {
          */
         index_recovered
     };
-    static constexpr size_t footer_size = sizeof(footer::size)
-                                          + sizeof(footer::keys)
-                                          + sizeof(footer::flags)
-                                          + sizeof(footer::crc)
-                                          + sizeof(footer::version);
+
+    struct needs_rebuild_error final : public std::runtime_error {
+    public:
+        explicit needs_rebuild_error(std::string_view msg)
+          : std::runtime_error(msg.data()) {}
+    };
+
     // for the readers and friends
     struct entry {
         entry(

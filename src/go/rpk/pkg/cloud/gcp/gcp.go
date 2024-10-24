@@ -10,38 +10,39 @@
 package gcp
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"path/filepath"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 )
 
 const name = "gcp"
 
-type GcpVendor struct{}
+type GcpProvider struct{}
 
-type InitializedGcpVendor struct {
+type InitializedGcpProvider struct {
 	client *metadata.Client
 }
 
-func (*GcpVendor) Name() string {
+func (*GcpProvider) Name() string {
 	return name
 }
 
-func (*GcpVendor) Init() (vendor.InitializedVendor, error) {
+func (*GcpProvider) Init() (provider.InitializedProvider, error) {
 	timeout := 500 * time.Millisecond
 	client := metadata.NewClient(&http.Client{Timeout: timeout})
 	if available(client, timeout) {
-		return &InitializedGcpVendor{client}, nil
+		return &InitializedGcpProvider{client}, nil
 	}
-	return nil, errors.New("vendor GCP couldn't be initialized")
+	return nil, errors.New("provider GCP couldn't be initialized")
 }
 
-func (v *InitializedGcpVendor) VMType() (string, error) {
-	t, err := v.client.Get("instance/machine-type")
+func (v *InitializedGcpProvider) VMType() (string, error) {
+	t, err := v.client.GetWithContext(context.Background(), "instance/machine-type")
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +53,7 @@ func (v *InitializedGcpVendor) VMType() (string, error) {
 	return filepath.Base(t), nil
 }
 
-func (*InitializedGcpVendor) Name() string {
+func (*InitializedGcpProvider) Name() string {
 	return name
 }
 
@@ -60,7 +61,7 @@ func available(client *metadata.Client, timeout time.Duration) bool {
 	result := make(chan bool)
 
 	go func(c *metadata.Client, res chan<- bool) {
-		_, err := c.ProjectID()
+		_, err := c.ProjectIDWithContext(context.Background())
 		res <- err == nil
 	}(client, result)
 

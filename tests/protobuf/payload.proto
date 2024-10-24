@@ -1,0 +1,61 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+syntax = "proto3";
+
+package com.redpanda;
+
+option go_package = "./;main";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+message Payload {
+    int32 val = 1;
+    google.protobuf.Timestamp timestamp = 2;
+}
+
+message A {
+    message B {
+        message C {
+            message D {
+                message M00 {}
+                message M01 {}
+                message M02 {}
+                message M03 {}
+                message M04 {}
+                message M05 {}
+                message M06 {}
+                message M07 {}
+                message M08 {}
+                message M09 {}
+                message M10 {}
+                message M11 {}
+                message M12 {}
+                message M13 {}
+                message M14 {}
+                message M15 {}
+                message M16 {}
+                message M17 {}
+                message NestedPayload {
+                    int32 val = 1;
+                    google.protobuf.Timestamp timestamp = 2;
+                }
+            }
+        }
+    }
+}
+
+message CompressiblePayload {
+    int32 val = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    string message = 3;
+}

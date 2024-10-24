@@ -9,7 +9,7 @@
 
 #include "finjector/hbadger.h"
 
-#include "vlog.h"
+#include "base/vlog.h"
 
 #include <seastar/util/log.hh>
 

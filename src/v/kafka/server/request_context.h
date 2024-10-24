@@ -10,19 +10,30 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
-#include "cluster/security_frontend.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/fwd.h"
-#include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/types.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
+#include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/logger.h"
-#include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
-#include "kafka/types.h"
-#include "seastarx.h"
-#include "vlog.h"
+#include "kafka/server/server.h"
+#include "kafka/server/usage_manager.h"
+#include "model/namespace.h"
+#include "pandaproxy/schema_registry/fwd.h"
+#include "security/acl.h"
+#include "security/audit/schemas/iam.h"
+#include "security/audit/schemas/types.h"
+#include "security/audit/schemas/utils.h"
+#include "security/audit/types.h"
+#include "security/authorizer.h"
+#include "security/fwd.h"
+#include "ssx/abort_source.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -36,9 +47,20 @@
 
 namespace kafka {
 
-constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
-                                     + sizeof(correlation_id::type)
-                                     + sizeof(int16_t);
+/// Checks to see if the event is auditable.
+/// Current check will exclude any produce messages by the audit principal
+inline bool
+skip_auditing(api_key key, const security::acl_principal& principal) {
+    return security::audit::kafka_api_to_event_type(key)
+             == security::audit::event_type::produce
+           && principal == security::audit_principal;
+}
+
+inline constexpr auto request_header_size = sizeof(int16_t) + sizeof(int16_t)
+                                            + sizeof(correlation_id::type)
+                                            + sizeof(int16_t);
+
+using audit_on_success = ss::bool_class<struct audit_on_success_tag>;
 
 struct request_header {
     api_key key;
@@ -59,7 +81,7 @@ struct request_header {
 
 template<typename T>
 concept has_throttle_time_ms = requires(T a) {
-    {a.data.throttle_time_ms};
+    { a.data.throttle_time_ms };
 };
 
 class request_context {
@@ -70,6 +92,7 @@ public:
       iobuf&& request,
       ss::lowres_clock::duration throttle_delay) noexcept
       : _conn(std::move(conn))
+      , _request_size(request.size_bytes())
       , _header(std::move(header))
       , _reader(std::move(request))
       , _throttle_delay(throttle_delay) {}
@@ -82,11 +105,28 @@ public:
 
     const request_header& header() const { return _header; }
 
+    // override the client id. This method is used when handling virtual
+    // connections and an actual client id is part of the client id buffer.
+    void override_client_id(std::optional<std::string_view> new_client_id) {
+        _header.client_id = new_client_id;
+    }
+
     ss::lw_shared_ptr<connection_context> connection() { return _conn; }
 
-    request_reader& reader() { return _reader; }
+    ssx::sharded_abort_source& abort_source() { return _conn->abort_source(); }
+    bool abort_requested() const { return _conn->abort_requested(); }
 
-    latency_probe& probe() { return _conn->server().probe(); }
+    protocol::decoder& reader() { return _reader; }
+
+    latency_probe& probe() { return _conn->server().latency_probe(); }
+    sasl_probe& sasl_probe() { return _conn->server().sasl_probe(); }
+
+    // used to reach for server_probe::produce_bad_timestamp
+    net::server_probe& server_probe() { return _conn->server().probe(); }
+
+    kafka::usage_manager& usage_mgr() const {
+        return _conn->server().usage_mgr();
+    }
 
     const cluster::metadata_cache& metadata_cache() const {
         return _conn->server().metadata_cache();
@@ -98,6 +138,14 @@ public:
 
     cluster::topics_frontend& topics_frontend() const {
         return _conn->server().topics_frontend();
+    }
+
+    cluster::client_quota::frontend& quota_frontend() {
+        return _conn->server().quota_frontend();
+    }
+
+    cluster::client_quota::store& quota_store() {
+        return _conn->server().quota_store();
     }
 
     quota_manager& quota_mgr() { return _conn->server().quota_mgr(); }
@@ -122,8 +170,17 @@ public:
         return _conn->server().are_transactions_enabled();
     }
 
+    bool recovery_mode_enabled() const {
+        return _conn->server().recovery_mode_enabled();
+    }
+
     cluster::tx_gateway_frontend& tx_gateway_frontend() const {
         return _conn->server().tx_gateway_frontend();
+    }
+
+    const std::unique_ptr<pandaproxy::schema_registry::api>&
+    schema_registry() const {
+        return _conn->server().schema_registry();
     }
 
     std::chrono::milliseconds throttle_delay_ms() const {
@@ -134,10 +191,6 @@ public:
     kafka::group_router& groups() { return _conn->server().group_router(); }
 
     cluster::shard_table& shards() { return _conn->server().shard_table(); }
-
-    ss::sharded<coproc::partition_manager>& coproc_partition_manager() {
-        return _conn->server().coproc_partition_manager();
-    }
 
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _conn->server().partition_manager();
@@ -153,19 +206,42 @@ public:
 
     template<typename ResponseType>
     requires requires(
-      ResponseType r, response_writer& writer, api_version version) {
+      ResponseType r, protocol::encoder& writer, api_version version) {
         { r.encode(writer, version) } -> std::same_as<void>;
     }
     ss::future<response_ptr> respond(ResponseType r) {
-        vlog(
-          klog.trace,
-          "[{}:{}] sending {}:{} for {}, response {}",
-          _conn->client_host(),
-          _conn->client_port(),
-          ResponseType::api_type::key,
-          ResponseType::api_type::name,
-          _header.client_id,
-          r);
+        /// Many responses contain a throttle_time_ms field, to prevent each
+        /// handler from manually having to set this value, it can be done in
+        /// one place here, with this concept check
+        if constexpr (has_throttle_time_ms<ResponseType>) {
+            /// Allow request handlers to override the throttle response, if
+            /// multiple throttles detected, choose larger of the two
+            r.data.throttle_time_ms = std::max(
+              r.data.throttle_time_ms, throttle_delay_ms());
+        }
+
+        if (r.data.errored()) {
+            vlog(
+              kwire.debug,
+              "[{}:{}] sending {}:{} for {}, response {}",
+              _conn->client_host(),
+              _conn->client_port(),
+              ResponseType::api_type::key,
+              ResponseType::api_type::name,
+              _header.client_id,
+              r);
+        } else {
+            vlog(
+              kwire.trace,
+              "[{}:{}] sending {}:{} for {}, response {}",
+              _conn->client_host(),
+              _conn->client_port(),
+              ResponseType::api_type::key,
+              ResponseType::api_type::name,
+              _header.client_id,
+              r);
+        }
+
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
         /// that there will be no tags in the response header.
@@ -183,18 +259,9 @@ public:
             }
         }
 
-        /// Many responses contain a throttle_time_ms field, to prevent each
-        /// handler from manually having to set this value, it can be done in
-        /// one place here, with this concept check
-        if constexpr (has_throttle_time_ms<ResponseType>) {
-            /// Allow request handlers to override the throttle response, if
-            /// multiple throttles detected, choose larger of the two
-            r.data.throttle_time_ms = std::max(
-              r.data.throttle_time_ms, throttle_delay_ms());
-        }
-
         auto resp = std::make_unique<response>(is_flexible);
         r.encode(resp->writer(), version);
+        update_usage_stats(r, resp->buf().size_bytes());
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
@@ -208,20 +275,132 @@ public:
         return _conn->server().credentials();
     }
 
+    bool audit() { return _audit_successful; }
+
+    bool audit_authn_failure(ss::sstring reason) {
+        return audit_authn_failure(std::move(reason), "");
+    }
+
+    bool audit_authn_failure(ss::sstring reason, const char* auth_protocol) {
+        return audit_authn_failure(
+          std::move(reason),
+          auth_protocol,
+          {.type_id = security::audit::user::type::unknown});
+    }
+
+    bool audit_authn_failure(
+      ss::sstring reason,
+      const char* auth_protocol,
+      security::audit::user user) {
+        return audit(
+          make_authn_event(std::move(reason), auth_protocol, std::move(user)));
+    }
+
+    bool
+    audit_authn_success(const char* auth_protocol, security::audit::user user) {
+        return audit(
+          make_authn_event(std::nullopt, auth_protocol, std::move(user)));
+    }
+
+    bool audit(security::audit::authentication_event_options options) {
+        if (!_conn->server().audit_mgr().enqueue_authn_event(
+              std::move(options))) {
+            vlog(
+              klog.error, "Failed to append authentication event to audit log");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * This function will perform authorization as normal however if
+     * @p audit is false, then successful authz calls will not
+     * be sent to the audit log
+     */
     template<typename T>
     bool authorized(
       security::acl_operation operation,
       const T& name,
+      audit_on_success audit,
       authz_quiet quiet = authz_quiet{false}) {
-        return _conn->authorized(operation, name, quiet);
+        auto result = do_authorized(operation, name, quiet);
+
+        auto resp = bool(result);
+        auto key = _header.key;
+        auto client_id = _header.client_id;
+
+        if (audit == audit_on_success::no && resp) {
+            return resp;
+        }
+
+        do_audit(std::move(result), name, key, client_id);
+
+        return resp;
     }
+
+    template<typename T>
+    bool authorized(
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet = authz_quiet{false},
+      audit_authz_check audit_authz = audit_authz_check::yes) {
+        auto result = do_authorized(operation, name, quiet);
+        auto resp = bool(result);
+
+        auto key = _header.key;
+        auto client_id = _header.client_id;
+
+        if (audit_authz) {
+            do_audit(std::move(result), name, key, client_id);
+        }
+        return resp;
+    }
+
+    template<
+      typename T,
+      security::audit::returns_auditable_resource_vector Func>
+    bool authorized(
+      security::acl_operation operation,
+      const T& name,
+      Func&& f,
+      authz_quiet quiet = authz_quiet{false}) {
+        auto result = do_authorized(operation, name, quiet);
+        auto resp = bool(result);
+
+        auto key = _header.key;
+
+        // Not auditing produce authz attempts from audit principal
+        if (skip_auditing(key, result.principal)) [[unlikely]] {
+            return resp;
+        }
+
+        auto operation_name = handler_for_key(key).value()->name();
+        if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
+              key,
+              name,
+              std::forward<Func>(f),
+              operation_name,
+              std::move(result),
+              _conn->local_address(),
+              _conn->server().name(),
+              _conn->client_host(),
+              _conn->client_port(),
+              _header.client_id)) {
+            _audit_successful = false;
+            vlog(klog.error, "Failed to append authz event to audit log");
+        }
+
+        return resp;
+    }
+
+    bool request_contains_audit_topic() const {
+        return _request_contains_audit_topic;
+    }
+
+    bool authorized_auditor() const { return _conn->authorized_auditor(); }
 
     cluster::security_frontend& security_frontend() const {
         return _conn->server().security_frontend();
-    }
-
-    v8_engine::data_policy_table& data_policy_table() const {
-        return _conn->server().data_policy_table();
     }
 
     security::authorizer& authorizer() { return _conn->server().authorizer(); }
@@ -230,11 +409,97 @@ public:
         return _conn->server().controller_api();
     }
 
+    ss::sharded<server>& server() { return _conn->server().container(); }
+
+private:
+    template<typename T>
+    security::auth_result do_authorized(
+      security::acl_operation operation,
+      const T& name,
+      authz_quiet quiet = authz_quiet{false}) {
+        if constexpr (std::is_same_v<T, model::topic>) {
+            if (name == model::kafka_audit_logging_topic) [[unlikely]] {
+                _request_contains_audit_topic = true;
+            }
+        }
+        return _conn->authorized(operation, name, quiet);
+    }
+    template<typename T>
+    void do_audit(
+      security::auth_result&& auth_result,
+      const T& name,
+      api_key key,
+      std::optional<std::string_view> client_id) {
+        if (skip_auditing(key, auth_result.principal)) [[unlikely]] {
+            return;
+        }
+
+        // If we have reached this point, handler_for_key should already be
+        // returning a value.  The only situations where it won't would be
+        // in unit tests, so this is a "smoke test" to ensure that unit tests
+        // correctly set up the `_header` member of `request_context`
+        auto operation_name = handler_for_key(key).value()->name();
+
+        if (!_conn->server().audit_mgr().enqueue_authz_audit_event(
+              key,
+              name,
+              operation_name,
+              std::move(auth_result),
+              _conn->local_address(),
+              _conn->server().name(),
+              _conn->client_host(),
+              _conn->client_port(),
+              client_id)) {
+            _audit_successful = false;
+            vlog(klog.error, "Failed to append authz event to audit log");
+        }
+    }
+    security::audit::authentication_event_options make_authn_event(
+      std::optional<ss::sstring> reason,
+      const char* auth_protocol,
+      security::audit::user user) {
+        return {
+            .auth_protocol = auth_protocol,
+            .server_addr = {fmt::format("{}", connection()->local_address().addr()), connection()->local_address().port(), connection()->local_address().addr().in_family()},
+            .svc_name = connection()->server().name(),
+            .client_addr = {fmt::format("{}", connection()->client_host()), connection()->client_port()},
+            .client_id = _header.client_id,
+            .is_cleartext = connection()->tls_enabled() ? security::audit::authentication::used_cleartext::no : security::audit::authentication::used_cleartext::yes,
+            .user = std::move(user),
+            .error_reason = std::move(reason)
+        };
+    }
+    template<typename ResponseType>
+    void update_usage_stats(const ResponseType& r, size_t response_size) {
+        size_t internal_bytes_recv = 0;
+        size_t internal_bytes_sent = 0;
+        if constexpr (std::is_same_v<ResponseType, produce_response>) {
+            internal_bytes_recv = r.internal_topic_bytes;
+        } else if constexpr (std::is_same_v<ResponseType, fetch_response>) {
+            internal_bytes_sent = r.internal_topic_bytes;
+        }
+        /// Bytes recieved by redpanda
+        vassert(
+          _request_size >= internal_bytes_recv,
+          "Observed bigger internal bytes accounting then entire request size");
+        usage_mgr().add_bytes_recv(_request_size - internal_bytes_recv);
+
+        /// Bytes sent to redpanda
+        vassert(
+          response_size >= internal_bytes_sent,
+          "Observed bigger internal bytes accounting then entire response "
+          "size");
+        usage_mgr().add_bytes_sent(response_size - internal_bytes_sent);
+    }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
+    size_t _request_size;
     request_header _header;
-    request_reader _reader;
+    protocol::decoder _reader;
     ss::lowres_clock::duration _throttle_delay;
+    bool _audit_successful{true};
+    bool _request_contains_audit_topic{false};
 };
 
 // Executes the API call identified by the specified request_context.

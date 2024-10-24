@@ -23,7 +23,7 @@ partition_balancer_rpc_handler::partition_balancer_rpc_handler(
 
 ss::future<partition_balancer_overview_reply>
 partition_balancer_rpc_handler::overview(
-  partition_balancer_overview_request&&, rpc::streaming_context&) {
+  partition_balancer_overview_request, rpc::streaming_context&) {
     auto overview = co_await _backend.invoke_on(
       partition_balancer_backend::shard,
       [](partition_balancer_backend& backend) { return backend.overview(); });

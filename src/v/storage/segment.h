@@ -13,17 +13,19 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/file_sanitizer_types.h"
+#include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
-#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/sharded.hh>
 
 #include <exception>
 #include <optional>
@@ -38,26 +40,75 @@ struct segment_closed_exception final : std::exception {
 class segment {
 public:
     using generation_id = named_type<uint64_t, struct segment_gen_tag>;
-    struct offset_tracker {
+    class offset_tracker {
+    public:
+        using committed_offset_t
+          = named_type<model::offset, struct committed_offset_tag>;
+        using stable_offset_t
+          = named_type<model::offset, struct stable_offset_tag>;
+        using dirty_offset_t
+          = named_type<model::offset, struct dirty_offset_tag>;
+
         offset_tracker(model::term_id t, model::offset base)
-          : term(t)
-          , base_offset(base)
-          , committed_offset(base)
-          , dirty_offset(base)
-          , stable_offset(base) {}
-        model::term_id term;
-        model::offset base_offset;
+          : _term(t)
+          , _base_offset(base)
+          , _committed_offset(model::prev_offset(base))
+          , _stable_offset(model::prev_offset(base))
+          , _dirty_offset(model::prev_offset(base)) {}
+
+        template<typename... Ts>
+        void set_offsets(Ts... ts) {
+            (set_offset_impl(ts), ...);
+            vassert(
+              _committed_offset <= _stable_offset
+                && _stable_offset <= _dirty_offset,
+              "Must maintain offset invariant: committed ({}) <= stable ({}) "
+              "<= dirty ({})",
+              _committed_offset,
+              _stable_offset,
+              _dirty_offset);
+        }
+
+        template<typename T>
+        void set_offset(T t) {
+            set_offsets(t);
+        }
+
+        model::term_id get_term() const { return _term; }
+        model::offset get_base_offset() const { return _base_offset; }
+        model::offset get_committed_offset() const { return _committed_offset; }
+        model::offset get_stable_offset() const { return _stable_offset; }
+        model::offset get_dirty_offset() const { return _dirty_offset; }
+
+    private:
+        template<typename T>
+        void set_offset_impl(T tagged_offset) {
+            if constexpr (std::is_same_v<T, committed_offset_t>) {
+                _committed_offset = tagged_offset();
+            } else if constexpr (std::is_same_v<T, stable_offset_t>) {
+                _stable_offset = tagged_offset();
+            } else if constexpr (std::is_same_v<T, dirty_offset_t>) {
+                _dirty_offset = tagged_offset();
+            } else {
+                static_assert(always_false_v<T>, "Invalid offset type");
+            }
+        }
+
+        model::term_id _term;
+        model::offset _base_offset;
 
         /// \brief These offsets are the `batch.last_offset()` and not
         /// `batch.base_offset()` which might be confusing at first,
         /// but allow us to keep track of the actual last logical offset
 
-        // Offset of last message fsync'd to disk
-        model::offset committed_offset;
-        // Offset of last message written to this log
-        model::offset dirty_offset;
-        // Offset of last message written to disk
-        model::offset stable_offset;
+        // Offset of last message fsynced to disk.
+        model::offset _committed_offset;
+        // Offset of last message written to disk, may not yet have been
+        // fsynced.
+        model::offset _stable_offset;
+        // Offset of last message written to this log, may not yet be stable.
+        model::offset _dirty_offset;
+
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };
     enum class bitflags : uint32_t {
@@ -66,19 +117,19 @@ public:
         finished_self_compaction = 1U << 1U,
         mark_tombstone = 1U << 2U,
         closed = 1U << 3U,
+        finished_windowed_compaction = 1U << 4U,
     };
 
 public:
     segment(
       offset_tracker tracker,
-      segment_reader,
+      segment_reader_ptr,
       segment_index,
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
       std::optional<batch_cache_index>,
       storage_resources&,
-      generation_id = generation_id{},
-      bool is_internal = false) noexcept;
+      generation_id = generation_id{}) noexcept;
     ~segment() noexcept = default;
     segment(segment&&) noexcept = default;
     // rwlock does not have move-assignment
@@ -89,13 +140,34 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> release_appender(readers_cache*);
-    ss::future<> truncate(model::offset, size_t physical);
+    ss::future<> truncate(
+      model::offset, size_t physical, model::timestamp new_max_timestamp);
 
     /// main write interface
     /// auto indexes record_batch
+    ///
     /// We recommend using the const-ref method below over the r-value since we
     /// do not need to take ownership of the batch itself
+    ///
+    /// Appending does not offer read-your-writes consistency in the general
+    /// case. It only buffers data in-memory and no guarantees are made about
+    /// when the data will be available fo reading.
+    ///
+    /// If you need to read the data you either need to wait for the stable
+    /// offset to cover `append_result::last_offset`^1 or flush the segment.
+    ///
+    /// In case batch_cache_index is provided, the batch will be available for
+    /// will be available there immediately after and at least until it is
+    /// written to disk. The batch cache can be used to read data immediately
+    /// after it is appended.^2
+    ///
+    /// ^1: This is what `log_segment_batch_reader` does
+    ///     https://github.com/redpanda-data/redpanda/blob/b4f54b1dc71c1f6750a319f6ef0efa6192bb95d7/src/v/storage/log_reader.cc#L246-L254
+    /// ^2: This is what `log_reader` does via `log_segment_batch_reader`
+    ///     https://github.com/redpanda-data/redpanda/blob/b4f54b1dc71c1f6750a319f6ef0efa6192bb95d7/src/v/storage/log_reader.cc#L224-L230
     ss::future<append_result> append(model::record_batch&&);
+
+    /// See the overload for r-value batches above for documentation.
     ss::future<append_result> append(const model::record_batch&);
     ss::future<append_result> do_append(const model::record_batch&);
     ss::future<bool> materialize_index();
@@ -117,15 +189,25 @@ public:
     bool is_compacted_segment() const;
     void mark_as_finished_self_compaction();
     bool finished_self_compaction() const;
+    void mark_as_finished_windowed_compaction();
+    bool finished_windowed_compaction() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
-    bool is_internal_topic() { return _is_internal; }
+
+    /// \brief Returns whether the underlying segment has data records that
+    /// might be removed if compaction were to run. May return false positives,
+    /// e.g. if the underlying index was written in a version with insufficient
+    /// metadata.
+    bool may_have_compactible_records() const;
 
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
-    size_t file_size() const { return _reader.file_size(); }
-    const ss::sstring& filename() const { return _reader.filename(); }
+    segment_reader_ptr release_segment_reader();
+    void swap_reader(segment_reader_ptr);
+    size_t file_size() const { return _reader->file_size(); }
+    const ss::sstring filename() const { return _reader->filename(); }
+    const segment_full_path& path() const { return _reader->path(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -151,7 +233,8 @@ public:
       std::optional<model::timestamp> first_ts,
       size_t max_bytes,
       bool skip_lru_promote);
-    void cache_put(const model::record_batch& batch);
+    void cache_put(
+      const model::record_batch& batch, batch_cache::is_dirty_entry dirty);
 
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
@@ -159,26 +242,58 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
-    ss::future<> remove_persistent_state();
+    /*
+     * return an estimate of how much data on disk is associated with this
+     * segment (e.g. the data file, indices, etc...).
+     */
+    ss::future<usage> persistent_size();
+
+    /*
+     * return the number of bytes removed from disk.
+     */
+    ss::future<size_t> remove_persistent_state();
 
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
+
+    /**
+     * Timestamp of the first data batch written to this segment.
+     * Note that this isn't the first timestamp of a data batch in the log,
+     * and is only set if the segment was appended to while this segment was
+     * active. I.e. a closed segment following a restart wouldn't have this
+     * value set, because we only intend on using this in the context of an
+     * active segment.
+     */
+    constexpr std::optional<ss::lowres_clock::time_point>
+    first_write_ts() const {
+        return _first_write;
+    }
+
+    void clear_cached_disk_usage();
+
+    /// Fallback timestamp method, for use if the timestamps in the index
+    /// appear to be invalid (e.g. too far in the future)
+    ss::future<model::timestamp> get_file_timestamp() const;
 
 private:
     void set_close();
     void cache_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
-    ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
+    ss::future<> do_truncate(
+      model::offset prev_last_offset,
+      size_t physical,
+      model::timestamp new_max_timestamp);
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> do_release_appender(
       segment_appender_ptr,
       std::optional<batch_cache_index>,
       std::optional<compacted_index_writer>);
-    ss::future<> remove_tombstones();
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
+
+    ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
     struct appender_callbacks : segment_appender::callbacks {
         explicit appender_callbacks(segment* segment)
@@ -210,17 +325,28 @@ private:
     generation_id _generation_id;
 
     offset_tracker _tracker;
-    segment_reader _reader;
+    segment_reader_ptr _reader;
     segment_index _idx;
     bitflags _flags{bitflags::none};
     segment_appender_ptr _appender;
+    std::optional<size_t> _data_disk_usage_size;
+
+    // compaction index size should be cleared whenever the size might change
+    // (e.g. after compaction). when cleared it will reset the next time the
+    // size of the compaction index is needed (e.g. estimating total seg size).
+    std::optional<size_t> _compaction_index_size;
     std::optional<compacted_index_writer> _compaction_index;
+
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
     ss::gate _gate;
-    bool _is_internal;
 
     absl::btree_map<size_t, model::offset> _inflight;
+
+    // Timestamp from server time of first data written to this segment,
+    // field is set when a raft_data batch is appended.
+    // Used to implement segment.ms rolling
+    std::optional<ss::lowres_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
@@ -241,13 +367,13 @@ private:
  * exist
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
-  debug_sanitize_files sanitize_fileops,
+  segment_full_path path,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
   storage_resources&,
-  bool is_internal);
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -257,9 +383,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   record_version_type version,
   size_t buf_size,
   unsigned read_ahead,
-  debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
+  size_t segment_size_hint);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags
@@ -294,13 +422,13 @@ inline bool segment::empty() const {
     if (_appender) {
         return _appender->file_byte_offset() == 0;
     }
-    return _reader.empty();
+    return _reader->empty();
 }
 inline size_t segment::size_bytes() const {
     if (_appender) {
         return _appender->file_byte_offset();
     }
-    return _reader.file_size();
+    return _reader->file_size();
 }
 inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
@@ -310,7 +438,7 @@ inline bool
 segment::has_compactible_offsets(const compaction_config& cfg) const {
     // since we don't support partially-compacted segments, a segment must
     // end before the max compactible offset to be eligible for compaction.
-    return offsets().stable_offset <= cfg.max_collectible_offset;
+    return _tracker.get_stable_offset() <= cfg.max_collectible_offset;
 }
 
 inline void segment::mark_as_compacted_segment() {
@@ -329,6 +457,13 @@ inline void segment::mark_as_finished_self_compaction() {
 inline bool segment::finished_self_compaction() const {
     return (_flags & bitflags::finished_self_compaction)
            == bitflags::finished_self_compaction;
+}
+inline void segment::mark_as_finished_windowed_compaction() {
+    _flags |= bitflags::finished_windowed_compaction;
+}
+inline bool segment::finished_windowed_compaction() const {
+    return (_flags & bitflags::finished_windowed_compaction)
+           == bitflags::finished_windowed_compaction;
 }
 inline std::optional<std::reference_wrapper<batch_cache_index>>
 segment::cache() {
@@ -362,9 +497,10 @@ inline batch_cache_index::read_result segment::cache_get(
       .next_batch = offset,
     };
 }
-inline void segment::cache_put(const model::record_batch& batch) {
+inline void segment::cache_put(
+  const model::record_batch& batch, batch_cache::is_dirty_entry dirty) {
     if (likely(bool(_cache))) {
-        _cache->put(batch);
+        _cache->put(batch, dirty);
     }
 }
 inline ss::future<ss::rwlock::holder>
@@ -382,7 +518,13 @@ inline bool segment::has_outstanding_locks() const {
 inline bool segment::is_closed() const {
     return (_flags & bitflags::closed) == bitflags::closed;
 }
-inline segment_reader& segment::reader() { return _reader; }
+inline segment_reader& segment::reader() { return *_reader; }
+inline void segment::swap_reader(segment_reader_ptr new_reader) {
+    std::swap(new_reader, _reader);
+}
+inline segment_reader_ptr segment::release_segment_reader() {
+    return std::move(_reader);
+}
 inline segment_index& segment::index() { return _idx; }
 inline const segment_index& segment::index() const { return _idx; }
 inline segment_appender_ptr segment::release_appender() {
@@ -403,9 +545,10 @@ inline bool segment::is_tombstone() const {
 }
 /// \brief used for compaction, to reset the tracker from index
 inline void segment::force_set_commit_offset_from_index() {
-    _tracker.committed_offset = _idx.max_offset();
-    _tracker.stable_offset = _idx.max_offset();
-    _tracker.dirty_offset = _idx.max_offset();
+    _tracker.set_offsets(
+      offset_tracker::committed_offset_t{_idx.max_offset()},
+      offset_tracker::stable_offset_t{_idx.max_offset()},
+      offset_tracker::dirty_offset_t{_idx.max_offset()});
 }
 
 } // namespace storage

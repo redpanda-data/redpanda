@@ -25,7 +25,7 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const raft::vnode& v) {
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::vnode& obj) {
+inline void read_value(const json::Value& rd, raft::vnode& obj) {
     model::node_id node_id;
     model::revision_id revision;
     read_member(rd, "id", node_id);
@@ -48,10 +48,12 @@ inline void rjson_serialize(
     rjson_serialize(w, v.prev_log_term);
     w.Key("last_visible_index");
     rjson_serialize(w, v.last_visible_index);
+    w.Key("dirty_offset");
+    rjson_serialize(w, v.dirty_offset);
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::protocol_metadata& obj) {
+inline void read_value(const json::Value& rd, raft::protocol_metadata& obj) {
     raft::protocol_metadata tmp;
     read_member(rd, "group", tmp.group);
     read_member(rd, "commit_index", tmp.commit_index);
@@ -59,10 +61,11 @@ inline void read_value(json::Value const& rd, raft::protocol_metadata& obj) {
     read_member(rd, "prev_log_index", tmp.prev_log_index);
     read_member(rd, "prev_log_term", tmp.prev_log_term);
     read_member(rd, "last_visible_index", tmp.last_visible_index);
+    read_member(rd, "dirty_offset", tmp.dirty_offset);
     obj = tmp;
 }
 
-inline void read_value(json::Value const& rd, raft::heartbeat_metadata& obj) {
+inline void read_value(const json::Value& rd, raft::heartbeat_metadata& obj) {
     raft::heartbeat_metadata tmp;
     read_member(rd, "meta", tmp.meta);
     read_member(rd, "node_id", tmp.node_id);
@@ -82,7 +85,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
+inline void read_value(const json::Value& rd, raft::append_entries_reply& out) {
     raft::append_entries_reply obj;
     json_read(target_node_id);
     json_read(node_id);
@@ -94,20 +97,21 @@ inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
     auto result = read_enum_ut(rd, "result", obj.result);
     switch (result) {
     case 0:
-        obj.result = raft::append_entries_reply::status::success;
+        obj.result = raft::reply_result::success;
         break;
     case 1:
-        obj.result = raft::append_entries_reply::status::failure;
+        obj.result = raft::reply_result::failure;
         break;
     case 2:
-        obj.result = raft::append_entries_reply::status::group_unavailable;
+        obj.result = raft::reply_result::group_unavailable;
         break;
     case 3:
-        obj.result = raft::append_entries_reply::status::timeout;
+        obj.result = raft::reply_result::timeout;
         break;
     default:
         vassert(false, "invalid result {}", result);
     }
+    json_read(may_recover);
     out = obj;
 }
 
@@ -116,7 +120,7 @@ inline void rjson_serialize(
     rjson_serialize(wr, v.value());
 }
 
-inline void read_value(json::Value const& rd, model::timestamp& out) {
+inline void read_value(const json::Value& rd, model::timestamp& out) {
     out = model::timestamp(rd.GetInt64());
 }
 
@@ -130,6 +134,7 @@ inline void rjson_serialize(
     json_write(last_dirty_log_index);
     json_write(last_term_base_offset);
     json_write(result);
+    json_write(may_recover);
 }
 
 inline void rjson_serialize(
@@ -139,7 +144,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, model::record_batch_attributes& out) {
+read_value(const json::Value& rd, model::record_batch_attributes& out) {
     out = model::record_batch_attributes(rd.GetInt());
 }
 
@@ -148,20 +153,25 @@ inline void rjson_serialize(
     rjson_serialize(wr, b.value());
 }
 
-inline void read_value(json::Value const& rd, model::record_attributes& out) {
+inline void read_value(const json::Value& rd, model::record_attributes& out) {
     out = model::record_attributes(rd.GetInt());
 }
 
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& wr, const model::record_batch_header& obj) {
     wr.StartObject();
+    json_write(header_crc);
     json_write(size_bytes);
     json_write(base_offset);
+    json_write(type);
     json_write(crc);
     json_write(attrs);
     json_write(last_offset_delta);
     json_write(first_timestamp);
     json_write(max_timestamp);
+    json_write(producer_id);
+    json_write(producer_epoch);
+    json_write(base_sequence);
     json_write(record_count);
     wr.EndObject();
 }
@@ -201,15 +211,20 @@ inline void rjson_serialize(
     wr.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::record_batch_header& out) {
+inline void read_value(const json::Value& rd, model::record_batch_header& out) {
     model::record_batch_header obj;
+    json_read(header_crc);
     json_read(size_bytes);
     json_read(base_offset);
+    json_read(type);
     json_read(crc);
     json_read(attrs);
     json_read(last_offset_delta);
     json_read(first_timestamp);
     json_read(max_timestamp);
+    json_read(producer_id);
+    json_read(producer_epoch);
+    json_read(base_sequence);
     json_read(record_count);
     out = obj;
 }
@@ -223,8 +238,8 @@ inline void read_value(json::Value const& rd, model::record_batch_header& out) {
  * circumvent the normal api to which requires default ctor is available.
  */
 inline void read_value(
-  json::Value const& v, ss::circular_buffer<model::record_batch>& target) {
-    for (auto const& e : v.GetArray()) {
+  const json::Value& v, ss::circular_buffer<model::record_batch>& target) {
+    for (const auto& e : v.GetArray()) {
         model::record_batch_header header;
         std::vector<model::record> records;
 
@@ -239,7 +254,7 @@ inline void read_value(
         vassert(
           e.HasMember("records") && e["records"].IsArray(),
           "invalid records field");
-        for (auto const& r : e["records"].GetArray()) {
+        for (const auto& r : e["records"].GetArray()) {
             vassert(r.IsObject(), "record is not an object");
 
             int32_t size_bytes{};

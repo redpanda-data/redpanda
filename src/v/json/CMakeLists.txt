@@ -4,6 +4,8 @@ v_cc_library(
     json.cc
   DEPS
     Seastar::seastar
+    RapidJSON::rapidjson
+    v::hashing
 )
 
 add_subdirectory(tests)

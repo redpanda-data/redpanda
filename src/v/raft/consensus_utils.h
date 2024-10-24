@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "likely.h"
+#include "base/likely.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/types.h"
@@ -39,20 +39,26 @@ foreign_share_n(model::record_batch_reader&&, std::size_t);
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg);
 
-/// serialize group configuration to the record_batch_reader
-model::record_batch_reader serialize_configuration(group_configuration cfg);
+iobuf serialize_configuration(group_configuration cfg);
+void write_configuration(group_configuration cfg, iobuf& out);
 
 /// returns a fully parsed config state from a given storage log, starting at
 /// given offset
-ss::future<raft::configuration_bootstrap_state>
-read_bootstrap_state(storage::log, model::offset, ss::abort_source&);
+ss::future<raft::configuration_bootstrap_state> read_bootstrap_state(
+  ss::shared_ptr<storage::log>, model::offset, ss::abort_source&);
 
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, ss::circular_buffer<model::record_batch>&&);
+fragmented_vector<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset, fragmented_vector<model::record_batch>&&);
 
 /// writes snapshot with given data to disk
 ss::future<>
 persist_snapshot(storage::simple_snapshot_manager&, snapshot_metadata, iobuf&&);
+
+group_configuration deserialize_configuration(iobuf_parser&);
+
+group_configuration deserialize_nested_configuration(iobuf_parser&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>
@@ -93,9 +99,7 @@ public:
         });
     }
 
-    void print(std::ostream& os) final {
-        fmt::print(os, "{term assigning reader}");
-    }
+    void print(std::ostream& os) final { os << "{term assigning reader}"; }
 
 private:
     std::unique_ptr<model::record_batch_reader::impl> _source;
@@ -124,17 +128,6 @@ public:
 };
 
 /**
- * Extracts all configurations from underlying reader. Configuration are stored
- * in a vector passed as a reference to reader. The reader can will
- * automatically assing offsets to following batches using provided base offset
- * as a staring point
- */
-model::record_batch_reader make_config_extracting_reader(
-  model::offset,
-  std::vector<offset_configuration>&,
-  model::record_batch_reader&&);
-
-/**
  * Function that allow consuming batches with given consumer while lazily
  * extracting raft::group_configuration from the reader.
  *
@@ -146,32 +139,60 @@ auto for_each_ref_extract_configuration(
   model::record_batch_reader&& rdr,
   ReferenceConsumer c,
   model::timeout_clock::time_point tm) {
-    using conf_t = std::vector<offset_configuration>;
+    struct extracting_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
+            if (
+              batch.header().type
+              == model::record_batch_type::raft_configuration) {
+                iobuf_parser parser(
+                  batch.copy_records().begin()->release_value());
+                configurations.emplace_back(
+                  next_offset, deserialize_configuration(parser));
+            }
 
-    return ss::do_with(
-      conf_t{},
-      [tm, c = std::move(c), base_offset, rdr = std::move(rdr)](
-        conf_t& configurations) mutable {
-          return make_config_extracting_reader(
-                   base_offset, configurations, std::move(rdr))
-            .for_each_ref(std::move(c), tm)
-            .then([&configurations](auto res) {
-                return std::make_tuple(
-                  std::move(res), std::move(configurations));
-            });
-      });
+            // we have to calculate offsets manually because the batch may not
+            // yet have the base offset assigned.
+            next_offset += model::offset(batch.header().last_offset_delta)
+                           + model::offset(1);
+
+            return wrapped(batch);
+        }
+
+        auto end_of_stream() {
+            return ss::futurize_invoke(
+                     [this] { return wrapped.end_of_stream(); })
+              .then([confs = std::move(configurations)](auto ret) mutable {
+                  return std::make_tuple(std::move(ret), std::move(confs));
+              });
+        }
+
+        ReferenceConsumer wrapped;
+        model::offset next_offset;
+        std::vector<offset_configuration> configurations;
+    };
+
+    return std::move(rdr).for_each_ref(
+      extracting_consumer{
+        .wrapped = std::move(c),
+        .next_offset = model::next_offset(base_offset)},
+      tm);
 }
 
 bytes serialize_group_key(raft::group_id, metadata_key);
 /**
- * moves raft persistent state from KV store on source shard to the one on
+ * copies raft persistent state from KV store on source shard to the one on
  * target shard.
  */
-ss::future<> move_persistent_state(
+ss::future<> copy_persistent_state(
   raft::group_id,
-  ss::shard_id source_shard,
+  storage::kvstore& source_kvs,
   ss::shard_id target_shard,
   ss::sharded<storage::api>&);
+
+/**
+ * removes raft persistent state from a kvstore.
+ */
+ss::future<> remove_persistent_state(raft::group_id, storage::kvstore&);
 
 /// Creates persitent state for pre-existing partition (stored in S3 bucket).
 ///
@@ -188,5 +209,6 @@ ss::future<> bootstrap_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<model::broker> initial_nodes);
+  std::vector<model::broker> initial_nodes,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state);
 } // namespace raft::details

@@ -1,0 +1,18 @@
+# altera-*, fuschia-*, llvmlibc-*: project specific checks
+# llvm-header-guard: in redpanda we normally to use `#pragma once`
+# modernize-use-trailing-return-type: arbitrary style choice
+# misc-include-cleaner: the check has many false positives and is noisy
+# clang-analyzer-optin.core.EnumCastOutOfRange: Not recommended when using enums for bitwise flags
+---
+Checks: '*,-altera-*,-fuchsia-*,-llvmlibc-*,-llvm-header-guard,-modernize-use-trailing-return-type,-misc-include-cleaner,-clang-analyzer-optin.core.EnumCastOutOfRange'
+WarningsAsErrors: false
+CheckOptions:
+  - key:             readability-identifier-length.IgnoredVariableNames
+    value:           ^it$
+  - key:             readability-identifier-length.IgnoredParameterNames
+    value:           ^(it|a|b)$
+  - key:             readability-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
+  - key:             hicpp-uppercase-literal-suffix.NewSuffixes
+    value:           KiB;MiB;GiB;TiB
+...

@@ -15,14 +15,15 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "config/tls_config.h"
+#include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
-#include "raft/group_manager.h"
-#include "raft/types.h"
+#include "raft/fwd.h"
+#include "raft/notification.h"
 #include "rpc/fwd.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -79,7 +80,8 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<rpc::connection_cache>&,
-      ss::sharded<health_monitor_frontend>&);
+      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<features::feature_table>&);
 
     void disseminate_leadership(
       model::ntp,
@@ -97,7 +99,7 @@ private:
     // When update was delivered successfully the finished flag is set to true
     // and object is removed from pending updates map
     struct update_retry_meta {
-        std::vector<ntp_leader_revision> updates;
+        ss::chunked_fifo<ntp_leader_revision> updates;
         bool finished = false;
     };
     // Used to track the process of requesting update when redpanda starts
@@ -147,17 +149,18 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<rpc::connection_cache>& _clients;
     ss::sharded<health_monitor_frontend>& _health_monitor;
+    ss::sharded<features::feature_table>& _feature_table;
     model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;
-    std::vector<ntp_leader_revision> _requests;
+    ss::chunked_fifo<ntp_leader_revision> _requests;
     std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
-    mutex _lock;
+    mutex _lock{"metadata_dissemination_service"};
     ss::timer<> _dispatch_timer;
     ss::abort_source _as;
     ss::gate _bg;
-    cluster::notification_id_type _notification_handle;
+    raft::group_manager_notification_id _notification_handle;
 };
 
 } // namespace cluster

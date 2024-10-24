@@ -11,6 +11,14 @@
     "get": {
         "summary": "List users",
         "operationId": "list_users",
+        "parameters": [
+            {
+                "name": "include_ephemeral",
+                "in": "query",
+                "required": false,
+                "type": "boolean"
+            }
+        ],
         "responses": {
             "200": {
                 "description": "List users"
@@ -53,4 +61,348 @@
             }
         }
     }
+},
+"/v1/security/users/roles": {
+    "get": {
+        "tags": [
+            "User"
+        ],
+        "summary": "List roles assignments for a user",
+        "operationId": "list_user_roles",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "filter",
+                "description": "Return only roles whose names match this substring",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/roles_list"
+                }
+            },
+            "401": {
+                "description": "Unauthorized"
+            }
+        }
+    }
+},
+"/v1/security/oidc/whoami": {
+    "get": {
+        "summary": "Obtain the principal and details of the JWT passed in the bearer token",
+        "operationId": "oidc_whoami",
+        "responses": {
+            "200": {
+                "description": "Successful response",
+                "schema": {
+                    "$ref": "#/definitions/oidc_whoami_response"
+                }
+            },
+            "401": {
+                "description": "Unauthorized"
+            }
+        }
+    }
+},
+"/v1/security/oidc/keys/cache_invalidate": {
+    "post": {
+        "summary": "Reload the keys from the Identity Provider",
+        "operationId": "oidc_keys_cache_invalidate",
+        "responses": {
+            "200": {
+                "description": "Successful response"
+            },
+            "500": {
+                "description": "Keys failed to reload",
+                "schema": {
+                    "$ref": "#/definitions/oidc_keys_cache_invalidate_error_response"
+                }
+            }
+        }
+    }
+},
+"/v1/security/oidc/revoke": {
+    "post": {
+        "summary": "Reload the keys from the Identity Provider and disconnect clients",
+        "operationId": "oidc_revoke",
+        "responses": {
+            "200": {
+                "description": "Successful response"
+            },
+            "500": {
+                "description": "Keys failed to reload",
+                "schema": {
+                    "$ref": "#/definitions/oidc_keys_cache_invalidate_error_response"
+                }
+            }
+        }
+    }
+},
+"/v1/security/roles": {
+    "get": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "List roles",
+        "operationId": "list_roles",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "filter",
+                "description": "Return only roles whose names match this substring",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            },
+            {
+                "name": "principal",
+                "description": "Return only roles which are assigned to this user",
+                "in": "query",
+                "required": false,
+                "type": "string"
+            },
+            {
+                "name": "principal_type",
+                "description": "Applies to 'user' param; ignored if 'user' is unset",
+                "in": "query",
+                "required": false,
+                "type": "string",
+                "enum": ["User"]
+
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/roles_list"
+                }
+            }
+        }
+    },
+    "post": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Create a role",
+        "operationId": "create_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role_definition",
+                "in": "body",
+                "required": true,
+                "schema": {
+                    "$ref": "#/definitions/role_definition"
+                }
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "201": {
+                "description": "Created",
+                "schema": {
+                    "$ref": "#/definitions/role_definition"
+                }
+            },
+            "400": {
+                "description": "Bad Request",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "409": {
+                "description": "Conflict",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
+},
+"/v1/security/roles/{role}": {
+    "get": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Get the specified role",
+        "operationId": "get_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role"
+                }
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    },
+    "delete": {
+        "tags": [
+            "Roles"
+        ],
+        "summary": "Remove a role by name",
+        "operationId": "delete_role",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "delete_acls",
+                "in": "query",
+                "required": false,
+                "type": "boolean"
+            },
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "204": {
+                "description": ""
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
+},
+"/v1/security/roles/{role}/members": {
+    "get": {
+        "tags": [
+            "Members"
+        ],
+        "summary": "List members assigned a given role",
+        "operationId": "list_role_members",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role_members_list"
+                }
+            },
+            "404": {
+                "description": "Not Found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    },
+    "post": {
+        "tags": [
+            "Members"
+        ],
+        "summary": "Update role membership",
+        "operationId": "update_role_members",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "role",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            },
+            {
+                "name": "create",
+                "description": "Creates a role with name {role} if not found",
+                "in": "query",
+                "required": false,
+                "type": "bool"
+            },
+            {
+                "name": "role_member_update",
+                "in": "body",
+                "required": false,
+                "type": "object",
+                "properties": {
+                    "add": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/role_member"
+                        }
+                    },
+                    "remove": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/role_member"
+                        }
+                    }
+                }
+            }
+        ],
+        "produces": ["application/json"],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/role_member_update_response"
+                }
+            },
+            "400": {
+                "description": "Bad Request",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            },
+            "404": {
+                "description": "Not found",
+                "schema": {
+                    "$ref": "#/definitions/rbac_error_body"
+                }
+            }
+        }
+    }
 }
+

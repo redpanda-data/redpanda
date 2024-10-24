@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "base/vassert.h"
 #include "model/fundamental.h"
-#include "vassert.h"
 
 #include <bits/stdint-uintn.h>
 #include <roaring/roaring.hh>
@@ -27,8 +27,8 @@ public:
       : _base(base_offset)
       , _to_keep(std::move(offset_list)) {}
     compacted_offset_list(compacted_offset_list&&) noexcept = default;
-    compacted_offset_list&
-    operator=(compacted_offset_list&&) noexcept = default;
+    compacted_offset_list& operator=(compacted_offset_list&&) noexcept
+      = default;
     compacted_offset_list(const compacted_offset_list&) = delete;
     compacted_offset_list& operator=(const compacted_offset_list&) = delete;
     ~compacted_offset_list() noexcept = default;

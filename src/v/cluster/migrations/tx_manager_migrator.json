@@ -1,0 +1,19 @@
+{
+    "namespace": "cluster",
+    "service_name": "tx_manager_migrator",
+    "includes": [
+        "cluster/migrations/tx_manager_migrator_types.h"
+    ],
+    "methods": [
+        {
+            "name": "tx_manager_read",
+            "input_type": "tx_manager_read_request",
+            "output_type": "tx_manager_read_reply"
+        },
+        {
+            "name": "tx_manager_replicate",
+            "input_type": "tx_manager_replicate_request",
+            "output_type": "tx_manager_replicate_reply"
+        }
+    ]
+}

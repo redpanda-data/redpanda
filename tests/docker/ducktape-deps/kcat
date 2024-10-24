@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+mkdir /tmp/kcat-src
+curl -SL "https://github.com/edenhill/kcat/archive/1.7.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kcat-src
+cd /tmp/kcat-src
+./configure
+make -j$(nproc)
+make install
+ldconfig
+rm -fr /tmp/kcat-src

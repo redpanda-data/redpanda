@@ -1,13 +1,22 @@
+/*
+ * Copyright 2022 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
 #include "cloud_storage/tx_range_manifest.h"
 
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
+#include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "container/fragmented_vector.h"
 #include "json/istreamwrapper.h"
 #include "model/record.h"
-#include "utils/fragmented_vector.h"
 
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
@@ -22,13 +31,9 @@ remote_manifest_path generate_remote_tx_path(const remote_segment_path& path) {
 }
 
 tx_range_manifest::tx_range_manifest(
-  remote_segment_path spath, const std::vector<model::tx_range>& range)
-  : _path(std::move(spath)) {
-    for (const auto& tx : range) {
-        _ranges.push_back(tx);
-    }
-    _ranges.shrink_to_fit();
-}
+  remote_segment_path spath, fragmented_vector<model::tx_range> range)
+  : _path(std::move(spath))
+  , _ranges(std::move(range)) {}
 
 tx_range_manifest::tx_range_manifest(remote_segment_path spath)
   : _path(std::move(spath)) {}
@@ -45,10 +50,10 @@ ss::future<> tx_range_manifest::update(ss::input_stream<char> is) {
     Document m;
     IStreamWrapper wrapper(stream);
     m.ParseStream(wrapper);
-    update(m);
+    do_update(m);
 }
 
-void tx_range_manifest::update(const rapidjson::Document& doc) {
+void tx_range_manifest::do_update(const rapidjson::Document& doc) {
     _ranges = fragmented_vector<model::tx_range>();
     auto version = doc["version"].GetInt();
     auto compat_version = doc["compat_version"].GetInt();
@@ -77,28 +82,25 @@ void tx_range_manifest::update(const rapidjson::Document& doc) {
     _ranges.shrink_to_fit();
 }
 
-serialized_json_stream tx_range_manifest::serialize() const {
+ss::future<iobuf> tx_range_manifest::serialize_buf() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
-    serialize(os);
+    serialize_ostream(os);
     if (!os.good()) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "could not serialize tx range manifest {}",
           get_manifest_path()));
     }
-    size_t size_bytes = serialized.size_bytes();
-    return {
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
+    co_return serialized;
 }
 
 remote_manifest_path tx_range_manifest::get_manifest_path() const {
     return generate_remote_tx_path(_path);
 }
 
-void tx_range_manifest::serialize(std::ostream& out) const {
+void tx_range_manifest::serialize_ostream(std::ostream& out) const {
     using namespace rapidjson;
     OStreamWrapper wrapper(out);
     Writer<OStreamWrapper> w(wrapper);
@@ -123,5 +125,11 @@ void tx_range_manifest::serialize(std::ostream& out) const {
     }
     w.EndArray();
     w.EndObject();
+}
+
+size_t tx_range_manifest::estimate_serialized_size() const {
+    constexpr auto total_keys_size_per_range = 36;
+    constexpr auto avg_value_bytes = 40;
+    return _ranges.size() * (total_keys_size_per_range + avg_value_bytes);
 }
 } // namespace cloud_storage

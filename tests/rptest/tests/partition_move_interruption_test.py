@@ -1,6 +1,8 @@
 from copyreg import dispatch_table
 import os
 import random
+import signal
+from time import sleep
 from urllib.error import HTTPError
 from numpy import partition
 
@@ -9,7 +11,7 @@ from rptest.services.cluster import cluster
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
-from ducktape.mark import ok_to_fail
+from rptest.util import wait_for_recovery_throttle_rate
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -18,7 +20,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
-from rptest.utils.mode_checks import cleanup_on_early_exit
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 
 NO_RECOVERY = "no_recovery"
 RESTART_RECOVERY = "restart_recovery"
@@ -39,7 +41,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             extra_rp_conf={
                 # Disable leader balancer, as this test is doing its own
                 # partition movement and the balancer would interfere
-                'enable_leader_balancer': False
+                'enable_leader_balancer': False,
+                'partition_autobalancing_mode': 'off'
             },
             **kwargs)
 
@@ -49,8 +52,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.consumer_timeout_seconds = 90
 
         if os.environ.get('BUILD_TYPE', None) == 'debug':
-            self.throughput = 1000
-            self.min_records = 10000
+            self.throughput = 500
+            self.min_records = 5000
         else:
             self.throughput = 10000
             self.min_records = 100000
@@ -135,9 +138,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                                   previous_assignment=prev_assignment)
         self.check_metrics()
 
-    def _throttle_recovery(self, new_value):
+    def _throttle_recovery(self, new_rate: int):
         self.redpanda.set_cluster_config(
-            {"raft_learner_recovery_rate": str(new_value)})
+            {"raft_learner_recovery_rate": str(new_rate)})
+        wait_for_recovery_throttle_rate(redpanda=self.redpanda,
+                                        new_rate=new_rate)
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
@@ -153,7 +158,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.start_redpanda(num_nodes=5,
                             extra_rp_conf={
                                 "default_topic_replications": 3,
-                                "compacted_log_segment_size": 1 * (2 ^ 20)
+                                "compacted_log_segment_size": 1 * (2**20),
+                                "controller_snapshot_max_age_sec": 3,
                             })
         # skip compacted topics tests in debug mode
         if compacted and self.debug_mode:
@@ -198,8 +204,6 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 min_records=self.min_records,
                 enable_compaction=compacted)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5608
-    # https://github.com/redpanda-data/redpanda/issues/6020
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
@@ -218,7 +222,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                 "default_topic_replications": 3,
                 # make segments small to ensure that they are compacted during
                 # the test (only sealed i.e. not being written segments are compacted)
-                "compacted_log_segment_size": 1 * (2 ^ 20),
+                "compacted_log_segment_size": 1 * (2**20),
             })
 
         # skip compacted topics tests in debug mode
@@ -350,7 +354,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         wait_until(new_controller, 10, 1)
 
         # update replica set
-        admin.set_partition_replicas(self.topic, partition, new_assignment)
+        self._set_partition_assignments(self.topic, partition, new_assignment,
+                                        admin)
 
         self._wait_for_move_in_progress(self.topic, partition)
 
@@ -496,6 +501,188 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             return len([o for o in ongoing if is_node_reconfiguration(o)]) == 0
 
         wait_until(has_no_node_reconfigurations, 60, 1)
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=self.consumer_timeout_seconds,
+                            min_records=self.min_records)
+
+    def get_node_by_id(self, id):
+        for n in self.redpanda.nodes:
+            if self.redpanda.node_id(n) == id:
+                return n
+        return None
+
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_cancelling_partition_move_node_down(self):
+        """
+        Cancel partition moving with active consumer / producer
+        """
+
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(partition_count=self.partition_count,
+                         replication_factor=3)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=self.throughput,
+                           timeout_sec=self.consumer_timeout_seconds)
+
+        metadata = self.client().describe_topics()
+        topic, partition = self._random_partition(metadata)
+        admin = Admin(self.redpanda)
+        assignments = self._get_assignments(admin, topic, partition)
+        prev_assignments = assignments.copy()
+
+        self.logger.info(
+            f"initial assignments for {topic}/{partition}: {prev_assignments}")
+
+        replica_ids = [a['node_id'] for a in prev_assignments]
+        # throttle recovery to prevent partition move from finishing
+        self._throttle_recovery(10)
+        to_stop = None
+        for n in self.redpanda.nodes:
+            id = self.redpanda.node_id(n)
+            if id not in replica_ids:
+                previous = assignments.pop()
+                assignments.append({"node_id": id, "core": 0})
+                # stop a node that is going to be removed from current partition assignment
+                to_stop = self.get_node_by_id(previous['node_id'])
+                self.redpanda.stop_node(to_stop)
+                break
+
+        def new_controller():
+            leader_id = admin.get_partition_leader(namespace="redpanda",
+                                                   topic="controller",
+                                                   partition=0)
+            return leader_id != -1 and leader_id != self.redpanda.node_id(
+                to_stop)
+
+        wait_until(new_controller, 30)
+
+        self.logger.info(
+            f"moving {topic}/{partition}: {prev_assignments} -> {assignments}")
+
+        self._set_partition_assignments(topic, partition, assignments, admin)
+
+        self._wait_for_move_in_progress(topic, partition)
+
+        admin.cancel_partition_move(topic, partition)
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=self.consumer_timeout_seconds,
+                            min_records=self.min_records)
+
+        def move_finished():
+            for n in self.redpanda.started_nodes():
+                partition_info = admin.get_partitions(topic=topic,
+                                                      partition=partition,
+                                                      node=n)
+                if partition_info['status'] != 'done':
+                    return False
+                if not self._equal_assignments(partition_info['replicas'],
+                                               prev_assignments):
+                    return False
+
+            return True
+
+        wait_until(move_finished, 30, backoff_sec=1)
+
+    #TODO: investigate slow startups in debug mode
+    @skip_debug_mode
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(replication_factor=[1, 3])
+    def test_cancellations_interrupted_with_restarts(self, replication_factor):
+
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(name="test-move-topic",
+                         partition_count=self.partition_count,
+                         replication_factor=replication_factor)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=self.throughput,
+                           timeout_sec=self.consumer_timeout_seconds)
+
+        topic = spec.name
+        partition = 0
+        admin = Admin(self.redpanda)
+
+        assignments = self._get_assignments(admin, topic, partition)
+        prev_assignments = assignments.copy()
+
+        # throttle recovery to prevent partition move from finishing
+
+        for i in range(0, 10):
+            self._throttle_recovery(10)
+            should_cancel = i % 2
+            assignments = self._get_assignments(admin, topic, partition)
+            prev_assignments = assignments.copy()
+            self.logger.info(
+                f"[{i}] current assignments for {topic}/{partition}: {prev_assignments}"
+            )
+            replica_ids = [a['node_id'] for a in prev_assignments]
+            available_ids = [
+                self.redpanda.node_id(n) for n in self.redpanda.nodes
+            ]
+            random.shuffle(available_ids)
+            for id in available_ids:
+                if id not in replica_ids:
+                    assignments.pop()
+                    assignments.append({"node_id": id, "core": 0})
+
+            self.logger.info(
+                f"[{i}] moving {topic}/{partition}: {prev_assignments} -> {assignments}"
+            )
+
+            self._set_partition_assignments(topic, partition, assignments,
+                                            admin)
+
+            self._wait_for_move_in_progress(topic, partition)
+
+            if should_cancel:
+                try:
+                    admin.cancel_partition_move(topic, partition)
+                except:
+                    pass
+
+            self._throttle_recovery(10000000)
+            for n in self.redpanda.nodes:
+                self.redpanda.stop_node(n, forced=True)
+            for n in self.redpanda.nodes:
+                self.redpanda.start_node(n)
+
+            def move_finished():
+
+                for n in self.redpanda.started_nodes():
+                    partition_info = admin.get_partitions(topic=topic,
+                                                          partition=partition,
+                                                          node=n)
+                    if partition_info['status'] != 'done':
+                        return False
+
+                    replicas = partition_info['replicas']
+
+                    cancelled = self._equal_assignments(
+                        replicas, prev_assignments)
+                    reverted = self._equal_assignments(replicas, assignments)
+                    if not (cancelled or reverted):
+                        return False
+
+                return True
+
+            wait_until(move_finished, 80, backoff_sec=1)
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=self.consumer_timeout_seconds,

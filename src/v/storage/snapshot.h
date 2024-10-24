@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -25,6 +25,7 @@ namespace storage {
 
 class snapshot_reader;
 class snapshot_writer;
+class file_snapshot_writer;
 
 /**
  * Snapshot manager.
@@ -107,9 +108,12 @@ public:
       , _io_prio(io_prio) {}
 
     ss::future<std::optional<snapshot_reader>> open_snapshot(ss::sstring);
+    ss::future<std::optional<ss::file>>
+    open_snapshot_file(const ss::sstring&) const;
+    ss::future<uint64_t> get_snapshot_size(ss::sstring);
 
-    ss::future<snapshot_writer> start_snapshot(ss::sstring);
-    ss::future<> finish_snapshot(snapshot_writer&);
+    ss::future<file_snapshot_writer> start_snapshot(ss::sstring);
+    ss::future<> finish_snapshot(file_snapshot_writer&);
 
     std::filesystem::path snapshot_path(ss::sstring filename) const {
         return _dir / filename.c_str();
@@ -118,6 +122,11 @@ public:
     ss::future<> remove_partial_snapshots();
 
     ss::future<> remove_snapshot(ss::sstring);
+
+    /*
+     * Return the size of the snapshot on disk.
+     */
+    ss::future<std::optional<size_t>> size(ss::sstring filename) const;
 
 private:
     ss::sstring _partial_prefix;
@@ -198,7 +207,7 @@ private:
 /**
  * Use the snapshot manager to open a new snapshot:
  *
- *    snapshot_writer writer = manager.start_snapshot().get0();
+ *    snapshot_writer writer = manager.start_snapshot().get();
  *
  * Initialize the snapshot with metadata:
  *
@@ -217,10 +226,7 @@ private:
  */
 class snapshot_writer {
 public:
-    snapshot_writer(
-      ss::output_stream<char>,
-      std::filesystem::path,
-      std::filesystem::path) noexcept;
+    explicit snapshot_writer(ss::output_stream<char>) noexcept;
 
     ~snapshot_writer() noexcept;
     snapshot_writer(const snapshot_writer&) = delete;
@@ -232,15 +238,38 @@ public:
     ss::output_stream<char>& output() { return _output; }
     ss::future<> close();
 
+private:
+    ss::output_stream<char> _output;
+    bool _closed = false;
+};
+
+class file_snapshot_writer {
+public:
+    file_snapshot_writer(
+      ss::output_stream<char>,
+      std::filesystem::path,
+      std::filesystem::path) noexcept;
+
+    ~file_snapshot_writer() noexcept = default;
+    file_snapshot_writer(const file_snapshot_writer&) = delete;
+    file_snapshot_writer(file_snapshot_writer&&) noexcept = default;
+    file_snapshot_writer& operator=(const file_snapshot_writer&) = delete;
+    file_snapshot_writer& operator=(file_snapshot_writer&&) noexcept = default;
+
+    ss::future<> write_metadata(iobuf buffer) {
+        return _writer.write_metadata(std::move(buffer));
+    }
+    ss::output_stream<char>& output() { return _writer.output(); }
+    ss::future<> close() { return _writer.close(); }
+
     const std::filesystem::path& path() const { return _path; }
 
     const std::filesystem::path& target() const { return _target; }
 
 private:
+    snapshot_writer _writer;
     std::filesystem::path _path;
-    ss::output_stream<char> _output;
     std::filesystem::path _target;
-    bool _closed = false;
 };
 
 class simple_snapshot_manager {
@@ -258,10 +287,18 @@ public:
         return _snapshot.open_snapshot(_filename);
     }
 
-    ss::future<snapshot_writer> start_snapshot() {
+    ss::future<std::optional<ss::file>> open_snapshot_file() const {
+        return _snapshot.open_snapshot_file(_filename);
+    }
+
+    ss::future<uint64_t> get_snapshot_size() {
+        return _snapshot.get_snapshot_size(_filename);
+    }
+
+    ss::future<file_snapshot_writer> start_snapshot() {
         return _snapshot.start_snapshot(_filename);
     }
-    ss::future<> finish_snapshot(snapshot_writer& writer) {
+    ss::future<> finish_snapshot(file_snapshot_writer& writer) {
         return _snapshot.finish_snapshot(writer);
     }
 
@@ -275,6 +312,15 @@ public:
 
     ss::future<> remove_snapshot() {
         return _snapshot.remove_snapshot(_filename);
+    }
+
+    const ss::sstring& name() { return _filename; }
+
+    /*
+     * Return the size of the snapshot on disk.
+     */
+    ss::future<std::optional<size_t>> size() const {
+        return _snapshot.size(_filename);
     }
 
 private:

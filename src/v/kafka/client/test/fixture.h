@@ -19,16 +19,37 @@ namespace kc = kafka::client;
 
 class kafka_client_fixture : public redpanda_thread_fixture {
 public:
-    void restart() {
+    kafka_client_fixture()
+      : redpanda_thread_fixture() {}
+
+    kafka_client_fixture(std::optional<uint32_t> kafka_admin_topic_api_rate)
+      : redpanda_thread_fixture(
+          model::node_id(1),
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          configure_node_id::yes,
+          empty_seed_starts_cluster::yes,
+          kafka_admin_topic_api_rate) {}
+
+    void restart(bool test_mode = false) {
         shutdown();
         app_signal = std::make_unique<::stop_signal>();
         ss::smp::invoke_on_all([] {
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
-        }).get0();
+        }).get();
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
-        app.wire_up_and_start(*app_signal);
+        app.wire_up_and_start(*app_signal, test_mode);
     }
 
     kc::client make_client() { return kc::client{proxy_client_config()}; }
@@ -73,5 +94,52 @@ public:
           model::kafka_namespace, model::topic{topic_name});
         add_topic(tp_ns, partitions).get();
         return tp_ns;
+    }
+
+    void enable_sasl_and_restart(ss::sstring username) {
+        ss::smp::invoke_on_all([username]() mutable {
+            auto& config = config::shard_local_cfg();
+
+            config.get("enable_sasl").set_value(true);
+            config.get("superusers")
+              .set_value(std::vector<ss::sstring>{username});
+
+            auto& node_config = config::node();
+            int32_t kafka_port
+              = node_config.kafka_api.value()[0].address.port();
+            node_config.get("kafka_api")
+              .set_value(std::vector<config::broker_authn_endpoint>{
+                config::broker_authn_endpoint{
+                  .address = net::unresolved_address("127.0.0.1", kafka_port),
+                  .authn_method = config::broker_authn_method::sasl}});
+
+            node_config.get("admin").set_value(
+              std::vector<model::broker_endpoint>{model::broker_endpoint(
+                net::unresolved_address("127.0.0.1", 9644))});
+        }).get();
+
+        restart(true);
+    }
+
+    void disable_sasl_and_restart() {
+        ss::smp::invoke_on_all([]() mutable {
+            auto& config = config::shard_local_cfg();
+
+            config.get("enable_sasl").reset();
+            config.get("superusers").reset();
+
+            auto& node_config = config::node();
+            int32_t kafka_port
+              = node_config.kafka_api.value()[0].address.port();
+            node_config.get("kafka_api")
+              .set_value(std::vector<config::broker_authn_endpoint>{
+                config::broker_authn_endpoint{
+                  .address = net::unresolved_address("127.0.0.1", kafka_port),
+                  .authn_method = std::nullopt}});
+            node_config.get("admin").set_value(
+              std::vector<model::broker_endpoint>{});
+        }).get();
+
+        restart(true);
     }
 };

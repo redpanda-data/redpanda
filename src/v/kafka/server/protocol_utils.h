@@ -11,14 +11,11 @@
 
 #pragma once
 
-#include "kafka/protocol/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
-#include "kafka/types.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scattered_message.hh>
-#include <seastar/core/temporary_buffer.hh>
 
 #include <optional>
 

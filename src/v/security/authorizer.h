@@ -9,22 +9,175 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "config/property.h"
-#include "kafka/types.h"
-#include "model/fundamental.h"
-#include "seastarx.h"
+#include "container/fragmented_vector.h"
 #include "security/acl.h"
-#include "security/acl_store.h"
+#include "security/acl_entry_set.h"
+#include "security/fwd.h"
 #include "security/logger.h"
-#include "vlog.h"
+#include "security/types.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
+
+#include <iosfwd>
 
 namespace security {
+
+/**
+ * Holds authZ check metadata for audit processing
+ */
+struct auth_result {
+    // Flag indicating if user is authorized
+    bool authorized{false};
+    // Indicates if the authorization system is disabled
+    bool authorization_disabled{false};
+    // Indicates if the user is a superuser
+    bool is_superuser{false};
+    // Indicates if no ACL matches were found
+    bool empty_matches{false};
+
+    // If found, the resource pattern that was matched to provide authZ decision
+    std::optional<std::reference_wrapper<const resource_pattern>>
+      resource_pattern;
+    // If found, the ACL that was matched that provided the authZ decision
+    std::optional<acl_entry_set::const_reference> acl;
+    // The principal that was checked
+    security::acl_principal principal;
+    // The host
+    security::acl_host host;
+    // The type of resource
+    security::resource_type resource_type;
+    // The name of the resource
+    ss::sstring resource_name;
+    // The operation request
+    security::acl_operation operation;
+
+    // If found, the role that was matched to provide authZ decision
+    std::optional<security::role_name> role;
+
+    friend std::ostream& operator<<(std::ostream& os, const auth_result& a);
+
+    explicit operator bool() const noexcept { return is_authorized(); }
+
+    bool is_authorized() const noexcept { return authorized; }
+
+    template<typename T>
+    static auth_result authz_disabled(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource) {
+        return {
+          .authorized = true,
+          .authorization_disabled = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation,
+        };
+    }
+
+    template<typename T>
+    static auth_result superuser_authorized(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource) {
+        return {
+          .authorized = true,
+          .is_superuser = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation};
+    }
+
+    template<typename T>
+    static auth_result empty_match_result(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized) {
+        return {
+          .authorized = authorized,
+          .empty_matches = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation};
+    }
+
+    template<typename T>
+    static auth_result acl_match(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized,
+      const security::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation};
+    }
+
+    template<typename T>
+    static auth_result role_acl_match(
+      const security::acl_principal& principal,
+      const security::role_name& role,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      bool authorized,
+      const security::acl_match& match) {
+        return {
+          .authorized = authorized,
+          .resource_pattern = match.resource,
+          .acl = match.acl,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation,
+          .role = role};
+    }
+
+    template<typename T>
+    static auth_result opt_acl_match(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      const T& resource,
+      const std::optional<security::acl_match>& match) {
+        return {
+          .authorized = match.has_value(),
+          .empty_matches = !match.has_value(),
+          .resource_pattern = match.has_value()
+                                ? std::make_optional(match->resource)
+                                : std::nullopt,
+          .acl = match.has_value() ? std::make_optional(match->acl)
+                                   : std::nullopt,
+          .principal = principal,
+          .host = host,
+          .resource_type = get_resource_type<T>(),
+          .resource_name = resource(),
+          .operation = operation};
+    }
+};
 
 /*
  * Primary interface for request authorization and management of ACLs.
@@ -42,87 +195,69 @@ public:
     // allow operation when no ACL match is found
     using allow_empty_matches = ss::bool_class<struct allow_empty_matches_type>;
 
-    explicit authorizer(
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : authorizer(allow_empty_matches::no, superusers_cb) {}
+    authorizer() = delete;
+    ~authorizer();
+
+    authorizer(
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles);
 
     authorizer(
       allow_empty_matches allow,
-      std::function<config::binding<std::vector<ss::sstring>>()> superusers_cb)
-      : _superusers_conf(superusers_cb())
-      , _allow_empty_matches(allow) {
-        update_superusers();
-        _superusers_conf.watch([this]() { update_superusers(); });
-    }
+      config::binding<std::vector<ss::sstring>> superusers,
+      const role_store* roles);
 
     /*
      * Add ACL bindings to the authorizer.
      */
-    void add_bindings(const std::vector<acl_binding>& bindings) {
-        if (unlikely(
-              seclog.is_shard_zero()
-              && seclog.is_enabled(ss::log_level::debug))) {
-            for (const auto& binding : bindings) {
-                vlog(seclog.debug, "Adding ACL binding: {}", binding);
-            }
-        }
-        _store.add_bindings(bindings);
-    }
+    void add_bindings(const std::vector<acl_binding>& bindings);
 
     /*
      * Remove ACL bindings that match the filter(s).
      */
     std::vector<std::vector<acl_binding>> remove_bindings(
-      const std::vector<acl_binding_filter>& filters, bool dry_run = false) {
-        return _store.remove_bindings(filters, dry_run);
-    }
+      const std::vector<acl_binding_filter>& filters, bool dry_run = false);
 
     /*
      * Retrieve ACL bindings that match the filter.
      */
-    std::vector<acl_binding> acls(const acl_binding_filter& filter) const {
-        return _store.acls(filter);
-    }
+    std::vector<acl_binding> acls(const acl_binding_filter& filter) const;
 
     /*
      * Authorize an operation on a resource. The type of resource is deduced by
      * the type `T` of the name of the resouce (e.g. `model::topic`).
      */
     template<typename T>
-    bool authorized(
+    auth_result authorized(
       const T& resource_name,
       acl_operation operation,
       const acl_principal& principal,
-      const acl_host& host) const {
-        auto type = get_resource_type<T>();
-        auto acls = _store.find(type, resource_name());
+      const acl_host& host) const;
 
-        if (_superusers.contains(principal)) {
-            return true;
-        }
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
 
-        if (acls.empty()) {
-            return bool(_allow_empty_matches);
-        }
-
-        // check for deny
-        if (acls.contains(operation, principal, host, acl_permission::deny)) {
-            return false;
-        }
-
-        // check for allow
-        auto ops = acl_implied_ops(operation);
-        return std::any_of(
-          ops.cbegin(),
-          ops.cend(),
-          [&acls, &principal, &host](acl_operation operation) {
-              return acls.contains(
-                operation, principal, host, acl_permission::allow);
-          });
-    }
+    acl_store& store() &;
+    const acl_store& store() const&;
 
 private:
-    acl_store _store;
+    template<typename T>
+    auth_result do_authorized(
+      const T& resource_name,
+      acl_operation operation,
+      const acl_principal& principal,
+      const acl_host& host) const;
+
+    /*
+     * Compute whether the specified operation is allowed based on the implied
+     * operations.
+     */
+    std::optional<security::acl_match> acl_any_implied_ops_allowed(
+      const acl_matches& acls,
+      const acl_principal_base& principal,
+      const acl_host& host,
+      const acl_operation operation) const;
+    std::unique_ptr<acl_store> _store;
 
     // The list of superusers is stored twice: once as a vector in the
     // configuration subsystem, then again has a set here for fast lookups.
@@ -141,7 +276,12 @@ private:
         }
     }
 
+    // NOTE: _allow_empty_matches is used for testing purposes only. In normal
+    // operation, an empty match result is ALWAYS unauthorized.
     allow_empty_matches _allow_empty_matches;
+    const role_store* _role_store;
+    class probe;
+    std::unique_ptr<probe> _probe;
 };
 
 } // namespace security

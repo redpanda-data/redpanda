@@ -10,14 +10,18 @@
  */
 
 #pragma once
-#include "seastarx.h"
-#include "serde/serde.h"
+#include "base/seastarx.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 
 #include <seastar/core/sstring.hh>
 
-#include <boost/date_time/gregorian/gregorian_types.hpp>
 #include <fmt/core.h>
 
+#include <chrono>
 #include <exception>
 #include <fstream>
 #include <vector>
@@ -62,15 +66,19 @@ inline std::ostream& operator<<(std::ostream& os, license_type lt) {
     return os;
 }
 
-struct license : serde::envelope<license, serde::version<0>> {
+struct license
+  : serde::envelope<license, serde::version<1>, serde::compat_version<0>> {
+    using clock = std::chrono::system_clock;
+
     /// Expected encoded contents
     uint8_t format_version;
     license_type type;
     ss::sstring organization;
     std::chrono::seconds expiry;
+    ss::sstring checksum;
 
     auto serde_fields() {
-        return std::tie(format_version, type, organization, expiry);
+        return std::tie(format_version, type, organization, expiry, checksum);
     }
 
     /// true if todays date is greater then \ref expiry
@@ -79,8 +87,15 @@ struct license : serde::envelope<license, serde::version<0>> {
     /// Seconds since epoch until license expiration
     std::chrono::seconds expires() const noexcept;
 
+    /// Expiration timepoint
+    clock::time_point expiration() const noexcept;
+
+    auto operator<=>(const license&) const = delete;
+
 private:
     friend struct fmt::formatter<license>;
+
+    friend bool operator==(const license& a, const license& b) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const license& lic);
 };
@@ -89,7 +104,7 @@ private:
 /// failed, reasons could be:
 /// 1. Malformed license
 /// 2. Invalid license
-license make_license(const ss::sstring& raw_license);
+license make_license(std::string_view raw_license);
 
 } // namespace security
 

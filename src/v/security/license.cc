@@ -11,58 +11,23 @@
 
 #include "security/license.h"
 
+#include "crypto/crypto.h"
+#include "crypto/types.h"
+#include "hashing/secure.h"
 #include "json/document.h"
 #include "json/validator.h"
 #include "utils/base64.h"
 
-#include <boost/filesystem.hpp>
-#include <cryptopp/base64.h>
-#include <cryptopp/rsa.h>
-#include <cryptopp/sha.h>
+#include <algorithm>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace security {
 
 namespace crypto {
 
-static ss::sstring parse_pem_contents(const ss::sstring& pem_key) {
-    static constexpr std::string_view public_key_header
-      = "-----BEGIN PUBLIC KEY-----";
-    static constexpr std::string_view public_key_footer
-      = "-----END PUBLIC KEY-----";
-
-    size_t pos1{ss::sstring::npos}, pos2{ss::sstring::npos};
-    pos1 = pem_key.find(public_key_header.begin());
-    if (pos1 == ss::sstring::npos) {
-        throw std::runtime_error(
-          "Embedded public key error: PEM header not found");
-    }
-
-    pos2 = pem_key.find(public_key_footer.begin(), pos1 + 1);
-    if (pos2 == ss::sstring::npos) {
-        throw std::runtime_error(
-          "Embedded public key error: PEM footer not found");
-    }
-
-    // Start position and length
-    pos1 = pos1 + public_key_header.length();
-    pos2 = pos2 - pos1;
-    return pem_key.substr(pos1, pos2);
-}
-
-static CryptoPP::ByteQueue convert_pem_to_ber(const ss::sstring& pem_key) {
-    const ss::sstring keystr = parse_pem_contents(pem_key);
-    CryptoPP::StringSource ss{keystr.c_str(), true};
-
-    // Base64 decode, place in a ByteQueue
-    CryptoPP::ByteQueue queue;
-    CryptoPP::Base64Decoder decoder;
-    decoder.Attach(new CryptoPP::Redirector(queue));
-    ss.TransferTo(decoder);
-    decoder.MessageEnd();
-    return queue;
-}
-
-static const CryptoPP::RSA::PublicKey public_key = []() {
+static const ::crypto::key public_key = []() {
     static const ss::sstring public_key_material
       = "-----BEGIN PUBLIC KEY-----\n"
         "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
@@ -73,10 +38,10 @@ static const CryptoPP::RSA::PublicKey public_key = []() {
         "dcVQBm3tqIySLGFtiJp+RIa+nJhMrd+G4sqwm4FhsmG35Fbr0XQJY0sM6MaFJcDH\n"
         "swIDAQAB\n"
         "-----END PUBLIC KEY-----\n";
-    auto queue = convert_pem_to_ber(public_key_material);
-    CryptoPP::RSA::PublicKey public_key;
-    public_key.BERDecode(queue);
-    return public_key;
+    return ::crypto::key::load_key(
+      public_key_material,
+      ::crypto::format_type::PEM,
+      ::crypto::is_private_key_t::no);
 }();
 
 /// The redpanda license is comprised of 2 sections seperated by a delimiter.
@@ -84,13 +49,8 @@ static const CryptoPP::RSA::PublicKey public_key = []() {
 /// signature, which is a PCKS1.5 sigature of the contents of the data section.
 static bool
 verify_license(const ss::sstring& data, const ss::sstring& signature) {
-    CryptoPP::RSASS<CryptoPP::PKCS1v15, CryptoPP::SHA256>::Verifier verifier(
-      public_key);
-    return verifier.VerifyMessage(
-      reinterpret_cast<const CryptoPP::byte*>(data.c_str()), // NOLINT
-      data.length(),
-      reinterpret_cast<const CryptoPP::byte*>(signature.data()), // NOLINT
-      signature.size());
+    return ::crypto::verify_signature(
+      ::crypto::digest_type::SHA256, public_key, data, signature);
 }
 
 } // namespace crypto
@@ -127,7 +87,7 @@ struct license_components {
     ss::sstring signature;
 };
 
-static license_components parse_license(const ss::sstring& license) {
+static license_components parse_license(std::string_view license) {
     static constexpr auto signature_delimiter = ".";
     const auto itr = license.find(signature_delimiter);
     if (itr == ss::sstring::npos) {
@@ -137,7 +97,7 @@ static license_components parse_license(const ss::sstring& license) {
     /// done so that it can have a utf-8 interpretation so the license file
     /// doesn't have to be in binary format
     return license_components{
-      .data = license.substr(0, itr),
+      .data = ss::sstring{license.substr(0, itr)},
       .signature = base64_to_string(
         license.substr(itr + strlen(signature_delimiter)))};
 }
@@ -191,7 +151,17 @@ static void parse_data_section(license& lc, const json::Document& doc) {
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
-license make_license(const ss::sstring& raw_license) {
+static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
+    bytes checksum;
+    hash_sha256 h;
+    h.update(raw_license);
+    const auto digest = h.reset();
+    checksum.resize(digest.size());
+    std::copy_n(digest.begin(), digest.size(), checksum.begin());
+    return to_hex(checksum);
+}
+
+license make_license(std::string_view raw_license) {
     try {
         license lc;
         auto components = parse_license(raw_license);
@@ -205,6 +175,7 @@ license make_license(const ss::sstring& raw_license) {
             throw license_malformed_exception("Malformed data section");
         }
         parse_data_section(lc, doc);
+        lc.checksum = calculate_sha256_checksum(raw_license);
         return lc;
     } catch (const base64_decoder_exception&) {
         throw license_malformed_exception("Failed to decode data section");
@@ -212,9 +183,11 @@ license make_license(const ss::sstring& raw_license) {
 }
 
 bool license::is_expired() const noexcept {
-    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-      std::chrono::system_clock::now().time_since_epoch());
-    return now > expiry;
+    return clock::now() > expiration();
+}
+
+license::clock::time_point license::expiration() const noexcept {
+    return clock::time_point{expiry};
 }
 
 } // namespace security
@@ -226,7 +199,7 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   const security::license& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    return format_to(
+    return fmt::format_to(
       ctx.out(),
       "[Version: {0}, Organization: {1}, Type: {2} Expiry(epoch): {3}]",
       r.format_version,

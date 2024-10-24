@@ -1,0 +1,27 @@
+---
+name: Compile and check P models
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'tests/models/**'
+      - '.github/workflows/p.yml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - 'tests/models/**'
+      - '.github/workflows/p.yml'
+jobs:
+  cpp:
+    name: Compile and check P models
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Compile
+        working-directory: tests/models
+        run: ../../tools/p/p compile
+      - name: Check
+        working-directory: tests/models
+        run: ../../tools/p/p check -tc tcMultiPartitionProduce -t 10

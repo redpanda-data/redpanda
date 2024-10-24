@@ -3,8 +3,8 @@ v_cc_library(
   NAME storage
   SRCS
     segment_reader.cc
+    segment_deduplication_utils.cc
     log_manager.cc
-    mem_log_impl.cc
     disk_log_impl.cc
     disk_log_appender.cc
     parser.cc
@@ -18,7 +18,7 @@ v_cc_library(
     segment_set.cc
     segment.cc
     segment_index.cc
-    segment_appender_utils.cc
+    record_batch_utils.cc
     storage_resources.cc
     batch_cache.cc
     index_state.cc
@@ -34,22 +34,33 @@ v_cc_library(
     readers_cache.cc
     backlog_controller.cc
     compaction_controller.cc
+    offset_to_filepos.cc
+    offset_translator.cc
+    fs_utils.cc
+    file_sanitizer_types.cc
+    api.cc
+    node.cc
+    key_offset_map.cc
+    chunk_cache.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::config
+    v::metrics
     v::model
-    v::rphashing
+    v::hashing
     v::finjector
     v::syschecks
     v::compression
-    v::rprandom
+    v::random
+    v::resource_mgmt
     absl::flat_hash_map
     absl::btree
     Roaring::roaring
   PUBLIC
 )
 
+add_subdirectory(mvlog)
 add_subdirectory(tests)
 add_subdirectory(opfuzz)
 

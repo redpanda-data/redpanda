@@ -1,0 +1,49 @@
+---
+name: Lint & Test rp-storage-tool
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'tools/rp_storage_tool/**'
+      - '.github/workflows/rp-storage-tool-checks.yml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - 'tools/rp_storage_tool/**'
+      - '.github/workflows/rp-storage-tool-checks.yml'
+jobs:
+  check:
+    name: Compile check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --manifest-path tools/rp_storage_tool/Cargo.toml
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path tools/rp_storage_tool/Cargo.toml

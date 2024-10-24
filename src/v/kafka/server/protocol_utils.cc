@@ -32,7 +32,7 @@ parse_v1_header(ss::input_stream<char>& src) {
 
     iobuf data;
     data.append(std::move(buf));
-    request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
 
     request_header header;
     header.key = api_key(reader.read_int16());
@@ -72,6 +72,7 @@ parse_v1_header(ss::input_stream<char>& src) {
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
     validate_utf8(*header.client_id);
+    validate_no_control(*header.client_id);
     co_return header;
 }
 
@@ -103,7 +104,7 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
      */
     iobuf tags_header;
     if (response->is_flexible()) {
-        response_writer writer(tags_header);
+        protocol::encoder writer(tags_header);
         vassert(response->tags(), "If flexible, tags should be filled");
         writer.write_tags(std::move(*response->tags()));
     }
@@ -111,7 +112,7 @@ ss::scattered_message<char> response_as_scattered(response_ptr response) {
       sizeof(response->correlation()) + tags_header.size_bytes()
       + response->buf().size_bytes());
     iobuf header;
-    response_writer writer(header);
+    protocol::encoder writer(header);
     writer.write(size);
     writer.write(response->correlation());
     header.append(std::move(tags_header));

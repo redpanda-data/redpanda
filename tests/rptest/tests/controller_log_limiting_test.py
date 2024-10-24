@@ -10,7 +10,6 @@
 import time
 import json
 from subprocess import CalledProcessError
-from ducktape.mark import ok_to_fail
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest
@@ -29,6 +28,8 @@ from rptest.services.mirror_maker2 import MirrorMaker2
 from rptest.services.cluster import cluster
 from requests.exceptions import HTTPError
 from ducktape.utils.util import wait_until
+
+from rptest.utils.mode_checks import skip_debug_mode
 
 OPERATIONS_LIMIT = 3
 TOO_MANY_REQUESTS_ERROR_CODE = 89
@@ -176,15 +177,20 @@ class ControllerConfigLimitTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1)
         for i in range(requests_amount):
-            out = self.client().alter_broker_config(
-                {
-                    "controller_log_accummulation_rps_capacity_topic_operations":
-                    i
-                },
-                incremental=True)
-            if "THROTTLING_QUOTA_EXCEEDED" in out:
-                quota_error_amount += 1
-            if "OK" in out:
+            try:
+                self.client().alter_broker_config(
+                    {
+                        "controller_log_accummulation_rps_capacity_topic_operations":
+                        i
+                    },
+                    incremental=True)
+            except RuntimeError as e:
+                if "THROTTLING_QUOTA_EXCEEDED" in str(e):
+                    quota_error_amount += 1
+                else:
+                    # unexpected error type
+                    raise
+            else:
                 success_amount += 1
             time.sleep(0.1)
         assert quota_error_amount > 0
@@ -194,21 +200,19 @@ class ControllerConfigLimitTest(RedpandaTest):
         return get_metric(self.redpanda, "requests_available_rps",
                           "configuration_operations") == capacity
 
-    @ok_to_fail
     @cluster(num_nodes=3)
     def test_alter_configs_limit_accumulate(self):
         requests_amount = OPERATIONS_LIMIT * 2
-        capacity = requests_amount * 2
         self.client().alter_broker_config(
             {
                 "controller_log_accummulation_rps_capacity_configuration_operations":
-                capacity
+                requests_amount
             },
             incremental=True)
         success_amount = 0
         quota_error_amount = 0
 
-        wait_until(lambda: self.check_capcity_is_full(capacity),
+        wait_until(lambda: self.check_capcity_is_full(requests_amount),
                    timeout_sec=10,
                    backoff_sec=1)
         for i in range(requests_amount):
@@ -242,13 +246,13 @@ class ControllerPartitionMovementLimitTest(PartitionMovementMixin,
     def perform_move(self, topic, partition):
         old_assignments, new_assignment = self._dispatch_random_partition_move(
             topic=topic.name, partition=partition)
-        return old_assignments == new_assignment
+        return self._equal_assignments(old_assignments, new_assignment)
 
     @cluster(num_nodes=3)
     def test_move_partition_limit(self):
         self.start_redpanda(num_nodes=3)
 
-        topic = TopicSpec(partition_count=3)
+        topic = TopicSpec(partition_count=3, replication_factor=1)
         self.client().create_topic(topic)
         try:
             while (self.perform_move(topic, 0)):
@@ -340,6 +344,7 @@ class ControllerLogLimitMirrorMakerTests(MirrorMakerService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @skip_debug_mode
     @cluster(num_nodes=10)
     def test_mirror_maker_with_limits(self):
         # start brokers

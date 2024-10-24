@@ -1,3 +1,6 @@
+from reader import Reader
+
+
 def read_broker_shard(reader):
     b = {}
     b['id'] = reader.read_int32()
@@ -51,36 +54,143 @@ def read_incremental_properties_update(reader):
     return u
 
 
-def read_endpoint(r):
+def read_topic_namespace(rdr: Reader):
+    v = {"namespace": rdr.read_string()}
+    v |= {"topic": rdr.read_string()}
+    return v
+
+
+def read_unresolved_address(rdr: Reader, v: int):
     ep = {}
-    ep['name'] = r.read_string()
-    ep['address'] = r.read_string()
-    ep['port'] = r.read_uint16()
+    ep['host'] = rdr.read_string()
+    ep['port'] = rdr.read_uint16()
+    ep['family'] = rdr.read_optional(Reader.read_serde_enum)
     return ep
 
 
-def read_broker(rdr):
+def read_broker_endpoint(r: Reader, v: int):
+    ep = {}
+    ep['name'] = r.read_string()
+
+    ep['address'] = r.read_envelope(type_read=read_unresolved_address)
+    return ep
+
+
+def read_unresolved_address_adl(r: Reader):
+    v = {}
+    v['host'] = r.read_string()
+    v['port'] = r.read_uint16()
+
+    return v
+
+
+def read_broker_endpoint_adl(r: Reader):
+    ep = {}
+    ep['name'] = r.read_string()
+    ep['address'] = read_unresolved_address_adl(r)
+    return ep
+
+
+def read_broker_properties(r: Reader, v: int):
+    p = {}
+    p |= {"cores": r.read_uint32()}
+    p |= {"available_memory_gb": r.read_uint32()}
+    p |= {"available_disk_gb": r.read_uint32()}
+    p |= {"mount_paths": r.read_serde_vector(Reader.read_string)}
+    p |= {"etc": r.read_serde_map(Reader.read_string, Reader.read_string)}
+    p |= {"available_memory_bytes": r.read_int64()}
+    return p
+
+
+def read_broker_properties_adl(r: Reader):
+    p = {}
+    p |= {"cores": r.read_uint32()}
+    p |= {"available_memory_gb": r.read_uint32()}
+    p |= {"available_disk_gb": r.read_uint32()}
+    p |= {"mount_paths": r.read_vector(Reader.read_string)}
+    p |= {"etc": r.read_map(Reader.read_string, Reader.read_string)}
+    return p
+
+
+def read_broker(rdr: Reader):
     br = {}
     br['id'] = rdr.read_int32()
-    br['kafka_endpoints'] = rdr.read_vector(lambda r: read_endpoint(r))
-    br['rpc_address'] = rdr.read_string()
-    br['rpc_port'] = rdr.read_uint16()
+    br['kafka_advertised_listeners'] = rdr.read_serde_vector(
+        lambda r: r.read_envelope(type_read=read_broker_endpoint))
+    br['rpc_address'] = rdr.read_envelope(read_unresolved_address)
     br['rack'] = rdr.read_optional(lambda r: r.read_string())
-    br['cores'] = rdr.read_uint32()
-    br['memory'] = rdr.read_uint32()
-    br['disk'] = rdr.read_uint32()
-    br['mount_paths'] = rdr.read_vector(lambda r: r.read_string())
-    br['etc'] = rdr.read_vector(lambda r: (r.read_string(), r.read_string()))
+    br['properties'] = rdr.read_envelope(type_read=read_broker_properties,
+                                         reader_version=1)
     return br
+
+
+def read_broker_state(rdr: Reader):
+    br = {}
+    br['membership_state'] = rdr.read_serde_enum()
+    br['maintenance_state'] = rdr.read_serde_enum()
+
+    return br
+
+
+def read_broker_adl(rdr: Reader):
+    br = {}
+    br['id'] = rdr.read_int32()
+    br['kafka_advertised_listeners'] = rdr.read_vector(
+        read_broker_endpoint_adl)
+    br['rpc_address'] = read_unresolved_address_adl(rdr)
+    br['rack'] = rdr.read_optional(Reader.read_string)
+    br['properties'] = read_broker_properties_adl(rdr)
+    return br
+
+
+def read_configuration_update(rdr):
+    return {
+        'replicas_to_add': rdr.read_vector(read_vnode),
+        'replicas_to_remove': rdr.read_vector(read_vnode)
+    }
+
+
+def decode_configuration_update(rdr: Reader, version: int):
+    ret = {}
+    ret['replicas_to_add'] = rdr.read_serde_vector(read_vnode_serde)
+    ret['replicas_to_remove'] = rdr.read_serde_vector(read_vnode_serde)
+    if version > 0:
+        ret['learner_start_offset'] = rdr.read_optional(Reader.read_int64)
+    return ret
+
+
+def read_configuration_update_serde(rdr: Reader):
+    return rdr.read_envelope(decode_configuration_update, reader_version=1)
 
 
 def read_raft_config(rdr):
     cfg = {}
-    cfg['version'] = rdr.read_int8()
-    cfg['brokers'] = rdr.read_vector(read_broker)
-    cfg['current_config'] = read_group_nodes(rdr)
-    cfg['prev_config'] = rdr.read_optional(read_group_nodes)
-    cfg['revision'] = rdr.read_int64()
+    version = rdr.peek_int8()
+    if version >= 6:
+        return rdr.read_envelope(lambda rdr, _: {
+            "current":
+            read_group_nodes_serde(rdr),
+            "configuration_update":
+            rdr.read_optional(read_configuration_update_serde),
+            "old":
+            rdr.read_optional(read_group_nodes_serde),
+            "revision":
+            rdr.read_int64()
+        },
+                                 reader_version=6)
+
+    else:
+        cfg['version'] = rdr.read_int8()
+        if cfg['version'] < 5:
+            cfg['brokers'] = rdr.read_vector(read_broker_adl)
+        cfg['current_config'] = read_group_nodes(rdr)
+        cfg['prev_config'] = rdr.read_optional(read_group_nodes)
+        cfg['revision'] = rdr.read_int64()
+
+        if cfg['version'] >= 4:
+            cfg['configuration_update'] = rdr.read_optional(
+                lambda ordr: read_configuration_update(ordr))
+
     return cfg
 
 
@@ -96,6 +206,21 @@ def read_group_nodes(r):
     ret['voters'] = r.read_vector(read_vnode)
     ret['learners'] = r.read_vector(read_vnode)
     return ret
+
+
+def read_vnode_serde(r):
+    return r.read_envelope(lambda r, _: {
+        "id": r.read_int32(),
+        "revision": r.read_int64()
+    })
+
+
+def read_group_nodes_serde(r):
+    return r.read_envelope(
+        lambda r, _: {
+            "voters": r.read_serde_vector(read_vnode_serde),
+            "learners": r.read_serde_vector(read_vnode_serde)
+        })
 
 
 def decode_cleanup_policy(bitflags):
@@ -150,7 +275,7 @@ def decode_acl_pattern_type(p):
     elif p == 1:
         return 'prefixed'
 
-    return "unknown"
+    return f"unknown({p})"
 
 
 def decode_acl_permission(p):
@@ -164,8 +289,12 @@ def decode_acl_permission(p):
 def decode_acl_principal_type(p):
     if p == 0:
         return 'user'
+    if p == 1:
+        return "ephemeral_user"
+    if p == 2:
+        return "role"
 
-    return "unknown"
+    return f"unknown({p})"
 
 
 def decode_acl_operation(o):

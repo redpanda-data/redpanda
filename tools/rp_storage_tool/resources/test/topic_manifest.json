@@ -1,0 +1,1 @@
+{"version":1,"namespace":"kafka","topic":"acme-ticker-cd-s","partition_count":16,"replication_factor":3,"revision_id":29,"compression":null,"cleanup_policy_bitflags":"compact,delete","compaction_strategy":null,"timestamp_type":null,"segment_size":null,"retention_bytes":null,"retention_duration":3600000}

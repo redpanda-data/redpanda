@@ -8,8 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "cloud_storage/access_time_tracker.h"
-#include "seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/testing/perf_tests.hh>
@@ -28,7 +28,7 @@ static void run_test(int test_scale) {
 
     for (int i = 0; i < test_scale; i++) {
         perf_tests::start_measuring_time();
-        tracker.add_timestamp(names[i % test_scale], make_ts(i));
+        tracker.add(names[i % test_scale], make_ts(i), 0);
         perf_tests::stop_measuring_time();
     }
 }

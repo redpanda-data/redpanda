@@ -11,23 +11,23 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include "cluster/logger.h"
+
 #include <fmt/ranges.h>
 
 namespace cluster {
 allocation_node::allocation_node(
   model::node_id id,
   uint32_t cpus,
-  absl::node_hash_map<ss::sstring, ss::sstring> labels,
-  std::optional<model::rack_id> rack,
   config::binding<uint32_t> partitions_per_shard,
-  config::binding<uint32_t> partitions_reserve_shard0)
+  config::binding<uint32_t> partitions_reserve_shard0,
+  config::binding<std::vector<ss::sstring>> internal_kafka_topics)
   : _id(id)
   , _weights(cpus)
   , _max_capacity((cpus * partitions_per_shard()) - partitions_reserve_shard0())
-  , _machine_labels(std::move(labels))
-  , _rack(std::move(rack))
   , _partitions_per_shard(std::move(partitions_per_shard))
   , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
+  , _internal_kafka_topics(std::move(internal_kafka_topics))
   , _cpus(cpus) {
     // add extra weights to core 0
     _weights[0] = _partitions_reserve_shard0();
@@ -50,70 +50,86 @@ allocation_node::allocation_node(
     });
 }
 
-ss::shard_id
-allocation_node::allocate(const partition_allocation_domain domain) {
+bool allocation_node::is_full(
+  const model::ntp& ntp, bool will_add_allocation) const {
+    // Internal topics are excluded from checks to prevent allocation failures
+    // when creating them. This is okay because they are fairly small in number
+    // compared to kafka user topic partitions.
+    auto is_internal_ns = ntp.ns == model::redpanda_ns
+                          || ntp.ns == model::kafka_internal_namespace;
+    if (is_internal_ns) {
+        return false;
+    }
+    const auto& internal_topics = _internal_kafka_topics();
+    auto is_internal_topic = ntp.ns == model::kafka_namespace
+                             && std::any_of(
+                               internal_topics.cbegin(),
+                               internal_topics.cend(),
+                               [&ntp](const ss::sstring& topic) {
+                                   return topic == ntp.tp.topic();
+                               });
+
+    auto count = _allocated_partitions;
+    if (will_add_allocation) {
+        count += 1;
+    }
+    return !is_internal_topic && count > _max_capacity;
+}
+
+ss::shard_id allocation_node::allocate_shard() {
     auto it = std::min_element(_weights.begin(), _weights.end());
     (*it)++; // increment the weights
-    _allocated_partitions++;
-    ++_allocated_domain_partitions[domain];
-    return std::distance(_weights.begin(), it);
+    const ss::shard_id core = std::distance(_weights.begin(), it);
+    vlog(
+      clusterlog.trace,
+      "allocation [node: {}, core: {}], total allocated: {}",
+      _id,
+      core,
+      _allocated_partitions);
+    return core;
 }
 
-void allocation_node::deallocate_on(
-  ss::shard_id core, const partition_allocation_domain domain) {
-    vassert(
-      core < _weights.size(),
-      "Tried to deallocate a non-existing core:{} - {}",
-      core,
-      *this);
-    vassert(
-      _allocated_partitions > allocation_capacity{0} && _weights[core] > 0,
-      "unable to deallocate partition from core {} at node {}",
-      core,
-      *this);
+void allocation_node::add_allocation() { _allocated_partitions++; }
 
-    allocation_capacity& domain_partitions
-      = _allocated_domain_partitions[domain];
-    vassert(
-      domain_partitions > allocation_capacity{0}
-        && domain_partitions <= _allocated_partitions,
-      "Unable to deallocate partition from core {} in domain {} at node {}",
-      core,
-      domain,
-      *this);
-    --domain_partitions;
-
-    _allocated_partitions--;
-    _weights[core]--;
-}
-
-void allocation_node::allocate_on(
-  ss::shard_id core, const partition_allocation_domain domain) {
+void allocation_node::add_allocation(ss::shard_id core) {
     vassert(
       core < _weights.size(),
       "Tried to allocate a non-existing core:{} - {}",
       core,
       *this);
     _weights[core]++;
-    _allocated_partitions++;
-    ++_allocated_domain_partitions[domain];
 }
 
-const absl::node_hash_map<ss::sstring, ss::sstring>&
-allocation_node::machine_labels() const {
-    return _machine_labels;
+void allocation_node::remove_allocation() {
+    vassert(
+      _allocated_partitions > allocation_capacity{0},
+      "unable to deallocate partition at node {}",
+      *this);
+
+    _allocated_partitions--;
 }
+
+void allocation_node::remove_allocation(ss::shard_id core) {
+    vassert(
+      core < _weights.size() && _weights[core] > 0,
+      "unable to deallocate partition from core {} at node {}",
+      core,
+      *this);
+    _weights[core]--;
+}
+
+void allocation_node::add_final_count() { ++_final_partitions; }
+
+void allocation_node::remove_final_count() { --_final_partitions; }
 
 void allocation_node::update_core_count(uint32_t core_count) {
-    vassert(
-      core_count >= cpus(),
-      "decreasing node core count is not supported, current core count {} > "
-      "requested core count {}",
-      cpus(),
-      core_count);
-    auto current_cpus = cpus();
-    for (auto i = current_cpus; i < core_count; ++i) {
-        _weights.push_back(0);
+    auto old_count = _weights.size();
+    if (core_count < old_count) {
+        _weights.resize(core_count);
+    } else {
+        for (auto i = old_count; i < core_count; ++i) {
+            _weights.push_back(0);
+        }
     }
     _max_capacity = allocation_capacity(
       (core_count * _partitions_per_shard()) - _partitions_reserve_shard0());
@@ -134,21 +150,18 @@ std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
 std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
     fmt::print(
       o,
-      "{{node: {}, max_partitions_per_core: {}, state: {}, partition_capacity: "
-      "{}, weights: [",
+      "{{node: {}, max_partitions_per_core: {}, state: {}, allocated: {}, "
+      "partition_capacity: {}, weights: [",
       n._id,
       n._partitions_per_shard(),
       n._state,
+      n._allocated_partitions,
       n.partition_capacity());
 
     for (auto w : n._weights) {
         fmt::print(o, "({})", w);
     }
-    fmt::print(
-      o,
-      "], allocated: {}({})}}",
-      n._allocated_partitions,
-      n._allocated_domain_partitions);
+    fmt::print(o, "], allocated: {}}}", n._allocated_partitions);
     return o;
 }
 

@@ -16,8 +16,8 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 const (
@@ -66,12 +66,12 @@ func (d *deviceFeatures) GetSupportedSchedulers(
 }
 
 func (d *deviceFeatures) GetNomerges(device string) (int, error) {
-	log.Debugf("Getting '%s' nomerges", device)
+	zap.L().Sugar().Debugf("Getting '%s' nomerges", device)
 	featureFile, err := d.GetNomergesFeatureFile(device)
 	if err != nil {
 		return 0, err
 	}
-	log.Debugf("Feature file %s", featureFile)
+	zap.L().Sugar().Debugf("Feature file %s", featureFile)
 	bytes, err := afero.ReadFile(d.fs, featureFile)
 	if err != nil {
 		return 0, err
@@ -90,12 +90,12 @@ func (d *deviceFeatures) GetSchedulerFeatureFile(
 }
 
 func (d *deviceFeatures) GetWriteCache(device string) (string, error) {
-	log.Debugf("Getting '%s' write cache", device)
+	zap.L().Sugar().Debugf("Getting '%s' write cache", device)
 	featureFile, err := d.GetWriteCacheFeatureFile(device)
 	if err != nil {
 		return "", err
 	}
-	log.Debugf("Feature file %s", featureFile)
+	zap.L().Sugar().Debugf("Feature file %s", featureFile)
 	bytes, err := afero.ReadFile(d.fs, featureFile)
 	if err != nil {
 		return "", err
@@ -112,12 +112,12 @@ func (d *deviceFeatures) GetWriteCacheFeatureFile(
 func (d *deviceFeatures) getSchedulerOptions(
 	device string,
 ) (*system.RuntimeOptions, error) {
-	log.Debugf("Getting '%s' scheduler options", device)
+	zap.L().Sugar().Debugf("Getting '%s' scheduler options", device)
 	featureFile, err := d.GetSchedulerFeatureFile(device)
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Feature file %s", featureFile)
+	zap.L().Sugar().Debugf("Feature file %s", featureFile)
 	return system.ReadRuntineOptions(d.fs, featureFile)
 }
 
@@ -126,11 +126,11 @@ func (d *deviceFeatures) getQueueFeatureFile(
 ) (string, error) {
 	device, err := d.blockDevices.GetDeviceFromPath(deviceNode)
 	if err != nil {
-		log.Error(err.Error())
+		zap.L().Sugar().Error(err.Error())
 		return "", nil
 	}
 	featureFile := filepath.Join(device.Syspath(), "queue", featureType)
-	log.Debugf("Trying to open feature file '%s'", featureFile)
+	zap.L().Sugar().Debugf("Trying to open feature file '%s'", featureFile)
 	if exists, _ := afero.Exists(d.fs, featureFile); exists {
 		return featureFile, nil
 	} else if device.Parent() != nil {

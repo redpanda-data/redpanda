@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/controller_service.h"
+#include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 
 namespace cluster {
@@ -42,7 +43,12 @@ ss::future<config_frontend::patch_result> config_frontend::patch(
           .errc = errc::no_leader_controller, .version = config_version_unset};
     }
     if (leader == _self) {
-        co_return co_await do_patch(std::move(update), timeout);
+        co_return co_await container().invoke_on(
+          cluster::config_frontend::version_shard,
+          [update{std::move(update)},
+           timeout](cluster::config_frontend& cfg_frontend) mutable {
+              return cfg_frontend.do_patch(std::move(update), timeout);
+          });
     } else {
         auto res = co_await _connections.local()
                      .with_node_client<cluster::controller_client_protocol>(
@@ -100,7 +106,7 @@ ss::future<config_frontend::patch_result> config_frontend::do_patch(
           clusterlog.trace,
           "patch: writing delta with version {}",
           projected_version);
-        return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+        return replicate_and_wait(_stm, _as, std::move(cmd), timeout)
           .then([projected_version](std::error_code errc) {
               return patch_result{.errc = errc, .version = projected_version};
           });
@@ -123,18 +129,22 @@ ss::future<std::error_code> config_frontend::set_status(
     auto data = cluster_config_status_cmd_data();
     data.status = status;
     auto cmd = cluster_config_status_cmd(status.node, data);
-    co_return co_await replicate_and_wait(
-      _stm, _features, _as, std::move(cmd), timeout);
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
 }
 
 /**
  * For config_manager to notify the frontend of what the next version
  * number should be.
- *
- * Must be called on version_shard (the shard where writes are
- * serialized to generate version numbers).
  */
-void config_frontend::set_next_version(config_version v) {
+ss::future<> config_frontend::set_next_version(config_version v) {
+    co_return co_await container().invoke_on(
+      cluster::config_frontend::version_shard,
+      [v](cluster::config_frontend& cfg_frontend) mutable {
+          return cfg_frontend.do_set_next_version(v);
+      });
+}
+
+void config_frontend::do_set_next_version(config_version v) {
     vassert(
       ss::this_shard_id() == version_shard, "Must be called on version_shard");
     vlog(clusterlog.trace, "set_next_version: {}", v);

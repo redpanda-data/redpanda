@@ -17,14 +17,14 @@
 
 // vectorized types. needed comment to allow clang-format
 // header sorting to not resort cstdint
-#include "seastarx.h"
-#include "static_deleter_fn.h"
+#include "base/seastarx.h"
+#include "thirdparty/hdrhistogram/hdr_histogram.h"
+#include "utils/static_deleter_fn.h"
 
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <boost/intrusive/list.hpp>
-#include <hdr/hdr_histogram.h>
 
 #include <chrono>
 #include <memory>
@@ -111,7 +111,8 @@ public:
       int64_t min = 1,
       int32_t significant_figures = 1)
       : _hist(hist_internal::make_unique_hdr_histogram(
-        max_value, min, significant_figures)) {}
+          max_value, min, significant_figures))
+      , _first_discernible_value(min) {}
     hdr_hist(
       std::chrono::microseconds max_value, std::chrono::microseconds min_value)
       : hdr_hist(max_value.count(), min_value.count()) {}
@@ -161,6 +162,7 @@ private:
     hist_internal::hdr_histogram_ptr _hist;
     uint64_t _sample_count{0};
     uint64_t _sample_sum{0};
+    int64_t _first_discernible_value{1};
 
     friend std::ostream& operator<<(std::ostream& o, const hdr_hist& h);
 };

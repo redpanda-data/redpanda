@@ -51,6 +51,146 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/cluster/uuid",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the UUID of the cluster this node belongs to. Not to be confused with the configurable cluster identifier used in metrics",
+                    "type": "get_cluster_uuid",
+                    "nickname": "get_cluster_uuid",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get cluster-level metadata for all partitions in the cluster",
+                    "nickname": "get_cluster_partitions",
+                    "type": "array",
+                    "items": {
+                        "type": "cluster_partition"
+                    },
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "disabled",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "with_internal",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable all partitions of a topic",
+                    "nickname": "post_cluster_partitions_topic",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "method": "GET",
+                    "summary": "Get cluster-level metadata for all partitions in a topic",
+                    "nickname": "get_cluster_partitions_topic",
+                    "type": "array",
+                    "items": {
+                        "type": "cluster_partition"
+                    },
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "disabled",
+                            "in": "query",
+                            "required": false,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/cluster/partitions/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Disable/enable a single partition",
+                    "nickname": "post_cluster_partitions_topic_partition",
+                    "type": "void",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -61,6 +201,13 @@
                 "is_healthy": {
                     "type": "boolean",
                     "description": "basic cluster health indicator"
+                },
+                "unhealthy_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "A list of reasons why the cluster is unhealthy (contains at least one cause when is_healthy is false)"
                 },
                 "controller_id": {
                     "type": "int",
@@ -80,12 +227,38 @@
                     },
                     "description": "ids of all nodes being recognized as down"
                 },
+                "nodes_in_recovery_mode": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes that were booted in recovery mode"
+                },
                 "leaderless_partitions": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },
-                    "description": "list of partitions for which no leader is elected"
+                    "description": "List of partitions for which no leader is elected (truncated at 128 entries)"
+                },
+                "leaderless_count": {
+                    "type": "int",
+                    "description": "Total count of leaderless partitions: is larger than the list of the leaderless_partitions array if the array was truncated."
+                },
+                "under_replicated_partitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "list of partitions where one or more replicas has not replicated all data"
+                },
+                "under_replicated_count": {
+                    "type": "int",
+                    "description": "Total count of under-replicated partitions: is larger than the list of the under_replicated_partitions if the array was truncated."
+                },
+                "bytes_in_cloud_storage": {
+                    "type": "long",
+                    "description": "total amount of bytes in cloud storage or -1 if unable to obtain data"
                 }
             }
         },
@@ -107,6 +280,17 @@
                 "current_reassignments_count": {
                     "type": "int",
                     "description": "current number of partition reassignments in progress"
+                },
+                "partitions_pending_force_recovery_count": {
+                    "type": "int",
+                    "description": "number of partitions pending force recovery"
+                },
+                "partitions_pending_force_recovery_sample": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "sample list of partitions pending force recovery"
                 }
             }
         },
@@ -124,6 +308,60 @@
                     "items": {
                         "type": "int"
                     }
+                }
+            }
+        },
+        "uuid": {
+            "id": "uuid",
+            "properties": {
+                "cluster_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "replica_assignment": {
+            "id": "replica_assignment",
+            "description": "Replica assignment",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node id"
+                },
+                "core": {
+                    "type": "long",
+                    "description": "core"
+                }
+            }
+        },
+        "cluster_partition": {
+            "id": "cluster_partition",
+            "description": "high-level partition info known to all cluster nodes",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition_id": {
+                    "type": "long",
+                    "description": "partition"
+                },
+                "leader_id": {
+                    "type": "long",
+                    "description": "leader node id"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "replica_assignment"
+                    },
+                    "description": "replica assignments"
+                },
+                "disabled": {
+                    "type": "boolean"
                 }
             }
         }

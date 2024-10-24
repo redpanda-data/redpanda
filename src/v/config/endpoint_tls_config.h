@@ -11,9 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "config/convert.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
-#include "seastarx.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <yaml-cpp/yaml.h>
 
@@ -28,7 +31,7 @@ struct endpoint_tls_config {
         return o;
     }
 
-    bool operator==(endpoint_tls_config const& rhs) const = default;
+    bool operator==(const endpoint_tls_config& rhs) const = default;
 
     static std::optional<ss::sstring> validate(const endpoint_tls_config& ec) {
         return tls_config::validate(ec.config);

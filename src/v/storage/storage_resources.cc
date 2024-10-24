@@ -11,9 +11,19 @@
 
 #include "storage_resources.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "config/configuration.h"
+#include "storage/chunk_cache.h"
 #include "storage/logger.h"
-#include "vlog.h"
+
+#include <seastar/core/smp.hh>
+
+namespace {
+uint64_t per_shard_target_replay_bytes(uint64_t global_target_replay_bytes) {
+    return global_target_replay_bytes / ss::smp::count;
+}
+} // namespace
 
 namespace storage {
 
@@ -23,25 +33,28 @@ storage_resources::storage_resources(
   config::binding<uint64_t> max_concurrent_replay,
   config::binding<uint64_t> compaction_index_memory)
   : _segment_fallocation_step(falloc_step)
-  , _target_replay_bytes(target_replay_bytes)
+  , _global_target_replay_bytes(target_replay_bytes)
   , _max_concurrent_replay(max_concurrent_replay)
   , _compaction_index_mem_limit(compaction_index_memory)
-  , _append_chunk_size(config::shard_local_cfg().append_chunk_size())
-  , _offset_translator_dirty_bytes(_target_replay_bytes() / ss::smp::count)
-  , _configuration_manager_dirty_bytes(_target_replay_bytes() / ss::smp::count)
-  , _stm_dirty_bytes(_target_replay_bytes() / ss::smp::count)
+  , _append_chunk_size(internal::chunks().chunk_size())
+  , _offset_translator_dirty_bytes(
+      _global_target_replay_bytes() / ss::smp::count)
+  , _configuration_manager_dirty_bytes(
+      _global_target_replay_bytes() / ss::smp::count)
+  , _stm_dirty_bytes(_global_target_replay_bytes() / ss::smp::count)
   , _compaction_index_bytes(_compaction_index_mem_limit())
   , _inflight_recovery(
       std::max(_max_concurrent_replay() / ss::smp::count, uint64_t{1}))
   , _inflight_close_flush(
       std::max(_max_concurrent_replay() / ss::smp::count, uint64_t{1})) {
     // Register notifications on configuration changes
-    _target_replay_bytes.watch([this]() {
-        auto v = _target_replay_bytes() / ss::smp::count;
+    _global_target_replay_bytes.watch([this]() {
+        auto v = per_shard_target_replay_bytes(_global_target_replay_bytes());
 
         _offset_translator_dirty_bytes.set_capacity(v);
         _stm_dirty_bytes.set_capacity(v);
         _configuration_manager_dirty_bytes.set_capacity(v);
+        update_min_checkpoint_bytes();
     });
 
     _max_concurrent_replay.watch([this]() {
@@ -64,17 +77,17 @@ storage_resources::storage_resources(
 // but otherwise do not want to override anything.
 storage_resources::storage_resources(config::binding<size_t> falloc_step)
   : storage_resources(
-    std::move(falloc_step),
-    config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
-    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
+      std::move(falloc_step),
+      config::shard_local_cfg().storage_target_replay_bytes.bind(),
+      config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+      config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 storage_resources::storage_resources()
   : storage_resources(
-    config::shard_local_cfg().segment_fallocation_step.bind(),
-    config::shard_local_cfg().storage_target_replay_bytes.bind(),
-    config::shard_local_cfg().storage_max_concurrent_replay.bind(),
-    config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
+      config::shard_local_cfg().segment_fallocation_step.bind(),
+      config::shard_local_cfg().storage_target_replay_bytes.bind(),
+      config::shard_local_cfg().storage_max_concurrent_replay.bind(),
+      config::shard_local_cfg().storage_compaction_index_memory.bind()) {}
 
 void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     // TODO: also take as an input the disk consumption of the SI cache:
@@ -91,9 +104,23 @@ void storage_resources::update_allowance(uint64_t total, uint64_t free) {
     _falloc_step = calc_falloc_step();
 }
 
+void storage_resources::update_min_checkpoint_bytes() {
+    if (_partition_count) {
+        // Limit the checkpoint frequency to 2x what it would be under
+        // uniform traffic to all partitions. This permits us to overshoot
+        // target_replay_bytes by approx 50% under non-uniform writes.
+        _min_checkpoint_bytes = per_shard_target_replay_bytes(
+                                  _global_target_replay_bytes())
+                                / (_partition_count * 2);
+    } else {
+        _min_checkpoint_bytes = 0;
+    }
+}
+
 void storage_resources::update_partition_count(size_t partition_count) {
     _partition_count = partition_count;
     _falloc_step_dirty = true;
+    update_min_checkpoint_bytes();
 }
 
 size_t storage_resources::calc_falloc_step() {
@@ -137,7 +164,7 @@ size_t storage_resources::calc_falloc_step() {
     }
 
     vlog(
-      stlog.debug,
+      rslog.debug,
       "calc_falloc_step: step {} (max {})",
       step,
       _segment_fallocation_step());
@@ -166,43 +193,60 @@ storage_resources::get_falloc_step(std::optional<uint64_t> segment_size_hint) {
     return step;
 }
 
-adjustable_allowance::take_result
-storage_resources::offset_translator_take_bytes(int32_t bytes) {
+bool storage_resources::offset_translator_take_bytes(
+  int32_t bytes, ssx::semaphore_units& units) {
     vlog(
-      stlog.trace,
-      "offset_translator_take_bytes {} (current {})",
+      rslog.trace,
+      "offset_translator_take_bytes {} += {} (current {})",
+      units.count(),
       bytes,
-      _offset_translator_dirty_bytes.current());
+      _offset_translator_dirty_bytes.available_units());
 
-    return _offset_translator_dirty_bytes.take(bytes);
+    return filter_checkpoints(
+      _offset_translator_dirty_bytes.take(bytes), units);
 }
 
-adjustable_allowance::take_result
-storage_resources::configuration_manager_take_bytes(size_t bytes) {
+bool storage_resources::configuration_manager_take_bytes(
+  size_t bytes, ssx::semaphore_units& units) {
     vlog(
-      stlog.trace,
-      "configuration_manager_take_bytes {} (current {})",
+      rslog.trace,
+      "configuration_manager_take_bytes {} += {} (current {})",
+      units.count(),
       bytes,
-      _configuration_manager_dirty_bytes.current());
+      _configuration_manager_dirty_bytes.available_units());
 
-    return _configuration_manager_dirty_bytes.take(bytes);
+    return filter_checkpoints(
+      _configuration_manager_dirty_bytes.take(bytes), units);
 }
 
-adjustable_allowance::take_result
-storage_resources::stm_take_bytes(size_t bytes) {
+bool storage_resources::stm_take_bytes(
+  size_t bytes, ssx::semaphore_units& units) {
     vlog(
-      stlog.trace,
-      "stm_take_bytes {} (current {})",
+      rslog.trace,
+      "stm_take_bytes {} += {} (current {})",
+      units.count(),
       bytes,
-      _stm_dirty_bytes.current());
+      _stm_dirty_bytes.available_units());
 
-    return _stm_dirty_bytes.take(bytes);
+    return filter_checkpoints(_stm_dirty_bytes.take(bytes), units);
 }
 
-adjustable_allowance::take_result
+bool storage_resources::filter_checkpoints(
+  adjustable_semaphore::take_result&& tr, ssx::semaphore_units& units) {
+    // Adopt units from the take_result into the caller's unit store
+    if (units.count()) {
+        units.adopt(std::move(tr.units));
+    } else {
+        units = std::move(tr.units);
+    }
+
+    return tr.checkpoint_hint && (units.count() > _min_checkpoint_bytes);
+}
+
+adjustable_semaphore::take_result
 storage_resources::compaction_index_take_bytes(size_t bytes) {
     vlog(
-      stlog.trace,
+      rslog.trace,
       "compaction_index_take_bytes {} (current {})",
       bytes,
       _compaction_index_bytes.current());

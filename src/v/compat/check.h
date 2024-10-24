@@ -10,13 +10,13 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "json/document.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
-#include "seastarx.h"
 #include "serde/serde.h"
 
 #include <seastar/core/sstring.hh>
@@ -54,7 +54,11 @@
             return {compat_binary::serde(obj)};                                \
         }                                                                      \
         static void check(class_name obj, compat_binary test) {                \
-            verify_serde_only(obj, std::move(test));                           \
+            if constexpr (std::equality_comparable<class_name>) {              \
+                verify_serde_only(obj, std::move(test));                       \
+            } else {                                                           \
+                verify_serde_round_trip(obj, std::move(test));                 \
+            }                                                                  \
         }                                                                      \
     };
 
@@ -74,6 +78,16 @@ std::pair<T, T> compat_copy(T t) {
     return {t, t};
 }
 
+template<typename T>
+concept ExplicitCopyable = requires(T a) {
+    { a.copy() } -> std::same_as<T>;
+};
+
+template<ExplicitCopyable T>
+std::pair<T, T> compat_copy(T t) {
+    return {t.copy(), std::move(t)};
+}
+
 /*
  * Holder for binary serialization of a data structure along with the name of
  * the protocol used (e.g. adl, serde).
@@ -85,7 +99,9 @@ struct compat_binary {
     // factory for serde
     template<typename T>
     static compat_binary serde(T v) {
-        return {"serde", serde::to_iobuf(std::move(v))};
+        iobuf s_data;
+        serde::write_async(s_data, std::move(v)).get();
+        return {"serde", std::move(s_data)};
     }
 
     // factory for serde and adl
@@ -173,10 +189,10 @@ template<typename T>
 T decode_adl_or_serde(compat_binary test) {
     if (test.name == "adl") {
         iobuf_parser in(std::move(test.data));
-        return reflection::async_adl<T>{}.from(in).get0();
+        return reflection::async_adl<T>{}.from(in).get();
     } else if (test.name == "serde") {
         iobuf_parser in(std::move(test.data));
-        return serde::read_async<T>(in).get0();
+        return serde::read_async<T>(in).get();
     } else {
         vassert(false, "unknown type {}", test.name);
     }
@@ -186,7 +202,7 @@ template<typename T>
 T decode_serde_only(compat_binary test) {
     vassert(test.name == "serde", "Non serde type encountered {}", test.name);
     iobuf_parser in(std::move(test.data));
-    return serde::read_async<T>(in).get0();
+    return serde::read_async<T>(in).get();
 }
 
 template<typename T>
@@ -215,6 +231,25 @@ void verify_serde_only(T expected, compat_binary test) {
     }
 }
 
+template<typename T>
+void verify_serde_round_trip(T, compat_binary test) {
+    const auto name = test.name;
+
+    auto expected = test.data.copy();
+    auto decoded = decode_serde_only<T>(std::move(test));
+
+    iobuf after_round_trip;
+    serde::write_async(after_round_trip, decoded).get();
+    if (expected != after_round_trip) {
+        throw compat_error(fmt::format(
+          "Verify of {{{}}} round trip decoding failed:\nExpected: "
+          "{}\nDecoded: {}",
+          name,
+          expected,
+          after_round_trip));
+    }
+}
+
 #define GEN_COMPAT_CHECK(Type, ToJson, FromJson)                               \
     template<>                                                                 \
     struct compat_check<Type> {                                                \
@@ -235,11 +270,11 @@ void verify_serde_only(T expected, compat_binary test) {
         }                                                                      \
                                                                                \
         static std::vector<compat_binary> to_binary(Type obj) {                \
-            return compat_binary::serde_and_adl(obj);                          \
+            return compat_binary::serde_and_adl(std::move(obj));               \
         }                                                                      \
                                                                                \
         static void check(Type obj, compat_binary test) {                      \
-            verify_adl_or_serde(obj, std::move(test));                         \
+            verify_adl_or_serde(std::move(obj), std::move(test));              \
         }                                                                      \
     };
 
@@ -263,11 +298,11 @@ void verify_serde_only(T expected, compat_binary test) {
         }                                                                      \
                                                                                \
         static std::vector<compat_binary> to_binary(Type obj) {                \
-            return {compat_binary::serde(obj)};                                \
+            return {compat_binary::serde(std::move(obj))};                     \
         }                                                                      \
                                                                                \
         static void check(Type obj, compat_binary test) {                      \
-            verify_serde_only(obj, std::move(test));                           \
+            verify_serde_only(std::move(obj), std::move(test));                \
         }                                                                      \
     };
 

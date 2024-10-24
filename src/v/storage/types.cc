@@ -9,7 +9,9 @@
 
 #include "storage/types.h"
 
+#include "base/vlog.h"
 #include "storage/compacted_index.h"
+#include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
@@ -19,28 +21,25 @@
 
 namespace storage {
 
-std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
-    switch (d) {
-    case disk_space_alert::ok:
-        o << "ok";
-        break;
-    case disk_space_alert::low_space:
-        o << "low_space";
-        break;
-    case disk_space_alert::degraded:
-        o << "degraded";
-        break;
+model::offset stm_manager::max_collectible_offset() {
+    model::offset result = model::offset::max();
+    for (const auto& stm : _stms) {
+        auto mco = stm->max_collectible_offset();
+        result = std::min(result, mco);
+        vlog(stlog.trace, "max_collectible_offset[{}] = {}", stm->name(), mco);
     }
-    return o;
+    return result;
 }
 
 std::ostream& operator<<(std::ostream& o, const disk& d) {
     fmt::print(
       o,
-      "{{path: {}, free: {}, total: {}}}",
+      "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
       d.path,
       human::bytes(d.free),
-      human::bytes(d.total));
+      human::bytes(d.total),
+      d.alert,
+      d.fsid);
     return o;
 }
 
@@ -59,24 +58,43 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     } else {
         o << "nullopt";
     }
+    o << ", bytes_consumed:" << cfg.bytes_consumed;
+    o << ", over_budget:" << cfg.over_budget;
+    o << ", strict_max_bytes:" << cfg.strict_max_bytes;
+    o << ", skip_batch_cache:" << cfg.skip_batch_cache;
+    o << ", abortable:" << cfg.abort_source.has_value();
+    o << ", aborted:"
+      << (cfg.abort_source.has_value()
+            ? cfg.abort_source.value().get().abort_requested()
+            : false);
+
+    if (cfg.client_address.has_value()) {
+        o << ", client_address:" << cfg.client_address.value();
+    }
     return o << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const append_result& a) {
-    return o << "{append_time:"
-             << std::chrono::duration_cast<std::chrono::milliseconds>(
-                  a.append_time.time_since_epoch())
-                  .count()
-             << ", base_offset:" << a.base_offset
-             << ", last_offset:" << a.last_offset
-             << ", byte_size:" << a.byte_size << "}";
+    auto append_dur = std::chrono::duration_cast<std::chrono::milliseconds>(
+      log_clock::now() - a.append_time);
+    fmt::print(
+      o,
+      "{{time_since_append: {}, base_offset: {}, last_offset: {}, last_term: "
+      "{}, "
+      "byte_size: {}}}",
+      append_dur,
+      a.base_offset,
+      a.last_offset,
+      a.last_term,
+      a.byte_size);
+    return o;
 }
 std::ostream& operator<<(std::ostream& o, const timequery_result& a) {
     return o << "{offset:" << a.offset << ", time:" << a.time << "}";
 }
 std::ostream& operator<<(std::ostream& o, const timequery_config& a) {
-    o << "{max_offset:" << a.max_offset << ", time:" << a.time
-      << ", type_filter:";
+    o << "{min_offset: " << a.min_offset << ", max_offset: " << a.max_offset
+      << ", time:" << a.time << ", type_filter:";
     if (a.type_filter) {
         o << *a.type_filter;
     } else {
@@ -92,7 +110,12 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       o,
       "{{compaction_strategy: {}, cleanup_policy_bitflags: {}, segment_size: "
       "{}, retention_bytes: {}, retention_time_ms: {}, recovery_enabled: {}, "
-      "retention_local_target_bytes: {}, retention_local_target_ms: {}}}",
+      "retention_local_target_bytes: {}, retention_local_target_ms: {}, "
+      "remote_delete: {}, segment_ms: {}, "
+      "initial_retention_local_target_bytes: {}, "
+      "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
+      "flush_bytes: {} iceberg_enabled: {}, iceberg_translation_interval_ms: "
+      "{}}}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
@@ -100,7 +123,22 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       v.retention_time,
       v.recovery_enabled,
       v.retention_local_target_bytes,
-      v.retention_local_target_ms);
+      v.retention_local_target_ms,
+      v.remote_delete,
+      v.segment_ms,
+      v.initial_retention_local_target_bytes,
+      v.initial_retention_local_target_ms,
+      v.write_caching,
+      v.flush_ms,
+      v.flush_bytes,
+      v.iceberg_enabled,
+      v.iceberg_translation_interval_ms);
+
+    if (config::shard_local_cfg().development_enable_cloud_topics()) {
+        fmt::print(o, ", cloud_topic_enabled: {}", v.cloud_topic_enabled);
+    }
+
+    o << "}";
 
     return o;
 }
@@ -134,7 +172,11 @@ std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
-    fmt::print(o, "{{start_offset:{}}}", cfg.start_offset);
+    fmt::print(
+      o,
+      "{{start_offset:{}, force_truncate_delta:{}}}",
+      cfg.start_offset,
+      cfg.force_truncate_delta);
     return o;
 }
 
@@ -142,27 +184,39 @@ std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
     fmt::print(
       o,
       "{{start_offset:{}, committed_offset:{}, "
-      "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}, "
-      "last_term_start_offset:{}}}",
+      "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}}}",
       s.start_offset,
       s.committed_offset,
       s.committed_offset_term,
       s.dirty_offset,
-      s.dirty_offset_term,
-      s.last_term_start_offset);
+      s.dirty_offset_term);
     return o;
+}
+
+std::ostream& operator<<(std::ostream& os, const gc_config& cfg) {
+    fmt::print(
+      os,
+      "{{eviction_time:{}, max_bytes:{}}}",
+      cfg.eviction_time,
+      cfg.max_bytes.value_or(-1));
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
     fmt::print(
       o,
-      "{{evicition_time:{}, max_bytes:{}, max_collectible_offset:{}, "
-      "should_sanitize:{}}}",
-      c.eviction_time,
-      c.max_bytes.value_or(-1),
+      "{{max_collectible_offset:{}, "
+      "should_sanitize:{}, "
+      "tombstone_retention_ms:{}}}",
       c.max_collectible_offset,
-      c.sanitize);
+      c.sanitizer_config,
+      c.tombstone_retention_ms);
     return o;
+}
+
+std::ostream& operator<<(std::ostream& os, const housekeeping_config& cfg) {
+    fmt::print(os, "{{compact:{}, gc:{}}}", cfg.compact, cfg.gc);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& o, const compaction_result& r) {

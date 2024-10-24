@@ -31,7 +31,7 @@ fixing_issue_urls=$(gh api graphql -f query='{
       }
     }
   }
-}' --jq .data.resource.closingIssuesReferences.nodes.[].url)
+}' --jq '.data.resource.closingIssuesReferences.nodes | map(.url) | join(" ")')
 
 suffix=$((RANDOM % 1000))
 git config --global user.email "$GIT_EMAIL"
@@ -40,19 +40,15 @@ git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
 git fetch --all
 git remote set-url origin "https://$GIT_USER:$GITHUB_TOKEN@github.com/$GIT_USER/$TARGET_REPO.git"
 
-backport_issues_numbers=""
-for issue_url in $fixing_issue_urls; do
-  backport_issues_numbers+=$(echo "$issue_url" | awk -F/ '{print $NF"-"}')
-done
-if [[ $backport_issues_numbers == "" ]]; then
-  backport_issues_numbers="fixes-to-"
-fi
-head_branch=$(echo "backport-$backport_issues_numbers$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
+head_branch=$(echo "backport-pr-$PR_NUMBER-$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 
 if ! git cherry-pick -x $BACKPORT_COMMITS; then
-  msg="Failed to run cherry-pick command. I executed the below command:\n
+  msg="Failed to create a backport PR to $BACKPORT_BRANCH branch. I tried:\n
 \`\`\`\r
+git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
+git fetch --all
+git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 git cherry-pick -x $BACKPORT_COMMITS
 \`\`\`"
 
@@ -68,5 +64,5 @@ fi
 
 git push --set-upstream origin "$head_branch"
 git remote rm upstream
-echo "::set-output name=head_branch::$head_branch"
-echo "::set-output name=fixing_issue_urls::$fixing_issue_urls"
+echo "head_branch=$head_branch" >>$GITHUB_OUTPUT
+echo "fixing_issue_urls=$fixing_issue_urls" >>$GITHUB_OUTPUT

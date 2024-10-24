@@ -12,6 +12,7 @@
 #include "kafka/protocol/schemata/delete_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
 #include "kafka/server/request_context.h"
+#include "model/validation.h"
 #include "security/acl.h"
 namespace kafka::details {
 
@@ -31,21 +32,32 @@ struct acl_conversion_error : std::exception {
 
 inline security::acl_principal to_acl_principal(const ss::sstring& principal) {
     std::string_view view(principal);
-    if (unlikely(!view.starts_with("User:"))) {
+    constexpr std::string_view user_prefix{"User:"};
+    constexpr std::string_view role_prefix{"RedpandaRole:"};
+    auto usr = view.starts_with(user_prefix);
+    auto rol = !usr && view.starts_with(role_prefix);
+
+    if (unlikely(!usr && !rol)) {
         throw acl_conversion_error(
           fmt::format("Invalid principal name: {{{}}}", principal));
     }
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    auto user = principal.substr(5);
-    if (unlikely(user.empty())) {
+
+    auto name = principal.substr(usr ? user_prefix.size() : role_prefix.size());
+    if (unlikely(name.empty())) {
         throw acl_conversion_error(
           fmt::format("Principal name cannot be empty"));
     }
-    if (user == "*") {
-        return security::acl_wildcard_user;
+    if (name == "*") {
+        if (usr) {
+            return security::acl_wildcard_user;
+        } else {
+            throw acl_conversion_error(
+              fmt::format("Illegal wildcard role: {{{}}}", principal));
+        }
     }
     return security::acl_principal(
-      security::principal_type::user, std::move(user));
+      usr ? security::principal_type::user : security::principal_type::role,
+      std::move(name));
 }
 
 inline security::acl_host to_acl_host(const ss::sstring& host) {
@@ -146,6 +158,17 @@ inline security::acl_binding to_acl_binding(const creatable_acl& acl) {
       && pattern.name() != security::default_cluster_name) {
         throw acl_conversion_error(
           fmt::format("Invalid cluster name: {}", pattern.name()));
+    }
+
+    if (pattern.resource() == security::resource_type::topic) {
+        auto errc = model::validate_kafka_topic_name(
+          model::topic_view(pattern.name()));
+        if (pattern.name() != "*" && errc) {
+            throw acl_conversion_error(fmt::format(
+              "ACL topic {} does not conform to kafka topic schema: {}",
+              pattern.name(),
+              errc.message()));
+        }
     }
 
     security::acl_entry entry(
@@ -301,6 +324,10 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
     switch (p.type()) {
     case security::principal_type::user:
         return fmt::format("User:{}", p.name());
+    case security::principal_type::ephemeral_user:
+        return fmt::format("Ephemeral user:{}", p.name());
+    case security::principal_type::role:
+        return fmt::format("RedpandaRole:{}", p.name());
     }
     __builtin_unreachable();
 }
@@ -406,7 +433,8 @@ authorized_operations(request_context& ctx, const T& resource) {
       ops.end(),
       std::back_inserter(allowed_operations),
       [&ctx, &resource](security::acl_operation op) {
-          return ctx.authorized(op, resource);
+          return ctx.authorized(
+            op, resource, authz_quiet::no, audit_authz_check::no);
       });
 
     return allowed_operations;

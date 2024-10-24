@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -e
+
+OCSF_SCHEMA_VERSION=1.0.0
+OCSF_SERVER_VERSION=d3b26de39df9eb33c6d63e34a126c77c0811c7a0
+
+wget "https://github.com/redpanda-data/ocsf-schema/archive/refs/tags/v${OCSF_SCHEMA_VERSION}.tar.gz"
+wget "https://github.com/redpanda-data/ocsf-server/archive/${OCSF_SERVER_VERSION}.tar.gz"
+
+tar -xvzf v${OCSF_SCHEMA_VERSION}.tar.gz
+rm v${OCSF_SCHEMA_VERSION}.tar.gz
+mv ocsf-schema-${OCSF_SCHEMA_VERSION} /opt/ocsf-schema
+
+tar -xvzf ${OCSF_SERVER_VERSION}.tar.gz
+rm ${OCSF_SERVER_VERSION}.tar.gz
+mv ocsf-server-${OCSF_SERVER_VERSION} /opt/ocsf-server
+
+apt-get update
+apt-get install -qq software-properties-common
+
+add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang
+apt-get update
+apt-get install -qq elixir erlang-dev erlang-xmerl
+
+mix local.hex --force && mix local.rebar --force
+
+pushd /opt/ocsf-server
+
+# temporary workaround for erlang 26.2.3 arm core dump
+# https://github.com/erlang/otp/issues/8238#issuecomment-1987173291
+if [ $(uname -m) = "aarch64" ]; then
+  MIX_ENV=prod mix archive.install --force github hexpm/hex branch latest
+fi
+
+./build_server.sh
+
+# remove added repository for other packages stability
+add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
+
+# The following is required because the server attempts to write logs
+# to the `dist/tmp` directory.  This is fine in docker ducktape as the user
+# who kicks it off is root, but in CDT, the user is not root so the server
+# fails to start causing audit log tests to fail
+mkdir dist/tmp
+chmod a+w dist/tmp
+openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -keyout server.key -out server.crt -subj "/O=Redpanda" -batch
+popd

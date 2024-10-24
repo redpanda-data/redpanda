@@ -1,0 +1,86 @@
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+
+syntax = "proto3";
+
+package pbthree;
+
+message SearchRequest {
+    string query = 1;
+    int32 page_number = 2;
+    int32 results_per_page = 3;
+}
+
+message SearchResponse {
+    message Result {
+        string url = 1;
+        string title = 2;
+        repeated string snippets = 3;
+    }
+    repeated Result results = 1;
+}
+
+message Node {
+    fixed32 value = 1;
+    Node left = 2;
+    Node right = 3;
+}
+
+message Message1 {
+    string foo = 1;
+    string bar = 2;
+    string qux = 3;
+}
+
+message Message2 {
+    Message1 foo = 4;
+    string bar = 5;
+    string qux = 6;
+}
+
+message Message3 {
+    Message2 bar = 7;
+    string foo = 8;
+    string qux = 9;
+}
+
+message Packed {
+    repeated int64 test = 1;
+}
+
+message Version1 {
+    int64 test = 1;
+}
+
+message Version2 {
+    int64 test = 1;
+    string foo = 2;
+}
+
+message Version3 {
+    string foo = 2;
+    bool data = 3;
+}
+
+message Version4 {
+    oneof justone {
+        string foo = 2;
+        bool data = 3;
+    }
+}
+
+message Map {
+    map<string, string> meta = 1;
+}
+
+message Entries {
+    map<string, int32> entry = 1;
+}

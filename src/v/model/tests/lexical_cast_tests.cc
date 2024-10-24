@@ -8,8 +8,11 @@
 // by the Apache License, Version 2.0
 
 #include "model/record.h"
+
+#include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE model
 #include "model/compression.h"
+#include "model/metadata.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -34,6 +37,10 @@ BOOST_AUTO_TEST_CASE(test_cast_from_string) {
     BOOST_CHECK_EQUAL(
       boost::lexical_cast<model::compression>("zstd"),
       model::compression::zstd);
+    BOOST_CHECK_EXCEPTION(
+      boost::lexical_cast<model::compression>("plzmakesmaller"),
+      boost::bad_lexical_cast,
+      [](const boost::bad_lexical_cast&) { return true; });
 };
 BOOST_AUTO_TEST_CASE(removing_compression) {
     model::record_batch_attributes attr(std::numeric_limits<uint16_t>::max());
@@ -85,3 +92,25 @@ BOOST_AUTO_TEST_CASE(timestamp_type_printing) {
     BOOST_CHECK_EQUAL(
       "LogAppendTime", fmt::format("{}", model::timestamp_type::append_time));
 };
+
+BOOST_AUTO_TEST_CASE(recovery_validation_mode_enum_roundtrip) {
+    // test that all recovery_validation_mode have a unique string
+    // representation
+    using enum model::recovery_validation_mode;
+
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>("no_check"),
+      no_check);
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "check_manifest_existence"),
+      check_manifest_existence);
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "check_manifest_and_segment_metadata"),
+      check_manifest_and_segment_metadata);
+    BOOST_REQUIRE_THROW(
+      boost::lexical_cast<model::recovery_validation_mode>(
+        "this_mode_does_not_exists"),
+      boost::bad_lexical_cast);
+}

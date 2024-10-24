@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/client/logger.h"
 #include "kafka/client/produce_batcher.h"
 #include "kafka/client/produce_partition.h"
 #include "kafka/client/topic_cache.h"
@@ -35,27 +36,25 @@ public:
       const configuration& config,
       topic_cache& topic_cache,
       brokers& brokers,
+      int16_t acks,
       error_handler&& error_handler)
       : _config{config}
       , _partitions{}
       , _error_handler(std::move(error_handler))
       , _topic_cache(topic_cache)
-      , _brokers(brokers) {}
+      , _brokers(brokers)
+      , _acks(acks) {}
 
     ss::future<produce_response::partition>
     produce(model::topic_partition tp, model::record_batch&& batch);
 
-    ss::future<> stop() {
-        return ssx::parallel_transform(
-          std::move(_partitions),
-          [](partitions_t::value_type p) { return p.second->stop(); });
-    }
+    ss::future<> stop();
 
 private:
     ss::future<> send(model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<produce_response::partition>
-    do_send(model::topic_partition tp, model::record_batch&& batch);
+    do_send(model::topic_partition tp, model::record_batch batch);
 
     auto make_consumer(model::topic_partition tp) {
         return [this, tp](model::record_batch&& batch) {
@@ -80,6 +79,10 @@ private:
     error_handler _error_handler;
     topic_cache& _topic_cache;
     brokers& _brokers;
+    int16_t _acks;
+    ss::abort_source _as;
+    ss::abort_source _ingest_as;
+    ss::gate _gate;
 };
 
 } // namespace kafka::client

@@ -9,8 +9,10 @@
 
 #include "raft/configuration_bootstrap_state.h"
 
-#include "likely.h"
+#include "base/likely.h"
+#include "bytes/iobuf_parser.h"
 #include "model/record.h"
+#include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
 
@@ -34,10 +36,9 @@ void configuration_bootstrap_state::process_configuration(
 
     process_offsets(b.base_offset(), last_offset);
     b.for_each_record([this, o = b.base_offset()](model::record rec) {
+        iobuf_parser parser(rec.release_value());
         _configurations.emplace_back(
-          o,
-          reflection::from_iobuf<raft::group_configuration>(
-            rec.release_value()));
+          o, details::deserialize_configuration(parser));
     });
 }
 void configuration_bootstrap_state::process_data_offsets(

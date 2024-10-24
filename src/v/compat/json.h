@@ -13,12 +13,13 @@
 #include "cluster/errc.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
+#include "container/json.h"
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
-#include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "utils/base64.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 
@@ -28,53 +29,53 @@
 
 namespace json {
 
-inline char const* to_str(rapidjson::Type const t) {
-    static char const* str[] = {
+inline const char* to_str(const rapidjson::Type t) {
+    static const char* str[] = {
       "Null", "False", "True", "Object", "Array", "String", "Number"};
     return str[t];
 }
 
-inline void read_value(json::Value const& v, int64_t& target) {
+inline void read_value(const json::Value& v, int64_t& target) {
     target = v.GetInt64();
 }
 
-inline void read_value(json::Value const& v, uint64_t& target) {
+inline void read_value(const json::Value& v, uint64_t& target) {
     target = v.GetUint64();
 }
 
-inline void read_value(json::Value const& v, uint32_t& target) {
+inline void read_value(const json::Value& v, uint32_t& target) {
     target = v.GetUint();
 }
 
-inline void read_value(json::Value const& v, int32_t& target) {
+inline void read_value(const json::Value& v, int32_t& target) {
     target = v.GetInt();
 }
 
-inline void read_value(json::Value const& v, int16_t& target) {
+inline void read_value(const json::Value& v, int16_t& target) {
     target = v.GetInt();
 }
 
-inline void read_value(json::Value const& v, uint16_t& target) {
+inline void read_value(const json::Value& v, uint16_t& target) {
     target = v.GetUint();
 }
 
-inline void read_value(json::Value const& v, int8_t& target) {
+inline void read_value(const json::Value& v, int8_t& target) {
     target = v.GetInt();
 }
 
-inline void read_value(json::Value const& v, uint8_t& target) {
+inline void read_value(const json::Value& v, uint8_t& target) {
     target = v.GetUint();
 }
 
-inline void read_value(json::Value const& v, bool& target) {
+inline void read_value(const json::Value& v, bool& target) {
     target = v.GetBool();
 }
 
-inline void read_value(json::Value const& v, ss::sstring& target) {
+inline void read_value(const json::Value& v, ss::sstring& target) {
     target = v.GetString();
 }
 
-inline void read_value(json::Value const& v, iobuf& target) {
+inline void read_value(const json::Value& v, iobuf& target) {
     target = bytes_to_iobuf(base64_to_bytes(v.GetString()));
 }
 
@@ -83,40 +84,59 @@ inline void rjson_serialize(
     rjson_serialize(w, v.count());
 }
 
-inline void read_value(json::Value const& v, std::chrono::nanoseconds& target) {
+inline void read_value(const json::Value& v, std::chrono::nanoseconds& target) {
     target = std::chrono::nanoseconds(v.GetInt64());
 }
 
 template<typename T, typename Tag, typename IsConstexpr>
 void read_value(
-  json::Value const& v, detail::base_named_type<T, Tag, IsConstexpr>& target) {
+  const json::Value& v, detail::base_named_type<T, Tag, IsConstexpr>& target) {
     auto t = T{};
     read_value(v, t);
-    target = detail::base_named_type<T, Tag, IsConstexpr>{t};
+    target = detail::base_named_type<T, Tag, IsConstexpr>{std::move(t)};
 }
 
 inline void
-read_value(json::Value const& v, std::chrono::milliseconds& target) {
+read_value(const json::Value& v, std::chrono::milliseconds& target) {
     target = std::chrono::milliseconds(v.GetUint64());
 }
 
 template<typename T>
-void read_value(json::Value const& v, std::vector<T>& target) {
-    for (auto const& e : v.GetArray()) {
+void read_value(const json::Value& v, std::vector<T>& target) {
+    for (const auto& e : v.GetArray()) {
         auto t = T{};
         read_value(e, t);
-        target.push_back(t);
+        target.push_back(std::move(t));
+    }
+}
+
+template<typename T, size_t chunk_size = 128>
+void read_value(const json::Value& v, ss::chunked_fifo<T, chunk_size>& target) {
+    for (const auto& e : v.GetArray()) {
+        auto t = T{};
+        read_value(e, t);
+        target.push_back(std::move(t));
+    }
+}
+
+template<typename T, size_t fragment_size_bytes>
+void read_value(
+  const json::Value& v, fragmented_vector<T, fragment_size_bytes>& target) {
+    for (const auto& e : v.GetArray()) {
+        auto t = T{};
+        read_value(e, t);
+        target.push_back(std::move(t));
     }
 }
 
 template<typename T>
-void read_value(json::Value const& v, std::optional<T>& target) {
+void read_value(const json::Value& v, std::optional<T>& target) {
     if (v.IsNull()) {
         target = std::nullopt;
     } else {
         auto t = T{};
         read_value(v, t);
-        target = t;
+        target = std::move(t);
     }
 }
 
@@ -126,14 +146,14 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const iobuf& buf) {
 }
 
 template<typename Writer, typename T>
-void write_member(Writer& w, char const* key, T const& value) {
+void write_member(Writer& w, const char* key, const T& value) {
     w.String(key);
     rjson_serialize(w, value);
 }
 
 // Reads the enum's underlying type directly.
 template<typename Enum>
-inline auto read_enum_ut(json::Value const& v, char const* key, Enum)
+inline auto read_enum_ut(const json::Value& v, const char* key, Enum)
   -> std::underlying_type_t<Enum> {
     std::underlying_type_t<Enum> value;
     read_member(v, key, value);
@@ -141,29 +161,29 @@ inline auto read_enum_ut(json::Value const& v, char const* key, Enum)
 }
 
 template<typename Enum>
-requires(std::is_enum_v<Enum>) inline void read_value(
-  json::Value const& v, Enum& e) {
+requires(std::is_enum_v<Enum>)
+inline void read_value(const json::Value& v, Enum& e) {
     std::underlying_type_t<Enum> value;
     read_value(v, value);
     e = Enum(value);
 }
 
 template<typename Enum>
-requires(std::is_enum_v<Enum>) inline void read_member(
-  json::Value const& v, char const* key, Enum& e) {
+requires(std::is_enum_v<Enum>)
+inline void read_member(const json::Value& v, const char* key, Enum& e) {
     std::underlying_type_t<Enum> value;
     read_member(v, key, value);
     e = Enum(value);
 }
 
 template<typename T>
-requires(!std::is_enum_v<T>) void read_member(
-  json::Value const& v, char const* key, T& target) {
-    auto const it = v.FindMember(key);
+requires(!std::is_enum_v<T>)
+void read_member(const json::Value& v, const char* key, T& target) {
+    const auto it = v.FindMember(key);
     if (it != v.MemberEnd()) {
         read_value(it->value, target);
     } else {
-        target = {};
+        target = T{};
         std::cout << "key " << key << " not found, default initializing"
                   << std::endl;
     }
@@ -181,14 +201,14 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const model::ntp& ntp) {
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::ntp& obj) {
+inline void read_value(const json::Value& rd, model::ntp& obj) {
     read_member(rd, "ns", obj.ns);
     read_member(rd, "topic", obj.tp.topic);
     read_member(rd, "partition", obj.tp.partition);
 }
 
 template<typename T>
-void read_value(json::Value const& v, ss::bool_class<T>& target) {
+void read_value(const json::Value& v, ss::bool_class<T>& target) {
     target = ss::bool_class<T>(v.GetBool());
 }
 
@@ -222,6 +242,21 @@ inline void rjson_serialize(
     w.EndArray();
 }
 
+template<typename T, typename V>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const absl::flat_hash_map<T, V>& m) {
+    w.StartArray();
+    for (const auto& e : m) {
+        w.StartObject();
+        w.Key("key");
+        rjson_serialize(w, e.first);
+        w.Key("value");
+        rjson_serialize(w, e.second);
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
 template<typename V>
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const absl::node_hash_set<V>& m) {
@@ -232,8 +267,18 @@ inline void rjson_serialize(
     w.EndArray();
 }
 
+template<typename V>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const absl::btree_set<V>& m) {
+    w.StartArray();
+    for (const V& e : m) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
 template<typename T, typename V>
-inline void read_value(json::Value const& rd, std::unordered_map<T, V>& obj) {
+inline void read_value(const json::Value& rd, std::unordered_map<T, V>& obj) {
     for (const auto& e : rd.GetArray()) {
         T key;
         read_member(e, "key", key);
@@ -244,7 +289,18 @@ inline void read_value(json::Value const& rd, std::unordered_map<T, V>& obj) {
 }
 
 template<typename T, typename V>
-inline void read_value(json::Value const& rd, absl::node_hash_map<T, V>& obj) {
+inline void read_value(const json::Value& rd, absl::node_hash_map<T, V>& obj) {
+    for (const auto& e : rd.GetArray()) {
+        T key;
+        read_member(e, "key", key);
+        V value;
+        read_member(e, "value", value);
+        obj.emplace(std::move(key), std::move(value));
+    }
+}
+
+template<typename T, typename V>
+inline void read_value(const json::Value& rd, absl::flat_hash_map<T, V>& obj) {
     for (const auto& e : rd.GetArray()) {
         T key;
         read_member(e, "key", key);
@@ -255,11 +311,20 @@ inline void read_value(json::Value const& rd, absl::node_hash_map<T, V>& obj) {
 }
 
 template<typename V>
-inline void read_value(json::Value const& rd, absl::node_hash_set<V>& obj) {
+inline void read_value(const json::Value& rd, absl::node_hash_set<V>& obj) {
     for (const auto& e : rd.GetArray()) {
         auto v = V{};
         read_value(e, v);
-        obj.insert(v);
+        obj.insert(std::move(v));
+    }
+}
+
+template<typename V>
+inline void read_value(const json::Value& rd, absl::btree_set<V>& obj) {
+    for (const auto& e : rd.GetArray()) {
+        auto v = V{};
+        read_value(e, v);
+        obj.insert(std::move(v));
     }
 }
 
@@ -282,19 +347,25 @@ inline void rjson_serialize(
     rjson_serialize(w, b.mount_paths);
     w.Key("etc_props");
     rjson_serialize(w, b.etc_props);
+    w.Key("available_memory_bytes");
+    rjson_serialize(w, b.available_memory_bytes);
+    w.Key("in_fips_mode");
+    rjson_serialize(w, b.in_fips_mode);
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::broker_properties& obj) {
+inline void read_value(const json::Value& rd, model::broker_properties& obj) {
     read_member(rd, "cores", obj.cores);
     read_member(rd, "available_memory_gb", obj.available_memory_gb);
     read_member(rd, "available_disk_gb", obj.available_disk_gb);
     read_member(rd, "mount_paths", obj.mount_paths);
     read_member(rd, "etc_props", obj.etc_props);
+    read_member(rd, "available_memory_bytes", obj.available_memory_bytes);
+    read_member(rd, "in_fips_mode", obj.in_fips_mode);
 }
 
 inline void
-read_value(json::Value const& rd, ss::net::inet_address::family& obj) {
+read_value(const json::Value& rd, ss::net::inet_address::family& obj) {
     obj = static_cast<ss::net::inet_address::family>(rd.GetInt());
 }
 
@@ -303,7 +374,7 @@ inline void rjson_serialize(
     w.Int(static_cast<int>(b));
 }
 
-inline void read_value(json::Value const& rd, net::unresolved_address& obj) {
+inline void read_value(const json::Value& rd, net::unresolved_address& obj) {
     ss::sstring host;
     uint16_t port{0};
     read_member(rd, "address", host);
@@ -311,7 +382,7 @@ inline void read_value(json::Value const& rd, net::unresolved_address& obj) {
     obj = net::unresolved_address(std::move(host), port);
 }
 
-inline void read_value(json::Value const& rd, model::broker_endpoint& obj) {
+inline void read_value(const json::Value& rd, model::broker_endpoint& obj) {
     ss::sstring host;
     uint16_t port{0};
 
@@ -338,7 +409,7 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const model::broker& b) {
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::broker& obj) {
+inline void read_value(const json::Value& rd, model::broker& obj) {
     model::node_id id;
     std::vector<model::broker_endpoint> kafka_advertised_listeners;
     net::unresolved_address rpc_address;
@@ -369,7 +440,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, model::topic_namespace& obj) {
+inline void read_value(const json::Value& rd, model::topic_namespace& obj) {
     model::ns ns;
     model::topic tp;
     read_member(rd, "ns", ns);
@@ -389,7 +460,7 @@ inline void rjson_serialize(
 }
 
 inline void read_value(
-  json::Value const& rd,
+  const json::Value& rd,
   cluster::partition_balancer_violations::unavailable_node& un) {
     read_member(rd, "id", un.id);
     read_member(rd, "unavailable_since", un.unavailable_since);
@@ -407,7 +478,7 @@ inline void rjson_serialize(
 }
 
 inline void read_value(
-  json::Value const& rd,
+  const json::Value& rd,
   cluster::partition_balancer_violations::full_node& fn) {
     read_member(rd, "id", fn.id);
     read_member(rd, "disk_used_percent", fn.disk_used_percent);
@@ -425,15 +496,21 @@ inline void rjson_serialize(
 }
 
 inline void read_value(
-  json::Value const& rd, cluster::partition_balancer_violations& violations) {
+  const json::Value& rd, cluster::partition_balancer_violations& violations) {
     read_member(rd, "unavailable_nodes", violations.unavailable_nodes);
     read_member(rd, "full_nodes", violations.full_nodes);
 }
 
-inline void read_value(json::Value const& rd, security::acl_host& host) {
+inline void read_value(const json::Value& rd, security::acl_host& host) {
     ss::sstring address;
     read_member(rd, "address", address);
     host = security::acl_host(address);
+}
+
+inline void read_value(const json::Value& rd, model::vcluster_id& v) {
+    ss::sstring xid_str;
+    read_value(rd, xid_str);
+    v = model::vcluster_id(xid::from_string(xid_str));
 }
 
 inline void rjson_serialize(
@@ -442,13 +519,19 @@ inline void rjson_serialize(
     std::stringstream ss;
     vassert(host.address(), "Unset optional address unexpected.");
     ss << host.address().value();
+    if (!ss.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "failed to serialize acl_host, state: {}",
+          ss.rdstate()));
+    }
     w.Key("address");
-    rjson_serialize(w, ss.str());
+    rjson_serialize(w, std::string_view{ss.str()});
     w.EndObject();
 }
 
 inline void
-read_value(json::Value const& rd, security::acl_principal& principal) {
+read_value(const json::Value& rd, security::acl_principal& principal) {
     security::principal_type type{};
     read_member(rd, "type", type);
     ss::sstring name;
@@ -467,7 +550,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, security::acl_entry& entry) {
+inline void read_value(const json::Value& rd, security::acl_entry& entry) {
     security::acl_principal principal;
     security::acl_host host;
     security::acl_operation operation{};
@@ -495,7 +578,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, security::resource_pattern& pattern) {
+read_value(const json::Value& rd, security::resource_pattern& pattern) {
     ss::sstring name;
     security::resource_type resource{};
     security::pattern_type pattern_type{};
@@ -519,7 +602,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-inline void read_value(json::Value const& rd, security::acl_binding& binding) {
+inline void read_value(const json::Value& rd, security::acl_binding& binding) {
     security::resource_pattern pattern;
     security::acl_entry entry;
     read_member(rd, "pattern", pattern);
@@ -538,7 +621,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, cluster::create_acls_cmd_data& data) {
+read_value(const json::Value& rd, cluster::create_acls_cmd_data& data) {
     read_member(rd, "bindings", data.bindings);
 }
 
@@ -552,13 +635,13 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, cluster::delete_acls_result& data) {
+read_value(const json::Value& rd, cluster::delete_acls_result& data) {
     read_member(rd, "error", data.error);
     read_member(rd, "bindings", data.bindings);
 }
 
 inline void read_value(
-  json::Value const& rd,
+  const json::Value& rd,
   security::resource_pattern_filter::pattern_filter_type& pattern_filter) {
     using type = security::resource_pattern_filter::serialized_pattern_type;
     type ser_filter{};
@@ -598,7 +681,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, security::resource_pattern_filter& pattern) {
+read_value(const json::Value& rd, security::resource_pattern_filter& pattern) {
     std::optional<security::resource_type> resource;
     std::optional<ss::sstring> name;
     std::optional<security::resource_pattern_filter::pattern_filter_type>
@@ -624,7 +707,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, security::acl_entry_filter& filter) {
+read_value(const json::Value& rd, security::acl_entry_filter& filter) {
     std::optional<security::acl_principal> principal;
     std::optional<security::acl_host> host;
     std::optional<security::acl_operation> operation;
@@ -664,7 +747,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, security::acl_binding_filter& binding) {
+read_value(const json::Value& rd, security::acl_binding_filter& binding) {
     security::resource_pattern_filter pattern_filter;
     security::acl_entry_filter entry_filter;
     read_member(rd, "pattern", pattern_filter);
@@ -684,7 +767,7 @@ inline void rjson_serialize(
 }
 
 inline void
-read_value(json::Value const& rd, cluster::delete_acls_cmd_data& data) {
+read_value(const json::Value& rd, cluster::delete_acls_cmd_data& data) {
     read_member(rd, "filters", data.filters);
 }
 
@@ -700,7 +783,7 @@ inline void rjson_serialize(
 enum class tristate_status : uint8_t { disabled = 0, not_set, set };
 
 template<typename T>
-void read_value(json::Value const& rd, tristate<T>& target) {
+void read_value(const json::Value& rd, tristate<T>& target) {
     tristate_status ts{tristate_status::disabled};
     auto ts_val = read_enum_ut(rd, "status", ts);
     switch (ts_val) {
@@ -727,7 +810,7 @@ void rjson_serialize(
     w.Key("status");
     if (t.is_disabled()) {
         w.Int(uint8_t(tristate_status::disabled));
-    } else if (!t.has_value()) {
+    } else if (!t.has_optional_value()) {
         w.Int(uint8_t(tristate_status::not_set));
     } else {
         w.Int(uint8_t(tristate_status::set));
@@ -735,6 +818,11 @@ void rjson_serialize(
         rjson_serialize(w, t.value());
     }
     w.EndObject();
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::vcluster_id& v) {
+    rjson_serialize(w, ssx::sformat("{}", v));
 }
 
 #define json_write(_fname) json::write_member(wr, #_fname, obj._fname)

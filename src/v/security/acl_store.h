@@ -9,103 +9,20 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "container/fragmented_vector.h"
 #include "security/acl.h"
+#include "security/acl_entry_set.h"
 
 #include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_set.h>
+
+#include <ranges>
 
 namespace security {
 
 /*
- * A collection of ACL entries.
- */
-class acl_entry_set {
-public:
-    using container_type = absl::flat_hash_set<acl_entry>;
-    using const_iterator = container_type::const_iterator;
-    using const_reference = std::reference_wrapper<const acl_entry>;
-
-    acl_entry_set() noexcept = default;
-    acl_entry_set(acl_entry_set&&) noexcept = default;
-    acl_entry_set& operator=(acl_entry_set&&) noexcept = default;
-    acl_entry_set(const acl_entry_set&) = delete;
-    acl_entry_set& operator=(const acl_entry_set&) = delete;
-    ~acl_entry_set() noexcept = default;
-
-    void insert(acl_entry entry) { _entries.insert(std::move(entry)); }
-    void erase(container_type::const_iterator it) { _entries.erase(it); }
-
-    template<typename Predicate>
-    void erase_if(Predicate pred) {
-        absl::erase_if(_entries, pred);
-    }
-
-    void rehash() { _entries.rehash(0); }
-
-    bool empty() const { return _entries.empty(); }
-
-    std::optional<const_reference> find(
-      acl_operation operation,
-      const acl_principal& principal,
-      const acl_host& host,
-      acl_permission perm) const;
-
-    bool contains(
-      acl_operation operation,
-      const acl_principal& principal,
-      const acl_host& host,
-      acl_permission perm) const {
-        return find(operation, principal, host, perm).has_value();
-    }
-
-    const_iterator begin() const { return _entries.cbegin(); }
-    const_iterator end() const { return _entries.cend(); }
-
-private:
-    container_type _entries;
-};
-
-/*
- * A lightweight container of references to ACL entries. An instance of this
- * object is created when authorizing and contains ACL matches for the
- * authorization request. Then authorization step searches through the matches
- * based on configured policies and type of authorization request.
- */
-class acl_matches {
-public:
-    using entry_set_ref = std::reference_wrapper<const acl_entry_set>;
-
-    acl_matches(
-      std::optional<entry_set_ref> wildcards,
-      std::optional<entry_set_ref> literals,
-      std::vector<entry_set_ref> prefixes)
-      : wildcards(wildcards)
-      , literals(literals)
-      , prefixes(std::move(prefixes)) {}
-
-    acl_matches(acl_matches&&) noexcept = default;
-    acl_matches& operator=(acl_matches&&) noexcept = default;
-    acl_matches(const acl_matches&) = delete;
-    acl_matches& operator=(const acl_matches&) = delete;
-    ~acl_matches() noexcept = default;
-
-    bool empty() const;
-
-    bool contains(
-      acl_operation operation,
-      const acl_principal& principal,
-      const acl_host& host,
-      acl_permission perm) const;
-
-private:
-    std::optional<entry_set_ref> wildcards;
-    std::optional<entry_set_ref> literals;
-    std::vector<entry_set_ref> prefixes;
-};
-
-/*
  * Container for ACLs.
  */
+class acl_matches;
 class acl_store {
 public:
     acl_store() = default;
@@ -130,7 +47,19 @@ public:
       const std::vector<acl_binding_filter>&, bool dry_run = false);
 
     std::vector<acl_binding> acls(const acl_binding_filter&) const;
+
+    /**
+     * WARNING: The acl_matches returned from this function may contain
+     * iterators into a container which is NOT iterator stable. Use of these
+     * matches across a yield point or acl_store update of any kind may (and
+     * likely will) result in UNDEFINED BEHAVIOR.
+     */
     acl_matches find(resource_type, const ss::sstring&) const;
+
+    // NOTE: the following functions assume that acl_store doesn't change across
+    // yield points.
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const;
+    ss::future<> reset_bindings(const fragmented_vector<acl_binding>& bindings);
 
 private:
     /*
@@ -153,8 +82,97 @@ private:
         }
     };
 
-    absl::btree_map<resource_pattern, acl_entry_set, resource_pattern_compare>
-      _acls;
+    using container_type = absl::
+      btree_map<resource_pattern, acl_entry_set, resource_pattern_compare>;
+    container_type _acls;
+
+    /**
+     * WARNING: The view returned by this function contains iterators into a
+     * container which is NOT iterator stable. Use of this view across a yield
+     * point or acl_store update of any kind may (and likely will) result in
+     * UNDEFINED BEHAVIOR.
+     */
+    template<typename RefT>
+    static auto get_prefix_view(
+      const container_type& acls,
+      resource_type resource,
+      const ss::sstring& name) {
+        auto it = acls.lower_bound(
+          resource_pattern(resource, name, pattern_type::prefixed));
+
+        auto end = acls.upper_bound(resource_pattern(
+          resource, name.substr(0, 1), pattern_type::prefixed));
+
+        return std::ranges::subrange(it, end)
+               | std::views::filter([&name](const auto& e) {
+                     return std::string_view(name).starts_with(e.first.name());
+                 })
+               | std::views::transform(
+                 [](const auto& e) { return RefT{e.first, e.second}; });
+    }
+
+public:
+    template<
+      typename RefT,
+      typename ViewT = decltype(get_prefix_view<RefT>(
+        std::declval<container_type>(),
+        std::declval<resource_type>(),
+        std::declval<ss::sstring>()))>
+    using prefix_view = ViewT;
+};
+
+/*
+ * A lightweight view of references to ACL entries. An instance of this
+ * object is created when authorizing and contains ACL matches for the
+ * authorization request. Then authorization step searches through the matches
+ * based on configured policies and type of authorization request.
+ */
+class acl_matches {
+public:
+    struct acl_entry_set_match {
+        std::reference_wrapper<const resource_pattern> resource;
+        std::reference_wrapper<const acl_entry_set> acl_entry_set;
+    };
+
+    using entry_set_ref = acl_entry_set_match;
+
+    acl_matches(
+      std::optional<entry_set_ref> wildcards,
+      std::optional<entry_set_ref> literals,
+      acl_store::prefix_view<entry_set_ref> prefixes)
+      : wildcards(wildcards)
+      , literals(literals)
+      , prefixes(std::move(prefixes)) {}
+
+    acl_matches(acl_matches&&) noexcept = default;
+    acl_matches& operator=(acl_matches&&) noexcept = default;
+    acl_matches(const acl_matches&) = delete;
+    acl_matches& operator=(const acl_matches&) = delete;
+    ~acl_matches() noexcept = default;
+
+    bool empty() const;
+
+    std::optional<acl_match> find(
+      acl_operation operation,
+      const acl_principal_base& principal,
+      const acl_host& host,
+      acl_permission perm) const;
+
+    bool contains(
+      acl_operation operation,
+      const acl_principal_base& principal,
+      const acl_host& host,
+      acl_permission perm) const {
+        return find(operation, principal, host, perm).has_value();
+    }
+
+private:
+    std::optional<entry_set_ref> wildcards;
+    std::optional<entry_set_ref> literals;
+    // NOTE(oren): mutable because filter_view & transform_view don't support
+    // const iterators as of C++20. Both are slated for C++23, so we can remove
+    // the mutable specifier when we bump compilers.
+    mutable acl_store::prefix_view<entry_set_ref> prefixes;
 };
 
 } // namespace security

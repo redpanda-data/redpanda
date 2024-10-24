@@ -14,6 +14,7 @@
 namespace pandaproxy::rest {
 
 struct configuration;
+class api;
 class proxy;
 
 } // namespace pandaproxy::rest

@@ -1,4 +1,8 @@
 #!/bin/bash
-if [[ $ENABLE_STEP_CDT == '1' && -x bin/task ]]; then
-  bin/task ci:cdt-cleanup
+
+if [[ -f vtools/.buildkite/hooks/pre-exit ]]; then
+  echo "~~~ Executing vtools pre-exit hook"
+  vtools/.buildkite/hooks/pre-exit
+else
+  echo "No pre-exit hook found in vtools/.buildkite/hooks/"
 fi

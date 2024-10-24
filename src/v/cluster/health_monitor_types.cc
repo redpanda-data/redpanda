@@ -10,15 +10,25 @@
  */
 #include "cluster/health_monitor_types.h"
 
+#include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
 #include "features/feature_table.h"
+#include "health_monitor_types.h"
 #include "model/adl_serde.h"
+#include "model/metadata.h"
 #include "utils/to_string.h"
+
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <chrono>
+#include <iterator>
+#include <optional>
 
 namespace cluster {
 
@@ -49,54 +59,165 @@ bool partitions_filter::matches(
     return false;
 }
 
+node_state::node_state(
+  model::node_id id, model::membership_state membership_state, alive is_alive)
+  : _id(id)
+  , _membership_state(membership_state)
+  , _is_alive(is_alive) {}
+
 std::ostream& operator<<(std::ostream& o, const node_state& s) {
     fmt::print(
       o,
       "{{membership_state: {}, is_alive: {}}}",
-      s.membership_state,
-      s.is_alive);
+      s._membership_state,
+      s._is_alive);
     return o;
 }
 
+node_health_report::node_health_report(
+  model::node_id id,
+  node::local_state local_state,
+  chunked_vector<topic_status> topics_vec,
+  std::optional<drain_manager::drain_status> drain_status)
+  : id(id)
+  , local_state(std::move(local_state))
+  , drain_status(drain_status) {
+    topics.reserve(topics_vec.size());
+    for (auto& topic : topics_vec) {
+        topics.emplace(std::move(topic.tp_ns), std::move(topic.partitions));
+    }
+}
+
+node_health_report node_health_report::copy() const {
+    node_health_report ret{id, local_state, {}, drain_status};
+    ret.topics.reserve(topics.bucket_count());
+    for (const auto& [tp_ns, partitions] : topics) {
+        ret.topics.emplace(tp_ns, partitions.copy());
+    }
+    return ret;
+}
+
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
+    return o << node_health_report_serde{r};
+}
+
+node_health_report_serde::node_health_report_serde(const node_health_report& hr)
+  : node_health_report_serde(hr.id, hr.local_state, {}, hr.drain_status) {
+    topics.reserve(hr.topics.size());
+    for (const auto& [tp_ns, partitions] : hr.topics) {
+        topics.emplace_back(tp_ns, partitions.copy());
+    }
+}
+
+std::ostream& operator<<(std::ostream& o, const node_health_report_serde& r) {
     fmt::print(
       o,
-      "{{id: {}, disks: {}, topics: {}, redpanda_version: {}, uptime: "
-      "{}, logical_version: {}, drain_status: {}}}",
+      "{{id: {}, topics: {}, local_state: {}, drain_status: {}}}",
       r.id,
-      r.local_state.disks,
       r.topics,
-      r.local_state.redpanda_version,
-      r.local_state.uptime,
-      r.local_state.logical_version,
+      r.local_state,
       r.drain_status);
     return o;
+}
+
+bool operator==(
+  const node_health_report_serde& a, const node_health_report_serde& b) {
+    return a.id == b.id && a.local_state == b.local_state
+           && a.drain_status == b.drain_status
+           && a.topics.size() == b.topics.size()
+           && std::equal(
+             a.topics.cbegin(),
+             a.topics.cend(),
+             b.topics.cbegin(),
+             b.topics.cend());
 }
 
 std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
     fmt::print(
       o,
-      "{{raft0_leader: {}, node_states: {}, node_reports: {} }}",
+      "{{raft0_leader: {}, node_states: {}, node_reports: {}, "
+      "bytes_in_cloud_storage: {} }}",
       r.raft0_leader,
       r.node_states,
-      r.node_reports);
+      r.node_reports,
+      r.bytes_in_cloud_storage);
     return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
       o,
-      "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}}}",
+      "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}, "
+      "reclaimable_size_bytes: {}, under_replicated: {}, shard: {}}}",
       ps.id,
       ps.term,
       ps.leader_id,
       ps.revision_id,
-      ps.size_bytes);
+      ps.size_bytes,
+      ps.reclaimable_size_bytes,
+      ps.under_replicated_replicas,
+      ps.shard);
     return o;
 }
 
+topic_status& topic_status::operator=(const topic_status& rhs) {
+    if (this == &rhs) {
+        return *this;
+    }
+
+    partition_statuses_t p;
+    p.reserve(rhs.partitions.size());
+    std::copy(
+      rhs.partitions.begin(), rhs.partitions.end(), std::back_inserter(p));
+
+    tp_ns = rhs.tp_ns;
+    partitions = std::move(p);
+    return *this;
+}
+
+topic_status::topic_status(
+  model::topic_namespace tp_ns, partition_statuses_t partitions)
+  : tp_ns(std::move(tp_ns))
+  , partitions(std::move(partitions)) {}
+
+topic_status::topic_status(const topic_status& o)
+  : tp_ns(o.tp_ns) {
+    std::copy(
+      o.partitions.cbegin(),
+      o.partitions.cend(),
+      std::back_inserter(partitions));
+}
+bool operator==(const topic_status& a, const topic_status& b) {
+    return a.tp_ns == b.tp_ns && a.partitions.size() == b.partitions.size()
+           && std::equal(
+             a.partitions.cbegin(),
+             a.partitions.cend(),
+             b.partitions.cbegin(),
+             b.partitions.cend());
+}
+
+cluster_health_report cluster_health_report::copy() const {
+    cluster_health_report r;
+    r.raft0_leader = raft0_leader;
+    r.node_states = node_states;
+    r.bytes_in_cloud_storage = bytes_in_cloud_storage;
+    r.node_reports.reserve(node_reports.size());
+    for (auto& nr : node_reports) {
+        r.node_reports.emplace_back(ss::make_lw_shared(nr->copy()));
+    }
+    return r;
+}
+
+get_cluster_health_reply get_cluster_health_reply::copy() const {
+    get_cluster_health_reply reply{.error = error};
+    if (report.has_value()) {
+        reply.report = report->copy();
+    }
+    return reply;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
-    fmt::print(o, "{{topic: {}, leaders: {}}}", tl.tp_ns, tl.partitions);
+    fmt::print(o, "{{topic: {}, partitions: {}}}", tl.tp_ns, tl.partitions);
     return o;
 }
 
@@ -139,8 +260,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 }
 
 std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
-    fmt::print(
-      o, "{{filter: {}, current_version: {}}}", r.filter, r.current_version);
+    fmt::print(o, "{{target_node_id: {}}}", r.get_target_node_id());
     return o;
 }
 
@@ -164,359 +284,24 @@ std::ostream& operator<<(std::ostream& o, const get_cluster_health_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
+    fmt::print(
+      o,
+      "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
+      "nodes_in_recovery_mode: {}, bytes_in_cloud_storage: {}, "
+      "leaderless_count: {}, under_replicated_count: {}, "
+      "leaderless_partitions: {}, under_replicated_partitions: {}}}",
+      ho.controller_id,
+      ho.all_nodes,
+      ho.unhealthy_reasons,
+      ho.nodes_down,
+      ho.nodes_in_recovery_mode,
+      ho.bytes_in_cloud_storage,
+      ho.leaderless_count,
+      ho.under_replicated_count,
+      ho.leaderless_partitions,
+      ho.under_replicated_partitions);
+    return o;
+}
+
 } // namespace cluster
-namespace reflection {
-
-template<typename T>
-int8_t read_and_assert_version(std::string_view type, iobuf_parser& parser) {
-    auto version = adl<int8_t>{}.from(parser);
-    vassert(
-      version <= T::current_version,
-      "unsupported version of {}, max_supported version: {}, read version: {}",
-      type,
-      T::current_version,
-      version);
-    return version;
-}
-
-void adl<cluster::node_state>::to(iobuf& out, cluster::node_state&& s) {
-    serialize(out, s.current_version, s.id, s.membership_state, s.is_alive);
-}
-
-cluster::node_state adl<cluster::node_state>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_state>("cluster::node_state", p);
-
-    auto id = adl<model::node_id>{}.from(p);
-    auto m_state = adl<model::membership_state>{}.from(p);
-    auto is_alive = adl<cluster::alive>{}.from(p);
-
-    return cluster::node_state{
-      .id = id,
-      .membership_state = m_state,
-      .is_alive = is_alive,
-    };
-}
-
-void adl<cluster::partition_status>::to(
-  iobuf& out, cluster::partition_status&& s) {
-    // if revision or size is not set fallback to old version, we do it here to
-    // prevent old redpanda version from crashing, request handler will decode
-    // request version and base on that handle revision_id and size_bytes fields
-    // correctly.
-    if (s.revision_id == model::revision_id{}) {
-        serialize(
-          out,
-          cluster::partition_status::initial_version,
-          s.id,
-          s.term,
-          s.leader_id);
-    } else if (s.size_bytes == cluster::partition_status::invalid_size_bytes) {
-        serialize(
-          out,
-          cluster::partition_status::revision_id_version,
-          s.id,
-          s.term,
-          s.leader_id,
-          s.revision_id);
-    } else {
-        serialize(
-          out,
-          cluster::partition_status::size_bytes_version,
-          s.id,
-          s.term,
-          s.leader_id,
-          s.revision_id,
-          s.size_bytes);
-    }
-}
-
-cluster::partition_status
-adl<cluster::partition_status>::from(iobuf_parser& p) {
-    auto version = adl<int8_t>{}.from(p);
-
-    auto id = adl<model::partition_id>{}.from(p);
-    auto term = adl<model::term_id>{}.from(p);
-    auto leader = adl<std::optional<model::node_id>>{}.from(p);
-    cluster::partition_status ret{
-      .id = id,
-      .term = term,
-      .leader_id = leader,
-    };
-    if (version <= cluster::partition_status::revision_id_version) {
-        ret.revision_id = adl<model::revision_id>{}.from(p);
-    }
-    if (version <= cluster::partition_status::size_bytes_version) {
-        ret.size_bytes = adl<size_t>{}.from(p);
-    }
-    return ret;
-}
-
-void adl<cluster::topic_status>::to(iobuf& out, cluster::topic_status&& l) {
-    return serialize(
-      out,
-      l.current_version,
-      std::move(l.tp_ns.ns),
-      std::move(l.tp_ns.tp),
-      std::move(l.partitions));
-}
-
-cluster::topic_status adl<cluster::topic_status>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::topic_status>("cluster::topic_status", p);
-
-    auto ns = adl<model::ns>{}.from(p);
-    auto topic = adl<model::topic>{}.from(p);
-    auto partitions = adl<std::vector<cluster::partition_status>>{}.from(p);
-
-    return cluster::topic_status{
-      .tp_ns = model::topic_namespace(std::move(ns), std::move(topic)),
-      .partitions = std::move(partitions),
-    };
-}
-
-void adl<cluster::node_health_report>::to(
-  iobuf& out, cluster::node_health_report&& r) {
-    if (r.include_drain_status) {
-        reflection::serialize(
-          out,
-          cluster::node_health_report::current_version,
-          r.id,
-          std::move(r.local_state.redpanda_version),
-          r.local_state.uptime,
-          std::move(r.local_state.disks),
-          std::move(r.topics),
-          std::move(r.local_state.logical_version),
-          std::move(r.drain_status));
-    } else {
-        reflection::serialize(
-          out,
-          static_cast<int8_t>(1), // version right before maintenance mode added
-          r.id,
-          std::move(r.local_state.redpanda_version),
-          r.local_state.uptime,
-          std::move(r.local_state.disks),
-          std::move(r.topics),
-          std::move(r.local_state.logical_version));
-    }
-}
-
-cluster::node_health_report
-adl<cluster::node_health_report>::from(iobuf_parser& p) {
-    auto version = read_and_assert_version<cluster::node_health_report>(
-      "cluster::node_health_report", p);
-
-    auto id = adl<model::node_id>{}.from(p);
-    auto redpanda_version = adl<cluster::node::application_version>{}.from(p);
-    auto uptime = adl<std::chrono::milliseconds>{}.from(p);
-    auto disks = adl<std::vector<storage::disk>>{}.from(p);
-    auto topics = adl<std::vector<cluster::topic_status>>{}.from(p);
-    cluster::cluster_version logical_version{cluster::invalid_version};
-    if (version >= 1) {
-        logical_version = adl<cluster::cluster_version>{}.from(p);
-    }
-    std::optional<cluster::drain_manager::drain_status> drain_status;
-    if (version >= 2) {
-        drain_status
-          = adl<std::optional<cluster::drain_manager::drain_status>>{}.from(p);
-    }
-
-    return cluster::node_health_report{
-      .id = id,
-      .local_state
-      = {.redpanda_version = std::move(redpanda_version), .logical_version = std::move(logical_version), .uptime = uptime, .disks = std::move(disks)},
-      .topics = std::move(topics),
-      .drain_status = drain_status,
-    };
-}
-
-void adl<cluster::cluster_health_report>::to(
-  iobuf& out, cluster::cluster_health_report&& r) {
-    reflection::serialize(
-      out,
-      r.current_version,
-      r.raft0_leader,
-      std::move(r.node_states),
-      std::move(r.node_reports));
-}
-
-cluster::cluster_health_report
-adl<cluster::cluster_health_report>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::cluster_health_report>(
-      "cluster::cluster_health_report", p);
-
-    auto raft0_leader = adl<std::optional<model::node_id>>{}.from(p);
-    auto node_states = adl<std::vector<cluster::node_state>>{}.from(p);
-    auto node_reports = adl<std::vector<cluster::node_health_report>>{}.from(p);
-
-    return cluster::cluster_health_report{
-      .raft0_leader = raft0_leader,
-      .node_states = std::move(node_states),
-      .node_reports = std::move(node_reports),
-    };
-}
-
-void adl<cluster::partitions_filter>::to(
-  iobuf& out, cluster::partitions_filter&& filter) {
-    std::vector<raw_ns_filter> raw_filters;
-    raw_filters.reserve(filter.namespaces.size());
-    for (auto& [ns, topics] : filter.namespaces) {
-        raw_ns_filter nsf{.ns = ns};
-        nsf.topics.reserve(topics.size());
-        for (auto& [tp, partitions] : topics) {
-            raw_tp_filter tpf{.topic = tp};
-            tpf.partitions.reserve(partitions.size());
-            std::move(
-              partitions.begin(),
-              partitions.end(),
-              std::back_inserter(tpf.partitions));
-
-            nsf.topics.push_back(std::move(tpf));
-        }
-        raw_filters.push_back(nsf);
-    }
-
-    serialize(out, filter.current_version, std::move(raw_filters));
-}
-
-cluster::partitions_filter
-adl<cluster::partitions_filter>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::partitions_filter>(
-      "cluster::partitions_filter", p);
-
-    cluster::partitions_filter ret;
-    auto raw_filters = adl<std::vector<raw_ns_filter>>{}.from(p);
-    ret.namespaces.reserve(raw_filters.size());
-    for (auto& rf : raw_filters) {
-        cluster::partitions_filter::topic_map_t topics;
-        topics.reserve(rf.topics.size());
-        for (auto& tp : rf.topics) {
-            cluster::partitions_filter::partitions_set_t paritions;
-            paritions.reserve(tp.partitions.size());
-            for (auto& p : tp.partitions) {
-                paritions.emplace(p);
-            }
-
-            topics.emplace(tp.topic, std::move(paritions));
-        }
-        ret.namespaces.emplace(std::move(rf.ns), std::move(topics));
-    }
-
-    return ret;
-}
-
-void adl<cluster::node_report_filter>::to(
-  iobuf& out, cluster::node_report_filter&& f) {
-    reflection::serialize(
-      out, f.current_version, f.include_partitions, std::move(f.ntp_filters));
-}
-
-cluster::node_report_filter
-adl<cluster::node_report_filter>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::node_report_filter>(
-      "cluster::node_report_filter", p);
-
-    auto include_partitions = adl<cluster::include_partitions_info>{}.from(p);
-    auto ntp_filters = adl<cluster::partitions_filter>{}.from(p);
-
-    return cluster::node_report_filter{
-      .include_partitions = include_partitions,
-      .ntp_filters = std::move(ntp_filters),
-    };
-}
-
-void adl<cluster::cluster_report_filter>::to(
-  iobuf& out, cluster::cluster_report_filter&& f) {
-    reflection::serialize(
-      out,
-      f.current_version,
-      std::move(f.node_report_filter),
-      std::move(f.nodes));
-}
-
-cluster::cluster_report_filter
-adl<cluster::cluster_report_filter>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::cluster_report_filter>(
-      "cluster::cluster_report_filter", p);
-
-    auto node_filter = adl<cluster::node_report_filter>{}.from(p);
-    auto nodes = adl<std::vector<model::node_id>>{}.from(p);
-
-    return cluster::cluster_report_filter{
-      .node_report_filter = std::move(node_filter),
-      .nodes = std::move(nodes),
-    };
-}
-
-void adl<cluster::get_node_health_request>::to(
-  iobuf& out, cluster::get_node_health_request&& req) {
-    reflection::serialize(out, req.current_version, std::move(req.filter));
-}
-
-cluster::get_node_health_request
-adl<cluster::get_node_health_request>::from(iobuf_parser& p) {
-    auto version = adl<int8_t>{}.from(p);
-
-    auto filter = adl<cluster::node_report_filter>{}.from(p);
-
-    return cluster::get_node_health_request{
-      .filter = std::move(filter),
-      .decoded_version = version,
-    };
-}
-
-void adl<cluster::get_node_health_reply>::to(
-  iobuf& out, cluster::get_node_health_reply&& reply) {
-    reflection::serialize(out, reply.current_version, std::move(reply.report));
-}
-
-cluster::get_node_health_reply
-adl<cluster::get_node_health_reply>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_node_health_reply>(
-      "cluster::get_node_health_reply", p);
-
-    auto report = adl<std::optional<cluster::node_health_report>>{}.from(p);
-
-    return cluster::get_node_health_reply{
-      .report = std::move(report),
-    };
-}
-
-void adl<cluster::get_cluster_health_request>::to(
-  iobuf& out, cluster::get_cluster_health_request&& req) {
-    reflection::serialize(
-      out, req.current_version, std::move(req.filter), req.refresh);
-}
-
-cluster::get_cluster_health_request
-adl<cluster::get_cluster_health_request>::from(iobuf_parser& p) {
-    auto version = adl<int8_t>{}.from(p);
-
-    auto filter = adl<cluster::cluster_report_filter>{}.from(p);
-    auto refresh = adl<cluster::force_refresh>{}.from(p);
-
-    return cluster::get_cluster_health_request{
-      .filter = std::move(filter),
-      .refresh = refresh,
-      .decoded_version = version,
-    };
-}
-
-void adl<cluster::get_cluster_health_reply>::to(
-  iobuf& out, cluster::get_cluster_health_reply&& reply) {
-    reflection::serialize(
-      out, reply.current_version, reply.error, reply.report);
-}
-
-cluster::get_cluster_health_reply
-adl<cluster::get_cluster_health_reply>::from(iobuf_parser& p) {
-    read_and_assert_version<cluster::get_cluster_health_reply>(
-      "cluster::get_cluster_health_reply", p);
-    auto err = adl<cluster::errc>{}.from(p);
-    auto report = adl<std::optional<cluster::cluster_health_report>>{}.from(p);
-
-    return cluster::get_cluster_health_reply{
-      .error = err,
-      .report = std::move(report),
-    };
-}
-
-} // namespace reflection

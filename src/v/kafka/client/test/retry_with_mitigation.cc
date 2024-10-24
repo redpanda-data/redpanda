@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/client/retry_with_mitigation.h"
+#include "kafka/client/utils.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -87,4 +87,23 @@ SEASTAR_THREAD_TEST_CASE(test_retry_fail_all) {
       .get();
     BOOST_REQUIRE_EQUAL(ctx.calls(), 3);
     BOOST_REQUIRE_EQUAL(errors, 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_retry_cancel) {
+    context ctx = {true, true, true};
+    ss::abort_source as;
+    auto cancel = [&as](std::exception_ptr) {
+        as.request_abort();
+        return ss::now();
+    };
+    bool threw_aborted
+      = kc::retry_with_mitigation(ctx.retries(), 0ms, std::ref(ctx), cancel, as)
+          .then([] { return false; })
+          .handle_exception_type(
+            [](const ss::abort_requested_exception&) { return true; })
+          .handle_exception_type([](const ss::sleep_aborted&) { return true; })
+          .handle_exception([](std::exception_ptr) { return false; })
+          .get();
+    BOOST_REQUIRE(threw_aborted);
+    BOOST_REQUIRE_EQUAL(ctx.calls(), 2);
 }

@@ -9,7 +9,11 @@
 
 #pragma once
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
+
+namespace seastar {
+template<typename T>
+class input_stream;
+}
 
 namespace kafka {
 class flex_versions {

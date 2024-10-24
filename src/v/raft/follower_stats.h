@@ -11,10 +11,9 @@
 
 #pragma once
 
-#include "model/metadata.h"
+#include "base/vassert.h"
 #include "raft/follower_queue.h"
 #include "raft/types.h"
-#include "vassert.h"
 
 #include <absl/container/node_hash_map.h>
 
@@ -25,6 +24,7 @@ public:
     using container_t = absl::node_hash_map<vnode, follower_index_metadata>;
     using iterator = container_t::iterator;
     using const_iterator = container_t::const_iterator;
+    using value_type = container_t::value_type;
 
     explicit follower_stats(vnode self, uint32_t max_concurrent_append_entries)
       : _self(self)
@@ -75,6 +75,12 @@ public:
     void return_append_entries_units(vnode);
 
     void update_with_configuration(const group_configuration&);
+
+    void reset() {
+        for (auto& [_, meta] : _followers) {
+            meta.reset();
+        }
+    }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const follower_stats&);

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -28,7 +29,10 @@ public:
         virtual void add_records_fetched(uint64_t) = 0;
         virtual void add_bytes_produced(uint64_t) = 0;
         virtual void add_bytes_fetched(uint64_t) = 0;
+        virtual void add_bytes_fetched_from_follower(uint64_t) = 0;
+        virtual void add_schema_id_validation_failed() = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
+        virtual void clear_metrics() = 0;
         virtual ~impl() noexcept = default;
     };
 
@@ -54,6 +58,16 @@ public:
         return _impl->add_bytes_fetched(bytes);
     }
 
+    void add_bytes_fetched_from_follower(uint64_t bytes) {
+        return _impl->add_bytes_fetched_from_follower(bytes);
+    }
+
+    void add_schema_id_validation_failed() {
+        _impl->add_schema_id_validation_failed();
+    }
+
+    void clear_metrics() { _impl->clear_metrics(); }
+
 private:
     std::unique_ptr<impl> _impl;
 };
@@ -66,11 +80,22 @@ public:
     void add_records_fetched(uint64_t cnt) final { _records_fetched += cnt; }
     void add_records_produced(uint64_t cnt) final { _records_produced += cnt; }
     void add_bytes_fetched(uint64_t cnt) final { _bytes_fetched += cnt; }
+    void add_bytes_fetched_from_follower(uint64_t cnt) final {
+        _bytes_fetched_from_follower += cnt;
+    }
     void add_bytes_produced(uint64_t cnt) final { _bytes_produced += cnt; }
+    void add_schema_id_validation_failed() final {
+        ++_schema_id_validation_records_failed;
+    };
+
+    void clear_metrics() final;
 
 private:
+    void reconfigure_metrics();
     void setup_public_metrics(const model::ntp&);
     void setup_internal_metrics(const model::ntp&);
+
+    void setup_public_scrubber_metric(const model::ntp&);
 
 private:
     const partition& _partition;
@@ -78,9 +103,10 @@ private:
     uint64_t _records_fetched{0};
     uint64_t _bytes_produced{0};
     uint64_t _bytes_fetched{0};
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    uint64_t _bytes_fetched_from_follower{0};
+    uint64_t _schema_id_validation_records_failed{0};
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
-partition_probe make_materialized_partition_probe();
 } // namespace cluster

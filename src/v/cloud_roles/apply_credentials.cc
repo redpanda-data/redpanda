@@ -10,8 +10,10 @@
 
 #include "cloud_roles/apply_credentials.h"
 
-#include "cloud_roles/apply_aws_credentials.h"
-#include "cloud_roles/apply_gcp_credentials.h"
+#include "apply_abs_credentials.h"
+#include "apply_abs_oauth_credentials.h"
+#include "apply_aws_credentials.h"
+#include "apply_gcp_credentials.h"
 
 namespace cloud_roles {
 apply_credentials make_credentials_applier(credentials creds) {
@@ -22,6 +24,13 @@ apply_credentials make_credentials_applier(credentials creds) {
       },
       [](gcp_credentials gc) -> std::unique_ptr<apply_credentials::impl> {
           return std::make_unique<apply_gcp_credentials>(std::move(gc));
+      },
+      [](abs_credentials abs) -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<apply_abs_credentials>(std::move(abs));
+      },
+      [](const abs_oauth_credentials& abs_oauth)
+        -> std::unique_ptr<apply_credentials::impl> {
+          return std::make_unique<apply_abs_oauth_credentials>(abs_oauth);
       })};
 }
 

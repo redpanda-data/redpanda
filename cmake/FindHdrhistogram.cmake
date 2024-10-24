@@ -2,8 +2,13 @@ find_path (Hdrhistogram_INCLUDE_DIR
   NAMES hdr_histogram.h
   PATH_SUFFIXES hdr)
 
-find_library (Hdrhistogram_LIBRARY
-  NAMES hdr_histogram_static)
+if (BUILD_SHARED_LIBS)
+  find_library (Hdrhistogram_LIBRARY
+    NAMES hdr_histogram)
+else()
+  find_library (Hdrhistogram_LIBRARY
+    NAMES hdr_histogram_static)
+endif()
 
 mark_as_advanced (
   Hdrhistogram_INCLUDE_DIR

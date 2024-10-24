@@ -10,11 +10,12 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "ssx/sformat.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -27,6 +28,16 @@ using topic_recovery_enabled
 
 class ntp_config {
 public:
+    // Remote deletes are enabled by default in new tiered storage topics,
+    // disabled by default in legacy topics during upgrade (the legacy path
+    // is handled during adl/serde decode).
+    static constexpr bool default_remote_delete{true};
+    static constexpr bool legacy_remote_delete{false};
+    static constexpr bool default_iceberg_enabled{false};
+    static constexpr bool default_cloud_topic_enabled{false};
+
+    static constexpr std::chrono::milliseconds read_replica_retention{3600000};
+
     struct default_overrides {
         // if not set use the log_manager's configuration
         std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -53,6 +64,25 @@ public:
         tristate<std::chrono::milliseconds> retention_local_target_ms{
           std::nullopt};
 
+        // Controls whether topic deletion should imply deletion in S3
+        std::optional<bool> remote_delete;
+
+        // time before rolling a segment, from first write
+        tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
+
+        tristate<size_t> initial_retention_local_target_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> initial_retention_local_target_ms{
+          std::nullopt};
+
+        std::optional<model::write_caching_mode> write_caching;
+
+        std::optional<std::chrono::milliseconds> flush_ms;
+        std::optional<size_t> flush_bytes;
+        bool iceberg_enabled{default_iceberg_enabled};
+        bool cloud_topic_enabled{default_cloud_topic_enabled};
+        std::optional<std::chrono::milliseconds>
+          iceberg_translation_interval_ms{std::nullopt};
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -66,10 +96,10 @@ public:
       ss::sstring base_dir,
       std::unique_ptr<default_overrides> overrides) noexcept
       : ntp_config(
-        std::move(n),
-        std::move(base_dir),
-        std::move(overrides),
-        model::revision_id(0)) {}
+          std::move(n),
+          std::move(base_dir),
+          std::move(overrides),
+          model::revision_id(0)) {}
 
     ntp_config(
       model::ntp n,
@@ -110,24 +140,20 @@ public:
 
     bool has_overrides() const { return _overrides != nullptr; }
 
-    bool is_compacted() const {
-        if (_overrides && _overrides->cleanup_policy_bitflags) {
-            return (_overrides->cleanup_policy_bitflags.value()
-                    & model::cleanup_policy_bitflags::compaction)
-                   == model::cleanup_policy_bitflags::compaction;
+    bool has_compacted_override() const {
+        auto cp_override = cleanup_policy_override();
+        if (!cp_override) {
+            return false;
         }
-        return false;
+        return model::is_compaction_enabled(cp_override.value());
+    }
+
+    bool is_compacted() const {
+        return model::is_compaction_enabled(cleanup_policy());
     }
 
     bool is_collectable() const {
-        // has no overrides
-        if (!_overrides || !_overrides->cleanup_policy_bitflags) {
-            return true;
-        }
-        // check if deletion bitflag is set
-        return (_overrides->cleanup_policy_bitflags.value()
-                & model::cleanup_policy_bitflags::deletion)
-               == model::cleanup_policy_bitflags::deletion;
+        return model::is_deletion_enabled(cleanup_policy());
     }
 
     ss::sstring work_directory() const {
@@ -144,6 +170,41 @@ public:
 
     void set_overrides(default_overrides o) {
         _overrides = std::make_unique<default_overrides>(o);
+    }
+
+    std::optional<size_t> retention_bytes() const {
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_bytes.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_bytes.has_optional_value()) {
+                return _overrides->retention_bytes.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
+        }
+        return config::shard_local_cfg().retention_bytes();
+    }
+
+    std::optional<std::chrono::milliseconds> retention_duration() const {
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_time.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_time.has_optional_value()) {
+                return _overrides->retention_time.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
+        }
+
+        if (is_read_replica_mode_enabled()) {
+            // Read replicas have a special hardcoded default, because they do
+            // not retain user data in local raft log, just configuration.
+            return read_replica_retention;
+        }
+
+        return config::shard_local_cfg().log_retention_ms();
     }
 
     bool is_archival_enabled() const {
@@ -163,7 +224,110 @@ public:
                && _overrides->read_replica.value();
     }
 
-    bool is_internal_topic() const { return _ntp.ns != model::kafka_namespace; }
+    /**
+     * True if the topic is configured for "normal" tiered storage, i.e.
+     * both reads and writes to S3, and is not a read replica.
+     */
+    bool is_tiered_storage() const {
+        return _overrides != nullptr
+               && !_overrides->read_replica.value_or(false)
+               && _overrides->shadow_indexing_mode
+                    == model::shadow_indexing_mode::full;
+    }
+
+    bool remote_delete() const {
+        if (_overrides == nullptr) {
+            return default_remote_delete;
+        } else {
+            return _overrides->remote_delete.value_or(default_remote_delete);
+        }
+    }
+
+    auto segment_ms() const -> std::optional<std::chrono::milliseconds> {
+        if (_overrides) {
+            if (_overrides->segment_ms.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->segment_ms.has_optional_value()) {
+                return _overrides->segment_ms.value();
+            }
+            // fall through to server config
+        }
+
+        if (is_read_replica_mode_enabled()) {
+            // Read replicas have a special hardcoded default, because they do
+            // not retain user data in local raft log, just configuration.
+            return read_replica_retention;
+        }
+
+        return config::shard_local_cfg().log_segment_ms;
+    }
+
+    bool write_caching() const {
+        if (!model::is_user_topic(_ntp)) {
+            return false;
+        }
+        auto cluster_default
+          = config::shard_local_cfg().write_caching_default();
+        if (cluster_default == model::write_caching_mode::disabled) {
+            return false;
+        }
+        auto value = _overrides
+                       ? _overrides->write_caching.value_or(cluster_default)
+                       : cluster_default;
+        return value == model::write_caching_mode::default_true;
+    }
+
+    std::chrono::milliseconds flush_ms() const {
+        auto cluster_default
+          = config::shard_local_cfg().raft_replica_max_flush_delay_ms();
+        return _overrides ? _overrides->flush_ms.value_or(cluster_default)
+                          : cluster_default;
+    }
+
+    size_t flush_bytes() const {
+        const auto& conf
+          = config::shard_local_cfg().raft_replica_max_pending_flush_bytes();
+        auto cluster_default = conf.value_or(
+          std::numeric_limits<size_t>::max());
+        return _overrides ? _overrides->flush_bytes.value_or(cluster_default)
+                          : cluster_default;
+    }
+
+    std::optional<model::cleanup_policy_bitflags>
+    cleanup_policy_override() const {
+        return _overrides ? _overrides->cleanup_policy_bitflags : std::nullopt;
+    }
+
+    model::cleanup_policy_bitflags cleanup_policy() const {
+        const auto& cluster_default
+          = config::shard_local_cfg().log_cleanup_policy();
+        return cleanup_policy_override().value_or(cluster_default);
+    }
+
+    bool iceberg_enabled() const {
+        if (!config::shard_local_cfg().iceberg_enabled) {
+            return false;
+        }
+        return _overrides ? _overrides->iceberg_enabled
+                          : default_iceberg_enabled;
+    }
+
+    bool cloud_topic_enabled() const {
+        if (!config::shard_local_cfg().development_enable_cloud_topics()) {
+            return false;
+        }
+        return _overrides ? _overrides->cloud_topic_enabled
+                          : default_cloud_topic_enabled;
+    }
+    std::chrono::milliseconds iceberg_translation_interval_ms() const {
+        auto default_value
+          = config::shard_local_cfg().iceberg_translation_interval_ms_default();
+        return _overrides
+                 ? _overrides->iceberg_translation_interval_ms.value_or(
+                     default_value)
+                 : default_value;
+    }
 
 private:
     model::ntp _ntp;

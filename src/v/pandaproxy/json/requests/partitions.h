@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "json/encodings.h"
 #include "json/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/json/rjson_parse.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 

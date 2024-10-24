@@ -10,20 +10,29 @@
  */
 
 #pragma once
-#include "bytes/iobuf_parser.h"
-#include "model/adl_serde.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "reflection/adl.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/vector.h"
+#include "utils/to_string.h"
+
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <fmt/ostream.h>
 
-#include <ostream>
+#include <algorithm>
+#include <iosfwd>
 
 namespace cluster {
 
-struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
+struct ntp_leader
+  : serde::envelope<ntp_leader, serde::version<0>, serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
@@ -54,7 +63,10 @@ struct ntp_leader : serde::envelope<ntp_leader, serde::version<0>> {
 };
 
 struct ntp_leader_revision
-  : serde::envelope<ntp_leader_revision, serde::version<0>> {
+  : serde::envelope<
+      ntp_leader_revision,
+      serde::version<0>,
+      serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
@@ -91,38 +103,35 @@ struct ntp_leader_revision
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-struct update_leadership_request
-  : serde::envelope<update_leadership_request, serde::version<0>> {
-    std::vector<ntp_leader> leaders;
-
-    update_leadership_request() noexcept = default;
-
-    explicit update_leadership_request(std::vector<ntp_leader> leaders)
-      : leaders(std::move(leaders)) {}
-
-    friend bool operator==(
-      const update_leadership_request&, const update_leadership_request&)
-      = default;
-
-    auto serde_fields() { return std::tie(leaders); }
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const update_leadership_request& r) {
-        fmt::print(o, "leaders {}", r.leaders);
-        return o;
-    }
-};
-
 struct update_leadership_request_v2
-  : serde::envelope<update_leadership_request_v2, serde::version<0>> {
+  : serde::envelope<
+      update_leadership_request_v2,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t version = 0;
-    std::vector<ntp_leader_revision> leaders;
+    chunked_vector<ntp_leader_revision> leaders;
 
     update_leadership_request_v2() noexcept = default;
 
     friend bool operator==(
-      const update_leadership_request_v2&, const update_leadership_request_v2&)
-      = default;
+      const update_leadership_request_v2& lhs,
+      const update_leadership_request_v2& rhs) {
+        return std::equal(
+          lhs.leaders.begin(),
+          lhs.leaders.end(),
+          rhs.leaders.begin(),
+          rhs.leaders.end());
+    };
+
+    update_leadership_request_v2 copy() const {
+        chunked_vector<ntp_leader_revision> leaders_cp;
+        leaders_cp.reserve(leaders.size());
+        std::copy(
+          leaders.begin(), leaders.end(), std::back_inserter(leaders_cp));
+
+        return update_leadership_request_v2(std::move(leaders_cp));
+    }
 
     friend std::ostream&
     operator<<(std::ostream& o, const update_leadership_request_v2& r) {
@@ -131,14 +140,18 @@ struct update_leadership_request_v2
     }
 
     explicit update_leadership_request_v2(
-      std::vector<ntp_leader_revision> leaders)
+      chunked_vector<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
 
     auto serde_fields() { return std::tie(leaders); }
 };
 
 struct update_leadership_reply
-  : serde::envelope<update_leadership_reply, serde::version<0>> {
+  : serde::envelope<
+      update_leadership_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     update_leadership_reply() noexcept = default;
 
     friend std::ostream&
@@ -151,7 +164,11 @@ struct update_leadership_reply
 };
 
 struct get_leadership_request
-  : serde::envelope<get_leadership_request, serde::version<0>> {
+  : serde::envelope<
+      get_leadership_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     get_leadership_request() noexcept = default;
 
     friend std::ostream&
@@ -164,13 +181,21 @@ struct get_leadership_request
 };
 
 struct get_leadership_reply
-  : serde::envelope<get_leadership_reply, serde::version<0>> {
-    std::vector<ntp_leader> leaders;
+  : serde::envelope<
+      get_leadership_reply,
+      serde::version<1>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using is_success = ss::bool_class<struct glr_tag>;
+    fragmented_vector<ntp_leader> leaders;
+    is_success success = is_success::yes;
 
     get_leadership_reply() noexcept = default;
 
-    explicit get_leadership_reply(std::vector<ntp_leader> leaders)
-      : leaders(std::move(leaders)) {}
+    explicit get_leadership_reply(
+      fragmented_vector<ntp_leader> leaders, is_success success)
+      : leaders(std::move(leaders))
+      , success(success) {}
 
     friend bool
     operator==(const get_leadership_reply&, const get_leadership_reply&)
@@ -178,88 +203,18 @@ struct get_leadership_reply
 
     friend std::ostream&
     operator<<(std::ostream& o, const get_leadership_reply& r) {
-        fmt::print(o, "leaders {}", r.leaders);
+        fmt::print(o, "leaders {}, success: {}", r.leaders, r.success);
         return o;
     }
 
-    auto serde_fields() { return std::tie(leaders); }
+    auto serde_fields() { return std::tie(leaders, success); }
+
+    /*
+     * Support for serde compat check
+     */
+    get_leadership_reply copy() const {
+        return get_leadership_reply{leaders.copy(), success};
+    }
 };
 
 } // namespace cluster
-
-namespace reflection {
-template<>
-struct adl<cluster::get_leadership_reply> {
-    void to(iobuf& out, cluster::get_leadership_reply&& r) {
-        serialize(out, r.leaders);
-    }
-    cluster::get_leadership_reply from(iobuf_parser& in) {
-        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
-        return cluster::get_leadership_reply(std::move(leaders));
-    }
-};
-
-template<>
-struct adl<cluster::get_leadership_request> {
-    void to(iobuf&, cluster::get_leadership_request&&) {}
-    cluster::get_leadership_request from(iobuf_parser&) { return {}; }
-};
-
-template<>
-struct adl<cluster::update_leadership_reply> {
-    void to(iobuf&, cluster::update_leadership_reply&&) {}
-    cluster::update_leadership_reply from(iobuf_parser&) { return {}; }
-};
-
-template<>
-struct adl<cluster::update_leadership_request> {
-    void to(iobuf& out, cluster::update_leadership_request&& r) {
-        serialize(out, std::move(r.leaders));
-    }
-    cluster::update_leadership_request from(iobuf_parser& in) {
-        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
-        return cluster::update_leadership_request(std::move(leaders));
-    }
-};
-
-template<>
-struct adl<cluster::ntp_leader_revision> {
-    void to(iobuf& out, cluster::ntp_leader_revision&& l) {
-        serialize(out, std::move(l.ntp), l.term, l.leader_id, l.revision);
-    }
-    cluster::ntp_leader_revision from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto leader = adl<std::optional<model::node_id>>{}.from(in);
-        auto revision = adl<model::revision_id>{}.from(in);
-        return {std::move(ntp), term, leader, revision};
-    }
-};
-
-template<>
-struct adl<cluster::ntp_leader> {
-    void to(iobuf& out, cluster::ntp_leader&& l) {
-        serialize(out, std::move(l.ntp), l.term, l.leader_id);
-    }
-    cluster::ntp_leader from(iobuf_parser& in) {
-        auto ntp = adl<model::ntp>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto leader = adl<std::optional<model::node_id>>{}.from(in);
-        return {std::move(ntp), term, leader};
-    }
-};
-
-template<>
-struct adl<cluster::update_leadership_request_v2> {
-    void to(iobuf& out, cluster::update_leadership_request_v2&& req) {
-        serialize(out, req.version, req.leaders);
-    }
-    cluster::update_leadership_request_v2 from(iobuf_parser& in) {
-        // decode version
-        adl<int8_t>{}.from(in);
-        auto leaders = adl<std::vector<cluster::ntp_leader_revision>>{}.from(
-          in);
-        return cluster::update_leadership_request_v2(std::move(leaders));
-    }
-};
-} // namespace reflection

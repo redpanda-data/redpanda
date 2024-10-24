@@ -1,0 +1,121 @@
+#
+# Copyright (c) 2024 Snowflake Computing Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+server:
+  # Maximum number of threads.
+  maxThreads: 200
+
+  # Minimum number of thread to keep alive.
+  minThreads: 10
+  applicationConnectors:
+    # HTTP-specific options.
+    - type: http
+
+      # The port on which the HTTP server listens for service requests.
+      port: 8181
+
+  adminConnectors:
+    - type: http
+      port: 8182
+
+  # The hostname of the interface to which the HTTP server socket wil be found. If omitted, the
+  # socket will listen on all interfaces.
+  #bindHost: localhost
+
+  #  ssl:
+  #    keyStore: ./example.keystore
+  #    keyStorePassword: example
+  #
+  #    keyStoreType: JKS # (optional, JKS is default)
+
+  # HTTP request log settings
+  requestLog:
+    appenders:
+      - type: console
+# Either 'jdbc' or 'polaris'; specifies the underlying delegate catalog
+baseCatalogType: "polaris"
+
+featureConfiguration:
+  ENFORCE_PRINCIPAL_CREDENTIAL_ROTATION_REQUIRED_CHECKING: false
+  DISABLE_TOKEN_GENERATION_FOR_USER_PRINCIPALS: true
+  SUPPORTED_CATALOG_STORAGE_TYPES:
+    - S3
+    - GCS
+    - AZURE
+    - FILE
+
+# Whether we want to enable Snowflake OAuth locally. Setting this to true requires
+# that you go through the setup outlined in the `README.md` file, specifically the
+# `OAuth + Snowflake: Local Testing And Then Some` section
+callContextResolver:
+  type: default
+
+realmContextResolver:
+  type: default
+
+defaultRealms:
+  - default-realm
+
+metaStoreManager:
+  type: in-memory
+
+# TODO - avoid duplicating token broker config
+oauth2:
+  type: test
+#  type: default # - uncomment to support Auth0 JWT tokens
+#  tokenBroker:
+#    type: symmetric-key
+#    secret: polaris
+
+authenticator:
+  class: io.polaris.service.auth.TestInlineBearerTokenPolarisAuthenticator
+  # class: io.polaris.service.auth.DefaultPolarisAuthenticator # - uncomment to support Auth0 JWT tokens
+  # tokenBroker:
+  #  type: symmetric-key
+  #  secret: polaris
+
+cors:
+  allowed-origins:
+    - http://localhost:8080
+  allowed-timing-origins:
+    - http://localhost:8080
+  allowed-methods:
+    - PATCH
+    - POST
+    - DELETE
+    - GET
+    - PUT
+  allowed-headers:
+    - "*"
+  exposed-headers:
+    - "*"
+  preflight-max-age: 600
+  allowed-credentials: true
+
+# Logging settings.
+
+logging:
+  # The default level of all loggers. Can be OFF, ERROR, WARN, INFO, DEBUG, TRACE, or ALL.
+  level: INFO
+
+  # Logger-specific levels.
+  loggers:
+    org.apache.iceberg.rest: DEBUG
+    io.polaris: DEBUG
+
+  appenders:
+    - type: console
+      threshold: ALL
+      logFormat: "%-5p [%d{ISO8601} - %-6r] [%t] [%X{aid}%X{sid}%X{tid}%X{wid}%X{oid}%X{srv}%X{job}%X{rid}] %c{30}: %m %kvp%n%ex"

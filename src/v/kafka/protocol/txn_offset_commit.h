@@ -11,14 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/txn_offset_commit_request.h"
 #include "kafka/protocol/schemata/txn_offset_commit_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -32,11 +31,11 @@ struct txn_offset_commit_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -67,7 +66,7 @@ struct txn_offset_commit_response final {
         }
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

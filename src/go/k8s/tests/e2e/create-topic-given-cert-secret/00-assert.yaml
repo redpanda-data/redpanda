@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cluster-tls-node-certificate
-  namespace: given-cert
-

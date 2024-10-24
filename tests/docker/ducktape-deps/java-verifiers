@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
+mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-serde --define buildDir=/opt/kafka-serde

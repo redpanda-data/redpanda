@@ -1,0 +1,12 @@
+# git-blame supports ignoring commits which is useful for formatting changes
+# and other non-functional changes.
+#
+# as of writing, this file is not picked up by default by git-blame. use
+# `--ignore-revs-file` or add the file to your git configuration
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
+# upgraded to clang-format 18
+fc822009898f760092ba69ceac439de88d2ade90
+
+# applied clang-format changes
+0b64b2c3f7dd62a3770dbca42c11b3e92f71297e

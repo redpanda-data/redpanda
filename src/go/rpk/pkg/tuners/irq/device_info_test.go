@@ -38,6 +38,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 		irqConfigDir  string
 		xenDeviceName string
 		want          []int
+		wantErr       bool
 	}{
 		{
 			name: "Shall return the IRQs when device is using MSI IRQs",
@@ -49,6 +50,14 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			},
 			irqConfigDir: "/irq_config/dev1",
 			want:         []int{1, 2, 5, 8},
+		},
+		{
+			name: "Err when is using MSI IRQs but the list is empty",
+			before: func(fs afero.Fs) {
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/", []byte{}, os.ModePerm)
+			},
+			irqConfigDir: "/irq_config/dev1",
+			wantErr:      true,
 		},
 		{
 			name: "Shall return the IRQs when device is using INT#x IRQs",
@@ -112,8 +121,42 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			tt.before(fs)
 			deviceInfo := NewDeviceInfo(fs, tt.procFile)
 			got, err := deviceInfo.GetIRQs(tt.irqConfigDir, tt.xenDeviceName)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.Exactly(t, tt.want, got)
+		})
+	}
+}
+
+func TestFindModalias(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		init             string
+		modaliasFilePath string
+		expErr           bool
+	}{
+		{"in block device", "/sys/devices/vbd-51792/block/xvdf/", "/sys/devices/vbd-51792/block/xvdf/modalias", false},
+		{"in device", "/sys/devices/vbd-51792/block/xvdf/", "/sys/devices/vbd-51792/modalias", false},
+		{"starting very deep", "/sys/devices/vbd-51792/block/xvdf/xvdf-1/xvdf-part/block/xvdf-a", "/sys/devices/vbd-51792/modalias", false},
+		{"no modalias", "/sys/devices/vbd-51792/block/xvdf/", "", true},
+		{"no modalias in unknown path", "/home/redpanda/opt/bin/device", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			if tt.modaliasFilePath != "" {
+				err := afero.WriteFile(fs, tt.modaliasFilePath, []byte{}, 0o777)
+				require.NoError(t, err)
+			}
+			modalias, err := findModalias(fs, tt.init)
+			if tt.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.modaliasFilePath, modalias)
 		})
 	}
 }

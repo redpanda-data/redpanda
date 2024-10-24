@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"os"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
@@ -26,18 +26,18 @@ type writeSizedFileCommand struct {
 	sizeBytes int64
 }
 
-// Creates a file of size sizeBytes at the given path.
+// NewWriteSizedFileCmd creates a file of size sizeBytes at the given path.
 // When executed through DirectExecutor, it uses fallocate to create
 // the file. If the file already existed, then it uses ftruncate to shrink it
 // down if needed.
-// The script rendered throug a ScriptRenderingExecutor calls `truncate`,
+// The script rendered through a ScriptRenderingExecutor calls `truncate`,
 // which has the same behavior.
 func NewWriteSizedFileCmd(path string, sizeBytes int64) Command {
 	return &writeSizedFileCommand{path, sizeBytes}
 }
 
 func (c *writeSizedFileCommand) Execute() error {
-	log.Debugf("Creating '%s' (%d B)", c.path, c.sizeBytes)
+	zap.L().Sugar().Debugf("Creating '%s' (%d B)", c.path, c.sizeBytes)
 
 	// the 'os' package needs to be used instead of 'afero', because the file
 	// handles returned by afero don't have a way to get their file descriptor
@@ -78,7 +78,7 @@ func (c *writeSizedFileCommand) RenderScript(w *bufio.Writer) error {
 	// See 'man truncate'.
 	fmt.Fprintf(
 		w,
-		"truncate -s %d %s",
+		"truncate -s %d %s\n",
 		c.sizeBytes,
 		c.path,
 	)

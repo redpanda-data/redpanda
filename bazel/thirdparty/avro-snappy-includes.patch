@@ -1,0 +1,13 @@
+diff --git a/lang/c++/impl/DataFile.cc b/lang/c++/impl/DataFile.cc
+index a76f714fa..8a7dade25 100644
+--- a/lang/c++/impl/DataFile.cc
++++ b/lang/c++/impl/DataFile.cc
+@@ -31,7 +31,7 @@
+ #include <boost/random/mersenne_twister.hpp>
+ 
+ #ifdef SNAPPY_CODEC_AVAILABLE
+-#include <snappy.h>
++#include "snappy.h"
+ #endif
+ 
+ namespace avro {

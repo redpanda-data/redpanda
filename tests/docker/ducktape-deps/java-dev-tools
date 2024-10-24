@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -e
+apt update
+apt install -y \
+  build-essential \
+  openjdk-17-jdk \
+  openjdk-21-jdk \
+  git \
+  maven \
+  cmake \
+  curl
+
+SCRIPTPATH="$(
+  cd -- "$(dirname "$0")" >/dev/null 2>&1
+  pwd -P
+)"
+$SCRIPTPATH/protobuf
+ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
+
+update-java-alternatives -s java-1.17.0-openjdk-${ARCH}
+mkdir /opt/java
+
+cat <<EOF >/opt/java/java-21
+JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${ARCH}"
+/usr/lib/jvm/java-21-openjdk-${ARCH}/bin/java "\$@"
+EOF
+chmod +x /opt/java/java-21
+
+cat <<EOF >/opt/java/java-17
+JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}"
+/usr/lib/jvm/java-17-openjdk-${ARCH}/bin/java "\$@"
+EOF
+chmod +x /opt/java/java-17

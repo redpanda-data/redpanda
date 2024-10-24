@@ -1,0 +1,82 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+      }
+    },
+    {
+      "name": "sanitize",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "release-type",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "debug-type",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "shared",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "ON"
+      }
+    },
+    {
+      "name": "static",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": ["base", "release-type", "shared"]
+    },
+    {
+      "name": "release-static",
+      "inherits": ["base", "release-type", "static"]
+    },
+    {
+      "name": "debug",
+      "inherits": ["base", "debug-type", "shared", "sanitize"]
+    },
+    {
+      "name": "debug-static",
+      "inherits": ["base", "debug-type", "static", "sanitize"]
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "release-static",
+      "configurePreset": "release-static"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "debug-static",
+      "configurePreset": "debug-static"
+    }
+  ]
+}

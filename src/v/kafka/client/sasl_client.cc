@@ -11,13 +11,22 @@
 #include "kafka/client/sasl_client.h"
 
 #include "kafka/client/logger.h"
+#include "security/oidc_authenticator.h"
+#include "security/scram_authenticator.h"
 
 namespace kafka::client {
 
 ss::future<>
 do_authenticate(shared_broker_t broker, const configuration& config) {
+    auto prefix = config.client_identifier().has_value()
+                    ? ssx::sformat("{}: ", *config.client_identifier())
+                    : "";
     if (config.sasl_mechanism().empty()) {
-        vlog(kclog.debug, "Connecting to broker without authentication");
+        vlog(
+          kclog.debug,
+          "{}Connecting to broker {} without authentication",
+          prefix,
+          broker->id());
         co_return;
     }
 
@@ -25,7 +34,8 @@ do_authenticate(shared_broker_t broker, const configuration& config) {
 
     if (
       mechanism != security::scram_sha256_authenticator::name
-      && mechanism != security::scram_sha512_authenticator::name) {
+      && mechanism != security::scram_sha512_authenticator::name
+      && mechanism != security::oidc::sasl_authenticator::name) {
         throw broker_error{
           broker->id(),
           error_code::sasl_authentication_failed,
@@ -36,7 +46,9 @@ do_authenticate(shared_broker_t broker, const configuration& config) {
 
     vlog(
       kclog.debug,
-      "Connecting to broker with authentication: {}:{}",
+      "{}Connecting to broker {} with authentication: {}:{}",
+      prefix,
+      broker->id(),
       mechanism,
       username);
 
@@ -59,6 +71,8 @@ do_authenticate(shared_broker_t broker, const configuration& config) {
     } else if (mechanism == security::scram_sha512_authenticator::name) {
         co_await do_authenticate_scram512(
           broker, std::move(username), std::move(password));
+    } else if (mechanism == security::oidc::sasl_authenticator::name) {
+        co_await do_authenticate_oauthbearer(broker, std::move(password));
     }
 }
 
@@ -150,7 +164,7 @@ static ss::future<> do_authenticate_scram(
      * send client final message
      */
     security::client_final_message client_final(
-      bytes("n,,"), server_first.nonce());
+      bytes::from_string("n,,"), server_first.nonce());
 
     auto salted_password = ScramAlgo::hi(
       bytes(password.cbegin(), password.cend()),
@@ -195,6 +209,20 @@ ss::future<> do_authenticate_scram512(
   shared_broker_t broker, ss::sstring username, ss::sstring password) {
     return do_authenticate_scram<security::scram_sha512>(
       std::move(broker), std::move(username), std::move(password));
+}
+
+ss::future<>
+do_authenticate_oauthbearer(shared_broker_t broker, ss::sstring token) {
+    sasl_authenticate_request req;
+    req.data.auth_bytes = bytes::from_string(
+      fmt::format("n,,\1auth={}\1\1", token));
+    auto res = co_await broker->dispatch(std::move(req));
+    if (res.data.errored()) {
+        throw broker_error{
+          broker->id(),
+          res.data.error_code,
+          res.data.error_message.value_or("<no error message>")};
+    }
 }
 
 } // namespace kafka::client

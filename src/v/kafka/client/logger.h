@@ -11,10 +11,12 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "utils/truncating_logger.h"
 
 #include <seastar/util/log.hh>
 
 namespace kafka::client {
 inline ss::logger kclog("kafka/client");
+inline truncating_logger kcwire(kclog, 1048576);
 } // namespace kafka::client

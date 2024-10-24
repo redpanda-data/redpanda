@@ -14,7 +14,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_request.h"
 #include "kafka/protocol/schemata/offset_for_leader_epoch_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 namespace kafka {
@@ -24,11 +23,11 @@ struct offset_for_leader_epoch_request final {
 
     offset_for_leader_epoch_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -42,6 +41,48 @@ struct offset_for_leader_epoch_response final {
     using api_type = offset_for_leader_epoch_api;
 
     offset_for_leader_epoch_response_data data;
+
+    offset_for_leader_epoch_response() = default;
+
+    offset_for_leader_epoch_response(
+      error_code ec,
+      offset_for_leader_epoch_request current_request,
+      std::vector<offset_for_leader_topic_result> unauthorized_results) {
+        data.topics.reserve(
+          current_request.data.topics.size() + unauthorized_results.size());
+
+        std::transform(
+          current_request.data.topics.begin(),
+          current_request.data.topics.end(),
+          std::back_inserter(data.topics),
+          [ec](offset_for_leader_topic& o) {
+              chunked_vector<epoch_end_offset> offsets;
+              offsets.reserve(o.partitions.size());
+              std::transform(
+                o.partitions.begin(),
+                o.partitions.end(),
+                std::back_inserter(offsets),
+                [ec](const offset_for_leader_partition& ol) {
+                    return epoch_end_offset{
+                      .error_code = ec, .partition = ol.partition};
+                });
+              return offset_for_leader_topic_result{
+                .topic = std::move(o.topic), .partitions = std::move(offsets)};
+          });
+        std::for_each(
+          unauthorized_results.begin(),
+          unauthorized_results.end(),
+          [ec](offset_for_leader_topic_result& r) {
+              std::for_each(
+                r.partitions.begin(),
+                r.partitions.end(),
+                [ec](epoch_end_offset& o) { o.error_code = ec; });
+          });
+        std::move(
+          unauthorized_results.begin(),
+          unauthorized_results.end(),
+          std::back_inserter(data.topics));
+    }
 
     static epoch_end_offset make_epoch_end_offset(
       model::partition_id p_id,
@@ -70,7 +111,7 @@ struct offset_for_leader_epoch_response final {
           p_id, ec, model::offset(-1), invalid_leader_epoch);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

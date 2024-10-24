@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/random.h"
 #include "model/fundamental.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
@@ -14,10 +15,11 @@
 #include "storage/api.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
+#include "storage/file_sanitizer.h"
+#include "storage/record_batch_utils.h"
+#include "storage/segment.h"
 #include "storage/segment_appender.h"
-#include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -35,20 +37,21 @@ void write_garbage(segment_appender& ptr) {
 
 void write_batches(ss::lw_shared_ptr<segment> seg) {
     auto batches = model::test::make_random_batches(
-      seg->offsets().base_offset + model::offset(1), 1);
+                     seg->offsets().get_base_offset() + model::offset(1), 1)
+                     .get();
     for (auto& b : batches) {
         b.header().header_crc = model::internal_header_only_crc(b.header());
-        (void)seg->append(std::move(b)).get0();
+        (void)seg->append(std::move(b)).get();
     }
     seg->flush().get();
 }
 
 log_config make_config() {
     return log_config{
-      log_config::storage_type::disk,
       "test.dir",
       1024,
-      debug_sanitize_files::yes};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()};
 }
 
 ntp_config config_from_ntp(const model::ntp& ntp) {
@@ -60,17 +63,30 @@ constexpr unsigned default_segment_readahead_count = 10;
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto conf = make_config();
+
+    ss::logger test_logger("test-logger");
+    ss::sharded<features::feature_table> feature_table;
+    feature_table.start().get();
+    feature_table
+      .invoke_on_all(
+        [](features::feature_table& f) { f.testing_activate_all(); })
+      .get();
+
     storage::api store(
       [conf]() {
           return storage::kvstore_config(
             1_MiB,
             config::mock_binding(10ms),
             conf.base_dir,
-            storage::debug_sanitize_files::yes);
+            storage::make_sanitized_file_config());
       },
-      [conf]() { return conf; });
+      [conf]() { return conf; },
+      feature_table);
     store.start().get();
-    auto stop_kvstore = ss::defer([&store] { store.stop().get(); });
+    auto stop_kvstore = ss::defer([&store, &feature_table] {
+        store.stop().get();
+        feature_table.stop().get();
+    });
     auto& m = store.log_mgr();
     std::vector<storage::ntp_config> ntps;
     ntps.reserve(4);
@@ -85,8 +101,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                   model::term_id(1),
                   ss::default_priority_class(),
                   default_segment_readahead_size,
-                  default_segment_readahead_count)
-                 .get0();
+                  default_segment_readahead_count,
+                  0)
+                 .get();
     seg->close().get();
 
     // auto ntp2 = empty
@@ -97,8 +114,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    model::term_id(1),
                    ss::default_priority_class(),
                    default_segment_readahead_size,
-                   default_segment_readahead_count)
-                  .get0();
+                   default_segment_readahead_count,
+                   1_MiB)
+                  .get();
     write_batches(seg3);
     seg3->close().get();
 
@@ -108,8 +126,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
                    model::term_id(1),
                    ss::default_priority_class(),
                    default_segment_readahead_size,
-                   default_segment_readahead_count)
-                  .get0();
+                   default_segment_readahead_count,
+                   1_MiB)
+                  .get();
     write_garbage(seg4->appender());
     seg4->close().get();
 
@@ -122,9 +141,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     BOOST_CHECK_EQUAL(m.get(ntps[1].ntp())->segment_count(), 0);
     BOOST_CHECK_EQUAL(m.get(ntps[2].ntp())->segment_count(), 1);
     BOOST_CHECK_EQUAL(m.get(ntps[3].ntp())->segment_count(), 0);
-    BOOST_CHECK(!file_exists(seg->reader().filename()).get0());
-    BOOST_CHECK(file_exists(seg3->reader().filename()).get0());
-    BOOST_CHECK(!file_exists(seg4->reader().filename()).get0());
+    BOOST_CHECK(!file_exists(seg->reader().filename()).get());
+    BOOST_CHECK(file_exists(seg3->reader().filename()).get());
+    BOOST_CHECK(!file_exists(seg4->reader().filename()).get());
     BOOST_CHECK(
-      file_exists(seg4->reader().filename() + ".cannotrecover").get0());
+      file_exists(seg4->reader().filename() + ".cannotrecover").get());
 }

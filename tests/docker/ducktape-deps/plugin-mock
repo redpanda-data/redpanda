@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
+cd /opt/redpanda-tests/go/plugin-mock
+go mod tidy
+go build -o .rpk.ac-pluginmock

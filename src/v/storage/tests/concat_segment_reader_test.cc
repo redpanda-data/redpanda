@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iostream.h"
 #include "model/tests/random_batch.h"
 #include "storage/directories.h"
 #include "storage/log_manager.h"
@@ -46,11 +47,10 @@ SEASTAR_THREAD_TEST_CASE(
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });
@@ -66,7 +66,8 @@ SEASTAR_THREAD_TEST_CASE(
         model::record_batch_type::acl_management_cmd);
 
     size_t start_pos = b.bytes_written();
-    start_offset = b.get_segment(0).offsets().dirty_offset + model::offset{1};
+    start_offset = b.get_segment(0).offsets().get_dirty_offset()
+                   + model::offset{1};
     b
       | add_random_batch(
         start_offset,
@@ -75,7 +76,8 @@ SEASTAR_THREAD_TEST_CASE(
         model::record_batch_type::user_management_cmd);
 
     // Add intermediate segments
-    start_offset = b.get_segment(0).offsets().dirty_offset + model::offset{1};
+    start_offset = b.get_segment(0).offsets().get_dirty_offset()
+                   + model::offset{1};
     for (auto i = 1; i < 4; ++i) {
         b | add_segment(start_offset)
           | add_random_batch(
@@ -83,7 +85,7 @@ SEASTAR_THREAD_TEST_CASE(
             10,
             maybe_compress_batches::yes,
             model::record_batch_type::user_management_cmd);
-        start_offset = b.get_segment(i).offsets().dirty_offset
+        start_offset = b.get_segment(i).offsets().get_dirty_offset()
                        + model::offset{1};
     }
 
@@ -94,7 +96,8 @@ SEASTAR_THREAD_TEST_CASE(
         10,
         maybe_compress_batches::yes,
         model::record_batch_type::user_management_cmd);
-    start_offset = b.get_segment(4).offsets().dirty_offset + model::offset{1};
+    start_offset = b.get_segment(4).offsets().get_dirty_offset()
+                   + model::offset{1};
 
     // Add a sentinel batch, view will read upto here
     auto final_segment = b.get_log_segments().back();
@@ -140,11 +143,10 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
@@ -169,11 +171,10 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
@@ -196,11 +197,10 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });
@@ -208,7 +208,7 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     size_t start_offset = 0;
     for (auto i = 0; i < 5; ++i) {
         b | add_segment(start_offset) | add_random_batch(start_offset, 10);
-        start_offset = b.get_segment(i).offsets().dirty_offset
+        start_offset = b.get_segment(i).offsets().get_dirty_offset()
                        + model::offset{1};
     }
 

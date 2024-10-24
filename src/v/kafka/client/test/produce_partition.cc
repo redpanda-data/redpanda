@@ -16,6 +16,7 @@
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "test_utils/async.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -42,6 +43,11 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     auto c_res0_fut = producer.produce(make_batch(model::offset(0), 2));
     auto c_res1_fut = producer.produce(make_batch(model::offset(2), 1));
+
+    tests::cooperative_spin_wait_with_timeout(5s, [&consumed_batches]() {
+        return consumed_batches.size() > 0;
+    }).get();
+
     producer.handle_response(kafka::produce_response::partition{
       .partition_index{model::partition_id{42}},
       .error_code = kafka::error_code::none,
@@ -49,12 +55,15 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 1);
     BOOST_REQUIRE_EQUAL(consumed_batches[0].record_count(), 3);
-    auto c_res0 = c_res0_fut.get0();
+    auto c_res0 = c_res0_fut.get();
     BOOST_REQUIRE_EQUAL(c_res0.base_offset, model::offset{0});
-    auto c_res1 = c_res1_fut.get0();
+    auto c_res1 = c_res1_fut.get();
     BOOST_REQUIRE_EQUAL(c_res1.base_offset, model::offset{2});
 
     auto c_res2_fut = producer.produce(make_batch(model::offset(3), 3));
+    tests::cooperative_spin_wait_with_timeout(5s, [&consumed_batches]() {
+        return consumed_batches.size() > 1;
+    }).get();
     producer.handle_response(kafka::produce_response::partition{
       .partition_index{model::partition_id{42}},
       .error_code = kafka::error_code::none,
@@ -62,6 +71,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 2);
     BOOST_REQUIRE_EQUAL(consumed_batches[1].record_count(), 3);
-    auto c_res2 = c_res2_fut.get0();
+    auto c_res2 = c_res2_fut.get();
     BOOST_REQUIRE_EQUAL(c_res2.base_offset, model::offset{3});
+    producer.stop().get();
 }

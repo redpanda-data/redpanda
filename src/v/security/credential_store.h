@@ -11,8 +11,12 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "security/scram_credential.h"
+#include "security/types.h"
+
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/node_hash_map.h>
+#include <boost/range/adaptor/filtered.hpp>
 
 namespace security {
 
@@ -24,10 +28,6 @@ namespace security {
  * process that often spans multiple network round trips and should remain
  * consistent for the duration of that process.
  */
-using credential_user = named_type<ss::sstring, struct credential_user_type>;
-using credential_password
-  = named_type<ss::sstring, struct credential_password_type>;
-
 class credential_store {
 public:
     // when a second type is supported update `credential_store_test` to include
@@ -51,7 +51,7 @@ public:
     }
 
     template<typename T>
-    auto get(const credential_user& name) const -> std::optional<T> const {
+    auto get(const credential_user& name) const -> const std::optional<T> {
         if (auto it = _credentials.find(name); it != _credentials.end()) {
             return std::get<T>(it->second);
         }
@@ -66,8 +66,26 @@ public:
         return _credentials.contains(name);
     }
 
-    const_iterator begin() const { return _credentials.cbegin(); }
-    const_iterator end() const { return _credentials.cend(); }
+    // Ephemeral credentials often require careful handling; they must not
+    // be serialized to disk, and in the general case, should not be displayed
+    // to users.
+    static constexpr auto is_not_ephemeral =
+      [](const security::credential_store::container_type::value_type& t) {
+          return ss::visit(t.second, [](const security::scram_credential& c) {
+              return !c.principal().has_value()
+                     || c.principal().value().type()
+                          != security::principal_type::ephemeral_user;
+          });
+      };
+
+    // Retrieve a list of credentials that satisfy the predicate.
+    //
+    // E.g.:
+    // _creds.range(credential_store::is_not_ephemeral);
+    auto range(auto pred) {
+        return boost::adaptors::filter(_credentials, std::move(pred));
+    }
+    void clear() { _credentials.clear(); }
 
 private:
     container_type _credentials;

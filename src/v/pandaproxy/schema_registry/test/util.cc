@@ -44,7 +44,8 @@ BOOST_AUTO_TEST_CASE(test_make_schema_definition) {
     auto res = pps::make_schema_definition<json::UTF8<>>(example_avro_schema);
 
     BOOST_REQUIRE(res);
-    BOOST_REQUIRE_EQUAL(res.value()(), minified_avro_schema);
+    auto str = to_string(std::move(res).value());
+    BOOST_REQUIRE_EQUAL(str, minified_avro_schema);
 }
 
 BOOST_AUTO_TEST_CASE(test_make_schema_definition_failure) {

@@ -11,15 +11,16 @@
 
 #pragma once
 
+#include "base/outcome.h"
+#include "base/seastarx.h"
+#include "metrics/metrics.h"
 #include "model/metadata.h"
 #include "net/transport.h"
-#include "outcome.h"
 #include "reflection/async_adl.h"
 #include "rpc/errc.h"
 #include "rpc/parse_utils.h"
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/gate.hh>
@@ -45,6 +46,129 @@ namespace rpc {
 struct client_context_impl;
 
 /**
+ * @brief A structure for tracking various points in time associated with a
+ * specific RPC request, for more detailed diagnosis when an RPC times out.
+ */
+struct timing_info {
+    using clock_type = rpc::clock_type;
+    using time_point = clock_type::time_point;
+
+    constexpr static time_point unset = time_point::min();
+
+    /**
+     * The originally configured timeout, usually created when the client_opts
+     * object is constructed.
+     */
+    timeout_spec timeout = timeout_spec::none;
+
+    /**
+     * The moment in time the request was enqueued in the _requests array, i.e.,
+     * now waiting in line to be sent. This
+     * is often immediately followed by being dispatched, though not always:
+     * since we dispatch in-order, any lower-sequence number requests which
+     * haven't been dispatched yet will prevent this from being dispatched.
+     */
+    time_point enqueued_at = unset;
+
+    /**
+     * Moment in time the semaphore units needed for request buffer are
+     * reserved. The request is not dispatched until the required units are
+     * acquired.
+     */
+    time_point memory_reserved_at = unset;
+
+    /**
+     * The moment in time we dispatched the request: that is, it was the next
+     * request to be sent and we called .write on the output stream: note that
+     * this does not perform the write (since that's an async method), but it
+     * means that the task responsible for doing the write has been set up.
+     */
+    time_point dispatched_at = unset;
+
+    /**
+     * The moment in time the future associated with the write to the output
+     * stream completes. As this is a buffered_output_stream, it does not
+     * necessarily mean the underlying stream has been flushed (as this happens
+     * only sometimes), so doesn't even mean the kernel has been notified of the
+     * buffers yet.
+     */
+    time_point written_at = unset;
+
+    /**
+     * True if the batched output stream write associated with this request was
+     * flushed at the time of writing. That is, the written_at timestamp is set
+     * when the write occurs, but the output stream will internally decide
+     * whether to flush not depending on concurrent writers
+     *
+     */
+    bool flushed = false;
+};
+
+class client_probe : public net::client_probe {
+public:
+    client_probe() = default;
+    client_probe(const client_probe&) = delete;
+    client_probe& operator=(const client_probe&) = delete;
+    client_probe(client_probe&&) = delete;
+    client_probe& operator=(client_probe&&) = delete;
+    ~client_probe() = default;
+
+    void request() {
+        ++_requests;
+        ++_requests_pending;
+    }
+
+    void request_completed() {
+        ++_requests_completed;
+        --_requests_pending;
+    }
+
+    void request_timeout() {
+        ++_request_timeouts;
+        --_requests_pending;
+    }
+
+    void request_error() {
+        ++_request_errors;
+        --_requests_pending;
+    }
+
+    void add_bytes_sent(size_t sent) { _out_bytes += sent; }
+
+    void add_bytes_received(size_t recv) { _in_bytes += recv; }
+
+    void read_dispatch_error() { ++_read_dispatch_errors; }
+
+    void header_corrupted() { ++_corrupted_headers; }
+
+    void client_correlation_error() { ++_client_correlation_errors; }
+
+    void server_correlation_error() { ++_server_correlation_errors; }
+
+    void waiting_for_available_memory() { ++_requests_blocked_memory; }
+
+    std::vector<ss::metrics::metric_definition> defs(
+      const std::vector<ss::metrics::label_instance>& labels,
+      const std::vector<ss::metrics::label>& aggregate_labels);
+
+private:
+    uint64_t _requests = 0;
+    uint32_t _requests_pending = 0;
+    uint32_t _request_errors = 0;
+    uint64_t _request_timeouts = 0;
+    uint64_t _requests_completed = 0;
+    uint64_t _in_bytes = 0;
+    uint64_t _out_bytes = 0;
+    uint32_t _read_dispatch_errors = 0;
+    uint32_t _corrupted_headers = 0;
+    uint32_t _server_correlation_errors = 0;
+    uint32_t _client_correlation_errors = 0;
+    uint32_t _requests_blocked_memory = 0;
+
+    friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
+};
+
+/**
  * Transport implementation used for internal RPC traffic.
  *
  * As callers send buffers over the wire, the transport associates each with an
@@ -60,9 +184,9 @@ public:
       std::optional<connection_cache_label> label = std::nullopt,
       std::optional<model::node_id> node_id = std::nullopt);
     ~transport() override;
-    transport(transport&&) noexcept = default;
     // semaphore is not move assignable
-    transport& operator=(transport&&) noexcept = delete;
+    transport(transport&&) = delete;
+    transport& operator=(transport&&) = delete;
     transport(const transport&) = delete;
     transport& operator=(const transport&) = delete;
 
@@ -73,11 +197,11 @@ public:
 
     template<typename Input, typename Output>
     ss::future<result<client_context<Output>>>
-      send_typed(Input, uint32_t, rpc::client_opts);
+      send_typed(Input, method_info, rpc::client_opts);
 
     template<typename Input, typename Output>
     ss::future<result<result_context<Output>>> send_typed_versioned(
-      Input, uint32_t, rpc::client_opts, transport_version);
+      Input, method_info, rpc::client_opts, transport_version);
 
     void reset_state() final;
 
@@ -86,8 +210,8 @@ public:
 private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
-        std::unique_ptr<netbuf> buffer;
-        client_opts::resource_units_t resource_units;
+        ss::scattered_message<char> scattered_message;
+        uint32_t correlation_id;
     };
     using requests_queue_t
       = absl::btree_map<sequence_t, std::unique_ptr<entry>>;
@@ -102,22 +226,47 @@ private:
     ss::future<result<std::unique_ptr<streaming_context>>>
       do_send(sequence_t, netbuf, rpc::client_opts);
     void dispatch_send();
+    ss::future<> do_dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, const rpc::client_opts&);
+    make_response_handler(netbuf&, rpc::client_opts&);
 
     ssx::semaphore _memory;
+
     /**
-     * Map of response handlers to use when processing a buffer read from the
-     * wire.
+     * @brief Get the timing info for the request with the given correlation ID.
+     *
+     * A pointer to the timing info object embedded in the _correlations map, or
+     * nullptr the correlation no longer exists (e.g., because the request has
+     * completed).
+     *
+     * This pointer is only valid until the next suspension point, since the
+     * entry may be deleted at any point if the current fiber suspends.
+     */
+    timing_info* get_timing(uint32_t correlation);
+
+    /**
+     * @brief Holds resource units from client_opts, the response handler and
+     * timing information for an outstanding request.
+     */
+    struct response_entry {
+        client_opts::resource_units_t resource_units;
+        internal::response_handler handler;
+        timing_info timing;
+    };
+
+    /**
+     * Map of correlation IDs to response handlers to use when processing a
+     * response read from the wire. We also track the timing info for the
+     * request in this map.
      *
      * NOTE: _correlation_idx is unrelated to the sequence type used to define
      * on-wire ordering below.
      */
-    absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
+    absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
-    ss::metrics::metric_groups _metrics;
+
     /**
      * Ordered map containing requests to be sent over the wire. The map
      * preserves order of calling send_typed function. It is fine to use
@@ -146,6 +295,8 @@ private:
     void set_version(transport_version v) { _version = v; }
 
     friend std::ostream& operator<<(std::ostream&, const transport&);
+
+    std::unique_ptr<client_probe> _probe;
 };
 
 namespace internal {
@@ -156,12 +307,16 @@ inline errc map_server_error(status status) {
         return errc::success;
     case status::request_timeout:
         return errc::client_request_timeout;
-    case rpc::status::server_error:
+    case status::server_error:
         return errc::service_error;
     case status::method_not_found:
         return errc::method_not_found;
     case status::version_not_supported:
         return errc::version_not_supported;
+    case status::service_unavailable:
+        return errc::service_unavailable;
+    default:
+        return errc::unknown;
     };
 };
 
@@ -180,9 +335,7 @@ ss::future<result<rpc::client_context<T>>> parse_result(
      * otherwise this is non-compliant behavior. the exception to this
      * rule is a v0 reply to a v1 request (ie talking to old v0 server).
      */
-    const auto protocol_violation
-      = rep_ver != req_ver
-        && (req_ver != transport_version::v1 || rep_ver != transport_version::v0);
+    const auto protocol_violation = rep_ver != req_ver;
 
     if (unlikely(st != status::success || protocol_violation)) {
         if (st == status::version_not_supported) {
@@ -211,7 +364,11 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         return ss::make_ready_future<ret_t>(map_server_error(st));
     }
 
-    return parse_type<T, default_message_codec>(in, sctx->get_header())
+    // use-after-move check doesn't take into account c++17 evaluation order
+    // correctly, so when used before and after `.then` it is a false positive.
+    // https://reviews.llvm.org/D145581
+    auto header = sctx->get_header();
+    return parse_type<T, default_message_codec>(in, header)
       .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
           if (data_fut.failed()) {
               const auto ex = data_fut.get_exception();
@@ -233,10 +390,10 @@ ss::future<result<rpc::client_context<T>>> parse_result(
 
 template<typename Input, typename Output>
 inline ss::future<result<client_context<Output>>>
-transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
+transport::send_typed(Input r, method_info method, rpc::client_opts opts) {
     using ret_t = result<client_context<Output>>;
     return send_typed_versioned<Input, Output>(
-             std::move(r), method_id, std::move(opts), _version)
+             std::move(r), method, std::move(opts), _version)
       .then([](result<result_context<Output>> res) {
           if (!res) {
               return ss::make_ready_future<ret_t>(res.error());
@@ -249,31 +406,26 @@ template<typename Input, typename Output>
 inline ss::future<result<result_context<Output>>>
 transport::send_typed_versioned(
   Input r,
-  uint32_t method_id,
+  method_info method,
   rpc::client_opts opts,
   transport_version version) {
     using ret_t = result<result_context<Output>>;
     using ctx_t = result<std::unique_ptr<streaming_context>>;
-    _probe.request();
+    _probe->request();
 
     auto b = std::make_unique<rpc::netbuf>();
     b->set_compression(opts.compression);
     b->set_min_compression_bytes(opts.min_compression_bytes);
     auto raw_b = b.get();
-    raw_b->set_service_method_id(method_id);
+    raw_b->set_service_method(method);
 
     auto& target_buffer = raw_b->buffer();
     auto seq = ++_seq;
     return encode_for_version(target_buffer, std::move(r), version)
       .then([this, version, b = std::move(b), seq, opts = std::move(opts)](
               transport_version effective_version) mutable {
-          /*
-           * enforce the rule that a transport configured as v0 behaves like
-           * a v0 client transport and sends v0 messages.
-           */
           vassert(
-            version != transport_version::v0
-              || effective_version == transport_version::v0,
+            version >= transport_version::min_supported,
             "Request type {} cannot be encoded at version {} (effective {}).",
             typeid(Input).name(),
             version,
@@ -291,52 +443,48 @@ transport::send_typed_versioned(
           const auto version = sctx.value()->get_header().version;
           return internal::parse_result<Output>(
                    _in, std::move(sctx.value()), req_ver)
-            .then([this, version](result<client_context<Output>> r) {
-                /*
-                 * upgrade transport to v2 when:
-                 * - at version v1 (do not upgrade from v0 -- for testing)
-                 * - the response was handled/contains no errors
-                 * - the response is v1,v2 (from a new server)
-                 */
-                if (
-                  _version == transport_version::v1 && r.has_value()
-                  && (version == transport_version::v1 || version == transport_version::v2)) {
-                    vlog(rpclog.debug, "Upgrading connection from v1 to v2");
-                    _version = transport_version::v2;
-                }
+            .then([version](result<client_context<Output>> r) {
                 return ret_t(result_context<Output>{version, std::move(r)});
             });
       });
 }
 
 template<typename Protocol>
-concept RpcClientProtocol = std::constructible_from<Protocol, rpc::transport&>;
+concept RpcClientProtocol
+  = std::constructible_from<Protocol, ss::lw_shared_ptr<rpc::transport>>;
 
 template<typename... Protocol>
-requires(RpcClientProtocol<Protocol>&&...) class client : public Protocol... {
+requires(RpcClientProtocol<Protocol> && ...)
+class client : public Protocol... {
 public:
-    explicit client(
-      transport_configuration cfg,
-      const std::optional<model::node_id>& node_id = std::nullopt)
-      : Protocol(_transport)...
-      , _transport(std::move(cfg), std::nullopt, node_id) {}
+    explicit client(ss::lw_shared_ptr<rpc::transport> transport)
+      : Protocol(transport)...
+      , _transport(transport) {}
 
     ss::future<> connect(rpc::clock_type::time_point connection_timeout) {
-        return _transport.connect(connection_timeout);
+        return _transport->connect(connection_timeout);
     }
-    ss::future<> stop() { return _transport.stop(); };
-    void shutdown() { _transport.shutdown(); }
+    ss::future<> stop() { return _transport->stop(); };
+    void shutdown() { _transport->shutdown(); }
 
     [[gnu::always_inline]] bool is_valid() const {
-        return _transport.is_valid();
+        return _transport->is_valid();
     }
 
     const net::unresolved_address& server_address() const {
-        return _transport.server_address();
+        return _transport->server_address();
     }
 
 private:
-    rpc::transport _transport;
+    ss::lw_shared_ptr<rpc::transport> _transport{nullptr};
 };
 
+template<typename... Protocol>
+rpc::client<Protocol...> make_client(
+  transport_configuration cfg,
+  std::optional<connection_cache_label> label = std::nullopt,
+  const std::optional<model::node_id> node_id = std::nullopt) {
+    return client<Protocol...>(ss::make_lw_shared<rpc::transport>(
+      std::move(cfg), std::move(label), node_id));
+}
 } // namespace rpc

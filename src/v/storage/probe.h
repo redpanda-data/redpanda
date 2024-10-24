@@ -10,10 +10,9 @@
  */
 
 #pragma once
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
-#include "ssx/metrics.h"
 #include "storage/fwd.h"
-#include "storage/logger.h"
 #include "storage/types.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -37,15 +36,28 @@ public:
 
     const disk_metrics& get_disk_metrics() const { return _disk; }
 
+    node_probe() = default;
+    node_probe(const node_probe&) = delete;
+    node_probe& operator=(const node_probe&) = delete;
+    node_probe(node_probe&&) = delete;
+    node_probe& operator=(node_probe&&) = delete;
+    ~node_probe() = default;
+
 private:
     disk_metrics _disk;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    metrics::public_metric_groups _public_metrics;
 };
 
 // Per-NTP probe.
 class probe {
 public:
+    probe() = default;
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() = default;
+
     void add_bytes_written(uint64_t written) {
         _partition_bytes += written;
         _bytes_written += written;
@@ -71,11 +83,13 @@ public:
     void initial_segments_count(size_t cnt) { _log_segments_active = cnt; }
 
     void segment_compacted() { ++_segment_compacted; }
+    auto get_segments_compacted() const { return _segment_compacted; }
 
-    void batch_write_error(const std::exception_ptr& e) {
-        stlog.error("Error writing record batch {}", e);
-        ++_batch_write_errors;
+    void add_compaction_removed_bytes(ssize_t bytes) {
+        _compaction_removed_bytes += bytes;
     }
+
+    void batch_write_error(const std::exception_ptr& e);
 
     void add_batches_read(uint32_t batches) { _batches_read += batches; }
     void add_cached_batches_read(uint32_t batches) {
@@ -93,11 +107,22 @@ public:
     void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
     void set_compaction_ratio(double r) { _compaction_ratio = r; }
 
+    int64_t get_batch_parse_errors() const { return _batch_parse_errors; }
+    /**
+     * Clears all probe related metrics
+     */
+    void clear_metrics() { _metrics.clear(); }
+
+    void add_bytes_prefix_truncated(size_t bytes) {
+        _bytes_prefix_truncated += bytes;
+    }
+
 private:
     uint64_t _partition_bytes = 0;
     uint64_t _bytes_written = 0;
     uint64_t _bytes_read = 0;
     uint64_t _cached_bytes_read = 0;
+    uint64_t _bytes_prefix_truncated = 0;
 
     uint64_t _batches_written = 0;
     uint64_t _batches_read = 0;
@@ -111,6 +136,9 @@ private:
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
     double _compaction_ratio = 1.0;
-    ss::metrics::metric_groups _metrics;
+
+    ssize_t _compaction_removed_bytes = 0;
+
+    metrics::internal_metric_groups _metrics;
 };
 } // namespace storage

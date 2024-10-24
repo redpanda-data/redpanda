@@ -1,0 +1,31 @@
+From 5799e1ff85a7df0e98238905dd5b48848ca72625 Mon Sep 17 00:00:00 2001
+From: Tyler Rockwood <rockwotj@gmail.com>
+Date: Thu, 5 Sep 2024 10:08:04 -0500
+Subject: [PATCH] Support timeout and size in gazelle_test
+
+---
+ def.bzl | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/def.bzl b/def.bzl
+index c4c1e68b7..5a25bfacb 100644
+--- a/def.bzl
++++ b/def.bzl
+@@ -227,7 +227,7 @@ def gazelle(name, **kwargs):
+         data = kwargs["data"] if "data" in kwargs else [],
+     )
+ 
+-def gazelle_test(name, **kwargs):
++def gazelle_test(name, size = None, timeout = None, **kwargs):
+     runner_name, visibility = _gazelle_kwargs_prepare(name, kwargs)
+ 
+     _gazelle_test_runner(
+@@ -247,6 +247,8 @@ def gazelle_test(name, **kwargs):
+         srcs = [runner_name],
+         visibility = visibility,
+         tags = tags,
++        size = size,
++        timeout = timeout,
+         deps = ["@bazel_tools//tools/bash/runfiles"],
+         data = kwargs["data"] if "data" in kwargs else [],
+     )

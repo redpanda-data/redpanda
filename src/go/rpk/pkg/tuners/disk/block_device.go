@@ -11,14 +11,12 @@ package disk
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type BlockDevice interface {
@@ -46,7 +44,7 @@ func (d *blockDevice) Parent() BlockDevice {
 }
 
 func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
-	log.Debugf("Reading block device details from '%s'", syspath)
+	zap.L().Sugar().Debugf("Reading block device details from '%s'", syspath)
 	lines, err := utils.ReadFileLines(fs, filepath.Join(syspath, "uevent"))
 	if err != nil {
 		return nil, err
@@ -70,16 +68,6 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 		devnode: filepath.Join("/dev", deviceAttrs["DEVNAME"]),
 		parent:  parent,
 	}, nil
-}
-
-func readSyspath(major, minor uint32) (string, error) {
-	blockBasePath := "/sys/dev/block"
-	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
-	linkpath, err := os.Readlink(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(filepath.Join(blockBasePath, linkpath))
 }
 
 func parseUeventFile(lines []string) (map[string]string, error) {

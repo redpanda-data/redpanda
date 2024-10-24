@@ -1,9 +1,8 @@
 #include "net/transport.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "net/dns.h"
-#include "rpc/logger.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
@@ -12,12 +11,14 @@
 namespace {
 
 ss::future<ss::connected_socket> connect_with_timeout(
-  const seastar::socket_address& address, net::clock_type::time_point timeout) {
+  const seastar::socket_address& address,
+  net::clock_type::time_point timeout,
+  seastar::logger* log) {
     auto socket = ss::make_lw_shared<ss::socket>(ss::engine().net().socket());
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
-      .handle_exception([socket, address](const std::exception_ptr& e) {
-          rpc::rpclog.trace("error connecting to {} - {}", address, e);
+      .handle_exception([socket, address, log](const std::exception_ptr& e) {
+          log->trace("error connecting to {} - {}", address, e);
           socket->shutdown();
           return ss::make_exception_future<ss::connected_socket>(e);
       });
@@ -27,10 +28,12 @@ ss::future<ss::connected_socket> connect_with_timeout(
 
 namespace net {
 
-base_transport::base_transport(configuration c)
+base_transport::base_transport(configuration c, seastar::logger* log)
   : _server_addr(c.server_addr)
   , _creds(c.credentials)
-  , _tls_sni_hostname(c.tls_sni_hostname) {}
+  , _tls_sni_hostname(c.tls_sni_hostname)
+  , _wait_for_tls_server_eof(c.wait_for_tls_server_eof)
+  , _log(log) {}
 
 ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
     // hold invariant of having an always valid dispatch gate
@@ -41,19 +44,24 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
+        base_transport::reset_state();
         reset_state();
         auto resolved_address = co_await net::resolve_dns(server_address());
         ss::connected_socket fd = co_await connect_with_timeout(
-          resolved_address, timeout);
+          resolved_address, timeout, _log);
 
         if (_creds) {
             fd = co_await ss::tls::wrap_client(
               _creds,
               std::move(fd),
-              _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{});
+              ss::tls::tls_options{
+                .wait_for_eof_on_shutdown = _wait_for_tls_server_eof,
+                .server_name = _tls_sni_hostname.value_or("")});
         }
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
-        _probe.connection_established();
+        if (auto* p = _probe.value_or(nullptr); p != nullptr) {
+            p->connection_established();
+        }
         _in = _fd->input();
 
         // Never implicitly destroy a live output stream here: output streams
@@ -62,7 +70,10 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         _out = net::batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
-        _probe.connection_error(e);
+        if (auto* p = _probe.value_or(nullptr); p != nullptr) {
+            p->connection_error();
+        }
+        _log->trace("Connection error: {}", e);
         std::rethrow_exception(e);
     }
 
@@ -99,7 +110,7 @@ ss::future<> base_transport::stop() {
                 // Closing the output stream can throw bad pipe if
                 // it had unflushed bytes, as we already closed FD.
                 vlog(
-                  rpc::rpclog.debug,
+                  _log->debug,
                   "Exception while stopping transport: {}",
                   std::current_exception());
             }
@@ -110,17 +121,27 @@ ss::future<> base_transport::stop() {
 
 void base_transport::shutdown() noexcept {
     try {
-        if (_fd) {
+        if (_fd && !std::exchange(_shutdown, true)) {
             _fd->shutdown_input();
             _fd->shutdown_output();
-            _fd.reset();
         }
     } catch (...) {
         vlog(
-          rpc::rpclog.debug,
+          _log->debug,
           "Failed to shutdown transport: {}",
           std::current_exception());
     }
+}
+
+ss::future<> base_transport::wait_input_shutdown() {
+    if (_fd && _shutdown) {
+        co_return co_await _fd->wait_input_shutdown();
+    }
+}
+
+void base_transport::set_probe(client_probe* probe) {
+    vassert(!_probe.has_value(), "Transport already has registered probe");
+    _probe = probe;
 }
 
 } // namespace net

@@ -9,10 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/vlog.h"
+#include "cluster/commands.h"
 #include "cluster/feature_manager.h"
 #include "cluster/members_table.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
-#include "vlog.h"
 
 #include <seastar/core/manual_clock.hh>
 #include <seastar/core/sleep.hh>
@@ -57,7 +59,10 @@ struct barrier_fixture {
               std::nullopt,
               model::broker_properties{}));
         }
-        members.update_brokers(model::offset{0}, brokers);
+        for (auto& br : brokers) {
+            BOOST_REQUIRE(!members.apply(
+              model::offset(0), cluster::add_node_cmd(br.id(), br)));
+        }
     }
 
     void create_node_state(model::node_id id) {
@@ -111,12 +116,6 @@ struct barrier_fixture {
         return get_node_state(id)->barrier_state;
     }
 
-    /**
-     * Call this in places where the test wishes to advance
-     * to the next I/O wait.
-     */
-    void drain_tasks() { ss::sleep(10ms).get(); }
-
     std::map<model::node_id, ss::lw_shared_ptr<node_state>> states;
 
     std::map<model::node_id, std::error_code> rpc_rx_errors;
@@ -141,7 +140,7 @@ FIXTURE_TEST(test_barrier_joining_node, barrier_fixture) {
 
     // Populate members_table
     create_brokers(1);
-    drain_tasks();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f.available() && !f.failed());
     f.get();
@@ -179,13 +178,13 @@ FIXTURE_TEST(test_barrier_simple, barrier_fixture) {
     // The nodes that have entered should not give up or error out,
     // even if it is a long time until the last node participates.
     ss::manual_clock::advance(10s);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
     BOOST_REQUIRE(!f2.available());
 
     auto f1 = get_barrier_state(model::node_id{1})
                 .barrier(feature_barrier_tag{"test"});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
@@ -217,20 +216,20 @@ FIXTURE_TEST(test_barrier_node_restart, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     restart(model::node_id{2});
     f2 = get_barrier_state(model::node_id{2})
            .barrier(feature_barrier_tag{"test"});
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f2.available());
 
@@ -259,12 +258,12 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Without comms to node 2, this barrier should block to complete
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     // Advance clock long enough for them to retry and still see an error
     vlog(logger.debug, "Should have just tried first time and failed");
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     vlog(logger.debug, "Should have just retried and failed again");
 
     rpc_rx_errors.clear();
@@ -273,7 +272,7 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
     // Advance clock far enough for the nodes to all retry (and succeed) their
     // RPCs
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     vlog(logger.debug, "Should have just retried and succeeded");
 
     BOOST_REQUIRE(f0.available());
@@ -306,12 +305,12 @@ FIXTURE_TEST(test_barrier_exit_early, barrier_fixture) {
     auto f0 = get_barrier_state(model::node_id{0})
                 .barrier(feature_barrier_tag{"test"});
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
 
     // Exit on node 0, its barrier future should complete with an error
     kill(model::node_id{0});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(f0.available() && f0.failed());
     try {
         f0.get();
@@ -336,12 +335,12 @@ FIXTURE_TEST(test_barrier_exit_late, barrier_fixture) {
     auto f0 = get_barrier_state(model::node_id{0})
                 .barrier(feature_barrier_tag{"test"});
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
 
     // Exit on node 0, its barrier future should complete with an error
     kill(model::node_id{0});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(f0.available() && f0.failed());
     try {
         f0.get();
@@ -359,20 +358,19 @@ SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {
       .entered = true};
     auto req2 = req;
 
-    iobuf req_io = reflection::to_iobuf(std::move(req2));
-    iobuf_parser req_parser(std::move(req_io));
-    auto req_decoded = reflection::adl<feature_barrier_request>{}.from(
-      req_parser);
+    iobuf req_io = serde::to_iobuf(std::move(req2));
+    auto req_decoded = serde::from_iobuf<feature_barrier_request>(
+      std::move(req_io));
     BOOST_REQUIRE_EQUAL(req.tag, req_decoded.tag);
     BOOST_REQUIRE_EQUAL(req.peer, req_decoded.peer);
     BOOST_REQUIRE_EQUAL(req.entered, req_decoded.entered);
 
-    feature_barrier_response resp{.entered = true, .complete = true};
+    const feature_barrier_response resp{.entered = true, .complete = true};
+    auto orig_resp = resp;
 
-    iobuf resp_io = reflection::to_iobuf(std::move(resp));
-    iobuf_parser resp_parser(std::move(resp_io));
-    auto resp_decoded = reflection::adl<feature_barrier_response>{}.from(
-      resp_parser);
+    iobuf resp_io = serde::to_iobuf(std::move(orig_resp));
+    auto resp_decoded = serde::from_iobuf<feature_barrier_response>(
+      std::move(resp_io));
     BOOST_REQUIRE_EQUAL(resp.entered, resp_decoded.entered);
     BOOST_REQUIRE_EQUAL(resp.complete, resp_decoded.complete);
 }

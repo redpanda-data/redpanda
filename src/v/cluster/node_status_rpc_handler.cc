@@ -1,5 +1,7 @@
 #include "cluster/node_status_rpc_handler.h"
 
+#include "cluster/node_status_backend.h"
+
 namespace cluster {
 
 node_status_rpc_handler::node_status_rpc_handler(
@@ -10,7 +12,7 @@ node_status_rpc_handler::node_status_rpc_handler(
   , _node_status_backend(node_status_backend) {}
 
 ss::future<node_status_reply> node_status_rpc_handler::node_status(
-  node_status_request&& r, rpc::streaming_context&) {
+  node_status_request r, rpc::streaming_context&) {
     return _node_status_backend.invoke_on(
       node_status_backend::shard, [r = std::move(r)](auto& service) {
           return service.process_request(std::move(r));

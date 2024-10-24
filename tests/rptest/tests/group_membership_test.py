@@ -12,10 +12,13 @@ import requests
 import random
 
 from rptest.services.cluster import cluster
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
+import ducktape.errors
 
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.redpanda import RedpandaService
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
@@ -117,6 +120,80 @@ class ListGroupsReplicationFactorTest(RedpandaTest):
                    10,
                    backoff_sec=2,
                    err_msg="found persistent duplicates in groups listing")
+
+
+class GroupCoordinatorTransferUtils:
+    """
+    Utilities class for handling the topic-partition for the __consumer_offsets topic.
+    This class assumes that the topic has 1 partition a replication factor of 3
+    """
+    def __init__(self, redpanda: RedpandaService):
+        self.redpanda = redpanda
+        self.admin = Admin(self.redpanda)
+        self.logger = self.redpanda.logger
+
+    def get_group_partition(self, partition: int = 0):
+        partition = self.admin.get_partitions(namespace="kafka",
+                                              topic="__consumer_offsets",
+                                              partition=partition)
+        self.logger.debug(f"Group partition: {partition}")
+        return partition
+
+    def get_group_leader(self):
+        leader = self.get_group_partition()['leader_id']
+        self.logger.debug(f"Group leader: {leader}")
+        return leader
+
+    def transfer_leadership(self, new_leader: ClusterNode):
+        """
+        Request leadership transfer of the internal consumer group partition
+        and check that it completes successfully.
+        """
+        self.logger.debug(
+            f"Transferring leadership to {new_leader.account.hostname}")
+        success = self.admin.transfer_leadership_to(
+            namespace="kafka",
+            topic="__consumer_offsets",
+            partition=0,
+            target_id=self.redpanda.idx(new_leader))
+
+        self.logger.debug(
+            f"Leadership transfer to {new_leader}, success: {success}")
+        return success
+
+    def validate_leadership_transfer(self, new_leader: ClusterNode):
+        def leader_is():
+            leader = self.get_group_leader()
+            return leader != -1 and self.redpanda.get_node(
+                leader) == new_leader
+
+        try:
+            wait_until(leader_is, timeout_sec=4, backoff_sec=1)
+            return True
+        except ducktape.errors.TimeoutError:
+            return False
+
+    def partition_ready(self):
+        """
+        All replicas present and known leader
+        """
+        partition = self.get_group_partition()
+        return len(partition['replicas']) == 3 and partition['leader_id'] >= 0
+
+    def select_next_leader(self):
+        """
+        Select a leader different than the current leader
+        """
+        wait_until(self.partition_ready, timeout_sec=30, backoff_sec=5)
+        partition = self.get_group_partition()
+        replicas = partition['replicas']
+        assert len(replicas) == 3
+        leader = partition['leader_id']
+        assert leader >= 0
+        replicas = filter(lambda r: r["node_id"] != leader, replicas)
+        new_leader = random.choice(list(replicas))['node_id']
+        self.logger.debug(f"New leader: {new_leader}")
+        return self.redpanda.get_node(new_leader)
 
 
 class GroupMetricsTest(RedpandaTest):
@@ -287,15 +364,7 @@ class GroupMetricsTest(RedpandaTest):
             timeout_sec=30,
             backoff_sec=5)
 
-        admin = Admin(redpanda=self.redpanda)
-
-        def get_group_partition():
-            return admin.get_partitions(namespace="kafka",
-                                        topic="__consumer_offsets",
-                                        partition=0)
-
-        def get_group_leader():
-            return get_group_partition()['leader_id']
+        utils = GroupCoordinatorTransferUtils(self.redpanda)
 
         def metrics_from_single_node(node):
             """
@@ -315,50 +384,6 @@ class GroupMetricsTest(RedpandaTest):
                 for metric in metrics
             ])
 
-        def transfer_leadership(new_leader):
-            """
-            Request leadership transfer of the internal consumer group partition
-            and check that it completes successfully.
-            """
-            self.logger.debug(
-                f"Transferring leadership to {new_leader.account.hostname}")
-            admin.transfer_leadership_to(
-                namespace="kafka",
-                topic="__consumer_offsets",
-                partition=0,
-                target_id=self.redpanda.idx(new_leader))
-            for _ in range(3):  # re-check a few times
-                leader = get_group_leader()
-                self.logger.debug(f"Current leader: {leader}")
-                if leader != -1 and self.redpanda.get_node(
-                        leader) == new_leader:
-                    return True
-                time.sleep(1)
-            return False
-
-        def partition_ready():
-            """
-            All replicas present and known leader
-            """
-            partition = get_group_partition()
-            self.logger.debug(f"XXXXX: {partition}")
-            return len(
-                partition['replicas']) == 3 and partition['leader_id'] >= 0
-
-        def select_next_leader():
-            """
-            Select a leader different than the current leader
-            """
-            wait_until(partition_ready, timeout_sec=30, backoff_sec=5)
-            partition = get_group_partition()
-            replicas = partition['replicas']
-            assert len(replicas) == 3
-            leader = partition['leader_id']
-            assert leader >= 0
-            replicas = filter(lambda r: r["node_id"] != leader, replicas)
-            new_leader = random.choice(list(replicas))['node_id']
-            return self.redpanda.get_node(new_leader)
-
         # repeat the following test a few times.
         #
         #  1. transfer leadership to a new node
@@ -369,9 +394,13 @@ class GroupMetricsTest(RedpandaTest):
         # any metrics but that it does not report metrics for consumer groups
         # for which it is not leader.
         for _ in range(4):
-            new_leader = select_next_leader()
+            new_leader = utils.select_next_leader()
 
-            wait_until(lambda: transfer_leadership(new_leader),
+            wait_until(lambda: utils.transfer_leadership(new_leader),
+                       timeout_sec=10,
+                       backoff_sec=1)
+
+            wait_until(lambda: utils.validate_leadership_transfer(new_leader),
                        timeout_sec=30,
                        backoff_sec=5)
 

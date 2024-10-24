@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+go install github.com/birdayz/kaf/cmd/kaf@v0.2.3
+mv /root/go/bin/kaf /usr/local/bin/

@@ -13,7 +13,7 @@
 
 #include "bytes/details/io_fragment.h"
 #include "bytes/details/out_of_range.h"
-#include "utils/intrusive_list_helpers.h"
+#include "container/intrusive_list_helpers.h"
 
 namespace details {
 class io_placeholder {
@@ -24,7 +24,7 @@ public:
     io_placeholder() noexcept = default;
 
     io_placeholder(
-      iterator const& iter, size_t initial_index, size_t max_size_to_write)
+      const iterator& iter, size_t initial_index, size_t max_size_to_write)
       : _iter(iter)
       , _byte_index(initial_index)
       , _remaining_size(max_size_to_write) {}
@@ -34,6 +34,13 @@ public:
         std::copy_n(src, len, mutable_index());
         _remaining_size -= len;
         _byte_index += len;
+    }
+
+    [[gnu::always_inline]] void write_end(const uint8_t* src, size_t len) {
+        details::check_out_of_range(len, _remaining_size);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        std::copy_n(src, len, mutable_index() + _remaining_size - len);
+        _remaining_size -= len;
     }
 
     size_t remaining_size() const { return _remaining_size; }

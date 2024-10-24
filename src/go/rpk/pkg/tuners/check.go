@@ -17,16 +17,16 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 func Check(
-	fs afero.Fs, conf *config.Config, timeout time.Duration,
+	fs afero.Fs, y *config.RedpandaYaml, timeout time.Duration,
 ) ([]CheckResult, error) {
 	var results []CheckResult
-	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
-	checkersMap, err := RedpandaCheckers(fs, ioConfigFile, conf, timeout)
+	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(y.FileLocation()))
+	checkersMap, err := RedpandaCheckers(fs, ioConfigFile, y, timeout)
 	if err != nil {
 		return results, err
 	}
@@ -42,7 +42,7 @@ func Check(
 	for _, id := range ids {
 		checkers := checkersMap[CheckerID(id)]
 		for _, c := range checkers {
-			log.Debugf("Starting checker %q", c.GetDesc())
+			zap.L().Sugar().Debugf("Starting checker %q", c.GetDesc())
 			result := c.Check()
 			if result.Err != nil {
 				if c.GetSeverity() == Fatal {
@@ -50,7 +50,7 @@ func Check(
 				}
 				fmt.Printf("System check %q failed with non-fatal error %q\n", c.GetDesc(), result.Err)
 			}
-			log.Debugf("Finished checker %q; result %+v", c.GetDesc(), result)
+			zap.L().Sugar().Debugf("Finished checker %q; result %+v", c.GetDesc(), result)
 			results = append(results, *result)
 		}
 	}

@@ -45,11 +45,11 @@ struct compat_check<cluster::allocate_id_request> {
 
     static std::vector<compat_binary>
     to_binary(cluster::allocate_id_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(cluster::allocate_id_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -79,11 +79,11 @@ struct compat_check<cluster::allocate_id_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::allocate_id_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(cluster::allocate_id_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 

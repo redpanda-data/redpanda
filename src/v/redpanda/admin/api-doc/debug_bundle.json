@@ -1,0 +1,352 @@
+"/v1/debug/bundle": {
+  "post": {
+    "description": "Posting to this endpoint will trigger the start of an rpk debug bundle process.  If a process is already executing, this endpoint will return a 409 error.  If there is an issue with starting the process, this endpoint will return a 500 error.",
+    "summary": "Start an rpk debug bundle",
+    "operationId": "post_debug_bundle",
+    "consumes": [
+      "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "config",
+        "in": "body",
+        "required": true,
+        "schema": {
+          "description": "Configuration for the debug bundle process",
+          "type": "object",
+          "required": [
+            "job_id"
+          ],
+          "properties": {
+            "job_id": {
+              "description": "The Job UUID to use",
+              "type": "string"
+            },
+            "config": {
+              "description": "The parameters",
+              "type": "object",
+              "required": [],
+              "properties": {
+                "authentication": {
+                  "description": "Authentication object",
+                  "type": "object",
+                  "required": [
+                    "mechanism",
+                    "username",
+                    "password"
+                  ],
+                  "properties": {
+                    "mechanism": {
+                      "description": "SCRAM mechanism",
+                      "type": "string"
+                    },
+                    "username": {
+                      "description": "username used by RPK to authenticate against Kafka and Admin API",
+                      "type": "string"
+                    },
+                    "password": {
+                      "description": "password used by RPK to authenticate against Kafka and Admin API",
+                      "type": "string"
+                    }
+                  }
+                },
+                "controller_logs_size_limit_bytes": {
+                  "type": "integer"
+                },
+                "cpu_profiler_wait_seconds": {
+                  "type": "integer"
+                },
+                "logs_since": {
+                  "description": "Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+                  "type": "string"
+                },
+                "logs_size_limit_bytes": {
+                  "type": "integer"
+                },
+                "logs_until": {
+                  "description": "Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options.",
+                  "type": "string"
+                },
+                "metrics_interval_seconds": {
+                  "type": "integer"
+                },
+                "metrics_samples": {
+                  "type": "integer"
+                },
+                "partition": {
+                  "type": "string"
+                },
+                "tls_enabled": {
+                  "type": "boolean"
+                },
+                "tls_insecure_skip_verify": {
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "label_selector": {
+                  "description": "Label selection to filter k8s resources in the debug bundle response",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "key",
+                      "value"
+                    ],
+                    "properties": {
+                      "key": {
+                        "description": "The resource label key",
+                        "type": "string"
+                      },
+                      "value": {
+                        "description": "The resource label value",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/bundle_start_response"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal server error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  },
+  "get": {
+    "description": "Returns the status of a debug bundle process.  If one was never kicked off and bundle does not exist, this will return 409",
+    "summary": "Returns the status of a debug bundle process.",
+    "operationId": "get_debug_bundle",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK",
+        "schema": {
+          "$ref": "#/definitions/get_bundle_status"
+        }
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+},
+"/v1/debug/bundle/{jobid}": {
+  "delete": {
+    "description": "Attempts to kill a running bundle process.  Providing an incorrect `job_id` returns a 422.  If the process is not currently running, the request will return a 409 error.  Internal errors will return a 500 status.",
+    "summary": "Abort a running bundle process.",
+    "operationId": "delete_debug_bundle",
+    "consumes": [
+      "application/json"
+    ],
+    "parameters": [
+      {
+        "name": "jobid",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "No content"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "422": {
+        "description": "Format Error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+},
+"/v1/debug/bundle/file/{filename}": {
+  "get": {
+    "description": "Returns the generated debug bundle ZIP file",
+    "summary": "Returns the generated debug bundle ZIP file",
+    "operationId": "get_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json",
+      "application/zip"
+    ],
+    "responses": {
+      "200": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  },
+  "delete": {
+    "description": "Attempts to delete the generated debug bundle file",
+    "summary": "Attempts to delete the generated debug bundle file",
+    "operationId": "delete_debug_bundle_file",
+    "parameters": [
+      {
+        "name": "filename",
+        "in": "path",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "204": {
+        "description": "OK"
+      },
+      "401": {
+        "description": "Unauthorized",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "403": {
+        "description": "Forbidden",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "404": {
+        "description": "Not found",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "409": {
+        "description": "Conflict",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      },
+      "500": {
+        "description": "Internal error",
+        "schema": {
+          "$ref": "#/definitions/error_body"
+        }
+      }
+    }
+  }
+}

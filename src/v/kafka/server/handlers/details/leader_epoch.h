@@ -10,9 +10,8 @@
  */
 #pragma once
 
+#include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/server/partition_proxy.h"
-#include "kafka/types.h"
 
 #include <compare>
 
@@ -26,7 +25,7 @@ inline kafka::error_code check_leader_epoch(
     if (request_epoch < 0) {
         return error_code::none;
     }
-    auto const partition_epoch = p.leader_epoch();
+    const auto partition_epoch = p.leader_epoch();
 
     if (request_epoch > partition_epoch) {
         return error_code::unknown_leader_epoch;

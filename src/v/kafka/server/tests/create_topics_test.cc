@@ -7,8 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
@@ -24,21 +26,13 @@
 class create_topic_fixture : public redpanda_thread_fixture {
 public:
     kafka::create_topics_request make_req(
-      std::vector<kafka::creatable_topic> topics, bool validate_only = false) {
+      chunked_vector<kafka::creatable_topic> topics,
+      bool validate_only = false) {
         return kafka::create_topics_request{.data{
           .topics = std::move(topics),
           .timeout_ms = 10s,
           .validate_only = validate_only,
         }};
-    }
-
-    cluster::non_replicable_topic
-    make_non_rep(ss::sstring src, ss::sstring name) {
-        return cluster::non_replicable_topic{
-          .source = model::
-            topic_namespace{model::kafka_namespace, model::topic(std::move(src))},
-          .name = model::topic_namespace{
-            model::kafka_namespace, model::topic(std::move(name))}};
     }
 
     kafka::creatable_topic make_topic(
@@ -91,9 +85,12 @@ public:
     void test_create_topic(
       kafka::create_topics_request req,
       kafka::api_version version = kafka::api_version(2)) {
-        auto client = make_kafka_client().get0();
+        auto client = make_kafka_client().get();
         client.connect().get();
-        auto resp = client.dispatch(req, version).get0();
+        auto topics = req.data.topics
+                        .copy(); // save a copy because we will move out of req
+        bool validate_only = req.data.validate_only;
+        auto resp = client.dispatch(std::move(req), version).get();
 
         BOOST_REQUIRE_MESSAGE(
           std::all_of(
@@ -104,8 +101,8 @@ public:
             }),
           fmt::format("expected no errors. received response: {}", resp));
 
-        for (auto& topic : req.data.topics) {
-            verify_metadata(client, req, topic);
+        for (auto& topic : topics) {
+            verify_metadata(client, validate_only, topic);
 
             auto it = std::find_if(
               resp.data.topics.begin(),
@@ -113,7 +110,7 @@ public:
               [name = topic.name](const auto& t) { return t.name == name; });
 
             BOOST_CHECK(it != resp.data.topics.end());
-            verify_response(topic, *it, version, req.data.validate_only);
+            verify_response(topic, *it, version, validate_only);
 
             // TODO: one we combine the cluster fixture with the redpanda
             // fixture and enable multiple RP instances to run at the same time
@@ -140,8 +137,10 @@ public:
             /// Server should return default configs
             BOOST_TEST(topic_res.configs, "empty config response");
             auto cfg_map = config_map(*topic_res.configs);
-            const auto default_topic_properties = kafka::from_cluster_type(
-              app.metadata_cache.local().get_default_properties());
+            const auto default_topic_properties = config_map(
+              kafka::report_topic_configs(
+                app.metadata_cache.local(),
+                app.metadata_cache.local().get_default_properties()));
             BOOST_TEST(
               cfg_map == default_topic_properties,
               "incorrect default properties");
@@ -158,61 +157,26 @@ public:
         auto cfg = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, topic_res.name});
         BOOST_TEST(cfg, "missing topic config");
-        auto config_map = kafka::from_cluster_type(cfg->properties);
-        BOOST_TEST(config_map == resp_cfgs, "configs didn't match");
+        auto cfg_map = config_map(kafka::report_topic_configs(
+          app.metadata_cache.local(), cfg->properties));
+        BOOST_TEST(cfg_map == resp_cfgs, "configs didn't match");
         BOOST_CHECK_EQUAL(
           topic_res.topic_config_error_code, kafka::error_code::none);
     }
 
-    void test_create_non_replicable_topic(
-      model::topic src, kafka::create_topics_request req) {
-        std::vector<cluster::non_replicable_topic> non_reps;
-        std::transform(
-          req.data.topics.begin(),
-          req.data.topics.end(),
-          std::back_inserter(non_reps),
-          [&src](const kafka::creatable_topic& t) {
-              return cluster::non_replicable_topic{
-                .source = model::topic_namespace{model::kafka_namespace, src},
-                .name = model::topic_namespace{model::kafka_namespace, t.name}};
-          });
-
-        // Creating a materialized topic is not part of the kafka API
-        // Must do this through the cluster::topics_frontend class
-        auto& topics_frontend = app.controller->get_topics_frontend();
-        const auto resp = topics_frontend.local()
-                            .create_non_replicable_topics(
-                              std::move(non_reps), model::no_timeout)
-                            .get();
-        BOOST_TEST(
-          std::all_of(
-            std::cbegin(resp),
-            std::cend(resp),
-            [](const cluster::topic_result& t) {
-                return t.ec == cluster::errc::success;
-            }),
-          fmt::format("expected no errors. received response: {}", resp));
-
-        auto client = make_kafka_client().get0();
-        client.connect().get();
-        for (auto& topic : req.data.topics) {
-            verify_metadata(client, req, topic);
-        }
-        client.stop().then([&client] { client.shutdown(); }).get();
-    }
-
     void verify_metadata(
       kafka::client::transport& client,
-      kafka::create_topics_request& create_req,
+      bool validate_only,
       kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
         metadata_req.data.topics
-          = std::make_optional<std::vector<kafka::metadata_request_topic>>();
+          = std::make_optional<chunked_vector<kafka::metadata_request_topic>>();
         metadata_req.data.topics->push_back(
           kafka::metadata_request_topic{request_topic.name});
         auto metadata_resp
-          = client.dispatch(metadata_req, kafka::api_version(1)).get0();
+          = client.dispatch(std::move(metadata_req), kafka::api_version(1))
+              .get();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(
@@ -240,7 +204,7 @@ public:
             replication = request_topic.replication_factor;
         }
 
-        if (create_req.data.validate_only) {
+        if (validate_only) {
             BOOST_TEST(
               topic_metadata->error_code != kafka::error_code::none,
               fmt::format(
@@ -329,29 +293,6 @@ FIXTURE_TEST(create_topics, create_topic_fixture) {
 #endif
 }
 
-FIXTURE_TEST(create_non_replicable_topics, create_topic_fixture) {
-    wait_for_controller_leadership().get();
-
-    test_create_topic(make_req({make_topic("topic1")}));
-    test_create_non_replicable_topic(
-      model::topic("topic1"), make_req({make_topic("topic2")}));
-
-    // Test failure cases
-    cluster::non_replicable_topic no_exist(make_non_rep("abc", "def"));
-    cluster::non_replicable_topic already_exist(
-      make_non_rep("topic1", "topic2"));
-    auto& topics_frontend = app.controller->get_topics_frontend();
-    const auto resp = topics_frontend.local()
-                        .create_non_replicable_topics(
-                          {std::move(no_exist), std::move(already_exist)},
-                          model::no_timeout)
-                        .get();
-    BOOST_CHECK(resp[0].ec == cluster::errc::source_topic_not_exists);
-    BOOST_CHECK(resp[0].tp_ns.tp() == "def");
-    BOOST_CHECK(resp[1].ec == cluster::errc::topic_already_exists);
-    BOOST_CHECK(resp[1].tp_ns.tp() == "topic2");
-}
-
 FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
     auto topic = make_topic(
       "topic1",
@@ -361,11 +302,9 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
         {"redpanda.remote.readreplica", "panda-bucket"},
         {"redpanda.remote.write", "true"}});
 
-    auto req = make_req({topic});
-
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(2)).get();
 
     BOOST_CHECK(
       resp.data.topics[0].error_code == kafka::error_code::invalid_config);
@@ -395,4 +334,113 @@ FIXTURE_TEST(test_v5_validate_configs_resp, create_topic_fixture) {
          make_topic("topicD", 3, 1, config_map)},
         false),
       kafka::api_version(5));
+}
+
+FIXTURE_TEST(create_multiple_topics_mixed_invalid, create_topic_fixture) {
+    auto topic_a = make_topic(
+      "topic_a",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{{"redpanda.remote.write", "true"}});
+
+    auto topic_b = make_topic(
+      "topic_b",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"retention.bytes", "this_should_be_an_integer"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client
+                  .dispatch(make_req({topic_a, topic_b}), kafka::api_version(5))
+                  .get();
+
+    BOOST_CHECK(resp.data.topics.size() == 2);
+
+    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
+    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
+
+    BOOST_CHECK(
+      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
+}
+
+FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
+    auto topic_a = make_topic(
+      "topic_a",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "yes_this_is_true"}});
+
+    auto topic_b = make_topic(
+      "topic_b",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"retention.bytes", "this_should_be_an_integer"}});
+
+    auto topic_c = make_topic(
+      "topic_c",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{{"segment.ms", "0x2A"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client
+                  .dispatch(
+                    make_req({topic_a, topic_b, topic_c}),
+                    kafka::api_version(5))
+                  .get();
+
+    BOOST_CHECK(resp.data.topics.size() == 3);
+
+    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
+    BOOST_CHECK(
+      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+
+    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
+    BOOST_CHECK(
+      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
+
+    BOOST_CHECK(resp.data.topics[2].name == "topic_c");
+    BOOST_CHECK(
+      resp.data.topics[2].error_code == kafka::error_code::invalid_config);
+}
+
+FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "affirmative"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(
+      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK(
+      resp.data.topics[0].error_message == "Configuration is invalid");
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+}
+
+FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
+    auto topic = make_topic(
+      "topic1",
+      std::nullopt,
+      std::nullopt,
+      std::map<ss::sstring, ss::sstring>{
+        {"redpanda.remote.write", "tRuE"}, {"redpanda.remote.read", "FALSE"}});
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
+    BOOST_CHECK(resp.data.topics[0].name == "topic1");
 }

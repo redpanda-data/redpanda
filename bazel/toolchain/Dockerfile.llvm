@@ -1,0 +1,169 @@
+FROM ubuntu:jammy AS base
+
+RUN apt update
+RUN apt upgrade -y
+RUN apt install -y git curl python3 cmake ninja-build wget lsb-release software-properties-common gnupg
+ADD --chmod=755 https://apt.llvm.org/llvm.sh /
+ARG SYSTEM_CLANG_VERSION=19
+RUN /llvm.sh ${SYSTEM_CLANG_VERSION}
+
+ARG TARGETARCH
+ADD --chmod=755 https://github.com/bazelbuild/bazelisk/releases/download/v1.20.0/bazelisk-linux-${TARGETARCH} /usr/bin/bazel
+# For some reason, with high concurrency settings, clang will segfault for me sometimes. Use this automatic retry script so that's less annoying.
+ADD --chmod=755 https://github.com/kadwanev/retry/raw/20997c7712a4/retry /usr/bin/retry
+
+WORKDIR /opt
+
+ARG LLVM_VERSION=17.0.6
+
+RUN git clone --branch llvmorg-${LLVM_VERSION} --single-branch https://github.com/llvm/llvm-project.git
+
+ENV CC=clang-${SYSTEM_CLANG_VERSION}
+ENV CXX=clang++-${SYSTEM_CLANG_VERSION}
+
+ARG MAX_LINKER_JOBS=0
+ARG MAX_COMPILER_JOBS=0
+
+COPY --chmod=755 <<EOF /opt/build.sh
+#!/usr/bin/env bash
+
+set -ex
+
+BUILD_DIR="/tmp/$(tr -dc A-Za-z0-9 </dev/urandom | head -c 13; echo)"
+
+mkdir -p "\$BUILD_DIR"
+
+cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \\
+  -S /opt/llvm-project/llvm/ \\
+  -B "\$BUILD_DIR" \\
+  -DCMAKE_BUILD_TYPE=Release \\
+  -DLLVM_BUILD_STATIC=OFF \\
+  -DLLVM_ENABLE_PIC=ON \\
+  -DLLVM_INCLUDE_TESTS=OFF \\
+  -DLLVM_INCLUDE_EXAMPLES=OFF \\
+  -DLLVM_INCLUDE_UTILS=OFF \\
+  -DLLVM_INCLUDE_DOCS=OFF \\
+  -DLLVM_ENABLE_ZLIB=OFF \\
+  -DLLVM_ENABLE_ZSTD=OFF \\
+  -DLLVM_ENABLE_Z3_SOLVER=OFF \\
+  -DLLVM_ENABLE_DIA_SDK=OFF \\
+  -DLLVM_ENABLE_LIBEDIT=OFF \\
+  -DLLVM_ENABLE_TERMINFO=OFF \\
+  -DLLVM_ENABLE_LIBXML2=OFF \\
+  -DLLVM_ENABLE_BACKTRACES=OFF \\
+  -DLLVM_ENABLE_PROJECTS="clang;lld;lldb;clang-tools-extra;bolt" \\
+  -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;compiler-rt" \\
+  -DLLVM_USE_LINKER=lld \\
+  -DLLVM_BUILD_TOOLS=ON \\
+  -DLLVM_ENABLE_PLUGINS=OFF \\
+  -DLLDB_ENABLE_CURSES=OFF \\
+  -DLLDB_ENABLE_LUA=OFF \\
+  -DLLDB_ENABLE_LZMA=OFF \\
+  -DLLDB_ENABLE_LIBXML2=OFF \\
+  -DLLDB_ENABLE_LIBEDIT=OFF \\
+  -DLLVM_BINUTILS_INCDIR=ON \\
+  -DLIBCLANG_BUILD_STATIC=ON \\
+  -DCLANG_PLUGIN_SUPPORT=OFF \\
+  -DCOMPILER_RT_INCLUDE_TESTS=OFF \\
+  -DCOMPILER_RT_BUILD_SANITIZERS=ON \\
+  -DCOMPILER_RT_ENABLE_IOS=OFF \\
+  -DCOMPILER_RT_ENABLE_WATCHOS=OFF \\
+  -DCOMPILER_RT_ENABLE_TVOS=OFF \\
+  -DLIBCXX_INSTALL_EXPERIMENTAL_LIBRARY=ON \\
+  -DLIBCXX_CXX_ABI=libcxxabi \\
+  -DLIBCXXABI_USE_LLVM_UNWINDER=OFF \\
+  -DLLVM_PARALLEL_COMPILE_JOBS=${MAX_COMPILER_JOBS} \\
+  -DLLVM_PARALLEL_LINK_JOBS=${MAX_LINKER_JOBS} \\
+  -DLIBCXX_ABI_VERSION=2 \\
+  -DLLVM_ENABLE_LIBCXX=ON \\
+  -DLLVM_STATIC_LINK_CXX_STDLIB=ON \\
+  -DLLVM_ENABLE_LTO=On \\
+  "\$@"
+
+retry --sleep=0 --tries=100 -- ninja -C "\$BUILD_DIR"
+ninja -C "\$BUILD_DIR" install
+# Save space and cleanup the build directory
+rm -rf "\$BUILD_DIR"
+EOF
+
+FROM base AS lto-build
+
+ARG LTO_MODE=On
+
+RUN /opt/build.sh \
+  -DCMAKE_INSTALL_PREFIX=/opt/install \
+  -DLLVM_ENABLE_LTO=${LTO_MODE}
+
+WORKDIR /opt/install
+
+RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+
+FROM scratch AS lto
+
+COPY --from=lto-build /opt/llvm-*.tar.gz .
+
+FROM base AS pgo-build
+
+ARG LTO_MODE=On
+
+RUN mkdir -p /tmp/clang-pgo/data/
+
+RUN /opt/build.sh \
+  -DCMAKE_INSTALL_PREFIX=/opt/stage-1 \
+  -DLLVM_BUILD_INSTRUMENTED=IR \
+  -DLLVM_PROFILE_DATA_DIR=/tmp/clang-pgo-data/ \
+  -DLLVM_ENABLE_PROJECTS="clang;lld;bolt" \
+  -DCMAKE_C_FLAGS="-Xclang -mllvm -Xclang -vp-counters-per-site=6" \
+  -DCMAKE_CXX_FLAGS="-Xclang -mllvm -Xclang -vp-counters-per-site=6" \
+  -DLLVM_BUILD_RUNTIME=No \
+  -DLLVM_ENABLE_LTO=${LTO_MODE}
+
+RUN git clone --branch dev --single-branch https://github.com/redpanda-data/redpanda.git
+
+WORKDIR /opt/redpanda
+
+RUN ./bazel/install-deps.sh
+
+# Append this snippet to out MODULE file
+COPY <<EOF pgo_compiler.bzl
+llvm.toolchain(
+    name = "pgo_toolchain",
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "${LLVM_VERSION}",
+)
+llvm.toolchain_root(
+    name = "pgo_toolchain",
+    path = "/opt/stage-1",
+)
+use_repo(llvm, "pgo_toolchain")
+EOF
+RUN cat pgo_compiler.bzl >> MODULE.bazel
+
+RUN retry --sleep=0 --tries=100 -- bazel build \
+  --config=release \
+  --extra_toolchains=@pgo_toolchain//:all \
+  --copt=-g \
+  --copt=-w \
+  --copt=-Wno-error \
+  //...
+
+RUN bazel clean --expunge
+
+WORKDIR /opt
+
+# Merge profile data
+RUN llvm-profdata-${SYSTEM_CLANG_VERSION} merge -output=/tmp/profdata.prof /tmp/clang-pgo-data/*.profraw
+
+# Rebuild clang toolchain with profile data this time
+RUN /opt/build.sh \
+  -DCMAKE_INSTALL_PREFIX=/opt/stage-2 \
+  -DLLVM_ENABLE_LTO=${LTO_MODE} \
+  -DLLVM_PROFDATA_FILE=/tmp/profdata.prof
+
+WORKDIR /opt/stage-2
+
+RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+
+FROM scratch AS pgo
+
+COPY --from=pgo-build /opt/llvm-*.tar.gz .

@@ -20,6 +20,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.rpk_producer import RpkProducer
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class OffsetForLeaderEpochTest(PreallocNodesTest):
@@ -37,7 +38,11 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         return True
 
     def _produce(self, topic, msg_cnt):
-        wait_until(lambda: self._all_have_leaders(), 20, backoff_sec=2)
+        wait_until(
+            lambda: self._all_have_leaders(),
+            50,
+            backoff_sec=2,
+            err_msg="Timeout waiting for all partitions to have leaders")
 
         producer = RpkProducer(self.test_context,
                                self.redpanda,
@@ -107,8 +112,12 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
                                                            leader_epoch=1)
 
         for o in leader_epoch_offsets:
+            # check if the offset epoch matches what is expected or it is not available
+            # (may be the case if leader wasn't elected in term 1 but other term in this case the offset for term 1 will not be present)
             assert initial_offsets[(o.topic,
-                                    o.partition)] == o.epoch_end_offset
+                                    o.partition)] == o.epoch_end_offset or (
+                                        o.epoch_end_offset == -1
+                                        and o.leader_epoch == 1)
 
         # restart all the nodes to force leader election,
         # increase start timeout as partition count may get large
@@ -123,7 +132,9 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
 
         for o in leader_epoch_offsets:
             assert initial_offsets[(o.topic,
-                                    o.partition)] == o.epoch_end_offset
+                                    o.partition)] == o.epoch_end_offset or (
+                                        o.epoch_end_offset == -1
+                                        and o.leader_epoch == 1)
 
         last_offsets = self.list_offsets(topics=topics,
                                          total_partitions=total_partitions)
@@ -146,6 +157,17 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         for o in leader_epoch_offsets:
             assert o.error is not None and "UNKNOWN_LEADER_EPOCH" in o.error
 
+        # test case for requested_epoch larger then leader_epoch
+
+        leader_epoch_offsets = kcl.offset_for_leader_epoch(topics=topic_names,
+                                                           leader_epoch=15000)
+
+        for o in leader_epoch_offsets:
+            # Ensure the leader_epoch returned is not the current leader_epoch
+            # but the requested
+            assert o.error == '' and o.leader_epoch == 15000 and o.epoch_end_offset == -1
+
+    @skip_debug_mode
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch_transfer(self):
 

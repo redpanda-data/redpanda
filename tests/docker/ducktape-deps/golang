@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p /usr/local/go/
+if [ $(uname -m) = "aarch64" ]; then
+  export ARCHID="arm64"
+else
+  export ARCHID="amd64"
+fi
+curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://golang.org/dl/go1.21.1.linux-${ARCHID}.tar.gz" | tar -xz -C /usr/local/go/ --strip 1

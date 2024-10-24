@@ -1,0 +1,125 @@
+"oidc_whoami_response": {
+    "description": "Details of the provided bearer token.",
+    "type": "object",
+    "properties": {
+        "id": {
+            "description": "Mapped principal for autherization.",
+            "type": "string"
+        },
+        "expire": {
+            "description": "Unix timestamp of the expiry of the token.",
+            "format": "uint64",
+            "type": "int"
+        }
+    }
+},
+"oidc_keys_cache_invalidate_error_response": {
+    "type": "object",
+    "properties": {
+        "error_message": {
+            "description": "The error message.",
+            "type": "string"
+        }
+    }
+},
+"role_definition": {
+    "type": "object",
+    "properties": {
+        "role": {
+            "required": true,
+            "type": "string"
+        }
+    }
+},
+"role_description": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        }
+    }
+},
+"role_member": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "principal_type": {
+            "type": "string",
+            "enum": [
+                "User"
+            ]
+        }
+    }
+},
+"role_members_list": {
+    "type": "object",
+    "properties": {
+        "members": {
+            "type": "array",
+            "items": {
+                "$ref": "role_member"
+            }
+        }
+    }
+},
+"roles_list": {
+    "type": "object",
+    "properties": {
+        "roles": {
+            "type": "array",
+            "items": {
+                "$ref": "role_description"
+            }
+        }
+    }
+},
+"role": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "members": {
+            "type": "array",
+            "items": {
+                "$ref": "role_member"
+            }
+        }
+    }
+},
+"role_member_update_response": {
+    "type": "object",
+    "properties": {
+        "role": {
+            "type": "string"
+        },
+        "added": {
+            "type": "array",
+            "items": {
+                "$ref": "role_member"
+            }
+        },
+        "removed": {
+            "type": "array",
+            "items": {
+                "$ref": "role_member"
+            }
+        },
+        "created": {
+            "type": "boolean"
+        }
+    }
+},
+"rbac_error_body": {
+    "type": "object",
+    "properties": {
+        "message": {
+            "type": "string"
+        },
+        "code": {
+            "type": "int"
+        }
+    }
+}

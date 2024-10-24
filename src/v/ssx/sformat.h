@@ -16,6 +16,7 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#if FMT_VERSION < 90100
 template<>
 struct fmt::formatter<seastar::sstring> final : fmt::formatter<string_view> {
     template<typename FormatContext>
@@ -52,6 +53,7 @@ template<>
 struct is_streamable<seastar::sstring, char> : std::false_type {};
 
 } // namespace fmt::detail
+#endif
 
 namespace ssx {
 

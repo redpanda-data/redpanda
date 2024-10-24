@@ -10,10 +10,11 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/validation_error.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -50,6 +51,16 @@ enum class visibility {
     deprecated,
 };
 
+// Whether to force an even or an odd value for a given property.
+enum class odd_even_constraint {
+    even,
+    odd,
+};
+
+// This is equivalent to cluster::cluster_version, but defined here to
+// avoid a dependency between config/ and cluster/
+using legacy_version = named_type<int64_t, struct legacy_version_tag>;
+
 std::string_view to_string_view(visibility v);
 
 class base_property {
@@ -60,6 +71,10 @@ public:
         std::optional<ss::sstring> example{std::nullopt};
         visibility visibility{visibility::user};
         is_secret secret{is_secret::no};
+
+        // Aliases are used exclusively for input: all output (e.g. listing
+        // configuration) uses the primary name of the property.
+        std::vector<std::string_view> aliases;
     };
 
     base_property(
@@ -75,18 +90,23 @@ public:
     bool needs_restart() const { return bool(_meta.needs_restart); }
     visibility get_visibility() const { return _meta.visibility; }
     bool is_secret() const { return bool(_meta.secret); }
+    const std::vector<std::string_view>& aliases() const {
+        return _meta.aliases;
+    }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken
     // from the property name.
-    virtual void to_json(
-      json::Writer<json::StringBuffer>& w, redact_secrets redact) const = 0;
+    virtual void
+    to_json(json::Writer<json::StringBuffer>& w, redact_secrets redact) const
+      = 0;
 
     virtual void print(std::ostream&) const = 0;
     virtual bool set_value(YAML::Node) = 0;
     virtual void set_value(std::any) = 0;
     virtual void reset() = 0;
     virtual bool is_default() const = 0;
+    virtual bool is_hidden() const = 0;
 
     /**
      * Helper for logging string-ized values of a property, e.g.
@@ -97,7 +117,7 @@ public:
      * redacted if secret.
      */
     template<typename U>
-    std::string_view format_raw(U const& in) {
+    std::string_view format_raw(const U& in) {
         if (is_secret() && !in.empty()) {
             return secret_placeholder;
         } else {
@@ -119,6 +139,12 @@ public:
     virtual std::optional<validation_error> validate(YAML::Node) const = 0;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
+
+    /**
+     * Notify the property of the cluster's original logical version, in case
+     * it has alternative defaults for old clusters.
+     */
+    virtual void notify_original_version(legacy_version) = 0;
 
 private:
     friend std::ostream& operator<<(std::ostream&, const base_property&);

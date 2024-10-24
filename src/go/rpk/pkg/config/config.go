@@ -12,227 +12,269 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
 )
 
 const (
-	ModeDev  = "dev"
-	ModeProd = "prod"
-
 	DefaultKafkaPort     = 9092
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
 	DefaultAdminPort     = 9644
+	DefaultRPCPort       = 33145
+	DefaultConsolePort   = 8080
+	DefaultListenAddress = "0.0.0.0"
+	LoopbackIP           = "127.0.0.1"
 
 	DefaultBallastFilePath = "/var/lib/redpanda/data/ballast"
 	DefaultBallastFileSize = "1GiB"
 )
 
-func Default() *Config {
-	return &Config{
-		fileLocation: DefaultPath,
-		Redpanda: RedpandaNodeConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: SocketAddress{
-				Address: "0.0.0.0",
-				Port:    33145,
-			},
-			KafkaAPI: []NamedAuthNSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9092,
-			}},
-			AdminAPI: []NamedSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9644,
-			}},
-			SeedServers:   []SeedServer{},
-			DeveloperMode: true,
-		},
-		Rpk: RpkConfig{
-			CoredumpDir:     "/var/lib/redpanda/coredump",
-			Overprovisioned: true,
-		},
-		// enable pandaproxy and schema_registry by default
-		Pandaproxy:     &Pandaproxy{},
-		SchemaRegistry: &SchemaRegistry{},
+// DevOverrides contains available overrides that are used for developer
+// testing. This list can be used wherever in rpk. These are not persisted to
+// any configuration file and they are not available as flags.
+type DevOverrides struct {
+	// CloudAuthURL is used by `rpk cloud` to override the auth0 URL
+	// we talk to.
+	CloudAuthURL string `env:"RPK_CLOUD_AUTH_URL"`
+	// CloudAuthAudience is used by `rpk cloud` to override the auth0
+	// audience we use.
+	CloudAuthAudience string `env:"RPK_CLOUD_AUTH_AUDIENCE"`
+	// CloudAuthAppClientID is used by `rpk cloud` to override the client
+	// ID we use when talking to auth0.
+	CloudAuthAppClientID string `env:"RPK_AUTH_APP_CLIENT_ID"`
+	// CloudAPIURL is used by `rpk cloud` to override the Redpanda Cloud
+	// URL we talk to.
+	CloudAPIURL string `env:"RPK_CLOUD_URL"`
+	// BYOCSkipVersionCheck is used by `rpk cloud byoc` and skips any byoc
+	// plugin version checking, instead using whatever is available.
+	BYOCSkipVersionCheck string `env:"RPK_CLOUD_SKIP_VERSION_CHECK"`
+	// AllowRpkCloudAdmin bypasses out.CheckExitCloudAdmin, allowing rpk to
+	// continue to use an admin command even if the command is technically
+	// not supported because the cluster is a cloud cluster.
+	AllowRpkCloudAdmin bool `env:"ALLOW_RPK_CLOUD_ADMIN"`
+	// CloudToken bypasses the oauth.LoadFlow, allowing you to pass a cloud
+	// token instead of logging in.
+	CloudToken string `env:"RPK_CLOUD_TOKEN"`
+	// PublicAPIURL is used by `rpk cloud` to override the public API URL.
+	PublicAPIURL string `env:"RPK_PUBLIC_API_URL"`
+}
+
+// Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
+// entrypoint that params.Config returns, after which you can get either the
+// Virtual or actual configurations.
+type Config struct {
+	p *Params
+
+	redpandaYaml       RedpandaYaml // processed, defaults/env/flags
+	redpandaYamlActual RedpandaYaml // unprocessed
+	redpandaYamlExists bool         // whether the redpanda.yaml file exists
+	redpandaYamlInitd  bool         // if OrDefaults was returned to initialize a new "actual" file that has not yet been written
+
+	rpkYaml       RpkYaml // processed, defaults/env/flags
+	rpkYamlActual RpkYaml // unprocessed
+	rpkYamlExists bool    // whether the rpk.yaml file exists
+	rpkYamlInitd  bool    // if OrEmpty was returned to initialize a new "actual" file that has not yet been written
+
+	devOverrides DevOverrides
+}
+
+// CheckExitCloudAdmin exits if the profile has FromCloud=true and no
+// ALLOW_RPK_CLOUD_ADMIN override.
+func CheckExitCloudAdmin(p *RpkProfile) {
+	if p.FromCloud && !p.DevOverrides().AllowRpkCloudAdmin {
+		out.Die("This admin API based command is not supported on Redpanda Cloud clusters.")
 	}
 }
 
-func SetMode(mode string, conf *Config) (*Config, error) {
-	m, err := NormalizeMode(mode)
+// CheckExitServerlessAdmin exits if the profile has FromCloud=true and the
+// cluster is a Serverless cluster.
+func CheckExitServerlessAdmin(p *RpkProfile) {
+	if p.FromCloud && p.CloudCluster.IsServerless() {
+		out.Die("This admin API based command is not supported on Redpanda Cloud serverless clusters.")
+	}
+}
+
+// CheckExitNotServerlessAdmin exits if the profile has FromCloud=true and the
+// cluster is NOT a Serverless cluster.
+func CheckExitNotServerlessAdmin(p *RpkProfile) {
+	if p.FromCloud && !p.CloudCluster.IsServerless() {
+		out.Die("This admin API based command is not supported on Redpanda Cloud clusters.")
+	}
+}
+
+// VirtualRedpandaYaml returns a redpanda.yaml, starting with defaults,
+// then decoding a potential file, then applying env vars and then flags.
+func (c *Config) VirtualRedpandaYaml() *RedpandaYaml {
+	return &c.redpandaYaml
+}
+
+// ActualRedpandaYaml returns an actual redpanda.yaml if it exists, with no
+// other defaults over overrides applied.
+func (c *Config) ActualRedpandaYaml() (*RedpandaYaml, bool) {
+	return &c.redpandaYamlActual, c.redpandaYamlExists
+}
+
+// ActualRedpandaYamlOrDefaults returns an actual redpanda.yaml if it exists,
+// otherwise this returns dev defaults. This function is meant to be used
+// for writing a redpanda.yaml file, populating it with defaults if needed.
+func (c *Config) ActualRedpandaYamlOrDefaults() *RedpandaYaml {
+	if c.redpandaYamlExists || c.redpandaYamlInitd {
+		return &c.redpandaYamlActual
+	}
+	defer func() { c.redpandaYamlInitd = true }()
+	redpandaYaml := DevDefault()
+	if c.p.ConfigFlag != "" { // --config set but the file does not yet exist
+		redpandaYaml.fileLocation = c.p.ConfigFlag
+	}
+	c.redpandaYamlActual = *redpandaYaml
+	return &c.redpandaYamlActual
+}
+
+// VirtualRpkYaml returns an rpk.yaml, starting with defaults, then
+// decoding a potential file, then applying env vars and then flags.
+func (c *Config) VirtualRpkYaml() *RpkYaml {
+	return &c.rpkYaml
+}
+
+// VirtualProfile returns an rpk.yaml's current Virtual profile,
+// starting with defaults, then decoding a potential file, then applying env
+// vars and then flags. This always returns non-nil due to a guarantee from
+// Params.Load.
+func (c *Config) VirtualProfile() *RpkProfile {
+	return c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
+}
+
+// ActualProfile returns an actual rpk.yaml's current profile.
+// This may return nil if there is no current profile.
+func (c *Config) ActualProfile() *RpkProfile {
+	return c.rpkYamlActual.Profile(c.rpkYamlActual.CurrentProfile)
+}
+
+// ActualRpkYaml returns an actual rpk.yaml if it exists, with no other
+// defaults over overrides applied.
+func (c *Config) ActualRpkYaml() (*RpkYaml, bool) {
+	return &c.rpkYamlActual, c.rpkYamlExists
+}
+
+// ActualRpkYamlOrEmpty returns an actual rpk.yaml if it exists, otherwise this
+// returns a blank rpk.yaml. If this function tries to return a default rpk.yaml
+// but cannot read the user config dir, this returns an error.
+func (c *Config) ActualRpkYamlOrEmpty() (y *RpkYaml, err error) {
+	if c.rpkYamlExists || c.rpkYamlInitd {
+		return &c.rpkYamlActual, nil
+	}
+	defer func() { c.rpkYamlInitd = true }()
+	rpkYaml := emptyVirtualRpkYaml()
+	if c.p.ConfigFlag != "" {
+		rpkYaml.fileLocation = c.p.ConfigFlag
+	} else {
+		path, err := DefaultRpkYamlPath()
+		if err != nil {
+			return nil, err
+		}
+		rpkYaml.fileLocation = path
+	}
+	c.rpkYamlActual = rpkYaml
+	return &c.rpkYamlActual, nil
+}
+
+// DevOverrides returns any currently set dev overrides.
+func (c *Config) DevOverrides() DevOverrides {
+	return c.devOverrides
+}
+
+// LoadVirtualRedpandaYaml is a shortcut for p.Load followed by
+// cfg.VirtualRedpandaYaml.
+func (p *Params) LoadVirtualRedpandaYaml(fs afero.Fs) (*RedpandaYaml, error) {
+	cfg, err := p.Load(fs)
 	if err != nil {
 		return nil, err
 	}
-	switch m {
-	case ModeDev:
-		return setDevelopment(conf), nil
+	return cfg.VirtualRedpandaYaml(), nil
+}
 
-	case ModeProd:
-		return setProduction(conf), nil
-
-	default:
-		err := fmt.Errorf(
-			"'%s' is not a supported mode. Available modes: %s",
-			mode,
-			strings.Join(AvailableModes(), ", "),
-		)
+// LoadActualRedpandaYaml is a shortcut for p.Load followed by
+// cfg.ActualRedpandaYaml.
+func (p *Params) LoadActualRedpandaYamlOrDefaults(fs afero.Fs) (*RedpandaYaml, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
 		return nil, err
 	}
+	return cfg.ActualRedpandaYamlOrDefaults(), nil
 }
 
-func setDevelopment(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = true
-	// Defaults to setting all tuners to false
-	conf.Rpk = RpkConfig{
-		TLS:                  conf.Rpk.TLS,
-		SASL:                 conf.Rpk.SASL,
-		KafkaAPI:             conf.Rpk.KafkaAPI,
-		AdminAPI:             conf.Rpk.AdminAPI,
-		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
-		EnableUsageStats:     conf.Rpk.EnableUsageStats,
-		CoredumpDir:          conf.Rpk.CoredumpDir,
-		SMP:                  Default().Rpk.SMP,
-		BallastFilePath:      conf.Rpk.BallastFilePath,
-		BallastFileSize:      conf.Rpk.BallastFileSize,
-		Overprovisioned:      true,
+// LoadVirtualProfile is a shortcut for p.Load followed by
+// cfg.VirtualProfile.
+func (p *Params) LoadVirtualProfile(fs afero.Fs) (*RpkProfile, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return nil, err
 	}
-	return conf
+	return cfg.VirtualProfile(), nil
 }
 
-func setProduction(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = false
-	conf.Rpk.TuneNetwork = true
-	conf.Rpk.TuneDiskScheduler = true
-	conf.Rpk.TuneNomerges = true
-	conf.Rpk.TuneDiskIrq = true
-	conf.Rpk.TuneFstrim = false
-	conf.Rpk.TuneCPU = true
-	conf.Rpk.TuneAioEvents = true
-	conf.Rpk.TuneClocksource = true
-	conf.Rpk.TuneSwappiness = true
-	conf.Rpk.Overprovisioned = false
-	conf.Rpk.TuneDiskWriteCache = true
-	conf.Rpk.TuneBallastFile = true
-	return conf
-}
+///////////
+// MODES //
+///////////
 
-func NormalizeMode(mode string) (string, error) {
-	switch mode {
-	case "":
-		fallthrough
-	case "development", ModeDev:
-		return ModeDev, nil
+const (
+	ModeDev      = "dev"
+	ModeProd     = "prod"
+	ModeRecovery = "recovery"
+)
 
-	case "production", ModeProd:
-		return ModeProd, nil
-
+func (c *Config) SetMode(fs afero.Fs, mode string) error {
+	yRedpanda := c.ActualRedpandaYamlOrDefaults()
+	switch {
+	case mode == "" || strings.HasPrefix("development", mode):
+		yRedpanda.setDevMode()
+	case strings.HasPrefix("production", mode):
+		yRedpanda.setProdMode()
+	case strings.HasPrefix("recovery", mode):
+		yRedpanda.setRecoveryMode()
 	default:
-		err := fmt.Errorf(
-			"'%s' is not a supported mode. Available modes: %s",
-			mode,
-			strings.Join(AvailableModes(), ", "),
-		)
-		return "", err
+		return fmt.Errorf("unknown mode %q", mode)
+	}
+	return yRedpanda.Write(fs)
+}
+
+func (y *RedpandaYaml) setDevMode() {
+	y.Redpanda.DeveloperMode = true
+	y.Redpanda.RecoveryModeEnabled = false
+	// Defaults to setting all tuners to false
+	y.Rpk = RpkNodeConfig{
+		KafkaAPI:             y.Rpk.KafkaAPI,
+		AdminAPI:             y.Rpk.AdminAPI,
+		AdditionalStartFlags: y.Rpk.AdditionalStartFlags,
+		SMP:                  DevDefault().Rpk.SMP,
+		Overprovisioned:      true,
+		Tuners: RpkNodeTuners{
+			CoredumpDir:     y.Rpk.Tuners.CoredumpDir,
+			BallastFilePath: y.Rpk.Tuners.BallastFilePath,
+			BallastFileSize: y.Rpk.Tuners.BallastFileSize,
+		},
 	}
 }
 
-func AvailableModes() []string {
-	return []string{
-		ModeDev,
-		"development",
-		ModeProd,
-		"production",
-	}
+func (y *RedpandaYaml) setProdMode() {
+	y.Redpanda.DeveloperMode = false
+	y.Redpanda.RecoveryModeEnabled = false
+	y.Rpk.Overprovisioned = false
+	y.Rpk.Tuners.TuneNetwork = true
+	y.Rpk.Tuners.TuneDiskScheduler = true
+	y.Rpk.Tuners.TuneNomerges = true
+	y.Rpk.Tuners.TuneDiskIrq = true
+	y.Rpk.Tuners.TuneFstrim = false
+	y.Rpk.Tuners.TuneCPU = true
+	y.Rpk.Tuners.TuneAioEvents = true
+	y.Rpk.Tuners.TuneClocksource = true
+	y.Rpk.Tuners.TuneSwappiness = true
+	y.Rpk.Tuners.TuneDiskWriteCache = true
+	y.Rpk.Tuners.TuneBallastFile = true
 }
 
-// FileOrDefaults return the configuration as read from the file or
-// the default configuration if there is no file loaded.
-func (c *Config) FileOrDefaults() *Config {
-	if c.File() != nil {
-		return c.File()
-	} else {
-		cfg := Default()
-		// --config set but the file doesn't exist yet:
-		if c.fileLocation != "" {
-			cfg.fileLocation = c.fileLocation
-		}
-		return cfg // no file, write the defaults
-	}
-}
-
-// Check checks if the redpanda and rpk configuration is valid before running
-// the tuners. See: redpanda_checkers.
-func (c *Config) Check() (bool, []error) {
-	errs := checkRedpandaConfig(c)
-	errs = append(
-		errs,
-		checkRpkConfig(c)...,
-	)
-	ok := len(errs) == 0
-	return ok, errs
-}
-
-func checkRedpandaConfig(cfg *Config) []error {
-	var errs []error
-	rp := cfg.Redpanda
-	// top level check
-	if rp.Directory == "" {
-		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
-	}
-	if rp.ID != nil && *rp.ID < 0 {
-		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
-	}
-
-	// rpc server
-	if rp.RPCServer == (SocketAddress{}) {
-		errs = append(errs, fmt.Errorf("redpanda.rpc_server missing"))
-	} else {
-		saErrs := checkSocketAddress(rp.RPCServer, "redpanda.rpc_server")
-		if len(saErrs) > 0 {
-			errs = append(errs, saErrs...)
-		}
-	}
-
-	// kafka api
-	if len(rp.KafkaAPI) == 0 {
-		errs = append(errs, fmt.Errorf("redpanda.kafka_api missing"))
-	} else {
-		for i, addr := range rp.KafkaAPI {
-			configPath := fmt.Sprintf("redpanda.kafka_api[%d]", i)
-			saErrs := checkSocketAddress(SocketAddress{addr.Address, addr.Port}, configPath)
-			if len(saErrs) > 0 {
-				errs = append(errs, saErrs...)
-			}
-		}
-	}
-
-	// seed servers
-	if len(rp.SeedServers) > 0 {
-		for i, seed := range rp.SeedServers {
-			configPath := fmt.Sprintf("redpanda.seed_servers[%d].host", i)
-			saErrs := checkSocketAddress(seed.Host, configPath)
-			if len(saErrs) > 0 {
-				errs = append(errs, saErrs...)
-			}
-		}
-	}
-	return errs
-}
-
-func checkRpkConfig(cfg *Config) []error {
-	var errs []error
-	if cfg.Rpk.TuneCoredump && cfg.Rpk.CoredumpDir == "" {
-		errs = append(errs, fmt.Errorf("if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"))
-	}
-	return errs
-}
-
-func checkSocketAddress(s SocketAddress, configPath string) []error {
-	var errs []error
-	if s.Port == 0 {
-		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
-	}
-	if s.Address == "" {
-		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
-	}
-	return errs
+func (y *RedpandaYaml) setRecoveryMode() {
+	y.Redpanda.RecoveryModeEnabled = true
 }

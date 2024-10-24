@@ -10,8 +10,9 @@
  */
 #pragma once
 #include "bytes/bytes.h"
+#include "bytes/random.h"
 #include "hashing/secure.h"
-#include "random/generators.h"
+#include "net/types.h"
 #include "security/scram_credential.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
@@ -36,15 +37,10 @@
  */
 namespace security {
 
-class scram_exception final : public std::exception {
+class scram_exception final : public net::authentication_exception {
 public:
     explicit scram_exception(ss::sstring msg) noexcept
-      : _msg(std::move(msg)) {}
-
-    const char* what() const noexcept final { return _msg.c_str(); }
-
-private:
-    ss::sstring _msg;
+      : net::authentication_exception(std::move(msg)) {}
 };
 
 /**
@@ -236,7 +232,7 @@ public:
      */
     static scram_credential
     make_credentials(const ss::sstring& password, int iterations) {
-        bytes salt = random_generators::get_bytes(SaltSize);
+        bytes salt = random_generators::get_crypto_bytes(SaltSize);
         bytes salted_password = salt_password(password, salt, iterations);
         auto clientkey = client_key(salted_password);
         auto storedkey = stored_key(clientkey);
@@ -246,6 +242,20 @@ public:
           std::move(serverkey),
           std::move(storedkey),
           iterations);
+    }
+    static scram_credential make_credentials(
+      acl_principal principal, const ss::sstring& password, int iterations) {
+        bytes salt = random_generators::get_crypto_bytes(SaltSize);
+        bytes salted_password = salt_password(password, salt, iterations);
+        auto clientkey = client_key(salted_password);
+        auto storedkey = stored_key(clientkey);
+        auto serverkey = server_key(salted_password);
+        return scram_credential(
+          std::move(salt),
+          std::move(serverkey),
+          std::move(storedkey),
+          iterations,
+          std::move(principal));
     }
 
     static bytes client_proof(
@@ -335,6 +345,8 @@ private:
           client_final.msg_no_proof());
     }
 };
+
+bool validate_scram_username(std::string_view username);
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
 using scram_sha512 = scram_algorithm<hmac_sha512, hash_sha512, 130, 4096>;

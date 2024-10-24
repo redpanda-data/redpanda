@@ -8,8 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "net/connection_rate.h"
-#include "seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/manual_clock.hh>

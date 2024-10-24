@@ -9,6 +9,7 @@
 
 #include "cluster/members_frontend.h"
 
+#include "cluster/commands.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
@@ -43,34 +44,10 @@ members_frontend::members_frontend(
   , _feature_table(feature_table)
   , _as(as) {}
 
-ss::future<std::error_code>
-members_frontend::finish_node_reallocations(model::node_id id) {
-    auto leader = _leaders.local().get_leader(model::controller_ntp);
-    if (!leader) {
-        co_return errc::no_leader_controller;
-    }
-    if (leader == _self) {
-        co_return co_await do_replicate_node_command<finish_reallocations_cmd>(
-          id);
-    }
-    const std::chrono::duration timeout = _node_op_timeout;
-    auto res = co_await _connections.local()
-                 .with_node_client<cluster::controller_client_protocol>(
-                   _self,
-                   ss::this_shard_id(),
-                   *leader,
-                   timeout,
-                   [id, timeout](controller_client_protocol cp) mutable {
-                       return cp.finish_reallocation(
-                         finish_reallocation_request{.id = id},
-                         rpc::client_opts(
-                           model::timeout_clock::now() + timeout));
-                   });
-
-    if (res.has_error()) {
-        co_return res.error();
-    }
-    co_return res.value().data.error;
+ss::future<std::error_code> members_frontend::finish_node_reallocations(
+  model::node_id id, std::optional<model::term_id> term) {
+    co_return co_await do_replicate_node_command<finish_reallocations_cmd>(
+      id, term);
 }
 
 ss::future<std::error_code>
@@ -134,14 +111,6 @@ members_frontend::recommission_node(model::node_id id) {
 
 ss::future<std::error_code>
 members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
-    if (!_feature_table.local().is_active(
-          features::feature::maintenance_mode)) {
-        vlog(
-          clusterlog.info,
-          "Maintenance mode feature is not active (upgrade in progress?)");
-        co_return errc::invalid_node_operation;
-    }
-
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {
         co_return errc::no_leader_controller;
@@ -150,7 +119,6 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
     if (leader == _self) {
         co_return co_await replicate_and_wait(
           _stm,
-          _feature_table,
           _as,
           maintenance_mode_cmd(id, enabled),
           _node_op_timeout + model::timeout_clock::now());
@@ -175,6 +143,21 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
     }
 
     co_return res.value().data.error;
+}
+
+ss::future<std::error_code> members_frontend::remove_node(model::node_id id) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    /**
+     * There is no need to forward the request to current controller node as
+     * nodes are removed only by the node currently being a controller leader.
+     */
+    if (leader != _self) {
+        co_return errc::not_leader_controller;
+    }
+    co_return co_await do_replicate_node_command<remove_node_cmd>(id);
 }
 
 } // namespace cluster

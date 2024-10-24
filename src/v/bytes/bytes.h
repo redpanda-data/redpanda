@@ -11,41 +11,169 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
-#include <absl/hash/hash.h>
+#include <absl/container/inlined_vector.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <iosfwd>
+#include <span>
 
-// cannot be a `std::byte` because that's not sizeof(char)
+class bytes_view;
+
 constexpr size_t bytes_inline_size = 31;
-using bytes = ss::basic_sstring<
-  uint8_t,  // Must be different from char to not leak to std::string_view
-  uint32_t, // size type - 4 bytes - 4GB max - don't use a size_t or any 64-bit
-  bytes_inline_size, // short string optimization size
-  false              // not null terminated
-  >;
 
-using bytes_view = std::basic_string_view<uint8_t>;
-using bytes_opt = std::optional<bytes>;
+class bytes {
+    using container_type = absl::InlinedVector<uint8_t, bytes_inline_size>;
 
-struct bytes_type_hash {
-    using is_transparent = std::true_type;
-    // NOTE: you hash a fragmented buffer with a linearized buffer
-    //       unless you make a copy and linearize first. Our fragmented buffer
-    //       correctly implements boost::hash_combine between fragments which
-    //       would be missing altogether from a linearize buffer which is simply
-    //       the std::hash<std::string_view>()
-    //
-    //   size_t operator()(const iobuf& k) const;
-    //
-    size_t operator()(const bytes& k) const;
-    size_t operator()(const bytes_view&) const;
+public:
+    using value_type = container_type::value_type;
+    using size_type = container_type::size_type;
+    using reference = container_type::reference;
+    using const_reference = container_type::const_reference;
+    using pointer = container_type::pointer;
+    using const_pointer = container_type::const_pointer;
+    using iterator = container_type::iterator;
+    using const_iterator = container_type::const_iterator;
+
+    static bytes from_string(std::string_view s) {
+        return {s.begin(), s.end()};
+    }
+
+    bytes() = default;
+    bytes(const bytes&) = default;
+    bytes& operator=(const bytes&) = default;
+    bytes(bytes&&) noexcept = default;
+    bytes& operator=(bytes&&) noexcept = default;
+    ~bytes() = default;
+
+    struct initialized_later {};
+    bytes(initialized_later, size_t size)
+      : data_(size) {}
+
+    struct initialized_zero {};
+    bytes(initialized_zero, size_t size)
+      : data_(size, 0) {}
+
+    bytes(const value_type* data, size_t size)
+      : data_(data, data + size) {}
+
+    bytes(std::initializer_list<uint8_t> x)
+      : data_(x) {}
+
+    template<typename InputIterator>
+    bytes(InputIterator begin, InputIterator end)
+      : data_(begin, end) {}
+
+    explicit bytes(bytes_view);
+
+    reference operator[](size_type pos) noexcept { return data_[pos]; }
+    const_reference operator[](size_type pos) const noexcept {
+        return data_[pos];
+    }
+
+    pointer data() noexcept { return data_.data(); }
+    const_pointer data() const noexcept { return data_.data(); }
+
+    iterator begin() noexcept { return data_.begin(); }
+    const_iterator begin() const noexcept { return data_.begin(); }
+    const_iterator cbegin() const noexcept { return data_.cbegin(); }
+
+    iterator end() noexcept { return data_.end(); }
+    const_iterator end() const noexcept { return data_.end(); }
+    const_iterator cend() const noexcept { return data_.cend(); }
+
+    size_type size() const noexcept { return data_.size(); }
+    bool empty() const noexcept { return data_.empty(); }
+
+    void resize(size_type size) { data_.resize(size); }
+    void reserve(size_type size) { data_.reserve(size); }
+    void push_back(value_type v) { data_.push_back(v); }
+
+    friend bool operator==(const bytes&, const bytes&) = default;
+
+    friend bool operator<(const bytes& a, const bytes& b) {
+        return a.data_ < b.data_;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const bytes& b);
+
+private:
+    container_type data_;
 };
+
+class bytes_view {
+    using container_type = std::span<const uint8_t>;
+
+public:
+    using value_type = container_type::value_type;
+    using size_type = container_type::size_type;
+    using pointer = container_type::pointer;
+    using iterator = container_type::iterator;
+
+    bytes_view() = default;
+    bytes_view(const bytes_view&) = default;
+    bytes_view& operator=(const bytes_view&) = default;
+    bytes_view(bytes_view&&) noexcept = default;
+    bytes_view& operator=(bytes_view&&) noexcept = default;
+    ~bytes_view() = default;
+
+    bytes_view(const bytes& bytes)
+      : data_(bytes.begin(), bytes.end()) {}
+
+    bytes_view(const uint8_t* data, size_t size)
+      : data_(data, size) {}
+
+    pointer data() const noexcept { return data_.data(); }
+
+    iterator begin() const noexcept { return data_.begin(); }
+    iterator cbegin() const noexcept { return data_.begin(); }
+
+    iterator end() const noexcept { return data_.end(); }
+    iterator cend() const noexcept { return data_.end(); }
+
+    size_type size() const noexcept { return data_.size(); }
+    bool empty() const noexcept { return data_.empty(); }
+
+    const value_type& operator[](size_t pos) const noexcept {
+        return data_[pos];
+    }
+
+    bool starts_with(bytes_view v) const noexcept {
+        return size() >= v.size() && std::equal(v.begin(), v.end(), begin());
+    }
+
+    bytes_view substr(size_t offset) const {
+        return bytes_view(data_.subspan(offset));
+    }
+
+    friend bool operator==(const bytes_view& a, const bytes_view& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end());
+    }
+
+    friend bool operator<(const bytes_view& a, const bytes_view& b) {
+        return std::lexicographical_compare(
+          a.begin(), a.end(), b.begin(), b.end());
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const bytes_view& b);
+
+private:
+    explicit bytes_view(container_type data)
+      : data_(data) {}
+
+    container_type data_;
+};
+
+inline bytes::bytes(bytes_view v)
+  : data_(v.begin(), v.end()) {}
+
+template<std::size_t Extent = std::dynamic_extent>
+using bytes_span = std::span<bytes::value_type, Extent>;
 
 template<typename R, R (*HashFunction)(bytes::const_pointer, size_t)>
 requires requires(bytes::const_pointer data, size_t len) {
@@ -82,11 +210,8 @@ inline ss::sstring to_hex(const std::array<Char, Size>& data) {
     return to_hex(to_bytes_view(data));
 }
 
-std::ostream& operator<<(std::ostream& os, const bytes& b);
-std::ostream& operator<<(std::ostream& os, const bytes_opt& b);
-
 inline bytes iobuf_to_bytes(const iobuf& in) {
-    auto out = ss::uninitialized_string<bytes>(in.size_bytes());
+    bytes out(bytes::initialized_later{}, in.size_bytes());
     {
         iobuf::iterator_consumer it(in.cbegin(), in.cend());
         it.consume_to(in.size_bytes(), out.data());
@@ -95,6 +220,13 @@ inline bytes iobuf_to_bytes(const iobuf& in) {
 }
 
 inline iobuf bytes_to_iobuf(const bytes& in) {
+    iobuf out;
+    // NOLINTNEXTLINE
+    out.append(reinterpret_cast<const char*>(in.data()), in.size());
+    return out;
+}
+
+inline iobuf bytes_to_iobuf(bytes_view in) {
     iobuf out;
     // NOLINTNEXTLINE
     out.append(reinterpret_cast<const char*>(in.data()), in.size());
@@ -111,21 +243,12 @@ struct hash<bytes_view> {
           {reinterpret_cast<const char*>(v.data()), v.size()});
     }
 };
+
+template<>
+struct hash<bytes> {
+    size_t operator()(const bytes& v) const { return hash<bytes_view>()(v); }
+};
 } // namespace std
-
-// FIXME: remove overload from std::
-// NOLINTNEXTLINE(cert-dcl58-cpp)
-namespace std {
-std::ostream& operator<<(std::ostream& os, const bytes_view& b);
-}
-
-inline size_t bytes_type_hash::operator()(const bytes_view& k) const {
-    return absl::Hash<bytes_view>{}(k);
-}
-
-inline size_t bytes_type_hash::operator()(const bytes& k) const {
-    return absl::Hash<bytes>{}(k);
-}
 
 inline bool
 bytes_type_eq::operator()(const bytes& lhs, const bytes& rhs) const {

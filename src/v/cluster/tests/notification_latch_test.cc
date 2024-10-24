@@ -22,7 +22,7 @@ SEASTAR_THREAD_TEST_CASE(test_notify_before_timeout) {
     ss::timer<> timer;
     timer.set_callback([&latch] { latch.notify(model::offset(10)); });
     timer.arm(50ms);
-    auto r = latch.wait_for(model::offset(10), model::no_timeout).get0();
+    auto r = latch.wait_for(model::offset(10), model::no_timeout).get();
     BOOST_REQUIRE_EQUAL(r, cluster::errc::success);
 }
 
@@ -33,7 +33,7 @@ SEASTAR_THREAD_TEST_CASE(test_notify_after_timeout) {
     timer.arm(500ms);
     auto r = latch
                .wait_for(model::offset(10), model::timeout_clock::now() + 1ms)
-               .get0();
+               .get();
 
     BOOST_REQUIRE_EQUAL(r, cluster::errc::notification_wait_timeout);
 }
@@ -53,6 +53,6 @@ SEASTAR_THREAD_TEST_CASE(destroy_before_notify_broken_promise) {
         latch.stop();
     }
 
-    BOOST_REQUIRE_EQUAL(fut.get0(), cluster::errc::shutting_down);
+    BOOST_REQUIRE_EQUAL(fut.get(), cluster::errc::shutting_down);
 }
 #endif

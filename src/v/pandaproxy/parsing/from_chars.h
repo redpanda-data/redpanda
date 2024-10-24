@@ -11,8 +11,14 @@
 
 #pragma once
 
-#include "outcome.h"
+#include "base/outcome.h"
+#include "exceptions.h"
 #include "reflection/type_traits.h"
+#include "strings/utf8.h"
+
+#include <seastar/core/sstring.hh>
+
+#include <boost/algorithm/string.hpp>
 
 #include <cctype>
 #include <charconv>
@@ -20,19 +26,6 @@
 #include <type_traits>
 
 namespace pandaproxy::parse {
-
-namespace detail {
-
-template<typename T>
-struct is_duration : std::false_type {};
-
-template<typename Rep, typename Period>
-struct is_duration<std::chrono::duration<Rep, Period>> : std::true_type {};
-
-template<typename T>
-inline constexpr bool is_duration_v = is_duration<T>::value;
-
-} // namespace detail
 
 // from_chars converts from a string_view using std::from_chars.
 //
@@ -66,6 +59,9 @@ public:
       "from_chars not defined for T");
 
     result_type operator()(std::string_view in) noexcept {
+        if (unlikely(contains_control_character(in))) {
+            return std::errc::invalid_argument;
+        }
         if constexpr (is_optional) {
             if (in.empty()) {
                 return std::nullopt;
@@ -85,7 +81,7 @@ public:
             using value_type = typename type::rep;
             return wrap(from_chars<value_type>{}(in));
         } else if constexpr (is_ss_bool) {
-            return type(in == "true" || in == "TRUE" || in == "1");
+            return type(boost::iequals(in, "true") || in == "1");
         } else if constexpr (is_arithmetic) {
             return do_from_chars(in);
         }

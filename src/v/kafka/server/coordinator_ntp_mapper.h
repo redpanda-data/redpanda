@@ -10,14 +10,13 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "cluster/metadata_cache.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "seastar/core/sharded.hh"
-#include "seastarx.h"
 
 #include <seastar/core/reactor.hh>
 
@@ -27,7 +26,7 @@ namespace kafka {
  * \brief Mapping from kafka coordinator key to ntp.
  *
  * A kafka coordinator key is an identifier for a coordinator resource, such as
- * a consumer group or transaction coordinator. Every coordinator is associated
+ * a consumer group. Every coordinator is associated
  * with a single partition that it uses to persist its state. All coordinator
  * operations are handled by the active coordinator which is the the leader for
  * the partition that the coordinator key is associated with.
@@ -58,6 +57,10 @@ public:
         auto p = static_cast<model::partition_id::type>(
           jump_consistent_hash(inc.digest(), cfg->partition_count));
         return model::ntp(_tp_ns.ns, _tp_ns.tp, model::partition_id{p});
+    }
+
+    bool topic_exists() const {
+        return _md.local().get_topic_cfg(_tp_ns).has_value();
     }
 
     const model::ns& ns() const { return _tp_ns.ns; }

@@ -9,9 +9,9 @@
 
 #include "model/validation.h"
 
+#include "base/seastarx.h"
+#include "base/vlog.h"
 #include "model/errc.h"
-#include "seastarx.h"
-#include "vlog.h"
 
 #include <seastar/util/log.hh>
 

@@ -11,14 +11,14 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "config/validators.h"
 #include "net/connection_rate_counter.h"
-#include "net/inet_address_wrapper.h"
 #include "net/server_probe.h"
 #include "seastar/core/coroutine.hh"
-#include "seastarx.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
+#include "utils/inet_address_wrapper.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

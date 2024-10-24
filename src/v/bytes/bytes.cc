@@ -1,12 +1,13 @@
-// Copyright 2020 Redpanda Data, Inc.
-//
-// Use of this software is governed by the Business Source License
-// included in the file licenses/BSL.md
-//
-// As of the Change Date specified in that file, in accordance with
-// the Business Source License, use of this software will be governed
-// by the Apache License, Version 2.0
-
+/*
+ * Copyright 2024 Redpanda Data, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 #include "bytes/bytes.h"
 
 ss::sstring to_hex(bytes_view b) {
@@ -27,16 +28,7 @@ std::ostream& operator<<(std::ostream& os, const bytes& b) {
     return os << bytes_view(b);
 }
 
-std::ostream& operator<<(std::ostream& os, const bytes_opt& b) {
-    if (b) {
-        return os << *b;
-    }
-    return os << "empty";
-}
-
-namespace std {
 std::ostream& operator<<(std::ostream& os, const bytes_view& b) {
     fmt::print(os, "{{bytes:{}}}", b.size());
     return os;
 }
-} // namespace std

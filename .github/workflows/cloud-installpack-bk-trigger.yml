@@ -1,0 +1,43 @@
+---
+name: check formatting
+on:
+  release:
+    types: [published]
+jobs:
+  trigger-bump:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+            ,sdlc/prod/github/buildkite_token
+          parse-json-secrets: true
+      - uses: actions/checkout@v4
+        with:
+          repository: redpanda-data/sparse-checkout
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          path: sparse-checkout
+      - uses: ./sparse-checkout
+        with:
+          repository: redpanda-data/vtools
+          token: ${{ env.ACTIONS_BOT_TOKEN }}
+          patterns: actions
+          path: ghca
+      - name: Trigger Versions Bump Buildkite Job
+        uses: ./ghca/actions/buildkite-pipeline-trigger
+        with:
+          buildkite_token: ${{ env.BUILDKITE_TOKEN }}
+          buildkite_org: redpanda
+          buildkite_pipeline: ${{ vars.CLOUD_PIPELINE }}
+          commit: HEAD
+          branch: ${{ vars.CLOUD_DEFAULT_BRANCH }}
+          message: Install Pack version bump trigger
+          env: '{"INSTALLPACK_BUMP": "1", "RELEASE_VERSION": "${{ github.ref_name }}"}'

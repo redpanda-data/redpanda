@@ -8,12 +8,16 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "cluster/scheduling/leader_balancer_types.h"
+
+#include <cstdint>
 #define BOOST_TEST_MODULE leader_balancer
 
 #include "absl/container/flat_hash_map.h"
-#include "cluster/scheduling/leader_balancer_greedy.h"
+#include "cluster/scheduling/leader_balancer_random.h"
 #include "leader_balancer_test_utils.h"
 #include "model/metadata.h"
+#include "utils/to_string.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <boost/test/unit_test.hpp>
@@ -24,7 +28,7 @@
 #include <vector>
 
 using index_type = cluster::leader_balancer_strategy::index_type;
-using gbs = cluster::greedy_balanced_shards;
+using strategy = cluster::leader_balancer_types::random_hill_climbing_strategy;
 using reassignment = cluster::leader_balancer_strategy::reassignment;
 
 /**
@@ -44,32 +48,6 @@ static void check_valid(const index_type& index, const reassignment& movement) {
       std::count(replicas.begin(), replicas.end(), movement.to), 1);
 }
 
-BOOST_AUTO_TEST_CASE(greedy_movement) {
-    // 10 nodes
-    // 2 cores x node
-    // 10 partitions per shard
-    // r=3 (3 replicas)
-    auto index = leader_balancer_test_utils::make_cluster_index(10, 2, 10, 3);
-
-    auto greed = cluster::greedy_balanced_shards(index, {});
-    BOOST_REQUIRE_EQUAL(greed.error(), 0);
-
-    // new groups on shard {2, 0}
-    auto shard20 = model::broker_shard{model::node_id{2}, 0};
-    index[shard20][raft::group_id(20)] = index[shard20][raft::group_id(3)];
-    index[shard20][raft::group_id(21)] = index[shard20][raft::group_id(3)];
-    index[shard20][raft::group_id(22)] = index[shard20][raft::group_id(3)];
-
-    greed = cluster::greedy_balanced_shards(index, {});
-    BOOST_REQUIRE_GT(greed.error(), 0);
-
-    // movement should be _from_ the overloaded shard
-    auto movement = greed.find_movement({});
-    check_valid(index, *movement);
-    BOOST_REQUIRE(movement);
-    BOOST_REQUIRE_EQUAL(movement->from, shard20);
-}
-
 struct node_spec {
     std::vector<int> groups_led, groups_followed;
 };
@@ -80,7 +58,7 @@ struct node_spec {
 using cluster_spec = std::vector<node_spec>;
 
 /**
- * @brief Create a greedy balancer from a cluster_spec and set of muted nodes.
+ * @brief Create a balancer strategy from a cluster_spec and set of muted nodes.
  */
 static auto from_spec(
   const cluster_spec& spec, const absl::flat_hash_set<int>& muted = {}) {
@@ -143,7 +121,16 @@ static auto from_spec(
       std::inserter(muted_bs, muted_bs.begin()),
       [](auto id) { return model::node_id{id}; });
 
-    return std::make_tuple(index, gbs{index, muted_bs});
+    auto index_cp = leader_balancer_test_utils::copy_cluster_index(index);
+    auto g_to_topic = leader_balancer_test_utils::make_gid_to_topic_index(
+      index);
+    return std::make_tuple(
+      std::move(index_cp),
+      strategy{
+        std::move(index),
+        std::move(g_to_topic),
+        cluster::leader_balancer_types::muted_index{muted_bs, {}},
+        std::nullopt});
 };
 
 /**
@@ -152,17 +139,17 @@ static auto from_spec(
 bool no_movement(
   const cluster_spec& spec,
   const absl::flat_hash_set<int>& muted = {},
-  const absl::flat_hash_set<raft::group_id>& skip = {}) {
+  const cluster::leader_balancer_types::muted_groups_t& skip = {}) {
     auto [_, balancer] = from_spec(spec, muted);
     return !balancer.find_movement(skip);
 }
 
-BOOST_AUTO_TEST_CASE(greedy_empty) {
+BOOST_AUTO_TEST_CASE(empty) {
     // empty spec, expect no movement
     BOOST_REQUIRE(no_movement({}));
 }
 
-BOOST_AUTO_TEST_CASE(greedy_balanced) {
+BOOST_AUTO_TEST_CASE(balanced) {
     // single node is already balanced, expect no movement
     BOOST_REQUIRE(no_movement({
       {{1, 2, 3}, {}},
@@ -181,18 +168,48 @@ BOOST_AUTO_TEST_CASE(greedy_balanced) {
     }));
 }
 
-BOOST_AUTO_TEST_CASE(greedy_obeys_replica) {
+BOOST_AUTO_TEST_CASE(obeys_replica) {
     // unbalanced, but the overloaded node has no replicas it can
     // send its groups to
     BOOST_REQUIRE(no_movement({{{1, 2, 3}, {}}, {{4}, {}}, {{}, {4}}}));
 }
 
-bool operator==(const reassignment& l, const reassignment& r) {
-    return l.group == r.group && l.from == r.from && l.to == r.to;
+struct expected_reassignment {
+    std::optional<model::node_id> from;
+    std::optional<model::node_id> to;
+    std::optional<raft::group_id> group;
+};
+
+/**
+ * @brief Helper to create a reassignment from from, to and group passed as
+ * integers. -1 means "any"
+ */
+static expected_reassignment re(int from, int to, int group = -1) {
+    expected_reassignment ret;
+    if (from != -1) {
+        ret.from = model::node_id(from);
+    }
+    if (to != -1) {
+        ret.to = model::node_id(to);
+    }
+    if (group != -1) {
+        ret.group = raft::group_id(group);
+    }
+    return ret;
+}
+
+bool operator==(const reassignment& r, const expected_reassignment& e) {
+    return (!e.from || e.from == r.from.node_id)
+           && (!e.to || e.to == r.to.node_id)
+           && (!e.group || e.group == r.group);
 }
 
 ss::sstring to_string(const reassignment& r) {
-    return fmt::format("{{group: {} from: {} to: {}}}", r.group, r.from, r.to);
+    return fmt::format("{{from: {} to: {} group: {}}}", r.from, r.to, r.group);
+}
+
+ss::sstring to_string(const expected_reassignment& r) {
+    return fmt::format("{{from: {} to: {} group: {}}}", r.from, r.to, r.group);
 }
 
 /**
@@ -201,17 +218,15 @@ ss::sstring to_string(const reassignment& r) {
  */
 ss::sstring expect_movement(
   const cluster_spec& spec,
-  const reassignment& expected_reassignment,
+  const expected_reassignment& expected,
   const absl::flat_hash_set<int>& muted = {},
   const absl::flat_hash_set<int>& skip = {}) {
     auto [index, balancer] = from_spec(spec, muted);
 
-    absl::flat_hash_set<raft::group_id> skip_typed;
-    std::transform(
-      skip.begin(),
-      skip.end(),
-      std::inserter(skip_typed, skip_typed.begin()),
-      [](auto groupid) { return raft::group_id{groupid}; });
+    cluster::leader_balancer_types::muted_groups_t skip_typed;
+    for (auto s : skip) {
+        skip_typed.add(static_cast<uint64_t>(s));
+    }
 
     auto reassignment = balancer.find_movement(skip_typed);
 
@@ -221,28 +236,17 @@ ss::sstring expect_movement(
 
     check_valid(index, *reassignment);
 
-    if (!(*reassignment == expected_reassignment)) {
+    if (!(*reassignment == expected)) {
         return fmt::format(
           "Reassignment not as expected.\nExpected: {}\nActual:   {}\n",
-          to_string(expected_reassignment),
+          to_string(expected),
           to_string(*reassignment));
     }
 
     return "";
 }
 
-/**
- * @brief Helper to create a reassignment from group, from and to passed as
- * integers.
- */
-static reassignment re(unsigned group, int from, int to) {
-    return {
-      raft::group_id(group),
-      model::broker_shard{model::node_id(from)},
-      model::broker_shard{model::node_id(to)}};
-}
-
-BOOST_AUTO_TEST_CASE(greedy_simple_movement) {
+BOOST_AUTO_TEST_CASE(simple_movement) {
     // simple balancing from {2, 0} leader counts to {1, 1}
     BOOST_REQUIRE_EQUAL(
       expect_movement(
@@ -252,45 +256,26 @@ BOOST_AUTO_TEST_CASE(greedy_simple_movement) {
           {{}, {1, 2}}
           // clang-format on
         },
-        re(1, 0, 1)),
+        re(0, 1)),
       "");
-}
 
-BOOST_AUTO_TEST_CASE(greedy_highest_to_lowest) {
-    // balancing should occur from the most to least loaded node if that is
-    // possible
+    // balancing should occur from any node to node 3
     BOOST_REQUIRE_EQUAL(
       expect_movement(
         {
           // clang-format off
             {{1, 2},    {-1}},
-            {{3, 4, 5}, {-1}},                  // from 1
+            {{3, 4, 5}, {-1}},
             {{6, 7},    {-1}},
             {{},        {1, 2, 3, 4, 5, 6, 7}}  // to 3
 
           // clang-format on
         },
-        re(3, 1, 3)),
-      "");
-
-    // like the previous case but group 3 is not replicated on the to node, so
-    // we check that group 4 goes instead
-    BOOST_REQUIRE_EQUAL(
-      expect_movement(
-        {
-          // clang-format off
-          {{1, 2},    {-1}},
-          {{3, 4, 5}, {-1}}, // from 1
-          {{6, 7},    {-1}},
-          {{},        {1, 2, 4, 5, 6, 7}} // to 3
-
-          // clang-format on
-        },
-        re(4, 1, 3)),
+        re(-1, 3)),
       "");
 }
 
-BOOST_AUTO_TEST_CASE(greedy_low_to_lower) {
+BOOST_AUTO_TEST_CASE(low_to_lower) {
     // balancing can occur even from a shard with less than average load,
     // if there is a shard with even lower load and the higher loaded shards
     // cannot be rebalanced from because of a lack of replicas for their
@@ -306,11 +291,11 @@ BOOST_AUTO_TEST_CASE(greedy_low_to_lower) {
 
           // clang-format on
         },
-        re(8, 2, 3)),
+        re(2, 3, 8)),
       "");
 }
 
-BOOST_AUTO_TEST_CASE(greedy_muted) {
+BOOST_AUTO_TEST_CASE(muted) {
     // base spec without high, medium and low (zero) load nodes
     auto spec = cluster_spec{
       // clang-format off
@@ -320,14 +305,14 @@ BOOST_AUTO_TEST_CASE(greedy_muted) {
       // clang-format on
     };
 
-    // base case, move from high to low
-    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(1, 0, 2)), "");
+    // base case, some move expected
+    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(-1, -1)), "");
 
-    // mute from the "from" node (high), so moves from mid to low
-    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(5, 1, 2), {0}), "");
+    // mute from the "high" node, so moves from mid to low
+    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(1, 2), {0}), "");
 
-    // mute from the "to" node (low), so moves from high to mid
-    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(1, 0, 1), {2}), "");
+    // mute from the "low" node, so moves from high to mid
+    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(0, 1), {2}), "");
 
     // mute any 2 nodes and there should be no movement
     BOOST_REQUIRE(no_movement(spec, {0, 1}));
@@ -335,7 +320,7 @@ BOOST_AUTO_TEST_CASE(greedy_muted) {
     BOOST_REQUIRE(no_movement(spec, {1, 2}));
 }
 
-BOOST_AUTO_TEST_CASE(greedy_skip) {
+BOOST_AUTO_TEST_CASE(skip) {
     // base spec without high, medium and low load nodes
 
     auto spec = cluster_spec{
@@ -346,18 +331,10 @@ BOOST_AUTO_TEST_CASE(greedy_skip) {
       // clang-format on
     };
 
-    // base case, move from high to low
-    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(1, 0, 2)), "");
-
-    // skip group 1, we move group 2 instead from same node
-    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(2, 0, 2), {}, {1}), "");
-
     // skip all groups on node 0, we move mid to low
-    BOOST_REQUIRE_EQUAL(
-      expect_movement(spec, re(5, 1, 2), {}, {1, 2, 3, 4}), "");
+    BOOST_REQUIRE_EQUAL(expect_movement(spec, re(1, 2), {}, {1, 2, 3, 4}), "");
 
     // mute node 0 and skip all groups on node 1, no movement
-    absl::flat_hash_set<raft::group_id> skip{
-      raft::group_id(5), raft::group_id(6)};
+    cluster::leader_balancer_types::muted_groups_t skip{5, 6};
     BOOST_REQUIRE(no_movement(spec, {0}, skip));
 }

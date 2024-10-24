@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import os
+
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk_remote import RpkRemoteTool
@@ -83,6 +85,27 @@ net                    true     true
 swappiness             true     true       
 transparent_hugepages  true     true       
 '''
+
+        uname = str(node.account.ssh_output("uname -m"))
+        # either x86-64 or i386.
+        is_not_x86 = "86" not in uname
+
+        r = str(node.account.ssh_output("dmidecode -s system-product-name"))
+        isGCP = "Google Compute Engine" in r
+
+        # Clocksource is only available for x86 architectures.
+        expected = expected.replace(
+            "clocksource            true     true       ",
+            "clocksource            true     false      Clocksource setting not available for this architecture"
+        ) if is_not_x86 else expected
+
+        expected = expected.replace(
+            "disk_write_cache       true     false      Disk write cache tuner is only supported in GCP",
+            "disk_write_cache       true     true       "
+        ) if isGCP else expected
+
         output = rpk.tune("list")
+        if output != expected:
+            self.logger.debug(f"expected:\n{expected}\ngot:\n{output}")
 
         assert output == expected

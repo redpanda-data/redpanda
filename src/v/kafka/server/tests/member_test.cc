@@ -7,11 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "container/fragmented_vector.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
@@ -22,8 +21,9 @@
 
 namespace kafka {
 
-static const std::vector<member_protocol> test_protos = {
-  {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
+static const chunked_vector<member_protocol> test_protos = {
+  {kafka::protocol_name("n0"), bytes::from_string("d0")},
+  {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static group_member get_member() {
     return group_member(
@@ -35,7 +35,7 @@ static group_member get_member() {
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      test_protos);
+      test_protos.copy());
 }
 
 static join_group_response make_join_response() {
@@ -48,7 +48,8 @@ static join_group_response make_join_response() {
 }
 
 static sync_group_response make_sync_response() {
-    return sync_group_response(error_code::none, bytes("this is some bytes"));
+    return sync_group_response(
+      error_code::none, bytes::from_string("this is some bytes"));
 }
 
 SEASTAR_THREAD_TEST_CASE(constructor) {
@@ -70,8 +71,8 @@ SEASTAR_THREAD_TEST_CASE(assignment) {
 
     BOOST_TEST(m.assignment() == bytes());
 
-    m.set_assignment(bytes("abc"));
-    BOOST_TEST(m.assignment() == bytes("abc"));
+    m.set_assignment(bytes::from_string("abc"));
+    BOOST_TEST(m.assignment() == bytes::from_string("abc"));
 
     m.clear_assignment();
     BOOST_TEST(m.assignment() == bytes());
@@ -93,12 +94,12 @@ SEASTAR_THREAD_TEST_CASE(protocols) {
     BOOST_TEST(m.protocols() == test_protos);
 
     // and the negative test
-    auto protos = test_protos;
+    auto protos = test_protos.copy();
     protos[0].name = kafka::protocol_name("x");
     BOOST_TEST(m.protocols() != protos);
 
     // can set new protocols
-    m.set_protocols(protos);
+    m.set_protocols(protos.copy());
     BOOST_TEST(m.protocols() != test_protos);
     BOOST_TEST(m.protocols() == protos);
 }
@@ -119,10 +120,10 @@ SEASTAR_THREAD_TEST_CASE(response_futs) {
     m.set_sync_response(make_sync_response());
 
     BOOST_TEST(
-      join_response.get0().data.generation_id
+      join_response.get().data.generation_id
       == make_join_response().data.generation_id);
     BOOST_TEST(
-      sync_response.get0().data.assignment
+      sync_response.get().data.assignment
       == make_sync_response().data.assignment);
 
     BOOST_TEST(!m.is_joining());
@@ -161,156 +162,26 @@ SEASTAR_THREAD_TEST_CASE(vote_for_protocols) {
 SEASTAR_THREAD_TEST_CASE(output_stream) {
     auto m = get_member();
     auto s = fmt::format("{}", m);
-    BOOST_TEST(s.find("id={m}") != std::string::npos);
+    BOOST_TEST(s.find("id=m") != std::string::npos);
 }
 
 SEASTAR_THREAD_TEST_CASE(member_serde) {
     // serialize a member's state to iobuf
     auto m0 = get_member();
-    m0.set_assignment(bytes("assignment"));
+    m0.set_assignment(bytes::from_string("assignment"));
     auto m0_state = m0.state().copy();
     iobuf m0_iobuf;
-    auto writer = kafka::response_writer(m0_iobuf);
+    auto writer = kafka::protocol::encoder(m0_iobuf);
     member_state::encode(writer, m0_state);
-    kafka::request_reader reader(m0_iobuf.copy());
+    kafka::protocol::decoder reader(m0_iobuf.copy());
     auto m1_state = member_state::decode(reader);
     auto m1 = kafka::group_member(
       std::move(m1_state),
       m0.group_id(),
       kafka::protocol_type("p"),
-      test_protos);
+      test_protos.copy());
 
     BOOST_REQUIRE(m1.state() == m0.state());
-}
-
-struct member_state_old {
-    kafka::member_id id;
-    std::chrono::milliseconds session_timeout;
-    std::chrono::milliseconds rebalance_timeout;
-    std::optional<kafka::group_instance_id> instance_id;
-    kafka::protocol_type protocol_type;
-    std::vector<member_protocol> protocols;
-    iobuf assignment;
-};
-
-struct group_log_group_metadata_old {
-    kafka::protocol_type protocol_type;
-    kafka::generation_id generation;
-    std::optional<kafka::protocol_name> protocol;
-    std::optional<kafka::member_id> leader;
-    int32_t state_timestamp;
-    std::vector<member_state_old> members;
-};
-
-// new code + old version. will see empty strings for client id/host
-SEASTAR_THREAD_TEST_CASE(group_log_group_metadata_compat0) {
-    group_log_group_metadata_old old;
-    old.protocol_type = kafka::protocol_type("asdf");
-    old.state_timestamp = 333333;
-
-    old.members.push_back(member_state_old{
-      .id = member_id("foobar"),
-      .protocols = {{.name = protocol_name("asdf")}}});
-    old.members.push_back(member_state_old{
-      .id = member_id("foobar1"),
-      .protocols = {{.name = protocol_name("asdf1")}}});
-
-    auto old_buf = reflection::to_iobuf(std::move(old));
-
-    auto new_out = reflection::from_iobuf<old::group_log_group_metadata>(
-      std::move(old_buf));
-
-    BOOST_REQUIRE(new_out.protocol_type == "asdf");
-    BOOST_REQUIRE(new_out.state_timestamp == 333333);
-    BOOST_REQUIRE(new_out.members.size() == 2);
-    BOOST_REQUIRE(new_out.members[0].id == "foobar");
-    BOOST_REQUIRE(new_out.members[0].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[0].protocols[0].name == "asdf");
-    BOOST_REQUIRE(new_out.members[0].client_id == "");
-    BOOST_REQUIRE(new_out.members[0].client_host == "");
-    BOOST_REQUIRE(new_out.members[1].id == "foobar1");
-    BOOST_REQUIRE(new_out.members[1].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[1].protocols[0].name == "asdf1");
-    BOOST_REQUIRE(new_out.members[1].client_id == "");
-    BOOST_REQUIRE(new_out.members[1].client_host == "");
-}
-
-// new code + new version. will see client id/host
-SEASTAR_THREAD_TEST_CASE(group_log_group_metadata_compat1) {
-    old::group_log_group_metadata md;
-    md.protocol_type = kafka::protocol_type("asdf");
-    md.state_timestamp = 333333;
-
-    md.members.push_back(old::member_state{
-      .id = member_id("foobar"),
-      .protocols = {{.name = protocol_name("asdf")}},
-      .client_id = kafka::client_id("c0"),
-      .client_host = kafka::client_host("c1"),
-    });
-    md.members.push_back(old::member_state{
-      .id = member_id("foobar1"),
-      .protocols = {{.name = protocol_name("asdf1")}},
-      .client_id = kafka::client_id("c2"),
-      .client_host = kafka::client_host("c3"),
-    });
-
-    auto old_buf = reflection::to_iobuf(std::move(md));
-
-    auto new_out = reflection::from_iobuf<old::group_log_group_metadata>(
-      std::move(old_buf));
-
-    BOOST_REQUIRE(new_out.protocol_type == "asdf");
-    BOOST_REQUIRE(new_out.state_timestamp == 333333);
-    BOOST_REQUIRE(new_out.members.size() == 2);
-    BOOST_REQUIRE(new_out.members[0].id == "foobar");
-    BOOST_REQUIRE(new_out.members[0].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[0].protocols[0].name == "asdf");
-    BOOST_REQUIRE(new_out.members[0].client_id == "c0");
-    BOOST_REQUIRE(new_out.members[0].client_host == "c1");
-    BOOST_REQUIRE(new_out.members[1].id == "foobar1");
-    BOOST_REQUIRE(new_out.members[1].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[1].protocols[0].name == "asdf1");
-    BOOST_REQUIRE(new_out.members[1].client_id == "c2");
-    BOOST_REQUIRE(new_out.members[1].client_host == "c3");
-}
-
-// old code + new version. doesn't see client id/host
-SEASTAR_THREAD_TEST_CASE(group_log_group_metadata_compat2) {
-    old::group_log_group_metadata md;
-    md.protocol_type = kafka::protocol_type("asdf");
-    md.state_timestamp = 333333;
-
-    md.members.push_back(old::member_state{
-      .id = member_id("foobar"),
-      .protocols = {{.name = protocol_name("asdf")}},
-      .client_id = kafka::client_id("c0"),
-      .client_host = kafka::client_host("c1"),
-    });
-    md.members.push_back(old::member_state{
-      .id = member_id("foobar1"),
-      .protocols = {{.name = protocol_name("asdf1")}},
-      .client_id = kafka::client_id("c2"),
-      .client_host = kafka::client_host("c3"),
-    });
-
-    auto old_buf = reflection::to_iobuf(std::move(md));
-
-    auto new_out = reflection::from_iobuf<group_log_group_metadata_old>(
-      std::move(old_buf));
-
-    BOOST_REQUIRE(new_out.protocol_type == "asdf");
-    BOOST_REQUIRE(new_out.state_timestamp == 333333);
-    BOOST_REQUIRE(new_out.members.size() == 2);
-    BOOST_REQUIRE(new_out.members[0].id == "foobar");
-    BOOST_REQUIRE(new_out.members[0].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[0].protocols[0].name == "asdf");
-    // BOOST_REQUIRE(new_out.members[0].client_id == "c0");
-    // BOOST_REQUIRE(new_out.members[0].client_host == "c1");
-    BOOST_REQUIRE(new_out.members[1].id == "foobar1");
-    BOOST_REQUIRE(new_out.members[1].protocols.size() == 1);
-    BOOST_REQUIRE(new_out.members[1].protocols[0].name == "asdf1");
-    // BOOST_REQUIRE(new_out.members[1].client_id == "c2");
-    // BOOST_REQUIRE(new_out.members[1].client_host == "c3");
 }
 
 } // namespace kafka

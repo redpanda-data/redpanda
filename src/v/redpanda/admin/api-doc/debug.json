@@ -23,6 +23,72 @@
             ]
         },
         {
+            "path": "/v1/debug/stress_fiber_start",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Spawns fibers to artificially inflate CPU utilization",
+                    "type": "void",
+                    "nickname": "stress_fiber_start",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "min_spins_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "max_spins_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "min_ms_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "max_ms_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "num_fibers",
+                            "in": "query",
+                            "required": true,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/stress_fiber_stop",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Stops any stress fibers that may be running",
+                    "type": "void",
+                    "nickname": "stress_fiber_stop",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/debug/partition_leaders_table",
             "operations": [
                 {
@@ -33,6 +99,60 @@
                         "type": "leader_info"
                     },
                     "nickname": "get_leaders_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/self_test/start",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Start self test",
+                    "nickname": "self_test_start",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [],
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "schema": "json"
+                        },
+                        "503": {
+                            "description": "Test failed to start",
+                            "schema": {
+                                "type": "json"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/self_test/stop",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "stop self test",
+                    "nickname": "self_test_stop",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/self_test/status",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Query self test",
+                    "nickname": "self_test_status",
                     "produces": [
                         "application/json"
                     ],
@@ -61,9 +181,500 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/is_node_isolated",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get is node isolated",
+                    "type": "boolean",
+                    "nickname": "is_node_isolated",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/controller_status",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get last_applied_offset and committed_index for controller log",
+                    "type": "controller_status",
+                    "nickname": "get_controller_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/cloud_storage_usage",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the sum of the cloud storage log for all partitions in the cluster",
+                    "type": "long",
+                    "nickname": "get_cloud_storage_usage",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "retries_allowed",
+                            "in": "query",
+                            "required": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "batch_size",
+                            "in": "query",
+                            "required": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/blocked_reactor_notify_ms",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Temporarily reduce the threshold over which the reactor is considered blocked if no progress is made. The original threshold value will be restored after 'expire' seconds (default: 5 min)",
+                    "nickname": "blocked_reactor_notify_ms",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "timeout",
+                            "in": "query",
+                            "required": true,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "expires",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/sampled_memory_profile",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the currently sampled live memory set for the specified or all shards",
+                    "nickname": "sampled_memory_profile",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "type": "array",
+                    "items": {
+                        "type": "memory_profile"
+                    },
+                    "parameters": [
+                        {
+                            "name": "shard",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/refresh_disk_health_info",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Force a refresh of node health information",
+                    "type": "void",
+                    "nickname": "refresh_disk_health_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/restart_service",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Restart a redpanda service",
+                    "type": "void",
+                    "nickname": "restart_service",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "service",
+                            "in": "query",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Restart success"
+                        },
+                        "400": {
+                            "description": "Service name is required"
+                        },
+                        "404": {
+                            "description": "Service not found"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/partition/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get low level debug information (on any node) of all replicas of a given partition",
+                    "type": "partition_state",
+                    "nickname": "get_partition_state",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/set_storage_failure_injection_enabled",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Set the value of the storage_failure_injection_enabled node config",
+                    "type": "void",
+                    "nickname": "set_storage_failure_injection_enabled",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "value",
+                            "in": "query",
+                            "required": true,
+                            "type": "boolean"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/local_storage_usage",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the usage report for local storage",
+                    "type": "long",
+                    "nickname": "get_local_storage_usage",
+                    "produces": [
+                        "application/json"
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/partitions/{namespace}/{topic}/{partition}/force_replicas",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Update a partitions replicas forcefully",
+                    "type": "void",
+                    "nickname": "force_update_partition_replicas",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/unsafe_reset_metadata/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Resets the manifest, updating all replicas with the given manifest. This is very unsafe, so be sure the provided manifest actually has valid contents. Formatting aside, very little validation will be done on the requested manifest.",
+                    "operationId": "unsafe_reset_metadata",
+                    "nickname": "unsafe_reset_metadata",
+                    "parameters": [
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "body",
+                            "required": true,
+                            "paramType": "body"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200,
+                            "message": "Partition metadata is reset"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/storage/disk_stat/{type}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return disk space statistics.",
+                    "operationId": "get_disk_stat",
+                    "nickname": "get_disk_stat",
+                    "type": "disk_stat",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200
+                        }
+                    ]
+                },
+                {
+                    "method": "PUT",
+                    "summary": "Override disk space statistics.",
+                    "operationId": "put_disk_stat",
+                    "nickname": "put_disk_stat",
+                    "type": "disk_stat_overrides",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "type",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responseMessages": [
+                        {
+                            "code": 200
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/storage/offset_translator/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return list of all local offsets translated",
+                    "nickname": "get_local_offsets_translated",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "type": "array",
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "translate_to",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/cpu_profile",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Gets the samples from the CPU profiler",
+                    "nickname": "cpu_profile",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "type": "array",
+                    "items": {
+                        "type": "cpu_profile_shard_samples"
+                    },
+                    "parameters": [
+                        {
+                            "name": "shard",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "wait_ms",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/broker_uuid",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return current broker id and UUID",
+                    "nickname": "get_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ]
+                },
+                {
+                    "method": "PUT",
+                    "summary": "Overrides stored broker UUID and ID values",
+                    "nickname": "override_broker_uuid",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "body",
+                            "required": true,
+                            "paramType": "broker_id_override"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
+        "cpu_profile_shard_samples": {
+            "id": "cpu_profile_sample",
+            "description": "cpu profile sample",
+            "properties": {
+                "shard_id": {
+                    "type": "long",
+                    "description": "the shard the sample originated from"
+                },
+                "dropped_samples": {
+                    "type": "long",
+                    "description": "number of samples that had to be dropped due to space limitations"
+                },
+                "samples": {
+                    "type": "array",
+                    "items": {
+                        "type": "cpu_profile_sample"
+                    }
+                }
+            }
+        },
+        "cpu_profile_sample": {
+            "id": "cpu_profile_sample",
+            "description": "cpu profile sample",
+            "properties": {
+                "user_backtrace": {
+                    "type": "string",
+                    "description": "user backtrace"
+                },
+                "occurrences": {
+                    "type": "long",
+                    "description": "number of times this backtrace has occurred"
+                }
+            }
+        },
         "leader_info": {
             "id": "leader_info",
             "description": "Leader info",
@@ -109,6 +720,574 @@
                 "since_last_status": {
                     "type": "long",
                     "description": "Milliseconds since last update from peer"
+                }
+            }
+        },
+        "memory_profile": {
+            "id": "memory_profile",
+            "description": "Sampled memory profile of a shard",
+            "properties": {
+                "shard": {
+                    "type": "long",
+                    "description": "Id of the shard the profile is from"
+                },
+                "allocation_sites": {
+                    "type": "array",
+                    "items": {
+                        "type": "allocation_site"
+                    }
+                }
+            }
+        },
+        "allocation_site": {
+            "id": "allocation_site",
+            "description": "A single allocation site with backtrace, size and count",
+            "properties": {
+                "size": {
+                    "type": "long",
+                    "description": "Current bytes allocated at this allocation site (note this is the upscaled size and not the sampled one)"
+                },
+                "count": {
+                    "type": "long",
+                    "description": "Live allocations at this site"
+                },
+                "backtrace": {
+                    "type": "string",
+                    "description": "Backtrace of this allocation site"
+                }
+            }
+        },
+        "controller_status": {
+            "id": "controller_status",
+            "description": "Controller status",
+            "properties": {
+                "start_offset": {
+                    "type": "long",
+                    "description": "start offset for controller log"
+                },
+                "last_applied_offset": {
+                    "type": "long",
+                    "description": "Last applied offset for controller stm"
+                },
+                "committed_index": {
+                    "type": "long",
+                    "description": "Committed index for controller consensus"
+                },
+                "dirty_offset": {
+                    "type": "long",
+                    "description": "Controller log dirty offset"
+                }
+            }
+        },
+        "self_test_result": {
+            "id": "self_test_result",
+            "description": "Result set from a single self_test run",
+            "properties": {
+                "p50": {
+                    "type": "long",
+                    "description": "50th percentile latencies"
+                },
+                "p90": {
+                    "type": "long",
+                    "description": "90th percentile latencies"
+                },
+                "p99": {
+                    "type": "long",
+                    "description": "99th percentile latencies"
+                },
+                "p999": {
+                    "type": "long",
+                    "description": "999th percentile latencies"
+                },
+                "max_latency": {
+                    "type": "long",
+                    "description": "Maximum recorded latency measurement"
+                },
+                "rps": {
+                    "type": "long",
+                    "description": "Number of requests per second"
+                },
+                "bps": {
+                    "type": "long",
+                    "description": "Bytes operated on per second"
+                },
+                "timeouts": {
+                    "type": "long",
+                    "description": "Number of io timeouts observed during run"
+                },
+                "test_id": {
+                    "type": "string",
+                    "description": "Global test uuid identifier"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name of the test run"
+                },
+                "info": {
+                    "type": "string",
+                    "description": "Additional test labels, metadata and/or information"
+                },
+                "test_type": {
+                    "type": "string",
+                    "description": "Type of self test, one of either disk/network/cloud"
+                },
+                "start_time": {
+                    "type": "long",
+                    "description": "Start time of the test run"
+                },
+                "end_time": {
+                    "type": "long",
+                    "description": "End time of the test run"
+                },
+                "duration": {
+                    "type": "long",
+                    "description": "Length of time the test took to complete"
+                },
+                "warning": {
+                    "type": "string",
+                    "description": "Warning that arose during test execution"
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Stringified exception if any occurred during test execution"
+                }
+            }
+        },
+        "self_test_node_report": {
+            "id": "self_test_node_report",
+            "description": "Current state of self test on a given broker",
+            "properties": {
+                "node_id": {
+                    "type": "long",
+                    "description": "node_id of the broker reporting"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "One of either idle / running / unreachable"
+                },
+                "stage": {
+                    "type": "string",
+                    "description": "One of either idle / net / disk / cloud"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "self_test_result"
+                    },
+                    "description": "Recordings of test runs from a single node"
+                }
+            }
+        },
+        "raft_follower_state": {
+            "id": "raft_follower_state",
+            "description": "Information about raft state for ntp for follower",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "Node id"
+                },
+                "last_flushed_log_index": {
+                    "type": "long",
+                    "description": "Last flushed log index"
+                },
+                "last_dirty_log_index": {
+                    "type": "long",
+                    "description": "Last dirty log index"
+                },
+                "match_index": {
+                    "type": "long",
+                    "description": "Match index"
+                },
+                "next_index": {
+                    "type": "long",
+                    "description": "Next index"
+                },
+                "expected_log_end_offset": {
+                    "type": "long",
+                    "description": "Follower log end offset expected by the leader"
+                },
+                "heartbeats_failed": {
+                    "type": "long",
+                    "description": "Heartbeats failed"
+                },
+                "is_learner": {
+                    "type": "boolean",
+                    "description": "Is node learner"
+                },
+                "ms_since_last_heartbeat": {
+                    "type": "long",
+                    "description": "Mlliseconds since last heartbeat"
+                },
+                "last_sent_seq": {
+                    "type": "long",
+                    "description": "Last sent seq"
+                },
+                "last_received_seq": {
+                    "type": "long",
+                    "description": "Last received seq"
+                },
+                "last_successful_received_seq": {
+                    "type": "long",
+                    "description": "Last successful received seq"
+                },
+                "suppress_heartbeats": {
+                    "type": "boolean",
+                    "description": "Suppress heartbeats"
+                },
+                "is_recovering": {
+                    "type": "boolean",
+                    "description": "Is node recovering"
+                }
+            }
+        },
+        "stm_state": {
+            "id": "stm_state",
+            "description": "Stm related state for a given replica.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "name of the stm"
+                },
+                "last_applied_offset": {
+                    "type": "long",
+                    "description": "Last applied offset"
+                },
+                "max_collectible_offset": {
+                    "type": "long",
+                    "description": "Max collectible offset"
+                }
+            }
+        },
+        "follower_recovery_state": {
+            "id": "follower_recovery_state",
+            "description": "Follower-side Raft recovery state",
+            "properties": {
+                "is_active": {
+                    "type": "boolean",
+                    "description": "True if recovery is currently allowed by the scheduler"
+                },
+                "pending_offset_count": {
+                    "type": "long",
+                    "description": "Difference between leader and our last offsets"
+                }
+            }
+        },
+        "raft_replica_state": {
+            "id": "raft_replica_state",
+            "description": "Raft level state for a single replica of a partition",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "node_id of the broker hosting partition"
+                },
+                "term": {
+                    "type": "long",
+                    "description": "Current raft term"
+                },
+                "offset_translator_state": {
+                    "type": "string",
+                    "description": "State of the offset translator"
+                },
+                "group_configuration": {
+                    "type": "string",
+                    "description": "Local raft replica configuration"
+                },
+                "confirmed_term": {
+                    "type": "long",
+                    "description": "Confirmed term as seen by consensus"
+                },
+                "flushed_offset": {
+                    "type": "long",
+                    "description": "Current flushed offset"
+                },
+                "commit_index": {
+                    "type": "long",
+                    "description": "Current commit index"
+                },
+                "majority_replicated_index": {
+                    "type": "long",
+                    "description": "Majority replicated index"
+                },
+                "visibility_upper_bound_index": {
+                    "type": "long",
+                    "description": "Visibility upper bound index"
+                },
+                "last_quorum_replicated_index": {
+                    "type": "long",
+                    "description": "Last quorum replicated index"
+                },
+                "last_snapshot_term": {
+                    "type": "long",
+                    "description": "Last snapshot term"
+                },
+                "received_snapshot_bytes": {
+                    "type": "long",
+                    "description": "Size in bytes of snapshot recieved"
+                },
+                "last_snapshot_index": {
+                    "type": "long",
+                    "description": "Last snapshot index"
+                },
+                "received_snapshot_index": {
+                    "type": "long",
+                    "description": "Received snapshot index"
+                },
+                "has_pending_flushes": {
+                    "type": "boolean",
+                    "descrption": "True if there are any pending flushes"
+                },
+                "is_leader": {
+                    "type": "boolean",
+                    "description": "True if voted a leader and term confirmed"
+                },
+                "is_elected_leader": {
+                    "type": "boolean",
+                    "description": "True of voted a leader"
+                },
+                "write_caching_enabled": {
+                    "type": "boolean",
+                    "description": "Whether write caching is enabled for this replica"
+                },
+                "flush_ms": {
+                    "type": "long",
+                    "description": "flush delay ms, used for cached writes."
+                },
+                "flush_bytes": {
+                    "type": "long",
+                    "description": "unflushed bytes size flush trigger, used for cached writes."
+                },
+                "time_since_last_flush": {
+                    "type": "long",
+                    "description": "milliseconds since the last flush attempt."
+                },
+                "followers": {
+                    "type": "array",
+                    "items": {
+                        "type": "raft_follower_state"
+                    },
+                    "description": "Follower metadata for this leader."
+                },
+                "stms": {
+                    "type": "array",
+                    "items": {
+                        "type": "stm_state"
+                    },
+                    "description": "All snapshottable stms attached to this replica"
+                },
+                "follower_recovery_state": {
+                    "type": "follower_recovery_state",
+                    "description": "Raft recovery state if this replica is a follower in recovery"
+                },
+                "replication_monitor_state": {
+                    "type": "string",
+                    "description": "State of waiters pending replication."
+                }
+            }
+        },
+        "partition_replica_state": {
+            "id": "partition_replica_state",
+            "description": "Partition state of a replica",
+            "properties": {
+                "start_offset": {
+                    "type": "long",
+                    "description": "Start offset"
+                },
+                "committed_offset": {
+                    "type": "long",
+                    "description": "Commmited offset"
+                },
+                "last_stable_offset": {
+                    "type": "long",
+                    "description": "Last stable offset"
+                },
+                "high_watermark": {
+                    "type": "long",
+                    "description": "High watermark"
+                },
+                "dirty_offset": {
+                    "type": "long",
+                    "description": "Dirty offset"
+                },
+                "latest_configuration_offset": {
+                    "type": "long",
+                    "description": "Get latest configuration offset"
+                },
+                "revision_id": {
+                    "type": "long",
+                    "description": "Revision id"
+                },
+                "log_size_bytes": {
+                    "type": "long",
+                    "description": "Log size bytes"
+                },
+                "non_log_disk_size_bytes": {
+                    "type": "long",
+                    "description": "Non log disk size bytes"
+                },
+                "is_read_replica_mode_enabled": {
+                    "type": "boolean",
+                    "description": "Is read replica mode enabled"
+                },
+                "read_replica_bucket": {
+                    "type": "string",
+                    "description": "Read replica bucket"
+                },
+                "is_remote_fetch_enabled": {
+                    "type": "boolean",
+                    "description": "Is remote fetch enabled"
+                },
+                "is_cloud_data_available": {
+                    "type": "boolean",
+                    "description": "Is cloud data available"
+                },
+                "start_cloud_offset": {
+                    "type": "long",
+                    "description": "Start cloud offset"
+                },
+                "next_cloud_offset": {
+                    "type": "long",
+                    "description": "Next cloud offset"
+                },
+                "iceberg_enabled": {
+                    "type": "boolean",
+                    "description": "Whether iceberg translation is enabled on this replica."
+                },
+                "raft_state": {
+                    "type": "raft_replica_state",
+                    "description": "Underlying raft replica state of the partition instance"
+                }
+            }
+        },
+        "partition_state": {
+            "id": "partition_state",
+            "description": "Partition states of all the instances of this partition",
+            "properties": {
+                "ntp": {
+                    "type": "string",
+                    "description": "Partition that is queried"
+                },
+                "replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "partition_replica_state"
+                    },
+                    "description": "All replicas of this partition"
+                }
+            }
+        },
+        "local_storage_usage": {
+            "id": "local_storage_usage",
+            "description": "Local storage disk usage",
+            "properties": {
+                "data": {
+                    "type": "long",
+                    "description": "Segment data"
+                },
+                "index": {
+                    "type": "long",
+                    "description": "Segment index"
+                },
+                "compaction": {
+                    "type": "long",
+                    "description": "Compaction index"
+                },
+                "cloud_storage_cache_bytes": {
+                    "type": "long",
+                    "description": "Bytes in use by tiered storage cache"
+                },
+                "cloud_storage_cache_objects": {
+                    "type": "long",
+                    "description": "Number of objects in tiered storage cache"
+                },
+                "reclaimable_by_retention": {
+                    "type": "long",
+                    "description": "Number of bytes currently reclaimable by retention"
+                },
+                "target_min_capacity": {
+                    "type": "long",
+                    "description": "Target minimum capacity"
+                },
+                "target_min_capacity_wanted": {
+                    "type": "long",
+                    "description": "Target minimum capacity wanted"
+                }
+            }
+        },
+        "disk_stat": {
+            "id": "disk_stat",
+            "description": "Effective disk stat used by redpanda",
+            "properties": {
+                "total_bytes": {
+                    "type": "long",
+                    "description": "Total size of disk in bytes"
+                },
+                "free_bytes": {
+                    "type": "long",
+                    "description": "Free size of disk in bytes"
+                }
+            }
+        },
+        "disk_stat_overrides": {
+            "id": "disk_stat_overrides",
+            "description": "Disk stat overrides",
+            "properties": {
+                "total_bytes": {
+                    "type": "long",
+                    "description": "Total size of disk in bytes"
+                },
+                "free_bytes": {
+                    "type": "long",
+                    "description": "Free size of disk in bytes"
+                },
+                "free_bytes_delta": {
+                    "type": "long",
+                    "description": "Free size adjustment (signed)"
+                }
+            }
+        },
+        "translated_offset": {
+            "id": "translated_offset",
+            "description": "2-tuple of redpanda and kafka offset",
+            "properties": {
+                "rp_offset": {
+                    "type": "long",
+                    "description": "redpanda offset"
+                },
+                "kafka_offset": {
+                    "type": "long",
+                    "description": "kafka offset"
+                }
+            }
+        },
+        "broker_uuid": {
+            "id": "broker_uuid",
+            "description": "Broker UUID and assigned id",
+            "properties": {
+                "node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID"
+                },
+                "node_id": {
+                    "type": "int",
+                    "description": "Assigned node id (may be empty)"
+                }
+            }
+        },
+        "broker_id_override": {
+            "id": "broker_id_override",
+            "description": "An override for broker id and UUID",
+            "properties": {
+                "current_node_uuid": {
+                    "type": "string",
+                    "description": "Current node UUID, used to validate if request is addressed to the correct node"
+                },
+                "new_node_id": {
+                    "type": "int",
+                    "description": "New node id for current node"
+                },
+                "new_node_uuid": {
+                    "type": "string",
+                    "description": "Node unique identifier. UUID is generated when Redpanda starts with empty data folder"
                 }
             }
         }

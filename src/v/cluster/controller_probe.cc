@@ -11,14 +11,18 @@
 
 #include "cluster/controller_probe.h"
 
+#include "cluster/cloud_metadata/uploader.h"
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
-#include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
+#include "config/node_config.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
+#include "model/fips_config.h"
 
 #include <seastar/core/metrics.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_set.h>
 
 namespace cluster {
@@ -61,17 +65,17 @@ void controller_probe::setup_metrics() {
         return;
     }
 
-    _public_metrics = std::make_unique<ss::metrics::metric_groups>(
-      ssx::metrics::public_metrics_handle);
+    _public_metrics = std::make_unique<metrics::public_metric_groups>();
+    constexpr static auto cluster_metric_prefix = "cluster";
     _public_metrics->add_group(
-      prometheus_sanitize::metrics_name("cluster"),
+      prometheus_sanitize::metrics_name(cluster_metric_prefix),
       {
         sm::make_gauge(
           "brokers",
           [this] {
               const auto& members_table
                 = _controller.get_members_table().local();
-              return members_table.all_brokers_count();
+              return members_table.node_count();
           },
           sm::description("Number of configured brokers in the cluster"))
           .aggregate({sm::shard_label}),
@@ -86,14 +90,7 @@ void controller_probe::setup_metrics() {
         sm::make_gauge(
           "partitions",
           [this] {
-              const auto& leaders_table
-                = _controller.get_partition_leaders().local();
-
-              auto partitions_count = 0;
-              leaders_table.for_each_leader(
-                [&partitions_count](auto&&...) { ++partitions_count; });
-
-              return partitions_count;
+              return _controller.get_topics_state().local().partition_count();
           },
           sm::description(
             "Number of partitions in the cluster (replicas not included)"))
@@ -103,24 +100,64 @@ void controller_probe::setup_metrics() {
           [this] {
               const auto& leaders_table
                 = _controller.get_partition_leaders().local();
-              auto unavailable_partitions_count = 0;
 
-              leaders_table.for_each_leader([&unavailable_partitions_count](
-                                              const auto& /*tp_ns*/,
-                                              auto /*pid*/,
-                                              auto leader,
-                                              auto /*term*/) {
-                  if (!leader.has_value()) {
-                      ++unavailable_partitions_count;
-                  }
-              });
-
-              return unavailable_partitions_count;
+              return leaders_table.leaderless_partition_count();
           },
           sm::description(
             "Number of partitions that lack quorum among replicants"))
           .aggregate({sm::shard_label}),
+        sm::make_gauge(
+          "non_homogenous_fips_mode",
+          [this] {
+              const auto& members_table
+                = _controller.get_members_table().local();
+              const auto& nodes = members_table.nodes();
+              auto fips_mode_val = model::from_config(
+                config::node().fips_mode());
+              return absl::c_count_if(nodes, [fips_mode_val](const auto& iter) {
+                  return iter.second.broker.properties().in_fips_mode
+                         != fips_mode_val;
+              });
+          },
+          sm::description(
+            "Number of nodes that have a non-homogenous FIPS mode value"))
+          .aggregate({sm::shard_label}),
       });
+
+    if (auto maybe_uploader = _controller.metadata_uploader()) {
+        // add the next metric only if the uploader is available. internally
+        // this depends on cloud storage configuration.
+        _public_metrics->add_group(
+          prometheus_sanitize::metrics_name(cluster_metric_prefix),
+          {
+            sm::make_gauge(
+              "latest_cluster_metadata_manifest_age",
+              [this] {
+                  auto maybe_manifest_ref
+                    = _controller.metadata_uploader().value().get().manifest();
+                  if (!maybe_manifest_ref.has_value()) {
+                      return int64_t{0};
+                  }
+
+                  const auto& manifest = maybe_manifest_ref.value().get();
+                  if (manifest.upload_time_since_epoch == 0ms) {
+                      // we never uploaded, so let's return a value that is not
+                      // problematic to the aggregation of this metric
+                      return int64_t{0};
+                  }
+
+                  auto now_ts
+                    = ss::lowres_system_clock::now().time_since_epoch();
+
+                  auto age_s = std::chrono::duration_cast<std::chrono::seconds>(
+                    now_ts - manifest.upload_time_since_epoch);
+                  return int64_t{age_s.count()};
+              },
+              sm::description("Age in seconds of the latest "
+                              "cluster_metadata_manifest uploaded"))
+              .aggregate({sm::shard_label}),
+          });
+    }
 }
 
 } // namespace cluster

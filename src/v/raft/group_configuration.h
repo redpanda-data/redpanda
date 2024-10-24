@@ -11,11 +11,13 @@
 
 #pragma once
 #include "model/metadata.h"
+#include "raft/fundamental.h"
 #include "reflection/adl.h"
-#include "serde/envelope.h"
-#include "utils/to_string.h"
+#include "serde/rw/vector.h"
 
 #include <boost/range/join.hpp>
+
+#include <optional>
 
 namespace raft {
 
@@ -24,34 +26,8 @@ struct broker_revision {
     model::revision_id rev;
 };
 
-static constexpr model::revision_id no_revision{};
-class vnode : public serde::envelope<vnode, serde::version<0>> {
-public:
-    constexpr vnode() = default;
+inline constexpr model::revision_id no_revision{};
 
-    constexpr vnode(model::node_id nid, model::revision_id rev)
-      : _node_id(nid)
-      , _revision(rev) {}
-
-    bool operator==(const vnode& other) const = default;
-    bool operator!=(const vnode& other) const = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const vnode& r);
-
-    template<typename H>
-    friend H AbslHashValue(H h, const vnode& node) {
-        return H::combine(std::move(h), node._node_id, node._revision);
-    }
-
-    constexpr model::node_id id() const { return _node_id; }
-    constexpr model::revision_id revision() const { return _revision; }
-
-    auto serde_fields() { return std::tie(_node_id, _revision); }
-
-private:
-    model::node_id _node_id;
-    model::revision_id _revision;
-};
 /**
  * Enum describing configuration state.
  *
@@ -86,7 +62,8 @@ enum class configuration_state : uint8_t { simple, transitional, joint };
 
 std::ostream& operator<<(std::ostream& o, configuration_state t);
 
-struct group_nodes {
+struct group_nodes
+  : serde::envelope<group_nodes, serde::version<0>, serde::compat_version<0>> {
     std::vector<vnode> voters;
     std::vector<vnode> learners;
 
@@ -96,12 +73,22 @@ struct group_nodes {
 
     friend std::ostream& operator<<(std::ostream&, const group_nodes&);
     friend bool operator==(const group_nodes&, const group_nodes&) = default;
+
+    auto serde_fields() { return std::tie(voters, learners); }
 };
 
 struct configuration_update
-  : serde::envelope<configuration_update, serde::version<0>> {
+  : serde::envelope<
+      configuration_update,
+      serde::version<1>,
+      serde::compat_version<0>> {
     std::vector<vnode> replicas_to_add;
     std::vector<vnode> replicas_to_remove;
+    /**
+     * If set, this field will instruct raft to initialize learner log with an
+     * offset that may be greater than the leader start offset.
+     */
+    std::optional<model::offset> learner_start_offset;
 
     bool is_to_add(const vnode&) const;
     bool is_to_remove(const vnode&) const;
@@ -111,34 +98,74 @@ struct configuration_update
       = default;
 
     auto serde_fields() {
-        return std::tie(replicas_to_add, replicas_to_remove);
+        return std::tie(
+          replicas_to_add, replicas_to_remove, learner_start_offset);
     }
 
     friend std::ostream& operator<<(std::ostream&, const configuration_update&);
 };
 
-class group_configuration final {
+class group_configuration
+  : public serde::envelope<
+      group_configuration,
+      serde::version<6>,
+      serde::compat_version<6>> {
 public:
     using version_t
       = named_type<int8_t, struct raft_group_configuration_version>;
-    static constexpr version_t current_version{4};
+    // classic joint consensus change strategy
+    static constexpr version_t v_3{3};
+    // improved change strategy, fix for availability issue when one replica is
+    // faulty
+    static constexpr version_t v_4{4};
+    // simplified configuration, not serializing brokers field
+    static constexpr version_t v_5{5};
+
+    // serde serialized configuration
+    static constexpr version_t v_6{6};
+
+    static constexpr version_t current_version = v_6;
+
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
+     *
+     * DEPRECATED: Use vnode accepting constructor instead
      */
     explicit group_configuration(
       std::vector<model::broker>, model::revision_id);
-
     /**
-     * creates joint configuration
+     * creates a configuration where all provided vnodes are current
+     * configuration voters
+     *
+     * Note:
+     * This is preferred constructor for group configuration
+     */
+    group_configuration(std::vector<vnode>, model::revision_id);
+
+    group_configuration(
+      std::vector<vnode> voters,
+      std::vector<vnode> learners,
+      model::revision_id);
+    /**
+     * creates joint configuration, version 4, with brokers
      */
     group_configuration(
       std::vector<model::broker>,
       group_nodes,
       model::revision_id,
       std::optional<configuration_update>,
+      std::optional<group_nodes> = std::nullopt);
+
+    /**
+     * creates joint configuration
+     */
+    group_configuration(
+      group_nodes,
+      model::revision_id,
+      std::optional<configuration_update>,
       std::optional<group_nodes> = std::nullopt,
-      version_t = current_version);
+      version_t version = current_version);
 
     group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) = default;
@@ -148,7 +175,6 @@ public:
 
     bool has_voters() const;
 
-    std::optional<model::broker> find_broker(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
     bool contains_address(const net::unresolved_address& address) const;
 
@@ -168,15 +194,20 @@ public:
      * Configuration manipulation API. Each operation cause the configuration to
      * become joint configuration.
      */
-    void add(std::vector<model::broker>, model::revision_id);
-    void remove(const std::vector<model::node_id>&);
-    void replace(std::vector<broker_revision>, model::revision_id);
-
+    // deprecated: broker based API, only applicable to versions < v_5
+    void add_broker(model::broker, model::revision_id);
+    void replace_brokers(std::vector<broker_revision>, model::revision_id);
+    void remove_broker(model::node_id);
     /**
      * Updating broker configuration. This operation does not require entering
      * joint consensus as it never change majority
      */
     void update(model::broker);
+
+    void add(vnode, model::revision_id, std::optional<model::offset>);
+    void remove(vnode, model::revision_id);
+    void replace(
+      std::vector<vnode>, model::revision_id, std::optional<model::offset>);
 
     /**
      * Discards the old configuration, after this operation joint configuration
@@ -211,7 +242,13 @@ public:
 
     const group_nodes& current_config() const { return _current; }
     const std::optional<group_nodes>& old_config() const { return _old; }
-    const std::vector<model::broker>& brokers() const { return _brokers; }
+    const std::vector<model::broker>& brokers() const {
+        vassert(
+          _version < v_5,
+          "brokers API is unsupported in configuration version {}",
+          _version);
+        return _brokers;
+    }
 
     configuration_state get_state() const;
 
@@ -228,6 +265,10 @@ public:
 
     template<typename Func>
     void for_each_learner(Func&& f) const;
+
+    std::vector<vnode> all_nodes() const;
+
+    std::optional<vnode> find_by_node_id(model::node_id) const;
 
     void set_revision(model::revision_id new_revision) {
         vassert(
@@ -295,14 +336,19 @@ public:
          * configuration revision with provided parameter.
          */
         // add
-        virtual void add(
-          std::vector<model::broker> to_add,
-          model::revision_id new_cfg_revision)
+        // Deprecated: broker based manipulation methods
+        virtual void add_broker(model::broker, model::revision_id) = 0;
+        virtual void
+          replace_brokers(std::vector<broker_revision>, model::revision_id)
           = 0;
-        virtual void remove(const std::vector<model::node_id>& to_remove) = 0;
+        virtual void remove_broker(model::node_id) = 0;
+
+        virtual void
+          add(vnode, model::revision_id, std::optional<model::offset>)
+          = 0;
+        virtual void remove(vnode, model::revision_id) = 0;
         virtual void replace(
-          std::vector<broker_revision> new_replica_set,
-          model::revision_id new_cfg_revision)
+          std::vector<vnode>, model::revision_id, std::optional<model::offset>)
           = 0;
 
         /**
@@ -332,11 +378,25 @@ public:
 
         virtual ~configuration_change_strategy() = default;
     };
+    /**
+     * Returns true if current configuration contains information about brokers
+     * configuration. Broker information is available in configuration with
+     * versions smaller than 5.
+     **/
+    bool is_with_brokers() const { return _version < v_5; }
+
+    void serde_write(iobuf& out);
+
+    static group_configuration
+    serde_direct_read(iobuf_parser&, const serde::header&);
 
 private:
     friend class configuration_change_strategy_v3;
 
     friend class configuration_change_strategy_v4;
+
+    friend class configuration_change_strategy_v5;
+
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
     std::unique_ptr<configuration_change_strategy> make_change_strategy();
@@ -390,6 +450,10 @@ bool majority(Predicate&& f, Range&& range) {
 
 template<typename Func>
 void group_configuration::for_each_broker(Func&& f) const {
+    vassert(
+      _version < v_5,
+      "for_each_broker method is not supported in configuration version {}",
+      _version);
     std::for_each(
       std::cbegin(_brokers), std::cend(_brokers), std::forward<Func>(f));
 }
@@ -481,5 +545,10 @@ template<>
 struct adl<raft::configuration_update> {
     void to(iobuf&, raft::configuration_update);
     raft::configuration_update from(iobuf_parser&);
+};
+template<>
+struct adl<raft::group_nodes> {
+    void to(iobuf&, raft::group_nodes);
+    raft::group_nodes from(iobuf_parser&);
 };
 } // namespace reflection

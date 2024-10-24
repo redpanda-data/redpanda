@@ -10,10 +10,9 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/sasl_authenticate_request.h"
 #include "kafka/protocol/schemata/sasl_authenticate_response.h"
-#include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -26,11 +25,11 @@ struct sasl_authenticate_request final {
 
     sasl_authenticate_request() = default;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -50,7 +49,7 @@ struct sasl_authenticate_response final {
     explicit sasl_authenticate_response(sasl_authenticate_response_data data)
       : data(std::move(data)) {}
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

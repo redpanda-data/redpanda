@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 var redpandaInstallDirContent = []string{
@@ -28,7 +28,7 @@ func GetIOConfigPath(configFileDirectory string) string {
 }
 
 func FindInstallDir(fs afero.Fs) (string, error) {
-	log.Debugf("Looking for redpanda install directory")
+	zap.L().Sugar().Debugf("Looking for redpanda install directory")
 	execPath, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -36,12 +36,12 @@ func FindInstallDir(fs afero.Fs) (string, error) {
 	installDirCandidate := filepath.Dir(filepath.Dir(execPath))
 	for _, path := range redpandaInstallDirContent {
 		installDirPath := filepath.Join(installDirCandidate, path)
-		log.Debugf("Checking if path '%s' exists", installDirPath)
+		zap.L().Sugar().Debugf("Checking if path '%s' exists", installDirPath)
 		if exists, _ := afero.Exists(fs, installDirPath); !exists {
 			return "", fmt.Errorf("Directory '%s' does not contain '%s'",
 				installDirCandidate, path)
 		}
 	}
-	log.Debugf("Redpanda is installed in '%s'", installDirCandidate)
+	zap.L().Sugar().Debugf("Redpanda is installed in '%s'", installDirCandidate)
 	return installDirCandidate, nil
 }

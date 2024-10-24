@@ -27,7 +27,7 @@ public:
       ss::sharded<partition_balancer_backend>&);
 
     virtual ss::future<partition_balancer_overview_reply> overview(
-      partition_balancer_overview_request&&, rpc::streaming_context&) override;
+      partition_balancer_overview_request, rpc::streaming_context&) override;
 
 private:
     ss::sharded<partition_balancer_backend>& _backend;

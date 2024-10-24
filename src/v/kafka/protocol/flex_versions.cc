@@ -9,29 +9,44 @@
 
 #include "kafka/protocol/flex_versions.h"
 
+#include "kafka/protocol/messages.h"
 #include "kafka/protocol/types.h"
-#include "kafka/server/handlers/handlers.h"
+#include "kafka/protocol/wire.h"
+#include "utils/vint_iostream.h"
+
+#include <seastar/core/iostream.hh>
+
 namespace kafka {
+
+namespace {
+
+template<typename... RequestTypes>
+consteval size_t max_api_key(type_list<RequestTypes...>) {
+    /// Black magic here is an overload of std::max() that takes an
+    /// std::initializer_list
+    return std::max({RequestTypes::key()...});
+}
 
 /// Not every value from 0 -> max_api_key is a valid request, non-supported
 /// requests will map to a value of api_key(-2)
-static constexpr api_version invalid_api = api_version(-2);
+constexpr api_version invalid_api = api_version(-2);
 
 template<typename... RequestTypes>
-static constexpr auto
+consteval auto
 get_flexible_request_min_versions_list(type_list<RequestTypes...> r) {
     /// An std::array where the indicies map to api_keys and values at an index
     /// map to the first flex version for a given api. If an api doesn't exist
     /// at an index -2 or \ref invalid_api will be the value at the index.
     std::array<api_version, max_api_key(r) + 1> versions;
     versions.fill(invalid_api);
-    ((versions[RequestTypes::api::key()] = RequestTypes::api::min_flexible),
-     ...);
+    ((versions[RequestTypes::key()] = RequestTypes::min_flexible), ...);
     return versions;
 }
 
-static constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
+constexpr auto g_flex_mapping = get_flexible_request_min_versions_list(
   request_types());
+
+} // namespace
 
 bool flex_versions::is_flexible_request(api_key key, api_version version) {
     /// If bounds checking is desired call is_api_in_schema(key) beforehand
@@ -50,9 +65,11 @@ bool flex_versions::is_api_in_schema(api_key key) noexcept {
 }
 
 ss::future<std::pair<std::optional<tagged_fields>, size_t>>
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
 parse_tags(ss::input_stream<char>& src) {
     size_t total_bytes_read = 0;
     auto read_unsigned_vint =
+      // NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
       [](size_t& total_bytes_read, ss::input_stream<char>& src) {
           return unsigned_vint::stream_deserialize(src).then(
             [&total_bytes_read](std::pair<uint32_t, size_t> pair) {
@@ -75,7 +92,7 @@ parse_tags(ss::input_stream<char>& src) {
         auto id = co_await read_unsigned_vint(total_bytes_read, src);
         auto next_len = co_await read_unsigned_vint(total_bytes_read, src);
         auto buf = co_await src.read_exactly(next_len);
-        auto data = ss::uninitialized_string<bytes>(buf.size());
+        bytes data(bytes::initialized_later{}, buf.size());
         std::copy_n(buf.begin(), buf.size(), data.begin());
         total_bytes_read += next_len;
         auto [_, succeded] = tags.emplace(tag_id(id), std::move(data));
@@ -91,7 +108,7 @@ namespace {
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
     iobuf data;
     data.append(std::move(buf));
-    request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
     auto size = reader.read_int32();
     if (size < 0) {
         throw std::runtime_error("kafka::parse_size_buffer is negative");
@@ -100,6 +117,8 @@ size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
 }
 } // namespace
 
+namespace protocol {
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-reference-coroutine-parameters)
 ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     auto buf = co_await src.read_exactly(sizeof(int32_t));
     if (!buf) {
@@ -107,5 +126,6 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     }
     co_return parse_size_buffer(std::move(buf));
 }
+} // namespace protocol
 
 } // namespace kafka

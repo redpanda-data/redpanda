@@ -37,7 +37,7 @@ model::ns adl<model::ns>::from(iobuf_parser& in) {
 
 void adl<model::topic_partition>::to(iobuf& out, model::topic_partition&& t) {
     auto str = ss::sstring(t.topic);
-    reflection::serialize(out, std::move(str), std::move(t.partition));
+    reflection::serialize(out, std::move(str), t.partition);
 }
 
 model::topic_partition adl<model::topic_partition>::from(iobuf_parser& in) {
@@ -126,26 +126,6 @@ model::broker adl<model::broker>::from(iobuf_parser& in) {
     auto rack = adl<std::optional<model::rack_id>>{}.from(in);
     auto etc_props = adl<model::broker_properties>{}.from(in);
     return model::broker{id, std::move(kafka_adrs), rpc_adrs, rack, etc_props};
-}
-
-void adl<model::internal::broker_v0>::to(
-  iobuf& out, model::internal::broker_v0&& r) {
-    adl<model::node_id>{}.to(out, r.id);
-    adl<net::unresolved_address>{}.to(out, r.kafka_address);
-    adl<net::unresolved_address>{}.to(out, r.rpc_address);
-    adl<std::optional<model::rack_id>>{}.to(out, r.rack);
-    adl<model::broker_properties>{}.to(out, r.properties);
-}
-
-model::internal::broker_v0
-adl<model::internal::broker_v0>::from(iobuf_parser& in) {
-    auto id = adl<model::node_id>{}.from(in);
-    auto kafka_adrs = adl<net::unresolved_address>{}.from(in);
-    auto rpc_adrs = adl<net::unresolved_address>{}.from(in);
-    auto rack = adl<std::optional<model::rack_id>>{}.from(in);
-    auto etc_props = adl<model::broker_properties>{}.from(in);
-    return model::internal::broker_v0{
-      id, kafka_adrs, rpc_adrs, rack, etc_props};
 }
 
 void adl<model::record>::to(iobuf& ref, model::record&& record) {

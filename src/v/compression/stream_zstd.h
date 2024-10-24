@@ -11,7 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf.h"
-#include "static_deleter_fn.h"
+#include "utils/static_deleter_fn.h"
 
 #include <memory>
 #include <zstd.h>

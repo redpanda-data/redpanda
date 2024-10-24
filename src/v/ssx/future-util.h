@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "base/vassert.h"
 #include "utils/functional.h"
 
 #include <seastar/core/abort_source.hh>
@@ -22,6 +23,8 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
+#include <type_traits>
 
 namespace ssx {
 
@@ -75,10 +78,11 @@ template<typename Iterator, typename Func>
 requires requires(Func f, Iterator i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0();
+    seastar::futurize_invoke(f, *i).get();
 }
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
-    using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
+    using result_type = std::remove_reference_t<
+      decltype(seastar::futurize_invoke(func, *begin).get())>;
     return detail::async_transform<result_type>(
       std::move(begin),
       std::move(end),
@@ -112,7 +116,7 @@ requires requires(Func f, Rng r) {
     r.begin();
     r.end();
     { r.begin() != r.begin() } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *r.begin()).get0();
+    seastar::futurize_invoke(f, *r.begin()).get();
 }
 inline auto async_transform(Rng& rng, Func&& func) {
     return async_transform(rng.begin(), rng.end(), std::forward<Func>(func));
@@ -142,11 +146,12 @@ template<typename Iterator, typename Func>
 requires requires(Func f, Iterator i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0().begin();
-    seastar::futurize_invoke(f, *i).get0().end();
+    seastar::futurize_invoke(f, *i).get().begin();
+    seastar::futurize_invoke(f, *i).get().end();
 }
 inline auto async_flat_transform(Iterator begin, Iterator end, Func&& func) {
-    using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
+    using result_type = std::remove_reference_t<
+      decltype(seastar::futurize_invoke(func, *begin).get())>;
     using value_type = typename result_type::value_type;
     return detail::async_transform<value_type>(
       std::move(begin),
@@ -168,7 +173,7 @@ requires requires(Func f, Rng r) {
     r.begin();
     r.end();
     { r.begin() != r.begin() } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *r.begin()).get0();
+    seastar::futurize_invoke(f, *r.begin()).get();
 }
 inline auto async_flat_transform(Rng& rng, Func&& func) {
     return async_flat_transform(
@@ -265,6 +270,38 @@ struct background_t {
 } // namespace detail
 inline constexpr detail::background_t background;
 
+/// \brief Create a new future, handling common shutdown exception types.
+inline seastar::future<>
+ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
+    try {
+        co_await std::move(fut);
+    } catch (const seastar::abort_requested_exception&) {
+    } catch (const seastar::gate_closed_exception&) {
+    } catch (const seastar::broken_semaphore&) {
+    } catch (const seastar::broken_promise&) {
+    } catch (const seastar::broken_condition_variable&) {
+    }
+}
+
+/// \brief Check if the exception is a commonly ignored shutdown exception.
+inline bool is_shutdown_exception(const std::exception_ptr& e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const seastar::abort_requested_exception&) {
+        return true;
+    } catch (const seastar::gate_closed_exception&) {
+        return true;
+    } catch (const seastar::broken_semaphore&) {
+        return true;
+    } catch (const seastar::broken_promise&) {
+        return true;
+    } catch (const seastar::broken_condition_variable&) {
+        return true;
+    } catch (...) {
+    }
+    return false;
+}
+
 /// \brief Create a future holding a gate, handling common shutdown exception
 /// types.  Returns the resulting future, onto which further exception handling
 /// may be chained.
@@ -279,11 +316,8 @@ inline constexpr detail::background_t background;
 /// noise on shutdown if the caller is logging exceptions.
 template<typename Func>
 inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
-    return seastar::try_with_gate(g, std::forward<Func>(func))
-      .handle_exception_type([](const seastar::abort_requested_exception&) {})
-      .handle_exception_type([](const seastar::gate_closed_exception&) {})
-      .handle_exception_type([](const seastar::broken_semaphore&) {})
-      .handle_exception_type([](const seastar::broken_condition_variable&) {});
+    return ignore_shutdown_exceptions(
+      seastar::try_with_gate(g, std::forward<Func>(func)));
 }
 
 /// \brief Detach a fiber holding a gate, with exception handling to ignore
@@ -300,6 +334,49 @@ inline void spawn_with_gate(seastar::gate& g, Func&& func) noexcept {
     background = spawn_with_gate_then(g, std::forward<Func>(func));
 }
 
+/// \brief Repeats the passed func in a detached fiber until the gate is closed.
+///
+/// \param gate Gate object to use.
+/// \param func function to invoke.
+template<class Func>
+inline void
+repeat_until_gate_closed(seastar::gate& gate, Func&& func) noexcept {
+    spawn_with_gate(gate, [&gate, func = std::forward<Func>(func)]() mutable {
+        return ss::do_until(
+          [&gate] { return gate.is_closed(); },
+          [func = std::forward<Func>(func)]() mutable {
+              return ss::futurize_invoke(func).handle_exception(
+                [](const std::exception_ptr&) {
+                    // A generic catch all to avoid exceptional futures.
+                    // The input func may include it's own exception handling.
+                });
+          });
+    });
+}
+
+/// \brief Repeats the passed func in a detached fiber until the gate is closed
+/// or abort is triggered.
+///
+/// \param gate Gate object to use.
+/// \param as Abort source to use.
+/// \param func function to invoke.
+template<class Func>
+inline void repeat_until_gate_closed_or_aborted(
+  ss::gate& gate, ss::abort_source& as, Func&& func) noexcept {
+    spawn_with_gate(
+      gate, [&gate, &as, func = std::forward<Func>(func)]() mutable {
+          return ss::do_until(
+            [&gate, &as] { return as.abort_requested() || gate.is_closed(); },
+            [func = std::forward<Func>(func)]() mutable {
+                return ss::futurize_invoke(func).handle_exception(
+                  [](const std::exception_ptr&) {
+                      // A generic catch all to avoid exceptional futures.
+                      // The input func may include it's own exception handling.
+                  });
+            });
+      });
+}
+
 /// \brief Works the same as std::partition however assumes that the predicate
 /// returns item of type seastar::future<bool> instead of bool.
 /// \param begin an \c InputIterator designating the beginning of the range
@@ -309,7 +386,7 @@ template<typename Iter, typename UnaryAsyncPredicate>
 requires requires(UnaryAsyncPredicate f, Iter i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
-    seastar::futurize_invoke(f, *i).get0();
+    seastar::futurize_invoke(f, *i).get();
 }
 seastar::future<Iter> partition(Iter begin, Iter end, UnaryAsyncPredicate p) {
     auto itr = begin;
@@ -360,23 +437,30 @@ seastar::future<T...> with_timeout_abortable(
               sub = seastar::abort_source::subscription{};
               done.set_exception(seastar::timed_out_error{});
           }) {
-            auto maybe_sub = as.subscribe([this]() noexcept {
-                timer.cancel();
-                done.set_exception(seastar::abort_requested_exception{});
-            });
-            if (!maybe_sub) {
-                done.set_exception(seastar::abort_requested_exception{});
-            } else {
-                sub = std::move(*maybe_sub);
-                timer.arm(deadline);
+            try {
+                as.check();
+            } catch (...) {
+                done.set_to_current_exception();
+                return;
             }
+            auto maybe_sub = as.subscribe(
+              [this,
+               &as](const std::optional<std::exception_ptr>& ex) noexcept {
+                  timer.cancel();
+                  done.set_exception(ex.value_or(as.get_default_exception()));
+              });
+            vassert(
+              maybe_sub,
+              "abort_source was just checked this should never happen.");
+            sub = std::move(*maybe_sub);
+            timer.arm(deadline);
         }
     };
 
     auto st = std::make_unique<state>(deadline, as);
     auto result = st->done.get_future();
 
-    (void)f.then_wrapped([st = std::move(st)](auto&& f) {
+    background = f.then_wrapped([st = std::move(st)](auto&& f) {
         bool fired = !st->timer.armed() || !st->sub;
         st->timer.cancel();
         st->sub = seastar::abort_source::subscription{};
@@ -389,6 +473,16 @@ seastar::future<T...> with_timeout_abortable(
     });
 
     return result;
+}
+
+// Create a ready future with template deduction.
+//
+// In most cases you should not need specify a template parameter using this
+// function over seastar's make_ready_future function.
+template<typename T>
+seastar::future<std::remove_cvref_t<T>> now(T&& v) noexcept {
+    return seastar::make_ready_future<std::remove_cvref_t<T>>(
+      std::forward<T>(v));
 }
 
 } // namespace ssx

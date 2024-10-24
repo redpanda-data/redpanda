@@ -3,10 +3,12 @@ v_cc_library(
   DEPS
     Seastar::seastar
     v::bytes
-    v::rphashing
+    v::hashing
     v::utils
     v::reflection
     absl::flat_hash_map
     v::compression
   )
+add_subdirectory(protobuf)
+add_subdirectory(avro)
 add_subdirectory(test)

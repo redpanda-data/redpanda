@@ -47,7 +47,7 @@ template<>
 struct instance_generator<cluster::abort_tx_reply> {
     static cluster::abort_tx_reply random() {
         return cluster::abort_tx_reply(
-          instance_generator<cluster::tx_errc>::random());
+          instance_generator<cluster::tx::errc>::random());
     }
     static std::vector<cluster::abort_tx_reply> limits() { return {}; }
 };

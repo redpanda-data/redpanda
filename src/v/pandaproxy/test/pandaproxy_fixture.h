@@ -24,9 +24,9 @@ public:
     pandaproxy_test_fixture()
       : redpanda_thread_fixture() {}
 
-    pandaproxy_test_fixture(pandaproxy_test_fixture const&) = delete;
+    pandaproxy_test_fixture(const pandaproxy_test_fixture&) = delete;
     pandaproxy_test_fixture(pandaproxy_test_fixture&&) = delete;
-    pandaproxy_test_fixture operator=(pandaproxy_test_fixture const&) = delete;
+    pandaproxy_test_fixture operator=(const pandaproxy_test_fixture&) = delete;
     pandaproxy_test_fixture operator=(pandaproxy_test_fixture&&) = delete;
     ~pandaproxy_test_fixture() = default;
 

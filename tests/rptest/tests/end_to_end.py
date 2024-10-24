@@ -24,7 +24,7 @@ import os
 from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
@@ -79,10 +79,14 @@ class EndToEndTest(Test):
 
     def start_redpanda(self,
                        num_nodes=1,
+                       num_started_nodes=None,
                        extra_rp_conf=None,
                        si_settings=None,
                        environment=None,
-                       install_opts: Optional[InstallOptions] = None):
+                       install_opts: Optional[InstallOptions] = None,
+                       new_bootstrap=False,
+                       max_num_seeds=3,
+                       license_required=False):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -95,12 +99,19 @@ class EndToEndTest(Test):
             self._extra_rp_conf = {**self._extra_rp_conf, **extra_rp_conf}
         assert self.redpanda is None
 
-        self.redpanda = RedpandaService(self.test_context,
-                                        num_nodes,
-                                        extra_rp_conf=self._extra_rp_conf,
-                                        extra_node_conf=self._extra_node_conf,
-                                        si_settings=self.si_settings,
-                                        environment=environment)
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            num_nodes,
+            extra_rp_conf=self._extra_rp_conf,
+            extra_node_conf=self._extra_node_conf,
+            si_settings=self.si_settings,
+            environment=environment)
+        if new_bootstrap:
+            seeds = [
+                self.redpanda.nodes[i]
+                for i in range(0, min(len(self.redpanda.nodes), max_num_seeds))
+            ]
+            self.redpanda.set_seed_servers(seeds)
         version_to_install = None
         if install_opts:
             if install_opts.install_previous_version:
@@ -112,7 +123,16 @@ class EndToEndTest(Test):
         if version_to_install:
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
-        self.redpanda.start()
+
+        started_nodes = None
+        if num_started_nodes is not None:
+            started_nodes = self.redpanda.nodes[:num_started_nodes]
+        self.redpanda.start(nodes=started_nodes,
+                            auto_assign_node_id=new_bootstrap,
+                            omit_seeds_on_idx_one=not new_bootstrap)
+        if license_required:
+            # Install an enterprise license before the upgrade
+            self.redpanda.install_license()
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new
@@ -148,13 +168,16 @@ class EndToEndTest(Test):
     def start_consumer(self,
                        num_nodes=1,
                        group_id="test_group",
-                       verify_offsets=True):
-        assert self.redpanda
+                       verify_offsets=True,
+                       redpanda_cluster=None):
+        if redpanda_cluster is None:
+            assert self.redpanda
+            redpanda_cluster = self.redpanda
         assert self.topic
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=num_nodes,
-            redpanda=self.redpanda,
+            redpanda=redpanda_cluster,
             topic=self.topic,
             group_id=group_id,
             on_record_consumed=self.on_record_consumed,
@@ -166,8 +189,7 @@ class EndToEndTest(Test):
                        throughput=1000,
                        repeating_keys=None,
                        enable_idempotence=False,
-                       transactional=False,
-                       tx_inject_aborts=False):
+                       acks=None):
         assert self.redpanda
         assert self.topic
         self.producer = VerifiableProducer(
@@ -179,8 +201,7 @@ class EndToEndTest(Test):
             message_validator=is_int_with_prefix,
             repeating_keys=repeating_keys,
             enable_idempotence=enable_idempotence,
-            transactional=transactional,
-            tx_inject_aborts=tx_inject_aborts)
+            acks=acks)
         self.producer.start()
 
     def on_record_consumed(self, record, node):
@@ -193,8 +214,13 @@ class EndToEndTest(Test):
 
     def await_consumed_offsets(self, last_acked_offsets, timeout_sec):
         def has_finished_consuming():
+            # if consumer was interrupted with error there is no point waiting
+            # for it to finish
+            if self.consumer.interrupted_with_error:
+                raise self.consumer.interrupted_with_error
+
             for partition, offset in last_acked_offsets.items():
-                if not partition in self.last_consumed_offsets:
+                if partition not in self.last_consumed_offsets:
                     return False
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
@@ -225,6 +251,12 @@ class EndToEndTest(Test):
                    timeout_sec=timeout_sec,
                    err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
                    (timeout_sec, min_records))
+
+    def _collect_segment_data(self):
+        # TODO: data collection is disabled because it was
+        # affecting other tests.
+        # See issue https://github.com/redpanda-data/redpanda/issues/7179
+        pass
 
     def _collect_all_logs(self):
         for s in self.test_context.services:
@@ -314,8 +346,9 @@ class EndToEndTest(Test):
             # we must check not acked state as it might have been caused
             # by request timeout and a message might still have been consumed by consumer
             self.logger.debug(
-                f"Checking not acked produced messages for key: {k}, previous acked value: {acked_producer_state[consumed_key]}, consumed value: {v}"
-            )
+                f"Checking not acked produced messages for key: {consumed_key}, "
+                f"previous acked value: {acked_producer_state[consumed_key]}, "
+                f"consumed value: {consumed_value}")
             # consumed value is one of the not acked produced values
             if consumed_key in not_acked_producer_state and consumed_value in not_acked_producer_state[
                     consumed_key]:
@@ -330,7 +363,9 @@ class EndToEndTest(Test):
         if not success:
             msg += "Invalid value detected for consumed compacted topic records. errors: ["
             for key, consumed_value, produced_acked, producer_not_acked in errors:
-                msg += f"key: {k} consumed value: {consumed_value}, produced values: (acked: {produced_acked}, not_acked: {producer_not_acked}) "
+                msg += f"key: {key} consumed value: {consumed_value}, " \
+                       f"produced values: (acked: {produced_acked}, " \
+                       f"not_acked: {producer_not_acked})\n"
             msg += "]"
 
         return success, msg
@@ -366,6 +401,12 @@ class EndToEndTest(Test):
                     msg += "Detected %d duplicates even though idempotence was enabled.\n" % num_duplicates
                 else:
                     msg += "(There are also %d duplicate messages in the log - but that is an acceptable outcome)\n" % num_duplicates
+
+            consumer_consistency = self.consumer.verify_position_offsets_consistency(
+            )
+            if not consumer_consistency[0]:
+                success = False
+                msg += '\n'.join(consumer_consistency[1]) + '\n'
 
         # Collect all logs if validation fails
         if not success:

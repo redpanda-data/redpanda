@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type OutputFormat string
@@ -57,7 +57,7 @@ func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Running '%s' with '%#q'", Bin, cmdArgs)
+	zap.L().Sugar().Debugf("Running '%s' with '%#q'", Bin, cmdArgs)
 	return ioTune.proc.RunWithSystemLdPath(ioTune.timeout, Bin, cmdArgs...)
 }
 

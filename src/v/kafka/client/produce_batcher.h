@@ -11,13 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "raft/types.h"
-#include "seastarx.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -50,7 +46,11 @@ class produce_batcher {
 public:
     using partition_response = produce_response::partition;
     explicit produce_batcher()
-      : _builder{make_builder()}
+      : produce_batcher(model::compression::none) {}
+
+    explicit produce_batcher(model::compression c)
+      : _c(c)
+      , _builder{make_builder()}
       , _client_reqs{}
       , _broker_reqs{} {}
 
@@ -81,10 +81,11 @@ public:
         return _client_reqs.back().promise.get_future();
     }
 
-    model::record_batch consume() {
-        auto batch = std::exchange(_builder, make_builder()).build();
+    ss::future<model::record_batch> consume() {
+        auto batch
+          = co_await std::exchange(_builder, make_builder()).build_async();
         _broker_reqs.emplace_back(batch.record_count());
-        return batch;
+        co_return batch;
     }
 
     void handle_response(partition_response res) {
@@ -113,9 +114,13 @@ public:
 
 private:
     storage::record_batch_builder make_builder() {
-        return {model::record_batch_type::raft_data, model::offset(0)};
+        auto builder = storage::record_batch_builder(
+          model::record_batch_type::raft_data, model::offset(0));
+        builder.set_compression(_c);
+        return builder;
     }
 
+    model::compression _c;
     storage::record_batch_builder _builder;
     // TODO(Ben): Maybe these should be a queue for backpressure
     ss::circular_buffer<client_context> _client_reqs;

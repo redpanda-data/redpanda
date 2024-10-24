@@ -11,7 +11,6 @@
 #pragma once
 #include "kafka/server/fwd.h"
 #include "kafka/server/response.h"
-#include "kafka/types.h"
 
 namespace kafka {
 /**
@@ -61,8 +60,9 @@ struct handler_interface {
      * connection_context for the associated connection is passed to give access
      * to global state which may be useful in making the estimate.
      */
-    virtual size_t memory_estimate(
-      size_t request_size, connection_context& conn_ctx) const = 0;
+    virtual size_t
+    memory_estimate(size_t request_size, connection_context& conn_ctx) const
+      = 0;
 
     /**
      * @brief Handles the request.
@@ -79,7 +79,8 @@ struct handler_interface {
      * the handler.
      */
     virtual process_result_stages
-    handle(request_context&&, ss::smp_service_group) const = 0;
+    handle(request_context&&, ss::smp_service_group) const
+      = 0;
 
     virtual ~handler_interface() = default;
 };
@@ -107,5 +108,18 @@ using handler = const handler_interface*;
  * @return std::optional<handler> the handler, if any
  */
 std::optional<handler> handler_for_key(api_key key) noexcept;
+
+/**
+ * Map a Kafka API name to it's API key.
+ *
+ * @param name The name, taken from API schemata.
+ * @return std::optional<api_key> the key, if any.
+ */
+std::optional<api_key> api_name_to_key(std::string_view name) noexcept;
+
+/**
+ * @return The highest value of Kafka API key
+ */
+size_t max_api_key() noexcept;
 
 } // namespace kafka

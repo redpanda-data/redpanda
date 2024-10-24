@@ -10,806 +10,570 @@
 
 #include "cloud_storage/remote.h"
 
+#include "bytes/iostream.h"
+#include "cloud_io/transfer_details.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/types.h"
-#include "s3/client.h"
-#include "ssx/sformat.h"
-#include "utils/intrusive_list_helpers.h"
+#include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/types.h"
+#include "cloud_storage_clients/util.h"
+#include "model/metadata.h"
+#include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "utils/retry_chain_node.h"
-#include "utils/string_switch.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/coroutine/as_future.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
+#include <boost/range/irange.hpp>
 #include <fmt/chrono.h>
-#include <gnutls/gnutls.h>
 
 #include <exception>
+#include <iterator>
 #include <utility>
 #include <variant>
+
+namespace {
+// Holds the key and associated retry_chain_node to make it
+// easier to keep objects on heap using do_with, as retry_chain_node
+// cannot be copied or moved.
+struct key_and_node {
+    cloud_storage_clients::object_key key;
+    std::unique_ptr<retry_chain_node> node;
+};
+
+template<typename R>
+requires std::ranges::range<R>
+size_t num_chunks(const R& r, size_t max_batch_size) {
+    const auto range_size = std::distance(r.begin(), r.end());
+
+    if (range_size % max_batch_size == 0) {
+        return range_size / max_batch_size;
+    } else {
+        return range_size / max_batch_size + 1;
+    }
+}
+} // namespace
 
 namespace cloud_storage {
 
 using namespace std::chrono_literals;
 
-enum class error_outcome {
-    /// Error condition that could be retried
-    retry,
-    /// The service asked us to retry (SlowDown response)
-    retry_slowdown,
-    /// Error condition that couldn't be retried
-    fail,
-    /// NotFound API error (only suitable for downloads)
-    notfound
-};
-
-/**
- * Identify error cases that should be quickly retried, e.g.
- * TCP disconnects, timeouts. Network errors may also show up
- * indirectly as errors from the TLS layer.
- */
-bool system_error_retryable(const std::system_error& e) {
-    auto v = e.code().value();
-
-    // The name() of seastar's gnutls_error_category class
-    constexpr std::string_view gnutls_cateogry_name{"GnuTLS"};
-
-    if (e.code().category().name() == gnutls_cateogry_name) {
-        switch (v) {
-        case GNUTLS_E_PUSH_ERROR:
-        case GNUTLS_E_PULL_ERROR:
-        case GNUTLS_E_PREMATURE_TERMINATION:
-            return true;
-        default:
-            return false;
-        }
-    } else {
-        switch (v) {
-        case ECONNREFUSED:
-        case ENETUNREACH:
-        case ETIMEDOUT:
-        case ECONNRESET:
-        case EPIPE:
-            return true;
-        default:
-            return false;
-        }
-    }
-    __builtin_unreachable();
-}
-
-/// @brief Analyze exception
-/// @return error outcome - retry, fail (with exception), or notfound (can only
-/// be used with download)
-///
-/// There're several error scopes that we're trying to choose from:
-/// - errors that can be retried
-///   - some network errors (connection reset by peer)
-///   - S3 service backpressure (SlowDown responses)
-///   - Short read errors (appear when S3 throttles redpanda)
-/// - errors for which retrying is not an effective solution
-///   - NotFound error for downloads
-///   - FS errors
-///   - errors generated during graceful shutdown, etc
-static error_outcome categorize_error(
-  const std::exception_ptr& err,
-  retry_chain_node& fib,
-  const s3::bucket_name& bucket,
-  const s3::object_key& path) {
-    auto result = error_outcome::retry;
-    retry_chain_logger ctxlog(cst_log, fib);
-    try {
-        std::rethrow_exception(err);
-    } catch (const s3::rest_error_response& err) {
-        if (err.code() == s3::s3_error_code::no_such_key) {
-            // Unexpected 404s are logged elsewhere by the s3 client at warn
-            // level, so only log at debug level here.
-            vlog(ctxlog.debug, "NoSuchKey response received {}", path);
-            result = error_outcome::notfound;
-        } else if (
-          err.code() == s3::s3_error_code::slow_down
-          || err.code() == s3::s3_error_code::internal_error) {
-            // This can happen when we're dealing with high request rate to
-            // the manifest's prefix. Backoff algorithm should be applied.
-            // In principle only slow_down should occur, but in practice
-            // AWS S3 does return internal_error as well sometimes.
-            vlog(ctxlog.warn, "{} response received {}", err.code(), path);
-            result = error_outcome::retry_slowdown;
-        } else {
-            // Unexpected REST API error, we can't recover from this
-            // because the issue is not temporary (e.g. bucket doesn't
-            // exist)
-            vlog(
-              ctxlog.error,
-              "Accessing {}, unexpected REST API error \"{}\" detected, "
-              "code: "
-              "{}, request_id: {}, resource: {}",
-              bucket,
-              err.message(),
-              err.code_string(),
-              err.request_id(),
-              err.resource());
-            result = error_outcome::fail;
-        }
-    } catch (const std::system_error& cerr) {
-        // The system_error is type erased and not convenient for selective
-        // handling. The following errors should be retried:
-        // - connection refused, timed out or reset by peer
-        // - network temporary unavailable
-        // Shouldn't be retried
-        // - any filesystem error
-        // - broken-pipe
-        // - any other network error (no memory, bad socket, etc)
-        if (system_error_retryable(cerr)) {
-            vlog(
-              ctxlog.warn,
-              "System error susceptible for retry {}",
-              cerr.what());
-        } else {
-            vlog(ctxlog.error, "System error {}", cerr);
-            result = error_outcome::fail;
-        }
-    } catch (const ss::timed_out_error& terr) {
-        // This should happen when the connection pool was disconnected
-        // from the S3 endpoint and subsequent connection attmpts failed.
-        vlog(ctxlog.warn, "Connection timeout {}", terr.what());
-    } catch (const boost::system::system_error& err) {
-        if (err.code() != boost::beast::http::error::short_read) {
-            vlog(cst_log.warn, "Connection failed {}", err.what());
-            result = error_outcome::fail;
-        } else {
-            // This is a short read error that can be caused by the abrupt TLS
-            // shutdown. The content of the received buffer is discarded in this
-            // case and http client receives an empty buffer.
-            vlog(
-              ctxlog.info,
-              "Server disconnected: '{}', retrying HTTP request",
-              err.what());
-        }
-    } catch (const ss::abort_requested_exception&) {
-        vlog(ctxlog.debug, "Abort requested");
-        throw;
-    } catch (...) {
-        vlog(ctxlog.error, "Unexpected error {}", std::current_exception());
-        result = error_outcome::fail;
-    }
-    return result;
-}
-
 remote::remote(
-  s3_connection_limit limit,
-  const s3::configuration& conf,
-  model::cloud_credentials_source cloud_credentials_source)
-  : _pool(limit(), conf)
+  ss::sharded<cloud_io::remote>& io,
+  const cloud_storage_clients::client_configuration& conf)
+  : _io(io)
+  , _materialized(std::make_unique<materialized_resources>())
   , _probe(
-      remote_metrics_disabled(static_cast<bool>(conf.disable_metrics)),
-      remote_metrics_disabled(static_cast<bool>(conf.disable_public_metrics)))
-  , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source} {
-    // If the credentials source is from config file, bypass the background op
-    // to refresh credentials periodically, and load pool with static
-    // credentials right now.
-    if (_auth_refresh_bg_op.is_static_config()) {
-        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
-    }
+      remote_metrics_disabled(static_cast<bool>(
+        std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),
+      remote_metrics_disabled(static_cast<bool>(std::visit(
+        [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
+      *_materialized,
+      _io.local().resources()) {}
+
+remote::remote(ss::sharded<cloud_io::remote>& io, const configuration& conf)
+  : remote(io, conf.client_config) {}
+
+remote::~remote() {
+    // This is declared in the .cc to avoid header trying to
+    // link with destructors for unique_ptr wrapped members
 }
 
-remote::remote(ss::sharded<configuration>& conf)
-  : remote(
-    conf.local().connection_limit,
-    conf.local().client_config,
-    conf.local().cloud_credentials_source) {}
-
-ss::future<> remote::start() {
-    if (!_auth_refresh_bg_op.is_static_config()) {
-        // Launch background operation to fetch credentials on
-        // auth_refresh_shard_id, and copy them to other shards. We do not wait
-        // for this operation here, the wait is done in client_pool::acquire to
-        // avoid delaying application startup.
-        _auth_refresh_bg_op.maybe_start_auth_refresh_op(
-          [this](auto credentials) {
-              return propagate_credentials(credentials);
-          });
-    }
-    return ss::now();
-}
+ss::future<> remote::start() { co_await _materialized->start(); }
 
 ss::future<> remote::stop() {
-    _as.request_abort();
-    co_await _pool.stop();
-    co_await _gate.close();
+    cst_log.debug("Stopping remote...");
+    co_await _materialized->stop();
+    cst_log.debug("Stopped remote...");
 }
 
-void remote::shutdown_connections() { _pool.shutdown_connections(); }
+size_t remote::concurrency() const { return io().concurrency(); }
 
-size_t remote::concurrency() const { return _pool.max_size(); }
+bool remote::is_batch_delete_supported() const {
+    return io().is_batch_delete_supported();
+}
+
+int remote::delete_objects_max_keys() const {
+    return io().delete_objects_max_keys();
+}
 
 ss::future<download_result> remote::download_manifest(
-  const s3::bucket_name& bucket,
-  const remote_manifest_path& key,
+  const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
   base_manifest& manifest,
   retry_chain_node& parent) {
-    return do_download_manifest(bucket, key, manifest, parent);
+    return do_download_manifest(bucket, format_key, manifest, parent);
 }
 
-ss::future<download_result> remote::maybe_download_manifest(
-  const s3::bucket_name& bucket,
+ss::future<download_result> remote::download_manifest_json(
+  const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
-    return do_download_manifest(bucket, key, manifest, parent, true);
+    auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(
+      bucket, fk, manifest, parent, false);
+}
+ss::future<download_result> remote::download_manifest_bin(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    auto fk = std::pair{manifest_format::serde, key};
+    co_return co_await do_download_manifest(
+      bucket, fk, manifest, parent, false);
+}
+ss::future<download_result> remote::maybe_download_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_manifest_path& key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(bucket, fk, manifest, parent, true);
 }
 
 ss::future<download_result> remote::do_download_manifest(
-  const s3::bucket_name& bucket,
-  const remote_manifest_path& key,
+  const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
   base_manifest& manifest,
   retry_chain_node& parent,
   bool expect_missing) {
-    gate_guard guard{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto path = s3::object_key(key().native());
-    auto lease = co_await _pool.acquire();
-    auto retry_permit = fib.retry();
-    std::optional<download_result> result;
-    vlog(ctxlog.debug, "Download manifest {}", key());
-    while (!_gate.is_closed() && retry_permit.is_allowed
-           && !result.has_value()) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->get_object(
-              bucket, path, fib.get_timeout(), expect_missing);
-            vlog(ctxlog.debug, "Receive OK response from {}", path);
-            co_await manifest.update(resp->as_input_stream());
-            switch (manifest.get_manifest_type()) {
-            case manifest_type::partition:
-                _probe.partition_manifest_download();
-                break;
-            case manifest_type::topic:
-                _probe.topic_manifest_download();
-                break;
-            case manifest_type::tx_range:
-                _probe.txrange_manifest_download();
-                break;
-            }
-            co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
+    auto path = cloud_storage_clients::object_key(format_key.second().native());
+    iobuf buffer;
+    const auto dl_result = co_await io().download_object(
+      {.transfer_details = {
+         .bucket = bucket,
+         .key = path,
+         .parent_rtc = parent,
+         // NOTE: appropriate probe is only updated after parsing the manifest.
+         .success_cb = std::nullopt,
+         .failure_cb = [this]() { _probe.failed_manifest_download(); },
+         .backoff_cb = [this]() { _probe.manifest_download_backoff(); },
+         .on_req_cb = make_notify_cb(
+           api_activity_type::manifest_download, parent),
+       },
+       .display_str = "manifest",
+       .payload = buffer,
+       .expect_missing = expect_missing});
+    if (dl_result == download_result::success) {
+        auto fut = co_await ss::coroutine::as_future(manifest.update(
+          format_key.first, make_iobuf_input_stream(std::move(buffer))));
+        if (fut.failed()) {
+            const auto ex = fut.get_exception();
+            auto res = download_result::failed;
             vlog(
-              ctxlog.debug,
-              "Downloading manifest from {}, {} backoff required",
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                retry_permit.delay));
-            _probe.manifest_download_backoff();
-            co_await ss::sleep_abortable(retry_permit.delay, _as);
-            retry_permit = fib.retry();
-            break;
-        case error_outcome::fail:
-            result = download_result::failed;
-            vlog(
-              ctxlog.warn,
+              cst_log.warn,
               "Failed downloading manifest from {} {}, manifest at {}",
               bucket,
-              *result,
+              ex,
               path);
+            co_return res;
+        }
+        switch (manifest.get_manifest_type()) {
+            using enum manifest_type;
+        case partition:
+            _probe.partition_manifest_download();
             break;
-        case error_outcome::notfound:
-            result = download_result::notfound;
-            vlog(
-              ctxlog.debug,
-              "Manifest from {} {}, manifest at {} not found",
-              bucket,
-              *result,
-              path);
+        case topic:
+            _probe.topic_manifest_download();
+            break;
+        case tx_range:
+            _probe.txrange_manifest_download();
+            break;
+        case cluster_metadata:
+            _probe.cluster_metadata_manifest_download();
+            break;
+        case spillover:
+            _probe.spillover_manifest_download();
+            break;
+        case topic_mount:
+            _probe.topic_mount_manifest_download();
             break;
         }
     }
-    _probe.failed_manifest_download();
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "Downloading manifest from {}, backoff quota exceded, manifest at {} "
-          "not available",
-          bucket,
-          path);
-        result = download_result::timedout;
-    }
-    co_return *result;
+    co_return dl_result;
 }
 
 ss::future<upload_result> remote::upload_manifest(
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
+  const remote_manifest_path& key,
   retry_chain_node& parent) {
-    gate_guard guard{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto key = manifest.get_manifest_path();
-    auto path = s3::object_key(key());
-    std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
-    auto lease = co_await _pool.acquire();
-    auto permit = fib.retry();
-    vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
-    std::optional<upload_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto [is, size] = manifest.serialize();
-            co_await lease.client->put_object(
-              bucket, path, size, std::move(is), tags, fib.get_timeout());
-            vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
-            switch (manifest.get_manifest_type()) {
-            case manifest_type::partition:
-                _probe.partition_manifest_upload();
-                break;
-            case manifest_type::topic:
-                _probe.topic_manifest_upload();
-                break;
-            case manifest_type::tx_range:
-                _probe.txrange_manifest_upload();
-                break;
-            }
-            _probe.register_upload_size(size);
-            co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "Uploading manifest {} to {}, {} backoff required",
-              path,
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            _probe.manifest_upload_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
-            permit = fib.retry();
+    auto buf = co_await manifest.serialize_buf();
+    auto success_cb = [this, t = manifest.get_manifest_type()]() {
+        switch (t) {
+            using enum manifest_type;
+        case partition:
+            _probe.partition_manifest_upload();
             break;
-        case error_outcome::notfound:
-            // not expected during upload
-        case error_outcome::fail:
-            result = upload_result::failed;
+        case topic:
+            _probe.topic_manifest_upload();
+            break;
+        case tx_range:
+            _probe.txrange_manifest_upload();
+            break;
+        case cluster_metadata:
+            _probe.cluster_metadata_manifest_upload();
+            break;
+        case spillover:
+            _probe.spillover_manifest_upload();
+            break;
+        case topic_mount:
+            _probe.topic_mount_manifest_upload();
             break;
         }
+    };
+    co_return co_await io().upload_object({
+      .transfer_details = {
+        .bucket = bucket,
+        .key = cloud_storage_clients::object_key{key().native()},
+        .parent_rtc = parent,
+        .success_cb = std::move(success_cb),
+        .failure_cb = [this] { _probe.failed_manifest_upload(); },
+        .backoff_cb = [this] { _probe.manifest_upload_backoff(); },
+        .on_req_cb = make_notify_cb(api_activity_type::manifest_upload, parent),
+      },
+      .display_str = to_string(upload_type::manifest),
+      .payload = std::move(buf),
+      .accept_no_content_response = false,
+    });
+}
+
+void remote::notify_external_subscribers(
+  api_activity_notification event, const retry_chain_node& caller) {
+    const auto* caller_root = caller.get_root();
+
+    for (auto& flt : _filters) {
+        if (flt._events_to_ignore.contains(event.type)) {
+            continue;
+        }
+
+        if (flt._sources_to_ignore.contains(caller_root)) {
+            continue;
+        }
+
+        // Invariant: the filter._promise is always initialized
+        // by the 'subscribe' method.
+        vassert(
+          flt._promise.has_value(),
+          "Filter object is not initialized properly");
+        flt._promise->set_value(event);
+        flt._promise = std::nullopt;
+        // NOTE: the filter object can be reused by the owner
     }
-    _probe.failed_manifest_upload();
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "Uploading manifest {} to {}, backoff quota exceded, manifest not "
-          "uploaded",
-          path,
-          bucket);
-        result = upload_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "Uploading manifest {} to {}, {}, manifest not uploaded",
-          path,
-          *result,
-          bucket);
-    }
-    co_return *result;
+
+    _filters.remove_if(
+      [](const event_filter& f) { return !f._promise.has_value(); });
+}
+
+ss::future<upload_result> remote::upload_controller_snapshot(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& remote_path,
+  const ss::file& file,
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source) {
+    auto reset_str = [&file] {
+        using provider_t = std::unique_ptr<stream_provider>;
+        ss::file_input_stream_options opts;
+        return ss::make_ready_future<provider_t>(
+          std::make_unique<storage::segment_reader_handle>(
+            ss::make_file_input_stream(file, opts)));
+    };
+    auto file_size = co_await file.size();
+    co_return co_await io().upload_stream(
+      {
+        .bucket = bucket,
+        .key = cloud_storage_clients::object_key{remote_path()},
+        .parent_rtc = parent,
+        .success_cb =
+          [this] { _probe.controller_snapshot_successful_upload(); },
+        // TODO: should use a different metric for controller snapshot size.
+        .success_size_cb =
+          [this](size_t sz) { _probe.register_upload_size(sz); },
+        .failure_cb = [this] { _probe.controller_snapshot_failed_upload(); },
+        .backoff_cb = [this] { _probe.controller_snapshot_upload_backoff(); },
+        .on_req_cb = make_notify_cb(
+          api_activity_type::controller_snapshot_upload, parent),
+      },
+      file_size,
+      reset_str,
+      lazy_abort_source,
+      "controller snapshot",
+      std::nullopt);
 }
 
 ss::future<upload_result> remote::upload_segment(
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
   uint64_t content_length,
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
-  lazy_abort_source& lazy_abort_source) {
-    gate_guard guard{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    std::vector<s3::object_tag> tags = {{"rp-type", "segment"}};
-    auto permit = fib.retry();
-    vlog(
-      ctxlog.debug,
-      "Uploading segment to path {}, length {}",
-      segment_path,
-      content_length);
-    std::optional<upload_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.acquire();
-
-        // Client acquisition can take some time. Do a check before starting
-        // the upload if we can still continue.
-        if (lazy_abort_source.abort_requested()) {
-            vlog(
-              ctxlog.warn,
-              "{}: cancelled uploading {} to {}",
-              lazy_abort_source.abort_reason(),
-              segment_path,
-              bucket);
-            _probe.failed_upload();
-            co_return upload_result::cancelled;
-        }
-
-        auto reader_handle = co_await reset_str();
-        auto path = s3::object_key(segment_path());
-        vlog(ctxlog.debug, "Uploading segment to path {}", segment_path);
-        std::exception_ptr eptr = nullptr;
-        try {
-            // Segment upload attempt
-            co_await lease.client->put_object(
-              bucket,
-              path,
-              content_length,
-              reader_handle->take_stream(),
-              tags,
-              fib.get_timeout());
-            _probe.successful_upload();
-            _probe.register_upload_size(content_length);
-            co_await reader_handle->close();
-            co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-
-        // `put_object` closed the encapsulated input_stream, but we must
-        // call close() on the segment_reader_handle to release the FD.
-        co_await reader_handle->close();
-
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "Uploading segment {} to {}, {} backoff required",
-              path,
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            _probe.upload_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
-            permit = fib.retry();
-            break;
-        case error_outcome::notfound:
-            // not expected during upload
-        case error_outcome::fail:
-            result = upload_result::failed;
-            break;
-        }
-    }
-
-    _probe.failed_upload();
-
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "Uploading segment {} to {}, backoff quota exceded, segment not "
-          "uploaded",
-          segment_path,
-          bucket);
-    } else {
-        vlog(
-          ctxlog.warn,
-          "Uploading segment {} to {}, {}, segment not uploaded",
-          segment_path,
-          bucket,
-          *result);
-    }
-    co_return upload_result::timedout;
+  lazy_abort_source& lazy_abort_source,
+  std::optional<size_t> max_retries) {
+    return io().upload_stream(
+      {
+        .bucket = bucket,
+        .key = cloud_storage_clients::object_key{segment_path()},
+        .parent_rtc = parent,
+        .success_cb = [this] { _probe.successful_upload(); },
+        .success_size_cb =
+          [this](size_t sz) { _probe.register_upload_size(sz); },
+        .failure_cb = [this] { _probe.failed_upload(); },
+        .backoff_cb = [this] { _probe.upload_backoff(); },
+        .on_req_cb = make_notify_cb(api_activity_type::segment_upload, parent),
+      },
+      content_length,
+      reset_str,
+      lazy_abort_source,
+      "segment",
+      max_retries);
 }
 
-ss::future<download_result> remote::download_segment(
-  const s3::bucket_name& bucket,
-  const remote_segment_path& segment_path,
+ss::future<upload_result> remote::upload_index(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& key,
+  const offset_index& index,
+  retry_chain_node& parent) {
+    auto buf = index.to_iobuf();
+    return io().upload_object({
+      .transfer_details = {
+        .bucket = bucket,
+        .key = key,
+        .parent_rtc = parent,
+        .success_cb = [this] { _probe.index_upload(); },
+        .failure_cb = [this] { _probe.failed_index_upload(); },
+        .on_req_cb = make_notify_cb(api_activity_type::object_upload, parent),
+      },
+      .display_str = to_string(upload_type::segment_index),
+      .payload = std::move(buf),
+    });
+}
+
+ss::future<download_result> remote::download_stream(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& path,
   const try_consume_stream& cons_str,
-  retry_chain_node& parent) {
-    gate_guard guard{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto path = s3::object_key(segment_path());
-    auto lease = co_await _pool.acquire();
-    auto permit = fib.retry();
-    vlog(ctxlog.debug, "Download segment {}", path);
-    std::optional<download_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->get_object(
-              bucket, path, fib.get_timeout());
-            vlog(ctxlog.debug, "Receive OK response from {}", path);
-            auto length = boost::lexical_cast<uint64_t>(resp->get_headers().at(
-              boost::beast::http::field::content_length));
-            uint64_t content_length = co_await cons_str(
-              length, resp->as_input_stream());
-            _probe.successful_download();
-            _probe.register_download_size(content_length);
-            co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "Downloading segment from {}, {} backoff required",
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            _probe.download_backoff();
-            co_await ss::sleep_abortable(permit.delay, _as);
-            permit = fib.retry();
-            break;
-        case error_outcome::fail:
-            result = download_result::failed;
-            break;
-        case error_outcome::notfound:
-            result = download_result::notfound;
-            break;
-        }
-    }
-    _probe.failed_download();
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "Downloading segment from {}, backoff quota exceded, segment at {} "
-          "not available",
-          bucket,
-          path);
-        result = download_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "Downloading segment from {}, {}, segment at {} not available",
-          bucket,
-          *result,
-          path);
-    }
-    co_return *result;
-}
-ss::future<download_result> remote::segment_exists(
-  const s3::bucket_name& bucket,
-  const remote_segment_path& segment_path,
-  retry_chain_node& parent) {
-    ss::gate::holder gh{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto path = s3::object_key(segment_path());
-    auto lease = co_await _pool.acquire();
-    auto permit = fib.retry();
-    vlog(ctxlog.debug, "Check segment {}", path);
-    std::optional<download_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            auto resp = co_await lease.client->head_object(
-              bucket, path, fib.get_timeout());
-            vlog(
-              ctxlog.debug,
-              "Receive OK HeadObject response from {}, object size: {}, etag: "
-              "{}",
-              path,
-              resp.object_size,
-              resp.etag);
-            co_return download_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "HeadObject from {}, {} backoff required",
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            co_await ss::sleep_abortable(permit.delay, _as);
-            permit = fib.retry();
-            break;
-        case error_outcome::fail:
-            result = download_result::failed;
-            break;
-        case error_outcome::notfound:
-            result = download_result::notfound;
-            break;
-        }
-    }
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "HeadObject from {}, backoff quota exceded, segment at {} "
-          "not available",
-          bucket,
-          path);
-        result = download_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "HeadObject from {}, {}, segment at {} not available",
-          bucket,
-          *result,
-          path);
-    }
-    co_return *result;
-}
-
-ss::future<upload_result> remote::delete_segment(
-  const s3::bucket_name& bucket,
-  const remote_segment_path& segment_path,
-  retry_chain_node& parent) {
-    ss::gate::holder gh{_gate};
-    retry_chain_node fib(&parent);
-    retry_chain_logger ctxlog(cst_log, fib);
-    auto path = s3::object_key(segment_path());
-    auto lease = co_await _pool.acquire();
-    auto permit = fib.retry();
-    vlog(ctxlog.debug, "Delete segment {}", path);
-    std::optional<upload_result> result;
-    while (!_gate.is_closed() && permit.is_allowed && !result) {
-        std::exception_ptr eptr = nullptr;
-        try {
-            // NOTE: DeleteObject in S3 doesn't return an error
-            // if the object doesn't exist. Because of that we're
-            // using 'upload_result' type as a return type. No need
-            // to handle NoSuchKey error. The 'upload_result' represents
-            // any mutable operation.
-            co_await lease.client->delete_object(
-              bucket, path, fib.get_timeout());
-            vlog(ctxlog.debug, "Receive OK DeleteObject {} response", path);
-            co_return upload_result::success;
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        lease.client->shutdown();
-        auto outcome = categorize_error(eptr, fib, bucket, path);
-        switch (outcome) {
-        case error_outcome::retry_slowdown:
-            [[fallthrough]];
-        case error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "DeleteObject {}, {} backoff required",
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            co_await ss::sleep_abortable(permit.delay, _as);
-            permit = fib.retry();
-            break;
-        case error_outcome::fail:
-            result = upload_result::failed;
-            break;
-        case error_outcome::notfound:
-            vassert(
-              false,
-              "Unexpected NoSuchKey error response from DeleteObject {}",
-              path);
-            break;
-        }
-    }
-    if (!result) {
-        vlog(
-          ctxlog.warn,
-          "DeleteObject {}, {}, backoff quota exceded, segment not deleted",
-          path,
-          bucket);
-        result = upload_result::timedout;
-    } else {
-        vlog(
-          ctxlog.warn,
-          "DeleteObject {}, {}, segment not deleted, error: {}",
-          path,
-          bucket,
-          *result);
-    }
-    co_return *result;
-}
-
-ss::sstring lazy_abort_source::abort_reason() const { return _abort_reason; }
-
-bool lazy_abort_source::abort_requested() { return _predicate(*this); }
-void lazy_abort_source::abort_reason(ss::sstring reason) {
-    _abort_reason = std::move(reason);
-}
-
-ss::future<>
-remote::propagate_credentials(cloud_roles::credentials credentials) {
-    return container().invoke_on_all(
-      [c = std::move(credentials)](remote& svc) mutable {
-          svc._pool.load_credentials(std::move(c));
+  retry_chain_node& parent,
+  const std::string_view stream_label,
+  const download_metrics& metrics,
+  std::optional<cloud_storage_clients::http_byte_range> byte_range) {
+    return io().download_stream(
+      {
+        // TODO: these metrics are for segments. Though this method appears to
+        // only be used for inventory downlaods.
+        .bucket = bucket,
+        .key = cloud_storage_clients::object_key{path()},
+        .parent_rtc = parent,
+        .success_cb = [this] { _probe.successful_download(); },
+        .success_size_cb =
+          [this](size_t sz) { _probe.register_download_size(sz); },
+        .failure_cb = [&metrics] { metrics.failed_download_metric(); },
+        .backoff_cb = [&metrics] { metrics.download_backoff_metric(); },
+        .client_acquire_cb = [this] { _probe.client_acquisition(); },
+        // TODO: pass type in as an argument.
+        .on_req_cb = make_notify_cb(
+          api_activity_type::segment_download, parent),
+        .measure_latency_cb =
+          [&metrics] { return metrics.download_latency_measurement(); },
+      },
+      cons_str,
+      stream_label,
+      false,
+      byte_range,
+      [this](size_t ms) {
+          _materialized->get_read_path_probe().download_throttled(ms);
       });
 }
 
-auth_refresh_bg_op::auth_refresh_bg_op(
-  ss::gate& gate,
-  ss::abort_source& as,
-  s3::configuration s3_conf,
-  model::cloud_credentials_source cloud_credentials_source)
-  : _gate(gate)
-  , _as(as)
-  , _s3_conf(std::move(s3_conf))
-  , _region_name{_s3_conf.region}
-  , _cloud_credentials_source(cloud_credentials_source) {}
+ss::future<download_result> remote::download_segment(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  const try_consume_stream& cons_str,
+  retry_chain_node& parent,
+  std::optional<cloud_storage_clients::http_byte_range> byte_range) {
+    return io().download_stream(
+      {
+        .bucket = bucket,
+        .key = cloud_storage_clients::object_key{segment_path()},
+        .parent_rtc = parent,
+        .success_cb = [this] { _probe.successful_download(); },
+        .success_size_cb =
+          [this](size_t sz) { _probe.register_download_size(sz); },
+        .failure_cb = [this] { _probe.failed_download(); },
+        .backoff_cb = [this] { _probe.download_backoff(); },
+        .client_acquire_cb = [this] { _probe.client_acquisition(); },
+        .on_req_cb = make_notify_cb(
+          api_activity_type::segment_download, parent),
+        .measure_latency_cb = [this] { return _probe.segment_download(); },
+      },
+      cons_str,
+      "segment",
+      false,
+      byte_range,
+      [this](size_t ms) {
+          _materialized->get_read_path_probe().download_throttled(ms);
+      });
+}
 
-void auth_refresh_bg_op::maybe_start_auth_refresh_op(
-  cloud_roles::credentials_update_cb_t credentials_update_cb) {
-    if (ss::this_shard_id() == auth_refresh_shard_id) {
-        do_start_auth_refresh_op(std::move(credentials_update_cb));
+ss::future<download_result> remote::download_index(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& index_path,
+  offset_index& ix,
+  retry_chain_node& parent) {
+    iobuf buffer;
+    const auto dl_result = co_await io().download_object(
+      {.transfer_details = {
+         .bucket = bucket,
+         .key = cloud_storage_clients::object_key{index_path},
+         .parent_rtc = parent,
+         .success_cb = [this]() { _probe.index_download(); },
+         .failure_cb = [this]() { _probe.failed_index_download(); },
+         .backoff_cb = [this]() { _probe.download_backoff(); },
+         .on_req_cb = make_notify_cb(
+           api_activity_type::object_download, parent),
+       },
+       .display_str = to_string(download_type::segment_index),
+       .payload = buffer});
+    if (dl_result == download_result::success) {
+        ix.from_iobuf(std::move(buffer));
     }
+    co_return dl_result;
 }
 
-void auth_refresh_bg_op::do_start_auth_refresh_op(
-  cloud_roles::credentials_update_cb_t credentials_update_cb) {
-    if (is_static_config()) {
-        // If credentials are static IE not changing, we just need to set the
-        // credential object once on all cores with static strings.
-        vlog(
-          cst_log.info,
-          "creating static credentials based on credentials source {}",
-          _cloud_credentials_source);
-
-        // Send the credentials to the client pool in a fiber
-        ssx::spawn_with_gate(
-          _gate,
-          [creds = build_static_credentials(),
-           fn = std::move(credentials_update_cb)] { return fn(creds); });
-    } else {
-        // Create an implementation of refresh_credentials based on the setting
-        // cloud_credentials_source.
-        _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
-          _cloud_credentials_source,
-          _gate,
-          _as,
-          std::move(credentials_update_cb),
-          _region_name));
-
-        vlog(
-          cst_log.info,
-          "created credentials refresh implementation based on credentials "
-          "source "
-          "{}: {}",
-          _cloud_credentials_source,
-          *_refresh_credentials);
-
-        _refresh_credentials->start();
+ss::future<download_result>
+remote::download_object(download_request download_request) {
+    auto details = std::move(download_request.transfer_details);
+    if (!details.on_req_cb.has_value()) {
+        details.on_req_cb = make_notify_cb(
+          api_activity_type::object_download, details.parent_rtc);
     }
+    return io().download_object({
+      .transfer_details = std::move(details),
+      .display_str = to_string(download_request.type),
+      .payload = download_request.payload,
+    });
 }
 
-bool auth_refresh_bg_op::is_static_config() const {
-    return _cloud_credentials_source
-           == model::cloud_credentials_source::config_file;
+ss::future<download_result> remote::object_exists(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& path,
+  retry_chain_node& parent,
+  existence_check_type object_type) {
+    co_return co_await io().object_exists(
+      bucket, path, parent, fmt::to_string(object_type));
 }
 
-cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
-    return cloud_roles::aws_credentials{
-      _s3_conf.access_key.value(),
-      _s3_conf.secret_key.value(),
-      std::nullopt,
-      _region_name};
+ss::future<download_result> remote::segment_exists(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  retry_chain_node& parent) {
+    co_return co_await io().object_exists(
+      bucket,
+      cloud_storage_clients::object_key{segment_path},
+      parent,
+      fmt::to_string(existence_check_type::segment));
+}
+
+ss::future<upload_result> remote::delete_object(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& path,
+  retry_chain_node& parent) {
+    return io().delete_object({
+      .bucket = bucket,
+      .key = path,
+      .parent_rtc = parent,
+      .on_req_cb = make_notify_cb(api_activity_type::segment_delete, parent),
+    });
+}
+
+template<typename R>
+requires std::ranges::range<R>
+         && std::same_as<
+           std::ranges::range_value_t<R>,
+           cloud_storage_clients::object_key>
+ss::future<upload_result> remote::delete_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  R keys,
+  retry_chain_node& parent) {
+    return io().delete_objects(
+      bucket,
+      std::move(keys),
+      parent,
+      make_notify_cb(api_activity_type::segment_delete, parent));
+}
+
+template ss::future<upload_result>
+remote::delete_objects<std::vector<cloud_storage_clients::object_key>>(
+  const cloud_storage_clients::bucket_name& bucket,
+  std::vector<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent);
+
+template ss::future<upload_result>
+remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
+  const cloud_storage_clients::bucket_name& bucket,
+  std::deque<cloud_storage_clients::object_key> keys,
+  retry_chain_node& parent);
+
+ss::future<remote::list_result> remote::list_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  retry_chain_node& parent,
+  std::optional<cloud_storage_clients::object_key> prefix,
+  std::optional<char> delimiter,
+  std::optional<cloud_storage_clients::client::item_filter> item_filter,
+  std::optional<size_t> max_keys,
+  std::optional<ss::sstring> continuation_token) {
+    return io().list_objects(
+      bucket,
+      parent,
+      prefix,
+      delimiter,
+      item_filter,
+      max_keys,
+      continuation_token);
+}
+
+ss::future<upload_result> remote::upload_object(upload_request req) {
+    auto details = std::move(req.transfer_details);
+    if (!details.on_req_cb.has_value()) {
+        details.on_req_cb = make_notify_cb(
+          api_activity_type::object_upload, details.parent_rtc);
+    }
+    return io().upload_object({
+      .transfer_details = std::move(details),
+      .display_str = to_string(req.type),
+      .payload = std::move(req.payload),
+      .accept_no_content_response = false,
+    });
+}
+
+ss::future<api_activity_notification>
+remote::subscribe(remote::event_filter& filter) {
+    vassert(filter._hook.is_linked() == false, "Filter is already in use");
+    filter._hook = {};
+    _filters.push_back(filter);
+    filter._promise.emplace();
+    return filter._promise->get_future();
+}
+
+std::function<void(size_t)>
+remote::make_notify_cb(api_activity_type t, retry_chain_node& retry) {
+    return [this, t, &retry](size_t attempt_num) {
+        notify_external_subscribers(
+          api_activity_notification{.type = t, .is_retry = attempt_num > 1},
+          retry);
+    };
 }
 
 } // namespace cloud_storage

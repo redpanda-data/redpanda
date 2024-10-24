@@ -18,7 +18,7 @@
 #include <limits>
 
 FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     using underlying_t = std::underlying_type_t<kafka::coordinator_type>;
@@ -26,7 +26,7 @@ FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
     req.data.key_type = kafka::coordinator_type(
       std::numeric_limits<underlying_t>::max());
 
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST(resp.data.error_code == kafka::error_code::unsupported_version);
@@ -38,12 +38,12 @@ FIXTURE_TEST(find_coordinator_unsupported_key, redpanda_thread_fixture) {
 FIXTURE_TEST(find_coordinator, redpanda_thread_fixture) {
     wait_for_controller_leadership().get();
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     kafka::find_coordinator_request req("key");
 
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(req, kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_TEST(resp.data.error_code == kafka::error_code::none);

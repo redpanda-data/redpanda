@@ -10,8 +10,8 @@
  */
 
 #pragma once
-#include "likely.h"
-#include "seastarx.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

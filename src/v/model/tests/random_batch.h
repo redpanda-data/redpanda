@@ -34,6 +34,7 @@ struct record_batch_spec {
     bool is_transactional{false};
     std::optional<std::vector<size_t>> record_sizes;
     std::optional<model::timestamp> timestamp;
+    bool all_records_have_same_timestamp{false};
 };
 
 model::record make_random_record(int, iobuf);
@@ -61,22 +62,15 @@ model::record_batch make_random_batch(
   bool allow_compression = true,
   std::optional<model::timestamp> ts = std::nullopt);
 
-ss::circular_buffer<model::record_batch> make_random_batches(
+ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
   model::offset o,
   int count,
   bool allow_compression = true,
   std::optional<model::timestamp> ts = std::nullopt);
 
-ss::circular_buffer<model::record_batch>
+ss::future<ss::circular_buffer<model::record_batch>>
 make_random_batches(model::offset o = model::offset(0));
 
-ss::circular_buffer<model::record_batch>
+ss::future<ss::circular_buffer<model::record_batch>>
 make_random_batches(record_batch_spec spec);
-
-model::record_batch_reader make_random_memory_record_batch_reader(
-  model::offset, int, int, bool allow_compression = true);
-
-model::record_batch_reader
-make_random_memory_record_batch_reader(record_batch_spec, int);
-
 } // namespace model::test

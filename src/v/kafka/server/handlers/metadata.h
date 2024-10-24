@@ -24,7 +24,12 @@ namespace kafka {
  */
 memory_estimate_fn metadata_memory_estimator;
 
+// IMPORTANT: Do not bump support to v11 (or beyond) unless DescribeCluster v0
+// has been implemented.  v11 drops support for the authorized operations list
+// and moves those lists to DCv0
+// Keep this at v8.  Moving to v9 appears to cause issues with the Kafka Java
+// Client
 using metadata_handler
-  = single_stage_handler<metadata_api, 0, 7, metadata_memory_estimator>;
+  = single_stage_handler<metadata_api, 0, 8, metadata_memory_estimator>;
 
 } // namespace kafka

@@ -1,18 +1,55 @@
 v_cc_library(
+  NAME security_config
+  SRCS
+    config_bsl.cc
+    config_rcl.cc
+    mtls_rule.cc
+    gssapi_rule.cc
+    logger.cc
+  DEPS
+    v::json
+    Seastar::seastar
+    re2
+    ada
+)
+
+v_cc_library(
   NAME security
   SRCS
-    scram_algorithm.cc
-    scram_credential.cc
-    scram_authenticator.cc
-    acl_store.cc
-    mtls.cc
+    acl.cc
+    authorizer.cc
+    credential.cc
+    gssapi_authenticator.cc
+    gssapi_principal_mapper.cc
+    jwt.cc
+    krb5.cc
+    krb5_configurator.cc
     license.cc
+    mtls.cc
+    oidc_authenticator.cc
+    oidc_principal_mapping_applicator.cc
+    oidc_service.cc
+    request_auth.cc
+    role.cc
+    scram_algorithm.cc
+    scram_authenticator.cc
   DEPS
+    v::http
+    v::security_config
+    v::config
     v::bytes
     v::utils
+    v::random
+    v::version
+    v::bytes_random
+    v::rpc
     absl::flat_hash_map
     absl::flat_hash_set
-    cryptopp
+    re2
+    gssapi_krb5
+    krb5
+    v::crypto
  )
 
+add_subdirectory(audit)
 add_subdirectory(tests)

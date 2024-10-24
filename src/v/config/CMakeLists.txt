@@ -3,16 +3,22 @@ v_cc_library(
   SRCS
     rest_authn_endpoint.cc
     broker_authn_endpoint.cc
+    client_group_byte_rate_quota.cc
     configuration.cc
     node_config.cc
     base_property.cc
     rjson_serialization.cc
     validators.cc
+    throughput_control_group.cc
+    tls_config.cc
+    node_overrides.cc
+    leaders_preference.cc
   DEPS
     v::json
     v::model
-    v::security
-   boost_filesystem
-   absl::node_hash_set
+    v::security_config
+    boost_filesystem
+    absl::node_hash_set
+    yaml-cpp
 )
 add_subdirectory(tests)

@@ -10,18 +10,16 @@
 
 #pragma once
 
-#include "cloud_storage/offset_translation_layer.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/fwd.h"
+#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/segment_state.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
-#include "s3/client.h"
-#include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
-#include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -33,108 +31,12 @@
 #include <boost/iterator/iterator_categories.hpp>
 #include <boost/iterator/iterator_facade.hpp>
 
-#include <chrono>
-#include <functional>
-
 namespace cloud_storage {
 
 using namespace std::chrono_literals;
 
 class partition_record_batch_reader_impl;
-
-namespace details {
-
-/// Iterator adapter for absl::btree_map that privides
-/// iterator stability guarantee by caching the key and
-/// doing a lookup on every increment.
-/// This turns iterator increment into O(logN) operation
-/// Deleting from underlying btree_map is not supported.
-template<class TKey, class TVal>
-class btree_map_stable_iterator
-  : public boost::iterator_facade<
-      btree_map_stable_iterator<TKey, TVal>,
-      typename absl::btree_map<TKey, TVal>::value_type,
-      boost::bidirectional_traversal_tag> {
-    using map_t = absl::btree_map<TKey, TVal>;
-    using self_t = btree_map_stable_iterator<TKey, TVal>;
-    using value_t = typename map_t::value_type;
-
-public:
-    /// Creates an iterator that points to the end of the sequence
-    explicit btree_map_stable_iterator(map_t& map)
-      : _key(std::nullopt)
-      , _map(std::ref(map)) {}
-
-    /// Create an iterator that points to the arbitrary element
-    explicit btree_map_stable_iterator(map_t& map, TKey o)
-      : _key(std::nullopt)
-      , _map(std::ref(map)) {
-        // Invariant: the iterator is pointing to end (_map is null) or
-        // _key is initialized using correct value.
-        if (map.empty()) {
-            set_end();
-        }
-        if (auto it = _map.get().find(o); it != _map.get().end()) {
-            _key = it->first;
-        } else {
-            // Same behaviour as map::find, if key can't be found setup
-            // iterator to point to end of key sequence.
-            set_end();
-        }
-    }
-
-private:
-    friend class boost::iterator_core_access;
-
-    // Increment iterator if possible.
-    // The _key will be set to next element key or nullopt.
-    void increment() {
-        vassert(
-          _key.has_value(), "btree_map_stable_iterator can't be incremented");
-        auto it = _map.get().find(*_key);
-        // _key should be present since deletions are not supported
-        vassert(
-          it != _map.get().end(),
-          "btree_map_stable_iterator can't be incremented");
-        ++it;
-        if (it == _map.get().end()) {
-            set_end();
-        } else {
-            _key = it->first;
-        }
-    }
-
-    // Decrement iterator if possible.
-    // The _key will be set to prev element key.
-    void decrement() {
-        auto it = _key ? _map.get().find(*_key) : _map.get().end();
-        vassert(
-          it != _map.get().begin(),
-          "btree_map_stable_iterator can't be decremented");
-        --it;
-        _key = it->first;
-    }
-
-    bool equal(const self_t& other) const { return _key == other._key; }
-
-    value_t& dereference() const {
-        vassert(
-          _key.has_value(),
-          "btree_map_stable_iterator doesn't point to an element and can't be "
-          "dereferenced");
-        auto it = _map.get().find(*_key);
-        return *it;
-    }
-
-    void set_end() { _key = std::nullopt; }
-
-    /// Key of the current element, nullopt is iter == end
-    std::optional<TKey> _key;
-    /// Reference to the container
-    std::reference_wrapper<map_t> _map;
-};
-
-} // namespace details
+struct materialized_segment_state;
 
 /// Remote partition manintains list of remote segments
 /// and list of active readers. Only one reader can be
@@ -144,11 +46,10 @@ private:
 /// won't conflict frequently. The conflict will result
 /// in rescan of the segment (since we don't have indexes
 /// for remote segments).
-class remote_partition : public ss::enable_shared_from_this<remote_partition> {
+class remote_partition
+  : public ss::enable_shared_from_this<remote_partition>
+  , public ss::weakly_referencable<remote_partition> {
     friend class partition_record_batch_reader_impl;
-
-    static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
-    static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
 
 public:
     /// C-tor
@@ -156,10 +57,11 @@ public:
     /// The manifest's lifetime should be bound to the lifetime of the owner
     /// of the remote_partition.
     remote_partition(
-      const partition_manifest& m,
+      ss::shared_ptr<async_manifest_view> m,
       remote& api,
       cache& c,
-      s3::bucket_name bucket);
+      cloud_storage_clients::bucket_name bucket,
+      partition_probe& probe);
 
     /// Start remote partition
     ss::future<> start();
@@ -179,15 +81,25 @@ public:
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
+    static size_t reader_mem_use_estimate() noexcept;
+
     /// Look up offset from timestamp
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
 
+    /// Whether a timequery on this timestamp can match this remote log
+    /// log (i.e. whether it is <= the max offset).  Timestamps below the
+    /// base_timestamp will also return true, as Kafka timequery semantics
+    /// are that a timestamp below the start of a log will match the first
+    /// record in the log.
+    bool bounds_timestamp(model::timestamp) const;
+
     /// Return first uploaded kafka offset
     kafka::offset first_uploaded_offset();
 
-    /// Return last uploaded kafka offset
-    model::offset last_uploaded_offset();
+    /// Return the offset one past the end of the last offset (i.e. the high
+    /// watermark as reported by object storage).
+    kafka::offset next_kafka_offset();
 
     /// Get partition NTP
     const model::ntp& get_ntp() const;
@@ -195,152 +107,148 @@ public:
     /// Returns true if at least one segment is uploaded to the bucket
     bool is_data_available() const;
 
+    uint64_t cloud_log_size() const;
+
+    // Serialize the manifest to an ss::output_stream in JSON format.
+    // Note that the caller must hold the archival_metadat_stm::_manifest_lock
+    // and keep the stream alive until the future completes.
+    ss::future<> serialize_json_manifest_to_output_stream(
+      ss::output_stream<char>& output) const;
+
     // returns term last kafka offset
-    std::optional<kafka::offset> get_term_last_offset(model::term_id) const;
+    ss::future<std::optional<kafka::offset>>
+      get_term_last_offset(model::term_id) const;
 
     // Get list of aborted transactions that overlap with the offset range
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
+    /// Do background flush metadata to object storage, prior to a topic
+    /// deletion
+    void finalize();
+
+    enum class erase_result { erased, failed };
+
+    static ss::future<erase_result> erase(
+      cloud_storage::remote&,
+      cloud_storage_clients::bucket_name,
+      const remote_path_provider& path_provider,
+      partition_manifest,
+      remote_manifest_path,
+      retry_chain_node&);
+
+    /// Hook for materialized_segment to notify us when a segment is evicted
+    void offload_segment(model::offset);
+
+    // Place on the eviction queue.
+    void
+    evict_segment_reader(std::unique_ptr<remote_segment_batch_reader> reader);
+    void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
+
+    // Compute cache usage statistics. This method uses information from the
+    // most recent segment to determine target cache size needs. The results
+    // depend on if the partition appears to be able to use chunk-based storage
+    // vs segment-based storage in the cache.
+    cache_usage_target get_cache_usage_target() const;
+
 private:
-    /// Create new remote_segment instances for all new
-    /// items in the manifest.
-    void update_segments_incrementally();
-
-    ss::future<> run_eviction_loop();
-
-    void gc_stale_materialized_segments(bool force_collection);
-
-    friend struct offloaded_segment_state;
-
-    struct materialized_segment_state;
-
-    /// State that have to be materialized before use
-    struct offloaded_segment_state {
-        explicit offloaded_segment_state(model::offset bo);
-
-        std::unique_ptr<materialized_segment_state>
-        materialize(remote_partition& p, kafka::offset offset_key);
-
-        ss::future<> stop();
-
-        offloaded_segment_state offload(remote_partition*);
-
-        model::offset base_rp_offset;
-
-        offloaded_segment_state* operator->() { return this; }
-
-        const offloaded_segment_state* operator->() const { return this; }
-    };
-
-    /// State with materialized segment and cached reader
-    ///
-    /// The object represent the state in which there is(or was) at
-    /// least one active reader that consumes data from the
-    /// remote segment.
-    struct materialized_segment_state {
-        materialized_segment_state(
-          model::offset bo, kafka::offset offk, remote_partition& p);
-
-        void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
-
-        /// Borrow reader or make a new one.
-        /// In either case return a reader.
-        std::unique_ptr<remote_segment_batch_reader> borrow_reader(
-          const storage::log_reader_config& cfg,
-          retry_chain_logger& ctxlog,
-          partition_probe& probe);
-
-        ss::future<> stop();
-
-        offloaded_segment_state offload(remote_partition* partition);
-
-        /// Base offsetof the segment
-        model::offset base_rp_offset;
-        /// Key of the segment in _segments collection of the remote_partition
-        kafka::offset offset_key;
-        ss::lw_shared_ptr<remote_segment> segment;
-        /// Batch readers that can be used to scan the segment
-        std::list<std::unique_ptr<remote_segment_batch_reader>> readers;
-        /// Reader access time
-        ss::lowres_clock::time_point atime;
-        /// List hook for the list of all materalized segments
-        intrusive_list_hook _hook;
-    };
+    friend struct materialized_segment_state;
 
     using materialized_segment_ptr
       = std::unique_ptr<materialized_segment_state>;
-    using segment_state
-      = std::variant<offloaded_segment_state, materialized_segment_ptr>;
 
-    static_assert(
-      sizeof(segment_state) == sizeof(std::variant<size_t>),
-      "segment_state has unexpected size");
+    using segment_map_t
+      = absl::btree_map<model::offset, materialized_segment_ptr>;
+    using iterator = segment_map_t::iterator;
 
-    using iterator
-      = details::btree_map_stable_iterator<kafka::offset, segment_state>;
+    /// This is exposed for the benefit of the materialized_segment_state
+    materialized_resources& materialized();
+
+    ss::future<> run_eviction_loop();
 
     /// Materialize segment if needed and create a reader
     ///
     /// \param config is a reader config
     /// \param offset_key is an key of the segment state in the _segments
     /// \param st is a segment state referenced by offset_key
-    std::unique_ptr<remote_segment_batch_reader> borrow_reader(
+    std::unique_ptr<remote_segment_batch_reader> borrow_segment_reader(
       storage::log_reader_config config,
       kafka::offset offset_key,
-      segment_state& st);
+      materialized_segment_ptr& st);
 
     /// Return reader back to segment_state
-    void return_reader(
-      std::unique_ptr<remote_segment_batch_reader>, segment_state& st);
+    void return_segment_reader(std::unique_ptr<remote_segment_batch_reader>);
 
-    /// Put reader into the eviction list which will
-    /// eventually lead to it being closed and deallocated
-    void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader) {
-        _eviction_list.push_back(std::move(reader));
-        _cvar.signal();
-    }
-    void evict_segment(ss::lw_shared_ptr<remote_segment> segment) {
-        _eviction_list.push_back(std::move(segment));
-        _cvar.signal();
-    }
+    /// The result of the borrow_next_reader method
+    ///
+    struct borrow_result_t {
+        /// The reader (can be set to null)
+        std::unique_ptr<remote_segment_batch_reader> reader;
+        /// The offset of the next segment, default value means that there is no
+        /// next segment yet
+        model::offset next_segment_offset;
+    };
 
-    /// Iterators used by the partition_record_batch_reader_impl class
-    iterator begin();
-    iterator end();
-    iterator upper_bound(kafka::offset);
-    iterator seek_by_timestamp(model::timestamp);
+    /// Borrow next reader in a sequence
+    ///
+    /// If the invocation is first the method will use config.start_offset to
+    /// find the target. It can find already materialized segment and reuse the
+    /// reader. Alternatively, it can materialize the segment and create a
+    /// reader.
+    borrow_result_t borrow_next_segment_reader(
+      const partition_manifest& manifest,
+      storage::log_reader_config config,
+      segment_units segment_unit,
+      segment_reader_units segment_reader_unit,
+      model::offset hint = {});
 
-    using segment_map_t = absl::btree_map<kafka::offset, segment_state>;
+    /// Materialize a new segment or grab one if it already exists
+    /// @return iterator that points a materialized segment (always valid
+    /// iterator)
+    iterator get_or_materialize_segment(
+      const remote_segment_path& path, const segment_meta&, segment_units);
 
-    using evicted_resource_t = std::variant<
-      std::unique_ptr<remote_segment_batch_reader>,
-      ss::lw_shared_ptr<remote_segment>>;
-
-    using eviction_list_t = std::deque<evicted_resource_t>;
-
+    model::ntp _ntp;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     ss::gate _gate;
+    ss::abort_source _as;
     remote& _api;
     cache& _cache;
-    const partition_manifest& _manifest;
-    s3::bucket_name _bucket;
+    ss::shared_ptr<async_manifest_view> _manifest_view;
+    cloud_storage_clients::bucket_name _bucket;
 
-    // Deleting from _segments is not supported.
-    // absl::btree_map doesn't provide a pointer stabilty. We are
-    // using remote_partition::btree_map_stable_iterator to work around this.
+    /// Special item in eviction_list that holds a promise and sets it
+    /// when the eviction fiber calls stop() (see flush_evicted)
+    struct eviction_barrier {
+        ss::promise<> promise;
+
+        ss::future<> stop() {
+            promise.set_value();
+            stopped = true;
+            return ss::now();
+        }
+
+        bool stopped{false};
+
+        bool is_stopped() const { return stopped; }
+    };
+
+    using evicted_resource_t = std::variant<
+      std::unique_ptr<remote_segment_batch_reader>,
+      ss::lw_shared_ptr<remote_segment>,
+      ss::lw_shared_ptr<eviction_barrier>>;
+    using eviction_list_t = std::deque<evicted_resource_t>;
+
+    /// Kick this condition variable when appending to eviction_list
+    ss::condition_variable _has_evictions_cvar;
+
+    /// List of segments and readers waiting to have their stop() method
+    /// called before destruction
+    eviction_list_t _eviction_pending;
     segment_map_t _segments;
-    eviction_list_t _eviction_list;
-    intrusive_list<
-      materialized_segment_state,
-      &materialized_segment_state::_hook>
-      _materialized;
-    ss::condition_variable _cvar;
-    /// Timer use to periodically evict stale readers
-    ss::timer<ss::lowres_clock> _stm_timer;
-    simple_time_jitter<ss::lowres_clock> _stm_jitter;
-    partition_probe _probe;
+    partition_probe& _probe;
+    ts_read_path_probe& _ts_probe;
 };
 
 } // namespace cloud_storage

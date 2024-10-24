@@ -10,12 +10,11 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/sync_group_request.h"
 #include "kafka/protocol/schemata/sync_group_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -31,24 +30,12 @@ struct sync_group_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
-    }
-
-    assignments_type member_assignments() && {
-        assignments_type res;
-        res.reserve(data.assignments.size());
-        std::for_each(
-          std::begin(data.assignments),
-          std::end(data.assignments),
-          [&res](sync_group_request_assignment& a) mutable {
-              res.emplace(std::move(a.member_id), std::move(a.assignment));
-          });
-        return res;
     }
 
     friend std::ostream&
@@ -66,9 +53,9 @@ struct sync_group_response final {
 
     sync_group_response(error_code error, bytes assignment)
       : data({
-        .error_code = error,
-        .assignment = std::move(assignment),
-      }) {}
+          .error_code = error,
+          .assignment = std::move(assignment),
+        }) {}
 
     explicit sync_group_response(error_code error)
       : sync_group_response(error, bytes()) {}
@@ -76,7 +63,7 @@ struct sync_group_response final {
     sync_group_response(const sync_group_request&, error_code error)
       : sync_group_response(error) {}
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

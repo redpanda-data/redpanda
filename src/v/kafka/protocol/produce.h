@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "kafka/protocol/schemata/produce_response.h"
-#include "kafka/types.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -32,15 +32,15 @@ struct produce_request final {
     using api_type = produce_api;
     using partition = partition_produce_data;
     using topic = topic_produce_data;
+    using topics = chunked_vector<topic>;
+    using topic_cit = topics::const_iterator;
 
     produce_request_data data;
 
     produce_request() = default;
 
     produce_request(
-      std::optional<ss::sstring> t_id,
-      int16_t acks,
-      std::vector<produce_request::topic> topics) {
+      std::optional<ss::sstring> t_id, int16_t acks, topics topics) {
         if (t_id) {
             data.transactional_id = transactional_id(std::move(*t_id));
         }
@@ -48,11 +48,11 @@ struct produce_request final {
         data.topics = std::move(topics);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -81,7 +81,10 @@ struct produce_response final {
 
     produce_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    // Used for usage/metering to relay this value back to the connection layer
+    size_t internal_topic_bytes{0};
+
+    void encode(protocol::encoder& writer, api_version version) {
         // normalize errors
         for (auto& r : data.responses) {
             for (auto& p : r.partitions) {

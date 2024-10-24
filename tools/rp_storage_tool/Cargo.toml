@@ -1,0 +1,58 @@
+[package]
+name = "rp_storage_tool"
+version = "0.1.0"
+edition = "2021"
+default-run = "rp-storage-tool"
+
+[features]
+default = []
+unstable = []
+
+[dependencies]
+tokio = { version = "1.21.2", features = ["full"] }
+log = "0.4.17"
+env_logger = "0.9.1"
+bincode = { version = "2.0.0-rc.2", features = ["serde"] }
+num-traits = "0.2.15"
+http = "0.2.8"
+futures = "0.3.25"
+lazy_static = "1.4.0"
+regex = "1.7.0"
+serde_json = "1.0.88"
+serde = { version = "1.0", features = ["derive"] }
+aws-smithy-http = "0.51.0"
+test-log = "0.2.11"
+crc32c = "0.6.3"
+clap = { version = "4.0.32", features = ["derive"] }
+tokio-util = "0.7.4"
+xxhash-rust = { version = "0.8.6", features = ["xxh32"] }
+#object_store = { version = "0.5.5", features = ["aws", "azure", "gcp"] }
+object_store = { git = "https://github.com/jcsp/arrow-rs.git", rev = "96e62d8f", features = ["aws", "azure", "gcp"] }
+bytes = "1.4.0"
+tokio-stream = "0.1.14"
+async-stream = "0.3.5"
+chrono = "0.4.24"
+serde_repr = "0.1.12"
+
+[[bin]]
+name = "rp-storage-tool"
+path = "src/main.rs"
+
+# Build unstable/experimental bits into a separate binary, so that the primary binary
+# is safely usable in production environments without risking running "the wrong subcommand"
+[[bin]]
+name = "rp-storage-tool-unstable"
+path = "src/main_unstable.rs"
+required-features = ["unstable"]
+
+[dependencies.redpanda-records]
+path = "redpanda-records"
+
+[dependencies.deltafor]
+path = "deltafor"
+
+[workspace]
+members = [
+    "redpanda-records",
+    "deltafor",
+]

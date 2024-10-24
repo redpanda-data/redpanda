@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
@@ -23,23 +24,20 @@
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/list_groups.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/schemata/join_group_request.h"
 #include "kafka/protocol/schemata/join_group_response.h"
 #include "kafka/protocol/schemata/offset_fetch_response.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "redpanda/tests/fixture.h"
 #include "ssx/future-util.h"
-#include "vassert.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
@@ -57,8 +55,6 @@
 #include <iterator>
 #include <memory>
 #include <vector>
-
-namespace kc = kafka::client;
 
 namespace {
 
@@ -264,7 +260,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         auto m_id = sorted_members[i];
         auto assignment = client.consumer_assignment(group_id, m_id).get();
         BOOST_REQUIRE_EQUAL(assignment.size(), 3);
-        for (auto const& [topic, partitions] : assignment) {
+        for (const auto& [topic, partitions] : assignment) {
             BOOST_REQUIRE_EQUAL(partitions.size(), 1);
             BOOST_REQUIRE_EQUAL(partitions[0](), i);
         }
@@ -275,9 +271,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), -1);
@@ -339,7 +335,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         auto m_id = sorted_members[i];
         auto assignment = client.consumer_assignment(group_id, m_id).get();
         BOOST_REQUIRE_EQUAL(assignment.size(), 3);
-        for (auto const& [topic, partitions] : assignment) {
+        for (const auto& [topic, partitions] : assignment) {
             BOOST_REQUIRE_EQUAL(partitions.size(), 1);
             BOOST_REQUIRE_EQUAL(partitions[0](), i);
         }
@@ -350,9 +346,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 BOOST_REQUIRE_EQUAL(p.committed_offset(), 5);
@@ -389,9 +385,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               .get();
         BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
         BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
-        for (auto const& t : offsets.data.topics) {
+        for (const auto& t : offsets.data.topics) {
             BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
-            for (auto const& p : t.partitions) {
+            for (const auto& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
                 auto part_it = std::find_if(

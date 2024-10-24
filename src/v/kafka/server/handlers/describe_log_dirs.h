@@ -15,6 +15,6 @@
 namespace kafka {
 
 using describe_log_dirs_handler
-  = single_stage_handler<describe_log_dirs_api, 0, 1>;
+  = single_stage_handler<describe_log_dirs_api, 0, 2>;
 
 }

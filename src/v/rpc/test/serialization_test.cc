@@ -10,14 +10,14 @@
 #include "bytes/iobuf.h"
 #include "reflection/adl.h"
 #include "reflection/arity.h"
-#include "rpc/test/test_types.h"
+#include "test_types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(serialize_pod) {
     auto b = iobuf();
     pod it;
-    reflection::serialize(b, std::move(it));
+    reflection::serialize(b, it);
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_bytes());
 }
 
@@ -50,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(serialize_pod_with_vector) {
 SEASTAR_THREAD_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
     pod_with_array it;
-    reflection::serialize(b, std::move(it));
+    reflection::serialize(b, it);
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_arr_bytes());
 }
 

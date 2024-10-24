@@ -11,7 +11,7 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-static auto const no_advertised_kafka_api_conf
+static const auto no_advertised_kafka_api_conf
   = "redpanda:\n"
     "  data_directory: /var/lib/redpanda/data\n"
     "  node_id: 1\n"
@@ -30,11 +30,11 @@ static auto const no_advertised_kafka_api_conf
     "    address: 127.0.0.1\n"
     "    port: 9644\n";
 
-static auto const advertised_kafka_api_conf = "  advertised_kafka_api:\n"
+static const auto advertised_kafka_api_conf = "  advertised_kafka_api:\n"
                                               "    address: 10.48.0.2\n"
                                               "    port: 1234\n";
 
-static auto const kafka_endpoints_conf_v2
+static const auto kafka_endpoints_conf_v2
   = "redpanda:\n"
     "  data_directory: /var/lib/redpanda/data\n"
     "  node_id: 1\n"

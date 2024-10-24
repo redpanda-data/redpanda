@@ -11,10 +11,8 @@
 
 #pragma once
 #include "config/config_store.h"
-#include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/rest_authn_endpoint.h"
-#include "config/tls_config.h"
-#include "model/metadata.h"
 
 namespace pandaproxy::schema_registry {
 
@@ -28,6 +26,7 @@ struct configuration final : public config::config_store {
       schema_registry_api;
     config::one_or_many_property<config::endpoint_tls_config>
       schema_registry_api_tls;
+    config::property<bool> mode_mutability;
     config::property<std::optional<int16_t>> schema_registry_replication_factor;
     config::property<ss::sstring> api_doc_dir;
 };

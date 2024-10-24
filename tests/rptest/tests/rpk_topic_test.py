@@ -29,12 +29,13 @@ class RpkToolTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_create_topic(self):
-        self._rpk.create_topic("topic")
+        topic = 'rp_dt_test_create_topic'
+        self._rpk.create_topic(topic)
 
-        wait_until(lambda: "topic" in self._rpk.list_topics(),
+        wait_until(lambda: topic in self._rpk.list_topics(),
                    timeout_sec=10,
                    backoff_sec=1,
-                   err_msg="Topic never appeared.")
+                   err_msg=f'Topic {topic} never appeared.')
 
     @cluster(num_nodes=1)
     @parametrize(config_type="compression.type")
@@ -44,18 +45,21 @@ class RpkToolTest(RedpandaTest):
     def test_create_topic_with_invalid_config(self, config_type):
         with expect_exception(RpkException,
                               lambda e: "INVALID_CONFIG" in str(e)):
-            out = self._rpk.create_topic("topic", config={config_type: "foo"})
+            out = self._rpk.create_topic(
+                'rp_dt_test_create_topic_with_invalid_config',
+                config={config_type: "foo"})
 
     @cluster(num_nodes=1)
     def test_add_unfeasible_number_of_partitions(self):
+        topic = 'rp_dt_test_add_unfeasible_number_of_partitions'
         with expect_exception(RpkException,
                               lambda e: "INVALID_REQUEST" in str(e)):
-            self._rpk.create_topic("topic")
-            out = self._rpk.add_partitions("topic", 2000000000000)
+            self._rpk.create_topic(topic)
+            out = self._rpk.add_partitions(topic, 2000000000000)
 
     @cluster(num_nodes=4)
     def test_produce(self):
-        topic = 'topic'
+        topic = 'rp_dt_test_produce'
         message = 'message'
         key = 'key'
         h_key = 'h_key'
@@ -80,11 +84,11 @@ class RpkToolTest(RedpandaTest):
         wait_until(cond,
                    timeout_sec=120,
                    backoff_sec=30,
-                   err_msg="Message didn't appear.")
+                   err_msg=f'Message in {topic} never appeared.')
 
     @cluster(num_nodes=4)
     def test_consume_as_group(self):
-        topic = 'topic_group'
+        topic = 'rp_dt_test_consume_as_group'
         message = 'message'
         key = 'key'
         h_key = 'h_key'
@@ -110,11 +114,11 @@ class RpkToolTest(RedpandaTest):
         wait_until(cond,
                    timeout_sec=120,
                    backoff_sec=15,
-                   err_msg="Message didn't appear.")
+                   err_msg=f'Message in {topic} never appeared.')
 
     @cluster(num_nodes=4)
     def test_consume_newest(self):
-        topic = 'topic_newest'
+        topic = 'rp_dt_test_consume_newest'
         message = 'newest message'
         key = 'key'
         h_key = 'h_key'
@@ -140,11 +144,11 @@ class RpkToolTest(RedpandaTest):
         wait_until(cond,
                    timeout_sec=150,
                    backoff_sec=30,
-                   err_msg="Message didn't appear.")
+                   err_msg=f'Message in {topic} never appeared.')
 
     @cluster(num_nodes=4)
     def test_consume_oldest(self):
-        topic = 'topic'
+        topic = 'rp_dt_test_consume_oldest'
 
         n = random.randint(10, 100)
         msgs = {}
@@ -178,11 +182,11 @@ class RpkToolTest(RedpandaTest):
         wait_until(cond,
                    timeout_sec=60,
                    backoff_sec=20,
-                   err_msg="Message didn't appear.")
+                   err_msg=f'Message in {topic} never appeared.')
 
     @cluster(num_nodes=4)
     def test_consume_from_partition(self):
-        topic = 'topic_partition'
+        topic = 'rp_dt_test_consume_from_partition'
 
         n_parts = random.randint(3, 100)
         self._rpk.create_topic(topic, partitions=n_parts)
@@ -226,6 +230,7 @@ class RpkToolTest(RedpandaTest):
             self.redpanda.logger.debug(
                 f"Message count {len(c.messages)} retries {retries}")
             if cond():
+                self._rpk.delete_topic(topic)
                 return
             if len(c.messages) > prev_msg_count:
                 prev_msg_count = len(c.messages)
@@ -233,4 +238,48 @@ class RpkToolTest(RedpandaTest):
             time.sleep(1)
             retries -= 1
 
-        raise ducktape.errors.TimeoutError("Message didn't appear")
+        raise ducktape.errors.TimeoutError(
+            f'Message in {topic} never appeared.')
+
+    @cluster(num_nodes=4)
+    def test_produce_and_consume_tombstones(self):
+        topic = 'rp_dt_test_produce_and_consume_tombstones'
+        self._rpk.create_topic(topic)
+
+        num_messages = 2
+
+        tombstone_key = 'ISTOMBSTONE'
+        tombstone_value = ''
+
+        # Producing a record with an empty value and -Z flag results in a tombstone.
+        self._rpk.produce(topic,
+                          tombstone_key,
+                          tombstone_value,
+                          tombstone=True)
+
+        not_tombstone_key = 'ISNOTTOMBSTONE'
+
+        # Producing a record with an empty value without the -Z flag results in an empty value.
+        self._rpk.produce(topic,
+                          not_tombstone_key,
+                          tombstone_value,
+                          tombstone=False)
+
+        c = RpkConsumer(self._ctx, self.redpanda, topic)
+        c.start()
+
+        def cond():
+            return len(c.messages) == num_messages
+
+        wait_until(cond,
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg=f'Messages in {topic} never appeared.')
+
+        # Tombstone records do not have a value in the returned JSON
+        assert c.messages[0]['key'] == tombstone_key
+        assert 'value' not in c.messages[0]
+
+        # Records with an empty string have a value of `""` in the returned JSON
+        assert c.messages[1]['key'] == not_tombstone_key
+        assert c.messages[1]['value'] == ""

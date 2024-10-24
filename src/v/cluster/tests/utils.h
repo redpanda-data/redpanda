@@ -14,31 +14,11 @@
 #include "cluster/types.h"
 #include "test_utils/async.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <chrono>
 
 static const model::ns test_ns = model::ns("test-namespace");
-
-inline cluster::partition_assignment create_test_assignment(
-  const ss::sstring& topic,
-  int partition_id,
-  std::vector<std::pair<uint32_t, uint32_t>> shards_assignment,
-  int group_id) {
-    cluster::partition_assignment p_as;
-    p_as.group = raft::group_id(group_id);
-    p_as.id = model::partition_id(partition_id);
-
-    std::transform(
-      shards_assignment.begin(),
-      shards_assignment.end(),
-      std::back_inserter(p_as.replicas),
-      [](const std::pair<uint32_t, uint32_t>& node_shard) {
-          return model::broker_shard{
-            .node_id = model::node_id(node_shard.first),
-            .shard = node_shard.second,
-          };
-      });
-    return p_as;
-}
 
 using batches_t = ss::circular_buffer<model::record_batch>;
 using batches_ptr_t = ss::lw_shared_ptr<batches_t>;
@@ -55,7 +35,7 @@ inline void wait_for_metadata(
           [&topic_table](const cluster::topic_result& r) {
               return topic_table.get_topic_metadata(r.tp_ns);
           });
-    }).get0();
+    }).get();
 }
 
 inline bool

@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using delete_acls_handler = single_stage_handler<delete_acls_api, 0, 1>;
+using delete_acls_handler = single_stage_handler<delete_acls_api, 0, 2>;
 
 }

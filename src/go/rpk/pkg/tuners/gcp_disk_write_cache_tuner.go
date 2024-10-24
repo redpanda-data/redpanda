@@ -11,7 +11,7 @@ package tuners
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/provider"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
@@ -23,7 +23,7 @@ func NewGcpWriteCacheTuner(
 	directories []string,
 	devices []string,
 	blockDevices disk.BlockDevices,
-	vendor vendor.Vendor,
+	provider provider.Provider,
 	executor executors.Executor,
 ) Tunable {
 	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
@@ -34,7 +34,7 @@ func NewGcpWriteCacheTuner(
 		blockDevices,
 		func(device string) Tunable {
 			return NewDeviceGcpWriteCacheTuner(fs, device, deviceFeatures,
-				vendor, executor)
+				provider, executor)
 		},
 	)
 }
@@ -43,7 +43,7 @@ func NewDeviceGcpWriteCacheTuner(
 	fs afero.Fs,
 	device string,
 	deviceFeatures disk.DeviceFeatures,
-	vendor vendor.Vendor,
+	provider provider.Provider,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
@@ -52,12 +52,12 @@ func NewDeviceGcpWriteCacheTuner(
 			return tuneWriteCache(fs, device, deviceFeatures, executor)
 		},
 		func() (bool, string) {
-			v, err := vendor.Init()
+			v, err := provider.Init()
 			if err != nil {
 				return false, "Disk write cache tuner is only supported in GCP"
 			}
-			gcpVendor := gcp.GcpVendor{}
-			return v.Name() == gcpVendor.Name(), ""
+			gcpProvider := gcp.GcpProvider{}
+			return v.Name() == gcpProvider.Name(), ""
 		},
 		executor.IsLazy(),
 	)
@@ -73,9 +73,7 @@ func tuneWriteCache(
 	if err != nil {
 		return NewTuneError(err)
 	}
-	err = executor.Execute(
-		commands.NewWriteFileCmd(fs, featureFile, disk.CachePolicyWriteThrough))
-
+	err = executor.Execute(commands.NewWriteFileCmd(fs, featureFile, disk.CachePolicyWriteThrough))
 	if err != nil {
 		return NewTuneError(err)
 	}

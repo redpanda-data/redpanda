@@ -27,10 +27,20 @@ public:
         _base_offset = base;
         // index
         _idx = std::unique_ptr<segment_index>(new segment_index(
-          "In memory iobuf",
+          segment_full_path::mock("In memory iobuf"),
           ss::file(ss::make_shared(tmpbuf_file(_data))),
           _base_offset,
-          storage::segment_index::default_data_buffer_step));
+          storage::segment_index::default_data_buffer_step,
+          _feature_table));
+    }
+
+    ~offset_index_utils_fixture() { _feature_table.stop().get(); }
+
+    ss::future<> start() {
+        return _feature_table.start().then([this]() {
+            return _feature_table.invoke_on_all(
+              [](features::feature_table& f) { f.testing_activate_all(); });
+        });
     }
 
     const model::record_batch_header
@@ -52,42 +62,52 @@ public:
     model::record_batch_header _base_hdr;
     storage::segment_index_ptr _idx;
     tmpbuf_file::store_t _data;
+    ss::sharded<features::feature_table> _feature_table;
 };
 } // namespace storage
 
 FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
+    start().get();
+
     BOOST_CHECK(true);
     info("index: {}", _idx);
     for (uint32_t i = 0; i < 1024; ++i) {
         model::offset o = _base_offset + model::offset(i);
         _idx->maybe_track(
-          modify_get(o, storage::segment_index::default_data_buffer_step), i);
+          modify_get(o, storage::segment_index::default_data_buffer_step),
+          std::nullopt,
+          i);
     }
     info("About to flush index");
-    _idx->flush().get0();
+    _idx->flush().get();
     auto data = _data.share_iobuf();
     info("{} - serializing from bytes into mem: buffer{}", _idx, data);
     auto raw_idx = serde::from_iobuf<storage::index_state>(
       data.share(0, data.size_bytes()));
     info("verifying tracking info: {}", raw_idx);
     BOOST_REQUIRE_EQUAL(raw_idx.max_offset(), 1023);
-    BOOST_REQUIRE_EQUAL(raw_idx.relative_offset_index.size(), 1024);
+    BOOST_REQUIRE_EQUAL(raw_idx.index.size(), 1024);
 }
 
 FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
+    start().get();
+
     info("index: {}", _idx);
     info("Testing bucket find");
-    _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{849}, 168865), 155103); // indexed
+      modify_get(model::offset{824}, 155103), std::nullopt, 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{879}, 134080), 323968); // indexed
+      modify_get(model::offset{849}, 168865), std::nullopt, 155103); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{901}, 142073), 458048); // indexed
+      modify_get(model::offset{879}, 134080), std::nullopt, 323968); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{926}, 126886), 600121); // indexed
+      modify_get(model::offset{901}, 142073), std::nullopt, 458048); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{948}, 1667), 727007); // not indexed
+      modify_get(model::offset{926}, 126886), std::nullopt, 600121); // indexed
+    _idx->maybe_track(
+      modify_get(model::offset{948}, 1667),
+      std::nullopt,
+      727007); // not indexed
 
     index_entry_expect(824, 0);
     index_entry_expect(849, 155103);
@@ -102,23 +122,31 @@ FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
     }
 }
 FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
+    start().get();
+
     info("index: {}", _idx);
     info("Testing bucket truncate");
-    _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{849}, 168865), 155103); // indexed
+      modify_get(model::offset{824}, 155103), std::nullopt, 0); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{879}, 134080), 323968); // indexed
+      modify_get(model::offset{849}, 168865), std::nullopt, 155103); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{901}, 142073), 458048); // indexed
+      modify_get(model::offset{879}, 134080), std::nullopt, 323968); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{926}, 126886), 600121); // indexed
+      modify_get(model::offset{901}, 142073), std::nullopt, 458048); // indexed
     _idx->maybe_track(
-      modify_get(model::offset{948}, 1667), 727007); // not indexed
+      modify_get(model::offset{926}, 126886), std::nullopt, 600121); // indexed
+    _idx->maybe_track(
+      modify_get(model::offset{948}, 1667),
+      std::nullopt,
+      727007); // not indexed
+    BOOST_REQUIRE_EQUAL(_idx->num_compactible_records_appended(), 0);
+
     // test range truncation next
-    _idx->truncate(model::offset(926)).get();
+    _idx->truncate(model::offset(926), model::timestamp{100}).get();
     index_entry_expect(879, 323968);
     index_entry_expect(901, 458048);
+    BOOST_REQUIRE_EQUAL(_idx->num_compactible_records_appended(), 0);
     {
         auto p = _idx->find_nearest(model::offset(926));
         BOOST_REQUIRE(bool(p));
@@ -130,5 +158,21 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
         BOOST_REQUIRE(bool(p));
         BOOST_REQUIRE_EQUAL(p->offset, model::offset(901));
         BOOST_REQUIRE_EQUAL(p->filepos, 458048);
+    }
+
+    BOOST_REQUIRE(_idx->max_timestamp() == model::timestamp{100});
+
+    _idx->truncate(model::offset(824), model::timestamp{100}).get();
+    BOOST_REQUIRE_EQUAL(_idx->num_compactible_records_appended(), 0);
+    {
+        auto p = _idx->find_nearest(model::offset(824));
+        BOOST_REQUIRE(bool(!p));
+    }
+
+    _idx->truncate(model::offset(823), model::timestamp{100}).get();
+    BOOST_REQUIRE_EQUAL(_idx->num_compactible_records_appended(), 0);
+    {
+        auto p = _idx->find_nearest(model::offset(824));
+        BOOST_REQUIRE(bool(!p));
     }
 }

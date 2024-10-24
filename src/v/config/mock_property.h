@@ -37,6 +37,17 @@ public:
 
     binding<T> bind() { return _property.bind(); }
 
+    const T& operator()() { return _property(); }
+
+    const T& operator()() const { return _property(); }
+
+    operator T() const { return _property(); } // NOLINT
+
+    template<typename U>
+    auto bind(std::function<U(const T&)> conv) -> conversion_binding<U, T> {
+        return _property.template bind<U>(std::move(conv));
+    }
+
 private:
     config_store _mock_store;
     property<T> _property;

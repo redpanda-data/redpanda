@@ -10,9 +10,11 @@
  */
 #include "security/scram_authenticator.h"
 
+#include "base/vlog.h"
+#include "random/generators.h"
+#include "security/credential_store.h"
 #include "security/errc.h"
 #include "security/logger.h"
-#include "vlog.h"
 
 namespace security {
 
@@ -24,17 +26,21 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     vlog(seclog.debug, "Received client first message {}", *_client_first);
 
     // lookup credentials for this user
-    _authid = _client_first->username_normalized();
+    auto authid = _client_first->username_normalized();
+    _audit_user.name = authid;
     auto credential = _credentials.get<scram_credential>(
-      credential_user(_authid));
+      credential_user(authid));
     if (!credential) {
         return errc::invalid_credentials;
     }
+    _principal = credential->principal().value_or(
+      acl_principal{principal_type::user, authid});
     _credential = std::make_unique<scram_credential>(std::move(*credential));
+    _audit_user.name = _principal.name();
+    _audit_user.type_id = audit::user::type::user;
 
     if (
-      !_client_first->authzid().empty()
-      && _client_first->authzid() != _authid) {
+      !_client_first->authzid().empty() && _client_first->authzid() != authid) {
         vlog(seclog.info, "Invalid authorization id and username pair");
         return errc::invalid_credentials;
     }
@@ -50,7 +56,7 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     // build server reply
     _server_first = std::make_unique<server_first_message>(
       _client_first->nonce(),
-      random_generators::gen_alphanum_string(nonce_size),
+      random_generators::gen_alphanum_string(nonce_size, true),
       _credential->salt(),
       _credential->iterations());
 
@@ -71,7 +77,7 @@ scram_authenticator<T>::handle_client_final(bytes_view auth_bytes) {
 
     auto computed_stored_key = scram::computed_stored_key(
       client_signature,
-      bytes(client_final.proof().begin(), client_final.proof().end()));
+      bytes(client_final.proof().cbegin(), client_final.proof().cend()));
 
     if (computed_stored_key != _credential->stored_key()) {
         vlog(
@@ -118,13 +124,14 @@ result<bytes> scram_authenticator<T>::handle_next(bytes_view auth_bytes) {
 }
 
 template<typename T>
-result<bytes> scram_authenticator<T>::authenticate(bytes_view auth_bytes) {
+ss::future<result<bytes>>
+scram_authenticator<T>::authenticate(bytes auth_bytes) {
     auto ret = handle_next(auth_bytes);
     if (!ret) {
         _state = state::failed;
         clear_credentials();
     }
-    return ret;
+    co_return ret;
 }
 
 template class scram_authenticator<scram_sha256>;

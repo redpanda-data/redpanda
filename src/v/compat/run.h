@@ -10,8 +10,8 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
 #include "json/document.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 

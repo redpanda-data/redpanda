@@ -1,5 +1,4 @@
 #pragma once
-#include "raft/types.h"
 #include "ssx/future-util.h"
 #include "utils/mutex.h"
 

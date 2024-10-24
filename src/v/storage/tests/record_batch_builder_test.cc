@@ -85,11 +85,29 @@ sample_type deserialize_sample_type(model::record& r) {
 } // namespace detail
 
 SEASTAR_THREAD_TEST_CASE(empty_builder) {
-    storage::record_batch_builder rbb(
-      model::record_batch_type::raft_data, model::offset(0));
-    auto rb = std::move(rbb).build();
-    BOOST_CHECK(rb.empty());
-    BOOST_CHECK_EQUAL(rb.record_count(), 0);
+    // positive case
+    {
+        storage::record_batch_builder rbb(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        BOOST_REQUIRE(rbb.empty());
+        auto rb = std::move(rbb).build();
+        BOOST_CHECK(rb.empty());
+        BOOST_CHECK_EQUAL(rb.record_count(), 0);
+    }
+
+    // negative case
+    {
+        storage::record_batch_builder rbb(
+          model::record_batch_type::raft_data, model::offset(0));
+
+        rbb.add_raw_kv(std::nullopt, std::nullopt);
+
+        BOOST_REQUIRE(!rbb.empty());
+        auto rb = std::move(rbb).build();
+        BOOST_CHECK(!rb.empty());
+        BOOST_CHECK_EQUAL(rb.record_count(), 1);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(serialize_deserialize_then_cmp) {
@@ -97,10 +115,10 @@ SEASTAR_THREAD_TEST_CASE(serialize_deserialize_then_cmp) {
     const std::size_t total = random_generators::get_int(50, 100);
     std::vector<detail::sample_type> sample_data;
     sample_data.reserve(total);
-    for (auto i = 0; i < total; ++i) {
+    for (size_t i = 0; i < total; ++i) {
         absl::btree_map<ss::sstring, ss::sstring> kv_pairs;
         const std::size_t kv_total = random_generators::get_int(2, 10);
-        for (auto j = 0; j < kv_total; ++j) {
+        for (size_t j = 0; j < kv_total; ++j) {
             kv_pairs.emplace(
               random_generators::gen_alphanum_string(32),
               random_generators::gen_alphanum_string(32));

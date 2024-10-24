@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "base/seastarx.h"
 #include "config/property.h"
-#include "seastarx.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/util/noncopyable_function.hh>

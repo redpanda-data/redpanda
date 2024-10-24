@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message Department {
+    int32 id = 1;
+    string name = 2;
+}
+
+message Person {
+    string name = 1;
+    int32 id = 2;
+    string email = 3;
+    Department dept = 4;
+    string test_coverage = 5;
+}

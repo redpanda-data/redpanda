@@ -1,10 +1,12 @@
-from ducktape.mark.resource import cluster
+from collections import defaultdict
+
+from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
 from rptest.services.mock_iam_roles_server import MockIamRolesServer
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_shadow_indexing_test import EndToEndShadowIndexingBase
-from rptest.util import produce_until_segments, wait_for_segments_removal
+from rptest.util import produce_until_segments, wait_for_local_storage_truncate
 
 
 class AWSRoleFetchTests(EndToEndShadowIndexingBase):
@@ -14,14 +16,14 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf[
-            'cloud_storage_credentials_source'] = 'aws_instance_metadata'
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'aws_instance_metadata'})
 
     def setUp(self):
         self.iam_server.start()
@@ -43,32 +45,37 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                local_retention,
             },
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 
-        # each broker makes two requests to server, one to get role and one for credentials
-        assert self.num_brokers * 2 == len(
+        assert self.num_brokers * 3 == len(
             self.iam_server.requests
         ), f'{self.num_brokers} and {len(self.iam_server.requests)}'
+        calls = defaultdict(lambda: 0)
         for request in self.iam_server.requests:
             # We do not know the order of requests, but they will be one of the two paths allowed
             assert request['path'] in {
+                '/latest/api/token',
                 '/latest/meta-data/iam/security-credentials/',
                 '/latest/meta-data/iam/security-credentials/tomato'
-            }
-            assert request['method'] == 'GET'
-            assert request['response_code'] == 200
+            }, f'unexpected path for {request}'
+            calls[request['method']] += 1
+            assert request[
+                'response_code'] == 200, f'unexpected status for {request}'
+        assert calls[
+            'GET'] == self.num_brokers * 2, f'unexpected calls {calls}'
+        assert calls['PUT'] == self.num_brokers, f'unexpected calls {calls}'
 
 
 class STSRoleFetchTests(EndToEndShadowIndexingBase):
@@ -79,7 +86,6 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf['cloud_storage_credentials_source'] = 'sts'
         self.token_path = '/tmp/token_file'
         self.role = 'tomato'
         self.token = 'token-tomato'
@@ -87,11 +93,13 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'sts'})
 
         for node in self.redpanda.nodes:
             node.account.create_file(self.token_path, self.token)
@@ -116,17 +124,14 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 
@@ -149,7 +154,6 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf['cloud_storage_credentials_source'] = 'sts'
         self.token_path = '/tmp/token_file'
         self.role = 'tomato'
         self.token = 'token-tomato'
@@ -157,11 +161,13 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'sts'})
 
         for node in self.redpanda.nodes:
             node.account.create_file(self.token_path, self.token)
@@ -186,17 +192,14 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 

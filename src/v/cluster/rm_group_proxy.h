@@ -11,9 +11,8 @@
 
 #pragma once
 
-#include "cluster/types.h"
-#include "model/metadata.h"
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "cluster/tx_protocol_types.h"
 
 namespace cluster {
 
@@ -30,22 +29,12 @@ public:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration)
+      model::timeout_clock::duration,
+      model::partition_id)
       = 0;
 
     virtual ss::future<begin_group_tx_reply>
       begin_group_tx_locally(begin_group_tx_request) = 0;
-
-    virtual ss::future<prepare_group_tx_reply> prepare_group_tx(
-      kafka::group_id,
-      model::term_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration)
-      = 0;
-
-    virtual ss::future<prepare_group_tx_reply>
-      prepare_group_tx_locally(prepare_group_tx_request) = 0;
 
     virtual ss::future<commit_group_tx_reply> commit_group_tx(
       kafka::group_id,

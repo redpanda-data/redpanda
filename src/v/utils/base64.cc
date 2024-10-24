@@ -10,11 +10,12 @@
  */
 #include "utils/base64.h"
 
-#include "vassert.h"
+#include "base/vassert.h"
+#include "thirdparty/base64/libbase64.h"
 
 #include <seastar/core/sstring.hh>
 
-#include <libbase64.h>
+#include <absl/strings/escaping.h>
 
 // Required length is ceil(4n/3) rounded up to 4 bytes
 static inline size_t encode_capacity(size_t input_size) {
@@ -109,4 +110,32 @@ ss::sstring iobuf_to_base64(const iobuf& input) {
 
     output.resize(written);
     return output;
+}
+
+bytes base64url_to_bytes(std::string_view data) {
+    std::string srv;
+    if (!absl::WebSafeBase64Unescape(data, &srv)) {
+        throw base64_url_decoder_exception{};
+    }
+    // NOLINTNEXTLINE
+    return {reinterpret_cast<bytes::const_pointer>(srv.data()), srv.size()};
+}
+
+iobuf base64_to_iobuf(const iobuf& buf) {
+    base64_state state{};
+    base64_stream_decode_init(&state, 0);
+    iobuf out;
+    for (const details::io_fragment& frag : buf) {
+        iobuf::fragment out_frag{frag.size()};
+        size_t written{};
+        if (
+          1
+          != base64_stream_decode(
+            &state, frag.get(), frag.size(), out_frag.get_write(), &written)) {
+            throw base64_decoder_exception{};
+        }
+        out_frag.reserve(written);
+        out.append(std::move(out_frag).release());
+    }
+    return out;
 }

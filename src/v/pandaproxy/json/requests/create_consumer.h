@@ -11,17 +11,12 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "json/stringbuffer.h"
+#include "base/seastarx.h"
 #include "json/types.h"
 #include "json/writer.h"
-#include "kafka/protocol/errors.h"
-#include "kafka/protocol/produce.h"
-#include "kafka/types.h"
-#include "pandaproxy/json/iobuf.h"
+#include "kafka/protocol/join_group.h"
 #include "pandaproxy/json/rjson_parse.h"
-#include "seastarx.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -107,9 +102,9 @@ struct create_consumer_response {
     ss::sstring base_uri;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const create_consumer_response& res) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const create_consumer_response& res) {
     w.StartObject();
     w.Key("instance_id");
     w.String(res.instance_id());

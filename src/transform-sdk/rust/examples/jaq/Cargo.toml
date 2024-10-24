@@ -1,0 +1,15 @@
+[package]
+name = "jaq"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+redpanda-transform-sdk = { path = "../.." }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+jaq-interpret = "1.5"
+jaq-parse = "1.0"
+jaq-core = "1.5"
+jaq-std = "1.6"

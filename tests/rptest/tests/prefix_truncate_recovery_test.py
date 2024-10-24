@@ -11,7 +11,6 @@ from rptest.services.cluster import cluster
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -69,8 +68,19 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         """
         metric = self.redpanda.metrics_sample("under_replicated_replicas",
                                               nodes)
-        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
-        assert len(metric.samples) == len(nodes)
+
+        topic = self.topics[0].name
+        partition_count = self.topics[0].partition_count
+        metric = metric.label_filter(dict(namespace="kafka", topic=topic))
+
+        # Ensure we have samples reported for all partitions.
+        expected_partitions = set(range(partition_count))
+        reported_partitions = set(
+            [int(sample.labels['partition']) for sample in metric.samples])
+
+        if expected_partitions != reported_partitions:
+            return False
+
         return all(map(lambda s: s.value == 0, metric.samples))
 
     def get_segments_deleted(self, nodes):
@@ -182,11 +192,17 @@ class PrefixTruncateRecoveryUpgradeTest(PrefixTruncateRecoveryTestBase):
         def _run_recovery(src_node, dst_node):
             # Force leadership to 'src_node' so we can deterministically check
             # mixed-version traffic.
-            self.redpanda._admin.transfer_leadership_to(
+            # Note it's possible to see surprising error codes on older
+            # versions following a node restart (e.g. 500 insteaad of 503/504);
+            # just retry until leadership is moved.
+            wait_until(lambda: self.redpanda._admin.transfer_leadership_to(
                 namespace="kafka",
                 topic=self.topic,
                 partition=0,
-                target_id=self.redpanda.idx(src_node))
+                target_id=self.redpanda.idx(src_node)),
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       retry_on_exc=True)
             # Speed the test up a bit by using acks=1.
             self.run_recovery(acks=1, dst_node=dst_node)
 

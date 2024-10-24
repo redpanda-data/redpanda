@@ -11,42 +11,36 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/details/out_of_range.h"
-#include "seastarx.h"
-#include "utils/intrusive_list_helpers.h"
-#include "vassert.h"
+#include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
 namespace details {
 class io_fragment {
 public:
-    struct full {};
-    struct empty {};
-
-    io_fragment(ss::temporary_buffer<char> buf, full)
+    /**
+     * Initialize fragment from the provided temporary buffer.
+     */
+    explicit io_fragment(ss::temporary_buffer<char> buf)
       : _buf(std::move(buf))
       , _used_bytes(_buf.size()) {}
-    io_fragment(ss::temporary_buffer<char> buf, empty)
-      : _buf(std::move(buf))
+
+    /**
+     * Initialize an empty fragment of a given size.
+     */
+    explicit io_fragment(size_t size)
+      : _buf(size)
       , _used_bytes(0) {}
+
     io_fragment(io_fragment&& o) noexcept = delete;
     io_fragment& operator=(io_fragment&& o) noexcept = delete;
     io_fragment(const io_fragment& o) = delete;
     io_fragment& operator=(const io_fragment& o) = delete;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
     ~io_fragment() noexcept = default;
-#pragma GCC diagnostic pop
 
-    bool operator==(const io_fragment& o) const {
-        return _used_bytes == o._used_bytes && _buf == o._buf;
-    }
-    bool operator!=(const io_fragment& o) const { return !(*this == o); }
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
     bool is_empty() const { return _used_bytes == 0; }
-#pragma GCC diagnostic pop
     size_t available_bytes() const { return _buf.size() - _used_bytes; }
     void reserve(size_t reservation) {
         check_out_of_range(reservation, available_bytes());
@@ -95,16 +89,7 @@ public:
         }
     }
     void trim(size_t len) { _used_bytes = std::min(len, _used_bytes); }
-    void trim_front(size_t pos) {
-        // required by input_stream<char> converter
-        vassert(
-          pos <= _used_bytes,
-          "trim_front requested {} bytes but io_fragment have only {}",
-          pos,
-          _used_bytes);
-        _used_bytes -= pos;
-        _buf.trim_front(pos);
-    }
+    void trim_front(size_t pos);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* get_current() { return _buf.get_write() + _used_bytes; }
     char* get_write() { return _buf.get_write(); }

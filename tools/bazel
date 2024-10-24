@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# This wrapper is called by bazel automatically, so we can check if bazelisk is
+# being used. If bazelisk isn't being used then this script will inform the user
+# that they should install and use it.
+#
+# TODO
+#  - It would be reasonable to provide automatic download of bazelisk.
+#  - Python might be a better choice here. Potentially.
+#
+
+if [[ -z ${BAZELISK_SKIP_WRAPPER} ]]; then
+  echo "It appears you are not using Bazelisk. Please install a recent version." >&2
+  echo "Get it here: https://github.com/bazelbuild/bazelisk" >&2
+  exit 0
+fi
+
+$BAZEL_REAL "$@"

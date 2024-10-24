@@ -139,7 +139,7 @@ BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
 
     {
         argv a{"redpanda --redpanda-cfg f.yaml --smp 2 --memory 4G --mbind 1 "
-               "--max-io-requests=10"};
+               "--num-io-groups=1"};
         auto [ac, av] = a.args();
         cli_parser parser{
           ac, av, cli_parser::app_opts{cfg}, cli_parser::ss_opts{ss}, test_log};

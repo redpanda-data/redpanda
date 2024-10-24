@@ -13,11 +13,11 @@ import (
 	"net"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func GetInterfacesByIps(addresses ...string) ([]string, error) {
-	log.Debugf("Looking for interface with '%v' addresses", addresses)
+	zap.L().Sugar().Debugf("Looking for interface with '%v' addresses", addresses)
 
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -30,7 +30,7 @@ func GetInterfacesByIps(addresses ...string) ([]string, error) {
 			return nil, err
 		}
 		for _, address := range addr {
-			log.Debugf("Checking '%s' address '%s'", iface.Name, address)
+			zap.L().Sugar().Debugf("Checking '%s' address '%s'", iface.Name, address)
 			for _, requestedAddr := range addresses {
 				if requestedAddr == "0.0.0.0" {
 					if (iface.Flags & net.FlagLoopback) == 0 {

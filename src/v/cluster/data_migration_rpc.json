@@ -1,0 +1,29 @@
+{
+    "namespace": "cluster::data_migrations",
+    "service_name": "data_migrations",
+    "includes": [
+        "cluster/data_migration_types.h"
+    ],
+    "methods": [
+        {
+            "name": "create_migration",
+            "input_type": "create_migration_request",
+            "output_type": "create_migration_reply"
+        },
+        {
+            "name": "update_migration_state",
+            "input_type": "update_migration_state_request",
+            "output_type": "update_migration_state_reply"
+        },
+        {
+            "name": "remove_migration",
+            "input_type": "remove_migration_request",
+            "output_type": "remove_migration_reply"
+        },
+        {
+            "name": "check_ntp_states",
+            "input_type": "check_ntp_states_request",
+            "output_type": "check_ntp_states_reply"
+        }
+    ]
+}

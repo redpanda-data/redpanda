@@ -1,0 +1,10 @@
+config_diagnostics = 1
+openssl_conf = openssl_init
+.include @REDPANDA_DEPS_INSTALL_DIR@/etc/ssl/fipsmodule.cnf
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+fips = fips_sect
+

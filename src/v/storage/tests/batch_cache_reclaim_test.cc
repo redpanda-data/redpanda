@@ -7,10 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/simple_batch_builder.h"
 #include "model/record.h"
-#include "raft/types.h"
 #include "storage/batch_cache.h"
+#include "storage/record_batch_builder.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/memory.hh>
@@ -28,13 +27,15 @@ static storage::batch_cache::reclaim_options opts = {
   .max_size = 4 << 20,
   .min_free_memory = 1};
 
+using is_dirty_entry = storage::batch_cache::is_dirty_entry;
+
 model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
     iobuf value;
     value.append(ss::temporary_buffer<char>(size));
-    cluster::simple_batch_builder builder(
+    storage::record_batch_builder builder(
       model::record_batch_type::raft_data, base_offset);
-    builder.add_kv(iobuf{}, std::move(value));
+    builder.add_raw_kv(iobuf{}, std::move(value));
     auto batch = std::move(builder).build();
     base_offset += model::offset(batch.record_count());
     return batch;
@@ -74,10 +75,10 @@ FIXTURE_TEST(reclaim, fixture) {
 
     // insert batches into the cache up to roughly have the amount needed to
     // trigger reclaim
-    for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
+    for (size_t i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        cache_entries.push_back(cache.put(index, batch));
+        cache_entries.push_back(cache.put(index, batch, is_dirty_entry::no));
     }
 
     // cache uses an async reclaimer. give it a chance to run
@@ -93,10 +94,10 @@ FIXTURE_TEST(reclaim, fixture) {
     BOOST_TEST(stats.reclaims() == 0);
 
     // now allocate past what should cause relcaims to trigger
-    for (auto i = 0; i < pages_until_reclaim; i++) {
+    for (size_t i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(index, std::move(batch));
+        auto e = cache.put(index, std::move(batch), is_dirty_entry::no);
         BOOST_REQUIRE((bool)e.range());
         cache_entries.emplace_back(std::move(e));
     }

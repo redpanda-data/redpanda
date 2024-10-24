@@ -16,8 +16,8 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 const (
@@ -45,12 +45,12 @@ func NewSwappinessTuner(fs afero.Fs, executor executors.Executor) Tunable {
 	return NewCheckedTunable(
 		NewSwappinessChecker(fs),
 		func() TuneResult {
-			log.Debugf("Setting swappiness to %d", ExpectedSwappiness)
+			zap.L().Sugar().Debugf("Setting swappiness to %d", ExpectedSwappiness)
 			err := executor.Execute(
 				commands.NewWriteFileCmd(
 					fs, File, fmt.Sprint(ExpectedSwappiness)))
 			if err != nil {
-				log.Errorf("got an error while writing %d to %s: %v", ExpectedSwappiness, File, err)
+				zap.L().Sugar().Errorf("got an error while writing %d to %s: %v", ExpectedSwappiness, File, err)
 				return NewTuneError(err)
 			}
 			return NewTuneResult(false)

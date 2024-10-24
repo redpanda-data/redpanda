@@ -10,10 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/list_groups_request.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
-#include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -26,11 +25,11 @@ struct list_groups_request final {
 
     list_groups_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -45,7 +44,7 @@ struct list_groups_response final {
 
     list_groups_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

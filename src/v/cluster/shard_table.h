@@ -11,9 +11,14 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "cluster/logger.h"
+#include "cluster/notification.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
-#include "raft/types.h"
-#include "seastarx.h"
+#include "model/ktp.h"
+#include "raft/fundamental.h"
+#include "utils/notification_list.h"
 
 #include <seastar/core/reactor.hh> // shard_id
 
@@ -25,22 +30,13 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        model::revision_id revision;
-        /// Only used for additional sanity checks
-        bool non_replicable;
+        model::revision_id log_revision;
     };
 
 public:
-    bool contains(const raft::group_id& group) {
-        return _group_idx.find(group) != _group_idx.end();
-    }
-    ss::shard_id shard_for(const raft::group_id& group) {
-        return _group_idx.find(group)->second.shard;
-    }
-
-    std::optional<model::revision_id> revision_for(const model::ntp& ntp) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            return it->second.revision;
+    std::optional<ss::shard_id> shard_for(const raft::group_id& group) {
+        if (auto it = _group_idx.find(group); it != _group_idx.end()) {
+            return it->second.shard;
         }
         return std::nullopt;
     }
@@ -48,89 +44,85 @@ public:
     /**
      * \brief Lookup the owning shard for an ntp.
      */
-    std::optional<ss::shard_id> shard_for(const model::ntp& ntp) {
+    template<model::any_ntp T>
+    std::optional<ss::shard_id> shard_for(const T& ntp) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
             return it->second.shard;
         }
         return std::nullopt;
     }
 
-    bool update_shard(
-      const model::ntp& ntp, ss::shard_id i, model::revision_id rev) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
-                return false;
-            }
-            vassert(
-              it->second.non_replicable,
-              "Attempting to update replicable entry from non_replicable "
-              "interface");
-        }
-        _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev, true});
-        return true;
-    }
-
     void update(
       const model::ntp& ntp,
       raft::group_id g,
       ss::shard_id shard,
-      model::revision_id rev) {
+      model::revision_id log_rev) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "Attempting to update non_replicable entry from replicable "
-              "interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "Attempting to update non_replicable entry from replicable "
-              "interface");
         }
 
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev, false});
-        _group_idx.insert_or_assign(g, shard_revision{shard, rev, false});
+        vlog(
+          clusterlog.trace,
+          "[{}] updating shard table, shard_id: {}, log_rev: {}",
+          ntp,
+          shard,
+          log_rev);
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, log_rev});
+        _group_idx.insert_or_assign(g, shard_revision{shard, log_rev});
+
+        _notification_list.notify(ntp, g, shard);
     }
 
     void
-    erase(const model::ntp& ntp, raft::group_id g, model::revision_id rev) {
+    erase(const model::ntp& ntp, raft::group_id g, model::revision_id log_rev) {
+        // Revision check protects against race conditions between operations
+        // on instances of the same ntp with different log revisions (e.g. after
+        // a topic was deleted and then re-created). These operations can happen
+        // on different shards, therefore erase() corresponding to the old
+        // instance can happen after update() corresponding to the new one. Note
+        // that concurrent updates are not a problem during cross-shard
+        // transfers because even though corresponding erase() and update() will
+        // have the same log_revision, update() will always come after erase().
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "erasing non_replicable entry from replicable erase interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
-            if (it->second.revision > rev) {
+            if (it->second.log_revision > log_rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "erasing non_replicable entry from replicable erase interface");
         }
 
+        vlog(
+          clusterlog.trace,
+          "[{}] erasing from shard table, log_rev: {}",
+          ntp,
+          log_rev);
         _ntp_idx.erase(ntp);
         _group_idx.erase(g);
+
+        _notification_list.notify(ntp, g, std::nullopt);
     }
 
-    void erase(const model::ntp& ntp, model::revision_id rev) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
-                return;
-            }
-            vassert(
-              it->second.non_replicable,
-              "erassing replicable entry from non_replicable erase interface");
-            _ntp_idx.erase(it);
-        }
+    using change_cb_t = ss::noncopyable_function<void(
+      const model::ntp& ntp,
+      raft::group_id g,
+      std::optional<ss::shard_id> shard)>;
+
+    notification_id_type register_notification(change_cb_t&& cb) {
+        return _notification_list.register_cb(std::move(cb));
+    }
+
+    void unregister_delta_notification(cluster::notification_id_type id) {
+        _notification_list.unregister_cb(id);
     }
 
 private:
@@ -150,8 +142,15 @@ private:
      */
 
     // kafka index
-    absl::node_hash_map<model::ntp, shard_revision> _ntp_idx;
+    chunked_hash_map<
+      model::ntp,
+      shard_revision,
+      model::ktp_hash_eq,
+      model::ktp_hash_eq>
+      _ntp_idx;
     // raft index
-    absl::node_hash_map<raft::group_id, shard_revision> _group_idx;
+    chunked_hash_map<raft::group_id, shard_revision> _group_idx;
+
+    notification_list<change_cb_t, notification_id_type> _notification_list;
 };
 } // namespace cluster

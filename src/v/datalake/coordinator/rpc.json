@@ -1,0 +1,19 @@
+{
+    "namespace": "datalake::coordinator::rpc::impl",
+    "service_name": "datalake_coordinator_rpc",
+    "includes": [
+        "datalake/coordinator/types.h"
+    ],
+    "methods": [
+        {
+            "name": "add_translated_data_files",
+            "input_type": "add_translated_data_files_request",
+            "output_type": "add_translated_data_files_reply"
+        },
+        {
+            "name": "fetch_latest_data_file",
+            "input_type": "fetch_latest_data_file_request",
+            "output_type": "fetch_latest_data_file_reply"
+        }
+    ]
+}

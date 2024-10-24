@@ -11,6 +11,7 @@ import os
 import re
 import itertools
 from typing import Optional
+from dataclasses import dataclass
 
 
 class Segment:
@@ -20,6 +21,13 @@ class Segment:
         self.data_file = None
         self.base_index = None
         self.compaction_index = None
+
+        # Size of data_file, if caller chooses to populate it via set_size
+        self.size = None
+
+        m = re.match(r"^(\d+)\-\d+\-v\d+$", name)
+        assert m, f"Unexpected segment name {name}"
+        self.offset = int(m.group(1))
 
     def add_file(self, fn, ext):
         assert fn
@@ -43,6 +51,9 @@ class Segment:
         paths = map(lambda fn: os.path.join(self.partition.path, fn), files)
         return all(
             map(lambda path: self.partition.node.account.isfile(path), paths))
+
+    def set_size(self, s: int):
+        self.size = s
 
     def __repr__(self):
         return "{}:{}{}{}".format(self.name, "D" if self.data_file else "d",
@@ -70,6 +81,22 @@ class Partition:
             seg = self.segments[seg]
             seg.add_file(fn, ext)
 
+    def set_segment_size(self, segment_name: str, size: int):
+        """Set the data size of a segment: this is not the physical size of
+           all the segment's files, but just the size of the data part, excluding
+           space used by any indices.  This is usually what you care about, because
+           it's how Redpanda itself reasons about size for retention."""
+        seg, ext = os.path.splitext(segment_name)
+        if not (re.match(r"^\d+\-\d+\-v\d+$", seg) and ext == ".log"):
+            return
+        self.segments[seg].set_size(size)
+
+    def delete_segment(self, segment_name: str):
+        try:
+            del self.segments[segment_name]
+        except KeyError:
+            pass
+
     def delete_indices(self, allow_fail=False):
         for _, segment in self.segments.items():
             segment.delete_indices(allow_fail)
@@ -82,6 +109,12 @@ class Partition:
         # the currently open segment (segments don't get indices on disk
         # until they're sealed)
         return n_recovered >= len(self.segments) - 1
+
+    def get_mtime(self, filename):
+        path = os.path.join(self.path, filename)
+        out = self.node.account.ssh_capture(f"stat --format=%Y {path}")
+        mtime = ''.join(out).strip()
+        return int(mtime)
 
     def __repr__(self):
         return "part-{}-{}-{}".format(self.node.name, self.num, self.segments)
@@ -122,11 +155,26 @@ class PartitionNotFoundError(Exception):
     pass
 
 
+@dataclass
+class NodeCacheStorage:
+    # Total size of the directory according to `du`
+    bytes: int
+
+    # Total number of non-directory files in the cache dir.  This count
+    # overlaps with subsequent type-specific object counts
+    objects: int
+
+    # Number of .index files
+    indices: int
+
+
 class NodeStorage:
-    def __init__(self, name, data_dir):
+    def __init__(self, name: str, data_dir: str, cache_dir: str):
         self.data_dir = data_dir
+        self.cache_dir = cache_dir
         self.ns = dict()
         self.name = name
+        self.cache = None
 
     def add_namespace(self, ns, path):
         n = Namespace(ns, path)
@@ -150,6 +198,9 @@ class NodeStorage:
             )
 
         return partitions[partition_idx].segments.values()
+
+    def set_cache_stats(self, stats: NodeCacheStorage):
+        self.cache = stats
 
 
 class ClusterStorage:

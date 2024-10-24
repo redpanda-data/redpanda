@@ -9,9 +9,15 @@
 
 from collections import namedtuple
 import json
+import random
 import re
+import string
 import subprocess
 import time
+import itertools
+from typing import Optional
+from ducktape.utils.util import wait_until
+from rptest.utils.functional import flat_map
 
 KclPartitionOffset = namedtuple(
     'KclPartitionOffset',
@@ -28,10 +34,28 @@ KclCreateTopicsRequestTopic = namedtuple(
 KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
                                              ['topic', 'count', 'assignment'])
 
+KclListPartitionReassignmentsResponse = namedtuple(
+    'KclListPartitionReassignmentsResponse',
+    ['topic', 'partition', 'replicas', 'adding_replicas', 'removing_replicas'])
+
 
 class KCL:
-    def __init__(self, redpanda):
+    def __init__(self,
+                 redpanda,
+                 username: str = None,
+                 password: str = None,
+                 sasl_mechanism: str = None):
         self._redpanda = redpanda
+        self._username = username
+        self._password = password
+        self._sasl_mechanism = sasl_mechanism
+        if self._username is None:
+            assert self._password is None and self._sasl_mechanism is None, 'Incomplete KCL sasl credentials'
+        else:
+            assert self._password is not None and self._sasl_mechanism is not None, 'Incomplete KCL sasl credentials'
+
+    def sasl_enabled(self):
+        return self._username is not None
 
     def list_topics(self):
         return self._cmd(['topic', 'list'])
@@ -96,7 +120,8 @@ class KCL:
                 n=None,
                 group=None,
                 regex=False,
-                fetch_max_bytes=None):
+                fetch_max_bytes=None,
+                rack=None):
         cmd = ["consume"]
         if group is not None:
             cmd += ["-g", group]
@@ -106,27 +131,60 @@ class KCL:
             cmd.append("-r")
         if fetch_max_bytes is not None:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
+        if rack is not None:
+            cmd += ["--rack", rack]
         cmd.append(topic)
         return self._cmd(cmd)
 
-    def alter_broker_config(self, values, incremental, broker=None):
+    def _alter_config(self,
+                      values,
+                      incremental,
+                      entity_type,
+                      entity,
+                      node=None):
         """
-        :param broker: node id.  Not supported in redpanda but used for testing error handling.
+        :param broker: node id.
         :param values: dict of property name to new value
         :param incremental: if true, use incremental kafka APIs
-        :return:
+        :param entity_type: one of 'broker', 'topic'
+        :param entity: string-izable entity, or None to omit
         """
-        cmd = ["admin", "configs", "alter", "-tb"]
+        cmd = ["admin", "configs", "alter"]
+
+        if entity_type == "broker":
+            cmd.append("-tb")
+        elif entity_type == "topic":
+            cmd.append("-tt")
+        else:
+            raise NotImplementedError(entity_type)
+
         if incremental:
             cmd.append("-i")
+        else:
+            # By default, non-incremental AlterConfig will prompt on stdin (and hang)
+            cmd.append("--no-confirm")
         for k, v in values.items():
             cmd.extend(["-k", f"s:{k}={v}" if incremental else f"{k}={v}"])
 
-        if broker:
+        if entity:
             # cmd needs to be string, so handle things like broker=1
-            cmd.append(str(broker))
+            cmd.append(str(entity))
 
-        return self._cmd(cmd, attempts=1)
+        r = self._cmd(cmd, attempts=1, node=node)
+        if 'OK' not in r:
+            raise RuntimeError(r)
+        else:
+            return r
+
+    def alter_broker_config(self, values, incremental, broker=None):
+        return self._alter_config(values, incremental, "broker", broker)
+
+    def alter_topic_config(self, values, incremental, topic, node=None):
+        return self._alter_config(values,
+                                  incremental,
+                                  "topic",
+                                  topic,
+                                  node=node)
 
     def delete_broker_config(self, keys, incremental):
         """
@@ -142,16 +200,201 @@ class KCL:
 
         return self._cmd(cmd, attempts=1)
 
-    def _cmd(self, cmd, input=None, attempts=5):
+    def describe_topic(self,
+                       topic: str,
+                       with_docs: bool = False,
+                       with_types: bool = False,
+                       node=None):
+        """
+        :param topic: the name of the topic to describe
+        :param with_docs: if true, include documention strings in the response
+        :param with_types: if true, include config type information in the reponse
+        :return: stdout string
+        """
+        cmd = ["admin", "configs", "describe", topic, "--type", "topic"]
+        if with_docs:
+            cmd.append("--with-docs")
+        if with_types:
+            cmd.append("--with-types")
+
+        return self._cmd(cmd, attempts=1, node=node)
+
+    def offset_delete(self, group: str, topic_partitions: dict):
+        """
+        kcl group offset-delete <group> -t <topic>:partition_1,partition_2,... -t ...
+        """
+
+        # First convert partitions from integers to strings
+        as_strings = {
+            k: ",".join([str(x) for x in v])
+            for k, v in topic_partitions.items()
+        }
+
+        # Group each kv pair to string item like '<topic>:p1,p2,p3'
+        request_args = [f"{x}:{y}" for x, y in as_strings.items()]
+
+        # Append each arg with the -t (topic) flag
+        # interleaves a list of -t strings with each argument producing
+        # [-t, arg1, -t arg2, ... , -t argn]
+        request_args_w_flags = list(
+            itertools.chain(
+                *zip(["-t"
+                      for _ in range(0, len(request_args))], request_args)))
+
+        cmd = ['group', 'offset-delete', "-j", group] + request_args_w_flags
+        return json.loads(self._cmd(cmd, attempts=5))
+
+    def sasl_options(self):
+        if self.sasl_enabled():
+            return [
+                "-X", f'sasl_user={self._username}', "-X",
+                f'sasl_pass={self._password}', "-X",
+                f'sasl_method={self._sasl_mechanism}'
+            ]
+
+        return []
+
+    def alter_partition_reassignments(self,
+                                      topics: dict[str, dict[int, list[int]]],
+                                      user_cred: Optional[dict[str,
+                                                               str]] = None,
+                                      timeout_s: int = 10):
+        """
+        :param topics: the key is a topic and the value is a dict that maps partition IDs
+                       to new replica assignments
+        :return: list of KclAlterPartitionReassignmentsResponse
+        """
+        cmd = ["admin", "partas", "alter"]
+
+        for topic in topics:
+            assert len(topics[topic]) > 0
+            reassignment_str = f"{topic}:"
+            partitions = []
+            for pid in topics[topic]:
+                if len(topics[topic][pid]) == 0:
+                    raise NotImplementedError(
+                        'Canceling a reassignment is unsupported')
+
+                part_str = f"{pid}->{topics[topic][pid]}"
+                # Remove empty and [] characters
+                part_str = part_str.replace('[', '').replace(']', '')
+                part_str = part_str.replace(' ', '')
+                partitions.append(part_str)
+            join_partitions = ";".join(partitions)
+            reassignment_str += join_partitions
+            cmd.append(reassignment_str)
+
+        no_broker_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +BROKER_NOT_AVAILABLE.*$"
+        )
+        bad_rep_factor_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +INVALID_REPLICATION_FACTOR.*$"
+        )
+        unknown_tp_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +UNKNOWN_TOPIC_OR_PARTITION:.*$"
+        )
+
+        lines = None
+
+        def do_alter_partitions():
+            nonlocal lines
+            lines = self._cmd(cmd).splitlines()
+
+            # Check for errors here instead of outside the KCL wrapper
+            # because test writers can use method params to account for their expectations
+            for l in lines:
+                l = l.strip()
+                self._redpanda.logger.debug(l)
+
+                m = no_broker_re.match(l)
+                # No broker available means the partition did not find any eligible allocation nodes.
+                # See the map from cluster errors to kafka errors in kafka::map_topic_error_code()
+                if m is not None:
+                    raise RuntimeError('No eligible allocation nodes')
+
+                # Invalid replication factor means the number of replicas for one (or more) partitions
+                # in a request does not match the replication factor for the topic.
+                m = bad_rep_factor_re.match(l)
+                if m is not None:
+                    raise RuntimeError(
+                        'Number of replicas != topic replication factor')
+
+                # RP may report that the topic does not exist, this can
+                # happen when the recieving broker has out-of-date metadata. So
+                # retry the request.
+                m = unknown_tp_re.match(l)
+                if m is not None:
+                    return False
+
+            return True
+
+        wait_until(do_alter_partitions,
+                   timeout_sec=timeout_s,
+                   backoff_sec=1,
+                   err_msg="Failed to alter partitions")
+
+        return lines
+
+    def list_partition_reassignments(self,
+                                     topics: Optional[dict[str,
+                                                           list[int]]] = None):
+        """
+        :param topics: dict where topic name is the key and the value is the list
+                       of partition IDs
+        :return: list of KclListPartitionReassignmentsResponse
+        """
+        cmd = ["admin", "partas", "list"]
+
+        lines = None
+        if topics is None:
+            lines = self._cmd(cmd).splitlines()
+        else:
+            for topic in topics:
+                topic_str = f"{topic}:{topics[topic]}"
+                # Remove empty and [] characters
+                topic_str = topic_str.replace('[', '').replace(']', '')
+                topic_str = topic_str.replace(' ', '')
+                cmd.append(topic_str)
+
+            lines = self._cmd(cmd, attempts=1).splitlines()
+        self._redpanda.logger.debug(lines)
+
+        def replicas_as_int(replicas: list[str]):
+            return [int(node_id) for node_id in replicas]
+
+        res_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +\[(?P<replicas>[0-9 ]+?)\] +\[(?P<adding>[0-9 ]*?)\] +\[(?P<removing>[0-9 ]*?)\]$"
+        )
+        ret = []
+        for l in lines:
+            l = l.strip()
+            self._redpanda.logger.debug(l)
+            m = res_re.match(l)
+            if m is not None:
+                replicas = replicas_as_int(list(m["replicas"].replace(' ',
+                                                                      '')))
+                adding_replicas = replicas_as_int(
+                    list(m["adding"].replace(' ', '')))
+                removing_replicas = replicas_as_int(
+                    list(m["removing"].replace(' ', '')))
+                ret.append(
+                    KclListPartitionReassignmentsResponse(
+                        m['topic'], int(m['partition']), replicas,
+                        adding_replicas, removing_replicas))
+
+        return ret
+
+    def _cmd(self, cmd, input=None, attempts=5, node=None):
         """
 
         :param attempts: how many times to try before giving up (1 for no retries)
         :return: stdout string
         """
-        brokers = self._redpanda.brokers()
+        brokers = node.name if node is not None else self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
-               ] + cmd
+               ] + self.sasl_options() + cmd
         assert attempts > 0
+        self._redpanda.logger.debug(f"Executing {cmd}")
         for retry in reversed(range(attempts)):
             try:
                 res = subprocess.check_output(cmd,
@@ -178,13 +421,42 @@ class RawKCL(KCL):
 
     Callers should expect raw kafka responses json encoded with franz-go key naming scheme
     """
-    def raw_create_topics(self, version, topics):
+    def create_topics(self,
+                      version,
+                      topics: list[dict] = [],
+                      validate_only: bool = False):
+        """
+        Create some topics based on the provided dicts
+        Valid fields, which will be propagated into the request, are:
+          - 'name' - default 12 random ascii letters
+          - 'partition_count' - default -1
+          - 'replication_factor' - default -1
+        """
+        tps = []
+        for tp in topics:
+            tps.append(
+                KclCreateTopicsRequestTopic(
+                    tp.get('name',
+                           ''.join(random.choices(string.ascii_letters,
+                                                  k=12))),
+                    tp.get('partition_count', -1),
+                    tp.get('replication_factor', -1),
+                ))
+        try:
+            return json.loads(
+                self.raw_create_topics(version,
+                                       tps,
+                                       validate_only=validate_only))['Topics']
+        except:
+            return []
+
+    def raw_create_topics(self, version, topics, validate_only=False):
         assert version >= 0 and version <= 6, "version out of supported redpanda range for this API"
         create_topics_request = {
             'Version':
             version,
             'ValidateOnly':
-            False,
+            validate_only,
             'TimeoutMillis':
             60000,
             'Topics': [{
@@ -219,3 +491,43 @@ class RawKCL(KCL):
         }
         return self._cmd(['misc', 'raw-req', '-k', '37'],
                          input=json.dumps(create_partitions_request))
+
+    def raw_alter_topic_config(self, version, topic, configs):
+        assert version >= 0 and version <= 1, "version out of supported redpanda range for this API"
+        alter_configs_request = {
+            'Version':
+            version,
+            'ValidateOnly':
+            False,
+            'TimeoutMillis':
+            15000,
+            'Resources': [{
+                'ResourceType': 2,
+                'ResourceName': topic,
+                'Configs': []
+            }],
+            'ValidateOnly':
+            False
+        }
+
+        for k, v in configs.items():
+
+            alter_configs_request['Resources'][0]['Configs'].append({
+                "Name":
+                k,
+                "Value":
+                str(v)
+            })
+        self._redpanda.logger.info(f"DBG: {json.dumps(alter_configs_request)}")
+        return self._cmd(['misc', 'raw-req', '-k', '33'],
+                         input=json.dumps(alter_configs_request))
+
+    def raw_alter_quotas(self, body):
+        res = self._cmd(['misc', 'raw-req', '-k', '49'],
+                        input=json.dumps(body))
+        return json.loads(res)
+
+    def raw_describe_quotas(self, body):
+        res = self._cmd(['misc', 'raw-req', '-k', '48'],
+                        input=json.dumps(body))
+        return json.loads(res)

@@ -90,6 +90,21 @@
                     }
                 }
             ]
+        },
+        {
+            "path": "/v1/features/enterprise",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Report license status and enterprise features in use",
+                    "nickname": "get_enterprise",
+                    "type": "enterprise_response",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -116,7 +131,19 @@
             "properties": {
                 "cluster_version": {
                     "type": "long",
-                    "description": "Logical version of cluster"
+                    "description": "Logical version of cluster: this should equal latest_node_version if the cluster is not currently being upgraded."
+                },
+                "original_cluster_version": {
+                    "type": "long",
+                    "description": "Logical version at time of cluster creation.  This should equal latest_node_version on a newly created cluster."
+                },
+                "node_earliest_version": {
+                    "type": "long",
+                    "description": "Earliest logical version supported by the node answering this request"
+                },
+                "node_latest_version": {
+                    "type": "long",
+                    "description": "Latest logical version supported by the node answering this request"
                 },
                 "features": {
                     "type": "array",
@@ -144,6 +171,10 @@
                 "expires": {
                     "type": "long",
                     "description": "Expiration date of the license in Unix epoch seconds"
+                },
+                "sha256": {
+                    "type": "string",
+                    "description": "Checksum (sha256) of the raw license data"
                 }
             }
         },
@@ -159,6 +190,37 @@
                     "type": "license_contents",
                     "nullable": "true",
                     "description": "Contents of a valid, signed license if loaded"
+                }
+            }
+        },
+        "enterprise_feature": {
+            "id": "enterprise_feature",
+            "description": "One enterprise feature by name, and whether it is in use",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "enterprise_response": {
+            "id": "enterprise_response",
+            "description": "Describe the license status and enterprise features in use.",
+            "properties": {
+                "license_status": {
+                    "type": "string",
+                    "enum": ["valid", "expired", "not_present"]
+                },
+                "violation": {
+                    "type": "boolean",
+                    "description": "true if license_status is not 'valid' AND one or more enterprise features are enabled"
+                },
+                "features": {
+                    "type": "array",
+                    "items": { "type": "enterprise_feature" },
+                    "description": "List of enterprise features (name and whether in use)"
                 }
             }
         }

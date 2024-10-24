@@ -7,6 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any, Callable
+
+OMBValiatorFunction = Callable[[float], bool]
+OMBValidator = tuple[OMBValiatorFunction, str]
+ValidatorDict = dict[str, list[Any]]
+
 
 # Pre populated OMB perf runner configurations.
 class OMBSampleConfigurations:
@@ -29,18 +35,23 @@ class OMBSampleConfigurations:
     E2E_LATENCY_50PCT = "aggregatedEndToEndLatency50pct"
     E2E_LATENCY_75PCT = "aggregatedEndToEndLatency75pct"
     E2E_LATENCY_95PCT = "aggregatedEndToEndLatency95pct"
+    E2E_LATENCY_99PCT = "aggregatedEndToEndLatency99pct"
+    E2E_LATENCY_999PCT = "aggregatedEndToEndLatency999pct"
     E2E_LATENCY_MAX = "aggregatedEndToEndLatencyMax"
     AVG_THROUGHPUT_MBPS = "throughputMBps"
 
-    def range(min_val, max_val):
+    @staticmethod
+    def range(min_val: float, max_val: float) -> OMBValidator:
         return (lambda x: x >= min_val and x <= max_val,
                 f"Expected in range [{min_val}, {max_val}], check failed.")
 
-    def lte(max_val):
+    @staticmethod
+    def lte(max_val: float) -> OMBValidator:
         return (lambda x: x <= max_val,
                 f"Expected to be <= {max_val}, check failed.")
 
-    def gte(min_val):
+    @staticmethod
+    def gte(min_val: float) -> OMBValidator:
         return (lambda x: x >= min_val,
                 f"Expected to be >= {min_val}, check failed.")
 
@@ -87,107 +98,147 @@ class OMBSampleConfigurations:
         AVG_THROUGHPUT_MBPS: [gte(600)]
     }
 
-    def validate_metrics(metrics, validator):
-        """ Validates some predefined metrics rules against the metrics data and throws if any of the rules fail."""
-        assert len(metrics) == 1, "Unexpected metrics output {metrics}}"
-        metrics = next(iter(metrics.values()))
-        results = []
+    @staticmethod
+    def validate_metrics(metrics,
+                         validator: ValidatorDict,
+                         raise_exceptions=True):
+        """Validates some predefined metrics rules against the metrics data.
+
+        Args:
+            metrics: The metrics to validate.
+            validator: A dictionary containing the validation rules.
+            raise_exceptions: If True, raises an exception when validation fails. If False, returns the validation results.
+
+        Returns:
+            A tuple (is_valid, results), where is_valid is a boolean indicating if all metrics passed validation,
+            and results is a list of validation failures.
+        """
+        assert len(validator) > 0, "At least one metric should be validated"
+
+        results: list[str] = []
         kv_str = lambda k, v: f"Metric {k}, value {v}, "
-        count = 0
-        for key in metrics.keys():
-            if key not in validator:
-                continue
+
+        for key in validator.keys():
+            assert key in metrics, f"Missing requested validator key {key} in metrics"
+
             val = metrics[key]
-            count = count + 1
             for rule in validator[key]:
                 if not rule[0](val):
                     results.append(kv_str(key, val) + rule[1])
-        assert count > 0, f"At least one metric should be validated {metrics}"
-        assert len(results) == 0, str(results)
+
+        is_valid = len(results) == 0
+
+        if raise_exceptions and not is_valid:
+            assert is_valid, str(results)
+        return is_valid, results
 
     # ------ Driver configurations --------
     SIMPLE_DRIVER = {
         "name": "simple-driver",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "1",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "1",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS = {
         "name": "ack-all-group-linger-1-ms-no-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT = {
         "name": "ack-all-group-linger-1-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 5,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 5,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_10MS = {
         "name": "ack-all-group-linger-10-ms-no-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "false",
-        "acks": "all",
-        "linger_ms": 10,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "false",
+            "acks": "all",
+            "linger.ms": 10,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     ACK_ALL_GROUP_LINGER_10MS_WITH_IDEMPOTENCE = {
         "name": "ack-all-group-linger-10-ms-enable-idem",
         "replication_factor": 3,
         "request_timeout": 300000,
-        "enable_idempotence": "true",
-        "acks": "all",
-        "linger_ms": 1,
-        "max_in_flight": 1,
-        "batch_size": 131072,
-        "auto_offset_earliest": "earliest",
-        "auto_commit": "false",
-        "max_partition_fetch": 131072
+        "producer_config": {
+            "enable.idempotence": "true",
+            "acks": "all",
+            "linger.ms": 1,
+            "max.in.flight.requests.per.connection": 1,
+            "batch.size": 131072,
+        },
+        "consumer_config": {
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": "false",
+            "max.partition.fetch.bytes": 131072
+        },
     }
 
     # ------ Driver configurations end--------
@@ -244,7 +295,7 @@ class OMBSampleConfigurations:
         "producer_rate": 625000,
         "consumer_backlog_size_GB": 0,
         "test_duration_minutes": 5,
-        "warmup_duration_minutes": 1,
+        "warmup_duration_minutes": 5,
     }
 
     # ------- Workload configurations end--------
@@ -280,5 +331,5 @@ class OMBSampleConfigurations:
         "TOPIC1_PART100_1KB_4PROD_1250K_RATE":
         (TOPIC1_PART100_1KB_4PROD_1250K_RATE, PROD_ENV_VALIDATOR),
         "RELEASE_CERT_SMOKE_LOAD_625k":
-        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR)
+        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR),
     }

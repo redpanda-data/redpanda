@@ -9,12 +9,15 @@
 
 #include "cluster/id_allocator_stm.h"
 
+#include "bytes/iobuf.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/namespace.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
+#include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/coroutine.hh>
@@ -38,20 +41,20 @@ id_allocator_stm::id_allocator_stm(ss::logger& logger, raft::consensus* c)
 
 id_allocator_stm::id_allocator_stm(
   ss::logger& logger, raft::consensus* c, config::configuration& cfg)
-  : persisted_stm("id.snapshot", logger, c)
+  : raft::persisted_stm<>(id_allocator_snapshot, logger, c)
   , _batch_size(cfg.id_allocator_batch_size.value())
   , _log_capacity(cfg.id_allocator_log_capacity.value()) {}
 
 ss::future<bool>
 id_allocator_stm::sync(model::timeout_clock::duration timeout) {
     auto term = _insync_term;
-    auto is_synced = co_await persisted_stm::sync(timeout);
+    auto is_synced = co_await raft::persisted_stm<>::sync(timeout);
     if (is_synced) {
         if (term != _insync_term) {
             _curr_id = _state;
             _curr_batch = 0;
             _processed = 0;
-            _next_snapshot = _insync_offset;
+            _next_snapshot = last_applied_offset();
         }
         if (_procesing_legacy) {
             for (auto& cmd : _cache) {
@@ -67,12 +70,42 @@ id_allocator_stm::sync(model::timeout_clock::duration timeout) {
     co_return is_synced;
 }
 
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::reset_next_id(
+  int64_t id, model::timeout_clock::duration timeout) {
+    return _lock
+      .with(
+        timeout, [this, id, timeout]() { return advance_state(id, timeout); })
+      .handle_exception_type(
+        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+            return raft::make_error_code(raft::errc::timeout);
+        });
+}
+
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::advance_state(
+  int64_t value, model::timeout_clock::duration timeout) {
+    if (!co_await sync(timeout)) {
+        co_return raft::make_error_code(raft::errc::timeout);
+    }
+    if (value < _curr_id) {
+        co_return _curr_id;
+    }
+    _curr_id = value;
+    auto success = co_await set_state(_curr_id + _batch_size, timeout);
+    if (!success) {
+        co_return raft::make_error_code(raft::errc::timeout);
+    }
+    _curr_batch = _batch_size;
+    co_return stm_allocation_result(_curr_id);
+}
+
 ss::future<bool> id_allocator_stm::set_state(
   int64_t value, model::timeout_clock::duration timeout) {
     auto batch = serialize_cmd(
       state_cmd{.next_state = value}, model::record_batch_type::id_allocator);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       _insync_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -80,7 +113,8 @@ ss::future<bool> id_allocator_stm::set_state(
         co_return false;
     }
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + timeout)) {
         co_return false;
     }
     co_return true;
@@ -90,34 +124,35 @@ ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::allocate_id(model::timeout_clock::duration timeout) {
     return _lock
       .with(timeout, [this, timeout]() { return do_allocate_id(timeout); })
-      .handle_exception_type([](const ss::semaphore_timed_out&) {
-          return stm_allocation_result{-1, raft::errc::timeout};
-      });
+      .handle_exception_type(
+        [](const ss::semaphore_timed_out&) -> stm_allocation_result {
+            return raft::make_error_code(raft::errc::timeout);
+        });
 }
 
 ss::future<id_allocator_stm::stm_allocation_result>
 id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
     if (!co_await sync(timeout)) {
-        co_return stm_allocation_result{-1, raft::errc::timeout};
+        co_return raft::make_error_code(raft::errc::timeout);
     }
 
     if (_curr_batch == 0) {
         _curr_id = _state;
         if (!co_await set_state(_curr_id + _batch_size, timeout)) {
-            co_return stm_allocation_result{-1, raft::errc::timeout};
+            co_return raft::make_error_code(raft::errc::timeout);
         }
         _curr_batch = _batch_size;
     }
 
-    auto id = _curr_id;
+    int64_t id = _curr_id;
 
     _curr_id += 1;
     _curr_batch -= 1;
 
-    co_return stm_allocation_result{id, raft::errc::success};
+    co_return stm_allocation_result{id};
 }
 
-ss::future<> id_allocator_stm::apply(model::record_batch b) {
+ss::future<> id_allocator_stm::do_apply(const model::record_batch& b) {
     if (b.header().type != model::record_batch_type::id_allocator) {
         return ss::now();
     }
@@ -126,8 +161,6 @@ ss::future<> id_allocator_stm::apply(model::record_batch b) {
     auto r = b.copy_records();
     auto& record = *r.begin();
     auto rk = reflection::adl<uint8_t>{}.from(record.release_key());
-
-    _insync_offset = b.last_offset();
 
     if (rk == allocation_cmd::record_key) {
         allocation_cmd cmd = reflection::adl<allocation_cmd>{}.from(
@@ -160,7 +193,7 @@ ss::future<> id_allocator_stm::apply(model::record_batch b) {
         _state = cmd.next_state;
 
         if (_next_snapshot() < 0) {
-            _next_snapshot = _insync_offset;
+            _next_snapshot = last_applied_offset();
             _processed = 0;
         }
 
@@ -181,29 +214,41 @@ ss::future<> id_allocator_stm::write_snapshot() {
         return ss::now();
     }
     _is_writing_snapshot = true;
-    return _c->write_snapshot(raft::write_snapshot_cfg(_next_snapshot, iobuf()))
+    return _raft
+      ->write_snapshot(raft::write_snapshot_cfg(_next_snapshot, iobuf()))
       .then([this] {
-          _next_snapshot = _insync_offset;
+          _next_snapshot = last_applied_offset();
           _processed = 0;
       })
       .finally([this] { _is_writing_snapshot = false; });
 }
 
-ss::future<> id_allocator_stm::apply_snapshot(stm_snapshot_header, iobuf&&) {
+ss::future<>
+id_allocator_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
     return ss::make_exception_future<>(
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<stm_snapshot> id_allocator_stm::take_snapshot() {
-    return ss::make_exception_future<stm_snapshot>(
+ss::future<raft::stm_snapshot>
+id_allocator_stm::take_local_snapshot(ssx::semaphore_units) {
+    return ss::make_exception_future<raft::stm_snapshot>(
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<> id_allocator_stm::handle_eviction() {
-    _next_snapshot = _c->start_offset();
+ss::future<> id_allocator_stm::apply_raft_snapshot(const iobuf&) {
+    _next_snapshot = _raft->start_offset();
     _processed = 0;
-    set_next(_next_snapshot);
     return ss::now();
+}
+
+bool id_allocator_stm_factory::is_applicable_for(
+  const storage::ntp_config& cfg) const {
+    return cfg.ntp() == model::id_allocator_ntp;
+}
+
+void id_allocator_stm_factory::create(
+  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+    builder.create_stm<id_allocator_stm>(clusterlog, raft);
 }
 
 } // namespace cluster

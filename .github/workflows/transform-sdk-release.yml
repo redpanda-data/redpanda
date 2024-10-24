@@ -1,0 +1,103 @@
+---
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+name: transform-sdk-release
+on:
+  push:
+    tags: ['transform-sdk/*']
+jobs:
+  list-golang:
+    name: List Golang Transform SDK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.22
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
+      - name: Create golang specific tag
+        id: gotag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{github.ref_name}}'.slice('transform-sdk/'.length);
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/src/transform-sdk/go/transform/' + version,
+              sha: context.sha
+            });
+            // Return the result so we can use it to publish via `go list` below.
+            return version;
+          result-encoding: string
+      - name: List module
+        working-directory: src/transform-sdk/go
+        # https://go.dev/doc/modules/publishing
+        run: go list -m github.com/redpanda-data/redpanda/src/transform-sdk/go/transform@${{steps.gotag.outputs.result}}
+  publish-rust:
+    name: Publish Rust Transform SDK
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        run: rustup update stable --no-self-update && rustup default stable
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/cargo_registry_token
+          parse-json-secrets: true
+      - name: Publish
+        working-directory: src/transform-sdk/rust
+        run: |
+          python3 -mvenv /tmp/venv/publish
+          source /tmp/venv/publish/bin/activate
+          pip install tomlkit
+          ./scripts/publish.py --version ${{github.ref_name}}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
+  publish-javascript:
+    name: Publish JavaScript Transform SDK
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/npm_token
+          parse-json-secrets: true
+      - name: Publish
+        run: |
+          VERSION=$(python -c "print('${{github.ref_name}}'.removeprefix('transform-sdk/v'), end='')")
+          sed -i "s/0.1.0/${VERSION}/g" package.json
+          sed -i "s/0.1.0/${VERSION}/g" package-lock.json
+          npm ci
+          npm publish
+        working-directory: src/transform-sdk/js/module
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}

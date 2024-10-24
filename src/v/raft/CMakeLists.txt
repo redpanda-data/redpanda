@@ -17,7 +17,6 @@ v_cc_library(
     types.cc
     replicate_entries_stm.cc
     vote_stm.cc
-    prevote_stm.cc
     recovery_stm.cc
     follower_stats.cc
     replicate_batcher.cc
@@ -27,13 +26,18 @@ v_cc_library(
     offset_monitor.cc
     event_manager.cc
     state_machine.cc
-    log_eviction_stm.cc
     configuration_manager.cc
     group_configuration.cc
     append_entries_buffer.cc
     follower_queue.cc
-    offset_translator.cc
     recovery_memory_quota.cc
+    coordinated_recovery_throttle.cc
+    heartbeats.cc
+    state_machine_manager.cc
+    state_machine_base.cc
+    recovery_scheduler.cc
+    persisted_stm.cc
+    replication_monitor.cc
   DEPS
     v::storage
     raft_rpc
@@ -41,7 +45,6 @@ v_cc_library(
     v::model
   )
 add_subdirectory(tests)
-add_subdirectory(kvelldb)
 
 set_source_files_properties(
     consensus.cc # too big => negative impact on minimal rebuilds for unity

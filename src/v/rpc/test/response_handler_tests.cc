@@ -35,37 +35,39 @@ struct test_fixture {
     bool triggered = false;
 
     rpc::internal::response_handler
-    create_handler(rpc::clock_type::time_point timeout) {
+    create_handler(rpc::clock_type::duration timeout_period) {
         rpc::internal::response_handler r;
-        r.with_timeout(timeout, [this]() mutable { triggered = true; });
+        r.with_timeout(
+          rpc::timeout_spec::from_now(timeout_period),
+          [this]() mutable { triggered = true; });
         return r;
     }
 };
 
 FIXTURE_TEST(fail_with_timeout, test_fixture) {
-    auto rh = create_handler(rpc::clock_type::now() + 100ms);
+    auto rh = create_handler(100ms);
 
     // wait for timeout
     ss::sleep(1s).get();
 
     BOOST_REQUIRE_EQUAL(
-      rh.get_future().get0().error(), rpc::errc::client_request_timeout);
+      rh.get_future().get().error(), rpc::errc::client_request_timeout);
     BOOST_REQUIRE_EQUAL(triggered, true);
 };
 
 FIXTURE_TEST(fail_other_error_with_timeout, test_fixture) {
-    auto rh = create_handler(rpc::clock_type::now() + 100s);
+    auto rh = create_handler(100s);
 
     rh.set_exception(std::runtime_error("test"));
-    BOOST_REQUIRE_THROW(auto res = rh.get_future().get0(), std::runtime_error);
+    BOOST_REQUIRE_THROW(auto res = rh.get_future().get(), std::runtime_error);
     BOOST_REQUIRE_EQUAL(triggered, false);
 };
 
 FIXTURE_TEST(success_case_with_timout, test_fixture) {
-    auto rh = create_handler(rpc::clock_type::now() + 100s);
+    auto rh = create_handler(100s);
     rh.set_value(std::make_unique<test_str_ctx>());
 
-    auto v = rh.get_future().get0();
+    auto v = rh.get_future().get();
 
     BOOST_REQUIRE_EQUAL(triggered, false);
 };

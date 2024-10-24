@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/lowres_clock.hh>
 
@@ -24,7 +24,7 @@ using timeout_clock = ss::lowres_clock;
 static constexpr timeout_clock::time_point no_timeout
   = timeout_clock::time_point::max();
 
-static constexpr timeout_clock::duration max_duration
+inline constexpr timeout_clock::duration max_duration
   = timeout_clock::duration::max();
 
 inline model::timeout_clock::time_point
@@ -33,6 +33,15 @@ time_from_now(model::timeout_clock::duration d) {
     const auto now = model::timeout_clock::now();
     const auto remaining = model::no_timeout - now;
     return d < remaining ? now + d : model::no_timeout;
+}
+
+inline model::timeout_clock::duration
+time_until(model::timeout_clock::time_point deadline) {
+    const auto now = model::timeout_clock::now();
+    if (deadline < now) {
+        return model::timeout_clock::duration(0);
+    }
+    return deadline - now;
 }
 
 } // namespace model

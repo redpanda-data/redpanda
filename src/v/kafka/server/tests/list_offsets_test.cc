@@ -7,8 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/protocol/list_offset.h"
 #include "kafka/protocol/produce.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
@@ -24,12 +25,12 @@
 using namespace std::chrono_literals;
 
 FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
 
     // Synthetic default timestamp for produced data
     auto base_ts = model::timestamp{10000};
 
-    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
+    auto ntp = make_data(base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -49,19 +50,19 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
         })
       .get();
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.data.topics = {{
-      .name = ntp.tp.topic,
+    req.data.topics.emplace_back(kafka::list_offset_topic{
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = base_ts,
       }},
-    }};
+    });
 
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
@@ -71,8 +72,8 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 }
 
 FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
-    wait_for_controller_leadership().get0();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+    wait_for_controller_leadership().get();
+    auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -83,19 +84,19 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
           });
     }).get();
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.data.topics = {{
-      .name = ntp.tp.topic,
+    req.data.topics.emplace_back(kafka::list_offset_topic{
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = kafka::list_offsets_request::earliest_timestamp,
       }},
-    }};
+    });
 
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
@@ -106,8 +107,8 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
 }
 
 FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
-    wait_for_controller_leadership().get0();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+    wait_for_controller_leadership().get();
+    auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -118,19 +119,19 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
           });
     }).get();
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.data.topics = {{
-      .name = ntp.tp.topic,
+    req.data.topics.emplace_back(kafka::list_offset_topic{
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = kafka::list_offsets_request::latest_timestamp,
       }},
-    }};
+    });
 
-    auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
@@ -146,7 +147,7 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
     auto base_ts = model::timestamp{100000};
     auto future_ts = model::timestamp{9999999};
 
-    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
+    auto ntp = make_data(base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -161,15 +162,15 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
     client.connect().get();
 
     kafka::list_offsets_request req;
-    req.data.topics = {{
-      .name = ntp.tp.topic,
+    req.data.topics.emplace_back(kafka::list_offset_topic{
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = future_ts,
       }},
-    }};
+    });
 
-    auto resp = client.dispatch(req, kafka::api_version(4)).get();
+    auto resp = client.dispatch(std::move(req), kafka::api_version(4)).get();
     client.stop().then([&client] { client.shutdown(); }).get();
 
     // request is asking for messages with timestamp far ahead of the produced
@@ -186,12 +187,12 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
 
 kafka::produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
-    std::vector<kafka::produce_request::partition> partitions;
+    chunked_vector<kafka::produce_request::partition> partitions;
     partitions.emplace_back(kafka::produce_request::partition{
       .partition_index{tp.partition},
       .records = kafka::produce_request_record_data(std::move(batch))});
 
-    std::vector<kafka::produce_request::topic> topics;
+    chunked_vector<kafka::produce_request::topic> topics;
     topics.emplace_back(kafka::produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
@@ -200,16 +201,16 @@ make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
 }
 
 FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
-    wait_for_controller_leadership().get0();
+    wait_for_controller_leadership().get();
     model::ntp ntp(
       model::kafka_namespace,
       model::topic(random_generators::gen_alphanum_string(8)),
       model::partition_id(0));
 
     add_topic(model::topic_namespace_view{ntp}, 1).get();
-    wait_for_partition_offset(ntp, model::offset(0)).get0();
+    wait_for_partition_offset(ntp, model::offset(0)).get();
 
-    auto client = make_kafka_client().get0();
+    auto client = make_kafka_client().get();
     client.connect().get();
 
     // 3 batches of 3 records, with timestamps incrementing 1ms per record
@@ -243,15 +244,17 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     for (long i = 0; i < batch_count; ++i) {
         // fetch timestamp i, expect offset 2 * i.
         kafka::list_offsets_request req;
-        req.data.topics = {{
+
+        req.data.topics.emplace_back(kafka::list_offset_topic{
           .name = ntp.tp.topic,
           .partitions = {{
             .partition_index = ntp.tp.partition,
             .timestamp = model::timestamp(base_timestamp + i * record_count),
           }},
-        }};
+        });
 
-        auto resp = client.dispatch(req, kafka::api_version(1)).get0();
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(1)).get();
 
         BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
         BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
@@ -266,17 +269,19 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
         // compressed batches we should still get a result pointing
         // to the start of the batch.
         auto record_offset = 1; // Offset into batch which we will read
-        req.data.topics = {{
+        kafka::list_offsets_request req2;
+        req2.data.topics.emplace_back(kafka::list_offset_topic{
           .name = ntp.tp.topic,
           .partitions = {{
             .partition_index = ntp.tp.partition,
             .timestamp = model::timestamp(
               base_timestamp + i * record_count + record_offset),
           }},
-        }};
+        });
 
         const auto& batch = batches[i];
-        auto resp_midbatch = client.dispatch(req, kafka::api_version(1)).get0();
+        auto resp_midbatch
+          = client.dispatch(std::move(req2), kafka::api_version(1)).get();
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics.size(), 1);
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics[0].partitions.size(), 1);
         if (batch.compressed()) {

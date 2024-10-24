@@ -231,7 +231,7 @@ func Test_nic_GetRxQueueCount(t *testing.T) {
 		want          int
 	}{
 		{
-			name: "Shall return len(IRQ) when RPS is disabled and driver is not limiting queus number",
+			name: "Shall return len(IRQ) when RPS is disabled and driver is not limiting queues number",
 			irqProcFile: &procFileMock{
 				getIRQProcFileLinesMap: func() (map[int]string, error) {
 					return map[int]string{
@@ -317,7 +317,7 @@ func Test_nic_GetNTupleStatus(t *testing.T) {
 		want          NTupleStatus
 	}{
 		{
-			name: "Shall return not suported when iface does not support NTuples",
+			name: "Shall return not supported when iface does not support NTuples",
 			ethtool: &ethtoolMock{
 				features: func(string) (map[string]bool, error) {
 					return map[string]bool{

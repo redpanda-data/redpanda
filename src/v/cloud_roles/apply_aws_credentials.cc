@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_roles/apply_aws_credentials.h"
+#include "apply_aws_credentials.h"
 
+#include "base/vlog.h"
 #include "cloud_roles/logger.h"
-#include "vlog.h"
 
 namespace cloud_roles {
 

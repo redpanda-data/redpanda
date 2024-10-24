@@ -7,7 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #include "random/generators.h"
+#include "security/acl.h"
 #include "security/credential_store.h"
+#include "security/ephemeral_credential.h"
+#include "security/sasl_authentication.h"
+#include "security/scram_credential.h"
+#include "security/types.h"
 #include "utils/base64.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -21,15 +26,15 @@ namespace security {
 
 BOOST_AUTO_TEST_CASE(credential_store_test) {
     const scram_credential cred0(
-      bytes("salty"),
-      bytes("i'm a server key"),
-      bytes("i'm the stored key"),
+      bytes::from_string("salty"),
+      bytes::from_string("i'm a server key"),
+      bytes::from_string("i'm the stored key"),
       123456);
 
     const scram_credential cred1(
-      bytes("salty2"),
-      bytes("i'm a server key2"),
-      bytes("i'm the stored key2"),
+      bytes::from_string("salty2"),
+      bytes::from_string("i'm a server key2"),
+      bytes::from_string("i'm the stored key2"),
       1234567);
 
     auto cred0_copy = cred0;
@@ -61,6 +66,36 @@ BOOST_AUTO_TEST_CASE(credential_store_test) {
 
     BOOST_REQUIRE(store.get<scram_credential>(copied));
     BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(copied), cred1);
+}
+
+BOOST_AUTO_TEST_CASE(credential_store_test_principal) {
+    const scram_credential cred0(
+      bytes::from_string("salty"),
+      bytes::from_string("i'm a server key"),
+      bytes::from_string("i'm the stored key"),
+      123456);
+
+    const scram_credential cred1(
+      bytes::from_string("salty2"),
+      bytes::from_string("i'm a server key2"),
+      bytes::from_string("i'm the stored key2"),
+      1234567,
+      acl_principal{principal_type::ephemeral_user, "ephemeral"});
+
+    const credential_user user0("user0");
+    const credential_user user1("user1");
+
+    // put new credentials
+    credential_store store;
+    store.put(user0, cred0);
+    store.put(user1, cred1);
+
+    auto r0 = store.get<scram_credential>(user0);
+    auto r1 = store.get<scram_credential>(user1);
+    BOOST_REQUIRE_EQUAL(r0->principal().has_value(), false);
+    BOOST_REQUIRE_EQUAL(
+      r1->principal()->type(), principal_type::ephemeral_user);
+    BOOST_REQUIRE_EQUAL(r1->principal()->name(), "ephemeral");
 }
 
 } // namespace security

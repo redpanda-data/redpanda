@@ -27,6 +27,11 @@ struct txn_offset_commit_ctx {
     txn_offset_commit_request request;
     ss::smp_service_group ssg;
 
+    absl::flat_hash_map<
+      model::topic,
+      std::vector<txn_offset_commit_response_partition>>
+      unauthorized_tps;
+
     // topic partitions found not to existent prior to processing. responses for
     // these are patched back into the final response after processing.
     absl::flat_hash_map<
@@ -47,6 +52,12 @@ ss::future<response_ptr> txn_offset_commit(txn_offset_commit_ctx& octx) {
     return octx.rctx.groups()
       .txn_offset_commit(std::move(octx.request))
       .then([&octx](txn_offset_commit_response resp) {
+          for (auto& topic : octx.unauthorized_tps) {
+              resp.data.topics.push_back(txn_offset_commit_response_topic{
+                .name = topic.first,
+                .partitions = std::move(topic.second),
+              });
+          }
           if (unlikely(!octx.nonexistent_tps.empty())) {
               /*
                * copy over partitions for topics that had some partitions
@@ -82,8 +93,25 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
   request_context ctx, ss::smp_service_group ssg) {
     txn_offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
 
-    vlog(klog.trace, "Handling request {}", request);
+    if (unlikely(ctx.recovery_mode_enabled())) {
+        return ctx.respond(
+          txn_offset_commit_response{request, error_code::policy_violation});
+    } else if (!ctx.authorized(
+                 security::acl_operation::write,
+                 transactional_id{request.data.transactional_id})) {
+        auto ec = !ctx.audit()
+                    ? error_code::broker_not_available
+                    : error_code::transactional_id_authorization_failed;
+        return ctx.respond(txn_offset_commit_response{request, ec});
+    } else if (!ctx.authorized(
+                 security::acl_operation::read,
+                 group_id{request.data.group_id})) {
+        auto ec = !ctx.audit() ? error_code::broker_not_available
+                               : error_code::group_authorization_failed;
+        return ctx.respond(txn_offset_commit_response{request, ec});
+    }
 
     txn_offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
@@ -109,7 +137,17 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
         const auto topic_name = model::topic(it->name);
         model::topic_namespace_view tn(model::kafka_namespace, topic_name);
 
-        if (octx.rctx.metadata_cache().contains(tn)) {
+        if (!octx.rctx.authorized(security::acl_operation::read, topic_name)) {
+            auto& parts = octx.unauthorized_tps[it->name];
+            parts.reserve(it->partitions.size());
+            absl::c_transform(
+              it->partitions, parts.begin(), [](const auto& part) {
+                  return txn_offset_commit_response_partition{
+                    .partition_index = part.partition_index,
+                    .error_code = error_code::topic_authorization_failed};
+              });
+            it->partitions.clear();
+        } else if (octx.rctx.metadata_cache().contains(tn)) {
             /*
              * check if each partition exists
              */
@@ -147,6 +185,11 @@ ss::future<response_ptr> txn_offset_commit_handler::handle(
             }
             it = octx.request.data.topics.erase(it);
         }
+    }
+
+    if (!octx.rctx.audit()) {
+        return octx.rctx.respond(txn_offset_commit_response{
+          octx.request, error_code::broker_not_available});
     }
 
     return ss::do_with(std::move(octx), txn_offset_commit);

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -e
+for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0" "3.7.0"; do
+  mkdir -p "/opt/kafka-${ver}"
+  chmod a+rw "/opt/kafka-${ver}"
+  curl "$KAFKA_MIRROR/kafka_2.12-${ver}.tgz" | tar xz --strip-components=1 -C "/opt/kafka-${ver}"
+done
+ln -s /opt/kafka-3.0.0/ /opt/kafka-dev
+
+set -e
+git -C /opt clone --depth 1 --branch 0.14.0-example-producer-args https://github.com/redpanda-data/strimzi-kafka-oauth.git
+
+cd /opt/strimzi-kafka-oauth
+mvn -DskipTests=true clean package
+
+cd /opt/strimzi-kafka-oauth/examples/producer
+mvn -DskipTests=true clean package
+
+cd /opt/strimzi-kafka-oauth
+cp oauth-common/target/kafka-oauth-common-*.jar /opt/kafka-dev/libs
+cp oauth-client/target/kafka-oauth-client-*.jar /opt/kafka-dev/libs
+cp oauth-common/target/lib/nimbus-jose-jwt-*.jar /opt/kafka-dev/libs

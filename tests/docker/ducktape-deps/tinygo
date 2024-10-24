@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p /usr/local/tinygo/
+. /etc/os-release
+if [ $(uname -m) = "aarch64" ]; then
+  export ARCHID="arm64"
+else
+  export ARCHID="amd64"
+fi
+if [ $UBUNTU_CODENAME = "focal" ]; then
+  retry_flag='--retry-connrefused'
+else
+  retry_flag='--retry-all-errors'
+fi
+curl -sSLf --retry 5 $retry_flag --retry-delay 2 "https://github.com/redpanda-data/tinygo/releases/download/v0.31.0-rpk2/tinygo-linux-${ARCHID}.tar.gz" -o /tmp/tinygo-linux.tar.gz
+cat /tmp/tinygo-linux.tar.gz | tar -xz -C /usr/local/tinygo/ --strip 1
+rm /tmp/tinygo-linux.tar.gz

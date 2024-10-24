@@ -9,8 +9,8 @@
 
 #include "raft/offset_monitor.h"
 
+#include "base/vassert.h"
 #include "raft/logger.h"
-#include "vassert.h"
 
 #include <seastar/core/future-util.hh>
 

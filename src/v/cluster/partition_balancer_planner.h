@@ -10,120 +10,132 @@
 
 #pragma once
 
+#include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/partition_balancer_types.h"
-#include "cluster/scheduling/partition_allocator.h"
-#include "cluster/topic_table.h"
+#include "cluster/scheduling/types.h"
+#include "cluster/types.h"
+#include "model/metadata.h"
 
 #include <absl/container/flat_hash_map.h>
 
+#include <chrono>
+
 namespace cluster {
 
-struct ntp_reassignments {
+enum ntp_reassignment_type : int8_t { regular, force };
+
+struct ntp_reassignment {
     model::ntp ntp;
-    allocation_units allocation_units;
+    allocated_partition allocated;
+    reconfiguration_policy reconfiguration_policy;
+    ntp_reassignment_type type;
 };
 
 struct planner_config {
+    model::partition_autobalancing_mode mode;
     // If node disk usage goes over this ratio planner will actively move
     // partitions away from the node.
     double soft_max_disk_usage_ratio;
     // Planner won't plan a move that will result in destination node(s) going
     // over this ratio.
     double hard_max_disk_usage_ratio;
-    // Size of partitions that can be planned to move in one request
-    size_t movement_disk_size_batch;
+    // Max number of actions that can be scheduled in one planning iteration
+    size_t max_concurrent_actions;
     std::chrono::seconds node_availability_timeout_sec;
+    // If the user manually requested a rebalance (not connected to node
+    // addition)
+    bool ondemand_rebalance_requested = false;
+    // Fallocation step used to calculate upperbound for partition size
+    size_t segment_fallocation_step;
+    // Threshold for minimum size of partition that is going to be prioritized
+    // for movement, partitions with size smaller than threshold will have the
+    // lowest priority
+    size_t min_partition_size_threshold;
+    // Timeout after which node is claimed unresponsive i.e. it doesn't respond
+    // the request but it is not yet considered as a violation of partition
+    // balancing rules
+    std::chrono::milliseconds node_responsiveness_timeout;
+    // If true, prioritize balancing topic-wise number of
+    // partitions on each node, as opposed to balancing the total number of
+    // partitions.
+    bool topic_aware = false;
 };
 
 class partition_balancer_planner {
 public:
     partition_balancer_planner(
       planner_config config,
-      topic_table& topic_table,
-      members_table& members_table,
+      partition_balancer_state& state,
       partition_allocator& partition_allocator);
 
     enum class status {
         empty,
-        movement_planned,
-        cancellations_planned,
-        waiting_for_maintenance_end,
+        actions_planned,
         waiting_for_reports,
+        missing_sizes,
+    };
+    /**
+     * class describing a reason underlying partition replica set change
+     */
+    enum class change_reason {
+        rack_constraint_repair,
+        partition_count_rebalancing,
+        node_decommissioning,
+        node_unavailable,
+        disk_full,
     };
 
     struct plan_data {
         partition_balancer_violations violations;
-        std::vector<ntp_reassignments> reassignments;
+        std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
-        size_t failed_reassignments_count = 0;
+        absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+          decommission_realloc_failures;
+        bool counts_rebalancing_finished = false;
+        size_t failed_actions_count = 0;
         status status = status::empty;
     };
 
-    plan_data plan_reassignments(
-      const cluster_health_report&, const std::vector<raft::follower_metrics>&);
+    ss::future<plan_data>
+    plan_actions(const cluster_health_report&, ss::abort_source&);
 
 private:
-    struct reallocation_request_state {
-        std::vector<model::node_id> all_nodes;
-        absl::flat_hash_set<model::node_id> all_unavailable_nodes;
-        absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
-        size_t num_nodes_in_maintenance = 0;
-        absl::flat_hash_set<model::node_id> decommissioning_nodes;
-        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
-
-        absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
-
-        // Partitions that are planned to move in current planner request
-        absl::flat_hash_set<model::ntp> moving_partitions;
-        uint64_t planned_moves_size = 0;
-    };
-
-    partition_constraints get_partition_constraints(
-      const partition_assignment& assignments,
-      const topic_metadata& topic_metadata,
-      size_t partition_size,
-      double max_disk_usage_ratio,
-      reallocation_request_state&) const;
-
-    result<allocation_units> get_reallocation(
-      const model::ntp&,
-      const partition_assignment&,
-      size_t partition_size,
-      partition_constraints,
-      const std::vector<model::broker_shard>& stable_replicas,
-      reallocation_request_state&);
-
-    void get_unavailable_nodes_reassignments(
-      plan_data&, reallocation_request_state&);
-
-    void get_full_node_reassignments(plan_data&, reallocation_request_state&);
+    class request_context;
+    class partition;
+    class reassignable_partition;
+    class force_reassignable_partition;
+    class moving_partition;
+    class immutable_partition;
 
     void init_per_node_state(
-      const cluster_health_report&,
-      const std::vector<raft::follower_metrics>&,
-      reallocation_request_state&,
-      plan_data&) const;
+      const cluster_health_report&, request_context&, plan_data&);
 
-    void get_unavailable_node_movement_cancellations(
-      plan_data&, const reallocation_request_state&);
+    ss::future<> init_ntp_sizes_from_health_report(
+      const cluster_health_report& health_report, request_context&);
+    ss::future<> init_topic_node_counts(request_context&);
 
-    bool is_partition_movement_possible(
-      const std::vector<model::broker_shard>& current_replicas,
-      const reallocation_request_state&);
+    /// Returns a pair of (total, free) bytes on a given node.
+    std::pair<uint64_t, uint64_t> get_node_bytes_info(const node::local_state&);
 
-    void init_ntp_sizes_from_health_report(
-      const cluster_health_report& health_report, reallocation_request_state&);
+    static ss::future<> get_node_drain_actions(
+      request_context&,
+      const absl::flat_hash_set<model::node_id>&,
+      change_reason reason);
 
-    std::optional<size_t> get_partition_size(
-      const model::ntp& ntp, const reallocation_request_state&);
+    static ss::future<> get_rack_constraint_repair_actions(request_context&);
+    static ss::future<> get_full_node_actions(request_context&);
+    static ss::future<> get_counts_rebalancing_actions(request_context&);
+    static ss::future<> get_force_repair_actions(request_context&);
 
-    bool all_reports_received(const reallocation_request_state&);
+    static size_t calculate_full_disk_partition_move_priority(
+      model::node_id, const reassignable_partition&, const request_context&);
 
     planner_config _config;
-    topic_table& _topic_table;
-    members_table& _members_table;
+    partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
+
+    friend std::ostream& operator<<(std::ostream&, change_reason);
 };
 
 } // namespace cluster

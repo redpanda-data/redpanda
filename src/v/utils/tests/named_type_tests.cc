@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -79,3 +79,41 @@ BOOST_AUTO_TEST_CASE(named_type_rvalue_overload) {
 
     BOOST_REQUIRE_EQUAL(str, r);
 }
+
+BOOST_AUTO_TEST_CASE(named_type_stream_operators) {
+    using int_alias = named_type<uint64_t, struct int_t_alias_test_module>;
+    int_alias value{123};
+    std::stringstream stream;
+    fmt::print(stream, "{}", value);
+    int_alias from_str_value;
+    stream >> from_str_value;
+    BOOST_REQUIRE_EQUAL(from_str_value, value);
+}
+
+static_assert(
+  !std::equality_comparable_with<
+    named_type<int, struct tag_0>,
+    named_type<int, struct tag_1>>,
+  "arithmetic named_types can't be compared directly");
+static_assert(
+  !std::equality_comparable_with<
+    named_type<ss::sstring, struct tag_a>,
+    named_type<ss::sstring, struct tag_b>>,
+  "non-arithmetic named_types can't be compared directly");
+
+using named_sstring = named_type<ss::sstring, struct named_sstring_tag>;
+static_assert(std::equality_comparable_with<named_sstring, ss::sstring>);
+static_assert(std::equality_comparable_with<
+              std::reference_wrapper<named_sstring>,
+              std::reference_wrapper<named_sstring>>);
+static_assert(std::equality_comparable_with<
+              named_sstring,
+              std::reference_wrapper<named_sstring>>);
+
+using named_int = named_type<int, struct named_int_tag>;
+static_assert(std::equality_comparable_with<named_int, int>);
+static_assert(std::equality_comparable_with<
+              std::reference_wrapper<named_int>,
+              std::reference_wrapper<named_int>>);
+static_assert(
+  std::equality_comparable_with<named_int, std::reference_wrapper<named_int>>);

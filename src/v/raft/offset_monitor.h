@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>

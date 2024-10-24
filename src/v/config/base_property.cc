@@ -9,8 +9,8 @@
 
 #include "config/base_property.h"
 
+#include "base/vassert.h"
 #include "config/config_store.h"
-#include "vassert.h"
 
 #include <ostream>
 
@@ -22,8 +22,13 @@ base_property::base_property(
   base_property::metadata meta)
   : _name(name)
   , _desc(desc)
-  , _meta(meta) {
+  , _meta(std::move(meta)) {
     conf._properties.emplace(name, this);
+    for (const auto& alias : _meta.aliases) {
+        auto [_, inserted] = conf._aliases.emplace(alias, this);
+
+        vassert(inserted, "Two properties tried to register the same alias");
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const base_property& p) {
@@ -51,8 +56,8 @@ std::string_view to_string_view(visibility v) {
 void base_property::assert_live_settable() const {
     vassert(
       _meta.needs_restart == needs_restart::no,
-      "Property must be be marked as "
-      "needs_restart::no");
+      "Property {} must be be marked as needs_restart::no",
+      name());
 }
 
 }; // namespace config

@@ -11,11 +11,14 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
+#include "storage/file_sanitizer_types.h"
+#include "storage/fs_utils.h"
 #include "storage/types.h"
-#include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
+#include "utils/stream_provider.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -30,12 +33,6 @@
 namespace storage {
 
 class segment_reader;
-
-struct stream_provider {
-    virtual ss::input_stream<char> take_stream() = 0;
-    virtual ss::future<> close() = 0;
-    virtual ~stream_provider() = default;
-};
 
 /**
  * A segment reader handle confers the right to use a file descriptor
@@ -104,16 +101,19 @@ public:
     ~segment_reader_handle() override;
 };
 
+using segment_reader_ptr = std::unique_ptr<segment_reader>;
+
 class segment_reader {
 public:
     segment_reader(
-      ss::sstring filename,
+      segment_full_path filename,
       size_t buffer_size,
       unsigned read_ahead,
-      debug_sanitize_files) noexcept;
+      std::optional<ntp_sanitizer_config> ntp_sanitizer_config
+      = std::nullopt) noexcept;
     ~segment_reader() noexcept;
-    segment_reader(segment_reader&&) noexcept;
-    segment_reader& operator=(segment_reader&&) noexcept;
+    segment_reader(segment_reader&&) = delete;
+    segment_reader& operator=(segment_reader&&) = delete;
     segment_reader(const segment_reader&) = delete;
     segment_reader& operator=(const segment_reader&) = delete;
 
@@ -124,7 +124,8 @@ public:
     size_t file_size() const { return _file_size; }
 
     /// file name
-    const ss::sstring& filename() const { return _filename; }
+    const ss::sstring filename() const { return path(); }
+    const segment_full_path& path() const { return _path; }
 
     bool empty() const { return _file_size == 0; }
 
@@ -145,11 +146,11 @@ public:
     data_stream(size_t pos_begin, size_t pos_end, const ss::io_priority_class);
 
 private:
-    ss::sstring _filename;
+    segment_full_path _path;
 
     // Protects open/close of _data_file, to avoid double-opening on
     // concurrent calls to get()
-    mutex _open_lock;
+    mutex _open_lock{"segment_reader::open_lock"};
 
     // This is only initialized if _data_file_refcount is greater than zero
     ss::file _data_file;
@@ -162,8 +163,10 @@ private:
     size_t _file_size{0};
     size_t _buffer_size{0};
     unsigned _read_ahead{0};
-    debug_sanitize_files _sanitize;
+    std::optional<ntp_sanitizer_config> _sanitizer_config;
 
+    // Keeps track of operations that cannot be pre-empted by close()
+    ss::gate _gate;
     // Acquire a handle to use the underlying file handle
     ss::future<segment_reader_handle> get();
 
@@ -173,10 +176,6 @@ private:
     friend class segment_reader_handle;
     friend std::ostream& operator<<(std::ostream&, const segment_reader&);
 };
-
-using segment_reader_ptr = ss::lw_shared_ptr<segment_reader>;
-
-std::ostream& operator<<(std::ostream&, segment_reader_ptr);
 
 /**
  * Enables reading from a series of segments sequentially using a single data
@@ -204,7 +203,7 @@ private:
     /**
      * Switches over to the next segment, if the current segment is depleted.
      */
-    ss::future<ss::input_stream<char>> next_stream();
+    ss::future<> next_stream();
 
 private:
     using segment_seq = std::vector<ss::lw_shared_ptr<segment>>;
@@ -220,6 +219,9 @@ private:
     // The file position upto which the last segment will be read.
     size_t _end_pos;
     ss::io_priority_class _priority_class;
+
+    ss::gate _gate;
+    ss::sstring _name;
 };
 
 /**

@@ -10,12 +10,12 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "seastarx.h"
 
 namespace kafka {
 
@@ -31,6 +31,19 @@ public:
         uint32_t record_count;
         model::offset base_offset;
         model::offset last_offset;
+        model::timestamp first_timestamp;
+        // First batch with the transactional bit set.
+        // We only return aborted transactions from this point on.
+        // This is needed for the correctness of consumption logic for
+        // transactions spanning compacted and non-compacted segments.
+        // For more details, check the details in the commit that added
+        // this.
+        // Note: This offset tracking is not needed after
+        // https://github.com/redpanda-data/redpanda/pull/16295
+        // but only retained for old data segments where abort markers
+        // were compacted away. Perhaps multiple major releases later
+        // this code can be removed.
+        std::optional<model::offset> first_tx_batch_offset;
     };
 
     kafka_batch_serializer() noexcept
@@ -47,6 +60,12 @@ public:
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         if (unlikely(record_count_ == 0)) {
             _base_offset = batch.base_offset();
+            _first_timestamp = batch.header().first_timestamp;
+        }
+        if (unlikely(
+              !_first_tx_batch_offset
+              && batch.header().attrs.is_transactional())) {
+            _first_tx_batch_offset = batch.base_offset();
         }
         _last_offset = batch.last_offset();
         record_count_ += batch.record_count();
@@ -61,19 +80,23 @@ public:
           .record_count = record_count_,
           .base_offset = _base_offset,
           .last_offset = _last_offset,
+          .first_timestamp = _first_timestamp,
+          .first_tx_batch_offset = _first_tx_batch_offset,
         };
     }
 
 private:
     void write_batch(model::record_batch&& batch) {
-        writer_serialize_batch(_wr, std::move(batch));
+        protocol::writer_serialize_batch(_wr, std::move(batch));
     }
 
 private:
     iobuf _buf;
-    response_writer _wr;
+    protocol::encoder _wr;
     model::offset _base_offset;
     model::offset _last_offset;
+    model::timestamp _first_timestamp;
+    std::optional<model::offset> _first_tx_batch_offset;
     uint32_t record_count_ = 0;
 };
 

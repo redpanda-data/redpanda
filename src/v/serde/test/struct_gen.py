@@ -125,6 +125,17 @@ class Struct:
   {{ field }}
     {%- endfor %}
 {%- endfor %}
+
+    auto serde_fields() {
+        return std::tie(
+{% for generation in s._field_generations %}
+    {%- for field in generation %}
+        {{ field._name}}{{ ", " if not loop.last else "" }}
+    {%- endfor %}
+        {{ ", " if not loop.last else "" }}
+{%- endfor %}
+        );
+    }
 };
 """).render(s=self)
 

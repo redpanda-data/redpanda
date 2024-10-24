@@ -11,14 +11,17 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "reflection/adl.h"
+#include "security/acl.h"
 #include "serde/envelope.h"
+#include "serde/rw/bytes.h"
 
 #include <iosfwd>
 
 namespace security {
 
 class scram_credential
-  : public serde::envelope<scram_credential, serde::version<0>> {
+  : public serde::
+      envelope<scram_credential, serde::version<0>, serde::compat_version<0>> {
 public:
     scram_credential() noexcept = default;
 
@@ -29,10 +32,23 @@ public:
       , _stored_key(std::move(stored_key))
       , _iterations(iterations) {}
 
+    scram_credential(
+      bytes salt,
+      bytes server_key,
+      bytes stored_key,
+      int iterations,
+      acl_principal principal) noexcept
+      : _salt(std::move(salt))
+      , _server_key(std::move(server_key))
+      , _stored_key(std::move(stored_key))
+      , _iterations(iterations)
+      , _principal(std::move(principal)) {}
+
     const bytes& salt() const { return _salt; }
     const bytes& server_key() const { return _server_key; }
     const bytes& stored_key() const { return _stored_key; }
     int iterations() const { return _iterations; }
+    const std::optional<acl_principal>& principal() const { return _principal; }
 
     bool operator==(const scram_credential&) const = default;
 
@@ -47,6 +63,8 @@ private:
     bytes _server_key;
     bytes _stored_key;
     int _iterations{0};
+    // Principal is not serialized on disk, it is sent over internal rpc
+    std::optional<acl_principal> _principal;
 };
 
 } // namespace security

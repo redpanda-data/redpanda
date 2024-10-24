@@ -9,17 +9,18 @@
  * by the Apache License, Version 2.0
  */
 
-#include "kafka/protocol/api_versions.h"
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "bytes/random.h"
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
+#include "kafka/protocol/wire.h"
 #include "random/generators.h"
+#include "utils/base64.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/iterator/counting_iterator.hpp>
+
+#include <limits>
 
 kafka::tagged_fields make_random_tags(size_t n) {
     kafka::tagged_fields::type tags;
@@ -42,14 +43,14 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
     auto tags = make_random_tags(10);
 
     /// Serialize the random tags into an iobuf
-    kafka::response_writer writer(buf);
+    kafka::protocol::encoder writer(buf);
     writer.write_tags(copy_tags(tags));
 
     /// Copy the result to use for a later comparison
     iobuf copy = buf.copy();
 
-    /// Deserialize the tags with the kafka::request_reader
-    kafka::request_reader reader(std::move(buf));
+    /// Deserialize the tags with the kafka::protocol::decoder
+    kafka::protocol::decoder reader(std::move(buf));
     auto deser_tags = reader.read_tags();
 
     /// Verify the inital values are equivalent
@@ -57,7 +58,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
 
     /// Re-serialize these tags to compare against the previous
     iobuf result;
-    kafka::response_writer end_writer(result);
+    kafka::protocol::encoder end_writer(result);
     end_writer.write_tags(std::move(deser_tags));
 
     /// Perform checks against serialized copies
@@ -88,10 +89,10 @@ struct test_struct {
 /// Only includes impls of supported types used in following unit tests
 template<typename T>
 void write_flex(T& type, iobuf& buf) {
-    kafka::response_writer writer(buf);
+    kafka::protocol::encoder writer(buf);
     if constexpr (std::is_same_v<T, std::vector<test_struct>>) {
         writer.write_flex_array(
-          type, [](test_struct& ts, kafka::response_writer& writer) {
+          type, [](test_struct& ts, kafka::protocol::encoder& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
@@ -100,12 +101,13 @@ void write_flex(T& type, iobuf& buf) {
                            T,
                            std::optional<std::vector<test_struct>>>) {
         writer.write_nullable_flex_array(
-          type, [](test_struct& ts, kafka::response_writer& writer) {
+          type, [](test_struct& ts, kafka::protocol::encoder& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
           });
-    } else if constexpr (std::is_same_v<T, kafka::uuid>) {
+    } else if constexpr (
+      std::is_same_v<T, kafka::uuid> || std::is_same_v<T, kafka::float64_t>) {
         writer.write(type);
     } else {
         writer.write_flex(type);
@@ -114,17 +116,19 @@ void write_flex(T& type, iobuf& buf) {
 
 template<typename T>
 T read_flex(iobuf buf) {
-    kafka::request_reader reader(std::move(buf));
+    kafka::protocol::decoder reader(std::move(buf));
     if constexpr (std::is_same_v<T, ss::sstring>) {
         return reader.read_flex_string();
     } else if constexpr (std::is_same_v<T, kafka::uuid>) {
         return reader.read_uuid();
+    } else if constexpr (std::is_same_v<T, kafka::float64_t>) {
+        return reader.read_float64();
     } else if constexpr (std::is_same_v<T, std::optional<ss::sstring>>) {
         return reader.read_nullable_flex_string();
     } else if constexpr (std::is_same_v<T, bytes>) {
         return reader.read_flex_bytes();
     } else if constexpr (std::is_same_v<T, std::vector<test_struct>>) {
-        return reader.read_flex_array([](kafka::request_reader& reader) {
+        return reader.read_flex_array([](kafka::protocol::decoder& reader) {
             test_struct v;
             v.field_a = reader.read_flex_string();
             v.field_b = reader.read_int32();
@@ -135,7 +139,7 @@ T read_flex(iobuf buf) {
                            T,
                            std::optional<std::vector<test_struct>>>) {
         return reader.read_nullable_flex_array(
-          [](kafka::request_reader& reader) {
+          [](kafka::protocol::decoder& reader) {
               test_struct v;
               v.field_a = reader.read_flex_string();
               v.field_b = reader.read_int32();
@@ -188,6 +192,20 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         BOOST_CHECK(b == serde_flex(b));
     }
     {
+        /// flex float64
+        auto valid = [](kafka::float64_t v) { return v == serde_flex(v); };
+
+        BOOST_CHECK(valid(0.0));
+        BOOST_CHECK(valid(1.2345));
+        BOOST_CHECK(valid(-1.2345));
+        BOOST_CHECK(valid(std::numeric_limits<kafka::float64_t>::min()));
+        BOOST_CHECK(valid(std::numeric_limits<kafka::float64_t>::max()));
+        BOOST_CHECK(valid(random_generators::get_real<kafka::float64_t>()));
+
+        auto nan = std::numeric_limits<kafka::float64_t>::quiet_NaN();
+        BOOST_CHECK(std::isnan(serde_flex(nan)));
+    }
+    {
         /// flex array
         std::vector<test_struct> v;
         std::for_each(
@@ -217,10 +235,10 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         iobuf data, writers_buf, copy;
         data.append(str.begin(), str.length());
         copy.append(str.begin(), str.length());
-        kafka::response_writer writer(writers_buf);
+        kafka::protocol::encoder writer(writers_buf);
         writer.write_flex(std::move(data));
 
-        kafka::request_reader reader(std::move(writers_buf));
+        kafka::protocol::decoder reader(std::move(writers_buf));
         auto result = reader.read_fragmented_nullable_flex_bytes();
         BOOST_REQUIRE(result.has_value());
         BOOST_CHECK_EQUAL(iobuf_to_bytes(*result), iobuf_to_bytes(copy));

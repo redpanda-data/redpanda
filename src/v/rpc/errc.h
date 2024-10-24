@@ -24,6 +24,13 @@ enum class errc {
     service_error,
     method_not_found,
     version_not_supported,
+    connection_timeout,
+    shutting_down,
+    service_unavailable,
+
+    // Used when receiving an undefined errc (e.g. from a newer version of
+    // Redpanda).
+    unknown = std::numeric_limits<uint8_t>::max(),
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "rpc::errc"; }
@@ -40,11 +47,22 @@ struct errc_category final : public std::error_category {
             return "rpc::errc::missing_node_rpc_client";
         case errc::client_request_timeout:
             return "rpc::errc::client_request_timeout";
+        case errc::service_error:
+            return "rpc::errc::service_error";
+        case errc::method_not_found:
+            return "rpc::errc::method_not_found";
         case errc::version_not_supported:
             return "rpc::errc::version_not_supported";
-        default:
-            return "rpc::errc::unknown";
+        case errc::connection_timeout:
+            return "rpc::errc::connection_timeout";
+        case errc::shutting_down:
+            return "rpc::errc::shutting_down";
+        case errc::service_unavailable:
+            return "rpc::errc::service_unavailable";
+        case errc::unknown:
+            break;
         }
+        return "rpc::errc::unknown(" + std::to_string(c) + ")";
     }
 };
 inline const std::error_category& error_category() noexcept {

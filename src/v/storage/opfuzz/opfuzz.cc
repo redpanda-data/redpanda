@@ -9,14 +9,14 @@
 
 #include "storage/opfuzz/opfuzz.h"
 
+#include "base/units.h"
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "units.h"
 #include "utils/directory_walker.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/loop.hh>
@@ -45,7 +45,7 @@ record_count(const ss::circular_buffer<model::record_batch>& batches) {
 
 struct append_offsets_validator {
     append_offsets_validator(
-      storage::log* log, size_t record_count, bool is_flushed)
+      ss::shared_ptr<storage::log> log, size_t record_count, bool is_flushed)
       : log(log) {
         auto lstats = log->offsets();
 
@@ -100,7 +100,7 @@ struct append_offsets_validator {
         }
     }
 
-    storage::log* log;
+    ss::shared_ptr<storage::log> log;
     model::offset expected_dirty;
     model::offset expected_committed;
     size_t start_seg_count;
@@ -114,7 +114,8 @@ struct append_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = model::test::make_random_batches(model::offset(0), 10);
+        auto batches = co_await model::test::make_random_batches(
+          model::offset(0), 10);
         vlog(
           fuzzlogger.info,
           "[{}] - Appending: {} batches. {}-{}",
@@ -129,7 +130,7 @@ struct append_op final : opfuzz::op {
           ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-        return std::move(reader)
+        co_return co_await std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
           .then(validator);
     }
@@ -143,23 +144,25 @@ struct append_op_foreign final : opfuzz::op {
         return ss::smp::submit_to(
                  source_core,
                  [ctx] {
-                     auto batches = model::test::make_random_batches(
-                       model::offset(0), 10);
-                     vlog(
-                       fuzzlogger.info,
-                       "[{}] - Foreign appending: {} batches. {}-{}",
-                       ctx.log->config().ntp(),
-                       batches.size(),
-                       batches.front().base_offset(),
-                       batches.back().last_offset());
-                     for (auto& b : batches) {
-                         b.set_term(*ctx.term);
-                     }
-                     auto cnt = record_count(batches);
-                     return std::pair<model::record_batch_reader, size_t>(
-                       model::make_foreign_memory_record_batch_reader(
-                         std::move(batches)),
-                       cnt);
+                     return model::test::make_random_batches(
+                              model::offset(0), 10)
+                       .then([ctx](auto batches) {
+                           vlog(
+                             fuzzlogger.info,
+                             "[{}] - Foreign appending: {} batches. {}-{}",
+                             ctx.log->config().ntp(),
+                             batches.size(),
+                             batches.front().base_offset(),
+                             batches.back().last_offset());
+                           for (auto& b : batches) {
+                               b.set_term(*ctx.term);
+                           }
+                           auto cnt = record_count(batches);
+                           return std::pair<model::record_batch_reader, size_t>(
+                             model::make_foreign_memory_record_batch_reader(
+                               std::move(batches)),
+                             cnt);
+                       });
                  })
           .then([ctx](std::pair<model::record_batch_reader, size_t> p) {
               return ss::smp::submit_to(
@@ -187,7 +190,8 @@ struct append_multi_term_op final : opfuzz::op {
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
-        auto batches = model::test::make_random_batches(model::offset(0), 10);
+        auto batches = co_await model::test::make_random_batches(
+          model::offset(0), 10);
         const size_t mid = batches.size() / 2;
         vlog(
           fuzzlogger.info,
@@ -208,7 +212,7 @@ struct append_multi_term_op final : opfuzz::op {
           ctx.log, record_count(batches), false);
         auto reader = model::make_memory_record_batch_reader(
           std::move(batches));
-        return std::move(reader)
+        co_return co_await std::move(reader)
           .for_each_ref(ctx.log->make_appender(append_cfg), model::no_timeout)
           .then(validator);
     }
@@ -354,7 +358,7 @@ public:
       model::offset min_offset,
       model::offset max_offset,
       bool expect_empty,
-      storage::log log)
+      ss::shared_ptr<storage::log> log)
       : _min_offset(min_offset)
       , _max_offset(max_offset)
       , _expect_empty(expect_empty)
@@ -376,7 +380,7 @@ public:
           "[{}] - Violated max offset limit in reader. Limit: {}, batch "
           "base "
           "offset: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _max_offset,
           b.base_offset());
 
@@ -385,7 +389,7 @@ public:
           "[{}] - Violated min offset limit in reader. Limit: {}, batch "
           "base "
           "offset: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _min_offset,
           b.last_offset());
 
@@ -397,7 +401,7 @@ public:
         vlog(
           fuzzlogger.info,
           "[{}] - Read {} batches from: {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _read_batches,
           _log);
 
@@ -405,7 +409,7 @@ public:
           _expect_empty || _read_batches > 0,
           "[{}] - Reader is expected to consume some batches in range: "
           "[{},{}] - {}",
-          _log.config().ntp(),
+          _log->config().ntp(),
           _min_offset,
           _max_offset,
           _log);
@@ -415,7 +419,7 @@ private:
     model::offset _min_offset;
     model::offset _max_offset;
     bool _expect_empty;
-    storage::log _log;
+    ss::shared_ptr<storage::log> _log;
     int64_t _read_batches{0};
 };
 
@@ -455,7 +459,7 @@ struct read_op final : opfuzz::op {
           [start, end, log = ctx.log, empty_log](
             model::record_batch_reader reader) {
               return std::move(reader).consume(
-                verifying_consumer(start, end, empty_log, *log),
+                verifying_consumer(start, end, empty_log, log),
                 model::no_timeout);
           });
     }
@@ -503,16 +507,17 @@ struct compact_op final : opfuzz::op {
     ~compact_op() noexcept override = default;
     const char* name() const final { return "compact_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
-        compaction_config cfg(
+        housekeeping_config cfg(
           model::timestamp::max(),
           std::nullopt,
           model::offset::max(),
+          std::nullopt,
           ss::default_priority_class(),
           *(ctx._as),
-          debug_sanitize_files::yes);
+          storage::ntp_sanitizer_config{.sanitize_only = true});
         if (random_generators::get_int(0, 100) > 70) {
-            cfg.eviction_time = model::timestamp::now();
-            cfg.max_bytes = 10_MiB;
+            cfg.gc.eviction_time = model::timestamp::now();
+            cfg.gc.max_bytes = 10_MiB;
         }
         vlog(
           fuzzlogger.info,
@@ -520,7 +525,7 @@ struct compact_op final : opfuzz::op {
           ctx.log->config().ntp(),
           cfg,
           *ctx.log);
-        return ctx.log->compact(cfg);
+        return ctx.log->housekeeping(cfg);
     }
 };
 
@@ -528,7 +533,7 @@ ss::future<> opfuzz::execute() {
     // compaction operation factory
     auto compact = [this]() {
         return ss::do_with(compact_op(), [this](compact_op& c) {
-            return c.invoke(op_context{&_term, &_log, &_as})
+            return c.invoke(op_context{&_term, _log, &_as})
               .handle_exception([](std::exception_ptr e) {
                   vlog(fuzzlogger.info, "Background compaction error: {}", e);
               });
@@ -543,7 +548,7 @@ ss::future<> opfuzz::execute() {
           c->name());
 
         std::vector<ss::future<>> ops;
-        ops.push_back(c->invoke(op_context{&_term, &_log, &_as}));
+        ops.push_back(c->invoke(op_context{&_term, _log, &_as}));
 
         if (
           c->concurrent_compaction_safe

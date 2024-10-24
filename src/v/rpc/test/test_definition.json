@@ -2,7 +2,7 @@
     "namespace": "cycling",
     "service_name": "team_movistar",
     "includes": [
-        "rpc/test/rpc_gen_types.h"
+        "rpc_gen_types.h"
     ],
     "methods": [
         {

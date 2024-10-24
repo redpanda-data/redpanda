@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/seastarx.h"
 #include "cluster/logger.h"
+#include "cluster/tests/local_monitor_fixture.h"
 #include "config/configuration.h"
-#include "local_monitor_fixture.h"
 #include "redpanda/tests/fixture.h"
-#include "seastarx.h"
 #include "storage/types.h"
 
 #include <seastar/core/reactor.hh>
@@ -32,32 +32,24 @@ using namespace cluster;
 
 using storage::disk_space_alert;
 
-local_monitor_fixture::local_monitor_fixture()
-  : _local_monitor(
-    config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
-    config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
-    config::shard_local_cfg().storage_min_free_bytes.bind(),
-    _storage_node_api,
-    _storage_api) {
-    _storage_node_api.start_single().get0();
-
+local_monitor_fixture::local_monitor_fixture() {
     auto log_conf = storage::log_config{
-      storage::log_config::storage_type::disk,
       "test.dir",
       1024,
-      storage::debug_sanitize_files::yes};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()};
 
     auto kvstore_conf = storage::kvstore_config(
       1_MiB,
       config::mock_binding(10ms),
       log_conf.base_dir,
-      storage::debug_sanitize_files::yes);
+      storage::make_sanitized_file_config());
 
-    _storage_api
-      .start(
-        [kvstore_conf]() { return kvstore_conf; },
-        [log_conf]() { return log_conf; })
-      .get0();
+    _feature_table.start().get();
+    _feature_table
+      .invoke_on_all(
+        [](features::feature_table& f) { f.testing_activate_all(); })
+      .get();
 
     clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
@@ -73,7 +65,23 @@ local_monitor_fixture::local_monitor_fixture()
     } else {
         clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
-    _local_monitor.testing_only_set_path(_test_path.string());
+
+    _storage_node_api.start_single(_test_path.string(), _test_path.string())
+      .get();
+
+    _local_monitor
+      .start(
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_bytes.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_percent.bind();
+        }),
+        std::ref(_storage_node_api))
+      .get();
+
     BOOST_ASSERT(ss::engine_is_ready());
 }
 
@@ -84,15 +92,17 @@ local_monitor_fixture::~local_monitor_fixture() {
     if (err) {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
-    _storage_api.stop().get0();
-    _storage_node_api.stop().get0();
+    _storage_node_api.stop().get();
+    _local_monitor.stop().get();
+    _feature_table.stop().get();
 }
 
 node::local_state local_monitor_fixture::update_state() {
-    _local_monitor.update_state()
+    local_monitor()
+      .update_state()
       .then([&]() { clusterlog.info("Updated local state."); })
       .get();
-    return _local_monitor.get_state_cached();
+    return local_monitor().get_state_cached();
 }
 
 struct statvfs local_monitor_fixture::make_statvfs(
@@ -120,19 +130,17 @@ void local_monitor_fixture::set_config_free_thresholds(
 
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.disks.size() == 1);
+    BOOST_TEST_REQUIRE(ls.disks().size() == 1);
 }
 
 FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
-    static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
-    struct statvfs stats = make_statvfs(free, total, block_size);
-    auto lamb = [&](const ss::sstring& _ignore) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+    _storage_node_api.local().set_statvfs_overrides(
+      storage::node::disk_type::data,
+      {.total_bytes = 2 << 20, .free_bytes = 1 << 20});
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.disks.size() == 1);
-    BOOST_TEST_REQUIRE(ls.disks[0].total == total * block_size);
-    BOOST_TEST_REQUIRE(ls.disks[0].free == free * block_size);
+    BOOST_TEST_REQUIRE(ls.data_disk.total == 2 << 20);
+    BOOST_TEST_REQUIRE(ls.data_disk.free == 1 << 20);
 }
 
 void local_monitor_fixture::assert_space_alert(
@@ -142,17 +150,15 @@ void local_monitor_fixture::assert_space_alert(
   size_t min_bytes,
   size_t free,
   disk_space_alert expected) {
-    static const size_t block_size = 1024;
-
     unsigned percent = (percent_alert_bytes * 100) / volume;
     set_config_free_thresholds(percent, bytes_alert, min_bytes);
-    struct statvfs stats = make_statvfs(
-      free / block_size, volume / block_size, block_size);
-    auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+
+    _storage_node_api.local().set_statvfs_overrides(
+      storage::node::disk_type::data,
+      {.total_bytes = volume, .free_bytes = free});
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == expected);
+    BOOST_TEST_REQUIRE(ls.data_disk.alert == expected);
 }
 
 FIXTURE_TEST(local_monitor_alert_none, local_monitor_fixture) {

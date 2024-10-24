@@ -9,39 +9,29 @@
 
 #include "cluster/metadata_dissemination_handler.h"
 
+#include "base/likely.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_leaders_table.h"
-#include "likely.h"
+#include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "ssx/async_algorithm.h"
+
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/shard_id.hh>
+#include <seastar/core/smp.hh>
+
+#include <boost/range/irange.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <iterator>
 
-namespace {
-std::vector<cluster::ntp_leader_revision>
-from_ntp_leaders(std::vector<cluster::ntp_leader> old_leaders) {
-    std::vector<cluster::ntp_leader_revision> leaders;
-    leaders.reserve(old_leaders.size());
-    std::transform(
-      old_leaders.begin(),
-      old_leaders.end(),
-      std::back_inserter(leaders),
-      [](cluster::ntp_leader& leader) {
-          return cluster::ntp_leader_revision(
-            std::move(leader.ntp),
-            leader.term,
-            leader.leader_id,
-            model::revision_id{} /* explicitly default */
-          );
-      });
-    return leaders;
-}
-} // namespace
 namespace cluster {
 metadata_dissemination_handler::metadata_dissemination_handler(
   ss::scheduling_group sg,
@@ -51,17 +41,8 @@ metadata_dissemination_handler::metadata_dissemination_handler(
   , _leaders(leaders) {}
 
 ss::future<update_leadership_reply>
-metadata_dissemination_handler::update_leadership(
-  update_leadership_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return do_update_leadership(from_ntp_leaders(std::move(req.leaders)));
-      });
-}
-
-ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership_v2(
-  update_leadership_request_v2&& req, rpc::streaming_context&) {
+  update_leadership_request_v2 req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return do_update_leadership(std::move(req.leaders));
@@ -70,37 +51,59 @@ metadata_dissemination_handler::update_leadership_v2(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
-  std::vector<ntp_leader_revision> leaders) {
-    return _leaders
-      .invoke_on_all(
-        [leaders = std::move(leaders)](partition_leaders_table& pl) mutable {
-            for (auto& leader : leaders) {
-                pl.update_partition_leader(
-                  leader.ntp, leader.revision, leader.term, leader.leader_id);
-            }
-        })
-      .then([] { return ss::make_ready_future<update_leadership_reply>(); });
+  chunked_vector<ntp_leader_revision> leaders) {
+    vlog(clusterlog.trace, "Received a metadata update");
+    return ss::do_with(
+             std::move(leaders),
+             [this](const chunked_vector<ntp_leader_revision>& leaders) {
+                 return ss::parallel_for_each(
+                   boost::irange<ss::shard_id>(0, ss::smp::count),
+                   [this, &leaders](ss::shard_id shard) {
+                       return ss::smp::submit_to(shard, [this, &leaders] {
+                           return ssx::async_for_each(
+                             leaders,
+                             [this](const ntp_leader_revision& leader) {
+                                 _leaders.local().update_partition_leader(
+                                   leader.ntp,
+                                   leader.revision,
+                                   leader.term,
+                                   leader.leader_id);
+                             });
+                       });
+                   });
+             })
+      .then([] { return update_leadership_reply{}; });
 }
 
-static get_leadership_reply
+namespace {
+ss::future<get_leadership_reply>
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    std::vector<ntp_leader> ret;
-    leaders.for_each_leader([&ret](
-                              model::topic_namespace_view tp_ns,
-                              model::partition_id pid,
-                              std::optional<model::node_id> leader,
-                              model::term_id term) mutable {
-        ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
-    });
-
-    return get_leadership_reply{std::move(ret)};
+    try {
+        fragmented_vector<ntp_leader> ret;
+        co_await leaders.for_each_leader([&ret](
+                                           model::topic_namespace_view tp_ns,
+                                           model::partition_id pid,
+                                           std::optional<model::node_id> leader,
+                                           model::term_id term) mutable {
+            ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
+        });
+        co_return get_leadership_reply{
+          std::move(ret), get_leadership_reply::is_success::yes};
+    } catch (...) {
+        vlog(
+          clusterlog.info,
+          "exception thrown while collecting leadership metadata - {}",
+          std::current_exception());
+        co_return get_leadership_reply{
+          {}, get_leadership_reply::is_success::no};
+    }
 }
+} // namespace
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
-  get_leadership_request&&, rpc::streaming_context&) {
+  get_leadership_request, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this]() mutable {
-        return ss::make_ready_future<get_leadership_reply>(
-          make_get_leadership_reply(_leaders.local()));
+        return make_get_leadership_reply(_leaders.local());
     });
 }
 

@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "model/record.h"
-#include "seastarx.h"
 #include "utils/vint.h"
 
 namespace storage {
@@ -25,19 +25,13 @@ public:
     record_batch_builder& operator=(const record_batch_builder&) = delete;
 
     virtual record_batch_builder&
-    add_raw_kv(std::optional<iobuf>&& key, std::optional<iobuf>&& value) {
-        _records.emplace_back(std::move(key), std::move(value));
-        return *this;
-    }
+    add_raw_kv(std::optional<iobuf>&& key, std::optional<iobuf>&& value);
     virtual record_batch_builder& add_raw_kw(
       std::optional<iobuf>&& key,
       std::optional<iobuf>&& value,
-      std::vector<model::record_header> headers) {
-        _records.emplace_back(
-          std::move(key), std::move(value), std::move(headers));
-        return *this;
-    }
-    virtual model::record_batch build() &&;
+      std::vector<model::record_header> headers);
+    model::record_batch build() &&;
+    ss::future<model::record_batch> build_async() &&;
     virtual ~record_batch_builder();
 
     void set_producer_identity(int64_t id, int16_t epoch) {
@@ -52,6 +46,11 @@ public:
     void set_compression(model::compression c) { _compression = c; }
 
     void set_timestamp(model::timestamp ts) { _timestamp = ts; }
+
+    /*
+     * Returns true if no records have been added, and false otherwise.
+     */
+    bool empty() const { return _records.empty(); }
 
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
@@ -83,6 +82,7 @@ private:
         std::vector<model::record_header> headers;
     };
 
+    model::record_batch_header build_header() const;
     uint32_t record_size(int32_t offset_delta, const serialized_record& r);
 
     model::record_batch_type _batch_type;
@@ -91,7 +91,8 @@ private:
     int16_t _producer_epoch{-1};
     bool _is_control_type{false};
     bool _transactional_type{false};
-    std::vector<serialized_record> _records;
+    iobuf _records;
+    int32_t _offset_delta{0};
     model::compression _compression{model::compression::none};
     std::optional<model::timestamp> _timestamp;
 };

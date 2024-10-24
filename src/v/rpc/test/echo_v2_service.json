@@ -2,13 +2,13 @@
     "namespace": "echo_v2",
     "service_name": "echo",
     "includes": [
-        "rpc/test/rpc_gen_types.h"
+        "rpc_gen_types.h"
     ],
     "methods": [
         {
-            "name": "echo_serde_only",
-            "input_type": "echo_req_serde_only",
-            "output_type": "echo_resp_serde_only"
+            "name": "echo",
+            "input_type": "echo_req",
+            "output_type": "echo_resp"
         }
     ]
 }

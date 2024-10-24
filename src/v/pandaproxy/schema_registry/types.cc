@@ -11,6 +11,8 @@
 
 #include "types.h"
 
+#include "util.h"
+
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -44,7 +46,12 @@ std::ostream& operator<<(
   std::ostream& os,
   const typed_schema_definition<unparsed_schema_definition::tag>& def) {
     fmt::print(
-      os, "type: {}, definition: {}", to_string_view(def.type()), def.raw());
+      os,
+      "type: {}, definition: {}, references: {}",
+      to_string_view(def.type()),
+      // TODO BP: Prevent this linearization
+      to_string(def.shared_raw()),
+      def.refs());
     return os;
 }
 
@@ -52,25 +59,37 @@ std::ostream& operator<<(
   std::ostream& os,
   const typed_schema_definition<canonical_schema_definition::tag>& def) {
     fmt::print(
-      os, "type: {}, definition: {}", to_string_view(def.type()), def.raw());
+      os,
+      "type: {}, definition: {}, references: {}",
+      to_string_view(def.type()),
+      // TODO BP: Prevent this linearization
+      to_string(def.shared_raw()),
+      def.refs());
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
-    fmt::print(
-      os, "name: {}, subject: {}, version: {}", ref.name, ref.sub, ref.version);
+    fmt::print(os, "{:l}", ref);
     return os;
 }
 
+bool operator<(const schema_reference& lhs, const schema_reference& rhs) {
+    return std::tie(lhs.name, lhs.sub, lhs.version)
+           < std::tie(rhs.name, rhs.sub, rhs.version);
+}
+
 std::ostream& operator<<(std::ostream& os, const unparsed_schema& ref) {
-    fmt::print(
-      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    fmt::print(os, "subject: {}, {}", ref.sub(), ref.def());
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const canonical_schema& ref) {
-    fmt::print(
-      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    fmt::print(os, "subject: {}, {}", ref.sub(), ref.def());
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const compatibility_result& res) {
+    fmt::print(os, "is_compat: {}, messages: {}", res.is_compat, res.messages);
     return os;
 }
 

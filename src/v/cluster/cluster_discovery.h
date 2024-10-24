@@ -8,22 +8,26 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "random/simple_time_jitter.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <optional>
 #include <vector>
 
 namespace storage {
 class kvstore;
+class api;
 } // namespace storage
 
 namespace cluster {
+struct cluster_bootstrap_info_reply;
 
 // Provides metadata pertaining to initial cluster discovery. It is the
 // entrypoint into the steps to join a cluster.
@@ -60,61 +64,98 @@ namespace cluster {
 // TODO: reconcile the RPC dispatch logic here with that in members_manager.
 class cluster_discovery {
 public:
+    using brokers = std::vector<model::broker>;
+    using node_ids_by_uuid
+      = absl::flat_hash_map<model::node_uuid, model::node_id>;
+
+    // After a successful join by a non-founder node to an existing cluster,
+    // this is what we know about the cluster
+    struct registration_result {
+        // True if this is the result of registering the node with the
+        // cluster, false if it is populated based on local state (i.e.
+        // we are a founder or an already-registered node).
+        bool newly_registered{false};
+
+        model::node_id assigned_node_id;
+        std::optional<iobuf> controller_snapshot;
+    };
+
     cluster_discovery(
-      const model::node_uuid& node_uuid,
-      storage::kvstore& kvstore,
-      ss::abort_source&);
+      const model::node_uuid& node_uuid, storage::api&, ss::abort_source&);
 
-    // Determines what the node ID for this node should be. Once called, we can
-    // proceed with initializing anything that depends on node ID (Raft
-    // subsystem, etc).
+    // Register with the cluster:
+    // - If we are a fresh cluster founder, broadcast to other founders
+    //   to ensure we agree on the seed servers, then proceed.
+    // - For non-founders, call out to a seed server to register, which
+    //   will issue us with a node ID if we don't already have one, and
+    //   provide a controller snapshot.
     //
-    // On a non-seed server with no node ID specified via config or on disk,
-    // this sends a request to the controllers to register this node's UUID and
-    // assign it a node ID.
-    //
-    // TODO: implement the below behavior.
-    //
-    // On a seed server with no data on it (i.e. a fresh node), this sends
-    // requests to all other seed servers to determine if there is a valid
-    // assignment of node IDs for the seeds.
-    ss::future<model::node_id> determine_node_id();
+    // This method is to be used before starting the controller for
+    // the first time: after this method returns success, we have a node ID set,
+    // the cluster has accepted our request to join, and we have a controller
+    // snapshot that we can use to prime configuration/features state before
+    // starting up the controller.
+    ss::future<registration_result> register_with_cluster();
 
-    // If configured as the root, return this broker as the sole initial Raft0
-    // broker.
-    //
-    // TODO: implement the below behavior.
-    //
     // Returns brokers to be used to form a Raft group for a new cluster.
     //
-    // If this node is a seed server, returns all seed servers, assuming seeds
-    // are configured with identical seed servers.
+    // If this node is a cluster founder, returns all seed servers, after
+    // making sure that all founders are configured with identical seed servers
+    // list. In case of root-driven bootstrap, that reflects to a list of just
+    // the root broker.
     //
-    // If this node is not a seed server returns an empty list.
-    std::vector<model::broker> initial_raft0_brokers() const;
+    // If this node is not a cluster founder, returns an empty list.
+    brokers founding_brokers() const;
+
+    // A cluster founder is a node that is configured as a seed server, and
+    // whose local on-disk state along with the remote state from other seed
+    // servers indicate that a cluster doesn't already exist. A cluster founder
+    // will form the initial controller Raft group with all other seed servers,
+    // to which non-seeds can join later.
+    //
+    // Upon completion of this call, if config::node().node_id was empty, it
+    // will be set with an ID agreed upon by all seeds.
+    ss::future<bool> is_cluster_founder();
+
+    // Returns node_uuid to node_id map built during cluster discovery.
+    // Non-const to allow moving the contents away, since it is supposed to be
+    // a single use call.
+    //
+    // \pre is_cluster_founder() future has been completed
+    // \pre get_node_ids_by_uuid() has never been called
+    node_ids_by_uuid& get_node_ids_by_uuid();
 
 private:
-    // Returns whether this node is the root node.
-    //
-    // TODO: implement the below behavior.
-    //
-    // Returns true if the local node is a founding member of the cluster, as
-    // indicated by either us having an empty seed server (we are the root node
-    // in a legacy config) or our node UUID matching one of those returned by
-    // the seed servers.
-    bool is_cluster_founder() const;
+    // Sends requests to each seed server to register the local node UUID
+    // until one succeeds. Returns nullopt if registration did not succeed.
+    ss::future<std::optional<registration_result>>
+    dispatch_node_uuid_registration_to_seeds();
 
-    // Sends requests to each seed server to register the local node UUID until
-    // one succeeds. Upon success, sets `node_id` to the assigned node ID and
-    // returns true.
-    ss::future<bool> dispatch_node_uuid_registration_to_seeds(model::node_id&);
+    // Requests `cluster_bootstrap_info` from the given address, returning
+    // early with a bogus result if it's already been determined if this node
+    // is a cluster founder.
+    ss::future<cluster_bootstrap_info_reply>
+      request_cluster_bootstrap_info_single(net::unresolved_address) const;
+
+    // Initializes founder state (whether a cluster already exists, whether
+    // this node is a founder, etc). Requests cluster_bootstrap_info from all
+    // seeds to determine whether the local node is a cluster founder, and if
+    // so, populates `_founding_brokers` and `_node_ids_by_uuid`. Validates that
+    // all seeds are consistent with one another and agree on the set of
+    // founding brokers.
+    //
+    // Sets `_is_cluster_founder` upon completion.
+    ss::future<> discover_founding_brokers();
 
     const model::node_uuid _node_uuid;
     simple_time_jitter<model::timeout_clock> _join_retry_jitter;
     const std::chrono::milliseconds _join_timeout;
 
-    storage::kvstore& _kvstore;
+    std::optional<bool> _is_cluster_founder;
+    storage::api& _storage;
     ss::abort_source& _as;
+    brokers _founding_brokers;
+    node_ids_by_uuid _node_ids_by_uuid;
 };
 
 } // namespace cluster

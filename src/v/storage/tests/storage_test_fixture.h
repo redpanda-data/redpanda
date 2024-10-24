@@ -11,20 +11,22 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
-#include "seastarx.h"
+#include "reflection/adl.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
-#include "units.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
@@ -32,6 +34,9 @@
 #include <boost/range/irange.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/core.h>
+
+#include <cstdint>
+#include <optional>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -41,7 +46,11 @@ struct random_batches_generator {
     ss::circular_buffer<model::record_batch>
     operator()(std::optional<model::timestamp> base_ts = std::nullopt) {
         return model::test::make_random_batches(
-          model::offset(0), random_generators::get_int(1, 10), true, base_ts);
+                 model::offset(0),
+                 random_generators::get_int(1, 10),
+                 true,
+                 base_ts)
+          .get();
     }
 };
 
@@ -50,12 +59,14 @@ struct key_limited_random_batch_generator {
 
     ss::circular_buffer<model::record_batch>
     operator()(std::optional<model::timestamp> ts = std::nullopt) {
-        return model::test::make_random_batches(model::test::record_batch_spec{
-          .allow_compression = true,
-          .count = random_generators::get_int(1, 10),
-          .max_key_cardinality = cardinality,
-          .bt = model::record_batch_type::raft_data,
-          .timestamp = ts});
+        return model::test::make_random_batches(
+                 model::test::record_batch_spec{
+                   .allow_compression = true,
+                   .count = random_generators::get_int(1, 10),
+                   .max_key_cardinality = cardinality,
+                   .bt = model::record_batch_type::raft_data,
+                   .timestamp = ts})
+          .get();
     }
 };
 
@@ -182,6 +193,7 @@ public:
     ss::sstring test_dir;
     storage::kvstore kvstore;
     storage::storage_resources resources;
+    ss::sharded<features::feature_table> feature_table;
 
     std::optional<model::timestamp> ts_cursor;
 
@@ -192,17 +204,41 @@ public:
             1_MiB,
             config::mock_binding(10ms),
             test_dir,
-            storage::debug_sanitize_files::yes),
-          resources) {
+            storage::make_sanitized_file_config()),
+          ss::this_shard_id(),
+          resources,
+          feature_table) {
         configure_unit_test_logging();
-        // avoid double metric registrations
+        // avoid double metric registrations - disk_log_builder and other
+        // helpers also start a feature_table and other structs that register
+        // metrics
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
-        }).get0();
+            config::shard_local_cfg()
+              .get("disable_public_metrics")
+              .set_value(true);
+            config::shard_local_cfg()
+              .get("log_segment_size_min")
+              .set_value(std::optional<uint64_t>{});
+        }).get();
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         kvstore.start().get();
     }
 
-    ~storage_test_fixture() { kvstore.stop().get(); }
+    ~storage_test_fixture() {
+        kvstore.stop().get();
+        feature_table.stop().get();
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg().get("disable_metrics").reset();
+            config::shard_local_cfg().get("disable_public_metrics").reset();
+            config::shard_local_cfg().get("log_segment_size_min").reset();
+        }).get();
+    }
 
     /**
      * Only safe to call if you have generated some batches: this gives you
@@ -214,32 +250,25 @@ public:
 
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
-        return storage::log_manager(std::move(cfg), kvstore, resources);
+        return storage::log_manager(
+          std::move(cfg), kvstore, resources, feature_table);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
         return storage::log_manager(
-          default_log_config(test_dir), kvstore, resources);
+          default_log_config(test_dir), kvstore, resources, feature_table);
     }
 
     /// \brief randomizes the configuration options
     storage::log_config default_log_config(ss::sstring test_dir) {
-        auto i = random_generators::get_int(0, 100);
-        auto stype = i > 50 ? storage::log_config::storage_type::disk
-                            : storage::log_config::storage_type::memory;
-
-        auto cache = i > 50 ? storage::with_cache::yes
-                            : storage::with_cache::no;
+        auto cache = storage::with_cache::yes;
         auto cfg = storage::log_config(
-          stype,
           std::move(test_dir),
           200_MiB,
-          storage::debug_sanitize_files::yes,
           ss::default_priority_class(),
-          cache);
-
-        cfg.segment_size_jitter = storage::jitter_percents(0);
+          cache,
+          storage::make_sanitized_file_config());
         return cfg;
     }
 
@@ -267,32 +296,36 @@ public:
     };
 
     ss::circular_buffer<model::record_batch>
-    read_and_validate_all_batches(storage::log log) {
-        auto lstats = log.offsets();
+    read_and_validate_all_batches(ss::shared_ptr<storage::log> log) {
+        return read_and_validate_all_batches(
+          log, model::model_limits<model::offset>::max());
+    }
+
+    ss::circular_buffer<model::record_batch> read_and_validate_all_batches(
+      ss::shared_ptr<storage::log> log, model::offset max_offset) {
+        auto lstats = log->offsets();
         storage::log_reader_config cfg(
-          lstats.start_offset,
-          lstats.committed_offset,
-          ss::default_priority_class());
-        auto reader = log.make_reader(std::move(cfg)).get0();
+          lstats.start_offset, max_offset, ss::default_priority_class());
+        auto reader = log->make_reader(std::move(cfg)).get();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
-          .get0();
+          .get();
     }
 
     // clang-format off
     template<typename T = random_batches_generator>
-        requires requires(T generator) {
-            { generator() } -> std::same_as<ss::circular_buffer<model::record_batch>>;
+        requires requires(T generator, std::optional<model::timestamp> ts) {
+            { generator(ts) } -> std::same_as<ss::circular_buffer<model::record_batch>>;
         }
     // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
-      storage::log log,
+      ss::shared_ptr<storage::log> log,
       int appends,
       model::term_id term = model::term_id(0),
       T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no,
       bool flush_after_append = true) {
-        auto lstats = log.offsets();
+        auto lstats = log->offsets();
         storage::log_append_config append_cfg{
           sync, ss::default_priority_class(), model::no_timeout};
 
@@ -321,45 +354,47 @@ public:
               std::move(batches));
             auto res = std::move(reader)
                          .for_each_ref(
-                           log.make_appender(append_cfg), append_cfg.timeout)
-                         .get0();
+                           log->make_appender(append_cfg), append_cfg.timeout)
+                         .get();
             if (flush_after_append) {
-                log.flush().get();
+                log->flush().get();
             }
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
-            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
-            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
+            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
+            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
         }
 
         return headers;
     }
 
-    void append_batch(storage::log log, model::record_batch batch) {
+    void
+    append_batch(ss::shared_ptr<storage::log> log, model::record_batch batch) {
         model::record_batch_reader::data_t buffer;
+        const auto last_offset_delta = model::offset(
+          batch.header().last_offset_delta);
         buffer.push_back(std::move(batch));
         storage::log_append_config append_cfg{
           storage::log_append_config::fsync::no,
           ss::default_priority_class(),
           model::no_timeout};
 
-        model::offset old_dirty_offset = log.offsets().dirty_offset;
+        model::offset old_dirty_offset = log->offsets().dirty_offset;
         model::offset base_offset = old_dirty_offset < model::offset(0)
                                       ? model::offset(0)
                                       : old_dirty_offset + model::offset(1);
-        auto expected_offset
-          = base_offset + model::offset{batch.header().last_offset_delta};
+        auto expected_offset = base_offset + last_offset_delta;
 
         auto res = model::make_memory_record_batch_reader(std::move(buffer))
                      .for_each_ref(
-                       log.make_appender(append_cfg), model::no_timeout)
+                       log->make_appender(append_cfg), model::no_timeout)
                      .get();
 
-        log.flush().get();
+        log->flush().get();
 
-        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
-        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
+        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
+        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
     }
 
     // model::offset start_offset;
@@ -370,13 +405,15 @@ public:
     // model::offset max_offset = model::model_limits<model::offset>::max(); //
     // inclusive
     ss::circular_buffer<model::record_batch> read_range_to_vector(
-      storage::log log, model::offset start, model::offset end) {
+      ss::shared_ptr<storage::log> log,
+      model::offset start,
+      model::offset end) {
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
         tlog.info("read_range_to_vector: {}", cfg);
-        auto reader = log.make_reader(std::move(cfg)).get0();
+        auto reader = log->make_reader(std::move(cfg)).get();
         return std::move(reader)
           .consume(batch_validating_consumer(), model::no_timeout)
-          .get0();
+          .get();
     }
 };

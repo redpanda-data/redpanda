@@ -11,10 +11,11 @@
 
 #include "kafka/client/fetcher.h"
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/types.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"
 
@@ -23,16 +24,17 @@ namespace kafka::client {
 fetch_request make_fetch_request(
   const model::topic_partition& tp,
   model::offset offset,
+  int32_t min_bytes,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
-    std::vector<fetch_request::partition> partitions;
+    chunked_vector<fetch_request::partition> partitions;
     partitions.push_back(fetch_request::partition{
       .partition_index{tp.partition},
       .current_leader_epoch = kafka::invalid_leader_epoch,
       .fetch_offset{offset},
       .log_start_offset{model::offset{-1}},
       .max_bytes = max_bytes});
-    std::vector<fetch_request::topic> topics;
+    chunked_vector<fetch_request::topic> topics;
     topics.push_back(fetch_request::topic{
       .name{tp.topic}, .fetch_partitions{std::move(partitions)}});
 
@@ -40,7 +42,7 @@ fetch_request make_fetch_request(
       .data = {
         .replica_id{consumer_replica_id},
         .max_wait_ms{timeout},
-        .min_bytes = 0,
+        .min_bytes = min_bytes,
         .max_bytes = max_bytes,
         .isolation_level = model::isolation_level::read_uncommitted,
         .topics{std::move(topics)}}};
@@ -73,11 +75,11 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
       .aborted{},
       .records{}};
 
-    std::vector<fetch_response::partition_response> responses;
+    small_fragment_vector<fetch_response::partition_response> responses;
     responses.push_back(std::move(pr));
     auto response = fetch_response::partition{.name = tp.topic};
     response.partitions = std::move(responses);
-    std::vector<fetch_response::partition> parts;
+    chunked_vector<fetch_response::partition> parts;
     parts.push_back(std::move(response));
     return fetch_response{
       .data = {

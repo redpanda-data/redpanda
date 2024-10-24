@@ -1,0 +1,42 @@
+---
+name: Add comment to JIRA Issue
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  add_jira_comment:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      - name: install dependencies
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+        run: pip install -r ${SCRIPT_DIR}/requirements.txt
+      - name: install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/jira
+          parse-json-secrets: true
+      - name: Add comment to JIRA Issue
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+          JIRA_TOKEN: ${{ env.JIRA_TOKEN  }}
+          JIRA_USER: ${{ env.JIRA_USER  }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_COMMENT: ${{ github.event.comment.body }}
+        run: python ${SCRIPT_DIR}/jira_helper.py UPDATE_COMMENT --verbose -p CORE

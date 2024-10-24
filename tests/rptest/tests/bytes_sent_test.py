@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from typing import Any, List, cast
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
@@ -39,14 +40,16 @@ class BytesSentTest(RedpandaTest):
             # Convert the metrics generator to a list
             metrics = list(self.redpanda.metrics(node))
 
+            def filter_sent(fam: Any):
+                return fam.name == "vectorized_kafka_rpc_sent_bytes"
+
             # Find the metric family that tracks bytes sent from kafka subsystem
-            family_filter = filter(
-                lambda fam: fam.name == "vectorized_kafka_rpc_sent_bytes",
-                metrics)
+            family_filter = filter(filter_sent, metrics)
+
             family = next(family_filter)
 
             # Sum bytes sent
-            for sample in family.samples:
+            for sample in cast(List[Any], family.samples):
                 bytes_sent += sample.value
 
         return bytes_sent
@@ -104,7 +107,7 @@ class BytesSentTest(RedpandaTest):
         self.logger.debug(f"End bytes: {end_bytes}")
         self.logger.debug(f"Total sent: {total_sent}")
 
-        def in_percent_threshold(n1, n2, threshold):
+        def in_percent_threshold(n1: int, n2: int, threshold: float):
             percent_increase = (abs(n2 - n1) / n2) * 100
             self.logger.debug(
                 f"Percent increase: {percent_increase}, Threshold: {threshold}"

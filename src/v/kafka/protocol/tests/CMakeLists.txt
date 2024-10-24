@@ -1,4 +1,4 @@
-set(KAFKA_REQUEST_GENERATOR "${CMAKE_BINARY_DIR}/src/go/kreq-gen/kafka-request-generator")
+set(KAFKA_REQUEST_GENERATOR "${CMAKE_BINARY_DIR}/src/v/test_utils/go/kreq-gen/kafka-request-generator")
 
 rp_test(
   UNIT_TEST
@@ -17,7 +17,7 @@ rp_test(
     kafka
     kafka_protocol
   BUILD_DEPENDENCIES
-    kafka-request-generator
+    kafka_request_generator
   ENV
     "GENERATOR_BIN=${KAFKA_REQUEST_GENERATOR}"
 )
@@ -35,6 +35,7 @@ rp_test(
     v::seastar_testing_main
     v::kafka
     v::storage_test_utils
+    v::application
   ARGS "-- -c 1"
   LABELS
     kafka

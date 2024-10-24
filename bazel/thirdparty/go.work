@@ -1,0 +1,11 @@
+// This should match what is listed in MODULE.bazel
+go 1.23.0
+
+// Everything we build with Bazel goes here.
+use (
+	src/go/rpk
+	src/v/test_utils/go
+	src/transform-sdk/go/transform
+	src/transform-sdk/go/transform/internal/testdata
+	src/transform-sdk/tests
+)

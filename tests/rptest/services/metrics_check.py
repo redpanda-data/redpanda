@@ -94,15 +94,23 @@ class MetricCheck(object):
                     samples[sample.name] = sample.value
 
         for k, v in samples.items():
-            self.logger.info(f"  Captured {k}={v}")
+            self.logger.info(
+                f"  Captured {k}={v} from {self.node.account.hostname}(node_id = {self.redpanda.node_id(self.node)})"
+            )
 
         if len(samples) == 0:
-            metrics_endpoint = ("/metrics" if self._metrics_endpoint
-                                == MetricsEndpoint.METRICS else
-                                "/public_metrics")
-            url = f"http://{self.node.account.hostname}:9644{metrics_endpoint}"
-            import requests
-            dump = requests.get(url).text
+            # Announce
+            dump = "No metrics extracted"
+            # handle cloud cluster separately
+            if getattr(self.redpanda, "_cloud_cluster", None) is None:
+                metrics_endpoint = ("/metrics" if self._metrics_endpoint
+                                    == MetricsEndpoint.METRICS else
+                                    "/public_metrics")
+                url = f"http://{self.node.account.hostname}:9644{metrics_endpoint}"
+                import requests
+                dump = requests.get(url).text
+            else:
+                dump = self.redpanda._cloud_cluster.get_public_metrics()
             self.logger.warn(f"Metrics dump: {dump}")
             raise RuntimeError("Failed to capture metrics!")
 
@@ -147,6 +155,27 @@ class MetricCheck(object):
 
             new_value = samples[metric]
             if not comparator(old_value, new_value):
+                return False
+
+        return True
+
+    def evaluate_groups(self, expectations):
+        """
+        Similar to `evaluate`, but allowing for mutliple metrics per comparator. Where
+        each comparator will recieve two dicts. The first for a dict of old samples. And
+        the second for a dict of new samples.
+        """
+        metrics = [metric for e in expectations for metric in e[0]]
+        samples = self._capture(metrics)
+
+        for (metrics, comparator) in expectations:
+            old_samples_dict = dict((k, self._initial_samples[k])
+                                    for k in metrics
+                                    if k in self._initial_samples)
+            if len(old_samples_dict) != len(samples):
+                return False
+
+            if not comparator(old_samples_dict, samples):
                 return False
 
         return True

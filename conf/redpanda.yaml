@@ -1,4 +1,4 @@
-# Copyright 2020 Redpanda Data, Inc.
+# Copyright 2024 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
 # included in the file licenses/BSL.md
@@ -7,21 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-# Redpanda Queue configuration file
-
-# organization and cluster_id help Vectorized identify your system.
-organization: ""
-cluster_id: ""
-
-license_key: ""
+# Redpanda configuration file
 
 redpanda:
   # Data directory where all the files will be stored.
-  # This directory MUST resides on xfs partion.
+  # This directory MUST reside on an ext4 or xfs partition.
   data_directory: "/var/lib/redpanda/data"
-
-  # Node ID - must be unique for each node
-  node_id: 1
 
   # The initial cluster nodes addresses
   seed_servers: []
@@ -31,11 +22,22 @@ redpanda:
     address: "0.0.0.0"
     port: 33145
 
+  # Redpanda server for other nodes to connect too
+  advertised_rpc_api:
+    address: "127.0.0.1"
+    port: 33145
+
   # Kafka transport
   kafka_api:
   - address: "0.0.0.0"
     port: 9092
 
+  # Kafka transport for other nodes to connect too
+  advertised_kafka_api:
+  - address: "127.0.0.1"
+    port: 9092
+
+  # Admin server includes metrics, and cluster management
   admin:
     address: "0.0.0.0"
     port: 9644
@@ -44,10 +46,10 @@ redpanda:
   # not recomended for production use
   developer_mode: true
 
-# Enable Pandaproxy
+# Enable Pandaproxy on port 8082
 pandaproxy: {}
 
-# Enable Schema Registry
+# Enable Schema Registry on port 8081
 schema_registry: {}
 
 rpk:
@@ -61,9 +63,6 @@ rpk:
 
     # The path to the client certificate key (PEM)
     #key_file: ""
-
-  # Enables sending environment and resource usage data to Vectorized.
-  enable_usage_stats: true
 
   # Available tuners
   tune_network: false

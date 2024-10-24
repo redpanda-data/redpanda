@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/future.hh>
@@ -28,7 +28,7 @@ namespace syschecks {
 
 extern ss::logger checklog;
 
-static inline void initialize_intrinsics() {
+inline void initialize_intrinsics() {
 #if !defined __aarch64__
     // https://gcc.gnu.org/onlinedocs/gcc/x86-Built-in-Functions.html#index-_005f_005fbuiltin_005fcpu_005finit-1
     //
@@ -40,7 +40,7 @@ static inline void initialize_intrinsics() {
     __builtin_cpu_init();
 #endif
 }
-static inline void cpu() {
+inline void cpu() {
 #if !defined __aarch64__
     // Do not use the macros __SSE4_2__ because we need to detect at runtime
     if (!__builtin_cpu_supports("sse4.2")) {
@@ -63,6 +63,16 @@ ss::future<> systemd_message(fmt::format_string<Args...> fmt, Args&&... args) {
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
     return systemd_raw_message(std::move(s));
 }
+
+/**
+ * Ensure that the path specified by dir exists and is a directory.
+ *
+ * If it does not exist, throw an std::invalid_argument exception
+ * which embeds details of the failure, using name as a human-readable
+ * name in the error string.
+ */
+void directory_must_exist(
+  std::string_view name, const std::filesystem::path& dir);
 
 /*
  * write the pid lock file for this process at the given path. if the lock file

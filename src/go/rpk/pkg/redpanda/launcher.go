@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,7 +49,6 @@ func (*launcher) Start(installDir string, args *RedpandaArgs) error {
 		return errors.New("Redpanda config file is required")
 	}
 	redpandaArgs := collectRedpandaArgs(args)
-	log.Debugf("Starting '%s' with arguments '%v'", binary, redpandaArgs)
 
 	var rpEnv []string
 	ldLibraryPathPattern := regexp.MustCompile("^LD_LIBRARY_PATH=.*$")
@@ -59,7 +57,7 @@ func (*launcher) Start(installDir string, args *RedpandaArgs) error {
 			rpEnv = append(rpEnv, ev)
 		}
 	}
-	log.Infof("Running:\n%s %s %s", strings.Join(rpEnv, " "), binary, strings.Join(redpandaArgs, " "))
+	fmt.Printf("Running:\n%s %s\n", binary, strings.Join(redpandaArgs, " "))
 	return unix.Exec(binary, redpandaArgs, rpEnv)
 }
 

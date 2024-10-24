@@ -10,10 +10,10 @@
  */
 #pragma once
 
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sasl_handshake_response.h"
-#include "kafka/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -26,11 +26,11 @@ struct sasl_handshake_request final {
 
     sasl_handshake_request() = default;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -48,12 +48,12 @@ struct sasl_handshake_response final {
     sasl_handshake_response() = default;
 
     sasl_handshake_response(
-      error_code error, std::vector<ss::sstring> mechanisms) {
+      error_code error, chunked_vector<ss::sstring> mechanisms) {
         data.error_code = error;
         data.mechanisms = std::move(mechanisms);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

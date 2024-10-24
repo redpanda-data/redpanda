@@ -24,20 +24,26 @@ class RollingRestarter:
                       override_cfg_params=None,
                       start_timeout=None,
                       stop_timeout=None,
-                      use_maintenance_mode=True):
+                      use_maintenance_mode=True,
+                      omit_seeds_on_idx_one=True,
+                      auto_assign_node_id=True):
         """
         Performs a rolling restart on the given nodes, optionally overriding
         the given configs.
         """
         admin = self.redpanda._admin
+        if start_timeout is None:
+            start_timeout = self.redpanda.node_ready_timeout_s
+        if stop_timeout is None:
+            stop_timeout = self.redpanda.node_ready_timeout_s
 
         def has_drained_leaders(node):
             try:
-                node_id = self.redpanda.idx(node)
-                broker_resp = admin.get_broker(node_id)
+                node_id = self.redpanda.node_id(node)
+                broker_resp = admin.get_broker(node_id, node=node)
                 maintenance_status = broker_resp["maintenance_status"]
-                return maintenance_status["draining"] and maintenance_status[
-                    "finished"]
+                return maintenance_status[
+                    "draining"] and maintenance_status.get("finished", False)
             except requests.exceptions.HTTPError:
                 return False
 
@@ -46,7 +52,7 @@ class RollingRestarter:
                        timeout_sec=stop_timeout,
                        backoff_sec=1)
             # Wait for the cluster to agree on a controller leader.
-            return self.redpanda.get_node(
+            return self.redpanda.get_node_by_id(
                 admin.await_stable_leader(
                     topic="controller",
                     partition=0,
@@ -57,7 +63,10 @@ class RollingRestarter:
 
         # TODO: incorporate rack awareness into this to support updating
         # multiple nodes at a time.
+        self.redpanda.logger.info(
+            f"Rolling restart of nodes {[n.name for n in nodes]}")
         for node in nodes:
+            self.redpanda.logger.info(f"Waiting for cluster healthy")
             controller_leader = wait_until_cluster_healthy(stop_timeout)
 
             # NOTE: callers may not want to use maintenance mode if the
@@ -72,10 +81,15 @@ class RollingRestarter:
                     err_msg=
                     "Timeout waiting for cluster to support 'maintenance_mode' feature"
                 )
+                self.redpanda.logger.info(
+                    f"Put node {node.name} into maintenance mode")
                 admin.maintenance_start(node, dst_node=controller_leader)
+                self.redpanda.logger.info(
+                    f"Waiting for node {node.name} leadership drain")
                 wait_until(lambda: has_drained_leaders(node),
                            timeout_sec=stop_timeout,
-                           backoff_sec=1)
+                           backoff_sec=1,
+                           err_msg=f"Node {node.name} draining leaderships")
 
             wait_until(lambda: self.redpanda.healthy(),
                        timeout_sec=stop_timeout,
@@ -83,9 +97,12 @@ class RollingRestarter:
 
             self.redpanda.stop_node(node, timeout=stop_timeout)
 
-            self.redpanda.start_node(node,
-                                     override_cfg_params,
-                                     timeout=start_timeout)
+            self.redpanda.start_node(
+                node,
+                override_cfg_params,
+                timeout=start_timeout,
+                omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                auto_assign_node_id=auto_assign_node_id)
 
             controller_leader = wait_until_cluster_healthy(start_timeout)
 

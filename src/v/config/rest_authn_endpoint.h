@@ -15,7 +15,7 @@
 #include "json/_include_first.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "net/unresolved_address.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/sstring.hh>
 

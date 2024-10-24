@@ -33,9 +33,9 @@ struct instance_generator<cluster::init_tm_tx_reply> {
     static cluster::init_tm_tx_reply random() {
         return cluster::init_tm_tx_reply(
           model::random_producer_identity(),
-          cluster::tx_errc(random_generators::get_int<int>(
-            static_cast<int>(cluster::tx_errc::none),
-            static_cast<int>(cluster::tx_errc::invalid_txn_state))));
+          cluster::tx::errc(random_generators::get_int<int>(
+            static_cast<int>(cluster::tx::errc::none),
+            static_cast<int>(cluster::tx::errc::invalid_txn_state))));
     }
     static std::vector<cluster::init_tm_tx_reply> limits() { return {}; }
 };

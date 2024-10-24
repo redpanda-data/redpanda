@@ -11,11 +11,23 @@
 #pragma once
 
 #include "cluster/errc.h"
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/map.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/set.h"
+#include "serde/rw/vector.h"
+#include "utils/human.h"
+#include "utils/to_string.h"
+
+#include <absl/container/btree_set.h>
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace cluster {
 
@@ -39,14 +51,42 @@ struct node_disk_space {
     double peak_used_ratio() const { return double(used + assigned) / total; }
 
     double final_used_ratio() const {
+        // it sometimes may happen  that the partition replica size on one node
+        // is out of date with the total used size reported by a node space
+        // manager. This may lead to an overflow of final used ratio.
+        if (released >= used + assigned) {
+            return 0.0;
+        }
+
         return double(used + assigned - released) / total;
+    }
+
+    friend std::ostream& operator<<(std::ostream& o, const node_disk_space& d) {
+        fmt::print(
+          o,
+          "{{total: {}, used: {}, assigned: {}, released: {}; "
+          "used ratios: orig: {:.4}, peak: {:.4}, final: {:.4}}}",
+          human::bytes(d.total),
+          human::bytes(d.used),
+          human::bytes(d.assigned),
+          human::bytes(d.released),
+          d.original_used_ratio(),
+          d.peak_used_ratio(),
+          d.final_used_ratio());
+        return o;
     }
 };
 
 struct partition_balancer_violations
-  : serde::envelope<partition_balancer_violations, serde::version<0>> {
+  : serde::envelope<
+      partition_balancer_violations,
+      serde::version<0>,
+      serde::compat_version<0>> {
     struct unavailable_node
-      : serde::envelope<unavailable_node, serde::version<0>> {
+      : serde::envelope<
+          unavailable_node,
+          serde::version<0>,
+          serde::compat_version<0>> {
         model::node_id id;
         model::timestamp unavailable_since;
 
@@ -69,7 +109,9 @@ struct partition_balancer_violations
         }
     };
 
-    struct full_node : serde::envelope<full_node, serde::version<0>> {
+    struct full_node
+      : serde::
+          envelope<full_node, serde::version<0>, serde::compat_version<0>> {
         model::node_id id;
         uint32_t disk_used_percent;
 
@@ -158,7 +200,10 @@ operator<<(std::ostream& os, partition_balancer_status status) {
 }
 
 struct partition_balancer_overview_request
-  : serde::envelope<partition_balancer_overview_request, serde::version<0>> {
+  : serde::envelope<
+      partition_balancer_overview_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     friend std::ostream&
@@ -171,34 +216,62 @@ struct partition_balancer_overview_request
 };
 
 struct partition_balancer_overview_reply
-  : serde::envelope<partition_balancer_overview_reply, serde::version<0>> {
+  : serde::envelope<
+      partition_balancer_overview_reply,
+      serde::version<2>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     errc error;
     model::timestamp last_tick_time;
     partition_balancer_status status;
     std::optional<partition_balancer_violations> violations;
+    absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+      decommission_realloc_failures;
+    size_t partitions_pending_force_recovery_count;
+    std::vector<model::ntp> partitions_pending_force_recovery_sample;
 
     auto serde_fields() {
-        return std::tie(error, last_tick_time, status, violations);
+        return std::tie(
+          error,
+          last_tick_time,
+          status,
+          violations,
+          decommission_realloc_failures,
+          partitions_pending_force_recovery_count,
+          partitions_pending_force_recovery_sample);
     }
 
     bool operator==(const partition_balancer_overview_reply& other) const {
         return error == other.error && last_tick_time == other.last_tick_time
-               && status == other.status && violations == other.violations;
+               && status == other.status && violations == other.violations
+               && decommission_realloc_failures
+                    == other.decommission_realloc_failures
+               && partitions_pending_force_recovery_count
+                    == other.partitions_pending_force_recovery_count
+               && partitions_pending_force_recovery_sample
+                    == other.partitions_pending_force_recovery_sample;
     }
 
     friend std::ostream&
     operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
         fmt::print(
           o,
-          "{{ error: {} last_tick_time: {} status: {} violations: {}}}",
+          "{{ error: {} last_tick_time: {} status: {} violations: {}, "
+          "partitions_pending_force_recovery: {}}}",
           rep.error,
           rep.last_tick_time,
           rep.status,
-          rep.violations);
+          rep.violations,
+          rep.partitions_pending_force_recovery_count);
         return o;
     }
+};
+
+class balancer_tick_aborted_exception final : public std::runtime_error {
+public:
+    explicit balancer_tick_aborted_exception(const std::string& msg)
+      : std::runtime_error(msg) {}
 };
 
 } // namespace cluster

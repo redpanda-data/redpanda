@@ -1,0 +1,110 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "release-type",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "debug-type",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "shared",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "ON"
+      }
+    },
+    {
+      "name": "static",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "sanitize",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "coverage-type",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "ci",
+      "hidden": true,
+      "cacheVariables": {
+        "Redpanda_ENABLE_CLANG_TIDY": "FORCE_ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": ["base", "release-type", "shared"]
+    },
+    {
+      "name": "release-static",
+      "inherits": ["base", "release-type", "static"]
+    },
+    {
+      "name": "release-ci",
+      "inherits": ["release", "ci"]
+    },
+    {
+      "name": "debug",
+      "inherits": ["base", "debug-type", "shared", "sanitize"]
+    },
+    {
+      "name": "debug-static",
+      "inherits": ["base", "debug-type", "static", "sanitize"]
+    },
+    {
+      "name": "coverage",
+      "inherits": ["base", "release-type", "static", "coverage-type"]
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "release-static",
+      "configurePreset": "release-static"
+    },
+    {
+      "name": "release-ci",
+      "configurePreset": "release-ci"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "debug-static",
+      "configurePreset": "debug-static"
+    }
+  ]
+}

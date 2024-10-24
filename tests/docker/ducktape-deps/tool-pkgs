@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -e
+apt-get update
+apt-get install -qq \
+  bind9-utils \
+  bind9-dnsutils \
+  bsdmainutils \
+  dmidecode \
+  gnuplot-nox \
+  krb5-admin-server \
+  krb5-kdc \
+  krb5-user \
+  iproute2 \
+  iptables \
+  libatomic1 \
+  libyajl-dev \
+  libsasl2-dev \
+  libsasl2-modules-gssapi-mit \
+  libssl-dev \
+  net-tools \
+  lsof \
+  pciutils \
+  nodejs \
+  npm \
+  openssh-server \
+  netcat-openbsd \
+  sudo \
+  llvm \
+  python3-pip \
+  python3-venv \
+  libzstd-dev \
+  pkg-config \
+  faketime

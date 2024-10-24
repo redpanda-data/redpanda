@@ -75,7 +75,14 @@ def make_aws_handler(token_ttl):
 
         # noinspection PyPep8Naming
         def do_PUT(self):
-            self.not_allowed()
+            if self.path == '/latest/api/token':
+                self.send_response(200)
+                self.send_header('Content-type', 'application/text')
+                self.end_headers()
+                self.wfile.write(b'token')
+                self.json_log(200)
+            else:
+                self.not_allowed()
 
         # noinspection PyPep8Naming
         def do_DELETE(self):

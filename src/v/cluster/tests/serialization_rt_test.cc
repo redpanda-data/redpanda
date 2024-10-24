@@ -7,28 +7,39 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/tests/randoms.h"
+#include "cluster/tests/topic_properties_generator.h"
 #include "cluster/tests/utils.h"
+#include "cluster/tx_protocol_types.h"
 #include "cluster/types.h"
+#include "compat/check.h"
+#include "container/fragmented_vector.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/test/random.h"
+#include "raft/fundamental.h"
+#include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "security/tests/randoms.h"
 #include "storage/types.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
-#include "tristate.h"
-#include "units.h"
+#include "utils/tristate.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -84,7 +95,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
         .available_memory_gb = 1024,
         .available_disk_gb = static_cast<uint32_t>(10000000000),
         .mount_paths = {"/", "/var/lib"},
-        .etc_props = {{"max_segment_size", "1233451"}}});
+        .etc_props = {{"max_segment_size", "1233451"}},
+        .available_memory_bytes = 1024 * 1_GiB,
+        .in_fips_mode = model::fips_mode_flag::enabled});
     auto d = serialize_roundtrip_rpc(std::move(b));
 
     BOOST_REQUIRE_EQUAL(d.id(), model::node_id(0));
@@ -102,6 +115,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     BOOST_REQUIRE_EQUAL(
       d.properties().etc_props.find("max_segment_size")->second, "1233451");
     BOOST_CHECK(d.rack() == std::optional<ss::sstring>("test"));
+    BOOST_REQUIRE_EQUAL(d.properties().available_memory_bytes, 1024 * 1_GiB);
+    BOOST_REQUIRE_EQUAL(
+      d.properties().in_fips_mode, model::fips_mode_flag::enabled);
 }
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
@@ -191,7 +207,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
 SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
     auto invariants = cluster::configuration_invariants(model::node_id(12), 64);
 
-    auto res = serialize_roundtrip_rpc(std::move(invariants));
+    auto res = serialize_roundtrip_adl(std::move(invariants));
     BOOST_REQUIRE_EQUAL(res.core_count, 64);
     BOOST_REQUIRE_EQUAL(res.node_id, model::node_id(12));
     BOOST_REQUIRE_EQUAL(res.version, 0);
@@ -406,42 +422,6 @@ struct partition_status_v1 {
     model::revision_id revision_id;
 };
 
-SEASTAR_THREAD_TEST_CASE(partition_status_serialization_backward_compat_test) {
-    partition_status_v0 status_v0{
-      .id = model::partition_id(10),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-    };
-
-    auto original_v0 = status_v0;
-    auto buf = reflection::to_iobuf(std::move(status_v0));
-    auto result = reflection::from_iobuf<cluster::partition_status>(
-      std::move(buf));
-
-    BOOST_REQUIRE_EQUAL(result.id, original_v0.id);
-    BOOST_REQUIRE_EQUAL(result.term, original_v0.term);
-    BOOST_REQUIRE_EQUAL(result.leader_id, original_v0.leader_id);
-    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{});
-    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
-
-    partition_status_v1 status_v1{
-      .id = model::partition_id(10),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id(1024),
-    };
-
-    auto original_v1 = status_v1;
-    buf = reflection::to_iobuf(std::move(status_v1));
-    result = reflection::from_iobuf<cluster::partition_status>(std::move(buf));
-
-    BOOST_REQUIRE_EQUAL(result.id, original_v1.id);
-    BOOST_REQUIRE_EQUAL(result.term, original_v1.term);
-    BOOST_REQUIRE_EQUAL(result.leader_id, original_v1.leader_id);
-    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{1024});
-    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
-}
-
 namespace reflection {
 template<>
 struct adl<partition_status_v0> {
@@ -492,65 +472,53 @@ struct adl<partition_status_v1> {
 };
 } // namespace reflection
 
-SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
-    std::vector<cluster::partition_status> statuses;
-    statuses.push_back(cluster::partition_status{
-      .id = model::partition_id(0),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id{},
-      .size_bytes = 0,
-    });
-    statuses.push_back(cluster::partition_status{
-      .id = model::partition_id(1),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id{},
-      .size_bytes = 0,
-    });
-
-    auto original = statuses;
-    auto buf = reflection::to_iobuf(std::move(statuses));
-    auto result_v0 = reflection::from_iobuf<std::vector<partition_status_v0>>(
-      std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
-        BOOST_CHECK(result_v0[i].id == original[i].id);
-        BOOST_CHECK(result_v0[i].term == original[i].term);
-        BOOST_CHECK(result_v0[i].leader_id == original[i].leader_id);
-    }
-
-    buf = reflection::to_iobuf(std::move(statuses));
-    auto result_v1 = reflection::from_iobuf<std::vector<partition_status_v1>>(
-      std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
-        BOOST_CHECK(result_v1[i].id == original[i].id);
-        BOOST_CHECK(result_v1[i].term == original[i].term);
-        BOOST_CHECK(result_v1[i].leader_id == original[i].leader_id);
-    }
-}
-
 template<typename T>
-void serde_roundtrip_test(const T original) {
-    auto serde_in = original;
+void roundtrip_test(T a) {
+    using compat::compat_copy;
+    auto [serde_in, original] = compat_copy(std::move(a));
     auto serde_out = serde::to_iobuf(std::move(serde_in));
-    auto from_serde = serde::from_iobuf<T>(std::move(serde_out));
 
-    BOOST_REQUIRE(original == from_serde);
-}
+    T from_serde;
+    std::exception_ptr err;
+    try {
+        from_serde = serde::from_iobuf<T>(serde_out.copy());
+    } catch (...) {
+        err = std::current_exception();
+    }
 
-template<typename T>
-void adl_roundtrip_test(const T original) {
-    auto adl_in = original;
-    auto adl_out = reflection::to_iobuf(std::move(adl_in));
-    auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
+    if constexpr (std::equality_comparable<T>) {
+        // On failures, log the type and the content of the buffer.
+        if (err || original != from_serde) {
+            std::cerr << "Failed serde roundtrip on " << typeid(T).name()
+                      << std::endl;
+            std::cerr << "Dump " << serde_out.size_bytes()
+                      << " bytes: " << serde_out.hexdump(1024) << std::endl;
+        }
 
-    BOOST_REQUIRE(original == from_adl);
-}
+        if (err) {
+            std::rethrow_exception(err);
+        }
 
-template<typename T>
-void roundtrip_test(const T original) {
-    serde_roundtrip_test(original);
-    adl_roundtrip_test(original);
+        BOOST_REQUIRE(original == from_serde);
+    } else {
+        auto serde_out_after_roundtrip = serde::to_iobuf(from_serde);
+        if (err || serde_out_after_roundtrip != serde_out) {
+            std::cerr << "Failed serde roundtrip on " << typeid(T).name()
+                      << std::endl;
+            std::cerr << "Iobuf before " << serde_out.size_bytes()
+                      << " bytes: " << serde_out.hexdump(1024) << std::endl;
+            std::cerr << "Iobuf after "
+                      << serde_out_after_roundtrip.size_bytes()
+                      << " bytes: " << serde_out_after_roundtrip.hexdump(1024)
+                      << std::endl;
+        }
+
+        if (err) {
+            std::rethrow_exception(err);
+        }
+
+        BOOST_REQUIRE(serde_out_after_roundtrip == serde_out);
+    }
 }
 
 template<typename T>
@@ -564,54 +532,8 @@ cluster::property_update<T> random_property_update(T value) {
     };
 }
 
-cluster::remote_topic_properties random_remote_topic_properties() {
-    cluster::remote_topic_properties remote_tp;
-    remote_tp.remote_revision
-      = tests::random_named_int<model::initial_revision_id>();
-    remote_tp.remote_partition_count = random_generators::get_int(0, 1000);
-    return remote_tp;
-}
-
-cluster::topic_properties old_random_topic_properties() {
-    cluster::topic_properties properties;
-    properties.cleanup_policy_bitflags = tests::random_optional(
-      [] { return model::random_cleanup_policy(); });
-    properties.compaction_strategy = tests::random_optional(
-      [] { return model::random_compaction_strategy(); });
-    properties.compression = tests::random_optional(
-      [] { return model::random_compression(); });
-    properties.timestamp_type = tests::random_optional(
-      [] { return model::random_timestamp_type(); });
-    properties.segment_size = tests::random_optional(
-      [] { return random_generators::get_int(100_MiB, 1_GiB); });
-    properties.retention_bytes = tests::random_tristate(
-      [] { return random_generators::get_int(100_MiB, 1_GiB); });
-    properties.retention_duration = tests::random_tristate(
-      [] { return tests::random_duration_ms(); });
-    properties.recovery = tests::random_optional(
-      [] { return tests::random_bool(); });
-    properties.shadow_indexing = tests::random_optional(
-      [] { return model::random_shadow_indexing_mode(); });
-    return properties;
-}
-
-cluster::topic_properties random_topic_properties() {
-    cluster::topic_properties properties = old_random_topic_properties();
-
-    properties.read_replica = tests::random_optional(
-      [] { return tests::random_bool(); });
-    properties.read_replica_bucket = tests::random_optional([] {
-        return random_generators::gen_alphanum_string(
-          random_generators::get_int(1, 64));
-    });
-    properties.remote_topic_properties = tests::random_optional(
-      [] { return random_remote_topic_properties(); });
-
-    return properties;
-}
-
-std::vector<cluster::partition_assignment> random_partition_assignments() {
-    std::vector<cluster::partition_assignment> ret;
+ss::chunked_fifo<cluster::partition_assignment> random_partition_assignments() {
+    ss::chunked_fifo<cluster::partition_assignment> ret;
 
     for (auto a = 0, ma = random_generators::get_int(1, 10); a < ma; a++) {
         cluster::partition_assignment p_as;
@@ -705,28 +627,28 @@ model::timeout_clock::duration random_timeout_clock_duration() {
       random_generators::get_int<int64_t>(-100000, 100000) * 1000000);
 }
 
-cluster::tx_errc random_tx_errc() {
-    return random_generators::random_choice(std::vector<cluster::tx_errc>{
-      cluster::tx_errc::none,
-      cluster::tx_errc::leader_not_found,
-      cluster::tx_errc::shard_not_found,
-      cluster::tx_errc::partition_not_found,
-      cluster::tx_errc::stm_not_found,
-      cluster::tx_errc::partition_not_exists,
-      cluster::tx_errc::pid_not_found,
-      cluster::tx_errc::timeout,
-      cluster::tx_errc::conflict,
-      cluster::tx_errc::fenced,
-      cluster::tx_errc::stale,
-      cluster::tx_errc::not_coordinator,
-      cluster::tx_errc::coordinator_not_available,
-      cluster::tx_errc::preparing_rebalance,
-      cluster::tx_errc::rebalance_in_progress,
-      cluster::tx_errc::coordinator_load_in_progress,
-      cluster::tx_errc::unknown_server_error,
-      cluster::tx_errc::request_rejected,
-      cluster::tx_errc::invalid_producer_id_mapping,
-      cluster::tx_errc::invalid_txn_state});
+cluster::tx::errc random_tx_errc() {
+    return random_generators::random_choice(std::vector<cluster::tx::errc>{
+      cluster::tx::errc::none,
+      cluster::tx::errc::leader_not_found,
+      cluster::tx::errc::shard_not_found,
+      cluster::tx::errc::partition_not_found,
+      cluster::tx::errc::stm_not_found,
+      cluster::tx::errc::partition_not_exists,
+      cluster::tx::errc::pid_not_found,
+      cluster::tx::errc::timeout,
+      cluster::tx::errc::conflict,
+      cluster::tx::errc::fenced,
+      cluster::tx::errc::stale,
+      cluster::tx::errc::not_coordinator,
+      cluster::tx::errc::coordinator_not_available,
+      cluster::tx::errc::preparing_rebalance,
+      cluster::tx::errc::rebalance_in_progress,
+      cluster::tx::errc::coordinator_load_in_progress,
+      cluster::tx::errc::unknown_server_error,
+      cluster::tx::errc::request_rejected,
+      cluster::tx::errc::invalid_producer_id_mapping,
+      cluster::tx::errc::invalid_txn_state});
 }
 
 cluster::partitions_filter random_partitions_filter() {
@@ -768,7 +690,7 @@ cluster::drain_manager::drain_status random_drain_status() {
 }
 
 cluster::topic_status random_topic_status() {
-    std::vector<cluster::partition_status> partitions;
+    cluster::partition_statuses_t partitions;
     for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
         partitions.push_back(cluster::partition_status{
           .id = tests::random_named_int<model::partition_id>(),
@@ -778,60 +700,66 @@ cluster::topic_status random_topic_status() {
           .size_bytes = random_generators::get_int<size_t>(),
         });
     }
-    cluster::topic_status data{
-      .tp_ns = model::random_topic_namespace(),
-      .partitions = partitions,
-    };
+    cluster::topic_status data(
+      model::random_topic_namespace(), std::move(partitions));
     return data;
 }
 
 cluster::node::local_state random_local_state() {
-    std::vector<storage::disk> disks;
-    for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
-        disks.push_back(storage::disk{
+    auto data_disk = storage::disk{
+      .path = random_generators::gen_alphanum_string(
+        random_generators::get_int(20)),
+      .free = random_generators::get_int<uint64_t>(),
+      .total = random_generators::get_int<uint64_t>(),
+    };
+
+    // Maybe report a separate cache drive
+    std::optional<storage::disk> cache_disk;
+    if (random_generators::get_int(0, 1) == 0) {
+        cache_disk = storage::disk{
           .path = random_generators::gen_alphanum_string(
             random_generators::get_int(20)),
           .free = random_generators::get_int<uint64_t>(),
           .total = random_generators::get_int<uint64_t>(),
-        });
+        };
     }
     cluster::node::local_state data{
       .redpanda_version
       = tests::random_named_string<cluster::node::application_version>(),
       .logical_version = tests::random_named_int<cluster::cluster_version>(),
       .uptime = tests::random_duration_ms(),
-      .disks = disks,
-    };
+      .data_disk = data_disk,
+      .cache_disk = cache_disk};
     return data;
 }
 
 cluster::cluster_health_report random_cluster_health_report() {
     std::vector<cluster::node_state> node_states;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        node_states.push_back(cluster::node_state{
-          .id = tests::random_named_int<model::node_id>(),
-          .membership_state = model::membership_state::draining,
-          .is_alive = cluster::alive(tests::random_bool()),
-        });
+        node_states.push_back(cluster::random_node_state());
     }
-    std::vector<cluster::node_health_report> node_reports;
+    std::vector<cluster::node_health_report_ptr> node_reports;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        std::vector<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        node_reports.push_back(cluster::node_health_report{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .include_drain_status = true, // so adl considers drain status
-          .drain_status = random_drain_status(),
-        });
+        auto report = cluster::node_health_report(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          random_drain_status());
+
+        // Reduce to an ADL-encodable state
+        report.local_state.cache_disk = std::nullopt;
+
+        node_reports.emplace_back(
+          ss::make_lw_shared<cluster::node_health_report>(std::move(report)));
     }
     cluster::cluster_health_report data{
       .raft0_leader = std::nullopt,
       .node_states = node_states,
-      .node_reports = node_reports,
+      .node_reports = std::move(node_reports),
     };
     if (tests::random_bool()) {
         data.raft0_leader = tests::random_named_int<model::node_id>();
@@ -866,32 +794,25 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-
-    roundtrip_test(cluster::update_leadership_request({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
-
-    roundtrip_test(cluster::update_leadership_request_v2({
-      cluster::ntp_leader_revision(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>(),
-        tests::random_named_int<model::revision_id>()),
-    }));
+    chunked_vector<cluster::ntp_leader_revision> l_revs;
+    l_revs.emplace_back(
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>(),
+      tests::random_named_int<model::revision_id>());
+    roundtrip_test(cluster::update_leadership_request_v2(std::move(l_revs)));
 
     roundtrip_test(cluster::update_leadership_reply());
 
     roundtrip_test(cluster::get_leadership_request());
 
-    roundtrip_test(cluster::get_leadership_reply({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
+    fragmented_vector<cluster::ntp_leader> leaders;
+    leaders.emplace_back(
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>());
+    roundtrip_test(cluster::get_leadership_reply(
+      std::move(leaders), cluster::get_leadership_reply::is_success::yes));
 
     roundtrip_test(
       cluster::allocate_id_request(random_timeout_clock_duration()));
@@ -911,9 +832,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(p_as);
     }
-    { serde_roundtrip_test(random_remote_topic_properties()); }
+    { roundtrip_test(random_remote_topic_properties()); }
     { roundtrip_test(old_random_topic_properties()); }
-    { serde_roundtrip_test(random_topic_properties()); }
+    { roundtrip_test(random_topic_properties()); }
     {
         roundtrip_test(
           random_property_update(random_generators::gen_alphanum_string(10)));
@@ -922,29 +843,31 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           [] { return random_generators::get_int<size_t>(0, 100000); })));
     }
     {
-        cluster::incremental_topic_updates updates{
-          .compression = random_property_update(
-            tests::random_optional([] { return model::random_compression(); })),
-          .cleanup_policy_bitflags = random_property_update(
-            tests::random_optional(
-              [] { return model::random_cleanup_policy(); })),
-          .compaction_strategy = random_property_update(tests::random_optional(
-            [] { return model::random_compaction_strategy(); })),
-          .timestamp_type = random_property_update(tests::random_optional(
-            [] { return model::random_timestamp_type(); })),
-          .segment_size = random_property_update(tests::random_optional(
-            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
-          .retention_bytes = random_property_update(tests::random_tristate(
-            [] { return random_generators::get_int(100_MiB, 1_GiB); })),
-          .retention_duration = random_property_update(
-            tests::random_tristate([] { return tests::random_duration_ms(); })),
-          .shadow_indexing = random_property_update(tests::random_optional(
-            [] { return model::random_shadow_indexing_mode(); })),
-        };
+        cluster::incremental_topic_updates updates;
+        updates.compression = random_property_update(
+          tests::random_optional([] { return model::random_compression(); }));
+        updates.cleanup_policy_bitflags = random_property_update(
+          tests::random_optional(
+            [] { return model::random_cleanup_policy(); }));
+        updates.compaction_strategy = random_property_update(
+          tests::random_optional(
+            [] { return model::random_compaction_strategy(); }));
+        updates.timestamp_type = random_property_update(tests::random_optional(
+          [] { return model::random_timestamp_type(); }));
+        updates.segment_size = random_property_update(tests::random_optional(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); }));
+        updates.retention_bytes = random_property_update(tests::random_tristate(
+          [] { return random_generators::get_int(100_MiB, 1_GiB); }));
+        updates.retention_duration = random_property_update(
+          tests::random_tristate([] { return tests::random_duration_ms(); }));
+        updates.remote_delete = random_property_update(tests::random_bool());
+        updates.get_shadow_indexing() = random_property_update(
+          tests::random_optional(
+            [] { return model::random_shadow_indexing_mode(); }));
         roundtrip_test(updates);
     }
     { roundtrip_test(old_random_topic_configuration()); }
-    { serde_roundtrip_test(random_topic_configuration()); }
+    { roundtrip_test(random_topic_configuration()); }
     { roundtrip_test(random_create_partitions_configuration()); }
     {
         cluster::topic_configuration_assignment cfg;
@@ -958,7 +881,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cfg.cfg = random_topic_configuration();
         cfg.assignments = random_partition_assignments();
 
-        serde_roundtrip_test(cfg);
+        roundtrip_test(cfg);
     }
     {
         cluster::create_partitions_configuration_assignment cfg;
@@ -980,21 +903,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             data.filters.push_back(tests::random_acl_binding_filter());
         }
         roundtrip_test(data);
-    }
-    {
-        cluster::create_data_policy_cmd_data data;
-        data.dp = v8_engine::data_policy(
-          random_generators::gen_alphanum_string(20),
-          random_generators::gen_alphanum_string(20));
-
-        roundtrip_test(data);
-    }
-    {
-        cluster::non_replicable_topic tp;
-        tp.name = model::random_topic_namespace();
-        tp.source = model::random_topic_namespace();
-
-        roundtrip_test(tp);
     }
     {
         cluster::config_status status;
@@ -1077,7 +985,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
           std::chrono::duration_cast<std::chrono::milliseconds>(
-            random_timeout_clock_duration())};
+            random_timeout_clock_duration()),
+          tests::random_named_int<model::partition_id>()};
 
         roundtrip_test(data);
     }
@@ -1136,7 +1045,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_string<kafka::group_id>(),
           random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
-          random_timeout_clock_duration()};
+          random_timeout_clock_duration(),
+          tests::random_named_int<model::partition_id>()};
 
         roundtrip_test(data);
     }
@@ -1146,7 +1056,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_string<kafka::group_id>(),
           random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
-          random_timeout_clock_duration()};
+          random_timeout_clock_duration(),
+          tests::random_named_int<model::partition_id>()};
 
         roundtrip_test(data);
     }
@@ -1244,7 +1155,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             random_generators::get_int(0, 100)),
           random_generators::get_int<uint16_t>(0, 16000),
           random_generators::random_choice(families)};
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
         // adl roundtrip doesn't work because family is not serialized
     }
     { roundtrip_test(model::random_broker_endpoint()); }
@@ -1349,19 +1260,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::join_request data{model::random_broker()};
-        roundtrip_test(data);
-    }
-    {
-        cluster::join_reply data{tests::random_bool()};
-        roundtrip_test(data);
-    }
-    {
         std::vector<uint8_t> node_uuid;
         for (int i = 0, mi = random_generators::get_int(100); i < mi; i++) {
             node_uuid.push_back(random_generators::get_int(255));
         }
         cluster::join_node_request data{
+          tests::random_named_int<cluster::cluster_version>(),
           tests::random_named_int<cluster::cluster_version>(),
           node_uuid,
           model::random_broker()};
@@ -1369,7 +1273,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         cluster::join_node_reply data{
-          tests::random_bool(),
+          tests::random_bool() ? cluster::join_node_reply::status_code::success
+                               : cluster::join_node_reply::status_code::error,
           tests::random_named_int<model::node_id>(),
         };
         roundtrip_test(data);
@@ -1430,7 +1335,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_properties_update> updates;
+        cluster::topic_properties_update_vector updates;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             cluster::property_update<std::optional<v8_engine::data_policy>>
               data_policy;
@@ -1443,21 +1348,20 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             cluster::incremental_topic_custom_updates custom_properties{
               .data_policy = data_policy,
             };
-            updates.push_back(cluster::topic_properties_update{
+            updates.emplace_back(
               model::random_topic_namespace(),
               random_incremental_topic_updates(),
-              custom_properties,
-            });
+              custom_properties);
         }
         cluster::update_topic_properties_request data{
-          .updates = updates,
+          .updates = std::move(updates),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::topic_result data{
           model::random_topic_namespace(),
-          cluster::errc::source_topic_not_exists,
+          cluster::errc::topic_already_exists,
         };
         roundtrip_test(data);
     }
@@ -1488,49 +1392,49 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::backend_operation data{
           .source_shard = random_generators::get_int<unsigned>(1000),
           .p_as = random_partition_assignments().front(),
-          .type = cluster::topic_table_delta::op_type::del,
+          .type = cluster::partition_operation_type::remove,
         };
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::backend_operation> backend_operations;
+        ss::chunked_fifo<cluster::backend_operation> backend_operations;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             backend_operations.push_back(cluster::backend_operation{
               .source_shard = random_generators::get_int<unsigned>(1000),
               .p_as = random_partition_assignments().front(),
-              .type = cluster::topic_table_delta::op_type::del,
+              .type = cluster::partition_operation_type::remove,
             });
         }
+
         cluster::ntp_reconciliation_state data{
           model::random_ntp(),
-          backend_operations,
+          std::move(backend_operations),
           cluster::reconciliation_status::error,
           cluster::errc::feature_disabled,
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         std::vector<cluster::ntp_reconciliation_state> results;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
-            std::vector<cluster::backend_operation> backend_operations;
+            ss::chunked_fifo<cluster::backend_operation> backend_operations;
             for (int j = 0, mj = random_generators::get_int(10); j < mj; j++) {
                 backend_operations.push_back(cluster::backend_operation{
                   .source_shard = random_generators::get_int<unsigned>(1000),
                   .p_as = random_partition_assignments().front(),
-                  .type = cluster::topic_table_delta::op_type::del,
+                  .type = cluster::partition_operation_type::remove,
                 });
             }
-            results.push_back(cluster::ntp_reconciliation_state{
+            results.emplace_back(
               model::random_ntp(),
-              backend_operations,
+              std::move(backend_operations),
               cluster::reconciliation_status::error,
-              cluster::errc::feature_disabled,
-            });
+              cluster::errc::feature_disabled);
         }
         cluster::reconciliation_state_reply data{
-          .results = results,
+          .results = std::move(results),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::create_acls_cmd_data create_acls_data{};
@@ -1648,14 +1552,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::get_node_health_request data{
-          .filter = {
-            .ntp_filters = random_partitions_filter(),
-          },
-        };
-        roundtrip_test(data);
-    }
-    {
         storage::disk data{
           .path = random_generators::gen_alphanum_string(
             random_generators::get_int(20)),
@@ -1672,9 +1568,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // but don't need to add adl encoding in this case.
         //
         // use a non-default value here for serde test. tests that use adl need
-        // to keep the default value because thsi field isn't seiralized in adl.
-        data.storage_space_alert = storage::disk_space_alert::degraded;
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         cluster::partition_status data{
@@ -1698,39 +1592,45 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        cluster::node_health_report data{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .drain_status = random_drain_status(),
-        };
-        data.include_drain_status = true; // so adl considers drain status
-        roundtrip_test(data);
+        cluster::node_health_report data(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          random_drain_status());
+
+        // Squash local_state to a form that ADL represents, since we will
+        // test ADL roundtrip.
+        data.local_state.cache_disk = std::nullopt;
+
+        roundtrip_test(cluster::node_health_report_serde{data});
     }
     {
-        std::vector<cluster::topic_status> topics;
+        chunked_vector<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        cluster::node_health_report report{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .drain_status = random_drain_status(),
-        };
-        report.include_drain_status = true; // so adl considers drain status
-        cluster::get_node_health_reply data{
-          .report = report,
-        };
-        roundtrip_test(data);
+        cluster::node_health_report report(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          random_drain_status());
+
+        // Squash to ADL-understood disk state
+        report.local_state.cache_disk = report.local_state.data_disk;
+
+        roundtrip_test(cluster::get_node_health_reply{
+          .report = cluster::node_health_report_serde{report},
+        });
         // try serde with non-default error code. adl doesn't encode error so
         // this is a serde only test.
-        data.error = cluster::errc::error_collecting_health_report;
-        serde_roundtrip_test(data);
+        roundtrip_test(cluster::get_node_health_reply{
+          .error = cluster::errc::error_collecting_health_report,
+          .report = cluster::node_health_report_serde{report},
+        });
     }
     {
         std::vector<model::node_id> nodes;
@@ -1764,18 +1664,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         };
         roundtrip_test(data);
     }
-    {
-        cluster::node_state data{
-          .id = tests::random_named_int<model::node_id>(),
-          .membership_state = model::membership_state::draining,
-          .is_alive = cluster::alive(tests::random_bool()),
-        };
-        roundtrip_test(data);
-    }
-    {
-        auto data = random_cluster_health_report();
-        roundtrip_test(data);
-    }
+    { roundtrip_test(cluster::random_node_state()); }
+    { roundtrip_test(random_cluster_health_report()); }
     {
         cluster::get_cluster_health_reply data{
           .error = cluster::errc::join_request_dispatch_error,
@@ -1783,47 +1673,21 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         if (tests::random_bool()) {
             data.report = random_cluster_health_report();
         }
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
-        std::vector<cluster::non_replicable_topic> topics;
-        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            topics.push_back(cluster::non_replicable_topic{
-              .source = model::random_topic_namespace(),
-              .name = model::random_topic_namespace()});
-        }
-        cluster::create_non_replicable_topics_request data{
-          .topics = topics,
-          .timeout = random_timeout_clock_duration(),
-        };
-        roundtrip_test(data);
-    }
-    {
-        std::vector<cluster::topic_result> results;
-        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            results.push_back(cluster::topic_result{
-              model::random_topic_namespace(),
-              cluster::errc::source_topic_not_exists,
-            });
-        }
-        cluster::create_non_replicable_topics_reply data{
-          .results = results,
-        };
-        roundtrip_test(data);
-    }
-    {
-        std::vector<cluster::topic_configuration> topics;
+        cluster::topic_configuration_vector topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_configuration());
         }
         cluster::create_topics_request data{
-          .topics = topics,
+          .topics = std::move(topics),
           .timeout = random_timeout_clock_duration(),
         };
         // adl encoding for topic_configuration doesn't encode/decode to exact
         // equality, but also already existed prior to serde support being added
         // so only testing the serde case.
-        serde_roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         auto data = random_partition_metadata();
@@ -1857,7 +1721,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // adl serialization doesn't preserve equality for topic_configuration.
         // serde serialization does and was added after support for adl so adl
         // semantics are preserved.
-        serde_roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         raft::transfer_leadership_request data{
@@ -1914,6 +1778,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1024))),
           .done = tests::random_bool(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         /*
          * manual adl/serde test to workaround iobuf being move-only
@@ -1928,30 +1793,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .file_offset = orig.file_offset,
               .chunk = orig.chunk.copy(),
               .done = orig.done,
+              .dirty_offset = orig.dirty_offset,
             };
             auto serde_out = serde::to_iobuf(std::move(serde_in));
             auto from_serde = serde::from_iobuf<raft::install_snapshot_request>(
               std::move(serde_out));
 
             BOOST_REQUIRE(orig == from_serde);
-        }
-        {
-            raft::install_snapshot_request adl_in{
-              .target_node_id = orig.target_node_id,
-              .term = orig.term,
-              .group = orig.group,
-              .node_id = orig.node_id,
-              .last_included_index = orig.last_included_index,
-              .file_offset = orig.file_offset,
-              .chunk = orig.chunk.copy(),
-              .done = orig.done,
-            };
-            auto adl_out = reflection::to_iobuf(std::move(adl_in));
-            auto from_adl
-              = reflection::from_iobuf<raft::install_snapshot_request>(
-                std::move(adl_out));
-
-            BOOST_REQUIRE(orig == from_adl);
         }
     }
     {
@@ -2006,6 +1854,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .prev_log_term = tests::random_named_int<model::term_id>(),
               .last_visible_index = tests::random_named_int<model::offset>(),
             };
+            meta.dirty_offset
+              = meta.prev_log_index; // always true for heartbeats
             raft::heartbeat_metadata hm{
               .meta = meta,
               .node_id = raft::
@@ -2037,22 +1887,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               std::move(serde_out));
             BOOST_REQUIRE(data == from_serde);
         }
-
-        // the adl test needs to force async to avoid the automatic reflection
-        // version of the encoder.
-        {
-            auto adl_in = data;
-            iobuf adl_out;
-            reflection::async_adl<raft::heartbeat_request>{}
-              .to(adl_out, std::move(adl_in))
-              .get();
-            iobuf_parser in(std::move(adl_out));
-            auto from_adl = reflection::async_adl<raft::heartbeat_request>{}
-                              .from(in)
-                              .get0();
-
-            BOOST_REQUIRE(data == from_adl);
-        }
     }
     {
         raft::heartbeat_reply data;
@@ -2075,7 +1909,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               = tests::random_named_int<model::offset>(),
               .last_dirty_log_index = tests::random_named_int<model::offset>(),
               .last_term_base_offset = tests::random_named_int<model::offset>(),
-              .result = raft::append_entries_reply::status::group_unavailable,
+              .result = raft::reply_result::group_unavailable,
             };
             data.meta.push_back(reply);
         }
@@ -2092,22 +1926,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
 
-        serde_roundtrip_test(data);
-
-        // the adl test needs to force async to avoid the automatic reflection
-        // version of the encoder.
-        {
-            auto adl_in = data;
-            iobuf adl_out;
-            reflection::async_adl<raft::heartbeat_reply>{}
-              .to(adl_out, std::move(adl_in))
-              .get();
-            iobuf_parser in(std::move(adl_out));
-            auto from_adl
-              = reflection::async_adl<raft::heartbeat_reply>{}.from(in).get0();
-
-            BOOST_REQUIRE(data == from_adl);
-        }
+        roundtrip_test(data);
     }
     {
         raft::protocol_metadata data{
@@ -2117,12 +1936,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
         roundtrip_test(data);
     }
     {
-        const auto gold = model::test::make_random_batches(
-          model::offset(0), 20);
+        const auto gold
+          = model::test::make_random_batches(model::offset(0), 20).get();
 
         // make a copy of the source batches for later comparison because the
         // copy moved into the request will get eaten.
@@ -2138,6 +1958,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
 
         raft::append_entries_request data{
@@ -2149,28 +1970,31 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             tests::random_named_int<model::revision_id>()},
           pmd,
           model::make_memory_record_batch_reader(std::move(batches_in)),
-          raft::append_entries_request::flush_after_append(
-            tests::random_bool()),
+          raft::flush_after_append(tests::random_bool()),
         };
 
         // append_entries_request -> iobuf
         iobuf serde_out;
+        const auto node_id = data.source_node();
+        const auto target_node_id = data.target_node();
+        const auto meta = data.metadata();
+        const auto flush = data.is_flush_required();
         serde::write_async(serde_out, std::move(data)).get();
 
         // iobuf -> append_entries_request
         iobuf_parser serde_in(std::move(serde_out));
         auto from_serde
-          = serde::read_async<raft::append_entries_request>(serde_in).get0();
+          = serde::read_async<raft::append_entries_request>(serde_in).get();
 
-        BOOST_REQUIRE(from_serde.node_id == data.node_id);
-        BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
-        BOOST_REQUIRE(from_serde.meta == data.meta);
-        BOOST_REQUIRE(from_serde.flush == data.flush);
+        BOOST_REQUIRE(from_serde.source_node() == node_id);
+        BOOST_REQUIRE(from_serde.target_node() == target_node_id);
+        BOOST_REQUIRE(from_serde.metadata() == meta);
+        BOOST_REQUIRE(from_serde.is_flush_required() == flush);
 
         auto batches_from_serde = model::consume_reader_to_memory(
-                                    std::move(from_serde.batches()),
+                                    std::move(from_serde).release_batches(),
                                     model::no_timeout)
-                                    .get0();
+                                    .get();
         BOOST_REQUIRE(gold.size() > 0);
         BOOST_REQUIRE(batches_from_serde.size() == gold.size());
         for (size_t i = 0; i < gold.size(); i++) {
@@ -2188,7 +2012,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_flushed_log_index = tests::random_named_int<model::offset>(),
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
-          .result = raft::append_entries_reply::status::group_unavailable,
+          .result = raft::reply_result::group_unavailable,
+          .may_recover = tests::random_bool(),
         };
         roundtrip_test(data);
     }
@@ -2202,6 +2027,64 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               cluster::partition_move_direction::all}),
         };
         roundtrip_test(request);
+    }
+    {
+        // Test schema ID validation topic_create
+        auto key_validation = tests::random_bool();
+        auto key_strategy = tests::random_subject_name_strategy();
+        auto val_validation = tests::random_bool();
+        auto val_strategy = tests::random_subject_name_strategy();
+
+        cluster::topic_properties props{};
+
+        props.record_key_schema_id_validation = tests::random_optional(
+          [=] { return key_validation; });
+        props.record_key_schema_id_validation_compat = tests::random_optional(
+          [=] { return key_validation; });
+        props.record_key_subject_name_strategy = tests::random_optional(
+          [=] { return key_strategy; });
+        props.record_key_subject_name_strategy_compat = tests::random_optional(
+          [=] { return key_strategy; });
+        props.record_value_schema_id_validation = tests::random_optional(
+          [=] { return val_validation; });
+        props.record_value_schema_id_validation_compat = tests::random_optional(
+          [=] { return val_validation; });
+        props.record_value_subject_name_strategy = tests::random_optional(
+          [=] { return val_strategy; });
+        props.record_value_subject_name_strategy_compat
+          = tests::random_optional([=] { return val_strategy; });
+
+        roundtrip_test(props);
+    }
+    {
+        // Test schema ID validation incremental_topic_updates
+        auto key_validation = tests::random_bool();
+        auto key_strategy = tests::random_subject_name_strategy();
+        auto val_validation = tests::random_bool();
+        auto val_strategy = tests::random_subject_name_strategy();
+
+        cluster::incremental_topic_updates updates;
+        updates.record_key_schema_id_validation = random_property_update(
+          tests::random_optional([=] { return key_validation; }));
+        updates.record_key_schema_id_validation_compat = random_property_update(
+          tests::random_optional([=] { return key_validation; }));
+        updates.record_key_subject_name_strategy = random_property_update(
+          tests::random_optional([=] { return key_strategy; }));
+        updates.record_key_subject_name_strategy_compat
+          = random_property_update(
+            tests::random_optional([=] { return key_strategy; }));
+        updates.record_value_schema_id_validation = random_property_update(
+          tests::random_optional([=] { return val_validation; }));
+        updates.record_value_schema_id_validation_compat
+          = random_property_update(
+            tests::random_optional([=] { return val_validation; }));
+        updates.record_value_subject_name_strategy = random_property_update(
+          tests::random_optional([=] { return val_strategy; }));
+        updates.record_value_subject_name_strategy_compat
+          = random_property_update(
+            tests::random_optional([=] { return val_strategy; }));
+
+        roundtrip_test(updates);
     }
 }
 
@@ -2253,6 +2136,33 @@ SEASTAR_THREAD_TEST_CASE(cluster_property_kv_exchangable_with_pair) {
           deserialized_kvs_from_kvs[i].value);
     }
 }
+template<typename Cmd>
+requires cluster::ControllerCommand<Cmd>
+ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
+    return ss::do_with(
+      iobuf{},
+      iobuf{},
+      [cmd = std::move(cmd)](iobuf& key_buf, iobuf& value_buf) mutable {
+          auto value_f
+            = reflection::async_adl<cluster::command_type>{}
+                .to(value_buf, Cmd::type)
+                .then([&value_buf, v = std::move(cmd.value)]() mutable {
+                    return reflection::adl<typename Cmd::value_t>{}.to(
+                      value_buf, std::move(v));
+                });
+          auto key_f = reflection::async_adl<typename Cmd::key_t>{}.to(
+            key_buf, std::move(cmd.key));
+          return ss::when_all_succeed(std::move(key_f), std::move(value_f))
+            .discard_result()
+            .then([&key_buf, &value_buf]() mutable {
+                cluster::simple_batch_builder builder(
+                  Cmd::batch_type, model::offset(0));
+                builder.add_raw_kv(std::move(key_buf), std::move(value_buf));
+                return std::move(builder).build();
+            });
+      });
+}
+
 template<typename Cmd, typename Key, typename Value>
 void serde_roundtrip_cmd(Key key, Value value) {
     auto cmd = Cmd(std::move(key), std::move(value));
@@ -2264,20 +2174,25 @@ void serde_roundtrip_cmd(Key key, Value value) {
     auto deserialized_cmd = std::get<Cmd>(deserialized);
 
     BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
-    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    if constexpr (std::equality_comparable<Value>) {
+        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    }
 }
 
 template<typename Cmd, typename Key, typename Value>
 void adl_roundtrip_cmd(Key key, Value value) {
     auto cmd = Cmd(std::move(key), std::move(value));
-    auto batch = cluster::serialize_cmd(cmd).get();
+    auto batch = serialize_cmd(cmd).get();
     auto deserialized = cluster::deserialize(
                           std::move(batch), cluster::make_commands_list<Cmd>())
                           .get();
     auto deserialized_cmd = std::get<Cmd>(deserialized);
 
     BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
-    BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+
+    if constexpr (std::equality_comparable<Value>) {
+        BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
+    }
 }
 
 template<typename Cmd, typename Key, typename Value>
@@ -2315,12 +2230,6 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
             random_create_partitions_configuration(),
             random_partition_assignments()));
 
-        roundtrip_cmd<cluster::create_non_replicable_topic_cmd>(
-          cluster::non_replicable_topic{
-            .source = model::random_topic_namespace(),
-            .name = model::random_topic_namespace()},
-          0);
-
         roundtrip_cmd<cluster::create_user_cmd>(
           tests::random_named_string<security::credential_user>(),
           tests::random_credential());
@@ -2347,17 +2256,6 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
         }
 
         roundtrip_cmd<cluster::delete_acls_cmd>(std::move(delete_acl_data), 0);
-        cluster::create_data_policy_cmd_data create_dp;
-        create_dp.dp = v8_engine::data_policy(
-          random_generators::gen_alphanum_string(15),
-          random_generators::gen_alphanum_string(15));
-
-        roundtrip_cmd<cluster::create_data_policy_cmd>(
-          model::random_topic_namespace(), std::move(create_dp));
-
-        roundtrip_cmd<cluster::delete_data_policy_cmd>(
-          model::random_topic_namespace(),
-          random_generators::gen_alphanum_string(20));
 
         roundtrip_cmd<cluster::decommission_node_cmd>(
           tests::random_named_int<model::node_id>(), 0);

@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/metadata_request.h"
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -29,11 +29,11 @@ struct metadata_request {
 
     bool list_all_topics{false};
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
         if (version > api_version(0)) {
             list_all_topics = !data.topics;
@@ -62,18 +62,28 @@ struct metadata_response {
 
     metadata_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);
     }
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const metadata_response& r) {
-        return os << r.data;
-    }
 };
 
 } // namespace kafka
+
+template<>
+struct fmt::formatter<kafka::metadata_response> {
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) -> decltype(ctx.begin()) {
+        return ctx.begin();
+    }
+
+    template<typename FormatContext>
+    auto format(
+      [[maybe_unused]] const kafka::metadata_response& v,
+      FormatContext& ctx) const -> decltype(ctx.out()) {
+        return fmt::format_to(ctx.out(), "{}", v.data);
+    }
+};

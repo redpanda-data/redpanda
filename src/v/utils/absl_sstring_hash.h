@@ -13,7 +13,7 @@
 /**
  * Transpartent hash & eq functors for ss::sstring
  */
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -35,5 +35,13 @@ struct sstring_eq {
 
     bool operator()(std::string_view lhs, std::string_view rhs) const {
         return lhs == rhs;
+    }
+};
+
+struct sstring_less {
+    using is_transparent = std::true_type;
+
+    bool operator()(std::string_view lhs, std::string_view rhs) const {
+        return lhs < rhs;
     }
 };

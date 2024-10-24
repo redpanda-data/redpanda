@@ -1,0 +1,276 @@
+module(
+    name = "redpanda",
+    repo_name = "com_github_redpanda_data_redpanda",
+)
+
+bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    commit = "a14ad3a64e7bf398ab48105aaa0348e032ac87f8",
+    remote = "https://github.com/hedronvision/bazel-compile-commands-extractor.git",
+)
+
+bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
+archive_override(
+    module_name = "rules_boost",
+    integrity = "sha256-ICuTlyfxD3u1tr12YyeT5qPcA/ZkEUvtMDA2ZRzz1zc=",
+    strip_prefix = "rules_boost-e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc",
+    urls = "https://github.com/nelhage/rules_boost/archive/e23cc59f87d5049618472d6ce0ca0ed5ef0c23dc.tar.gz",
+)
+
+non_module_boost_repositories = use_extension("@com_github_nelhage_rules_boost//:boost/repositories.bzl", "non_module_dependencies")
+use_repo(
+    non_module_boost_repositories,
+    "boost",
+)
+
+bazel_dep(name = "gazelle", version = "0.38.0")
+single_version_override(
+    module_name = "gazelle",
+    patch_strip = 1,
+    patches = [
+        "//bazel:gazelle_pr_1909.patch",
+    ],
+)
+
+bazel_dep(name = "abseil-cpp", version = "20240722.0")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "crc32c", version = "1.1.0")
+bazel_dep(name = "fmt", version = "9.1.0")
+bazel_dep(name = "googletest", version = "1.15.2")
+bazel_dep(name = "liburing", version = "2.5")
+bazel_dep(name = "lz4", version = "1.9.4")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "protobuf", version = "27.3")
+bazel_dep(name = "re2", version = "2024-07-02")
+bazel_dep(name = "rules_foreign_cc", version = "0.10.1")
+bazel_dep(name = "rules_go", version = "0.50.1")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "6.0.2")
+bazel_dep(name = "rules_rust", version = "0.49.3")
+bazel_dep(name = "snappy", version = "1.2.1")
+bazel_dep(name = "yaml-cpp", version = "0.8.0")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
+bazel_dep(name = "zstd", version = "1.5.6")
+
+bazel_dep(name = "buildifier_prebuilt", version = "6.4.0", dev_dependency = True)
+bazel_dep(name = "rules_python", version = "0.33.2", dev_dependency = True)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
+python.toolchain(
+    ignore_root_user_error = True,
+    is_default = True,
+    python_version = "3.12",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    extra_pip_args = ["--require-hashes"],
+    hub_name = "python_deps",
+    python_version = "3.12",
+    requirements_lock = "//bazel/thirdparty:requirements.txt",
+)
+use_repo(pip, "python_deps")
+
+non_module_dependencies = use_extension("//bazel:extensions.bzl", "non_module_dependencies")
+use_repo(non_module_dependencies, "ada")
+use_repo(non_module_dependencies, "avro")
+use_repo(non_module_dependencies, "base64")
+use_repo(non_module_dependencies, "c-ares")
+use_repo(non_module_dependencies, "hdrhistogram")
+use_repo(non_module_dependencies, "hwloc")
+use_repo(non_module_dependencies, "jsoncons")
+use_repo(non_module_dependencies, "krb5")
+use_repo(non_module_dependencies, "libpciaccess")
+use_repo(non_module_dependencies, "libprotobuf_mutator")
+use_repo(non_module_dependencies, "libxml2")
+use_repo(non_module_dependencies, "lksctp")
+use_repo(non_module_dependencies, "numactl")
+use_repo(non_module_dependencies, "openssl")
+use_repo(non_module_dependencies, "openssl-fips")
+
+# non-BCR rapidjson is used because BCR publishes v1.1.0 from 2016, and Redpanda
+# depends on newer changes since the last tagged upstream version.
+use_repo(non_module_dependencies, "rapidjson")
+use_repo(non_module_dependencies, "roaring")
+use_repo(non_module_dependencies, "seastar")
+use_repo(non_module_dependencies, "unordered_dense")
+use_repo(non_module_dependencies, "wasmtime")
+use_repo(non_module_dependencies, "xxhash")
+
+bazel_dep(name = "toolchains_llvm", version = "1.1.2")
+single_version_override(
+    module_name = "toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//bazel:toolchains_llvm_pr_346.patch",
+    ],
+)
+
+# ====================================
+# LLVM toolchain
+# ====================================
+
+# NOTE: We build our toolchains on ubuntu:jammy so you're going to need a distro at least that old.
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+
+CXX_STANDARD = "c++20"
+
+llvm.toolchain(
+    name = "llvm_19_toolchain",
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "19.1.1",
+    sha256 = {
+        "linux-aarch64": "c5cade3af930255296e097687ed9c86c660ca5b619a352a536353aaa5d4fde2e",
+        "linux-x86_64": "0617e50fdb484bcd2169b24acd90e9b9fec7e6730d187fe8d2acfe69d2d429c4",
+    },
+    urls = {
+        "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-19.1.1-ubuntu-22.04-aarch64.tar.gz"],
+        "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-19.1.1-ubuntu-22.04-x86_64.tar.gz"],
+    },
+)
+use_repo(llvm, "llvm_19_toolchain", "llvm_19_toolchain_llvm")
+
+register_toolchains("@llvm_19_toolchain//:all")
+
+llvm.toolchain(
+    name = "llvm_18_toolchain",
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "18.1.8",
+    sha256 = {
+        "linux-aarch64": "95223a9fd35a2cfea2582b34519bbf65ff6bed498a378eb545a9d4fb8ee5a832",
+        "linux-x86_64": "ca33f2b189bf56a3266101b6ed267739cf10d311b5c3fbdd2c05a306574f6f70",
+    },
+    urls = {
+        "linux-aarch64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/llvm-18.1.8-ubuntu-22.04-aarch64.tar.gz"],
+        "linux-x86_64": ["http://redpanda-core-toolchain.s3-website-us-east-1.amazonaws.com/pgo/llvm-18.1.8-ubuntu-22.04-x86_64.tar.gz"],
+    },
+)
+use_repo(llvm, "llvm_18_toolchain", "llvm_18_toolchain_llvm")
+
+register_toolchains("@llvm_18_toolchain//:all")
+
+# ====================================
+# Go Toolchain
+# ====================================
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.23.0")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_work = "//bazel/thirdparty:go.work")
+
+# TODO(bazel): Upstream this so we can remove this obscure workaround.
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go google.golang.org/protobuf/types/pluginpb @org_golang_google_protobuf//types/pluginpb",
+    ],
+    path = "github.com/bufbuild/protocompile",
+)
+use_repo(
+    go_deps,
+    "build_buf_gen_go_redpandadata_cloud_connectrpc_go",
+    "build_buf_gen_go_redpandadata_cloud_protocolbuffers_go",
+    "build_buf_gen_go_redpandadata_common_protocolbuffers_go",
+    "build_buf_gen_go_redpandadata_dataplane_connectrpc_go",
+    "build_buf_gen_go_redpandadata_dataplane_protocolbuffers_go",
+    "com_connectrpc_connect",
+    "com_github_actgardner_gogen_avro_v10",
+    "com_github_alecaivazis_survey_v2",
+    "com_github_avast_retry_go",
+    "com_github_aws_aws_sdk_go",
+    "com_github_beevik_ntp",
+    "com_github_bufbuild_protocompile",
+    "com_github_coreos_go_systemd_v22",
+    "com_github_docker_docker",
+    "com_github_docker_go_connections",
+    "com_github_docker_go_units",
+    "com_github_fatih_color",
+    "com_github_hamba_avro",
+    "com_github_hamba_avro_v2",
+    "com_github_hashicorp_go_multierror",
+    "com_github_kballard_go_shellquote",
+    "com_github_kr_pretty",
+    "com_github_lestrrat_go_jwx",
+    "com_github_linkedin_goavro_v2",
+    "com_github_lorenzosaino_go_sysctl",
+    "com_github_mattn_go_isatty",
+    "com_github_moby_term",
+    "com_github_opencontainers_go_digest",
+    "com_github_opencontainers_image_spec",
+    "com_github_parquet_go_parquet_go",
+    "com_github_pkg_browser",
+    "com_github_pkg_errors",
+    "com_github_prometheus_client_model",
+    "com_github_prometheus_common",
+    "com_github_redpanda_data_common_go_rpadmin",
+    "com_github_redpanda_data_redpanda_src_transform_sdk_go_transform",
+    "com_github_rs_xid",
+    "com_github_safchain_ethtool",
+    "com_github_santhosh_tekuri_jsonschema_v6",
+    "com_github_schollz_progressbar_v3",
+    "com_github_segmentio_encoding",
+    "com_github_spf13_afero",
+    "com_github_spf13_cobra",
+    "com_github_spf13_pflag",
+    "com_github_stretchr_testify",
+    "com_github_testcontainers_testcontainers_go",
+    "com_github_testcontainers_testcontainers_go_modules_redpanda",
+    "com_github_tklauser_go_sysconf",
+    "com_github_twmb_franz_go",
+    "com_github_twmb_franz_go_pkg_kadm",
+    "com_github_twmb_franz_go_pkg_kmsg",
+    "com_github_twmb_franz_go_pkg_sr",
+    "com_github_twmb_franz_go_plugin_kzap",
+    "com_github_twmb_tlscfg",
+    "com_github_twmb_types",
+    "com_google_cloud_go_compute_metadata",
+    "in_gopkg_yaml_v3",
+    "io_k8s_api",
+    "io_k8s_apimachinery",
+    "io_k8s_client_go",
+    "org_golang_google_protobuf",
+    "org_golang_x_exp",
+    "org_golang_x_sync",
+    "org_golang_x_sys",
+    "org_golang_x_term",
+    "org_uber_go_zap",
+)
+
+# ====================================
+# Rust Toolchain
+# ====================================
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.80.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+crate = use_extension(
+    "@rules_rust//crate_universe:extension.bzl",
+    "crate",
+)
+crate.from_cargo(
+    name = "crates",
+    cargo_lockfile = "//bazel/thirdparty:Cargo.lock",
+    manifests = ["//bazel/thirdparty:Cargo.toml"],
+)
+use_repo(crate, "crates")
+crate.annotation(
+    additive_build_file = "//bazel/thirdparty:wasmtime.BUILD",
+    crate = "wasmtime-c-api-impl",
+    extra_aliased_targets = {"wasmtime_c": "wasmtime_c"},
+    gen_build_script = "off",
+)
+
+# ====================================
+# clang-tidy
+# ====================================
+bazel_dep(name = "bazel_clang_tidy", dev_dependency = True)
+git_override(
+    module_name = "bazel_clang_tidy",
+    commit = "a95424548c494470258a23128f70244f7a79dac2",
+    remote = "https://github.com/erenon/bazel_clang_tidy.git",
+)

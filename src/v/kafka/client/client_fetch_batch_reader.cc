@@ -17,7 +17,6 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace kafka::client {
 
@@ -45,15 +44,20 @@ public:
         if (!_batch_reader || _batch_reader->is_end_of_stream()) {
             vlog(
               kclog.debug,
-              "fetch_batch_reader: fetch offset: {}",
+              "{}fetch_batch_reader: fetch offset: {}",
+              _client,
               _next_offset);
             auto res = co_await _client.fetch_partition(
               _tp,
               _next_offset,
-              1_MiB,
+              _client.config().consumer_request_max_bytes,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 t - model::timeout_clock::now()));
-            vlog(kclog.debug, "fetch_batch_reader: fetch result: {}", res);
+            vlog(
+              kclog.debug,
+              "{}fetch_batch_reader: fetch result: {}",
+              _client,
+              res);
             vassert(
               res.begin() != res.end() && ++res.begin() == res.end(),
               "Expected exactly one response from client::fetch_partition");
@@ -75,7 +79,11 @@ public:
               kafka::error_code::unknown_server_error, "No records returned");
         }
         _next_offset = ++data.back().last_offset();
-        vlog(kclog.debug, "fetch_batch_reader: next_offset: {}", _next_offset);
+        vlog(
+          kclog.debug,
+          "{}fetch_batch_reader: next_offset: {}",
+          _client,
+          _next_offset);
         co_return ret;
     }
 

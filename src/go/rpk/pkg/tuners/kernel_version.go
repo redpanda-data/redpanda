@@ -12,7 +12,7 @@ package tuners
 import "fmt"
 
 const (
-	ExpectedKernelVersion string = "4.19"
+	ExpectedKernelVersion string = "3.19"
 )
 
 func NewKernelVersionChecker(
@@ -38,7 +38,7 @@ func (kernelVersionChecker) GetSeverity() Severity {
 }
 
 func (kernelVersionChecker) GetRequiredAsString() string {
-	return "4.19"
+	return ExpectedKernelVersion
 }
 
 func (c kernelVersionChecker) Check() *CheckResult {
@@ -63,7 +63,7 @@ func (c kernelVersionChecker) Check() *CheckResult {
 		return res
 	}
 
-	if major < 4 || major == 4 && minor < 19 {
+	if major < 3 || major == 3 && minor < 19 {
 		res.Err = fmt.Errorf("%s", "kernel version is too old")
 		return res
 	}

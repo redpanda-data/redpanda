@@ -17,6 +17,8 @@
 #include "compat/json.h"
 #include "compat/model_json.h"
 
+#include <vector>
+
 namespace compat {
 
 GEN_COMPAT_CHECK(
@@ -36,15 +38,15 @@ GEN_COMPAT_CHECK(
       json_read(invalid);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_status_request,
   { json_write(status); },
   { json_read(status); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_status_reply, { json_write(error); }, { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cluster_property_kv,
   {
       json_write(key);
@@ -55,7 +57,7 @@ GEN_COMPAT_CHECK(
       json_read(value);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_update_request,
   {
       json_write(upsert);
@@ -66,7 +68,7 @@ GEN_COMPAT_CHECK(
       json_read(remove);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_update_reply,
   {
       json_write(error);
@@ -77,7 +79,7 @@ GEN_COMPAT_CHECK(
       json_read(latest_version);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::hello_request,
   {
       json_write(peer);
@@ -88,7 +90,7 @@ GEN_COMPAT_CHECK(
       json_read(start_time);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::hello_reply, { json_write(error); }, { json_read(error); });
 
 GEN_COMPAT_CHECK(
@@ -102,17 +104,17 @@ GEN_COMPAT_CHECK(
       json_read(action);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_action_request,
   { json_write(action); },
   { json_read(action); });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_action_response,
   { json_write(error); },
   { json_read(error); });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_barrier_request,
   {
       json_write(tag);
@@ -125,7 +127,7 @@ GEN_COMPAT_CHECK(
       json_read(entered);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_barrier_response,
   {
       json_write(entered);
@@ -136,61 +138,59 @@ GEN_COMPAT_CHECK(
       json_read(complete);
   });
 
-GEN_COMPAT_CHECK(
-  cluster::join_request, { json_write(node); }, { json_read(node); });
-
-GEN_COMPAT_CHECK(
-  cluster::join_reply, { json_write(success); }, { json_read(success); });
-
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::join_node_request,
   {
-      json_write(logical_version);
+      json_write(latest_logical_version);
+      json_write(earliest_logical_version);
       json_write(node_uuid);
       json_write(node);
   },
   {
-      json_read(logical_version);
+      json_read(latest_logical_version);
+      json_read(earliest_logical_version);
       json_read(node_uuid);
       json_read(node);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::join_node_reply,
   {
       json_write(success);
       json_write(id);
+      json_write(raw_status);
   },
   {
       json_read(success);
       json_read(id);
+      json_read(raw_status);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::decommission_node_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::decommission_node_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::recommission_node_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::recommission_node_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_reallocation_request, { json_write(id); }, { json_read(id); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_reallocation_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::set_maintenance_mode_request,
   {
       json_write(id);
@@ -201,38 +201,49 @@ GEN_COMPAT_CHECK(
       json_read(enabled);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::set_maintenance_mode_reply,
   { json_write(error); },
   { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::reconciliation_state_request,
   { json_write(ntps); },
   { json_read(ntps); });
 
-GEN_COMPAT_CHECK(
-  cluster::reconciliation_state_reply,
-  { json_write(results); },
-  { json_read(results); });
+template<>
+struct compat_check<cluster::reconciliation_state_reply> {
+    static constexpr std::string_view name = "reconciliation_state_reply";
 
-GEN_COMPAT_CHECK(
-  cluster::create_non_replicable_topics_request,
-  {
-      json_write(topics);
-      json_write(timeout);
-  },
-  {
-      json_read(topics);
-      json_read(timeout);
-  })
+    static std::vector<cluster::reconciliation_state_reply>
+    create_test_cases() {
+        return generate_instances<cluster::reconciliation_state_reply>();
+    }
 
-GEN_COMPAT_CHECK(
-  cluster::create_non_replicable_topics_reply,
-  { json_write(results); },
-  { json_read(results); });
+    static void to_json(
+      cluster::reconciliation_state_reply obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json::write_member(wr, "results", obj.results);
+    }
 
-GEN_COMPAT_CHECK(
+    static cluster::reconciliation_state_reply from_json(json::Value& rd) {
+        cluster::reconciliation_state_reply obj;
+        json::read_member(rd, "results", obj.results);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::reconciliation_state_reply obj) {
+        return {compat_binary::serde(std::move(obj))};
+    }
+
+    static void
+    check(cluster::reconciliation_state_reply obj, compat_binary test) {
+        verify_serde_only(std::move(obj), std::move(test));
+    }
+};
+
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_partition_update_request,
   {
       json_write(ntp);
@@ -243,12 +254,12 @@ GEN_COMPAT_CHECK(
       json_read(new_replica_set);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::finish_partition_update_reply,
   { json_write(result); },
   { json_read(result); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cancel_partition_movements_reply,
   {
       json_write(general_error);
@@ -259,7 +270,7 @@ GEN_COMPAT_CHECK(
       json_read(partition_results);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cancel_node_partition_movements_request,
   {
       json_write(node_id);
@@ -270,9 +281,9 @@ GEN_COMPAT_CHECK(
       json_read(direction);
   });
 
-EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
+EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::cancel_all_partition_movements_request);
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::configuration_update_request,
   {
       json_write(node);
@@ -283,7 +294,7 @@ GEN_COMPAT_CHECK(
       json_read(target_node);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::configuration_update_reply,
   { json_write(success); },
   { json_read(success); })
@@ -329,6 +340,24 @@ struct compat_check<cluster::topic_properties> {
         json_write(batch_max_bytes);
         json_write(retention_local_target_bytes);
         json_write(retention_local_target_ms);
+        json_write(remote_delete);
+        json_write(segment_ms);
+        json_write(record_key_schema_id_validation);
+        json_write(record_key_schema_id_validation_compat);
+        json_write(record_key_subject_name_strategy);
+        json_write(record_key_subject_name_strategy_compat);
+        json_write(record_value_schema_id_validation);
+        json_write(record_value_schema_id_validation_compat);
+        json_write(record_value_subject_name_strategy);
+        json_write(record_value_subject_name_strategy_compat);
+        json_write(initial_retention_local_target_bytes);
+        json_write(initial_retention_local_target_ms);
+        json_write(mpx_virtual_cluster_id);
+        json::write_exceptional_member_type(
+          wr, "write_caching", obj.write_caching);
+        json_write(flush_ms);
+        json_write(flush_bytes);
+        json_write(remote_topic_namespace_override);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -348,6 +377,23 @@ struct compat_check<cluster::topic_properties> {
         json_read(batch_max_bytes);
         json_read(retention_local_target_bytes);
         json_read(retention_local_target_ms);
+        json_read(remote_delete);
+        json_read(segment_ms);
+        json_read(record_key_schema_id_validation);
+        json_read(record_key_schema_id_validation_compat);
+        json_read(record_key_subject_name_strategy);
+        json_read(record_key_subject_name_strategy_compat);
+        json_read(record_value_schema_id_validation);
+        json_read(record_value_schema_id_validation_compat);
+        json_read(record_value_subject_name_strategy);
+        json_read(record_value_subject_name_strategy_compat);
+        json_read(initial_retention_local_target_bytes);
+        json_read(initial_retention_local_target_ms);
+        json_read(mpx_virtual_cluster_id);
+        json_read(write_caching);
+        json_read(flush_ms);
+        json_read(flush_bytes);
+        json_read(remote_topic_namespace_override);
         return obj;
     }
 
@@ -369,6 +415,17 @@ struct compat_check<cluster::topic_properties> {
         obj.retention_local_target_ms = tristate<std::chrono::milliseconds>{
           std::nullopt};
 
+        obj.segment_ms = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.initial_retention_local_target_bytes = tristate<size_t>{
+          std::nullopt};
+        obj.initial_retention_local_target_ms
+          = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.mpx_virtual_cluster_id = std::nullopt;
+        obj.write_caching = std::nullopt;
+        obj.flush_bytes = std::nullopt;
+        obj.flush_ms = std::nullopt;
+        obj.remote_topic_namespace_override = std::nullopt;
+
         if (reply != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_properties}} ADL decoding "
@@ -389,8 +446,10 @@ template<>
 struct compat_check<cluster::topic_configuration> {
     static constexpr std::string_view name = "cluster::topic_configuration";
 
-    static std::vector<cluster::topic_configuration> create_test_cases() {
-        return generate_instances<cluster::topic_configuration>();
+    static cluster::topic_configuration_vector create_test_cases() {
+        auto i = generate_instances<cluster::topic_configuration>();
+        return {
+          std::make_move_iterator(i.begin()), std::make_move_iterator(i.end())};
     }
 
     static void to_json(
@@ -398,6 +457,7 @@ struct compat_check<cluster::topic_configuration> {
         json_write(tp_ns);
         json_write(partition_count);
         json_write(replication_factor);
+        json_write(is_migrated);
         json_write(properties);
     }
 
@@ -406,6 +466,7 @@ struct compat_check<cluster::topic_configuration> {
         json_read(tp_ns);
         json_read(partition_count);
         json_read(replication_factor);
+        json_read(is_migrated);
         json_read(properties);
         return obj;
     }
@@ -425,15 +486,36 @@ struct compat_check<cluster::topic_configuration> {
         auto cfg = reflection::adl<cluster::topic_configuration>{}.from(iobp);
         obj.properties.read_replica = std::nullopt;
         obj.properties.read_replica_bucket = std::nullopt;
+        obj.properties.remote_topic_namespace_override = std::nullopt;
         obj.properties.remote_topic_properties = std::nullopt;
         obj.properties.batch_max_bytes = std::nullopt;
         obj.properties.retention_local_target_bytes = tristate<size_t>{
           std::nullopt};
         obj.properties.retention_local_target_ms
           = tristate<std::chrono::milliseconds>{std::nullopt};
+
+        // ADL will always squash remote_delete to false
+        obj.properties.remote_delete = false;
+
+        obj.properties.segment_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
+
+        obj.properties.initial_retention_local_target_bytes = tristate<size_t>{
+          std::nullopt};
+        obj.properties.initial_retention_local_target_ms
+          = tristate<std::chrono::milliseconds>{std::nullopt};
+        obj.properties.write_caching = std::nullopt;
+        obj.properties.flush_bytes = std::nullopt;
+        obj.properties.flush_ms = std::nullopt;
+
+        obj.properties.mpx_virtual_cluster_id = std::nullopt;
+
+        // ADL will always squash is_migrated to false
+        obj.is_migrated = false;
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
-              "Verify of {{cluster::topic_property}} decoding "
+              "Verify of {{cluster::topic_property}} adl decoding "
               "failed:\n Expected: {}\nDecoded: {}",
               obj,
               cfg));
@@ -465,33 +547,13 @@ struct compat_check<cluster::create_topics_request> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(cluster::create_topics_request obj, compat_binary test) {
         if (test.name == "serde") {
-            verify_serde_only(obj, test);
+            verify_serde_only(obj.copy(), test);
             return;
-        }
-        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
-        iobuf_parser iobp(std::move(test.data));
-        auto req = reflection::adl<cluster::create_topics_request>{}.from(iobp);
-        for (auto& topic : obj.topics) {
-            topic.properties.read_replica = std::nullopt;
-            topic.properties.read_replica_bucket = std::nullopt;
-            topic.properties.remote_topic_properties = std::nullopt;
-            topic.properties.batch_max_bytes = std::nullopt;
-            topic.properties.retention_local_target_bytes = tristate<size_t>{
-              std::nullopt};
-            topic.properties.retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-        }
-        if (req != obj) {
-            throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_request}} decoding "
-              "failed:\n Expected: {}\nDecoded: {}",
-              obj,
-              req));
         }
     }
 };
@@ -521,33 +583,13 @@ struct compat_check<cluster::create_topics_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::create_topics_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(cluster::create_topics_reply obj, compat_binary test) {
         if (test.name == "serde") {
-            verify_serde_only(obj, test);
+            verify_serde_only(obj.copy(), test);
             return;
-        }
-        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
-        iobuf_parser iobp(std::move(test.data));
-        auto reply = reflection::adl<cluster::create_topics_reply>{}.from(iobp);
-        for (auto& topic : obj.configs) {
-            topic.properties.read_replica = std::nullopt;
-            topic.properties.read_replica_bucket = std::nullopt;
-            topic.properties.remote_topic_properties = std::nullopt;
-            topic.properties.batch_max_bytes = std::nullopt;
-            topic.properties.retention_local_target_bytes = tristate<size_t>{
-              std::nullopt};
-            topic.properties.retention_local_target_ms
-              = tristate<std::chrono::milliseconds>{std::nullopt};
-        }
-        if (reply != obj) {
-            throw compat_error(fmt::format(
-              "Verify of {{cluster::create_toics_reply}} decoding "
-              "failed:\n Expected: {}\nDecoded: {}",
-              obj,
-              reply));
         }
     }
 };
@@ -589,7 +631,8 @@ GEN_COMPAT_CHECK(
       json_write(segment_size);
       json_write(retention_bytes);
       json_write(retention_duration);
-      json_write(shadow_indexing);
+      json_write(get_shadow_indexing());
+      json_write(remote_delete);
   },
   {
       json_read(compression);
@@ -599,7 +642,8 @@ GEN_COMPAT_CHECK(
       json_read(segment_size);
       json_read(retention_bytes);
       json_read(retention_duration);
-      json_read(shadow_indexing);
+      json_read(get_shadow_indexing());
+      json_read(remote_delete);
   })
 
 GEN_COMPAT_CHECK(
@@ -615,12 +659,11 @@ GEN_COMPAT_CHECK(
       json_read(custom_properties);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::update_topic_properties_request,
   { json_write(updates); },
   { json_read(updates); })
-
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::update_topic_properties_reply,
   { json_write(results); },
   { json_read(results); })

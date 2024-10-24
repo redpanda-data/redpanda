@@ -9,9 +9,9 @@
 
 #include "ssx/sformat.h"
 
-#include <seastar/testing/thread_test_case.hh>
+#include "base/seastarx.h"
 
-#include <seastarx.h>
+#include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(ssx_sformat_simple) {
     ss::sstring foo("foo");

@@ -12,13 +12,12 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "cluster/persisted_stm.h"
+#include "cluster/state_machine_registry.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
-#include "raft/logger.h"
+#include "raft/persisted_stm.h"
 #include "raft/state_machine.h"
-#include "utils/expiring_promise.h"
 #include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -31,12 +30,11 @@ namespace cluster {
 
 // id_allocator is a service to generate cluster-wide unique id (int64)
 
-class id_allocator_stm final : public persisted_stm {
+class id_allocator_stm final : public raft::persisted_stm<> {
 public:
-    struct stm_allocation_result {
-        int64_t id;
-        raft::errc raft_status{raft::errc::success};
-    };
+    static constexpr std::string_view name = "id_allocator_stm";
+
+    using stm_allocation_result = result<int64_t>;
 
     explicit id_allocator_stm(ss::logger&, raft::consensus*);
 
@@ -45,6 +43,11 @@ public:
 
     ss::future<stm_allocation_result>
     allocate_id(model::timeout_clock::duration timeout);
+
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
+    ss::future<stm_allocation_result>
+    reset_next_id(int64_t, model::timeout_clock::duration timeout);
 
 private:
     // legacy structs left for backward compatibility with the "old"
@@ -95,15 +98,22 @@ private:
       do_allocate_id(model::timeout_clock::duration);
     ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
 
-    ss::future<> apply(model::record_batch) override;
+    ss::future<> do_apply(const model::record_batch&) final;
+
+    // Moves the state forward to the given value if the curent id is lower
+    // than it.
+    ss::future<stm_allocation_result>
+      advance_state(int64_t, model::timeout_clock::duration);
 
     ss::future<> write_snapshot();
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_snapshot() override;
-    ss::future<> handle_eviction() override;
+    ss::future<>
+    apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
+    ss::future<raft::stm_snapshot>
+    take_local_snapshot(ssx::semaphore_units apply_units) override;
+    ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<bool> sync(model::timeout_clock::duration);
 
-    mutex _lock;
+    mutex _lock{"id_allocator"};
 
     // id_allocator_stm is a state machine generating unique increasing IDs.
     // When a node becomes a leader it allocates a range of IDs of size
@@ -128,6 +138,16 @@ private:
     int64_t _state{0};
 
     bool _is_writing_snapshot{false};
+};
+
+class id_allocator_stm_factory : public state_machine_factory {
+public:
+    id_allocator_stm_factory() = default;
+    bool is_applicable_for(const storage::ntp_config& cfg) const final;
+
+    void create(
+      raft::state_machine_manager_builder& builder,
+      raft::consensus* raft) final;
 };
 
 } // namespace cluster

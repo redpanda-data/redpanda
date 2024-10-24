@@ -11,17 +11,14 @@
 
 #pragma once
 
-#include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "resource_mgmt/cpu_scheduling.h"
-#include "ssx/metrics.h"
-
-#include <seastar/core/metrics.hh>
 
 class scheduling_groups_probe {
 public:
-    void wire_up(const scheduling_groups& scheduling_groups) {
+    void start(const scheduling_groups& scheduling_groups) {
         if (config::shard_local_cfg().disable_public_metrics()) {
             return;
         }
@@ -40,14 +37,16 @@ public:
                 seastar::metrics::description(
                   "Accumulated runtime of task queue associated with this "
                   "scheduling group"),
-                {ssx::metrics::make_namespaced_label("scheduling_group")(
+                {metrics::make_namespaced_label("scheduling_group")(
                   group_ref.get().name())})});
         }
     }
 
-    void clear() { _public_metrics.clear(); }
+    ss::future<> stop() {
+        _public_metrics.clear();
+        return ss::now();
+    }
 
 private:
-    seastar::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    metrics::public_metric_groups _public_metrics;
 };

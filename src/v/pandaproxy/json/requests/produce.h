@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "json/json.h"
-#include "json/stringbuffer.h"
+#include "json/chunked_buffer.h"
 #include "json/types.h"
 #include "json/writer.h"
 #include "kafka/client/types.h"
@@ -21,8 +21,7 @@
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
-#include "tristate.h"
+#include "utils/tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -43,7 +42,7 @@ private:
     serialization_format _fmt = serialization_format::none;
     state state = state::empty;
 
-    using json_writer = ::json::Writer<::json::StringBuffer>;
+    using json_writer = ::json::Writer<::json::chunked_buffer>;
 
     // If we're parsing json_v2, and the field is key or value (implied by
     // _json_writer being set), then forward calls to json_writer.
@@ -56,8 +55,7 @@ private:
         auto res = std::invoke(
           mem_func, *_json_writer, std::forward<Args>(args)...);
         if (_json_writer->IsComplete()) {
-            iobuf buf;
-            buf.append(_buf.GetString(), _buf.GetSize());
+            iobuf buf = std::move(_buf).as_iobuf();
             switch (state) {
             case state::key:
                 result.back().key.emplace(std::move(buf));
@@ -84,45 +82,51 @@ public:
       : _fmt(fmt) {}
 
     bool Null() {
-        if (auto res = maybe_json(&json_writer::Null); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Null);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Bool(bool b) {
-        if (auto res = maybe_json(&json_writer::Bool, b); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Bool, b);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Int64(int64_t v) {
-        if (auto res = maybe_json(&json_writer::Int64, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Int64, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Uint64(uint64_t v) {
-        if (auto res = maybe_json(&json_writer::Uint64, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Uint64, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Double(double v) {
-        if (auto res = maybe_json(&json_writer::Double, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Double, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool RawNumber(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json(&json_writer::RawNumber, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
 
     bool Int(int i) {
-        if (auto res = maybe_json(&json_writer::Int, i); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Int, i);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::partition) {
@@ -134,7 +138,8 @@ public:
     }
 
     bool Uint(unsigned u) {
-        if (auto res = maybe_json(&json_writer::Uint, u); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Uint, u);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::partition) {
@@ -149,7 +154,7 @@ public:
         if (auto res = maybe_json<bool (json_writer::*)(
               const Ch*, ::json::SizeType, bool)>(
               &json_writer::String, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::key) {
@@ -176,7 +181,7 @@ public:
         if (auto res = maybe_json<bool (json_writer::*)(
               const Ch*, ::json::SizeType, bool)>(
               &json_writer::Key, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         auto key = std::string_view(str, len);
@@ -206,7 +211,8 @@ public:
     }
 
     bool StartObject() {
-        if (auto res = maybe_json(&json_writer::StartObject); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::StartObject);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::empty) {
@@ -222,7 +228,7 @@ public:
 
     bool EndObject(::json::SizeType s) {
         if (auto res = maybe_json(&json_writer::EndObject, s);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::record) {
@@ -237,50 +243,55 @@ public:
     }
 
     bool StartArray() {
-        if (auto res = maybe_json(&json_writer::StartArray); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::StartArray);
+            res.has_optional_value()) {
             return res.value();
         }
         return state == state::records;
     }
 
     bool EndArray(::json::SizeType s) {
-        if (auto res = maybe_json(&json_writer::EndArray, s); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::EndArray, s);
+            res.has_optional_value()) {
             return res.value();
         }
         return state == state::records;
     }
 
 private:
-    ::json::StringBuffer _buf;
+    ::json::chunked_buffer _buf;
     std::optional<json_writer> _json_writer;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::produce_response::partition& v) {
+} // namespace pandaproxy::json
+
+namespace kafka {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::produce_response::partition& v) {
     w.StartObject();
     w.Key("partition");
     w.Int(v.partition_index);
     if (v.error_code != kafka::error_code::none) {
         w.Key("error_code");
-        ::json::rjson_serialize(w, v.error_code);
+        rjson_serialize(w, v.error_code);
     }
     w.Key("offset");
     w.Int64(v.base_offset);
     w.EndObject();
 }
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const kafka::produce_response::topic& v) {
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w, const kafka::produce_response::topic& v) {
     w.StartObject();
     w.Key("offsets");
     w.StartArray();
-    for (auto const& p : v.partitions) {
+    for (const auto& p : v.partitions) {
         rjson_serialize(w, p);
     }
     w.EndArray();
     w.EndObject();
 }
 
-} // namespace pandaproxy::json
+} // namespace kafka

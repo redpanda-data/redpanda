@@ -9,9 +9,9 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "base/vassert.h"
 #include "ssx/semaphore.h"
-#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
@@ -29,6 +29,8 @@ class token_bucket {
     static constexpr std::chrono::milliseconds refresh_interval{50};
 
 public:
+    using throttle_duration = clock_type::duration;
+
     token_bucket(size_t rate, ss::sstring name)
       : _rate(rate)
       , _capacity(rate)
@@ -44,15 +46,21 @@ public:
       , _refresh_timer([this] { handle_refresh(); }) {}
 
     ss::future<> throttle(size_t size, ss::abort_source& as) {
+        return maybe_throttle(size, as).discard_result();
+    }
+
+    /// Return nullopt if throttling is not applied or throttle duration
+    ss::future<std::optional<throttle_duration>>
+    maybe_throttle(size_t size, ss::abort_source& as) {
+        using res_t = std::optional<throttle_duration>;
         _refresh_timer.cancel();
         refresh();
-
         /*
          * when try_wait succeeds it implies that there are no waiters so there
          * is no risk in returning without arming the refresh timer.
          */
         if (_sem.try_wait(size)) {
-            return ss::now();
+            return ss::make_ready_future<res_t>(std::nullopt);
         }
 
         auto elapsed = clock_type::now() - _last_refresh;
@@ -62,7 +70,17 @@ public:
             _refresh_timer.arm(refresh_interval - elapsed);
         }
 
-        return _sem.wait(as, size);
+        auto start_time = clock_type::now();
+        return _sem.wait(as, size).then([start_time] {
+            auto end_time = clock_type::now();
+            auto duration = typename clock_type::duration(0);
+            if (end_time > start_time) {
+                // Return 0 in case if the clock is monotonic and
+                // the end_time is actually before the start_time.
+                duration = end_time - start_time;
+            }
+            return ss::make_ready_future<res_t>(duration);
+        });
     }
 
     bool try_throttle(size_t size) {

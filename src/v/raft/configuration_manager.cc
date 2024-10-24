@@ -9,19 +9,26 @@
 
 #include "raft/configuration_manager.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
+#include "serde/rw/rw.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/btree_map.h>
 #include <boost/range/irange.hpp>
+#include <fmt/ostream.h>
+
+#include <iterator>
+#include <utility>
 
 namespace raft {
 
@@ -170,6 +177,7 @@ configuration_manager::add(std::vector<offset_configuration> configurations) {
             // handling backward compatibility i.e. revisionless configurations
             co.cfg.maybe_set_initial_revision(_initial_revision);
 
+            reset_override(co.cfg.revision_id());
             add_configuration(co.offset, std::move(co.cfg));
             _highest_known_offset = std::max(_highest_known_offset, co.offset);
         }
@@ -204,8 +212,29 @@ const group_configuration& configuration_manager::get_latest() const {
     vassert(
       !_configurations.empty(),
       "Configuration manager should always have at least one configuration");
+    if (_configuration_force_override) [[unlikely]] {
+        return *_configuration_force_override;
+    }
+
     return _configurations.rbegin()->second.cfg;
 }
+
+void configuration_manager::set_override(group_configuration cfg) {
+    vlog(_ctxlog.info, "Setting configuration override to {}", cfg);
+    _configuration_force_override = std::make_unique<group_configuration>(
+      std::move(cfg));
+}
+
+void configuration_manager::reset_override(
+  model::revision_id added_configuration_revision) {
+    if (
+      _configuration_force_override
+      && _configuration_force_override->revision_id()
+           <= added_configuration_revision) [[unlikely]] {
+        vlog(_ctxlog.info, "Resetting configuration override");
+        _configuration_force_override.reset();
+    }
+};
 
 model::offset configuration_manager::get_latest_offset() const {
     vassert(
@@ -244,7 +273,12 @@ serialize_configurations(const configuration_manager::underlying_t& cfgs) {
                  cfgs.cbegin(),
                  cfgs.cend(),
                  [&ret](const auto& p) mutable {
-                     reflection::serialize(ret, p.first, p.second.cfg);
+                     reflection::serialize(ret, p.first);
+                     if (p.second.cfg.version() >= group_configuration::v_6) {
+                         serde::write(ret, p.second.cfg);
+                     } else {
+                         reflection::serialize(ret, p.second.cfg);
+                     }
                  })
           .then([&ret] { return std::move(ret); });
     });
@@ -267,8 +301,10 @@ ss::future<configuration_manager::underlying_t> deserialize_configurations(
                          [&parser, &configs, initial](uint64_t i) mutable {
                              auto key = reflection::adl<model::offset>{}.from(
                                parser);
-                             auto value = reflection::adl<group_configuration>{}
-                                            .from(parser);
+
+                             auto value
+                               = details::deserialize_nested_configuration(
+                                 parser);
                              auto [_, success] = configs.try_emplace(
                                key,
                                configuration_manager::indexed_configuration(
@@ -311,86 +347,87 @@ ss::future<>
 configuration_manager::start(bool reset, model::revision_id initial_revision) {
     _initial_revision = initial_revision;
     if (reset) {
-        return _storage.kvs()
-          .remove(
-            storage::kvstore::key_space::consensus, configurations_map_key())
-          .then([this] {
-              return _storage.kvs().remove(
-                storage::kvstore::key_space::consensus,
-                highest_known_offset_key());
-          });
+        co_await _storage.kvs().remove(
+          storage::kvstore::key_space::consensus, configurations_map_key());
+
+        co_return co_await _storage.kvs().remove(
+          storage::kvstore::key_space::consensus, highest_known_offset_key());
     }
 
     auto map_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, configurations_map_key());
     auto idx_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, next_configuration_idx_key());
-    return _lock.with([this,
-                       map_buf = std::move(map_buf),
-                       idx_buf = std::move(idx_buf)]() mutable {
-        auto f = ss::now();
+    auto u = co_await _lock.get_units();
 
-        if (map_buf) {
-            _next_index = configuration_idx(0);
-            if (idx_buf) {
-                _next_index = reflection::from_iobuf<configuration_idx>(
-                  std::move(*idx_buf));
-            }
-            f = deserialize_configurations(_next_index, std::move(*map_buf))
-                  .then([this](underlying_t cfgs) {
-                      _configurations = std::move(cfgs);
-                      if (!_configurations.empty()) {
-                          _highest_known_offset
-                            = _configurations.rbegin()->first;
-                          _next_index = _configurations.rbegin()->second.idx
-                                        + configuration_idx(1);
-                      }
-                  });
+    if (map_buf) {
+        _next_index = configuration_idx(0);
+        if (idx_buf) {
+            _next_index = reflection::from_iobuf<configuration_idx>(
+              std::move(*idx_buf));
         }
+        _configurations = co_await deserialize_configurations(
+          _next_index, std::move(*map_buf));
 
-        auto offset_buf = _storage.kvs().get(
-          storage::kvstore::key_space::consensus, highest_known_offset_key());
-        if (offset_buf) {
-            f = f.then([this, buf = std::move(*offset_buf)]() mutable {
-                auto offset = reflection::from_iobuf<model::offset>(
-                  std::move(buf));
-
-                _highest_known_offset = std::max(_highest_known_offset, offset);
-            });
+        if (!_configurations.empty()) {
+            _highest_known_offset = _configurations.rbegin()->first;
+            _next_index = _configurations.rbegin()->second.idx
+                          + configuration_idx(1);
         }
+    }
 
-        return f.then([this] {
-            for (auto& [o, icfg] : _configurations) {
-                icfg.cfg.maybe_set_initial_revision(_initial_revision);
-            }
-        });
-    });
+    auto offset_buf = _storage.kvs().get(
+      storage::kvstore::key_space::consensus, highest_known_offset_key());
+    if (offset_buf) {
+        auto offset = reflection::from_iobuf<model::offset>(
+          std::move(*offset_buf));
+
+        _highest_known_offset = std::max(_highest_known_offset, offset);
+    }
+
+    for (auto& [o, icfg] : _configurations) {
+        icfg.cfg.maybe_set_initial_revision(_initial_revision);
+    }
 }
 
-ss::future<> configuration_manager::maybe_store_highest_known_offset(
-  model::offset offset, size_t bytes) {
+void configuration_manager::maybe_store_highest_known_offset_in_background(
+  model::offset offset, size_t bytes, ss::gate& gate) {
     _highest_known_offset = offset;
     _bytes_since_last_offset_update += bytes;
 
-    auto take_result = _storage.resources().configuration_manager_take_bytes(
-      bytes);
-    if (_bytes_since_last_offset_update_units.count()) {
-        _bytes_since_last_offset_update_units.adopt(
-          std::move(take_result.units));
-    } else {
-        _bytes_since_last_offset_update_units = std::move(take_result.units);
-    }
+    auto checkpoint_hint
+      = _storage.resources().configuration_manager_take_bytes(
+        bytes, _bytes_since_last_offset_update_units);
 
     if (
       _bytes_since_last_offset_update < offset_update_treshold
-      && !take_result.checkpoint_hint) {
-        co_return;
+      && !checkpoint_hint) {
+        return;
     }
 
-    _bytes_since_last_offset_update = 0;
+    if (_hko_checkpoint_in_progress) {
+        return;
+    }
+
+    ssx::spawn_with_gate(gate, [this, bytes] {
+        return do_maybe_store_highest_known_offset(bytes);
+    });
+}
+
+ss::future<>
+configuration_manager::do_maybe_store_highest_known_offset(size_t) {
+    if (_hko_checkpoint_in_progress) {
+        // This could be a mutex, but it doesn't make much sense to wait on it.
+        // In an unlikely event checkpointing fails, immediate retry by another
+        // waiting fiber is likely to fail as well.
+        co_return;
+    }
+    _hko_checkpoint_in_progress = true;
+    auto deferred = ss::defer([&] { _hko_checkpoint_in_progress = false; });
 
     co_await store_highest_known_offset();
 
+    _bytes_since_last_offset_update = 0;
     _bytes_since_last_offset_update_units.return_all();
 }
 
@@ -484,13 +521,31 @@ ss::future<> configuration_manager::adjust_configuration_idx(
 }
 
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
-    o << "{configurations: ";
-    for (const auto& p : m._configurations) {
-        o << "{ offset: " << p.first << ", idx: " << p.second.idx
-          << ",cfg: " << p.second.cfg << " } " << std::endl;
-    }
+    fmt::print(o, "{{configurations: [");
 
-    return o << " }";
+    static auto print_cfg =
+      [](
+        std::ostream& o,
+        const configuration_manager::underlying_t::value_type& p) {
+          fmt::print(
+            o,
+            "{{offset: {}, index: {}, cfg: {}}}",
+            p.first,
+            p.second.idx,
+            p.second.cfg);
+      };
+
+    if (!m._configurations.empty()) {
+        auto it = m._configurations.begin();
+        print_cfg(o, *it);
+        ++it;
+        for (; it != m._configurations.end(); ++it) {
+            fmt::print(o, ",");
+            print_cfg(o, *it);
+        }
+    }
+    fmt::print(o, "]}}");
+    return o;
 }
 
 } // namespace raft

@@ -26,7 +26,8 @@ public:
         /// token added as an authorization header, to multiple headers added
         /// along with signing of the request payload.
         virtual std::error_code
-        add_auth(http::client::request_header& header) const = 0;
+        add_auth(http::client::request_header& header) const
+          = 0;
 
         /// Changes the authentication key and secret or the oauth token
         /// associated with the credentials. The concept of temporary
@@ -36,6 +37,10 @@ public:
         virtual void reset_creds(credentials creds) = 0;
 
         virtual std::ostream& print(std::ostream& os) const = 0;
+
+        /// Returns true if this implementation is based on oauth tokens.
+        /// meant to deal with API that do not support OAuth
+        virtual bool is_oauth() const = 0;
 
         virtual ~impl() = default;
     };
@@ -52,6 +57,8 @@ public:
     }
 
     std::ostream& print(std::ostream& os) const { return _impl->print(os); }
+
+    bool is_oauth() const { return _impl->is_oauth(); }
 
 private:
     std::unique_ptr<impl> _impl;

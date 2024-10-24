@@ -18,9 +18,9 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>
@@ -44,10 +44,10 @@ FIXTURE_TEST(test_creating_same_topic_twice, cluster_test_fixture) {
 
     // wait for cluster to be stable
     tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return get_local_cache(model::node_id{0}).all_brokers().size() == 3
-               && get_local_cache(model::node_id{1}).all_brokers().size() == 3
-               && get_local_cache(model::node_id{2}).all_brokers().size() == 3;
-    }).get0();
+        return get_local_cache(model::node_id{0}).node_count() == 3
+               && get_local_cache(model::node_id{1}).node_count() == 3
+               && get_local_cache(model::node_id{2}).node_count() == 3;
+    }).get();
 
     std::vector<ss::future<std::vector<cluster::topic_result>>> futures;
 

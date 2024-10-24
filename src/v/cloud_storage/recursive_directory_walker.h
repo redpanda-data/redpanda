@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include "cloud_storage/access_time_tracker.h"
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -19,6 +19,10 @@
 #include <chrono>
 
 namespace cloud_storage {
+
+inline constexpr auto cache_tmp_file_extension{".part"};
+
+class access_time_tracker;
 
 struct file_list_item {
     std::chrono::system_clock::time_point access_time;
@@ -28,18 +32,25 @@ struct file_list_item {
 
 struct walk_result {
     uint64_t cache_size{0};
-    std::vector<file_list_item> regular_files;
-    std::vector<ss::sstring> empty_dirs;
+    size_t filtered_out_files{0};
+    fragmented_vector<file_list_item> regular_files;
+    fragmented_vector<ss::sstring> empty_dirs;
+    size_t tmp_files_size{0};
 };
 
 class recursive_directory_walker {
 public:
+    using filter_type = std::function<bool(std::string_view)>;
+
     ss::future<> stop();
 
     // recursively walks start_dir, returns the total size of files in this
     // directory and a list of files sorted by access time from oldest to newest
-    ss::future<walk_result>
-    walk(ss::sstring start_dir, const access_time_tracker& tracker);
+    ss::future<walk_result> walk(
+      ss::sstring start_dir,
+      const access_time_tracker& tracker,
+      uint16_t max_concurrency,
+      std::optional<filter_type> collect_filter = std::nullopt);
 
 private:
     ss::gate _gate;

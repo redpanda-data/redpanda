@@ -1,7 +1,0 @@
-node_modules
-
-#those files will change, for now we ignore that.
-modules/hashing/*.ts
-modules/rpc/parser.ts
-modules/rpc/types.ts
-test/rpc/roundtrip.ts

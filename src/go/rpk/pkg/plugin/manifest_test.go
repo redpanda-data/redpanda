@@ -1,3 +1,12 @@
+// Copyright 2022 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package plugin
 
 import (
@@ -93,6 +102,7 @@ plugins:
 		// The rest of the download code is just standard request
 		// issuing and downloading.
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -126,7 +136,7 @@ func TestManifestPluginDownload(t *testing.T) {
 	var (
 		pluginName     = "name"
 		pluginPath     = "path/to"
-		pluginArch     = "os_arg"
+		pluginArch     = "os_arch"
 		pluginContents = "foo"
 		pluginSha256   = sha256.Sum256([]byte(pluginContents))
 		pluginSha      = hex.EncodeToString(pluginSha256[:])
@@ -167,6 +177,7 @@ func TestManifestPluginDownload(t *testing.T) {
 				Path:       pluginPath,
 				OSArchShas: map[string]string{pluginArch: pluginSha},
 			},
+			expErr: true,
 		},
 
 		{
@@ -175,6 +186,7 @@ func TestManifestPluginDownload(t *testing.T) {
 				Name:       pluginName,
 				OSArchShas: map[string]string{pluginArch: pluginSha},
 			},
+			expErr: true,
 		},
 
 		{
@@ -232,6 +244,7 @@ func TestManifestPluginDownload(t *testing.T) {
 
 		//
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -267,7 +280,7 @@ func TestManifestPluginDownload(t *testing.T) {
 			got, err := test.plugin.Download(svr.URL, "os", "arch")
 
 			if gotErr := err != nil; gotErr != test.expErr {
-				t.Errorf("got err? %v != exp err? %v", gotErr, test.expErr)
+				t.Errorf("got err? %v (%v) != exp err? %v", gotErr, err, test.expErr)
 				return
 			}
 			if test.expErr {

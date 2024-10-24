@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "container/fragmented_vector.h"
 #include "json/document.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -29,7 +30,7 @@ class tx_range_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit tx_range_manifest(
-      remote_segment_path spath, const std::vector<model::tx_range>& range);
+      remote_segment_path spath, fragmented_vector<model::tx_range> range);
 
     /// Create empty manifest that supposed to be updated later
     explicit tx_range_manifest(remote_segment_path spath);
@@ -41,20 +42,19 @@ public:
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
-    void update(const rapidjson::Document& is);
 
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    serialized_json_stream serialize() const override;
+    ss::future<iobuf> serialize_buf() const override;
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
+    remote_manifest_path get_manifest_path() const;
 
     /// Serialize manifest object
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    void serialize_ostream(std::ostream& out) const;
 
     manifest_type get_manifest_type() const override {
         return manifest_type::tx_range;
@@ -64,7 +64,12 @@ public:
         return std::move(_ranges);
     }
 
+    /// Return approximate size of the serialized manifest
+    size_t estimate_serialized_size() const;
+
 private:
+    void do_update(const rapidjson::Document& is);
+
     remote_segment_path _path;
     fragmented_vector<model::tx_range> _ranges;
 };

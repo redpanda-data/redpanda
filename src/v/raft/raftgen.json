@@ -2,7 +2,8 @@
     "namespace": "raft",
     "service_name": "raftgen",
     "includes": [
-        "raft/types.h"
+        "raft/types.h",
+        "raft/heartbeats.h"
     ],
     "methods": [
         {
@@ -21,6 +22,11 @@
             "output_type": "heartbeat_reply"
         },
         {
+            "name": "heartbeat_v2",
+            "input_type": "heartbeat_request_v2",
+            "output_type": "heartbeat_reply_v2"
+        },
+        {
             "name": "install_snapshot",
             "input_type": "install_snapshot_request",
             "output_type": "install_snapshot_reply"
@@ -34,6 +40,11 @@
             "name": "transfer_leadership",
             "input_type": "transfer_leadership_request",
             "output_type": "transfer_leadership_reply"
+        },
+        {
+            "name": "append_entries_full_serde",
+            "input_type": "append_entries_request_serde_wrapper",
+            "output_type": "append_entries_reply"
         }
     ]
 }

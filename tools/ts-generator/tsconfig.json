@@ -1,9 +1,0 @@
-{
-  "exclude": [
-    "node_modules",
-    "definition.json"
-  ],
-  "compilerOptions": {
-    "downlevelIteration": true
-  }
-}

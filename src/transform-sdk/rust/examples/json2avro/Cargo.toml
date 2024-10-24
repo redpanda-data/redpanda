@@ -1,0 +1,12 @@
+[package]
+name = "json2avro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+redpanda-transform-sdk = { path = "../.." }
+serde_json = { workspace = true }
+apache-avro = { workspace = true }
+anyhow = { workspace = true }

@@ -10,13 +10,16 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
+#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
+#include "container/chunked_hash_map.h"
+#include "metrics/metrics.h"
+#include "storage/fwd.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"
-#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
 
@@ -24,8 +27,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
-
-#include <absl/container/flat_hash_map.h>
 
 namespace storage {
 
@@ -75,31 +76,42 @@ struct kvstore_config {
     size_t max_segment_size;
     config::binding<std::chrono::milliseconds> commit_interval;
     ss::sstring base_dir;
-    debug_sanitize_files sanitize_fileops;
+    std::optional<storage::file_sanitize_config> sanitizer_config;
 
     kvstore_config(
       size_t max_segment_size,
       config::binding<std::chrono::milliseconds> commit_interval,
       ss::sstring base_dir,
-      debug_sanitize_files sanitize_fileops)
+      std::optional<storage::file_sanitize_config> sanitizer_config)
       : max_segment_size(max_segment_size)
       , commit_interval(commit_interval)
       , base_dir(std::move(base_dir))
-      , sanitize_fileops(sanitize_fileops) {}
+      , sanitizer_config(std::move(sanitizer_config)) {}
 };
 
 class kvstore {
 public:
+    using map_t = chunked_hash_map<bytes, iobuf>;
+
     enum class key_space : int8_t {
         testing = 0,
         consensus = 1,
         storage = 2,
         controller = 3,
         offset_translator = 4,
+        usage = 5,
+        stms = 6,
+        shard_placement = 7,
+        debug_bundle = 8,
         /* your sub-system here */
     };
 
-    explicit kvstore(kvstore_config kv_conf, storage_resources&);
+    explicit kvstore(
+      kvstore_config kv_conf,
+      ss::shard_id shard,
+      storage_resources&,
+      ss::sharded<features::feature_table>& feature_table);
+    ~kvstore() noexcept;
 
     ss::future<> start();
     ss::future<> stop();
@@ -108,14 +120,29 @@ public:
     ss::future<> put(key_space ks, bytes key, iobuf value);
     ss::future<> remove(key_space ks, bytes key);
 
+    /// Iterate over all key-value pairs in a keyspace.
+    /// NOTE: this will stall all updates, so use with a lot of caution.
+    ss::future<> for_each(
+      key_space ks,
+      ss::noncopyable_function<void(bytes_view, const iobuf&)> visitor);
+
     bool empty() const {
         vassert(_started, "kvstore has not been started");
         return _db.empty();
     }
 
+    /*
+     * Return disk usage information about kvstore. Size information for any
+     * segments are returned in the usage.data field. The kvstore doesn't
+     * currently use indexing, and has no reclaimable space yes, so these fields
+     * will be set to 0.
+     */
+    ss::future<usage_report> disk_usage() const;
+
 private:
     kvstore_config _conf;
     storage_resources& _resources;
+    ss::sharded<features::feature_table>& _feature_table;
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;
@@ -145,11 +172,15 @@ private:
     ss::timer<> _timer;
     ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
+    // Protect _db and _next_offset across asynchronous mutations.
+    mutex _db_mut{"kvstore::db_mut"};
     model::offset _next_offset;
-    absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
+    map_t _db;
+    std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
-    void apply_op(bytes key, std::optional<iobuf> value);
+    void apply_op(
+      bytes key, std::optional<iobuf> value, const ssx::semaphore_units&);
     ss::future<> flush_and_apply_ops();
     ss::future<> roll();
     ss::future<> save_snapshot();
@@ -161,8 +192,9 @@ private:
      * 2. then recover from segments
      */
     ss::future<> recover();
-    void load_snapshot_in_thread();
-    void replay_segments_in_thread(segment_set);
+    ss::future<> load_snapshot();
+    ss::future<> load_snapshot_from_reader(snapshot_reader&);
+    ss::future<> replay_segments(segment_set);
 
     /**
      * Replay batches against the key-value store.
@@ -182,7 +214,7 @@ private:
         void skip_batch_start(
           model::record_batch_header header, size_t, size_t) override;
         void consume_records(iobuf&&) override;
-        stop_parser consume_batch_end() override;
+        ss::future<stop_parser> consume_batch_end() override;
         void print(std::ostream&) const override;
 
     private:
@@ -208,7 +240,7 @@ private:
         uint64_t entries_removed{0};
         size_t cached_bytes{0};
 
-        ss::metrics::metric_groups metrics;
+        metrics::internal_metric_groups metrics;
     };
 
     probe _probe;

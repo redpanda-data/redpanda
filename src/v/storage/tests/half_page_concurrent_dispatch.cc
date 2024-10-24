@@ -17,12 +17,11 @@
 
 struct fixture {
     storage::disk_log_builder b{storage::log_config(
-      storage::log_config::storage_type::disk,
       storage::random_dir(),
       1_GiB,
-      storage::debug_sanitize_files::yes,
       ss::default_priority_class(),
-      storage::with_cache::no)};
+      storage::with_cache::no,
+      storage::make_sanitized_file_config())};
     ~fixture() { b.stop().get(); }
 };
 
@@ -48,7 +47,7 @@ FIXTURE_TEST(half_next_page, fixture) {
     info("Segment: {}", seg);
     seg.flush().get();
     b | add_random_batch(1, 1, maybe_compress_batches::yes);
-    auto recs = b.consume().get0();
+    auto recs = b.consume().get();
     BOOST_REQUIRE_EQUAL(recs.size(), 2);
     for (auto& rec : recs) {
         BOOST_REQUIRE_EQUAL(rec.header().crc, model::crc_record_batch(rec));

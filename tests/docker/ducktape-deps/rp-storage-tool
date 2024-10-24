@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+set -x
+
+cd /rp_storage_tool
+cargo build --release
+cp target/release/rp-storage-tool /usr/local/bin
+cd /

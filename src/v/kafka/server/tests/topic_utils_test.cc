@@ -134,7 +134,7 @@ BOOST_AUTO_TEST_CASE(
       partitions_validator::error_message,
       partitions_validator::is_valid);
     BOOST_REQUIRE_EQUAL(errs.size(), 2);
-    for (auto const& e : errs) {
+    for (const auto& e : errs) {
         BOOST_TEST(
           (int8_t)e.error_code
           == (int8_t)kafka::error_code::invalid_partitions);

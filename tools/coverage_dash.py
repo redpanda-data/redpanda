@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import io
+import re
 import argparse
 import tempfile
 import gen_coverage as rpcov
@@ -20,6 +21,15 @@ logger_handler.setFormatter(
     logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(logger_handler)
 logger.setLevel(logging.INFO)
+
+
+def is_safe_path(dest):
+    # helper function used to check for input sanitization
+    # of directory paths when using unsafe shell=True
+    if not re.match("^/?[\w?\-/]+$", dest):
+        logger.error(f"Unsafe destination: {dest}")
+        return False
+    return True
 
 
 def create_profraw_files_dict(files_list):
@@ -42,15 +52,17 @@ def create_profraw_files_dict(files_list):
 def get_profraw_files(test_dir):
     # need shell=True for wildcard use
     find = f'find "{test_dir}" -name "*.profraw"'
-    results = subprocess.run(find,
-                             shell=True,
-                             capture_output=True,
-                             encoding="utf-8",
-                             check=True)
-
-    results = results.stdout.strip().split("\n")
-    by_test = create_profraw_files_dict(results)
-    return by_test
+    if is_safe_path(find):
+        results = subprocess.run(find,
+                                 shell=True,
+                                 capture_output=True,
+                                 encoding="utf-8",
+                                 check=True)
+        results = results.stdout.strip().split("\n")
+        by_test = create_profraw_files_dict(results)
+        return by_test
+    else:
+        return {}
 
 
 def gen_coverage(test_dir, profraw_files, rp_binary, ignore_regex):

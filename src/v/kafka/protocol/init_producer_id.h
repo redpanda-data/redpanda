@@ -11,14 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/init_producer_id_request.h"
 #include "kafka/protocol/schemata/init_producer_id_response.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -29,11 +28,11 @@ struct init_producer_id_request final {
 
     init_producer_id_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -48,7 +47,7 @@ struct init_producer_id_response final {
 
     init_producer_id_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

@@ -1,0 +1,59 @@
+{
+    "namespace": "transform::rpc::impl",
+    "service_name": "transform_rpc",
+    "includes": [
+        "transform/rpc/serde.h"
+    ],
+    "methods": [
+        {
+            "name": "generate_report",
+            "input_type": "generate_report_request",
+            "output_type": "generate_report_reply"
+        },
+        {
+            "name": "produce",
+            "input_type": "produce_request",
+            "output_type": "produce_reply"
+        },
+        {
+            "name": "store_wasm_binary",
+            "input_type": "store_wasm_binary_request",
+            "output_type": "store_wasm_binary_reply"
+        },
+        {
+            "name": "load_wasm_binary",
+            "input_type": "load_wasm_binary_request",
+            "output_type": "load_wasm_binary_reply"
+        },
+        {
+            "name": "delete_wasm_binary",
+            "input_type": "delete_wasm_binary_request",
+            "output_type": "delete_wasm_binary_reply"
+        },
+        {
+            "name": "find_coordinator",
+            "input_type": "find_coordinator_request",
+            "output_type": "find_coordinator_response"
+        },
+        {
+            "name": "offset_commit",
+            "input_type": "offset_commit_request",
+            "output_type": "offset_commit_response"
+        },
+        {
+            "name": "offset_fetch",
+            "input_type": "offset_fetch_request",
+            "output_type": "offset_fetch_response"
+        },
+        {
+            "name": "list_committed_offsets",
+            "input_type": "list_commits_request",
+            "output_type": "list_commits_reply"
+        },
+        {
+            "name": "delete_committed_offsets",
+            "input_type": "delete_commits_request",
+            "output_type": "delete_commits_reply"
+        }
+    ]
+}

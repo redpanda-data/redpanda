@@ -11,10 +11,14 @@
 
 #pragma once
 #include "bytes/iobuf.h"
+#include "thirdparty/lz4/lz4frame.h"
+
 namespace compression::internal {
 
 struct lz4_frame_compressor {
     static iobuf compress(const iobuf&);
+    static iobuf
+    compress_with_block_size(const iobuf&, std::optional<LZ4F_blockSizeID_t>);
     static iobuf uncompress(const iobuf&);
 };
 

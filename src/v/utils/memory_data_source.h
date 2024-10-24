@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/iostream.hh>
 
@@ -22,13 +22,17 @@ class memory_data_source final : public ss::data_source_impl {
 public:
     using value_type = ss::temporary_buffer<char>;
     using vector_type = std::vector<value_type>;
-    explicit memory_data_source(vector_type buffers)
-      : _capacity(std::accumulate(
-        buffers.begin(),
-        buffers.end(),
-        size_t(0),
-        [](size_t acc, auto& it) { return acc + it.size(); }))
-      , _buffers(std::move(buffers)) {}
+
+    explicit memory_data_source(value_type buffer) {
+        add_buffer(std::move(buffer));
+    }
+
+    explicit memory_data_source(vector_type buffers) {
+        _buffers.reserve(buffers.size());
+        for (auto& buffer : buffers) {
+            add_buffer(std::move(buffer));
+        }
+    }
 
     ss::future<value_type> skip(uint64_t n) final {
         _byte_offset = std::min(_byte_offset + n, _capacity);
@@ -53,7 +57,12 @@ public:
     }
 
 private:
-    const size_t _capacity;
+    void add_buffer(value_type buffer) {
+        _capacity += buffer.size();
+        _buffers.push_back(std::move(buffer));
+    }
+
+    size_t _capacity = 0;
     vector_type _buffers;
     size_t _byte_offset = 0;
 };

@@ -14,7 +14,6 @@ import (
 
 	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 
@@ -37,9 +36,6 @@ func (c *dbusClient) Shutdown() error {
 
 func (c *dbusClient) StartUnit(name string) error {
 	_, err := c.conn.StartUnitContext(context.Background(), name, "replace", nil)
-	if err != nil {
-		logrus.Error("ERROR Starting unit ", err)
-	}
 	return err
 }
 

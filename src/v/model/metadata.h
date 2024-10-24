@@ -11,11 +11,18 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "base/units.h"
 #include "model/fundamental.h"
-#include "net/unresolved_address.h"
-#include "seastarx.h"
 #include "serde/envelope.h"
+#include "serde/rw/named_type.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/tristate_rw.h"
+#include "serde/rw/vector.h"
 #include "utils/named_type.h"
+#include "utils/unresolved_address.h"
+#include "utils/xid.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -25,45 +32,32 @@
 
 #include <compare>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace model {
-using node_id = named_type<int32_t, struct node_id_model_type>;
-/**
- * We use revision_id to identify entities evolution in time. f.e. NTP that was
- * first created and then removed, raft configuration
- */
-using revision_id = named_type<int64_t, struct revision_id_model_type>;
-
-/**
- * Revision id that the partition had when the topic was just created.
- * The revision_id of the partition might change when the partition is moved
- * between the nodes.
- */
-using initial_revision_id
-  = named_type<int64_t, struct initial_revision_id_model_type>;
 
 /// Rack id type
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties
-  : serde::envelope<broker_properties, serde::version<0>> {
+  : serde::
+      envelope<broker_properties, serde::version<2>, serde::compat_version<0>> {
     uint32_t cores;
     uint32_t available_memory_gb;
     uint32_t available_disk_gb;
     std::vector<ss::sstring> mount_paths;
     // key=value properties in /etc/redpanda/machine_properties.yaml
     std::unordered_map<ss::sstring, ss::sstring> etc_props;
+    uint64_t available_memory_bytes = 0;
+    fips_mode_flag in_fips_mode = fips_mode_flag::disabled;
 
-    bool operator==(const broker_properties& other) const {
-        return cores == other.cores
-               && available_memory_gb == other.available_memory_gb
-               && available_disk_gb == other.available_disk_gb
-               && mount_paths == other.mount_paths
-               && etc_props == other.etc_props;
-    }
+    bool operator==(const broker_properties& other) const = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const model::broker_properties&);
 
     auto serde_fields() {
         return std::tie(
@@ -71,12 +65,15 @@ struct broker_properties
           available_memory_gb,
           available_disk_gb,
           mount_paths,
-          etc_props);
+          etc_props,
+          available_memory_bytes,
+          in_fips_mode);
     }
 };
 
 struct broker_endpoint final
-  : serde::envelope<broker_endpoint, serde::version<0>> {
+  : serde::
+      envelope<broker_endpoint, serde::version<0>, serde::compat_version<0>> {
     ss::sstring name;
     net::unresolved_address address;
 
@@ -92,10 +89,42 @@ struct broker_endpoint final
     bool operator==(const broker_endpoint&) const = default;
     friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
 
+    static std::optional<ss::sstring>
+    validate_not_is_addr_any(const broker_endpoint& ep) {
+        bool is_any = [](const broker_endpoint& ep) {
+            try {
+                // Try a numerical parse of the hostname and check whether it is
+                // ADDR_ANY
+                return ss::net::inet_address{ep.address.host()}.is_addr_any();
+            } catch (...) {
+                // Parse failed, so probably a DNS name or invalid. Either way,
+                // not ADDR_ANY
+                return false;
+            }
+        }(ep);
+
+        if (is_any) {
+            return ssx::sformat(
+              "listener '{}' improperly configured with ADDR_ANY ({})",
+              ep.name,
+              ep.address.host());
+        }
+        return std::nullopt;
+    }
+
+    static std::optional<ss::sstring>
+    validate_many(const std::vector<broker_endpoint>& v) {
+        for (const auto& ep : v) {
+            auto err = broker_endpoint::validate_not_is_addr_any(ep);
+            if (err) {
+                return err;
+            }
+        }
+        return std::nullopt;
+    }
+
     auto serde_fields() { return std::tie(name, address); }
 };
-
-enum class violation_recovery_policy { crash = 0, best_effort };
 
 /**
  * Node membership can be in one of three states: active, draining and removed.
@@ -140,8 +169,11 @@ enum class membership_state : int8_t { active, draining, removed };
 enum class maintenance_state { active, inactive };
 
 std::ostream& operator<<(std::ostream&, membership_state);
+std::ostream& operator<<(std::ostream&, maintenance_state);
 
-class broker : public serde::envelope<broker, serde::version<0>> {
+class broker
+  : public serde::
+      envelope<broker, serde::version<0>, serde::compat_version<0>> {
 public:
     broker() noexcept = default;
 
@@ -164,14 +196,15 @@ public:
       std::optional<rack_id> rack,
       broker_properties props) noexcept
       : broker(
-        id,
-        {broker_endpoint(std::move(kafka_advertised_listener))},
-        std::move(rpc_address),
-        std::move(rack),
-        std::move(props)) {}
+          id,
+          {broker_endpoint(std::move(kafka_advertised_listener))},
+          std::move(rpc_address),
+          std::move(rack),
+          std::move(props)) {}
 
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
+    broker& operator=(const broker&) noexcept = default;
     broker(const broker&) = default;
     const node_id& id() const { return _id; }
 
@@ -182,14 +215,22 @@ public:
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
 
-    membership_state get_membership_state() const { return _membership_state; }
-    void set_membership_state(membership_state st) { _membership_state = st; }
+    /// Returns the memory for this broker in bytes.
+    uint64_t memory_bytes() const {
+        // For redpanda < 23.3, available_memory_bytes is not populated and
+        // will be zero. Fallback to available_memory_gb in that case.
+        if (_properties.available_memory_bytes > 0) {
+            return _properties.available_memory_bytes;
+        }
 
-    maintenance_state get_maintenance_state() const {
-        return _maintenance_state;
+        return _properties.available_memory_gb * 1_GiB;
     }
-    void set_maintenance_state(maintenance_state st) {
-        _maintenance_state = st;
+
+    void replace_unassigned_node_id(const node_id id) {
+        vassert(
+          _id == unassigned_node_id,
+          "Cannot replace an assigned node_id in model::broker");
+        _id = id;
     }
 
     bool operator==(const model::broker& other) const = default;
@@ -206,9 +247,6 @@ private:
     net::unresolved_address _rpc_address;
     std::optional<rack_id> _rack;
     broker_properties _properties;
-    // in memory state, not serialized
-    membership_state _membership_state = membership_state::active;
-    maintenance_state _maintenance_state{maintenance_state::inactive};
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
 };
@@ -237,7 +275,7 @@ struct broker_shard {
     }
 
     friend void read_nested(
-      iobuf_parser& in, broker_shard& bs, std::size_t const bytes_left_limit) {
+      iobuf_parser& in, broker_shard& bs, const std::size_t bytes_left_limit) {
         using serde::read_nested;
         read_nested(in, bs.node_id, bytes_left_limit);
         read_nested(in, bs.shard, bytes_left_limit);
@@ -245,7 +283,10 @@ struct broker_shard {
 };
 
 struct partition_metadata
-  : serde::envelope<partition_metadata, serde::version<0>> {
+  : serde::envelope<
+      partition_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
     partition_metadata() noexcept = default;
     explicit partition_metadata(partition_id p) noexcept
       : id(p) {}
@@ -278,6 +319,10 @@ struct topic_namespace_view {
         return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
     }
 
+    bool operator<(const topic_namespace_view& other) const {
+        return std::make_tuple(ns, tp) < std::make_tuple(other.ns, other.tp);
+    }
+
     const model::ns& ns;
     const model::topic& tp;
 
@@ -308,6 +353,13 @@ struct topic_namespace {
     friend bool operator==(const topic_namespace&, const topic_namespace&)
       = default;
 
+    bool operator<(const topic_namespace_view& other) const {
+        return topic_namespace_view(*this) < other;
+    }
+    bool operator<(const topic_namespace& other) const {
+        return *this < topic_namespace_view(other);
+    }
+
     template<typename H>
     friend H AbslHashValue(H h, const topic_namespace& tp_ns) {
         return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
@@ -322,7 +374,7 @@ struct topic_namespace {
     friend void read_nested(
       iobuf_parser& in,
       topic_namespace& t,
-      std::size_t const bytes_left_limit) {
+      const std::size_t bytes_left_limit) {
         using serde::read_nested;
         read_nested(in, t.ns, bytes_left_limit);
         read_nested(in, t.tp, bytes_left_limit);
@@ -330,6 +382,8 @@ struct topic_namespace {
 
     model::ns ns;
     model::topic tp;
+
+    ss::sstring path() const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_namespace&);
 };
@@ -369,7 +423,9 @@ struct topic_namespace_eq {
     }
 };
 
-struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
+struct topic_metadata
+  : serde::
+      envelope<topic_metadata, serde::version<0>, serde::compat_version<0>> {
     topic_metadata() noexcept = default;
     explicit topic_metadata(topic_namespace v) noexcept
       : tp_ns(std::move(v)) {}
@@ -383,21 +439,13 @@ struct topic_metadata : serde::envelope<topic_metadata, serde::version<0>> {
     auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
 
-inline std::ostream&
-operator<<(std::ostream& o, const model::violation_recovery_policy& x) {
-    switch (x) {
-    case model::violation_recovery_policy::best_effort:
-        return o << "best_effort";
-    case model::violation_recovery_policy::crash:
-        return o << "crash";
-    }
-}
-
 enum class cloud_credentials_source {
     config_file = 0,
     aws_instance_metadata = 1,
     sts = 2,
     gcp_instance_metadata = 3,
+    azure_aks_oidc_federation = 4,
+    azure_vm_instance_metadata = 5,
 };
 
 std::ostream& operator<<(std::ostream& os, const cloud_credentials_source& cs);
@@ -420,24 +468,126 @@ operator<<(std::ostream& o, const partition_autobalancing_mode& m) {
     }
 }
 
-namespace internal {
-/*
- * Old version for use in backwards compatibility serialization /
- * deserialization helpers.
- */
-struct broker_v0 {
-    model::node_id id;
-    net::unresolved_address kafka_address;
-    net::unresolved_address rpc_address;
-    std::optional<rack_id> rack;
-    model::broker_properties properties;
-
-    model::broker to_v3() const {
-        return model::broker(id, kafka_address, rpc_address, rack, properties);
-    }
+enum class cloud_storage_backend {
+    aws = 0,
+    google_s3_compat = 1,
+    azure = 2,
+    minio = 3,
+    oracle_s3_compat = 4,
+    unknown
 };
 
-} // namespace internal
+inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
+    switch (csb) {
+    case cloud_storage_backend::aws:
+        return os << "aws";
+    case cloud_storage_backend::google_s3_compat:
+        return os << "google_s3_compat";
+    case cloud_storage_backend::azure:
+        return os << "azure";
+    case cloud_storage_backend::minio:
+        return os << "minio";
+    case cloud_storage_backend::oracle_s3_compat:
+        return os << "oracle_s3_compat";
+    case cloud_storage_backend::unknown:
+        return os << "unknown";
+    }
+}
+
+enum class cloud_storage_chunk_eviction_strategy {
+    eager = 0,
+    capped = 1,
+    predictive = 2,
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
+    switch (st) {
+    case cloud_storage_chunk_eviction_strategy::eager:
+        return os << "eager";
+    case cloud_storage_chunk_eviction_strategy::capped:
+        return os << "capped";
+    case cloud_storage_chunk_eviction_strategy::predictive:
+        return os << "predictive";
+    }
+}
+
+enum class fetch_read_strategy : uint8_t {
+    polling = 0,
+    non_polling = 1,
+    non_polling_with_debounce = 2,
+    non_polling_with_pid = 3,
+};
+
+constexpr const char* fetch_read_strategy_to_string(fetch_read_strategy s) {
+    switch (s) {
+    case fetch_read_strategy::polling:
+        return "polling";
+    case fetch_read_strategy::non_polling:
+        return "non_polling";
+    case fetch_read_strategy::non_polling_with_debounce:
+        return "non_polling_with_debounce";
+    case fetch_read_strategy::non_polling_with_pid:
+        return "non_polling_with_pid";
+    default:
+        throw std::invalid_argument("unknown fetch_read_strategy");
+    }
+}
+
+std::ostream& operator<<(std::ostream&, fetch_read_strategy);
+std::istream& operator>>(std::istream&, fetch_read_strategy&);
+
+/**
+ * Type representing MPX virtual cluster. MPX uses XID to identify clusters.
+ */
+using vcluster_id = named_type<xid, struct v_cluster_id_tag>;
+
+/**
+ * Type that represents the cluster wide write caching mode.
+ */
+enum class write_caching_mode : uint8_t {
+    // true by default for all topics
+    default_true = 0,
+    // false by default for all topics
+    default_false = 1,
+    // disabled across all topics even for those
+    // with overrides. kill switch.
+    disabled = 2
+};
+
+constexpr const char* write_caching_mode_to_string(write_caching_mode s) {
+    switch (s) {
+    case write_caching_mode::default_true:
+        return "true";
+    case write_caching_mode::default_false:
+        return "false";
+    case write_caching_mode::disabled:
+        return "disabled";
+    default:
+        throw std::invalid_argument("unknown write_caching_mode");
+    }
+}
+
+std::optional<write_caching_mode>
+  write_caching_mode_from_string(std::string_view);
+
+std::ostream& operator<<(std::ostream&, write_caching_mode);
+std::istream& operator>>(std::istream&, write_caching_mode&);
+
+enum class recovery_validation_mode : std::uint16_t {
+    // ensure that either the manifest is in TS or that no manifest is present.
+    // download issues will fail the validation
+    check_manifest_existence = 0,
+    // download the manifest and check the most recent segments up to
+    // max_segment_depth
+    check_manifest_and_segment_metadata = 1,
+    // do not perform any check, validation is considered successful
+    no_check = 0xff,
+};
+
+std::ostream& operator<<(std::ostream&, recovery_validation_mode);
+std::istream& operator>>(std::istream&, recovery_validation_mode&);
+
 } // namespace model
 
 template<>
@@ -455,7 +605,7 @@ struct fmt::formatter<model::isolation_level> final
             str = "read_committed";
             break;
         }
-        return formatter<string_view>::format(str, ctx);
+        return fmt::format_to(ctx.out(), "{}", str);
     }
 };
 
@@ -495,6 +645,8 @@ struct hash<model::broker_properties> {
             boost::hash_combine(h, std::hash<ss::sstring>()(k));
             boost::hash_combine(h, std::hash<ss::sstring>()(v));
         }
+        boost::hash_combine(
+          h, std::hash<model::fips_mode_flag>()(b.in_fips_mode));
         return h;
     }
 };

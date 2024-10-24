@@ -1,0 +1,31 @@
+---
+name: Lint sh
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '**.sh'
+      - '.github/workflows/lint-sh.yml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - '**.sh'
+      - tests/docker/ducktape-deps/tinygo-wasi-transforms
+      - '.github/workflows/lint-sh.yml'
+jobs:
+  sh:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install shfmt
+        env:
+          SHFMT_VER: 3.6.0
+        run: |
+          mkdir -v -p "$HOME/.local/bin"
+          wget -O "$HOME/.local/bin/shfmt" "https://github.com/mvdan/sh/releases/download/v${SHFMT_VER}/shfmt_v${SHFMT_VER}_linux_amd64"
+          chmod 0700 "$HOME/.local/bin/shfmt"
+      - name: Run shfmt
+        run: shfmt -i 2 -ci -s -d .

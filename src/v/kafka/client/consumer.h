@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
@@ -21,7 +22,6 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -57,19 +57,20 @@ public:
       shared_broker_t coordinator,
       group_id group_id,
       member_id name,
-      ss::noncopyable_function<void(const member_id&)> on_stopped);
+      ss::noncopyable_function<void(const member_id&)> on_stopped,
+      ss::noncopyable_function<ss::future<>(std::exception_ptr)> mitigater);
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
     const kafka::member_id& name() const {
         return _name != kafka::no_member ? _name : _member_id;
     }
-    const std::vector<model::topic>& topics() const { return _topics; }
+    const chunked_vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
     ss::future<> initialize();
     ss::future<leave_group_response> leave();
-    ss::future<> subscribe(std::vector<model::topic> topics);
+    ss::future<> subscribe(chunked_vector<model::topic> topics);
     ss::future<offset_fetch_response>
     offset_fetch(std::vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
@@ -90,7 +91,7 @@ private:
     ss::future<> join();
     ss::future<> sync();
 
-    ss::future<std::vector<metadata_response::topic>>
+    ss::future<chunked_vector<metadata_response::topic>>
     get_subscribed_topic_metadata();
 
     ss::future<> heartbeat();
@@ -101,22 +102,55 @@ private:
     ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
 
     template<typename RequestFactory>
+    requires requires(const RequestFactory v) { v.operator()(); }
     ss::future<
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
     req_res(RequestFactory req) {
         using api_t = typename std::invoke_result_t<RequestFactory>::api_type;
         using response_t = typename api_t::response_type;
-        return ss::try_with_gate(_gate, [this, req{std::move(req)}]() {
+        return ss::try_with_gate(_gate, [this, req{std::move(req)}]() mutable {
             auto r = req();
-            kclog.debug("Consumer: {}: {} req: {}", *this, api_t::name, r);
+            kclog.debug(
+              "Consumer: {}: {} req: {}, coordinator {}",
+              *this,
+              api_t::name,
+              r,
+              _coordinator->id());
             return _coordinator->dispatch(std::move(r))
-              .then([this](response_t res) {
+              .then([this, req{std::move(req)}](response_t res) mutable {
                   kclog.debug(
-                    "Consumer: {}: {} res: {}", *this, api_t::name, res);
-                  return res;
+                    "Consumer: {}: {} res: {}, coordinator {}",
+                    *this,
+                    api_t::name,
+                    res,
+                    _coordinator->id());
+                  return maybe_process_response_errors(
+                    std::move(req), std::move(res));
               });
         });
     }
+
+    // The base template for handling response errors
+    template<typename request_factory, typename response_t>
+    ss::future<response_t>
+    maybe_process_response_errors(request_factory req, response_t res);
+
+    // Some template specializations for handling response errors of specific
+    // response types
+    template<typename request_factory>
+    ss::future<metadata_response>
+    maybe_process_response_errors(request_factory req, metadata_response res);
+    template<typename request_factory>
+    ss::future<offset_commit_response> maybe_process_response_errors(
+      request_factory req, offset_commit_response res);
+    template<typename request_factory>
+    ss::future<describe_groups_response> maybe_process_response_errors(
+      request_factory req, describe_groups_response res);
+
+    template<typename request_factory>
+    ss::future<
+      typename std::invoke_result_t<request_factory>::api_type::response_type>
+    reset_coordinator_and_retry_request(request_factory req);
 
     const configuration& _config;
     topic_cache& _topic_cache;
@@ -132,13 +166,15 @@ private:
     kafka::member_id _member_id{no_member};
     kafka::member_id _name{no_member};
     kafka::member_id _leader_id{no_leader};
-    std::vector<model::topic> _topics{};
-    std::vector<kafka::member_id> _members{};
-    std::vector<model::topic> _subscribed_topics{};
+    chunked_vector<model::topic> _topics{};
+    chunked_vector<kafka::member_id> _members{};
+    chunked_vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
     absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
     ss::noncopyable_function<void(const kafka::member_id&)> _on_stopped;
+    ss::noncopyable_function<ss::future<>(std::exception_ptr)>
+      _external_mitigate;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
@@ -160,7 +196,8 @@ ss::future<shared_consumer_t> make_consumer(
   shared_broker_t coordinator,
   group_id group_id,
   member_id name,
-  ss::noncopyable_function<void(const member_id&)> _on_stopped);
+  ss::noncopyable_function<void(const member_id&)> _on_stopped,
+  ss::noncopyable_function<ss::future<>(std::exception_ptr)> mitigater);
 
 namespace detail {
 

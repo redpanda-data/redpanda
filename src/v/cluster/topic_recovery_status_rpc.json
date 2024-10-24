@@ -1,0 +1,14 @@
+{
+	"namespace": "cluster",
+	"service_name": "topic_recovery_status_rpc",
+	"includes": [
+		"cluster/topic_recovery_status_types.h"
+	],
+	"methods": [
+		{
+			"name": "get_status",
+			"input_type": "status_request",
+			"output_type": "status_response"
+		}
+	]
+}

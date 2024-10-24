@@ -11,19 +11,20 @@
 
 #pragma once
 
+#include "container/intrusive_list_helpers.h"
 #include "storage/log.h"
-#include "utils/intrusive_list_helpers.h"
 
 namespace storage {
 struct log_housekeeping_meta {
     enum class bitflags : uint32_t {
         none = 0,
         compacted = 1U,
+        lifetime_checked = 1U << 1U,
     };
-    explicit log_housekeeping_meta(log l) noexcept
+    explicit log_housekeeping_meta(ss::shared_ptr<log> l) noexcept
       : handle(std::move(l)) {}
 
-    log handle;
+    ss::shared_ptr<log> handle;
     bitflags flags{bitflags::none};
     ss::lowres_clock::time_point last_compaction;
 

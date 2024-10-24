@@ -22,21 +22,33 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <stdexcept>
+#include <ostream>
 #include <string_view>
 
 namespace pps = pandaproxy::schema_registry;
 
+namespace pandaproxy::schema_registry {
+
+std::ostream& operator<<(std::ostream& os, mode m) {
+    return os << to_string_view(m);
+}
+
+} // namespace pandaproxy::schema_registry
+
 inline model::record_batch make_record_batch(
-  std::string_view key, std::string_view val, model::offset base_offset) {
+  std::string_view key,
+  std::optional<std::string_view> val,
+  model::offset base_offset) {
     storage::record_batch_builder rb{
       model::record_batch_type::raft_data, base_offset};
 
     iobuf key_buf;
-    iobuf val_buf;
+    std::optional<iobuf> val_buf;
     key_buf.append(key.data(), key.size());
-    val_buf.append(val.data(), val.size());
-
+    if (val) {
+        val_buf = iobuf();
+        val_buf->append(val->data(), val->size());
+    }
     rb.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return std::move(rb).build();
 }
@@ -45,6 +57,12 @@ constexpr std::string_view config_key_0{
   R"({"keytype":"CONFIG","subject":"subject_0","magic":0})"};
 constexpr std::string_view config_value_0{
   R"({"compatibilityLevel":"BACKWARD"})"};
+
+constexpr std::string_view mode_key_0{R"({"keytype":"MODE","magic":0})"};
+constexpr std::string_view mode_key_sub_0{
+  R"({"keytype":"MODE","subject":"subject_0","magic":0})"};
+constexpr std::string_view mode_value_rw{R"({"mode":"READWRITE"})"};
+constexpr std::string_view mode_value_ro{R"({"mode":"READONLY"})"};
 
 constexpr std::string_view schema_key_0{
   R"({"keytype":"SCHEMA","subject":"subject_0","version":1,"magic":1})"};
@@ -58,7 +76,7 @@ constexpr std::string_view del_sub_value_0{
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer
@@ -112,4 +130,75 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
       [](const pps::exception& e) {
           return e.code() == pps::error_code::subject_not_found;
       });
+
+    // perm delete sub version
+    BOOST_REQUIRE_NO_THROW(
+      c(make_record_batch(schema_key_0, std::nullopt, base_offset++)).get());
+
+    // Test mode default
+    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_write);
+
+    // Test mode READONLY
+    BOOST_REQUIRE_NO_THROW(
+      c(make_record_batch(mode_key_0, mode_value_ro, base_offset++)).get());
+    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_only);
+
+    // Test mode no subject, no fallback
+    BOOST_REQUIRE_EXCEPTION(
+      c._store.get_mode(pps::subject{"subject_0"}, pps::default_to_global::no)
+        .get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+
+    // Test mode no subject, with fallback
+    BOOST_REQUIRE_EQUAL(
+      c._store.get_mode(pps::subject{"subject_0"}, pps::default_to_global::yes)
+        .get(),
+      pps ::mode::read_only);
+
+    // test mode READWRITE
+    BOOST_REQUIRE_NO_THROW(
+      c(make_record_batch(mode_key_0, mode_value_rw, base_offset++)).get());
+    BOOST_REQUIRE_EQUAL(c._store.get_mode().get(), pps::mode::read_write);
+
+    // test mode subject override
+    BOOST_REQUIRE_NO_THROW(
+      c(make_record_batch(mode_key_sub_0, mode_value_ro, base_offset++)).get());
+    BOOST_REQUIRE_EQUAL(
+      c._store.get_mode(pps::subject{"subject_0"}, pps::default_to_global::no)
+        .get(),
+      pps::mode::read_only);
+
+    // test subject is not found
+    BOOST_REQUIRE_EXCEPTION(
+      c._store.get_versions(pps::subject{"subject_0"}, pps::include_deleted::no)
+        .get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::subject_not_found;
+      });
+
+    // test subject is not found
+    BOOST_REQUIRE_EXCEPTION(
+      c._store
+        .get_versions(pps::subject{"subject_0"}, pps::include_deleted::yes)
+        .get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::subject_not_found;
+      });
+
+    // clear mode subject override
+    c(make_record_batch(mode_key_sub_0, std::nullopt, base_offset++)).get();
+    BOOST_REQUIRE_EXCEPTION(
+      c._store.get_mode(pps::subject{"subject_0"}, pps::default_to_global::no)
+        .get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+
+    // Add a subject version
 }

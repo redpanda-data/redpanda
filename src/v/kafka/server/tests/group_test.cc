@@ -7,7 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/partition.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "utils/to_string.h"
@@ -19,6 +22,9 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 
+#include <chrono>
+
+using namespace std::chrono_literals;
 namespace kafka {
 
 static auto split_member_id(const ss::sstring& m) {
@@ -46,18 +52,23 @@ static bool is_uuid(const ss::sstring& uuid) {
 static group get() {
     static config::configuration conf;
     ss::sharded<cluster::tx_gateway_frontend> fr;
+    ss::sharded<features::feature_table> feature_table;
     return group(
       kafka::group_id("g"),
       group_state::empty,
       conf,
       nullptr,
+      nullptr,
+      model::term_id(),
       fr,
-      make_backward_compatible_serializer(),
+      feature_table,
+      make_consumer_offsets_serializer(),
       enable_group_metrics::no);
 }
 
 static const std::vector<member_protocol> test_group_protos = {
-  {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
+  {kafka::protocol_name("n0"), bytes::from_string("d0")},
+  {kafka::protocol_name("n1"), bytes::from_string("d1")}};
 
 static member_ptr get_group_member(
   ss::sstring id = "m",
@@ -71,7 +82,7 @@ static member_ptr get_group_member(
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      protos);
+      chunked_vector<member_protocol>{protos.begin(), protos.end()});
 }
 
 static join_group_response join_resp() {
@@ -175,7 +186,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     auto m1 = ss::make_lw_shared<group_member>(
       kafka::member_id("n"),
@@ -186,7 +198,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     (void)g.add_member(m0);
     BOOST_TEST(g.rebalance_timeout() == std::chrono::milliseconds(2));
@@ -234,13 +247,13 @@ SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
     BOOST_TEST(a[kafka::member_id("n")] == bytes());
 
     a.clear();
-    a[kafka::member_id("m")] = bytes("d1");
-    a[kafka::member_id("o")] = bytes("d2");
+    a[kafka::member_id("m")] = bytes::from_string("d1");
+    a[kafka::member_id("o")] = bytes::from_string("d2");
     g.add_missing_assignments(a);
     BOOST_TEST(a.size() == 3);
-    BOOST_TEST(a[kafka::member_id("m")] == bytes("d1"));
+    BOOST_TEST(a[kafka::member_id("m")] == bytes::from_string("d1"));
     BOOST_TEST(a[kafka::member_id("n")] == bytes());
-    BOOST_TEST(a[kafka::member_id("o")] == bytes("d2"));
+    BOOST_TEST(a[kafka::member_id("o")] == bytes::from_string("d2"));
 }
 
 SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
@@ -255,12 +268,12 @@ SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
     BOOST_TEST(m2->assignment() == bytes());
 
     assignments_type a;
-    a[kafka::member_id("m")] = bytes("d1");
-    a[kafka::member_id("n")] = bytes("d2");
+    a[kafka::member_id("m")] = bytes::from_string("d1");
+    a[kafka::member_id("n")] = bytes::from_string("d2");
     g.set_assignments(a);
 
-    BOOST_TEST(m->assignment() == bytes("d1"));
-    BOOST_TEST(m2->assignment() == bytes("d2"));
+    BOOST_TEST(m->assignment() == bytes::from_string("d1"));
+    BOOST_TEST(m2->assignment() == bytes::from_string("d2"));
 
     g.clear_assignments();
     BOOST_TEST(m->assignment() == bytes());
@@ -302,12 +315,12 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
 
     auto protos = std::vector<member_protocol>{
       {kafka::protocol_name("p0"), bytes()},
-      {kafka::protocol_name("p1"), bytes("foo")},
+      {kafka::protocol_name("p1"), bytes::from_string("foo")},
       {kafka::protocol_name("p2"), bytes()}};
     auto m0 = get_group_member("m", protos);
 
     protos = std::vector<member_protocol>{
-      {kafka::protocol_name("p1"), bytes("bar")},
+      {kafka::protocol_name("p1"), bytes::from_string("bar")},
       {kafka::protocol_name("p2"), bytes()},
       {kafka::protocol_name("p3"), bytes()}};
     auto m1 = get_group_member("n", protos);
@@ -323,8 +336,10 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
     for (auto& m : md) {
         conf[m.member_id] = m;
     }
-    BOOST_TEST(conf[kafka::member_id("m")].metadata == bytes("foo"));
-    BOOST_TEST(conf[kafka::member_id("n")].metadata == bytes("bar"));
+    BOOST_TEST(
+      conf[kafka::member_id("m")].metadata == bytes::from_string("foo"));
+    BOOST_TEST(
+      conf[kafka::member_id("n")].metadata == bytes::from_string("bar"));
 }
 
 SEASTAR_THREAD_TEST_CASE(select_protocol) {
@@ -365,7 +380,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
 
     // empty group -> request needs protocol type
     r.data.protocol_type = kafka::protocol_type("");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
@@ -376,7 +391,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
 
     // group is empty and request can init group state
     r.data.protocol_type = kafka::protocol_type("p");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -390,14 +405,15 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_group_protos);
+      chunked_vector<member_protocol>{
+        test_group_protos.begin(), test_group_protos.end()});
 
     (void)g.add_member(m);
     g.set_state(group_state::preparing_rebalance);
 
     // protocol type doesn't match the group's protocol type
     r.data.protocol_type = kafka::protocol_type("x");
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name(""), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 
@@ -406,7 +422,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
     BOOST_TEST(!g.supports_protocols(r));
 
     // now it contains a matching protocol
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name("n0"), bytes()}};
     BOOST_TEST(g.supports_protocols(r));
 
@@ -420,11 +436,12 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      std::vector<member_protocol>{{kafka::protocol_name("n2"), "d0"}});
+      chunked_vector<member_protocol>{
+        {kafka::protocol_name("n2"), bytes::from_string("d0")}});
     (void)g.add_member(m2);
 
     // n2 is not supported bc the first member doesn't support it
-    r.data.protocols = std::vector<join_group_request_protocol>{
+    r.data.protocols = chunked_vector<join_group_request_protocol>{
       {kafka::protocol_name("n2"), bytes()}};
     BOOST_TEST(!g.supports_protocols(r));
 }
@@ -441,8 +458,8 @@ SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
     // leader is joining
     BOOST_TEST(g.leader_rejoined());
 
-    // simulate that the leader is now not joining for some reason. since there
-    // is only one member, a replacement can't be chosen.
+    // simulate that the leader is now not joining for some reason. since
+    // there is only one member, a replacement can't be chosen.
     m0->set_join_response(join_resp());
     BOOST_TEST(!g.leader_rejoined());
 
@@ -477,12 +494,80 @@ SEASTAR_THREAD_TEST_CASE(generate_member_id) {
 SEASTAR_THREAD_TEST_CASE(group_output) {
     auto g = get();
     auto s = fmt::format("{}", g);
-    BOOST_TEST(s.find("id={g}") != std::string::npos);
+    BOOST_TEST(s.find("id=g") != std::string::npos);
 }
 
 SEASTAR_THREAD_TEST_CASE(group_state_output) {
     auto s = fmt::format("{}", group_state::preparing_rebalance);
     BOOST_TEST(s == "PreparingRebalance");
+}
+
+SEASTAR_THREAD_TEST_CASE(add_new_static_member) {
+    auto g = get();
+    const kafka::group_id common_group_id = g.id();
+    const kafka::group_instance_id common_instance_id{"0-0"};
+
+    const kafka::member_id m1_id{"m1"};
+    const kafka::client_id m1_client_id{"client-id-1"};
+    const kafka::client_host m1_client_host{"client-host-1"};
+    const std::chrono::milliseconds m1_session_timeout{30001};
+    const std::chrono::milliseconds m1_rebalance_timeout{45001};
+
+    // Create request for first member
+    join_group_request r1;
+    r1.client_id = m1_client_id;
+    r1.client_host = m1_client_host;
+    r1.data.group_id = common_group_id;
+    r1.data.group_instance_id = common_instance_id;
+    r1.data.session_timeout_ms = m1_session_timeout;
+    r1.data.rebalance_timeout_ms = m1_rebalance_timeout;
+
+    // adding first static member will call "add_member_and_rebalance"
+    g.add_new_static_member(m1_id, std::move(r1));
+
+    // validate group state
+    BOOST_TEST(g.contains_member(m1_id));
+
+    // validate new member
+    const auto m1 = g.get_member(m1_id);
+    BOOST_TEST(m1->group_id() == common_group_id);
+    BOOST_TEST(m1->id() == m1_id);
+    BOOST_TEST(m1->client_id() == m1_client_id);
+    BOOST_TEST(m1->client_host() == m1_client_host);
+    BOOST_TEST(m1->session_timeout() == m1_session_timeout);
+    BOOST_TEST(m1->rebalance_timeout() == m1_rebalance_timeout);
+
+    const kafka::member_id m2_id{"m2"};
+    const kafka::client_id m2_client_id{"client-id-2"};
+    const kafka::client_host m2_client_host{"client-host-2"};
+    const std::chrono::milliseconds m2_session_timeout{30002};
+    const std::chrono::milliseconds m2_rebalance_timeout{45002};
+
+    // Create request for second member to update m1
+    join_group_request r2;
+    r2.client_id = m2_client_id;
+    r2.client_host = m2_client_host;
+    r2.data.group_id = common_group_id;
+    r2.data.group_instance_id = common_instance_id;
+    r2.data.session_timeout_ms = m2_session_timeout;
+    r2.data.rebalance_timeout_ms = m2_rebalance_timeout;
+
+    // adding second static member will call
+    // "update_static_member_and_rebalance"
+    g.add_new_static_member(m2_id, std::move(r2));
+
+    // validate group state
+    BOOST_TEST(!g.contains_member(m1_id));
+    BOOST_TEST(g.contains_member(m2_id));
+
+    // validate updated member
+    const auto m2 = g.get_member(m2_id);
+    BOOST_TEST(m2->group_id() == common_group_id);
+    BOOST_TEST(m2->id() == m2_id);
+    BOOST_TEST(m2->client_id() == m2_client_id);
+    BOOST_TEST(m2->client_host() == m2_client_host);
+    BOOST_TEST(m2->session_timeout() == m2_session_timeout);
+    BOOST_TEST(m2->rebalance_timeout() == m2_rebalance_timeout);
 }
 
 } // namespace kafka

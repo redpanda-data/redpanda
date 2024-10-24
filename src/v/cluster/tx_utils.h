@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace cluster {
 
 enum class abort_origin : int8_t { present, past, future };

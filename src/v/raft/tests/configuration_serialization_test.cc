@@ -7,9 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/iobuf_parser.h"
+#include "model/adl_serde.h"
 #include "model/metadata.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
+#include "raft/broker_compat.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
 #include "random/generators.h"
@@ -82,7 +85,6 @@ raft::group_configuration random_configuration() {
           });
     }
     return {
-      std::move(brokers),
       std::move(current),
       tests::random_named_int<model::revision_id>(),
       std::move(update),
@@ -90,14 +92,20 @@ raft::group_configuration random_configuration() {
 }
 
 SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
-    auto cfg = random_configuration();
-    // serialize to entry
-    auto batches = raft::details::serialize_configuration_as_batches(cfg);
-    // extract from entry
-    auto new_cfg = reflection::from_iobuf<raft::group_configuration>(
-      batches.begin()->copy_records().begin()->release_value());
+    for (auto v :
+         {raft::group_configuration::v_5, raft::group_configuration::v_6}) {
+        auto cfg = random_configuration();
+        cfg.set_version(v);
 
-    BOOST_REQUIRE_EQUAL(new_cfg, cfg);
+        // serialize to entry
+        auto batches = raft::details::serialize_configuration_as_batches(cfg);
+        // extract from entry
+        iobuf_parser parser(
+          batches.begin()->copy_records().begin()->release_value());
+        auto new_cfg = raft::details::deserialize_configuration(parser);
+
+        BOOST_REQUIRE_EQUAL(new_cfg, cfg);
+    }
 }
 
 struct test_consumer {
@@ -129,19 +137,24 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
     ss::circular_buffer<model::record_batch> all_batches;
 
     // serialize to batches
+    // use adl
+    cfg_1.set_version(raft::group_configuration::v_5);
     auto cfg_batch_1 = raft::details::serialize_configuration_as_batches(cfg_1);
+    // use serde
+    cfg_2.set_version(raft::group_configuration::v_6);
     auto cfg_batch_2 = raft::details::serialize_configuration_as_batches(cfg_2);
-    auto batches = model::test::make_random_batches(model::offset(0), 10, true);
+    auto batches
+      = model::test::make_random_batches(model::offset(0), 10, true).get();
 
     std::vector<batches_t> ranges;
     ranges.reserve(4);
     // interleave config batches with data batches
     ranges.push_back(std::move(cfg_batch_1));
     ranges.push_back(
-      model::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true).get());
     ranges.push_back(std::move(cfg_batch_2));
     ranges.push_back(
-      model::test::make_random_batches(model::offset(0), 10, true));
+      model::test::make_random_batches(model::offset(0), 10, true).get());
 
     for (auto& r : ranges) {
         std::move(r.begin(), r.end(), std::back_inserter(all_batches));
@@ -161,7 +174,7 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
           BOOST_REQUIRE_EQUAL(configurations[1].offset, offsets[1]);
           BOOST_REQUIRE_EQUAL(configurations[1].cfg, cfg_2);
       })
-      .get0();
+      .get();
 }
 
 /**
@@ -309,12 +322,40 @@ iobuf serialize_v4() {
     return buffer;
 }
 
+iobuf serialize_v5() {
+    iobuf buffer;
+
+    raft::group_nodes current;
+    current.learners.emplace_back(node_0.id, model::revision_id(15));
+    current.voters.emplace_back(node_1.id, model::revision_id(10));
+
+    std::optional<raft::group_nodes> old = raft::group_nodes{};
+    old->voters.emplace_back(node_2.id, model::revision_id(5));
+
+    raft::configuration_update update{};
+
+    update.replicas_to_add.emplace_back(
+      model::node_id(10), model::revision_id(12));
+    update.replicas_to_remove.emplace_back(
+      model::node_id(12), model::revision_id(15));
+
+    reflection::serialize(
+      buffer,
+      raft::group_configuration(
+        std::move(current),
+        model::revision_id(15),
+        std::move(update),
+        std::move(old)));
+
+    return buffer;
+}
 SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     iobuf v0 = serialize_v0();
     iobuf v1 = serialize_v1();
     iobuf v2 = serialize_v2();
     iobuf v3 = serialize_v3();
     iobuf v4 = serialize_v4();
+    iobuf v5 = serialize_v5();
 
     auto cfg_v0 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v0));
@@ -330,6 +371,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
 
     auto cfg_v4 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v4));
+
+    auto cfg_v5 = reflection::from_iobuf<raft::group_configuration>(
+      std::move(v5));
 
     BOOST_REQUIRE_EQUAL(cfg_v0.brokers(), cfg_v1.brokers());
     BOOST_REQUIRE_EQUAL(cfg_v1.brokers(), cfg_v2.brokers());
@@ -348,6 +392,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().learners.size(),
       cfg_v4.current_config().learners.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().learners.size(),
+      cfg_v5.current_config().learners.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters.size(),
@@ -361,6 +408,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().voters.size(),
       cfg_v4.current_config().voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().voters.size(),
+      cfg_v5.current_config().voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters.size(), cfg_v1.old_config()->voters.size());
@@ -370,6 +420,8 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v2.old_config()->voters.size(), cfg_v3.old_config()->voters.size());
     BOOST_REQUIRE_EQUAL(
       cfg_v3.old_config()->voters.size(), cfg_v4.old_config()->voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.old_config()->voters.size(), cfg_v5.old_config()->voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
@@ -386,6 +438,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().learners[0].id(),
       cfg_v4.current_config().learners[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().learners[0].id(),
+      cfg_v5.current_config().learners[0].id());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters[0].id(),
@@ -399,12 +454,16 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v3.current_config().voters[0].id(),
       cfg_v4.current_config().voters[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v4.current_config().voters[0].id(),
+      cfg_v5.current_config().voters[0].id());
 
     BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), raft::no_revision);
     BOOST_REQUIRE_EQUAL(cfg_v1.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v2.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v3.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v4.revision_id(), model::revision_id(15));
+    BOOST_REQUIRE_EQUAL(cfg_v5.revision_id(), model::revision_id(15));
 }
 
 SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {

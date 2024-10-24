@@ -1,0 +1,20 @@
+[package]
+name = "redpanda-transform-sdk-sys"
+description = "Redpanda Broker ABI contract for redpanda-transform-sdk"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+redpanda-transform-sdk-types = { path = "../core-types", version = "=0.0.0-dev" }
+redpanda-transform-sdk-varint = { path = "../varint", version = "=0.0.0-dev" }
+
+[dev-dependencies]
+quickcheck = { workspace = true }
+rand = { workspace = true}
+anyhow = { workspace = true }

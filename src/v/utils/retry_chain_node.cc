@@ -11,11 +11,12 @@
 
 #include "utils/retry_chain_node.h"
 
+#include "base/vassert.h"
 #include "ssx/sformat.h"
-#include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/manual_clock.hh>
 #include <seastar/core/ragel.hh>
 
 #include <fmt/chrono.h>
@@ -33,39 +34,18 @@ static constexpr size_t max_retry_chain_depth = 8;
 static constexpr uint16_t max_retry_count = std::numeric_limits<uint16_t>::max()
                                             - 1;
 
-retry_chain_node::retry_chain_node()
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(ss::abort_source& as)
   : _id(fiber_count++) // generate new head id
   , _backoff{0}
-  , _deadline{ss::lowres_clock::time_point::min()}
-  , _parent() {}
-
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::time_point deadline,
-  ss::lowres_clock::duration backoff)
-  : _id(fiber_count++) // generate new head id
-  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
-  , _deadline{deadline}
-  , _parent() {
-    vassert(
-      backoff <= milliseconds_uint16_t::max(),
-      "Initial backoff {} is too large",
-      backoff);
-}
-
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::duration timeout, ss::lowres_clock::duration backoff)
-  : retry_chain_node(ss::lowres_clock::now() + timeout, backoff) {}
-
-retry_chain_node::retry_chain_node(ss::abort_source& as)
-  : _id(fiber_count++) // generate new head id
-  , _backoff{0}
-  , _deadline{ss::lowres_clock::time_point::min()}
+  , _deadline{time_point::min()}
   , _parent(&as) {}
 
-retry_chain_node::retry_chain_node(
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
   ss::abort_source& as,
-  ss::lowres_clock::time_point deadline,
-  ss::lowres_clock::duration backoff)
+  time_point deadline,
+  duration backoff)
   : _id(fiber_count++) // generate new head id
   , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
@@ -76,14 +56,36 @@ retry_chain_node::retry_chain_node(
       backoff);
 }
 
-retry_chain_node::retry_chain_node(
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
   ss::abort_source& as,
-  ss::lowres_clock::duration timeout,
-  ss::lowres_clock::duration backoff)
-  : retry_chain_node(as, ss::lowres_clock::now() + timeout, backoff) {}
+  time_point deadline,
+  duration backoff,
+  retry_strategy retry_strategy)
+  : basic_retry_chain_node(as, deadline, backoff) {
+    _retry_strategy = retry_strategy;
+}
 
-retry_chain_node::retry_chain_node(retry_chain_node* parent)
-  : _id(parent->add_child())
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  ss::abort_source& as, duration timeout, duration backoff)
+  : basic_retry_chain_node(as, Clock::now() + timeout, backoff) {}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  ss::abort_source& as,
+  duration timeout,
+  duration backoff,
+  retry_strategy retry_strategy)
+  : basic_retry_chain_node(as, timeout, backoff) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  basic_retry_chain_node* parent)
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{parent->_backoff}
   , _deadline{parent->_deadline}
   , _parent{parent} {
@@ -92,9 +94,18 @@ retry_chain_node::retry_chain_node(retry_chain_node* parent)
       len < max_retry_chain_depth, "Retry chain is too deep, {} >= 8", len);
 }
 
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::duration backoff, retry_chain_node* parent)
-  : _id(parent->add_child())
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  retry_strategy retry_strategy, basic_retry_chain_node* parent)
+  : basic_retry_chain_node(parent) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  duration backoff, basic_retry_chain_node* parent)
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{parent->_deadline}
   , _parent{parent} {
@@ -107,11 +118,20 @@ retry_chain_node::retry_chain_node(
       len < max_retry_chain_depth, "Retry chain is too deep, {} >= 8", len);
 }
 
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::time_point deadline,
-  ss::lowres_clock::duration backoff,
-  retry_chain_node* parent)
-  : _id(parent->add_child())
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  duration backoff,
+  retry_strategy retry_strategy,
+  basic_retry_chain_node* parent)
+  : basic_retry_chain_node(backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  time_point deadline, duration backoff, basic_retry_chain_node* parent)
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
   , _parent{parent} {
@@ -121,55 +141,87 @@ retry_chain_node::retry_chain_node(
       backoff);
 
     if (auto parent = get_parent();
-        parent != nullptr
-        && parent->_deadline != ss::lowres_clock::time_point::min()) {
+        parent != nullptr && parent->_deadline != time_point::min()) {
         _deadline = std::min(_deadline, parent->_deadline);
     }
     auto len = get_len();
     vassert(
       len < max_retry_chain_depth, "Retry chain is too deep, {} >= 8", len);
 }
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::duration timeout,
-  ss::lowres_clock::duration backoff,
-  retry_chain_node* parent)
-  : retry_chain_node(ss::lowres_clock::now() + timeout, backoff, parent) {}
 
-retry_chain_node* retry_chain_node::get_parent() {
-    if (std::holds_alternative<retry_chain_node*>(_parent)) {
-        return std::get<retry_chain_node*>(_parent);
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  time_point deadline,
+  duration backoff,
+  retry_strategy retry_strategy,
+  basic_retry_chain_node* parent)
+  : basic_retry_chain_node(deadline, backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  duration timeout, duration backoff, basic_retry_chain_node* parent)
+  : basic_retry_chain_node(Clock::now() + timeout, backoff, parent) {}
+
+template<class Clock>
+basic_retry_chain_node<Clock>::basic_retry_chain_node(
+  duration timeout,
+  duration backoff,
+  retry_strategy retry_strategy,
+  basic_retry_chain_node* parent)
+  : basic_retry_chain_node(timeout, backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
+
+template<class Clock>
+basic_retry_chain_node<Clock>* basic_retry_chain_node<Clock>::get_parent() {
+    if (std::holds_alternative<basic_retry_chain_node*>(_parent)) {
+        return std::get<basic_retry_chain_node*>(_parent);
     }
     return nullptr;
 }
 
-const retry_chain_node* retry_chain_node::get_parent() const {
-    if (std::holds_alternative<retry_chain_node*>(_parent)) {
-        return std::get<retry_chain_node*>(_parent);
+template<class Clock>
+const basic_retry_chain_node<Clock>*
+basic_retry_chain_node<Clock>::get_parent() const {
+    if (std::holds_alternative<basic_retry_chain_node*>(_parent)) {
+        return std::get<basic_retry_chain_node*>(_parent);
     }
     return nullptr;
 }
 
-ss::abort_source* retry_chain_node::get_abort_source() {
+template<class Clock>
+ss::abort_source* basic_retry_chain_node<Clock>::get_abort_source() {
     if (std::holds_alternative<ss::abort_source*>(_parent)) {
         return std::get<ss::abort_source*>(_parent);
     }
     return nullptr;
 }
 
-const ss::abort_source* retry_chain_node::get_abort_source() const {
+template<class Clock>
+const ss::abort_source*
+basic_retry_chain_node<Clock>::get_abort_source() const {
     if (std::holds_alternative<ss::abort_source*>(_parent)) {
         return std::get<ss::abort_source*>(_parent);
     }
     return nullptr;
 }
 
-retry_chain_node::~retry_chain_node() {
-    vassert(_num_children == 0, "Fiber stopped before its dependencies");
+template<class Clock>
+basic_retry_chain_node<Clock>::~basic_retry_chain_node() {
+    vassert(
+      _num_children == 0,
+      "{} Fiber stopped before its dependencies, num children {}",
+      (*this)(),
+      _num_children);
     if (auto parent = get_parent(); parent != nullptr) {
         parent->rem_child();
     }
 }
-ss::sstring retry_chain_node::operator()() const {
+
+template<class Clock>
+ss::sstring basic_retry_chain_node<Clock>::operator()() const {
     fmt::memory_buffer buf;
     auto bii = std::back_insert_iterator(buf);
     bii = '[';
@@ -178,49 +230,87 @@ ss::sstring retry_chain_node::operator()() const {
     return ss::sstring(buf.data(), buf.size());
 }
 
-retry_permit retry_chain_node::retry(retry_strategy st) {
-    auto as = find_abort_source();
-    if (as) {
-        as->check();
+template<class Clock>
+const basic_retry_chain_node<Clock>*
+basic_retry_chain_node<Clock>::get_root() const {
+    auto it = this;
+    auto root = it;
+    while (it) {
+        root = it;
+        it = it->get_parent();
     }
-    auto now = ss::lowres_clock::now();
+    return root;
+}
+
+template<class Clock>
+bool basic_retry_chain_node<Clock>::same_root(
+  const basic_retry_chain_node<Clock>& other) const {
+    return get_root() == other.get_root();
+}
+
+template<class Clock>
+retry_permit basic_retry_chain_node<Clock>::retry() {
+    auto& as = root_abort_source();
+    as.check();
+
+    auto now = Clock::now();
     if (
-      _deadline < now || _deadline == ss::lowres_clock::time_point::min()
+      _deadline < now || _deadline == time_point::min()
       || _retry == max_retry_count) {
         // deadline is not set or _retry counter is about to overflow (which
         // will lead to 0ms backoff time) retries are not allowed
-        return {.is_allowed = false, .abort_source = as, .delay = 0ms};
+        return {.is_allowed = false, .abort_source = &as, .delay = 0ms};
     }
-    auto required_delay = st == retry_strategy::backoff ? get_backoff()
-                                                        : get_poll_interval();
+
+    if (_retry_strategy == retry_strategy::disallow && _retry != 0) {
+        return {.is_allowed = false, .abort_source = &as, .delay = 0ms};
+    }
+
+    auto required_delay = [this]() -> duration {
+        switch (_retry_strategy) {
+        case retry_strategy::backoff:
+            return get_backoff();
+        case retry_strategy::polling:
+            return get_poll_interval();
+        case retry_strategy::disallow:
+            return 0ms;
+        }
+    }();
+
     _retry++;
     return {
       .is_allowed = (now + required_delay) < _deadline,
-      .abort_source = as,
+      .abort_source = &as,
       .delay = required_delay};
 }
 
-ss::lowres_clock::duration retry_chain_node::get_backoff() const {
-    ss::lowres_clock::duration backoff(_backoff * (1UL << _retry));
-    ss::lowres_clock::duration jitter(fast_prng_source() % backoff.count());
+template<class Clock>
+typename Clock::duration basic_retry_chain_node<Clock>::get_backoff() const {
+    duration backoff(_backoff * (1UL << _retry));
+    duration jitter(fast_prng_source() % backoff.count());
     return backoff + jitter;
 }
 
-ss::lowres_clock::duration retry_chain_node::get_poll_interval() const {
-    ss::lowres_clock::duration jitter(fast_prng_source() % _backoff.count());
+template<class Clock>
+typename Clock::duration
+basic_retry_chain_node<Clock>::get_poll_interval() const {
+    duration jitter(fast_prng_source() % _backoff.count());
     return _backoff + jitter;
 }
 
-ss::lowres_clock::duration retry_chain_node::get_timeout() const {
-    auto now = ss::lowres_clock::now();
+template<class Clock>
+typename Clock::duration basic_retry_chain_node<Clock>::get_timeout() const {
+    auto now = Clock::now();
     return now < _deadline ? _deadline - now : 0ms;
 }
 
-ss::lowres_clock::time_point retry_chain_node::get_deadline() const {
+template<class Clock>
+typename Clock::time_point basic_retry_chain_node<Clock>::get_deadline() const {
     return _deadline;
 }
 
-uint16_t retry_chain_node::get_len() const {
+template<class Clock>
+uint16_t basic_retry_chain_node<Clock>::get_len() const {
     uint16_t len = 1;
     auto next = get_parent();
     while (next) {
@@ -230,7 +320,8 @@ uint16_t retry_chain_node::get_len() const {
     return len;
 }
 
-void retry_chain_node::format(
+template<class Clock>
+void basic_retry_chain_node<Clock>::format(
   std::back_insert_iterator<fmt::memory_buffer>& bii) const {
     std::array<uint16_t, max_retry_chain_depth> ids{_id};
     int ids_len = 1;
@@ -250,9 +341,9 @@ void retry_chain_node::format(
             fmt::format_to(bii, "~{}", *id);
         }
     }
-    if (_deadline != ss::lowres_clock::time_point::min()) {
-        auto now = ss::lowres_clock::now();
-        ss::lowres_clock::duration time_budget{0ms};
+    if (_deadline != time_point::min()) {
+        auto now = Clock::now();
+        duration time_budget{0ms};
         if (now < _deadline) {
             time_budget = _deadline - now;
         }
@@ -265,14 +356,19 @@ void retry_chain_node::format(
     }
 }
 
-uint16_t retry_chain_node::add_child() {
+template<class Clock>
+uint16_t basic_retry_chain_node<Clock>::add_child() {
     _num_children++;
     return _fanout_id++;
 }
 
-void retry_chain_node::rem_child() { _num_children--; }
+template<class Clock>
+void basic_retry_chain_node<Clock>::rem_child() {
+    _num_children--;
+}
 
-void retry_chain_node::request_abort() {
+template<class Clock>
+void basic_retry_chain_node<Clock>::request_abort() {
     // Follow the links until the root node will be found
     auto it = this;
     auto root = it;
@@ -287,7 +383,8 @@ void retry_chain_node::request_abort() {
     as->request_abort();
 }
 
-void retry_chain_node::check_abort() const {
+template<class Clock>
+void basic_retry_chain_node<Clock>::check_abort() const {
     auto it = this;
     auto root = it;
     while (it) {
@@ -300,18 +397,30 @@ void retry_chain_node::check_abort() const {
     }
 }
 
-ss::abort_source* retry_chain_node::find_abort_source() {
+template<class Clock>
+ss::abort_source& basic_retry_chain_node<Clock>::root_abort_source() {
     auto it = this;
     auto root = it;
     while (it) {
         root = it;
         it = it->get_parent();
     }
-    return root->get_abort_source();
+    auto as_ptr = root->get_abort_source();
+
+    // This should never happen: our destructor asserts that all children
+    // are destroyed before the parent.
+    vassert(as_ptr != nullptr, "Root of retry_chain_node has no abort source!");
+    return *as_ptr;
 }
 
-void retry_chain_logger::do_log(
+template<class Clock>
+void basic_retry_chain_logger<Clock>::do_log(
   ss::log_level lvl,
   ss::noncopyable_function<void(ss::logger&, ss::log_level)> fn) const {
     fn(_log, lvl);
 }
+
+template class basic_retry_chain_node<ss::lowres_clock>;
+template class basic_retry_chain_node<ss::manual_clock>;
+template class basic_retry_chain_logger<ss::lowres_clock>;
+template class basic_retry_chain_logger<ss::manual_clock>;

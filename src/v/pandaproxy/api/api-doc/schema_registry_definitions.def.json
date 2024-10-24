@@ -31,7 +31,7 @@
                 "type": "string"
               },
               "version": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           }
@@ -65,7 +65,7 @@
                 "type": "string"
               },
               "version": {
-                  "type": "integer"
+                "type": "integer"
               }
             }
           }
@@ -73,5 +73,47 @@
         "schema": {
           "type": "string"
         }
+      }
+    },
+    "get_compatibility": {
+      "type": "object",
+      "properties": {
+        "compatibilityLevel": {
+          "type": "string"
+        }
+      }
+    },
+    "put_compatibility": {
+      "type": "object",
+      "properties": {
+        "compatibility": {
+          "type": "string"
+        }
+      }
+    },
+    "mode": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "READWRITE",
+            "READONLY"
+          ]
+        }
+      }
+    },
+    "is_compatibile": {
+      "type": "object",
+      "properties": {
+        "is_compatible": {
+          "type": "boolean"
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
       }
     }

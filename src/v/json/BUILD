@@ -1,0 +1,43 @@
+load("//bazel:build.bzl", "redpanda_cc_library")
+
+redpanda_cc_library(
+    name = "json",
+    srcs = [
+        "json.cc",
+    ],
+    hdrs = [
+        "_include_first.h",
+        "allocator.h",
+        "chunked_buffer.h",
+        "chunked_input_stream.h",
+        "document.h",
+        "encodings.h",
+        "iobuf_writer.h",
+        "istreamwrapper.h",
+        "json.h",
+        "logger.h",
+        "ostreamwrapper.h",
+        "pointer.h",
+        "prettywriter.h",
+        "reader.h",
+        "schema.h",
+        "stream.h",
+        "stringbuffer.h",
+        "types.h",
+        "validator.h",
+        "writer.h",
+    ],
+    include_prefix = "json",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:streambuf",
+        "//src/v/serde",
+        "//src/v/utils:named_type",
+        "//src/v/utils:unresolved_address",
+        "@fmt",
+        "@rapidjson",
+        "@seastar",
+    ],
+)

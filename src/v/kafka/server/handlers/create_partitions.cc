@@ -13,6 +13,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/create_partitions_request.h"
 #include "kafka/protocol/schemata/create_partitions_response.h"
@@ -43,7 +44,7 @@ make_result(const create_partitions_topic& tp, error_code ec) {
     };
 }
 
-using request_iterator = std::vector<create_partitions_topic>::iterator;
+using request_iterator = chunked_vector<create_partitions_topic>::iterator;
 
 template<typename ResultIter>
 request_iterator validate_range_duplicates(
@@ -52,7 +53,7 @@ request_iterator validate_range_duplicates(
     absl::node_hash_map<model::topic_view, uint32_t> freq;
 
     freq.reserve(std::distance(begin, end));
-    for (auto const& r : boost::make_iterator_range(begin, end)) {
+    for (const auto& r : boost::make_iterator_range(begin, end)) {
         freq[r.name]++;
     }
     auto valid_range_end = std::partition(
@@ -148,13 +149,26 @@ ss::future<response_ptr> create_partitions_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     create_partitions_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
     create_partitions_response resp;
 
     if (request.data.topics.empty()) {
-        co_return co_await ctx.respond(resp);
+        co_return co_await ctx.respond(std::move(resp));
     }
 
     resp.data.results.reserve(request.data.topics.size());
+
+    if (ctx.recovery_mode_enabled()) {
+        for (const auto& t : request.data.topics) {
+            resp.data.results.push_back(create_partitions_topic_result{
+              .name = t.name,
+              .error_code = error_code::policy_violation,
+              .error_message = "Forbidden in recovery mode",
+            });
+        }
+
+        co_return co_await ctx.respond(std::move(resp));
+    }
 
     // authorize
     auto valid_range_end = validate_range(
@@ -166,6 +180,18 @@ ss::future<response_ptr> create_partitions_handler::handle(
       [&ctx](const create_partitions_topic& tp) {
           return ctx.authorized(security::acl_operation::alter, tp.name);
       });
+
+    if (!ctx.audit()) {
+        auto distance = std::distance(
+          request.data.topics.begin(), valid_range_end);
+
+        co_return co_await ctx.respond(create_partitions_response(
+          error_code::broker_not_available,
+          "Broker not available - audit system failure",
+          std::move(resp),
+          std::move(request),
+          distance));
+    }
 
     // check duplicates
     valid_range_end = validate_range_duplicates(
@@ -218,6 +244,24 @@ ss::future<response_ptr> create_partitions_handler::handle(
           return !tp.assignments.has_value();
       });
 
+    // check for inprogress reassignments
+    valid_range_end = validate_range(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      error_code::reassignment_in_progress,
+      "A partition reassignment is in progress.",
+      [&ctx](const create_partitions_topic& tp) {
+          const auto& updates_in_progress
+            = ctx.metadata_cache().updates_in_progress();
+          return std::none_of(
+            updates_in_progress.begin(),
+            updates_in_progress.end(),
+            [name{tp.name}](auto& iter) {
+                return iter.first.tp.topic == name;
+            });
+      });
+
     if (request.data.validate_only) {
         std::transform(
           request.data.topics.begin(),
@@ -240,7 +284,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
          ? error_code::throttling_quota_exceeded
          : error_code::unknown_server_error),
       "Too many partition mutations requested",
-      [&ctx, &resp](const create_partitions_topic& tp) -> ss::future<bool> {
+      [&ctx, &resp](const create_partitions_topic& tp) {
           const auto cfg = ctx.metadata_cache().get_topic_cfg(
             model::topic_namespace_view(model::kafka_namespace, tp.name));
           vassert(cfg, "Topic exist check has already occurred");
@@ -248,12 +292,13 @@ ss::future<response_ptr> create_partitions_handler::handle(
             tp.count > cfg->partition_count,
             "Sanity check for request increase partition count failed");
           const auto mutations = (tp.count - cfg->partition_count);
-          const auto delay
-            = co_await ctx.quota_mgr().record_partition_mutations(
-              ctx.header().client_id, mutations);
-          resp.data.throttle_time_ms = std::max(
-            resp.data.throttle_time_ms, delay);
-          co_return delay == 0ms;
+          return ctx.quota_mgr()
+            .record_partition_mutations(ctx.header().client_id, mutations)
+            .then([&resp](std::chrono::milliseconds delay) {
+                resp.data.throttle_time_ms = std::max(
+                  resp.data.throttle_time_ms, delay);
+                return delay == 0ms;
+            });
       });
 
     auto results = co_await do_create_partitions(
@@ -271,6 +316,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
           return create_partitions_topic_result{
             .name = std::move(r.tp_ns.tp),
             .error_code = map_topic_error_code(r.ec),
+            .error_message = cluster::make_error_code(r.ec).message(),
           };
       });
 

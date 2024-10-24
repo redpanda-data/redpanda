@@ -9,13 +9,11 @@
 
 #include "storage/parser_utils.h"
 
+#include "base/vlog.h"
 #include "compression/compression.h"
 #include "model/compression.h"
 #include "model/record.h"
 #include "model/record_utils.h"
-#include "reflection/adl.h"
-#include "storage/logger.h"
-#include "vlog.h"
 
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/coroutine.hh>
@@ -34,19 +32,27 @@ model::record_batch_reader decompress_batch_consumer::end_of_stream() {
 }
 
 ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
-    if (!b.compressed()) {
-        return ss::make_ready_future<model::record_batch>(std::move(b));
-    }
-    return decompress_batch(b);
+    return ss::futurize_invoke(decompress_batch_sync, std::move(b));
 }
 
 ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
+    return ss::futurize_invoke(maybe_decompress_batch_sync, b);
+}
+
+model::record_batch decompress_batch_sync(model::record_batch&& b) {
+    if (!b.compressed()) {
+        return std::move(b);
+    }
+
+    return maybe_decompress_batch_sync(b);
+}
+
+model::record_batch maybe_decompress_batch_sync(const model::record_batch& b) {
     if (unlikely(!b.compressed())) {
-        return ss::make_exception_future<model::record_batch>(
-          std::runtime_error(fmt_with_ctx(
-            fmt::format,
-            "Asked to decompressed a non-compressed batch:{}",
-            b.header())));
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Asked to decompressed a non-compressed batch:{}",
+          b.header()));
     }
     iobuf body_buf = compression::compressor::uncompress(
       b.data(), b.header().attrs.compression());
@@ -56,7 +62,7 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
     reset_size_checksum_metadata(h, body_buf);
     auto batch = model::record_batch(
       h, std::move(body_buf), model::record_batch::tag_ctor_ng{});
-    return ss::make_ready_future<model::record_batch>(std::move(batch));
+    return batch;
 }
 
 compress_batch_consumer::compress_batch_consumer(
@@ -80,34 +86,24 @@ model::record_batch_reader compress_batch_consumer::end_of_stream() {
 }
 
 ss::future<model::record_batch>
-compress_batch(model::compression c, model::record_batch&& b) {
+compress_batch(model::compression c, model::record_batch b) {
     if (c == model::compression::none) {
         vassert(
           b.header().attrs.compression() == model::compression::none,
           "Asked to compress a batch with `none` compression, but header "
           "metadata is incorrect: {}",
           b.header());
-        return ss::make_ready_future<model::record_batch>(std::move(b));
+        co_return b;
     }
-    return ss::do_with(std::move(b), [c](model::record_batch& b) {
-        return compress_batch(c, b);
-    });
-}
-ss::future<model::record_batch>
-compress_batch(model::compression c, const model::record_batch& b) {
-    vassert(
-      c != model::compression::none,
-      "Asked to compress a batch with type `none`: {} - {}",
-      c,
-      b.header());
-    auto payload = compression::compressor::compress(b.data(), c);
     auto h = b.header();
+    auto payload = co_await compression::stream_compressor::compress(
+      std::move(b).release_data(), c);
     // compression bit must be set first!
     h.attrs |= c;
     reset_size_checksum_metadata(h, payload);
     auto batch = model::record_batch(
       h, std::move(payload), model::record_batch::tag_ctor_ng{});
-    return ss::make_ready_future<model::record_batch>(std::move(batch));
+    co_return batch;
 }
 
 /// \brief resets the size, header crc and payload crc

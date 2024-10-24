@@ -1,0 +1,42 @@
+---
+# Invoke the backport bot whenever we merge into dev.
+name: backport-on-merge
+on:
+  push:
+    branches: [dev]
+env:
+  SCRIPT_DIR: "${{ github.workspace }}/.github/workflows/scripts/backport-command"
+  PR_NUMBER: ${{ github.event.number }}
+jobs:
+  backport-on-merge:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      # Find the PR associated with this push, if there is one.
+      - uses: jwalton/gh-find-current-pr@v1
+        id: findPr
+        with:
+          # Can be "open", "closed", or "all".  Defaults to "open".
+          state: closed
+      - run: echo "PR_NUMBER=${PR}" >>"$GITHUB_ENV"
+        if: success() && steps.findPr.outputs.number
+        env:
+          PR: ${{ steps.findPr.outputs.pr }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/actions_bot_token
+          parse-json-secrets: true
+      - name: Backport On Merge
+        env:
+          GITHUB_TOKEN: ${{ env.ACTIONS_BOT_TOKEN }}
+        id: extract_required_backports_from_pr_body
+        run: $SCRIPT_DIR/backport_on_merge.sh
+        shell: bash

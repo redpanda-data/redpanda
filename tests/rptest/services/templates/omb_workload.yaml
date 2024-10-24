@@ -2,9 +2,18 @@ name: {{name}}
 
 topics: {{topics}}
 partitionsPerTopic: {{partitions_per_topic}}
+{% if key_distributor is defined %}
+keyDistributor: {{key_distributor}}
+{% endif %}
 {% if message_size is defined %}
 messageSize: {{message_size}}
+{% if use_randomized_payloads is defined %}
+useRandomizedPayloads: {{use_randomized_payloads}}
+randomBytesRatio: {{random_bytes_ratio}}
+randomizedPayloadPoolSize: {{randomized_payload_pool_size}}
+{% else %}
 payloadFile: {{payload_file}}
+{% endif %}
 {% else %}
 messageSize: 1024
 payloadFile: "payload/payload-1Kb.data"

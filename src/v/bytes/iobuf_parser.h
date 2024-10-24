@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
-#include "utils/utf8.h"
+#include "strings/utf8.h"
 #include "utils/vint.h"
 
 #include <seastar/core/sstring.hh>
@@ -65,7 +65,7 @@ public:
     }
 
     bytes read_bytes(size_t n) {
-        auto b = ss::uninitialized_string<bytes>(n);
+        bytes b(bytes::initialized_later{}, n);
         _in.consume_to(n, b.begin());
         return b;
     }
@@ -102,6 +102,13 @@ public:
     iobuf peek(size_t len) const {
         auto in = _in;
         return iobuf_copy(in, len);
+    }
+
+    bytes peek_bytes(size_t n) const {
+        auto in = _in;
+        bytes b(bytes::initialized_later{}, n);
+        in.consume_to(n, b.begin());
+        return b;
     }
 
 protected:

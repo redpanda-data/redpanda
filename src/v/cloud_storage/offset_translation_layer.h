@@ -12,14 +12,23 @@
 
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/record_batch_types.h"
+#include "storage/offset_translator_state.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/iostream.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/btree_map.h>
 
 namespace cloud_storage {
+
+struct stream_stats {
+    model::offset min_offset = model::offset::max();
+    model::offset max_offset = model::offset::min();
+    uint64_t size_bytes{};
+};
 
 /// This instance of this class is supposed to be used to
 /// translate from redpanda offsets to kafka offsets in the
@@ -29,15 +38,11 @@ class offset_translator final {
 public:
     offset_translator(
       model::offset_delta initial_delta,
+      ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
       storage::opt_abort_source_t as = std::nullopt)
       : _initial_delta(initial_delta)
+      , _ot_state(ot_state)
       , _as(as) {}
-
-    struct stream_stats {
-        model::offset min_offset;
-        model::offset max_offset;
-        uint64_t size_bytes{};
-    };
 
     /// Copy source stream into the destination stream
     ///
@@ -50,12 +55,9 @@ public:
       ss::output_stream<char> dst,
       retry_chain_node& fib) const;
 
-    /// Get segment name adjusted for all removed offsets
-    segment_name get_adjusted_segment_name(
-      const partition_manifest::key& s, retry_chain_node& fib) const;
-
 private:
     model::offset_delta _initial_delta;
+    ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     storage::opt_abort_source_t _as;
 };
 

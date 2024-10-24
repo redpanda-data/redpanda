@@ -15,6 +15,6 @@
 namespace kafka {
 
 using incremental_alter_configs_handler
-  = single_stage_handler<incremental_alter_configs_api, 0, 0>;
+  = single_stage_handler<incremental_alter_configs_api, 0, 1>;
 
 }

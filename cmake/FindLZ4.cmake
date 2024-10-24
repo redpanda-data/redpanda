@@ -24,7 +24,7 @@ if(LZ4_INCLUDE_DIR AND EXISTS "${LZ4_INCLUDE_DIR}/lz4.h")
     "${LZ4_VERSION_MAJOR}.${LZ4_VERSION_MINOR}.${LZ4_VERSION_RELEASE}")
 endif()
 
-find_library(LZ4_LIBRARY NAMES lz4)
+find_library(LZ4_LIBRARY NAMES liblz4.a)
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(LZ4

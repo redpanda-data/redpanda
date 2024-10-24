@@ -11,22 +11,17 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "bytes/iobuf_parser.h"
+#include "json/chunked_buffer.h"
 #include "json/document.h"
-#include "json/json.h"
-#include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "likely.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
-#include "seastarx.h"
-#include "ssx/semaphore.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <rapidjson/error/en.h>
-
-#include <exception>
-#include <utility>
 
 namespace pandaproxy::schema_registry {
 
@@ -37,7 +32,7 @@ namespace pandaproxy::schema_registry {
 ///
 /// Returns error_code::schema_invalid on failure
 template<typename Encoding>
-result<unparsed_schema_definition::raw_string>
+result<canonical_schema_definition::raw_string>
 make_schema_definition(std::string_view sv) {
     // Validate and minify
     // TODO (Ben): Minify. e.g.:
@@ -52,52 +47,16 @@ make_schema_definition(std::string_view sv) {
             rapidjson::GetParseError_En(doc.GetParseError()),
             doc.GetErrorOffset())};
     }
-    ::json::GenericStringBuffer<Encoding> str_buf;
-    str_buf.Reserve(sv.size());
-    ::json::Writer<::json::GenericStringBuffer<Encoding>> w{str_buf};
+    ::json::chunked_buffer buf;
+    ::json::Writer<::json::chunked_buffer> w{buf};
     doc.Accept(w);
-    return unparsed_schema_definition::raw_string{
-      ss::sstring{str_buf.GetString(), str_buf.GetSize()}};
+    return canonical_schema_definition::raw_string{std::move(buf).as_iobuf()};
 }
 
-///\brief The first invocation of one_shot::operator()() will invoke func and
-/// wait for it to finish. Concurrent invocatons will also wait.
-///
-/// On success, all waiters will be allowed to continue. Successive invocations
-/// of one_shot::operator()() will return ss::now().
-///
-/// If func fails, waiters will receive the error, and one_shot will be reset.
-/// Successive calls to operator()() will restart the process.
-class one_shot {
-    enum class state { empty, started, available };
-    using futurator = ss::futurize<ssx::semaphore_units>;
-
-public:
-    explicit one_shot(ss::noncopyable_function<ss::future<>()> func)
-      : _func{std::move(func)} {}
-    futurator::type operator()() {
-        if (likely(_started_sem.available_units() != 0)) {
-            return ss::get_units(_started_sem, 1);
-        }
-        auto units = ss::consume_units(_started_sem, 1);
-        return _func().then_wrapped(
-          [this, units{std::move(units)}](ss::future<> f) mutable noexcept {
-              if (f.failed()) {
-                  units.release();
-                  auto ex = f.get_exception();
-                  _started_sem.broken(ex);
-                  _started_sem = {0, "pproxy/oneshot"};
-                  return futurator::make_exception_future(ex);
-              }
-
-              _started_sem.signal(_started_sem.max_counter());
-              return futurator::convert(std::move(units));
-          });
-    }
-
-private:
-    ss::noncopyable_function<ss::future<>()> _func;
-    ssx::semaphore _started_sem{0, "pproxy/oneshot"};
-};
+template<typename Tag>
+ss::sstring to_string(named_type<iobuf, Tag> def) {
+    iobuf_parser p{std::move(def)};
+    return p.read_string(p.bytes_left());
+}
 
 } // namespace pandaproxy::schema_registry

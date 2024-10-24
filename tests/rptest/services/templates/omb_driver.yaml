@@ -2,22 +2,38 @@ name: Redpanda-{{name}}
 driverClass: io.openmessaging.benchmark.driver.redpanda.RedpandaBenchmarkDriver
 
 replicationFactor: {{replication_factor}}
-reset: true
+reset: {{reset or 'true'}}
 
 topicConfig: |
+  {% if topic_config %}
+  {% for config_name, config_value in topic_config.items() %}
+  {{config_name}}={{config_value}}
+  {% endfor %}
+  {% endif %}
 
 commonConfig: |
   bootstrap.servers={{redpanda_node}}:9092
   request.timeout.ms={{request_timeout}}
+  {% if sasl_username and sasl_password %}
+  sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{{sasl_username}}" password="{{sasl_password}}";
+  {% endif %}
+  {% if sasl_mechanism %}
+  sasl.mechanism={{sasl_mechanism}}
+  {% endif %}
+  {% if security_protocol %}
+  security.protocol={{security_protocol}}
+  {% endif %}
 
 producerConfig: |
-  enable.idempotence={{enable_idempotence}}
-  max.in.flight.requests.per.connection={{max_in_flight}}
-  acks={{acks}}
-  linger.ms={{linger_ms}}
-  batch.size={{batch_size}}
+  {% if producer_config %}
+  {% for config_name, config_value in producer_config.items() %}
+  {{config_name}}={{config_value}}
+  {% endfor %}
+  {% endif %}
 
 consumerConfig: |
-  auto.offset.reset={{auto_offset_earliest}}
-  enable.auto.commit={{auto_commit}}
-  max.partition.fetch.bytes={{max_partition_fetch}}
+  {% if consumer_config %}
+  {% for config_name, config_value in consumer_config.items() %}
+  {{config_name}}={{config_value}}
+  {% endfor %}
+  {% endif %}

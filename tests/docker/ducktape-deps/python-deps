@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -e
+
+function ubuntu_version() {
+  if [ ! -f /etc/os-release ]; then
+    echo "No /etc/os-release file!"
+    exit 1
+  fi
+
+  . /etc/os-release
+
+  if [ "$ID" != "ubuntu" ]; then
+    echo "Not an Ubuntu OS"
+    exit 1
+  fi
+
+  echo $VERSION_CODENAME
+}
+
+ubuntu_release=$(ubuntu_version)
+
+if [ "$ubuntu_release" == "focal" ]; then
+  add-apt-repository ppa:deadsnakes/ppa
+  apt update
+  apt install -y libpython3.10-dev python3.10 python3.10-dev python3.10-venv
+  curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+  PYEXE="python3.10"
+else
+  PYEXE="python3"
+fi
+
+$PYEXE -m venv /opt/.ducktape-venv
+# This adds the above created virtual environment to the path so all shells
+# regardless of being interactive or not, will utilize the virtual environment
+sed -i 's@^\(PATH="\)\([^"]*\)"$@\1/opt/.ducktape-venv/bin:\2"@' /etc/environment

@@ -11,9 +11,11 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 
 namespace cluster {
 
@@ -135,31 +137,42 @@ void topic_table_probe::handle_topic_creation(
     }
 
     const auto labels = {
-      ssx::metrics::make_namespaced_label("namespace")(topic_namespace.ns()),
-      ssx::metrics::make_namespaced_label("topic")(topic_namespace.tp())};
+      metrics::make_namespaced_label("namespace")(topic_namespace.ns()),
+      metrics::make_namespaced_label("topic")(topic_namespace.tp())};
 
     namespace sm = ss::metrics;
 
-    sm::metric_groups topic_metrics{ssx::metrics::public_metrics_handle};
+    auto [it, inserted] = _topics_metrics.emplace(
+      topic_namespace, metrics::public_metrics_handle);
 
-    topic_metrics.add_group(
+    it->second.add_group(
       prometheus_sanitize::metrics_name("kafka"),
       {sm::make_gauge(
          "replicas",
          [this, topic_namespace] {
              auto md = _topic_table.get_topic_metadata_ref(topic_namespace);
              if (md) {
-                 return md.value().get().get_configuration().replication_factor;
+                 return md.value().get().get_replication_factor();
              }
 
-             return int16_t{0};
+             return cluster::replication_factor{0};
          },
          sm::description("Configured number of replicas for the topic"),
          labels)
-         .aggregate({sm::shard_label})});
+         .aggregate({sm::shard_label}),
+       sm::make_gauge(
+         "partitions",
+         [this, topic_namespace] {
+             auto md = _topic_table.get_topic_metadata_ref(topic_namespace);
+             if (md) {
+                 return md.value().get().get_configuration().partition_count;
+             }
 
-    _topics_metrics.emplace(
-      std::move(topic_namespace), std::move(topic_metrics));
+             return int32_t{0};
+         },
+         sm::description("Configured number of partitions for the topic"),
+         labels)
+         .aggregate({sm::shard_label})});
 }
 
 void topic_table_probe::handle_topic_deletion(

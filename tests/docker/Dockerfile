@@ -12,171 +12,335 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:jammy-20220531
+FROM public.ecr.aws/docker/library/ubuntu:jammy-20230816 AS base
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies of Java client builds.
-RUN apt update && \
-    apt install -y \
-      build-essential \
-      default-jdk \
-      git \
-      maven && \
+RUN mkdir -p /opt/redpanda-tests
+COPY --chown=0:0 tests/protobuf /opt/redpanda-tests/protobuf
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/java-dev-tools /
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/protobuf /
+RUN /java-dev-tools && \
+    rm /java-dev-tools && \
     rm -rf /var/lib/apt/lists/*
+
+# - install distro-packaged depedencies
+# - install dependencies of 'rpk debug' system scan
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tool-pkgs /
+RUN /tool-pkgs && \
+    rm /tool-pkgs && \
+    rm -rf /var/lib/apt/lists/*
+
+#################################
+
+FROM base AS kafka-streams-examples
 
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
 # many maven dependency downloads without any parallelism.  To avoid re-running it
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
-RUN git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git && \
-    cd /opt/kafka-streams-examples && git reset --hard da50fa2723840f6388f99a1dae8d58104fd7650d && \
-    mvn -DskipTests=true clean package
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kafka-streams-examples /
+RUN /kafka-streams-examples && \
+    rm /kafka-streams-examples
 
-# Install our in-tree Java test clientst
-RUN mkdir -p /opt/redpanda-tests
-COPY --chown=0:0 tests/java /opt/redpanda-tests/java
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+#################################
 
-# - install distro-packaged depedencies
-# - allow user env variables in ssh sessions
-# - install dependencies of 'rpk debug' system scan
-RUN apt update && \
-    apt install -y \
-      bind9-utils \
-      bind9-dnsutils \
-      bsdmainutils \
-      curl \
-      dmidecode \
-      cmake \
-      iproute2 \
-      iptables \
-      libatomic1 \
-      libyajl-dev \
-      libsasl2-dev \
-      libssl-dev \
-      net-tools \
-      lsof \
-      pciutils \
-      nodejs \
-      npm \
-      openssh-server \
-      netcat \
-      sudo \
-      python3-pip && \
-    rm -rf /var/lib/apt/lists/* && \
-    echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
-    echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
-    echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
-    echo 'root hard nofile 65535' >> /etc/security/limits.conf
+FROM base AS omb
 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/omb /
+RUN /omb && \
+    rm /omb
 
-# Install the OMB tool
-RUN git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git && \
-    cd /opt/openmessaging-benchmark && git reset --hard 6eba1030cb7c199e03f76676b6c2df9dcc3b219d && mvn clean package -DskipTests
+#################################
 
-# install kafka binary dependencies, librdkafka dev, kcat and kaf tools
+FROM base AS java-verifiers
+
+COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
+COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
+COPY --chown=0:0 tests/java/kafka-serde /opt/redpanda-tests/java/kafka-serde
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/java-verifiers /
+RUN /java-verifiers && \
+    rm /java-verifiers
+
+#################################
+
+FROM base AS kafka-tools
+
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
-RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.3.1" && \
-    mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1" && \
-    mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0" && \
-    mkdir -p "/opt/kafka-2.7.0" && chmod a+rw /opt/kafka-2.7.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.7.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.7.0" && \
-    mkdir -p "/opt/kafka-3.0.0" && chmod a+rw /opt/kafka-3.0.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.0.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.0.0" && \
-    ln -s /opt/kafka-3.0.0 /opt/kafka-dev && \
-    mkdir /opt/librdkafka && \
-    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.8.0.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
-    cd /opt/librdkafka && \
-    ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    cd /opt/librdkafka/tests && \
-    make build -j$(nproc) && \
-    mkdir /tmp/kcat && \
-    curl -SL "https://github.com/edenhill/kcat/archive/1.7.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kcat && \
-    cd /tmp/kcat && \
-    ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kafka-tools /
+RUN /kafka-tools && \
+    rm /kafka-tools
 
-# install go
-RUN mkdir -p /usr/local/go/ && \
-    bash -c 'if [[ $(uname -m) = "aarch64" ]]; then ARCHID="arm64"; else export ARCHID="amd64"; fi && \
-    curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 https://golang.org/dl/go1.17.linux-${ARCHID}.tar.gz | tar -xz -C /usr/local/go/ --strip 1'
+#################################
+
+FROM base AS librdkafka
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/librdkafka /
+RUN /librdkafka && \
+    rm /librdkafka
+
+#################################
+
+FROM librdkafka AS kcat
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcat /
+RUN /kcat && \
+    rm /kcat
+
+#################################
+
+FROM base AS golang
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/golang /
+RUN /golang && \
+    rm /golang
 ENV PATH="${PATH}:/usr/local/go/bin"
 
-# Install `kaf`
-RUN go get github.com/birdayz/kaf/cmd/kaf && \
-    mv /root/go/bin/kaf /usr/local/bin/
+#################################
 
-ENV PATH="${PATH}:/usr/local/go/bin"
-# Compile and install rust-based workload generator.
-# Install & remove compiler in the same step, to avoid bulking
-# out the resulting container image.
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    export PATH="/root/.cargo/bin:${PATH}" && \
-    git clone https://github.com/redpanda-data/client-swarm.git && \
-    cd client-swarm && \
-    git reset --hard 28790f8 && \
-    cargo build --release && \
-    cp target/release/client-swarm /usr/local/bin && \
-    cd .. && rm -rf client-swarm && rm -rf /root/.cargo
+FROM golang AS kaf
 
-# Install golang dependencies for kafka clients such as sarama
-RUN git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git && \
-    cd /opt/sarama/examples/interceptors && go mod tidy && go build && \
-    cd /opt/sarama/examples/http_server && go mod tidy && go build && \
-    cd /opt/sarama/examples/consumergroup && go mod tidy && go build && \
-    cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kaf /
+RUN /kaf && \
+    rm /kaf
 
-# Install our in-tree go tests
-COPY --chown=0:0 tests/go /opt/redpanda-tests/go
-RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
+#################################
 
-# Install franz-go
-RUN git -C /opt clone -b v1.5.0 --single-branch https://github.com/twmb/franz-go.git && \
-    cd /opt/franz-go && \
-    cd /opt/franz-go/examples/bench && go mod tidy && go build
+FROM base AS rust
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rust /
+RUN /rust && \
+    rm /rust
+ENV PATH="${PATH}:/root/.cargo/bin"
 
-RUN go install github.com/twmb/kcl@v0.8.0 && \
-    mv /root/go/bin/kcl /usr/local/bin/
+#################################
 
-# Install the kgo-verifier tool
-RUN git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git && \
-    cd /opt/kgo-verifier && git reset --hard cf552ccba1c6a68f53b51bbdbbcdb50c4e2c8cfe && \
-    go mod tidy && make
+FROM rust AS client-swarm
 
-# Expose port 8080 for any http examples within clients
-EXPOSE 8080
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/client-swarm /
+RUN /client-swarm && \
+    rm /client-swarm
 
-# copy ssh keys
-COPY --chown=0:0 tests/docker/ssh /root/.ssh
+#################################
+
+FROM rust AS rp-storage-tool
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rp-storage-tool /
+COPY --chown=0:0 --chmod=0755 tools/rp_storage_tool /rp_storage_tool
+RUN /rp-storage-tool && \
+    rm -rf /rp_storage_tool
+
+#################################
+
+FROM golang AS sarama-examples
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/sarama-examples /
+RUN /sarama-examples && \
+    rm /sarama-examples
+
+#################################
+
+FROM golang AS golang-test-clients
+
+COPY --chown=0:0 --chmod=0755 tests/go /opt/redpanda-tests/go
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/golang-test-clients /
+RUN /golang-test-clients && \
+    rm /golang-test-clients
+
+#################################
+
+FROM golang AS franz-bench
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/franz-bench /
+RUN /franz-bench && \
+    rm /franz-bench
+
+#################################
+
+FROM base AS flink
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/flink /
+RUN /flink && \
+    rm /flink
+
+#################################
+
+FROM golang AS kcl
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kcl /
+RUN /kcl && \
+    rm /kcl
+
+#################################
+
+FROM golang AS kgo-verifier
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/kgo-verifier /
+RUN /kgo-verifier && \
+    rm /kgo-verifier
+
+#################################
+
+FROM base AS k8s
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/k8s /
+RUN /k8s && \
+    rm /k8s
+
+#################################
+
+FROM golang AS byoc-mock
+
+COPY --chown=0:0 --chmod=0755 tests/go/byoc-mock /opt/redpanda-tests/go/byoc-mock
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/byoc-mock /
+RUN /byoc-mock && rm /byoc-mock
+
+#################################
+
+FROM golang AS plugin-mock
+
+COPY --chown=0:0 --chmod=0755 tests/go/plugin-mock /opt/redpanda-tests/go/plugin-mock
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/plugin-mock /
+RUN /plugin-mock && rm /plugin-mock
+
+#################################
+
+FROM base AS keycloak
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/keycloak /
+RUN /keycloak && rm /keycloak
+
+#################################
+
+FROM golang AS tinygo
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo /
+RUN /tinygo && \
+    rm /tinygo
+ENV PATH="${PATH}:/usr/local/tinygo/bin"
+
+#################################
+
+FROM tinygo AS wasi-transforms
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/tinygo-wasi-transforms /
+COPY --chown=0:0 --chmod=0755 src/transform-sdk /transform-sdk
+RUN /tinygo-wasi-transforms && \
+    rm -rf /transform-sdk
+
+#################################
+
+FROM base AS ocsf
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/ocsf-server /
+RUN /ocsf-server && rm /ocsf-server
+
+#################################
+
+FROM base AS polaris
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/polaris /
+RUN /polaris && rm /polaris
+#################################
+
+FROM base as iceberg-rest
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/iceberg-rest-catalog /
+RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
+
+#################################
+
+FROM librdkafka AS final
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
+RUN /python-deps
+ENV PATH="/opt/.ducktape-venv/bin:$PATH"
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
+RUN /teleport && \
+    rm /teleport && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/arroyo /
+RUN /arroyo && \
+    rm /arroyo
+
+RUN mkdir -p /opt/scripts/consumer_offsets_recovery
+COPY --chown=0:0 --chmod=0755 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
+RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
 
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
 # passes --force so system pip packages can be updated
-COPY --chown=0:0 tests/setup.py /root/tests/
+# passes `--no-binary confluent-kafka` to ensure that the confluent-kafka
+#        package is built with GSSAPI support enabled. For binary compatibility
+#        reasons, this feature is disabled in publically available wheels
+COPY --chown=0:0 --chmod=0755 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
-    python3 -m pip install --force --no-cache-dir -e /root/tests/
+    python3 -m pip install --force --no-cache-dir --no-binary confluent-kafka -e /root/tests/
 
-# Seastar addrress to line utility
+# seastar addrress to line utility depends on 'file' pkg
 RUN apt update && \
-    apt install -y \
-      file && \
+    apt install -y file && \
     rm -rf /var/lib/apt/lists/*
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/addr2line /
+RUN /addr2line && \
+    rm /addr2line
 
-# Clone and install the arroyo client library in order to run its test suite.
-RUN mkdir /root/external_test_suites && \
-    git -C /root/external_test_suites clone -b 1.0.0 --depth=1 https://github.com/getsentry/arroyo.git && \
-    cd /root/external_test_suites/arroyo && \
-    python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
+# copy offline_log_viewer
+RUN mkdir -p /opt/scripts/offline_log_viewer
+COPY --chown=0:0 --chmod=0755 tools/offline_log_viewer /opt/scripts/offline_log_viewer
 
-RUN mkdir -p /opt/scripts && \
-    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py && \
-    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line && \
-    chmod +x /opt/scripts/seastar-addr2line
+# copy remote_scripts
+RUN mkdir -p /opt/remote
+COPY --chown=0:0 --chmod=0755 tests/rptest/remote_scripts /opt/remote
 
+# copy lsan suppressions file
+COPY --chown=0:0 --chmod=0644 lsan_suppressions.txt /opt/lsan_suppressions.txt
+
+# copy ubsan suppressions file
+COPY --chown=0:0 --chmod=0644 ubsan_suppressions.txt /opt/ubsan_suppressions.txt
+
+# expose port 8080 for any http examples within clients
+EXPOSE 8080
+
+# copy known ssh keys
+COPY --chown=0:0 --chmod=0755 tests/docker/ssh /root/.ssh
+
+# allow user env variables in ssh sessions and increase nofile limit
+RUN echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
+    echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
+    echo 'root soft nofile 65535' >> /etc/security/limits.conf && \
+    echo 'root hard nofile 65535' >> /etc/security/limits.conf
+
+# copy from other images
+COPY --from=kafka-streams-examples /opt/kafka-streams-examples /opt/kafka-streams-examples
+COPY --from=kafka-streams-examples /root/.m2 /root/.m2
+COPY --from=omb /opt/openmessaging-benchmark /opt/openmessaging-benchmark
+COPY --from=omb /root/.m2 /root/.m2
+COPY --from=java-verifiers /opt/redpanda-tests/java /opt/redpanda-tests/java
+COPY --from=java-verifiers /opt/verifiers /opt/verifiers
+COPY --from=java-verifiers /opt/kafka-serde /opt/kafka-serde
+COPY --from=java-verifiers /root/.m2 /root/.m2
+COPY --from=kafka-tools /opt /opt
+COPY --from=kcat /usr/local/bin/kcat /usr/local/bin/
+COPY --from=sarama-examples /opt/sarama /opt/sarama
+COPY --from=golang-test-clients /opt/redpanda-tests/go /opt/redpanda-tests/go
+COPY --from=client-swarm /usr/local/bin/client-swarm /usr/local/bin/
+COPY --from=rp-storage-tool /usr/local/bin/rp-storage-tool /usr/local/bin/
+COPY --from=franz-bench /opt/franz-go/examples/bench /opt/franz-go/examples/bench
+COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
+COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
+COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
+COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
+COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
+COPY --from=plugin-mock /opt/redpanda-tests/go/plugin-mock/.rpk.ac-pluginmock /root/.local/bin/.rpk.ac-pluginmock
+COPY --from=keycloak /opt/keycloak/ /opt/keycloak/
+COPY --from=wasi-transforms /opt/transforms/ /opt/transforms/
+COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
+COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
+COPY --from=polaris /opt/polaris/ /opt/polaris/
+COPY --from=flink /opt/flink/ /opt/flink/
+COPY --from=iceberg-rest /opt/iceberg-rest-image /opt/iceberg-rest-image
+
+RUN ldconfig
+
+# define sshd as the entrypoint
 CMD service ssh start && tail -f /dev/null

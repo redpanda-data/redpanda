@@ -12,27 +12,44 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_metadata.h"
-#include "kafka/types.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_set.h>
 
-#include <algorithm>
 #include <chrono>
 #include <iosfwd>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
 
 namespace kafka {
+
+/// \brief A protocol configuration supported by a group member.
+///
+/// NOTE: for efficiency this structure is shared between kafka request
+/// processing and the rest of group membership. if it changes, make sure that
+/// request processing is still correct.
+struct member_protocol {
+    protocol_name name;
+    bytes metadata;
+
+    bool operator==(const member_protocol& o) const {
+        return name == o.name && metadata == o.metadata;
+    }
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const member_protocol& p) {
+        return os << p.name << ":" << p.metadata.size();
+    }
+};
 
 /// \brief A Kafka group member.
 class group_member {
@@ -49,31 +66,31 @@ public:
       duration_type session_timeout,
       duration_type rebalance_timeout,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : group_member(
-        member_state{
-          .id = std::move(member_id),
-          .instance_id = std::move(group_instance_id),
-          .client_id = std::move(client_id),
-          .client_host = std::move(client_host),
-          .rebalance_timeout
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-            rebalance_timeout),
-          .session_timeout
-          = std::chrono::duration_cast<std::chrono::milliseconds>(
-            session_timeout),
-          .subscription = iobuf{},
-          .assignment = iobuf{},
-        },
-        std::move(group_id),
-        std::move(protocol_type),
-        std::move(protocols)) {}
+          member_state{
+            .id = std::move(member_id),
+            .instance_id = std::move(group_instance_id),
+            .client_id = std::move(client_id),
+            .client_host = std::move(client_host),
+            .rebalance_timeout
+            = std::chrono::duration_cast<std::chrono::milliseconds>(
+              rebalance_timeout),
+            .session_timeout
+            = std::chrono::duration_cast<std::chrono::milliseconds>(
+              session_timeout),
+            .subscription = iobuf{},
+            .assignment = iobuf{},
+          },
+          std::move(group_id),
+          std::move(protocol_type),
+          std::move(protocols)) {}
 
     group_member(
       kafka::member_state state,
       kafka::group_id group_id,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : _state(std::move(state))
       , _group_id(std::move(group_id))
       , _is_new(false)
@@ -87,6 +104,22 @@ public:
 
     void replace_id(member_id new_id) { _state.id = std::move(new_id); }
 
+    /// Get the member's client_id.
+    const kafka::client_id& client_id() const { return _state.client_id; }
+
+    /// Replace the member's client_id.
+    void replace_client_id(kafka::client_id new_client_id) {
+        _state.client_id = std::move(new_client_id);
+    }
+
+    /// Get the member's client_host.
+    const kafka::client_host& client_host() const { return _state.client_host; }
+
+    /// Replace the member's client_host.
+    void replace_client_host(kafka::client_host new_client_host) {
+        _state.client_host = std::move(new_client_host);
+    }
+
     /// Get the id of the member's group.
     const kafka::group_id& group_id() const { return _group_id; }
 
@@ -98,8 +131,20 @@ public:
     /// Get the member's session timeout.
     duration_type session_timeout() const { return _state.session_timeout; }
 
+    /// Replace the member's session timeout.
+    void
+    replace_session_timeout(std::chrono::milliseconds new_session_timeout) {
+        _state.session_timeout = new_session_timeout;
+    }
+
     /// Get the member's rebalance timeout.
     duration_type rebalance_timeout() const { return _state.rebalance_timeout; }
+
+    /// Replace the member's rebalance timeout.
+    void
+    replace_rebalance_timeout(std::chrono::milliseconds new_rebalance_timeout) {
+        _state.rebalance_timeout = new_rebalance_timeout;
+    }
 
     /// Get the member's protocol type.
     const kafka::protocol_type& protocol_type() const { return _protocol_type; }
@@ -115,10 +160,12 @@ public:
     /// Clear the member's assignment.
     void clear_assignment() { _state.assignment.clear(); }
 
-    const std::vector<member_protocol>& protocols() const { return _protocols; }
+    const chunked_vector<member_protocol>& protocols() const {
+        return _protocols;
+    }
 
     /// Update the set of protocols supported by the member.
-    void set_protocols(std::vector<member_protocol> protocols) {
+    void set_protocols(chunked_vector<member_protocol> protocols) {
         _protocols = std::move(protocols);
     }
 
@@ -215,7 +262,7 @@ private:
     clock_type::time_point _latest_heartbeat;
     ss::timer<clock_type> _expire_timer;
     kafka::protocol_type _protocol_type;
-    std::vector<member_protocol> _protocols;
+    chunked_vector<member_protocol> _protocols;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;
@@ -228,3 +275,26 @@ using member_ptr = ss::lw_shared_ptr<group_member>;
 /// @}
 
 } // namespace kafka
+
+/*
+ * TODO: bytes is on its way out in favor of iobuf. however its still lingering
+ * around in some types that we'd like to checkpoint to disk. therefore, this
+ * temporary hack serializes bytes as an iobuf so that we can avoid dealing with
+ * on-disk data compatibility when finally removing the last bit of bytes.
+ */
+namespace reflection {
+template<>
+struct adl<kafka::member_protocol> {
+    void to(iobuf& out, kafka::member_protocol p) {
+        iobuf md = bytes_to_iobuf(p.metadata);
+        reflection::serialize(out, p.name, md);
+    }
+
+    kafka::member_protocol from(iobuf_parser& in) {
+        return kafka::member_protocol{
+          .name = adl<kafka::protocol_name>{}.from(in),
+          .metadata = iobuf_to_bytes(adl<iobuf>{}.from(in)),
+        };
+    }
+};
+} // namespace reflection

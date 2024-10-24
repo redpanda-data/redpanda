@@ -11,13 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "cluster/fwd.h"
-#include "cluster/types.h"
-#include "model/metadata.h"
+#include "cluster/tx_protocol_types.h"
 #include "rpc/fwd.h"
-#include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/sharded.hh>
 
 namespace cluster {
 
@@ -37,14 +37,8 @@ public:
       model::producer_identity,
       model::tx_seq,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
-    ss::future<prepare_tx_reply> prepare_tx(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::partition_id);
     ss::future<commit_tx_reply> commit_tx(
       model::ntp,
       model::producer_identity,
@@ -80,39 +74,20 @@ private:
       model::producer_identity,
       model::tx_seq,
       std::chrono::milliseconds,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      model::partition_id);
     ss::future<begin_tx_reply> begin_tx_locally(
       model::ntp,
       model::producer_identity,
       model::tx_seq,
-      std::chrono::milliseconds);
+      std::chrono::milliseconds,
+      model::partition_id);
     ss::future<begin_tx_reply> do_begin_tx(
       model::ntp,
       model::producer_identity,
       model::tx_seq,
-      std::chrono::milliseconds);
-    ss::future<prepare_tx_reply> dispatch_prepare_tx(
-      model::node_id,
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<prepare_tx_reply> prepare_tx_locally(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<prepare_tx_reply> do_prepare_tx(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
+      std::chrono::milliseconds,
+      model::partition_id);
     ss::future<commit_tx_reply> dispatch_commit_tx(
       model::node_id,
       model::ntp,

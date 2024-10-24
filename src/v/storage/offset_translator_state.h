@@ -12,7 +12,6 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "serde/serde.h"
 
 #include <absl/container/btree_map.h>
 
@@ -57,6 +56,10 @@ public:
     /// Difference between the log offset and the kafka offset.
     int64_t delta(model::offset) const;
 
+    /// Returns the difference between the log offset and the Kafka offset one
+    /// offset past the input.
+    model::offset_delta next_offset_delta(model::offset) const;
+
     /// Translate log offset into kafka offset.
     model::offset from_log_offset(model::offset) const;
 
@@ -75,6 +78,9 @@ public:
     /// the map) so that delta at `offset` equals to `delta`. Returns true if
     /// the map changed.
     bool add_absolute_delta(model::offset offset, int64_t delta);
+
+    /// Remove all gaps from offset translator
+    void reset();
 
     /// Removes the offset translation state starting from the offset
     /// (inclusive). Returns true if the map changed.
@@ -98,17 +104,24 @@ public:
     operator<<(std::ostream&, const offset_translator_state&);
 
 private:
+    // Represents a non-data batch in the log - a batch that contributes to the
+    // difference (aka delta) between log (redpanda) and data (kafka) offset.
     struct batch_info {
         model::offset base_offset;
+        // The difference between log and data offsets that we want to find by
+        // querying the offset translator. `next_delta` of a _last_offset2batch
+        // map element is active for log offsets in the interval (last offset;
+        // next last offset] (left end exclusive, right end inclusive).
         int64_t next_delta;
     };
 
     // Map from the last offset of non-data batches to the corresponding batch
-    // info. next_delta in the batch info is active in the log offset interval
-    // (last offset; next last offset] (left end exclusive, right end
-    // inclusive). As prefix truncations happen, we maintain an invariant that
-    // there is always an element of the map with the key prev_offset(start of
-    // the log) - this way we can calculate delta for any offset in the log.
+    // info.
+    //
+    // As prefix truncations happen, we remove elements with keys less than
+    // log_start and substitute them with a single element with the key
+    // prev_offset(log_start) and next_delta equal to delta(log_start) - this
+    // way we can calculate delta for any offset starting from log_start.
     using batches_map_t = absl::btree_map<model::offset, batch_info>;
 
 private:

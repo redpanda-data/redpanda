@@ -12,7 +12,6 @@
 
 #include "cluster/types.h"
 #include "compat/generator.h"
-#include "kafka/types.h"
 #include "model/timeout_clock.h"
 #include "test_utils/randoms.h"
 
@@ -35,9 +34,9 @@ template<>
 struct instance_generator<cluster::commit_group_tx_reply> {
     static cluster::commit_group_tx_reply random() {
         return cluster::commit_group_tx_reply(
-          cluster::tx_errc(random_generators::get_int<int>(
-            static_cast<int>(cluster::tx_errc::none),
-            static_cast<int>(cluster::tx_errc::invalid_txn_state))));
+          cluster::tx::errc(random_generators::get_int<int>(
+            static_cast<int>(cluster::tx::errc::none),
+            static_cast<int>(cluster::tx::errc::invalid_txn_state))));
     }
     static std::vector<cluster::commit_group_tx_reply> limits() { return {}; }
 };

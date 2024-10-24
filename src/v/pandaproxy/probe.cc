@@ -10,8 +10,8 @@
 #include "pandaproxy/probe.h"
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
@@ -24,8 +24,7 @@ probe::probe(
   : _request_metrics()
   , _path(path_desc)
   , _group_name(group_name)
-  , _metrics()
-  , _public_metrics(ssx::metrics::public_metrics_handle) {
+  , _metrics() {
     setup_metrics();
     setup_public_metrics();
 }
@@ -41,22 +40,17 @@ void probe::setup_metrics() {
     std::vector<sm::label_instance> labels{
       operation_label(_path.operations.nickname)};
 
-    auto aggregate_labels = std::vector<sm::label>{
-      sm::shard_label, operation_label};
-
-    auto internal_aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? aggregate_labels
-          : std::vector<sm::label>{};
-
     _metrics.add_group(
       "pandaproxy",
       {sm::make_histogram(
-         "request_latency",
-         sm::description("Request latency"),
-         labels,
-         [this] { return _request_metrics.hist().seastar_histogram_logform(); })
-         .aggregate(internal_aggregate_labels)});
+        "request_latency",
+        sm::description("Request latency"),
+        labels,
+        [this] {
+            return _request_metrics.hist().internal_histogram_logform();
+        })},
+      {},
+      {sm::shard_label, operation_label});
 }
 
 void probe::setup_public_metrics() {
@@ -66,8 +60,8 @@ void probe::setup_public_metrics() {
         return;
     }
 
-    auto operation_label = ssx::metrics::make_namespaced_label("operation");
-    auto status_label = ssx::metrics::make_namespaced_label("status");
+    auto operation_label = metrics::make_namespaced_label("operation");
+    auto status_label = metrics::make_namespaced_label("status");
 
     std::vector<sm::label_instance> labels{
       operation_label(_path.operations.nickname)};
@@ -82,10 +76,7 @@ void probe::setup_public_metrics() {
          sm::description(
            ssx::sformat("Internal latency of request for {}", _group_name)),
          labels,
-         [this] {
-             return ssx::metrics::report_default_histogram(
-               _request_metrics.hist());
-         })
+         [this] { return _request_metrics.hist().public_histogram_logform(); })
          .aggregate(aggregate_labels),
 
        sm::make_counter(

@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -26,11 +26,11 @@ struct create_topics_request final {
 
     create_topics_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -45,7 +45,42 @@ struct create_topics_response final {
 
     create_topics_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    create_topics_response() = default;
+
+    create_topics_response(
+      error_code ec,
+      std::optional<ss::sstring> error_message,
+      create_topics_response current_response,
+      create_topics_request current_request) {
+        data.topics.reserve(
+          current_response.data.topics.size()
+          + current_request.data.topics.size());
+
+        std::transform(
+          current_response.data.topics.begin(),
+          current_response.data.topics.end(),
+          std::back_inserter(data.topics),
+          [ec, &error_message](creatable_topic_result& r) {
+              r.error_code = ec;
+              r.error_message = error_message;
+              r.topic_config_error_code = ec;
+              return std::move(r);
+          });
+
+        std::transform(
+          current_request.data.topics.begin(),
+          current_request.data.topics.end(),
+          std::back_inserter(data.topics),
+          [ec, &error_message](const creatable_topic& t) {
+              return creatable_topic_result{
+                .name = t.name,
+                .error_code = ec,
+                .error_message = error_message,
+                .topic_config_error_code = ec};
+          });
+    }
+
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

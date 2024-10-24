@@ -44,12 +44,12 @@ struct produce_batcher_context {
         produce_futs.push_back(batcher.produce(std::move(batch)));
         client_req_offset += count;
     }
-    auto consume() {
-        auto batch = batcher.consume();
+    ss::future<int32_t> consume() {
+        model::record_batch batch = co_await batcher.consume();
         auto record_count = batch.record_count();
         broker_batches.emplace_back(broker_req_offset, std::move(batch));
         broker_req_offset += record_count;
-        return record_count;
+        co_return record_count;
     }
     auto handle_response(kafka::error_code error = kafka::error_code::none) {
         auto batch = kc::consume_front(broker_batches);
@@ -73,8 +73,8 @@ struct produce_batcher_context {
               std::vector<model::offset> offsets;
               offsets.reserve(results.size());
               std::transform(
-                results.begin(),
-                results.end(),
+                std::make_move_iterator(results.begin()),
+                std::make_move_iterator(results.end()),
                 std::back_inserter(offsets),
                 [](kafka::produce_response::partition p) {
                     return p.base_offset;
@@ -88,13 +88,13 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_single) {
     produce_batcher_context ctx;
 
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 2);
+    BOOST_REQUIRE(ctx.consume().get() == 2);
     BOOST_REQUIRE(ctx.handle_response() == 2);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
-    BOOST_REQUIRE(ctx.consume() == 0);
+    BOOST_REQUIRE(ctx.consume().get() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_producer_seq) {
@@ -102,18 +102,18 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_seq) {
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
     BOOST_REQUIRE(ctx.handle_response() == 4);
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
     BOOST_REQUIRE(ctx.handle_response() == 4);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
-    BOOST_REQUIRE(ctx.consume() == 0);
+    BOOST_REQUIRE(ctx.consume().get() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_producer_overlapped) {
@@ -121,19 +121,19 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_overlapped) {
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
 
     BOOST_REQUIRE(ctx.handle_response() == 4);
     BOOST_REQUIRE(ctx.handle_response() == 4);
 
-    auto offsets = ctx.get_response_offsets().get0();
+    auto offsets = ctx.get_response_offsets().get();
     BOOST_REQUIRE(offsets == ctx.expected_offsets);
 
-    BOOST_REQUIRE(ctx.consume() == 0);
+    BOOST_REQUIRE(ctx.consume().get() == 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
@@ -141,17 +141,17 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
 
     ctx.produce(2);
     ctx.produce(2);
-    BOOST_REQUIRE(ctx.consume() == 4);
+    BOOST_REQUIRE(ctx.consume().get() == 4);
 
     BOOST_REQUIRE(ctx.handle_response() == 4);
     BOOST_REQUIRE(
       ctx.handle_response(kafka::error_code::not_leader_for_partition) == 4);
 
-    auto responses = ctx.get_responses().get0();
+    auto responses = ctx.get_responses().get();
     BOOST_REQUIRE(responses.size() == 4);
     // successes
     BOOST_REQUIRE(responses[0].base_offset == model::offset(42));
@@ -166,5 +166,5 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
     BOOST_REQUIRE(
       responses[3].error_code == kafka::error_code::not_leader_for_partition);
 
-    BOOST_REQUIRE(ctx.consume() == 0);
+    BOOST_REQUIRE(ctx.consume().get() == 0);
 }

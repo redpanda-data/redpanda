@@ -77,9 +77,9 @@ class StatusGraph:
         vertex = self.node_to_vertex[node]
         return self.edges[vertex][vertex] == ConnectionStatus.ALIVE
 
-    def check_cluster_status(self):
+    def do_check_cluster_status(self):
         admin = Admin(self.redpanda)
-
+        results = []
         for node, peer, expected_status in self._all_edges():
             if not self.is_node_available(node):
                 # The starting node is unavailable so the request
@@ -88,21 +88,36 @@ class StatusGraph:
 
             self.redpanda.logger.debug(
                 f"Checking status of peer {self.redpanda.idx(peer)} "
-                f"from node {self.redpanda.idx(node)}")
+                f"from node {self.redpanda.idx(node)}, expected status: {expected_status}"
+            )
             peer_status = self._get_peer_status(admin, node, peer)
 
             if expected_status == ConnectionStatus.UNKNOWN:
-                assert peer_status is None, f"Expected no reponse from node {peer.name}"
-            if expected_status == ConnectionStatus.ALIVE:
+                results.append(peer_status is None)
+
+            elif expected_status == ConnectionStatus.ALIVE:
                 ms_since_last_status = peer_status["since_last_status"]
-                assert is_live(
-                    ms_since_last_status
-                ), f"Expected node {peer.name} to be alive, but since_last_status > max_delta: ms_since_last_status={ms_since_last_status}, tolerance={MAX_DELTA}"
+                is_peer_live = is_live(ms_since_last_status)
+                self.redpanda.logger.debug(
+                    f"Node {peer.name} expected status: alive, last status: {ms_since_last_status}, is live: {is_peer_live}"
+                )
+                results.append(is_peer_live)
+
             elif expected_status == ConnectionStatus.DOWN:
                 ms_since_last_status = peer_status["since_last_status"]
-                assert not is_live(
-                    ms_since_last_status
-                ), f"Expected node {peer.name} to be down, but ms_since_last_status <= max_delta: ms_since_last_status={ms_since_last_status}, tolerance={MAX_DELTA}"
+                is_not_live = not is_live(ms_since_last_status)
+                self.redpanda.logger.debug(
+                    f"Node {peer.name} expected status: down, last status: {ms_since_last_status}, is not live: {is_not_live}"
+                )
+        return all(results)
+
+    def check_cluster_status(self):
+        self.redpanda.wait_until(
+            self.do_check_cluster_status,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=
+            "Node status across cluster nodes did not reach the desired state")
 
     def _all_edges(self):
         for start_vertex, end_vertex in np.ndindex(self.shape):
@@ -129,9 +144,15 @@ class NodeStatusTest(RedpandaTest):
             test_context=ctx,
             extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL})
 
+    def _update_max_backoff(self):
+        self.redpanda.set_cluster_config(
+            {"node_status_reconnect_max_backoff_ms": 5000})
+
     @cluster(num_nodes=3)
     def test_all_nodes_up(self):
         status_graph = StatusGraph(self.redpanda)
+        status_graph.check_cluster_status()
+        self._update_max_backoff()
         status_graph.check_cluster_status()
 
     @cluster(num_nodes=3)

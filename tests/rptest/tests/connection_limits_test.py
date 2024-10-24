@@ -18,6 +18,7 @@ from rptest.services.metrics_check import MetricCheck
 from rptest.util import expect_exception
 
 REJECTED_METRIC = "vectorized_kafka_rpc_connections_rejected_total"
+ACTIVE_METRIC = "vectorized_kafka_rpc_active_connections"
 
 
 class ConnectionLimitsTest(RedpandaTest):
@@ -45,6 +46,16 @@ class ConnectionLimitsTest(RedpandaTest):
 
         for c in consumers:
             c.start()
+
+        def connection_count():
+            return self.redpanda.metric_sum(ACTIVE_METRIC)
+
+        # wait until the connection count reaches the expected number before starting the
+        # producer, since otherwise the consumers and the producer race and the producer
+        # may win in which case it would be one of the consumers that fail to connect
+        self.redpanda.wait_until(
+            lambda: connection_count() >= 6, 60, 1,
+            f"Did not get 6 connections, last count was {connection_count()}")
 
         producer = RpkProducer(self.test_context,
                                self.redpanda,

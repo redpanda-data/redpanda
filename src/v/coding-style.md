@@ -1,70 +1,70 @@
 # Redpanda Coding Style
 
-This document contains an incomplete description of the coding style used for
-redpanda. It provides rationale for the `.clang-format` file we use for automatic
-formatting, and it also includes rules that are not automated.
+The document covers style and convention not enforced by clang-format.
 
-## Declarators
+## Naming and source tree layout
 
-Pointer (`*`) and reference (`&`, `&&`) declarators stick to the type:
+Header files have the `.h` extension, source files use the `.cc` extension.
 
-```cpp
-void foo(std::string&, std::optional<int*>&&);
+Public header files (meaning other libraries can `#include` them directly), should go
+in an `includes` directory within the library they belong to. For example, a library named
+`foo` should have public header files within `src/v/foo/include/foo`.
 
-auto& x = some_var;
-auto* y = &some_var;
-```
-
-An exception is the array declarator, which appears after the variable name:
-
-```cpp
-int a[3] = {1, 2, 3};
-```
-
-Note that we should always prefer std::array over C-style array declarations.
-
-## Files
-
-Header files have the `.h` extension, source files use the `.cc` extension. Use
-`#pragma once` instead of an include guard.
-
-Test files go in the `tests` directory of the module they belong to. That is,
+Test files go in the `tests` directory of the library they belong to. That is,
 the tests for a feature named `foo` and located in `src/v/foo` will be located
 in `src/v/foo/tests`.
 
-## Whitespace
+Use `snake_case` naming convention by default for files and language identifiers.
 
-Use spaces only. Tabs are never used because they differently on each system.
+## Documentation
 
-An _indent_ is four spaces. A double indent is eight spaces, a half-indent is
-two spaces. A continuation indent is two spaces.
+The audience when writing comments should be for other members of your team, new members of the 
+team getting onboarded, and an oncaller who is trying to re-familiarize themselves with some code.
 
-## Naming
+Here are some generic tips for writing good technical comments:
 
-We follow the C++ and Boost naming conventions: class names, variables, and
-functions are `words_separated_by_whitespace`.
+* If writing something in-depth, start with a summary to prevent overloading someone new.
+* Write as close to the source as possible, and try not to duplicate comments, but reference the source.
+* If in doubt, write something concise and to the point. Don't add fluff for the sake of it.
+* Think about the maintainablility of your comments.
 
-Data members appear at the bottom of the class. Private data members are
-prefixed by an underscore:
+For the curious, here are some useful articles on this subject:
 
-```c++
-class my_class {
-public:
-    void foo() {
-        _a_member = 3;
-    }
-private:
-    int _a_member;
-};
-```
+* [Coding Horror - Code tells you how, comments tell you why](https://blog.codinghorror.com/code-tells-you-how-comments-tell-you-why/)
+* [Stack Overflow - Best Practices for Writing Code Comments](https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/)
 
-Think of the leading underscore as a shorthand for `this->`. The leading
-underscore is also useful in the context of IDEs, to bring up the private
-members of a class.
+### Modules
 
-Template parameters and concepts use `CamelCase`
+Modules themselves should have a `README.md` file explaining the purpose of the library,
+its API surface, and an architectural overview of that library (mentioning major classes),
+etc. This will aid people new to the library in understanding the lay of the land. When in doubt
+of if information should be placed in a class or in a README, prefer moving the documentation
+as close to the source as possible (inside the class documentation). We want to prioritize
+documentation not becoming stale - and also not cognitively overload the reader of the library 
+README.
 
-## Including header files
+### Classes
+
+All classes and structs should be documented. 
+
+Writing points when documenting a given class:
+* Lifecycle of the class
+* Place within the larger library
+* How to use it correctly (concurrency, proper setup, example usage, etc).
+* Broad strokes of implmentation details
+* Which cores it exists on (if a sharded service)
+* If it is a cluster/node/shard view of information
+
+For a struct, it is useful to document how/where it is used, as well as the meaning of it's members.
+
+### Functions
+
+Non trivial free and class functions should be documented. Trivial is ultimately
+a judgement call, but a rule of thumb is that getter methods (like `iobuf value() const { return _value; }`)
+or other common lifecycle methods like `start` and `stop` could be considered trivial. It's highly
+recommended to error on the side of having something rather than nothing when documenting functions however.
+
+## Includes
 
 In any file, to include a header file (one in the `src/v` directory), use an
 absolute path with `""` like this:
@@ -73,130 +73,38 @@ absolute path with `""` like this:
 #include "utils/vint.h"
 ```
 
-`v` header files are the first block of includes. Then come header files for 
-`seastar`, and other libraries. The last block is comprised of standard
-library headers:
+Header files included from dependencies should use system path convention:
 
 ```c++
-#include "utils/vint.h"
-
-#include <seastar/core/future.hh>
-#include <seastar/core/sstring.hh>
-
-#include <boost/algorithm/string/join.hpp>
-
-#include <map>
-#include <vector>
+#include <boost/thing.h>
 ```
 
-This helps find missing includes in our headers.
+Use `#pragma once` instead of an include guard.
 
-## Braced blocks
+## Access Specifiers
 
-All nested scopes are braced, even when the language allows omitting the braces
-(such as an if-statement), this makes patches simpler and is more consistent.
-The opening brace is merged with the line that opens the scope (class
-definition, function definition, if statement, etc.) and the body is indented.
+### Ordering
 
 ```c++
-void a_function() {
-    if (some condition) {
-        stmt;
-    } else {
-        stmt;
-    }
-}
+class type {
+public:
+protected:
+private:
+};
 ```
 
-An exception is namespaces -- the body is _not_ indented, to prevent files that are almost 100% whitespace left margin.
+### Duplicate sections
 
-When making a change, if you need to insert an indentation level, you can temporarily break the rules by inserting a half-indent, so that the patch is easily reviewable:
+It's okay to use multiple instances of access specifiers to create logical groupings where needed.
 
 ```c++
-void a_function() {
-  while (something) {   // new line - half indent
-    if (some condition) {
-        stmt;
-    } else {
-        stmt;
-    }
-  }                      // new line
-}
+class type {
+public:
+   // boiler plate
+
+public:
+  // logical grouping of APIs
+
+...
+};
 ```
-
-A follow-up patch can restore the indents without any functional changes.
-
-## Function parameters
-
-Avoid output parameters; use return values instead.  In/out parameters are tricky, but in some cases they are relatively standard, such as serialization/deserialization.
-
-If a function accepts a lambda or an `std::function`, make it the last argument, so that it can be easily provided inline:
-
-```c++ 
-template <typename Func>
-void function_accepting_a_lambda(int a, int b, Func func);
-
-int f() {
-    return function_accepting_a_lambda(2, 3, [] (int x, int y) {
-        return x + y;
-    });
-}
-```
-
-## Complex return types
-
-If a function returns a complicated return type, put its return type on a separate line, otherwise it becomes hard to see where the return type ends and where the function name begins:
-
-```c++
-template <typename T1, T2>
-template <typename T3, T4>
-std::vector<typename a_struct<T1, T2>::some_nested_class<T3, T4>>  // I'm the return type
-a_struct<T1, T2>::a_function(T3 a, T4 b) {                         // And I'm the function name
-    // ...
-}
-```
-
-## Whitespace around operators
-
-Whitespace around operators should match their precedence: high precedence = no spaces, low precedency = add spaces:
-
-```c++
-     return *a + *b;  // good
-     return * a+* b;  // bad
-```
-
-Parentheses can be used to make the expression clearer, but spaces should still
-be used for readability.
-
-`if`, `while`, `return` (and `template`) are not function calls, so they get a space after the keyword.
-
-## Long lines
-
-If a line becomes excessively long (>80 characters?), or is just complicated,
-break it into two or more lines.  The second (and succeeding lines) are
-_continuation lines_, and have a half indent:
-
-```c++
-    if ((some_condition && some_other_condition)
-      || (more complicated stuff here...)   // continuation line, double indent
-      || (even more complicated stuff)) {   // another continuation line
-        do_something();  // back to single indent
-    }
-```
-
-Of course, long lines or complex conditions may indicate that refactoring is in order.
-
-## Generic lambdas and types
-
-Generic lambdas (`[] (auto param)`) are discouraged where the type is known. Generic
-lambdas reduce the compiler's and other tools' ability to reason about the code.
-In case the actual type of `param` doesn't match the programmers expectations,
-the compiler will only detect an error in the lambda body, or perhaps
-even lower down the stack if more generic functions are called. In the case of an
-IDE, most of its functionality is disabled in a generic lambda, since it can't
-assume anything about that parameter.
-
-Of course, when there is a need to support multiple types, genericity is the correct
-tool. Even then, type parameters should be constrained with concepts, in order to
-catch type mismatches early rather than deep in the instantiation chain.
-

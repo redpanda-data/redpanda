@@ -1,5 +1,3 @@
-find_program(KAFKA_CODEGEN_VENV "kafka-codegen-venv")
-
 set(schemata
   api_versions_request.json
   api_versions_response.json
@@ -23,6 +21,8 @@ set(schemata
   find_coordinator_response.json
   list_offset_request.json
   list_offset_response.json
+  list_transactions_request.json
+  list_transactions_response.json
   alter_configs_request.json
   alter_configs_response.json
   list_groups_request.json
@@ -45,6 +45,10 @@ set(schemata
   describe_acls_response.json
   describe_log_dirs_request.json
   describe_log_dirs_response.json
+  describe_producers_request.json
+  describe_producers_response.json
+  describe_transactions_request.json
+  describe_transactions_response.json
   create_acls_request.json
   create_acls_response.json
   delete_acls_request.json
@@ -65,7 +69,19 @@ set(schemata
   create_partitions_response.json
   add_offsets_to_txn_request.json
   add_offsets_to_txn_response.json
+  offset_delete_request.json
+  offset_delete_response.json
+  delete_records_request.json
+  delete_records_response.json
   offset_for_leader_epoch_request.json
-  offset_for_leader_epoch_response.json)
+  offset_for_leader_epoch_response.json
+  alter_partition_reassignments_request.json
+  alter_partition_reassignments_response.json
+  list_partition_reassignments_request.json
+  list_partition_reassignments_response.json
+  alter_client_quotas_request.json
+  alter_client_quotas_response.json
+  describe_client_quotas_request.json
+  describe_client_quotas_response.json)
 
 set(schemata ${schemata} PARENT_SCOPE)

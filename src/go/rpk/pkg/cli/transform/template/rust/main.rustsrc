@@ -1,0 +1,15 @@
+use redpanda_transform_sdk::*;
+use std::error::Error;
+
+fn main() {
+    // Register your transform function.
+    // This is a good place to perform other setup too.
+    on_record_written(my_transform);
+}
+
+// my_transform is where you read the record that was written, and then you can
+// return new records that will be written to the output topic
+fn my_transform(event: WriteEvent, writer: &mut RecordWriter) -> Result<(), Box<dyn Error>> {
+    writer.write(event.record)?;
+    Ok(())
+}

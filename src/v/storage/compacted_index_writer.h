@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
@@ -65,6 +66,7 @@ public:
 
         virtual ss::future<> index(
           model::record_batch_type,
+          bool is_control_batch,
           const iobuf& key, // default format in record batch
           model::offset base_offset,
           int32_t offset_delta)
@@ -72,6 +74,7 @@ public:
 
         virtual ss::future<> index(
           model::record_batch_type,
+          bool is_control_batch,
           bytes&& key, // default format in record batch
           model::offset base_offset,
           int32_t offset_delta)
@@ -99,10 +102,18 @@ public:
     // accepts a compaction_key which is already prefixed with batch_type
     ss::future<> index(const compaction_key& b, model::offset, int32_t);
 
-    ss::future<>
-    index(model::record_batch_type, const iobuf& key, model::offset, int32_t);
-    ss::future<>
-    index(model::record_batch_type, bytes&&, model::offset, int32_t);
+    ss::future<> index(
+      model::record_batch_type,
+      bool is_control_batch,
+      const iobuf& key,
+      model::offset,
+      int32_t);
+    ss::future<> index(
+      model::record_batch_type,
+      bool is_control_batch,
+      bytes&&,
+      model::offset,
+      int32_t);
 
     ss::future<> append(compacted_index::entry);
 
@@ -136,10 +147,11 @@ compacted_index_writer::release() && {
 }
 inline ss::future<> compacted_index_writer::index(
   model::record_batch_type batch_type,
+  bool is_control_batch,
   const iobuf& b,
   model::offset base_offset,
   int32_t delta) {
-    return _impl->index(batch_type, b, base_offset, delta);
+    return _impl->index(batch_type, is_control_batch, b, base_offset, delta);
 }
 inline ss::future<> compacted_index_writer::index(
   const compaction_key& b, model::offset base_offset, int32_t delta) {
@@ -147,10 +159,12 @@ inline ss::future<> compacted_index_writer::index(
 }
 inline ss::future<> compacted_index_writer::index(
   model::record_batch_type batch_type,
+  bool is_control_batch,
   bytes&& b,
   model::offset base_offset,
   int32_t delta) {
-    return _impl->index(batch_type, std::move(b), base_offset, delta);
+    return _impl->index(
+      batch_type, is_control_batch, std::move(b), base_offset, delta);
 }
 inline ss::future<> compacted_index_writer::truncate(model::offset o) {
     return _impl->truncate(o);
@@ -163,8 +177,8 @@ inline ss::future<> compacted_index_writer::close() { return _impl->close(); }
 compacted_index_writer make_file_backed_compacted_index(
   ss::sstring filename,
   ss::io_priority_class p,
-  debug_sanitize_files debug,
   bool truncate,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> sanitizer_config);
 
 } // namespace storage

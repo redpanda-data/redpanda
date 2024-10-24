@@ -1,3 +1,4 @@
+---
 # Copyright 2020 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
@@ -6,194 +7,33 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-
-name: Go
+name: rpk
 on:
   push:
-    tags:
-    - 'v2**'
-    branches:
-      - '*'
+    branches: [dev]
+    paths:
+      - 'src/go/rpk/**'
+      - '.github/workflows/rpk-build.yml'
   pull_request:
-    branches:
-      - main
-      - dev
-
+    paths:
+      - 'src/go/rpk/**'
+      - '.github/workflows/rpk-build.yml'
 jobs:
-  build:
-    name: Test and Build
+  test:
+    name: Test rpk
     strategy:
       matrix:
         os: [linux, darwin, windows]
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
-
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.17.8
-      id: go
-
-    - name: Set up Node
-      uses: actions/setup-node@v2-beta
-      with:
-        node-version: '12.16.1'
-
-    - name: Test
-      working-directory: src/go/rpk/
-      run: go test -v ./...
-
-    - name: Build
-      working-directory: src/go/rpk/
-      run: |
-        pkg='vectorized/pkg/cli/cmd/version'
-        tag=$(echo ${{ github.ref }} | sed 's;refs/tags/;;g')
-
-        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} ./build.sh $tag ${{ github.sha }}
-
-    - name: Package
-      if: ${{ matrix.os != 'windows'}}
-      working-directory: src/go/rpk/
-      run: |
-        zip -j rpk-${{ matrix.os }}-${{ matrix.arch }}.zip ./${{ matrix.os }}-${{ matrix.arch }}/rpk
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v2
-      if: startsWith(github.ref, 'refs/tags/v')
-      with:
-        name: rpk-archives
-        path: |
-          src/go/rpk/rpk-*.zip
-
-  sign-darwin:
-    name: Sign and notarize the darwin release_name
-    needs: create-release
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Download zip
-        uses: actions/download-artifact@v2
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          name: rpk-archives
-          path: zip/
-
-      - name: Unzip darwin build
-        working-directory: zip/
-        run: |
-          unzip rpk-darwin-${{ matrix.arch }}.zip
-          rm rpk-darwin-${{ matrix.arch }}.zip
-
-      - name: Import Code-Signing Certificates
-        uses: Apple-Actions/import-codesign-certs@v1
-        with:
-          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
-          p12-password: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
-
-      - name: Install gon for code signing and app notarization
-        run: |
-          curl -LO https://github.com/mitchellh/gon/releases/download/v0.2.5/gon_macos.zip
-          unzip gon_macos.zip
-          rm gon_macos.zip
-
-      - name: Sign the mac binaries with Gon
-        working-directory: zip/
-        env:
-          AC_USERNAME: ${{ secrets.AC_USERNAME }}
-          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
-        run: |
-          ../gon -log-level=info ../src/go/rpk/gon_${{ matrix.arch }}.json
-
-      - name: Upload signed Package
-        uses: actions/upload-artifact@v2
-        with:
-          name: rpk-archives
-          path: zip/rpk-darwin-${{ matrix.arch }}.zip
-    outputs:
-      upload_url: ${{ needs.create-release.outputs.upload_url }}
-
-  notify-sign-failure:
-    runs-on: ubuntu-latest
-    if: ${{ failure() }}
-    needs: [sign-darwin]
-    steps:
-      - name: Notify sign failed
-        id: notify_sign_failure
-        uses: slackapi/slack-github-action@v1.21.0
-        with:
-          channel-id: ${{ secrets.INTERNAL_RELEASES_SLACK_CHANNEL }}
-          slack-message: "ERROR: signing darwin binaries for `${{ github.ref_name }}` failed in ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
-
-  create-release:
-    name: Create release
-    needs: [build]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-    - name: Create rpk release
-      id: create_rpk_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: ${{ github.ref }}
-        draft: true
-        prerelease: false
-    outputs:
-      upload_url: ${{ steps.create_rpk_release.outputs.upload_url }}
-
-  upload-release-artifacts-linux:
-    name: Upload linux binaries
-    needs: [create-release]
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download compressed rpk artifacts
-      uses: actions/download-artifact@v2
-
-    - name: Upload rpk artifacts to release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: rpk-archives/rpk-linux-${{ matrix.arch }}.zip
-        asset_name: rpk-linux-${{ matrix.arch }}.zip
-        asset_content_type: application/zip
-
-  upload-release-artifacts-darwin:
-    name: Upload darwin binaries
-    needs: [sign-darwin]
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download compressed rpk artifacts
-      uses: actions/download-artifact@v2
-
-    - name: Upload rpk artifacts to release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.sign-darwin.outputs.upload_url }}
-        asset_path: rpk-archives/rpk-darwin-${{ matrix.arch }}.zip
-        asset_name: rpk-darwin-${{ matrix.arch }}.zip
-        asset_content_type: application/zip
+          go-version: stable
+          cache-dependency-path: 'src/go/rpk/go.sum'
+      - name: Run tests
+        working-directory: src/go/rpk/
+        run: go run gotest.tools/gotestsum@v1.11.0 -- -cover ./...

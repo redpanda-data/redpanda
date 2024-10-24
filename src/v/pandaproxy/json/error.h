@@ -19,6 +19,7 @@ namespace pandaproxy::json {
 enum class error_code : uint16_t {
     // 0 is success
     invalid_json = 1,
+    unable_to_serialize = 2,
 };
 
 std::error_code make_error_code(error_code);

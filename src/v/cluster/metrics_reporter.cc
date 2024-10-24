@@ -12,8 +12,10 @@
 #include "cluster/metrics_reporter.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cluster/config_frontend.h"
-#include "cluster/fwd.h"
+#include "cluster/controller_stm.h"
+#include "cluster/feature_manager.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -21,6 +23,8 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/validators.h"
+#include "features/enterprise_features.h"
 #include "hashing/secure.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -28,16 +32,20 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "net/tls.h"
-#include "net/unresolved_address.h"
+#include "net/tls_certificate_probe.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
+#include "security/role_store.h"
 #include "ssx/sformat.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/net/tls.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/container/node_hash_map.h>
 #include <boost/lexical_cast.hpp>
 #include <boost/random/seed_seq.hpp>
@@ -98,16 +106,27 @@ static ss::logger logger("metrics-reporter");
 
 metrics_reporter::metrics_reporter(
   consensus_ptr raft0,
+  ss::sharded<controller_stm>& controller_stm,
   ss::sharded<members_table>& members_table,
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<security::role_store>& role_store,
+  ss::sharded<plugin_table>* pt,
+  ss::sharded<feature_manager>* fm,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
+  , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
+  , _controller_stm(controller_stm)
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
   , _config_frontend(config_frontend)
+  , _feature_table(feature_table)
+  , _role_store(role_store)
+  , _plugin_table(pt)
+  , _feature_manager(fm)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -117,12 +136,17 @@ ss::future<> metrics_reporter::start() {
       config::shard_local_cfg().metrics_reporter_url());
     _tick_timer.set_callback([this] { report_metrics(); });
 
-    const auto initial_delay = 10s;
+    _last_success = model::timeout_clock::now();
 
-    // A shorter initial wait than the tick interval, so that we
-    // give the cluster state a chance to stabilize, but also send
-    // a report reasonably promptly.
-    _tick_timer.arm(initial_delay);
+    // Immediately enter the report loop, as on a fresh cluster this will
+    // be what initializes the cluster UUId.  It will not actually transmit
+    // a report on the first call, because the interval has not yet elapsed
+    // since the _last_success we just set to now().
+    // It is important to do this promptly and not wait here, because the
+    // controller cannot generate snapshots until the cluster UUID
+    // is initialized.
+    report_metrics();
+
     co_return;
 }
 
@@ -146,29 +170,12 @@ void metrics_reporter::report_metrics() {
     });
 }
 
-http::client::request_header
-metrics_reporter::make_header(const iobuf& buffer) {
-    http::client::request_header header;
-    header.method(boost::beast::http::verb::post);
-    header.target(std::string(_address.path));
-    header.insert(
-      boost::beast::http::field::content_length,
-      boost::beast::to_static_string(buffer.size_bytes()));
-    header.insert(
-      boost::beast::http::field::host,
-      fmt::format("{}:{}", _address.host, _address.port));
-
-    header.insert(boost::beast::http::field::content_type, "application/json");
-
-    return header;
-}
-
 ss::future<result<metrics_reporter::metrics_snapshot>>
 metrics_reporter::build_metrics_snapshot() {
     metrics_snapshot snapshot;
 
-    snapshot.cluster_uuid = _cluster_uuid;
-    snapshot.cluster_creation_epoch = _creation_timestamp.value();
+    snapshot.cluster_uuid = _cluster_info.uuid;
+    snapshot.cluster_creation_epoch = _cluster_info.creation_timestamp.value();
 
     absl::node_hash_map<model::node_id, node_metrics> metrics_map;
 
@@ -183,41 +190,33 @@ metrics_reporter::build_metrics_snapshot() {
     if (!report) {
         co_return result<metrics_snapshot>(report.error());
     }
-    metrics_map.reserve(report.value().node_states.size());
-
-    for (auto& ns : report.value().node_states) {
-        auto [it, _] = metrics_map.emplace(ns.id, node_metrics{.id = ns.id});
-        auto& metrics = it->second;
-        metrics.is_alive = (bool)ns.is_alive;
-
-        auto broker = _members_table.local().get_broker(ns.id);
-        if (!broker) {
-            continue;
-        }
-
-        metrics.cpu_count = broker.value()->properties().cores;
-    }
+    metrics_map.reserve(report.value().node_reports.size());
 
     for (auto& report : report.value().node_reports) {
-        auto it = metrics_map.find(report.id);
-        if (it == metrics_map.end()) {
-            auto [eit, _] = metrics_map.emplace(
-              report.id, node_metrics{.id = report.id});
-            it = eit;
-        }
+        auto [it, _] = metrics_map.emplace(
+          report->id, node_metrics{.id = report->id});
         auto& metrics = it->second;
 
-        metrics.version = report.local_state.redpanda_version;
-        metrics.disks.reserve(report.local_state.disks.size());
-        std::transform(
-          report.local_state.disks.begin(),
-          report.local_state.disks.end(),
-          std::back_inserter(metrics.disks),
-          [](const storage::disk& nds) {
-              return node_disk_space{.free = nds.free, .total = nds.total};
-          });
+        auto nm = _members_table.local().get_node_metadata_ref(report->id);
+        if (!nm) {
+            continue;
+        }
+        metrics.cpu_count = nm->get().broker.properties().cores;
+        metrics.is_alive = _health_monitor.local().is_alive(report->id)
+                           == cluster::alive::yes;
+        metrics.version = report->local_state.redpanda_version;
+        metrics.logical_version = report->local_state.logical_version;
+        metrics.disks.reserve(report->local_state.shared_disk() ? 1 : 2);
+        auto transform_disk = [](const storage::disk& d) -> node_disk_space {
+            return node_disk_space{.free = d.free, .total = d.total};
+        };
+        metrics.disks.push_back(transform_disk(report->local_state.data_disk));
+        if (!report->local_state.shared_disk()) {
+            metrics.disks.push_back(
+              transform_disk(*(report->local_state.cache_disk)));
+        }
 
-        metrics.uptime_ms = report.local_state.uptime / 1ms;
+        metrics.uptime_ms = report->local_state.uptime / 1ms;
     }
     auto& topics = _topics.local().topics_map();
     snapshot.topic_count = 0;
@@ -226,8 +225,7 @@ metrics_reporter::build_metrics_snapshot() {
         // do not include internal topics
         if (
           tp_ns.ns == model::redpanda_ns
-          || tp_ns.ns == model::kafka_internal_namespace
-          || !md.is_topic_replicable()) {
+          || tp_ns.ns == model::kafka_internal_namespace) {
             continue;
         }
 
@@ -240,12 +238,65 @@ metrics_reporter::build_metrics_snapshot() {
         snapshot.nodes.push_back(std::move(m));
     }
 
+    snapshot.active_logical_version
+      = _feature_table.local().get_active_version();
+    snapshot.original_logical_version
+      = _feature_table.local().get_original_version();
+
+    auto feature_report = co_await _feature_manager->invoke_on(
+      cluster::feature_manager::backend_shard,
+      [](const cluster::feature_manager& fm) {
+          return fm.report_enterprise_features();
+      });
+
+    snapshot.has_kafka_gssapi = feature_report.test(
+      features::license_required_feature::gssapi);
+
+    snapshot.has_oidc = feature_report.test(
+      features::license_required_feature::oidc);
+
+    snapshot.rbac_role_count = _role_store.local().size();
+
+    snapshot.data_transforms_count = _plugin_table->local().size();
+
+    auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
+    if (env_value) {
+        snapshot.redpanda_environment = ss::sstring(env_value).substr(
+          0, metrics_snapshot::max_size_for_rp_env);
+    }
+
+    auto license = _feature_table.local().get_license();
+    if (license.has_value()) {
+        snapshot.id_hash = license->checksum;
+    }
+
+    snapshot.has_valid_license = license.has_value()
+                                 && !license.value().is_expired();
+    snapshot.has_enterprise_features = feature_report.any();
+
     co_return snapshot;
 }
 
 ss::future<> metrics_reporter::try_initialize_cluster_info() {
     // already initialized, do nothing
-    if (_cluster_uuid != "") {
+    if (_cluster_info.is_initialized()) {
+        co_return;
+    }
+
+    // Wait until the controller log has seen enough batches to generate
+    // a UUID.  No timeout: we cannot generate any reports until this
+    // happens.
+    if (_raft0->committed_offset() < model::offset{2}) {
+        vlog(clusterlog.info, "Waiting to initialize cluster metrics ID...");
+        co_await _controller_stm.local().wait(
+          model::offset{2},
+          model::timeout_clock::time_point::max(),
+          std::ref(_as.local()));
+    }
+
+    if (_raft0->start_offset() > model::offset{0}) {
+        // Controller log already snapshotted, wait until cluster info gets
+        // initialized from the snapshot.
         co_return;
     }
 
@@ -255,10 +306,6 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     auto batches = co_await model::consume_reader_to_memory(
       std::move(reader), model::no_timeout);
-    /**
-     * In order to seed the UUID generator we use a hash over first two batches
-     * timestamps and initial raft-0 configuration
-     */
     if (batches.size() < 2) {
         co_return;
     }
@@ -268,7 +315,7 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     auto data_bytes = iobuf_to_bytes(first_cfg.data());
     hash_sha256 sha256;
     sha256.update(data_bytes);
-    _creation_timestamp = first_cfg.header().first_timestamp;
+    _cluster_info.creation_timestamp = first_cfg.header().first_timestamp;
     // use timestamps of first two batches in raft-0 log.
     for (int i = 0; i < 2; ++i) {
         sha256.update(iobuf_to_bytes(
@@ -282,7 +329,9 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
-    _cluster_uuid = fmt::format("{}", uuid_gen());
+    _cluster_info.uuid = fmt::format("{}", uuid_gen());
+    vlog(
+      clusterlog.info, "Generated cluster metrics ID {}", _cluster_info.uuid);
 }
 
 /**
@@ -300,18 +349,19 @@ ss::future<> metrics_reporter::propagate_cluster_id() {
         co_return;
     }
 
-    if (_cluster_uuid == "") {
+    if (_cluster_info.uuid == "") {
         co_return;
     }
 
-    auto result = co_await _config_frontend.local().do_patch(
-      config_update_request{.upsert = {{"cluster_id", _cluster_uuid}}},
+    auto result = co_await _config_frontend.local().patch(
+      config_update_request{.upsert = {{"cluster_id", _cluster_info.uuid}}},
       model::timeout_clock::now() + 5s);
     if (result.errc) {
         vlog(
           clusterlog.warn, "Failed to initialize cluster_id: {}", result.errc);
     } else {
-        vlog(clusterlog.info, "Initialized cluster_id to {}", _cluster_uuid);
+        vlog(
+          clusterlog.info, "Initialized cluster_id to {}", _cluster_info.uuid);
     }
 }
 
@@ -336,6 +386,8 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     if (_address.protocol == "https") {
         ss::tls::credentials_builder builder;
         builder.set_client_auth(ss::tls::client_auth::NONE);
+        builder.set_minimum_tls_version(
+          config::from_config(config::shard_local_cfg().tls_min_version()));
         auto ca_file = co_await net::find_ca_file();
         if (ca_file) {
             vlog(
@@ -350,24 +402,53 @@ ss::future<http::client> metrics_reporter::make_http_client() {
         }
 
         client_configuration.credentials
-          = co_await builder.build_reloadable_certificate_credentials();
+          = co_await net::build_reloadable_credentials_with_probe<
+            ss::tls::certificate_credentials>(
+            std::move(builder), "metrics_reporter", "httpclient");
         client_configuration.tls_sni_hostname = _address.host;
     }
     co_return http::client(client_configuration, _as.local());
 }
 
+ss::future<>
+metrics_reporter::do_send_metrics(http::client& client, iobuf body) {
+    auto timeout = config::shard_local_cfg().metrics_reporter_tick_interval();
+    auto res = co_await client.get_connected(timeout, _logger);
+    // skip sending metrics, unable to connect
+    if (res != http::reconnect_result_t::connected) {
+        vlog(
+          _logger.trace, "unable to send metrics report, connection timeout");
+        co_return;
+    }
+    auto resp_stream = co_await client.post(
+      _address.path, std::move(body), http::content_type::json, timeout);
+    co_await resp_stream->prefetch_headers();
+}
+
 ss::future<> metrics_reporter::do_report_metrics() {
+    // try initializing cluster info, if it is already present this operation
+    // does nothing.
+    // do this on every node to allow controller snapshotting to proceed.
+    co_await try_initialize_cluster_info();
+
+    // Update cluster_id in configuration, if not already set.  Wait until
+    // we become leader, or it gets written by some other node.
+    if (_cluster_info.is_initialized()) {
+        while (!_as.local().abort_requested()
+               && !config::shard_local_cfg().cluster_id().has_value()) {
+            if (_raft0->is_elected_leader()) {
+                co_await propagate_cluster_id();
+            } else {
+                co_await ss::sleep(
+                  config::shard_local_cfg().raft_heartbeat_interval_ms());
+            }
+        }
+    }
+
     // skip reporting if current node is not raft0 leader
     if (!_raft0->is_elected_leader()) {
         co_return;
     }
-
-    // try initializing cluster info, if it is already present this operation
-    // does nothig
-    co_await try_initialize_cluster_info();
-
-    // Update cluster_id in configuration, if not already set.
-    co_await propagate_cluster_id();
 
     // report interval has not elapsed
     if (
@@ -384,7 +465,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
     }
 
     // if not initialized, wait until next tick
-    if (_cluster_uuid == "") {
+    if (!_cluster_info.is_initialized()) {
         co_return;
     }
 
@@ -398,25 +479,11 @@ ss::future<> metrics_reporter::do_report_metrics() {
         co_return;
     }
     auto out = serialize_metrics_snapshot(snapshot.value());
-    auto header = make_header(out);
-    auto body = make_iobuf_input_stream(std::move(out));
     try {
-        // prepare http client
-        auto client = co_await make_http_client();
-        auto timeout
-          = config::shard_local_cfg().metrics_reporter_tick_interval();
-        auto res = co_await client.get_connected(timeout, _logger);
-        // skip sending metrics, unable to connect
-        if (res != http::reconnect_result_t::connected) {
-            vlog(
-              _logger.trace,
-              "unable to send metrics report, connection timeout");
-            co_return;
-        }
-        auto resp_stream = co_await client.request(
-          std::move(header), body, timeout);
-        co_await resp_stream->prefetch_headers();
-        co_await resp_stream->shutdown();
+        co_await http::with_client(
+          co_await make_http_client(), [this, &out](http::client& client) {
+              return do_send_metrics(client, std::move(out));
+          });
         _last_success = ss::lowres_clock::now();
     } catch (...) {
         vlog(
@@ -424,7 +491,6 @@ ss::future<> metrics_reporter::do_report_metrics() {
           "exception thrown while reporting metrics - {}",
           std::current_exception());
     }
-    co_await body.close();
 }
 
 } // namespace cluster
@@ -445,12 +511,45 @@ void rjson_serialize(
     w.Key("partition_count");
     w.Int(snapshot.partition_count);
 
+    w.Key("active_logical_version");
+    w.Int(snapshot.active_logical_version);
+
+    w.Key("original_logical_version");
+    w.Int(snapshot.original_logical_version);
+
     w.Key("nodes");
     w.StartArray();
     for (const auto& m : snapshot.nodes) {
         rjson_serialize(w, m);
     }
     w.EndArray();
+    w.Key("has_kafka_gssapi");
+    w.Bool(snapshot.has_kafka_gssapi);
+
+    w.Key("has_oidc");
+    w.Bool(snapshot.has_oidc);
+
+    w.Key("rbac_role_count");
+    w.Int(snapshot.rbac_role_count);
+
+    w.Key("data_transforms_count");
+    w.Uint(snapshot.data_transforms_count);
+
+    w.Key("config");
+    config::shard_local_cfg().to_json_for_metrics(w);
+
+    w.Key("redpanda_environment");
+    w.String(snapshot.redpanda_environment);
+
+    w.Key("id_hash");
+    w.String(snapshot.id_hash);
+
+    w.Key("has_valid_license");
+    w.Bool(snapshot.has_valid_license);
+
+    w.Key("has_enterprise_features");
+    w.Bool(snapshot.has_enterprise_features);
+
     w.EndObject();
 }
 
@@ -475,6 +574,8 @@ void rjson_serialize(
     w.Uint(nm.cpu_count);
     w.Key("version");
     w.String(nm.version);
+    w.Key("logical_version");
+    w.Int(nm.logical_version);
     w.Key("uptime_ms");
     w.Uint64(nm.uptime_ms);
     w.Key("is_alive");

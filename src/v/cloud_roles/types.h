@@ -10,8 +10,8 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
-#include "seastarx.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/metrics.hh>
@@ -23,10 +23,12 @@
 
 namespace cloud_roles {
 
-static constexpr auto retryable_system_error_codes = std::to_array(
+inline constexpr auto retryable_system_error_codes = std::to_array(
   {ECONNREFUSED, ENETUNREACH, ETIMEDOUT, ECONNRESET, EPIPE});
 
-static constexpr auto retryable_http_status = std::to_array({
+bool is_retryable(const std::system_error& ec);
+
+inline constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::request_timeout,
   boost::beast::http::status::gateway_timeout,
   boost::beast::http::status::bad_gateway,
@@ -35,14 +37,25 @@ static constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::network_connect_timeout_error,
 });
 
+bool is_retryable(boost::beast::http::status status);
+
 enum class api_request_error_kind { failed_abort, failed_retryable };
 
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind);
 
 struct api_request_error {
+    boost::beast::http::status status{boost::beast::http::status::ok};
     ss::sstring reason;
     api_request_error_kind error_kind;
 };
+
+api_request_error make_abort_error(const std::exception& ex);
+api_request_error
+make_abort_error(ss::sstring reason, boost::beast::http::status status);
+
+api_request_error make_retryable_error(const std::exception& ex);
+api_request_error
+make_retryable_error(ss::sstring reason, boost::beast::http::status status);
 
 std::ostream&
 operator<<(std::ostream& os, const api_request_error& request_error);
@@ -75,6 +88,7 @@ using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
 using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
 using timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
+using storage_account = named_type<ss::sstring, struct storage_account_tag>;
 
 struct aws_credentials {
     public_key_str access_key_id;
@@ -83,11 +97,33 @@ struct aws_credentials {
     aws_region_name region;
 };
 
+struct abs_credentials {
+    storage_account storage_account;
+    private_key_str shared_key;
+};
+
+// AKS federated OpenID Credentials uses Azure's managed identities to retrieve
+// a Oauth authorization token
+struct abs_oauth_credentials {
+    oauth_token_str oauth_token;
+};
+
+std::ostream& operator<<(std::ostream& os, const abs_oauth_credentials& ac);
+
+std::ostream& operator<<(std::ostream& os, const abs_credentials& ac);
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
-using credentials = std::variant<aws_credentials, gcp_credentials>;
+using credentials = std::variant<
+  aws_credentials,
+  gcp_credentials,
+  abs_credentials,
+  abs_oauth_credentials>;
 
-std::ostream& operator<<(std::ostream& os, const credentials& c);
+// tmp trick to ensure that we are not calling into infinite recursion if
+// there is a new credential but no operator<<
+template<std::same_as<credentials> Cred>
+std::ostream& operator<<(std::ostream& os, const Cred& c);
 
 using api_response_parse_result = std::variant<
   malformed_api_response_error,
@@ -97,5 +133,16 @@ using api_response_parse_result = std::variant<
 
 using credentials_update_cb_t
   = ss::noncopyable_function<ss::future<>(credentials)>;
+
+// Azure expects every request to Blob Storage to contain an
+// 'x-ms-version' header that specifies the API version to use.
+// This version is hardcoded in Redpanda to ensure that an API
+// version that we've tested with is used in field.
+// https://learn.microsoft.com/en-us/rest/api/storageservices/version-2023-01-03
+
+// Update this version to use a different storage API version, for example when
+// adding support to a new functionality released after the current version
+// 2023-01-03.
+inline constexpr auto azure_storage_api_version = "2023-01-03";
 
 } // namespace cloud_roles

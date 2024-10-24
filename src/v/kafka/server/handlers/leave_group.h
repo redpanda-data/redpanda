@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using leave_group_handler = single_stage_handler<leave_group_api, 0, 3>;
+using leave_group_handler = single_stage_handler<leave_group_api, 0, 4>;
 
 }

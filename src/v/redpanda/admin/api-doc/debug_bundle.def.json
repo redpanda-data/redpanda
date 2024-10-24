@@ -1,0 +1,71 @@
+"bundle_start_response": {
+  "type": "object",
+  "required": [
+    "job_id"
+  ],
+  "properties": {
+    "job_id": {
+      "description": "The Job UUID associated with the debug bundle process",
+      "type": "string"
+    }
+  }
+},
+"get_bundle_status": {
+  "type": "object",
+  "required": [
+    "job_id",
+    "status",
+    "created"
+  ],
+  "properties": {
+    "job_id": {
+      "description": "The Job UUID associated with the debug bundle process",
+      "type": "string"
+    },
+    "status": {
+      "description": "The status of the job",
+      "type": "string"
+    },
+    "created": {
+      "description": "When the job was started, in milliseconds since epoch",
+      "type": "int"
+    },
+    "filename": {
+      "description": "Path in API to get the file",
+      "type": "string"
+    },
+    "file_size": {
+      "description": "Size of the file in bytes",
+      "type": "int"
+    },
+    "stdout": {
+      "description": "Only filled in once the process completes.  Content of stdout from rpk",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stderr": {
+      "description": "Only filled in once the process completes.  Content of stderr from rpk",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+},
+"error_body": {
+  "type": "object",
+  "required": [
+    "code",
+    "message"
+  ],
+  "properties": {
+    "code": {
+      "type": "int"
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}

@@ -15,7 +15,7 @@
 
 namespace json {
 
-inline void read_value(json::Value const& rd, storage::disk& obj) {
+inline void read_value(const json::Value& rd, storage::disk& obj) {
     read_member(rd, "path", obj.path);
     read_member(rd, "free", obj.free);
     read_member(rd, "total", obj.total);

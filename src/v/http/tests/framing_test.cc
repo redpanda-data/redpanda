@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/seastarx.h"
 #include "bytes/details/io_byte_iterator.h"
 #include "bytes/details/io_fragment.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "http/chunk_encoding.h"
-#include "seastarx.h"
 
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -78,11 +78,10 @@ public:
         for (size_t fragment_size : fragmentation_hint) {
             ss::temporary_buffer<char> buf(fragment_size);
             std::generate_n(buf.get_write(), fragment_size, std::ref(*this));
-            auto fragm = new details::io_fragment(
-              std::move(buf), details::io_fragment::full{});
+            auto fragm = std::make_unique<details::io_fragment>(std::move(buf));
             // Make sure that fragmentation is not reduced by memory opt. in
             // iobuf
-            result.append_take_ownership(fragm);
+            result.append(std::move(fragm));
         }
         return result;
     }
@@ -92,7 +91,7 @@ public:
 
 private:
     std::random_device _rnddev;
-    std::uniform_int_distribution<char> _dist;
+    std::uniform_int_distribution<int8_t> _dist;
 };
 
 struct test_case {

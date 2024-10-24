@@ -12,11 +12,12 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/notification.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "utils/waiter_queue.h"
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -25,24 +26,40 @@ namespace cluster {
 /// cluster::members_manager
 class members_table {
 public:
-    using broker_ptr = ss::lw_shared_ptr<model::broker>;
+    using cache_t = absl::node_hash_map<model::node_id, node_metadata>;
 
-    std::vector<broker_ptr> all_brokers() const;
+    const cache_t& nodes() const;
+    std::vector<node_metadata> node_list() const;
+    size_t node_count() const;
 
-    size_t all_brokers_count() const;
-
-    std::vector<model::node_id> all_broker_ids() const;
+    std::vector<model::node_id> node_ids() const;
 
     /// Returns single broker if exists in cache
-    std::optional<broker_ptr> get_broker(model::node_id) const;
+    std::optional<std::reference_wrapper<const node_metadata>>
+      get_node_metadata_ref(model::node_id) const;
+
+    std::optional<node_metadata> get_node_metadata(model::node_id) const;
+
+    std::optional<model::rack_id> get_node_rack_id(model::node_id) const;
+
+    /// Returns reference to removed node metadata
+    ///  TODO: remove after we stop keeping track of configuration in raft
+    std::optional<std::reference_wrapper<const node_metadata>>
+      get_removed_node_metadata_ref(model::node_id) const;
 
     bool contains(model::node_id) const;
-
-    void update_brokers(model::offset, const std::vector<model::broker>&);
 
     std::error_code apply(model::offset, decommission_node_cmd);
     std::error_code apply(model::offset, recommission_node_cmd);
     std::error_code apply(model::offset, maintenance_mode_cmd);
+    std::error_code apply(model::offset, add_node_cmd);
+    std::error_code apply(model::offset, update_node_cfg_cmd);
+    std::error_code apply(model::offset, remove_node_cmd);
+
+    void set_initial_brokers(std::vector<model::broker>);
+
+    void fill_snapshot(controller_snapshot&);
+    void apply_snapshot(model::offset, const controller_snapshot&);
 
     model::revision_id version() const { return _version; }
 
@@ -54,11 +71,16 @@ public:
         }
     }
 
+    // NOTE: these are level-triggered (as opposed to edge-triggered)
+    // notifications. So for example if you get a members_updated notification
+    // with membership_state::draining, this means "there is a node and its
+    // current state is draining", not "node state switched to draining".
+
     using maintenance_state_cb_t = ss::noncopyable_function<void(
       model::node_id, model::maintenance_state)>;
 
     using members_updated_cb_t
-      = ss::noncopyable_function<void(std::vector<model::node_id>)>;
+      = ss::noncopyable_function<void(model::node_id, model::membership_state)>;
 
     notification_id_type
       register_maintenance_state_change_notification(maintenance_state_cb_t);
@@ -71,8 +93,12 @@ public:
     void unregister_members_updated_notification(notification_id_type);
 
 private:
-    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    broker_cache_t _brokers;
+    cache_t _nodes;
+
+    // we keep track of removed nodes in a separate map to make accessing
+    // brokers faster
+    cache_t _removed_nodes;
+
     model::revision_id _version;
 
     waiter_queue<model::node_id> _waiters;
@@ -88,6 +114,6 @@ private:
     void
       notify_maintenance_state_change(model::node_id, model::maintenance_state);
 
-    void notify_members_updated();
+    void notify_member_updated(model::node_id, model::membership_state);
 };
 } // namespace cluster

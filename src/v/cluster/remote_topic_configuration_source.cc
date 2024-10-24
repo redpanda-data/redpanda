@@ -13,11 +13,13 @@
 
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
+#include "cloud_storage/topic_manifest_downloader.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "s3/client.h"
+#include "model/timeout_clock.h"
 
 namespace cluster {
 
@@ -25,78 +27,71 @@ remote_topic_configuration_source::remote_topic_configuration_source(
   cloud_storage::remote& remote)
   : _remote(remote) {}
 
-static ss::future<std::tuple<errc, cloud_storage::remote_manifest_path>>
-download_topic_manifest(
+static ss::future<errc> download_topic_manifest(
   cloud_storage::remote& remote,
   custom_assignable_topic_configuration& cfg,
   cloud_storage::topic_manifest& manifest,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     auto timeout
       = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
     auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
-    retry_chain_node rc_node(as, timeout, backoff);
-
-    model::ns ns = cfg.cfg.tp_ns.ns;
-    model::topic topic = cfg.cfg.tp_ns.tp;
-    cloud_storage::remote_manifest_path key
-      = cloud_storage::topic_manifest::get_topic_manifest_path(ns, topic);
-
-    auto res = co_await remote.download_manifest(
-      bucket, key, manifest, rc_node);
-
-    if (res != cloud_storage::download_result::success) {
-        vlog(
-          clusterlog.warn,
-          "Could not download topic manifest {} from bucket {}: {}",
-          key,
-          bucket,
-          res);
-        co_return std::make_tuple(errc::topic_operation_error, key);
+    retry_chain_node retry_node(as);
+    cloud_storage::topic_manifest_downloader dl(
+      bucket,
+      /*remote_label=*/std::nullopt,
+      cfg.cfg.remote_tp_ns(),
+      remote);
+    auto deadline = model::timeout_clock::now() + timeout;
+    auto download_res = co_await dl.download_manifest(
+      retry_node, deadline, backoff, &manifest);
+    if (download_res.has_error()) {
+        co_return errc::topic_operation_error;
     }
-    co_return std::make_tuple(errc::success, key);
+    if (
+      download_res.value()
+      != cloud_storage::find_topic_manifest_outcome::success) {
+        co_return errc::topic_operation_error;
+    }
+    co_return errc::success;
 }
 
 ss::future<errc>
 remote_topic_configuration_source::set_remote_properties_in_config(
   custom_assignable_topic_configuration& cfg,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 
-    auto [res, key] = co_await download_topic_manifest(
+    auto res = co_await download_topic_manifest(
       _remote, cfg, manifest, bucket, as);
     if (res != errc::success) {
         co_return res;
     }
 
     if (!manifest.get_topic_config()) {
-        vlog(
-          clusterlog.warn,
-          "Topic manifest {} doesn't contain topic config",
-          key);
         co_return errc::topic_operation_error;
     } else {
+        const auto& dl_cfg = manifest.get_topic_config();
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
-          manifest.get_revision(),
-          manifest.get_topic_config()->partition_count);
+          manifest.get_revision(), dl_cfg->partition_count);
+        cfg.cfg.properties.remote_label = dl_cfg->properties.remote_label;
     }
     co_return errc::success;
 }
 
 /// If property is set in source apply it to target.
 static void apply_retention_defaults(
-  topic_properties& target,
-  const cloud_storage::manifest_topic_configuration::topic_properties& source) {
+  topic_properties& target, const topic_properties& source) {
     // If the retention properties are not set explicitly by the command we
     // should apply them from topic_manifest.
     if (!target.cleanup_policy_bitflags) {
         target.cleanup_policy_bitflags = source.cleanup_policy_bitflags;
     }
-    if (!target.retention_bytes.has_value()) {
+    if (!target.retention_bytes.has_optional_value()) {
         target.retention_bytes = source.retention_bytes;
     }
-    if (!target.retention_duration.has_value()) {
+    if (!target.retention_duration.has_optional_value()) {
         target.retention_duration = source.retention_duration;
     }
 }
@@ -104,21 +99,17 @@ static void apply_retention_defaults(
 ss::future<errc>
 remote_topic_configuration_source::set_recovered_topic_properties(
   custom_assignable_topic_configuration& cfg,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 
-    auto [res, key] = co_await download_topic_manifest(
+    auto res = co_await download_topic_manifest(
       _remote, cfg, manifest, bucket, as);
     if (res != errc::success) {
         co_return res;
     }
 
     if (!manifest.get_topic_config()) {
-        vlog(
-          clusterlog.warn,
-          "Topic manifest {} doesn't contain topic config",
-          key);
         co_return errc::topic_operation_error;
     } else {
         // Update all topic properties
@@ -131,6 +122,7 @@ remote_topic_configuration_source::set_recovered_topic_properties(
         cfg.cfg.properties.remote_topic_properties = remote_topic_properties(
           manifest.get_revision(),
           manifest.get_topic_config()->partition_count);
+        cfg.cfg.properties.remote_label = rc.value().properties.remote_label;
     }
     co_return errc::success;
 }

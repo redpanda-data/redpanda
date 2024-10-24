@@ -10,8 +10,9 @@
  */
 
 #pragma once
-#include <json/schema.h>
-#include <json/validator.h>
+#include "json/schema.h"
+#include "json/stringbuffer.h"
+#include "json/writer.h"
 
 #include <string>
 
@@ -35,5 +36,30 @@ struct validator {
     const json::SchemaDocument schema;
     json::SchemaValidator schema_validator;
 };
+
+class json_validation_error final : public std::exception {
+public:
+    explicit json_validation_error(ss::sstring msg) noexcept
+      : _msg(std::move(msg)) {}
+
+    const char* what() const noexcept override { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
+
+inline void
+validate(json::validator& validator, const json::Document::ValueType& json) {
+    validator.schema_validator.Reset();
+    validator.schema_validator.ResetError();
+
+    if (!json.Accept(validator.schema_validator)) {
+        json::StringBuffer val_buf;
+        json::Writer<json::StringBuffer> w{val_buf};
+        validator.schema_validator.GetError().Accept(w);
+        throw json_validation_error{
+          ss::sstring{val_buf.GetString(), val_buf.GetSize()}};
+    }
+}
 
 } // namespace json

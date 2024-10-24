@@ -18,17 +18,14 @@
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "net/unresolved_address.h"
 #include "redpanda/tests/fixture.h"
+#include "utils/unresolved_address.h"
 
 #include <boost/test/tools/old/interface.hpp>
 
 #include <chrono>
-
-namespace kc = kafka::client;
 
 FIXTURE_TEST(fetch, kafka_client_fixture) {
     using namespace std::chrono_literals;
@@ -72,7 +69,7 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
         const auto& p = res.data.topics[0];
         BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
         BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
-        auto const& r = p.partitions[0];
+        const auto& r = p.partitions[0];
         BOOST_REQUIRE_EQUAL(r.partition_index, ntp.tp.partition);
         BOOST_REQUIRE_EQUAL(r.error_code, kafka::error_code::none);
     }

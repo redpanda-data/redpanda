@@ -1,0 +1,172 @@
+"/v1/migrations": {
+    "get": {
+        "summary": "Lists all available migrations",
+        "operationId": "list_migrations",
+        "consumes": [
+            "application/json"
+        ],
+        "produces": [
+            "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "type": "array",
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "outbound_migration_state"
+                            },
+                            {
+                                "type": "inbound_migration_state"
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    },
+    "put": {
+        "operationId": "add_migration",
+        "summary": "Creates migration in initial state",
+        "requestBody": {
+            "description": "Migration configuration",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "oneOf": [
+                            {
+                                "type": "outbound_migration"
+                            },
+                            {
+                                "type": "inbound_migration"
+                            }
+                        ],
+                        "discriminator": {
+                            "propertyName": "migration_type",
+                            "mapping": {
+                                "inbound": "inbound_migration",
+                                "outbound": "outbound_migration"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+},
+"/v1/migrations/{id}": {
+    "get": {
+        "summary": "Get migration state",
+        "operationId": "get_migration",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "oneOf": [
+                        {
+                            "type": "outbound_migration_state"
+                        },
+                        {
+                            "type": "inbound_migration_state"
+                        }
+                    ]
+                }
+            }
+        }
+    },
+    "post": {
+        "summary": "Execute migration action",
+        "operationId": "execute_migration_action",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            },
+            {
+                "name": "action",
+                "description": "Action to execute over migration",
+                "in": "query",
+                "required": true,
+                "type": "string",
+                "enum": [
+                    "prepare",
+                    "execute",
+                    "finish",
+                    "cancel"
+                ]
+            }
+        ]
+    },
+    "delete": {
+        "summary": "Delete migration",
+        "operationId": "delete_migration",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "type": "int"
+            }
+        ]
+    }
+},
+"/v1/topics/mount": {
+    "post": {
+        "operationId": "mount_topics",
+        "summary": "Mount topic according to provided configuration",
+        "requestBody": {
+            "description": "Mount topic configuration",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": "mount_configuration"
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "Underlying migration information",
+                "schema": "migration_info"
+            }
+        }
+    }
+},
+"/v1/topics/unmount": {
+    "post": {
+        "operationId": "unmount_topics",
+        "summary": "Unmount the topics provided in the list",
+        "requestBody": {
+            "description": "List of topics to unmount",
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "type": "namespaced_topic"
+                        }
+                    }
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "description": "Underlying migration information",
+                "schema": "migration_info"
+            }
+        }
+    }
+}

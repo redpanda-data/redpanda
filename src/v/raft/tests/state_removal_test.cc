@@ -50,7 +50,7 @@ bool snapshot_exists(raft_node& n) {
           }
           return ss::now();
       })
-      .get0();
+      .get();
 
     return snapshot_exists;
 }
@@ -62,19 +62,25 @@ bool snapshot_exists(raft_node& n) {
  */
 void stop_node(raft_node& node) {
     node.recovery_throttle.stop().get();
-    node.server.stop().get0();
+    node.server.stop().get();
     node._as.request_abort();
-    if (node._nop_stm != nullptr) {
-        node._nop_stm->stop().get0();
-    }
-    node.raft_manager.stop().get0();
-    node.consensus = nullptr;
-    node.hbeats->stop().get0();
+    node.raft_manager.stop().get();
+
+    node.hbeats->stop().get();
     node.hbeats.reset();
-    node.cache.stop().get0();
-    node.log.reset();
-    node.storage.stop().get0();
-    node.feature_table.stop().get0();
+
+    // Nothing else should reference the consensus object: if it lives
+    // on past this point, it could dereference destroyed references
+    // to storage and recovery_scheduler objects.
+    assert(node.consensus.owned());
+    node.consensus = nullptr;
+
+    node.recovery_scheduler.stop().get();
+    node.cache.stop().get();
+    node.log = nullptr;
+    node.storage.stop().get();
+    node.feature_table.stop().get();
+    node.as_service.stop().get();
 
     node.started = false;
 }
@@ -83,18 +89,19 @@ FIXTURE_TEST(remove_persistent_state_test_no_snapshot, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
 
-    bool success = replicate_random_batches(gr, 5).get0();
+    bool success = replicate_random_batches(gr, 5).get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
     auto& node = gr.get_member(model::node_id(0));
-    node.consensus->stop().get0();
+    node.consensus->stop().get();
     auto defered = ss::defer([&node] { stop_node(node); });
     BOOST_REQUIRE_EQUAL(is_group_state_cleared(node), false);
     BOOST_REQUIRE_EQUAL(snapshot_exists(node), false);
+    BOOST_REQUIRE_EQUAL(node.consensus->get_snapshot_size(), 0);
 
     // remove state
-    node.consensus->remove_persistent_state().get0();
+    node.consensus->remove_persistent_state().get();
     BOOST_REQUIRE_EQUAL(is_group_state_cleared(node), true);
 };
 
@@ -102,7 +109,7 @@ FIXTURE_TEST(remove_persistent_state_test_with_snapshot, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
 
-    bool success = replicate_random_batches(gr, 10).get0();
+    bool success = replicate_random_batches(gr, 10).get();
     BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
@@ -111,15 +118,18 @@ FIXTURE_TEST(remove_persistent_state_test_with_snapshot, raft_test_fixture) {
     node.consensus
       ->write_snapshot(
         raft::write_snapshot_cfg(node.consensus->last_visible_index(), iobuf()))
-      .get0();
-    node.consensus->stop().get0();
+      .get();
+    node.consensus->stop().get();
 
     auto defered = ss::defer([&node] { stop_node(node); });
     BOOST_REQUIRE_EQUAL(is_group_state_cleared(node), false);
     BOOST_REQUIRE_EQUAL(snapshot_exists(node), true);
+    BOOST_REQUIRE_EQUAL(
+      node.consensus->get_snapshot_size(), get_snapshot_size_from_disk(node));
 
     // remove state
-    node.consensus->remove_persistent_state().get0();
+    node.consensus->remove_persistent_state().get();
     BOOST_REQUIRE_EQUAL(is_group_state_cleared(node), true);
     BOOST_REQUIRE_EQUAL(snapshot_exists(node), false);
+    BOOST_REQUIRE_EQUAL(node.consensus->get_snapshot_size(), 0);
 };

@@ -14,8 +14,8 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type writeFileLinesCommand struct {
@@ -34,7 +34,7 @@ func NewWriteFileLinesCmd(fs afero.Fs, path string, lines []string) Command {
 }
 
 func (c *writeFileLinesCommand) Execute() error {
-	log.Debugf("Writing '%v' to file '%s'", c.lines, c.path)
+	zap.L().Sugar().Debugf("Writing '%v' to file '%s'", c.lines, c.path)
 	return utils.WriteFileLines(c.fs, c.lines, c.path)
 }
 

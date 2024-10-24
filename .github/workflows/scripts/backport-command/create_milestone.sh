@@ -15,4 +15,4 @@ if [[ $(gh api "repos/$TARGET_ORG/$TARGET_REPO/milestones" --jq .[].title | grep
   gh api "repos/$TARGET_ORG/$TARGET_REPO/milestones" --silent --method POST -f title="$assignee_milestone"
   sleep 20 # wait for milestone creation to be propagated
 fi
-echo "::set-output name=milestone::$assignee_milestone"
+echo "milestone=$assignee_milestone" >>$GITHUB_OUTPUT

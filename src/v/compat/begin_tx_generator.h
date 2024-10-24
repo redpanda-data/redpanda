@@ -24,7 +24,8 @@ struct instance_generator<cluster::begin_tx_request> {
           model::random_ntp(),
           model::random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
-          tests::random_duration_ms());
+          tests::random_duration_ms(),
+          tests::random_named_int<model::partition_id>());
     }
     static std::vector<cluster::begin_tx_request> limits() { return {}; }
 };
@@ -35,9 +36,9 @@ struct instance_generator<cluster::begin_tx_reply> {
         return cluster::begin_tx_reply(
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
-          cluster::tx_errc(random_generators::get_int<int>(
-            static_cast<int>(cluster::tx_errc::none),
-            static_cast<int>(cluster::tx_errc::invalid_txn_state))));
+          cluster::tx::errc(random_generators::get_int<int>(
+            static_cast<int>(cluster::tx::errc::none),
+            static_cast<int>(cluster::tx::errc::invalid_txn_state))));
     }
     static std::vector<cluster::begin_tx_reply> limits() { return {}; }
 };

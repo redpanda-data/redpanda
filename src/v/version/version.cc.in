@@ -1,0 +1,13 @@
+#include "version/version.h"
+
+std::string_view redpanda_git_version() noexcept {
+    return std::string_view("@GIT_VER@");
+}
+
+std::string_view redpanda_git_revision() noexcept {
+    return std::string_view("@GIT_SHA1@@GIT_CLEAN_DIRTY@");
+}
+
+std::string_view redpanda_version() noexcept {
+    return std::string_view("@GIT_VER@ - @GIT_SHA1@@GIT_CLEAN_DIRTY@");
+}

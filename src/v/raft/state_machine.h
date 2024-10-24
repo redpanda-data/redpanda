@@ -10,13 +10,12 @@
  */
 
 #pragma once
+#include "base/outcome.h"
+#include "base/seastarx.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/record.h"
-#include "outcome.h"
 #include "raft/offset_monitor.h"
-#include "raft/types.h"
-#include "seastarx.h"
+#include "raft/replicate.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
@@ -69,7 +68,11 @@ public:
     virtual ss::future<> stop();
 
     // wait until at least offset is applied to state machine
-    ss::future<> wait(model::offset, model::timeout_clock::time_point);
+    ss::future<> wait(
+      model::offset,
+      model::timeout_clock::time_point,
+      std::optional<std::reference_wrapper<ss::abort_source>> as
+      = std::nullopt);
 
     /**
      * This must be implemented by the state machine. The state machine should
@@ -82,6 +85,10 @@ public:
      * to wait for the entries to be applied when STM is starting.
      */
     model::offset bootstrap_last_applied() const;
+    /**
+     * Return when the committed offset has been established when STM starts.
+     */
+    ss::future<model::offset> bootstrap_committed_offset();
     /**
      * Store last applied offset. If an offset is persisted it will be used by
      * consensus instance underlying this state machine to recovery committed
@@ -104,7 +111,11 @@ public:
 
 protected:
     void set_next(model::offset offset);
-    virtual ss::future<> handle_eviction();
+    virtual ss::future<> handle_raft_snapshot();
+
+    model::offset last_applied_offset() const {
+        return model::prev_offset(_next);
+    }
 
     consensus* _raft;
     ss::gate _gate;
@@ -114,16 +125,16 @@ private:
     public:
         explicit batch_applicator(state_machine*);
         ss::future<ss::stop_iteration> operator()(model::record_batch);
-        model::offset end_of_stream() const { return _last_applied; }
+        void end_of_stream() const {}
 
     private:
         state_machine* _machine;
-        model::offset _last_applied;
     };
 
     friend batch_applicator;
 
     ss::future<> apply();
+    ss::future<> maybe_apply_raft_snapshot();
     bool stop_batch_applicator();
 
     ss::io_priority_class _io_prio;

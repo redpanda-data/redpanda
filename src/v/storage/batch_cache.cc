@@ -9,12 +9,14 @@
 
 #include "batch_cache.h"
 
+#include "base/vassert.h"
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "model/fundamental.h"
+#include "resource_mgmt/available_memory.h"
+#include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
-#include "utils/gate_guard.h"
 #include "utils/to_string.h"
-#include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
@@ -26,15 +28,16 @@ namespace storage {
 
 batch_cache::range::range(batch_cache_index& index)
   : _index(index) {
-    auto f = new details::io_fragment(
-      ss::temporary_buffer<char>(range_size), details::io_fragment::empty{});
-    _arena.append_take_ownership(f);
+    auto f = std::make_unique<details::io_fragment>(range_size);
+    _arena.append(std::move(f));
 }
 
 batch_cache::range::range(
-  batch_cache_index& index, const model::record_batch& batch)
+  batch_cache_index& index,
+  const model::record_batch& batch,
+  is_dirty_entry dirty)
   : _index(index) {
-    add(batch);
+    add(batch, dirty);
 }
 
 model::record_batch batch_cache::range::batch(size_t o) {
@@ -93,7 +96,8 @@ bool batch_cache::range::fits(const model::record_batch& b) const {
     return space_left >= to_add;
 }
 
-uint32_t batch_cache::range::add(const model::record_batch& b) {
+uint32_t
+batch_cache::range::add(const model::record_batch& b, is_dirty_entry dirty) {
     auto offset = _arena.size_bytes();
     reflection::adl<model::record_batch_header>{}.to(_arena, b.header().copy());
     _size += serialized_header_size;
@@ -113,12 +117,41 @@ uint32_t batch_cache::range::add(const model::record_batch& b) {
     }
 
     _offsets.push_back(b.base_offset());
+    if (dirty) {
+        vassert(
+          _max_dirty_offset < b.last_offset(),
+          "Dirty batch base offsets must be monotonically increasing. "
+          "Adding: {}, Prev: {}",
+          b.last_offset(),
+          _max_dirty_offset);
+        _max_dirty_offset = b.last_offset();
+    }
 
     return offset;
 }
 
-batch_cache::entry
-batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
+static resources::available_memory::deregister_holder
+register_memory_reporter(const batch_cache& bc) {
+    auto& ab = resources::available_memory::local();
+    return ab.register_reporter(
+      "batch_cache", [&bc] { return bc.size_bytes(); });
+}
+
+batch_cache::batch_cache(const reclaim_options& opts)
+  : _reclaimer(
+      [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
+  , _reclaim_opts(opts)
+  , _reclaim_size(_reclaim_opts.min_size)
+  , _background_reclaimer(
+      *this, opts.min_free_memory, opts.background_reclaimer_sg)
+  , _available_mem_deregister(register_memory_reporter(*this)) {
+    _background_reclaimer.start();
+}
+
+batch_cache::entry batch_cache::put(
+  batch_cache_index& index,
+  const model::record_batch& input,
+  is_dirty_entry dirty) {
     // notify no matter what the exit path
     auto notify_guard = ss::defer([this] { _background_reclaimer.notify(); });
 
@@ -137,7 +170,7 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     // isn't on a lru/pool list.
 
     if (static_cast<size_t>(input.size_bytes()) > range::range_size) {
-        auto r = new range(index, input);
+        auto r = new range(index, input, dirty);
         _lru.push_back(*r);
         _size_bytes += r->memory_size();
         return entry(0, r->weak_from_this());
@@ -153,7 +186,7 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     }
 
     auto initial_sz = index._small_batches_range->memory_size();
-    auto offset = index._small_batches_range->add(input);
+    auto offset = index._small_batches_range->add(input, dirty);
     // calculate size difference to update batch cache size
     int64_t diff = (int64_t)index._small_batches_range->memory_size()
                    - initial_sz;
@@ -171,6 +204,11 @@ batch_cache::~batch_cache() noexcept {
 
 void batch_cache::evict(range_ptr&& e) {
     if (e) {
+        vassert(
+          e->clean(),
+          "Requested to evict a range with dirty data: Max dirty offset: {}",
+          e->_max_dirty_offset);
+
         // it's necessary to cause `e` to be sinked so the move constructor
         // invalidates the caller's range_ptr. simply interacting with the
         // r-value reference `e` wouldn't do that.
@@ -182,6 +220,12 @@ void batch_cache::evict(range_ptr&& e) {
 }
 
 size_t batch_cache::reclaim(size_t size) {
+    // update the available_memory low-water mark: this is a good place to do
+    // this because under memory pressure the reclaimer will be called
+    // frequently so we expect the LWM to track closely the true LWM if we
+    // update it here
+    resources::available_memory().update_low_water_mark();
+
     if (is_memory_reclaiming()) {
         return 0;
     }
@@ -222,7 +266,7 @@ size_t batch_cache::reclaim(size_t size) {
         }
 
         // skip any range that has a live reference.
-        if (unlikely(it->pinned())) {
+        if (unlikely(it->pinned() || !it->clean())) {
             ++it;
             continue;
         }
@@ -278,6 +322,33 @@ size_t batch_cache::reclaim(size_t size) {
     _last_reclaim = ss::lowres_clock::now();
     _size_bytes -= reclaimed;
     return reclaimed;
+}
+
+void batch_cache_index::dirty_tracker::mark_dirty(
+  const std::pair<model::offset, model::offset> range) {
+    if (_min == model::offset{}) {
+        _min = range.first;
+        _max = range.second;
+    } else {
+        vassert(
+          _max <= range.first && _max < range.second,
+          "newly tracked offset must be above any previously seen offsets "
+          "(inserting: [{}, {}], state: {})",
+          range.first,
+          range.second,
+          *this);
+        _max = range.second;
+    }
+}
+
+void batch_cache_index::dirty_tracker::mark_clean(
+  const model::offset up_to_inclusive) {
+    if (up_to_inclusive >= _max) {
+        _min = model::offset{};
+        _max = model::offset{};
+    } else {
+        _min = std::max(_min, up_to_inclusive);
+    }
 }
 
 std::optional<model::record_batch>
@@ -360,6 +431,12 @@ batch_cache_index::read_result batch_cache_index::read(
 
 void batch_cache_index::truncate(model::offset offset) {
     lock_guard lk(*this);
+
+    vassert(
+      _dirty_tracker.clean(),
+      "truncate() with dirty data in the index ({}).",
+      *this);
+
     if (auto it = find_first(offset); it != _index.end()) {
         // rule out if possible, otherwise always be pessimistic
         if (
@@ -372,6 +449,40 @@ void batch_cache_index::truncate(model::offset offset) {
         });
         _index.erase(it, _index.end());
     }
+}
+
+void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
+    lock_guard lk(*this);
+
+    if (_dirty_tracker.clean() || up_to_inclusive < _dirty_tracker.min()) {
+        // No dirty data in the cache.
+        return;
+    }
+
+    auto first = find_first(_dirty_tracker.min());
+    vassert(
+      first != _index.end(),
+      "Iterator must exist if dirty tracker isn't clean.");
+
+    auto last = std::next(find_first(up_to_inclusive));
+
+    std::for_each(first, last, [up_to_inclusive](index_type::value_type& e) {
+        e.second.range()->mark_clean(up_to_inclusive);
+    });
+
+    _dirty_tracker.mark_clean(up_to_inclusive);
+}
+ss::future<> batch_cache_index::clear_async() {
+    lock_guard lk(*this);
+    vassert(
+      _dirty_tracker.clean(),
+      "Destroying batch_cache_index ({}) tracking dirty batches.",
+      *this);
+    co_await ssx::async_for_each(
+      _index.begin(), _index.end(), [this](index_type::value_type& value) {
+          _cache->evict(std::move(value.second.range()));
+      });
+    _index.clear();
 }
 
 void batch_cache::background_reclaimer::start() {
@@ -439,7 +550,8 @@ operator<<(std::ostream& o, const batch_cache_index::read_result& c) {
     return o << "}";
 }
 std::ostream& operator<<(std::ostream& o, const batch_cache_index& c) {
-    return o << "{cache_size=" << c._index.size() << "}";
+    return o << "{cache_size=" << c._index.size()
+             << ", dirty tracker: " << c._dirty_tracker << "}";
 }
 
 } // namespace storage

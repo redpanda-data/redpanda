@@ -7,10 +7,15 @@ v_cc_library(
     async_adl_serde.cc
     adl_serde.cc
     validation.cc
+    transform.cc
+    record.cc
   DEPS
     v::bytes
-    v::rphashing
+    v::utils
+    v::hashing
     v::reflection
     Seastar::seastar
+    absl::btree
+    absl::flat_hash_map
   )
 add_subdirectory(tests)

@@ -1,49 +1,39 @@
 add_subdirectory(protocol)
+add_subdirectory(data)
 
 set(handlers_srcs
   server/handlers/api_versions.cc
   server/handlers/metadata.cc
-  server/handlers/add_partitions_to_txn.cc
   server/handlers/txn_offset_commit.cc
-  server/handlers/add_offsets_to_txn.cc
-  server/handlers/end_txn.cc
-  server/handlers/list_groups.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc
-  server/handlers/offset_fetch.cc
   server/handlers/produce.cc
   server/handlers/list_offsets.cc
   server/handlers/fetch.cc
-  server/handlers/join_group.cc
-  server/handlers/heartbeat.cc
-  server/handlers/leave_group.cc
-  server/handlers/sync_group.cc
-  server/handlers/init_producer_id.cc
   server/handlers/create_topics.cc
-  server/handlers/offset_commit.cc
-  server/handlers/delete_topics.cc
   server/handlers/alter_configs.cc
-  server/handlers/describe_groups.cc
-  server/handlers/sasl_handshake.cc
-  server/handlers/sasl_authenticate.cc
   server/handlers/incremental_alter_configs.cc
-  server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
-  server/handlers/create_acls.cc
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
   server/handlers/offset_for_leader_epoch.cc
+  server/handlers/alter_partition_reassignments.cc
+  server/handlers/list_partition_reassignments.cc
   server/handlers/handler_interface.cc
+  server/handlers/configs/config_response_utils.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
+  server/handlers/delete_records.cc
+  server/handlers/describe_producers.cc
+  server/handlers/describe_transactions.cc
+  server/handlers/handler_probe.cc
+  server/handlers/client_quotas.cc
 )
 
 v_cc_library(
   NAME kafka
   SRCS
-    protocol/batch_reader.cc
-    protocol/kafka_batch_adapter.cc
     ${handlers_srcs}
     server/requests.cc
     server/member.cc
@@ -51,31 +41,40 @@ v_cc_library(
     server/group.cc
     server/group_router.cc
     server/group_manager.cc
+    server/usage_aggregator.cc
+    server/usage_manager.cc
     server/rm_group_frontend.cc
     server/connection_context.cc
-    server/protocol.cc
+    server/server.cc
     server/protocol_utils.cc
     server/quota_manager.cc
+    server/client_quota_translator.cc
+    server/snc_quota_manager.cc
+    server/fetch_pid_controller.cc
     server/fetch_session_cache.cc
-    server/replicated_partition.cc
-    server/partition_proxy.cc
     server/group_recovery_consumer.cc
     server/group_metadata.cc
-    server/group_metadata_migration.cc
+    server/group_tx_tracker_stm.cc
+    server/logger.cc
+    server/app.cc
  DEPS
     Seastar::seastar
     v::bytes
     v::rpc
-    v::coproc
     v::cluster
+    v::kafka_partition_proxy
     v::kafka_protocol
     v::security
+    v::security_audit
+    v::pandaproxy_schema_registry
+    v::kafka_client
     absl::flat_hash_map
     absl::flat_hash_set
 )
 
 add_subdirectory(client)
 add_subdirectory(server/tests)
+add_subdirectory(utils)
 
 set_source_files_properties(
     server/group.cc # too big => negative impact on minimal rebuilds for unity

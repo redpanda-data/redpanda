@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
+#include "metrics/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -21,6 +22,13 @@ namespace net {
 
 class server_probe {
 public:
+    server_probe() = default;
+    server_probe(const server_probe&) = delete;
+    server_probe& operator=(const server_probe&) = delete;
+    server_probe(server_probe&&) = delete;
+    server_probe& operator=(server_probe&&) = delete;
+    ~server_probe() = default;
+
     void connection_established() {
         ++_connects;
         ++_connections;
@@ -30,7 +38,13 @@ public:
 
     void connection_close_error() { ++_connection_close_error; }
 
-    void connection_rejected() { ++_connections_rejected; }
+    void connection_rejected_open_limit() {
+        ++_connections_rejected_open_limit;
+    }
+
+    void connection_rejected_rate_limit() {
+        ++_connections_rejected_rate_limit;
+    }
 
     void add_bytes_sent(size_t sent) { _out_bytes += sent; }
 
@@ -48,14 +62,23 @@ public:
 
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
-    void timeout_waiting_rate_limit() { ++_declined_new_connections; }
-
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
-    void setup_metrics(ss::metrics::metric_groups& mgs, std::string_view proto);
+    // metric used to signal a produce request with a timestamp too far into the
+    // future or too far in the past see configuration
+    // log_message_timestamp_alert_after_ms and
+    // log_message_timestamp_alert_before_ms
+    void produce_bad_create_time() { _produce_bad_create_time++; }
+    // for testing
+    auto get_produce_bad_create_time() const {
+        return _produce_bad_create_time;
+    }
+
+    void
+    setup_metrics(metrics::internal_metric_groups& mgs, std::string_view proto);
 
     void setup_public_metrics(
-      ss::metrics::metric_groups& mgs, std::string_view proto);
+      metrics::public_metric_groups& mgs, std::string_view proto);
 
 private:
     uint64_t _requests_completed = 0;
@@ -66,12 +89,16 @@ private:
     uint64_t _service_errors = 0;
     uint32_t _connections = 0;
     uint32_t _connection_close_error = 0;
-    uint64_t _connections_rejected = 0;
+    // connections rejected as we hit our "open connections" limit
+    uint64_t _connections_rejected_open_limit = 0;
+    // connections rejected as we hit our connection rate limit and
+    // delaying the connection was not sufficient to stay under the limit
+    uint32_t _connections_rejected_rate_limit = 0;
     uint32_t _corrupted_headers = 0;
     uint32_t _method_not_found_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-    uint32_t _declined_new_connections = 0;
     uint32_t _connections_wait_rate = 0;
+    uint32_t _produce_bad_create_time = 0;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 

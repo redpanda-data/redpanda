@@ -24,8 +24,11 @@ public:
       ss::smp_service_group,
       ss::sharded<cluster::id_allocator_frontend>&);
 
-    virtual ss::future<allocate_id_reply>
-    allocate_id(allocate_id_request&&, rpc::streaming_context&) final;
+    ss::future<allocate_id_reply>
+    allocate_id(allocate_id_request, rpc::streaming_context&) final;
+
+    ss::future<reset_id_allocator_reply> reset_id_allocator(
+      reset_id_allocator_request, rpc::streaming_context&) final;
 
 private:
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;

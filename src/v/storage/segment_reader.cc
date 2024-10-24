@@ -9,11 +9,11 @@
 
 #include "storage/segment_reader.h"
 
+#include "base/vassert.h"
+#include "base/vlog.h"
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "storage/segment_utils.h"
-#include "vassert.h"
-#include "vlog.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -24,21 +24,21 @@
 namespace storage {
 
 segment_reader::segment_reader(
-  ss::sstring filename,
+  segment_full_path path,
   size_t buffer_size,
   unsigned read_ahead,
-  debug_sanitize_files sanitize) noexcept
-  : _filename(std::move(filename))
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) noexcept
+  : _path(std::move(path))
   , _buffer_size(buffer_size)
   , _read_ahead(read_ahead)
-  , _sanitize(sanitize) {}
+  , _sanitizer_config(std::move(ntp_sanitizer_config)) {}
 
 segment_reader::~segment_reader() noexcept {
     if (!_streams.empty() || _data_file_refcount > 0) {
         vlog(
           stlog.warn,
           "Dropping segment_reader while handles exist on file {}",
-          _filename);
+          _path);
     }
 
     for (auto& i : _streams) {
@@ -48,36 +48,9 @@ segment_reader::~segment_reader() noexcept {
     _streams.clear();
 }
 
-segment_reader::segment_reader(segment_reader&& rhs) noexcept
-  : _filename(std::move(rhs._filename))
-  , _data_file(std::move(rhs._data_file))
-  , _data_file_refcount(rhs._data_file_refcount)
-  , _streams(std::move(rhs._streams))
-  , _file_size(rhs._file_size)
-  , _buffer_size(rhs._buffer_size)
-  , _read_ahead(rhs._read_ahead)
-  , _sanitize(rhs._sanitize) {
-    for (auto& i : _streams) {
-        i._parent = this;
-    }
-}
-
-segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
-    _filename = std::move(rhs._filename);
-    _data_file = std::move(rhs._data_file);
-    _data_file_refcount = rhs._data_file_refcount;
-    _file_size = rhs._file_size;
-    _buffer_size = rhs._buffer_size;
-    _read_ahead = rhs._read_ahead;
-    _sanitize = rhs._sanitize;
-    _streams = std::move(rhs._streams);
-    for (auto& i : _streams) {
-        i._parent = this;
-    }
-    return *this;
-}
-
 ss::future<> segment_reader::load_size() {
+    ss::gate::holder guard{_gate};
+
     auto s = co_await stat();
     set_file_size(s.st_size);
 };
@@ -106,6 +79,8 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class pc) {
     options.io_priority_class = pc;
     options.read_ahead = _read_ahead;
 
+    ss::gate::holder guard{_gate};
+
     auto handle = co_await get();
     handle.set_stream(make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options)));
@@ -116,14 +91,14 @@ ss::future<segment_reader_handle> segment_reader::get() {
     vlog(
       stlog.trace,
       "::get segment file {}, refcount={}",
-      _filename,
+      _path,
       _data_file_refcount);
     // Lock to prevent double-opens
     auto units = co_await _open_lock.get_units();
     if (!_data_file) {
-        vlog(stlog.debug, "Opening segment file {}", _filename);
+        vlog(stlog.debug, "Opening segment file {}", _path);
         _data_file = co_await internal::make_reader_handle(
-          std::filesystem::path(_filename), _sanitize);
+          std::filesystem::path(_path), _sanitizer_config);
     }
 
     _data_file_refcount++;
@@ -143,12 +118,12 @@ ss::future<> segment_reader::put() {
     vlog(
       stlog.trace,
       "::put segment file {}, refcount={}",
-      _filename,
+      _path,
       _data_file_refcount);
-    vassert(_data_file_refcount > 0, "bad put() on {}", _filename);
+    vassert(_data_file_refcount > 0, "bad put() on {}", _path);
     _data_file_refcount--;
     if (_data_file && _data_file_refcount == 0) {
-        vlog(stlog.debug, "Closing segment file {}", _filename);
+        vlog(stlog.debug, "Closing segment file {}", _path);
         // Note: a get() can now come in and open a fresh file handle: this
         // means we strictly-speaking can consume >1 file descriptors from one
         // segment_reader, but it's a rare+transient state.
@@ -158,6 +133,8 @@ ss::future<> segment_reader::put() {
 }
 
 ss::future<struct stat> segment_reader::stat() {
+    ss::gate::holder guard{_gate};
+
     auto handle = co_await get();
     auto r = co_await _data_file.stat();
     co_await handle.close();
@@ -183,6 +160,7 @@ ss::future<segment_reader_handle> segment_reader::data_stream(
     options.io_priority_class = pc;
     options.read_ahead = _read_ahead;
 
+    ss::gate::holder guard{_gate};
     auto handle = co_await get();
     handle.set_stream(make_file_input_stream(
       _data_file, pos_begin, pos_end - pos_begin, std::move(options)));
@@ -190,8 +168,10 @@ ss::future<segment_reader_handle> segment_reader::data_stream(
 }
 
 ss::future<> segment_reader::truncate(size_t n) {
+    ss::gate::holder guard{_gate};
+
     _file_size = n;
-    return ss::open_file_dma(_filename, ss::open_flags::rw)
+    return ss::open_file_dma(ss::sstring(_path), ss::open_flags::rw)
       .then([n](ss::file f) {
           return f.truncate(n)
             .then([f]() mutable { return f.close(); })
@@ -200,10 +180,11 @@ ss::future<> segment_reader::truncate(size_t n) {
 }
 
 ss::future<> segment_reader::close() {
+    if (!_gate.is_closed()) {
+        co_await _gate.close();
+    }
     if (_data_file) {
-        return _data_file.close();
-    } else {
-        return ss::now();
+        co_return co_await _data_file.close();
     }
 }
 
@@ -250,7 +231,7 @@ void segment_reader_handle::operator=(segment_reader_handle&& rhs) noexcept {
         // it's to reset a stream on the same underlying segment_reader,
         // so we can be certain that the put() will not reduce the
         // file handle refcount to zero, as `rhs` holds a reference.
-        vlog(stlog.trace, "Backgrounding put to {}", _parent->_filename);
+        vlog(stlog.trace, "Backgrounding put to {}", _parent->_path);
         ssx::background = _parent->put();
     }
     _stream = std::exchange(rhs._stream, std::nullopt);
@@ -267,25 +248,40 @@ concat_segment_data_source_impl::concat_segment_data_source_impl(
   , _current_pos{_segments.begin()}
   , _start_pos{start_pos}
   , _end_pos{end_pos}
-  , _priority_class{priority_class} {}
+  , _priority_class{priority_class}
+  , _name{"uninitialized"} {}
 
 ss::future<ss::temporary_buffer<char>> concat_segment_data_source_impl::get() {
+    ss::gate::holder guard{_gate};
     if (!_current_stream) {
-        _current_stream = co_await next_stream();
+        co_await next_stream();
     }
 
     ss::temporary_buffer<char> buf = co_await _current_stream->read();
     while (buf.empty() && _current_pos != _segments.end()) {
-        _current_stream = co_await next_stream();
+        co_await next_stream();
         buf = co_await _current_stream->read();
     }
 
     co_return buf;
 }
 
-ss::future<ss::input_stream<char>>
-concat_segment_data_source_impl::next_stream() {
+ss::future<> concat_segment_data_source_impl::next_stream() {
+    if (_current_stream) {
+        vlog(
+          stlog.trace,
+          "closing stream for current segment {} before switching to next "
+          "segment",
+          _name);
+        co_await _current_stream->close();
+    }
+
     if (_current_handle) {
+        vlog(
+          stlog.trace,
+          "closing handle for current segment {} before switching to next "
+          "segment",
+          _name);
         co_await _current_handle->close();
     }
 
@@ -306,18 +302,29 @@ concat_segment_data_source_impl::next_stream() {
         end = _end_pos;
     }
 
+    _name = segment->filename();
     _current_handle = co_await segment->reader().data_stream(
       start, end, _priority_class);
-    auto stream = _current_handle->take_stream();
+    _current_stream = _current_handle->take_stream();
 
     _current_pos++;
-    co_return stream;
+
+    vlog(stlog.trace, "opened segment {}", _name);
+    co_return;
 }
 
 ss::future<> concat_segment_data_source_impl::close() {
-    if (_current_handle) {
-        co_return co_await _current_handle->close();
+    co_await _gate.close();
+    if (_current_stream) {
+        vlog(stlog.trace, "closing stream for segment {}", _name);
+        co_await _current_stream->close();
     }
+
+    if (_current_handle) {
+        vlog(stlog.trace, "closing handle for segment {}", _name);
+        co_await _current_handle->close();
+    }
+    co_return;
 }
 
 concat_segment_reader_view::concat_segment_reader_view(
@@ -326,7 +333,7 @@ concat_segment_reader_view::concat_segment_reader_view(
   size_t end_pos,
   ss::io_priority_class priority_class)
   : _stream(ss::data_source{std::make_unique<concat_segment_data_source_impl>(
-    std::move(segments), start_pos, end_pos, priority_class)}) {}
+      std::move(segments), start_pos, end_pos, priority_class)}) {}
 
 ss::input_stream<char> concat_segment_reader_view::take_stream() {
     auto r = std::move(_stream.value());

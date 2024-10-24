@@ -12,15 +12,22 @@
 #pragma once
 
 #include "model/metadata.h"
-#include "serde/serde.h"
+#include "serde/rw/envelope.h"
+
+#include <fmt/ostream.h>
 
 namespace cluster {
 
 struct node_status_metadata
-  : serde::envelope<node_status_metadata, serde::version<0>> {
+  : serde::envelope<
+      node_status_metadata,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     model::node_id node_id;
+
+    auto serde_fields() { return std::tie(node_id); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_metadata& nsm) {
@@ -30,10 +37,15 @@ struct node_status_metadata
 };
 
 struct node_status_request
-  : serde::envelope<node_status_request, serde::version<0>> {
+  : serde::envelope<
+      node_status_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata sender_metadata;
+
+    auto serde_fields() { return std::tie(sender_metadata); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_request& r) {
@@ -43,10 +55,13 @@ struct node_status_request
 };
 
 struct node_status_reply
-  : serde::envelope<node_status_reply, serde::version<0>> {
+  : serde::
+      envelope<node_status_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     node_status_metadata replier_metadata;
+
+    auto serde_fields() { return std::tie(replier_metadata); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const node_status_reply& r) {

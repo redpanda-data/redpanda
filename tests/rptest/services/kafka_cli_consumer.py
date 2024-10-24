@@ -9,6 +9,7 @@
 
 import re
 import threading
+import time
 from ducktape.services.background_thread import BackgroundThreadService
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -41,10 +42,13 @@ class KafkaCliConsumer(BackgroundThreadService):
         self._stopping = threading.Event()
         self._instance_name = "cli-consumer" if instance_name is None else instance_name
         self._done = None
+        self._progress_reporter = None
+        self._last_consumed = time.time()
+        self._lock = threading.Lock()
         assert self._partitions is not None or self._group is not None, "either partitions or group have to be set"
 
         self._cli = KafkaCliTools(self._redpanda)
-        self._messages = []
+        self._message_cnt = 0
 
     def script(self):
         return self._cli._script("kafka-console-consumer.sh")
@@ -52,6 +56,9 @@ class KafkaCliConsumer(BackgroundThreadService):
     def _worker(self, _, node):
         self._done = False
         self._stopping.clear()
+        self._progress_reporter = threading.Thread(
+            target=lambda: self._report_progress(), daemon=True)
+        self._progress_reporter.start()
         try:
 
             cmd = [self.script()]
@@ -73,12 +80,14 @@ class KafkaCliConsumer(BackgroundThreadService):
 
             cmd += ["--bootstrap-server", self._redpanda.brokers()]
 
-            for line in node.account.ssh_capture(' '.join(cmd)):
-                line.strip()
-                line = line.replace("\n", "")
-                self.logger.debug(
-                    f"[{self._instance_name}] consumed: '{line}'")
-                self._messages.append(line)
+            for l in node.account.ssh_capture(' '.join(cmd)):
+                self._redpanda.logger.debug(l)
+                # last line does not correspond to a consumed message and looks like
+                # "Processed a total of N messages"
+                if not l.startswith("Processed a total of "):
+                    with self._lock:
+                        self._message_cnt += 1
+                        self._last_consumed = time.time()
         except:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
@@ -88,8 +97,12 @@ class KafkaCliConsumer(BackgroundThreadService):
         finally:
             self._done = True
 
+    def message_cnt(self):
+        with self._lock:
+            return self._message_cnt
+
     def wait_for_messages(self, messages, timeout=30):
-        wait_until(lambda: len(self._messages) >= messages,
+        wait_until(lambda: self.message_cnt() >= messages,
                    timeout,
                    backoff_sec=2)
 
@@ -105,6 +118,8 @@ class KafkaCliConsumer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("java", clean_shutdown=True)
+        if self._progress_reporter.is_alive():
+            self._progress_reporter.join()
 
         try:
             wait_until(lambda: self._done is None or self._done == True,
@@ -120,3 +135,17 @@ class KafkaCliConsumer(BackgroundThreadService):
                 err_msg=
                 f"{self._instance_name} running on {node.name} failed to stop after SIGKILL"
             )
+
+    def clean_node(self, node):
+        pass
+
+    def _report_progress(self):
+        while (not self._stopping.is_set()):
+            with self._lock:
+                self.logger.info(
+                    f"Consumed {self._message_cnt} messages, time since last consumed: {time.time() - self._last_consumed} seconds"
+                )
+            if self._stopping.is_set():
+                break
+
+            time.sleep(5)

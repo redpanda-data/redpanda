@@ -14,6 +14,7 @@ namespace kafka {
 
 struct alter_configs_request;
 struct alter_configs_response;
+struct alter_client_quotas_request;
 struct api_versions_request;
 struct api_versions_response;
 struct create_topics_request;
@@ -24,6 +25,7 @@ struct delete_topics_request;
 struct delete_topics_response;
 struct describe_configs_request;
 struct describe_configs_response;
+struct describe_client_quotas_request;
 struct describe_groups_request;
 struct describe_groups_request;
 struct find_coordinator_response;
@@ -52,7 +54,9 @@ struct offset_fetch_request;
 struct offset_fetch_response;
 struct produce_request;
 struct produce_response;
-class response_writer;
+namespace protocol {
+class encoder;
+}
 struct sasl_authenticate_request;
 struct sasl_authenticate_response;
 struct sasl_handshake_request;

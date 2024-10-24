@@ -12,8 +12,8 @@ package tuners
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 func NewDiskTuner(
@@ -51,7 +51,7 @@ func (tuner *diskTuner) Tune() TuneResult {
 func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
 	if len(tuner.directories) == 0 && len(tuner.devices) == 0 {
 		return false,
-			"Either direcories or devices must be provided for disk tuner"
+			"Either directories or devices must be provided for disk tuner"
 	}
 	tunables, err := tuner.createDeviceTuners()
 	if err != nil {
@@ -78,7 +78,7 @@ func (tuner *diskTuner) createDeviceTuners() ([]Tunable, error) {
 	devices := utils.GetKeys(disksSetMap)
 	var tuners []Tunable
 	for _, device := range devices {
-		log.Debugf("Creating disk tuner for '%s'", device)
+		zap.L().Sugar().Debugf("Creating disk tuner for '%s'", device)
 		tuners = append(tuners, tuner.deviceTunerFactory(device))
 	}
 	return tuners, nil

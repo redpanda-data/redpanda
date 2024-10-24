@@ -22,9 +22,8 @@ namespace security {
 
 struct exception final : public std::runtime_error {
 public:
-    explicit exception(errc e, std::string_view msg)
-      : std::runtime_error(
-        fmt::format("{}: {}", make_error_code(e).message(), msg)) {}
+    explicit exception(std::error_code e, std::string_view msg)
+      : std::runtime_error(fmt::format("{}: {}", e.message(), msg)) {}
 };
 
 } // namespace security

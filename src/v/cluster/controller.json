@@ -3,14 +3,10 @@
     "service_name": "controller",
     "includes": [
         "cluster/types.h",
-        "cluster/health_monitor_types.h"
+        "cluster/health_monitor_types.h",
+        "cluster/client_quota_serde.h"
     ],
     "methods": [
-        {
-            "name": "join",
-            "input_type": "join_request",
-            "output_type": "join_reply"
-        },
         {
             "name": "join_node",
             "input_type": "join_node_request",
@@ -27,9 +23,9 @@
             "output_type": "create_topics_reply"
         },
         {
-            "name": "create_non_replicable_topics",
-            "input_type": "create_non_replicable_topics_request",
-            "output_type": "create_non_replicable_topics_reply"
+            "name": "purged_topic",
+            "input_type": "purged_topic_request",
+            "output_type": "purged_topic_reply"
         },
         {
             "name": "finish_partition_update",
@@ -70,6 +66,11 @@
             "name": "finish_reallocation",
             "input_type": "finish_reallocation_request",
             "output_type": "finish_reallocation_reply"
+        },
+        {
+            "name": "revert_cancel_partition_move",
+            "input_type": "revert_cancel_partition_move_request",
+            "output_type": "revert_cancel_partition_move_reply"
         },
         {
             "name": "set_maintenance_mode",
@@ -120,6 +121,56 @@
             "name": "cancel_node_partition_movements",
             "input_type": "cancel_node_partition_movements_request",
             "output_type": "cancel_partition_movements_reply"
+        },
+        {
+            "name": "transfer_leadership",
+            "input_type": "transfer_leadership_request",
+            "output_type": "transfer_leadership_reply"
+        },
+        {
+            "name": "highest_producer_id",
+            "input_type": "producer_id_lookup_request",
+            "output_type": "producer_id_lookup_reply"
+        },
+        {
+            "name": "cloud_storage_usage",
+            "input_type": "cloud_storage_usage_request",
+            "output_type": "cloud_storage_usage_reply"
+        },
+        {
+            "name": "get_partition_state",
+            "input_type": "partition_state_request",
+            "output_type": "partition_state_reply"
+        },
+        {
+            "name": "get_controller_committed_offset",
+            "input_type": "controller_committed_offset_request",
+            "output_type": "controller_committed_offset_reply"
+        },
+        {
+            "name": "upsert_plugin",
+            "input_type": "upsert_plugin_request",
+            "output_type": "upsert_plugin_response"
+        },
+        {
+            "name": "remove_plugin",
+            "input_type": "remove_plugin_request",
+            "output_type": "remove_plugin_response"
+        },
+        {
+            "name": "delete_topics",
+            "input_type": "delete_topics_request",
+            "output_type": "delete_topics_reply"
+        },
+        {
+            "name": "set_partition_shard",
+            "input_type": "set_partition_shard_request",
+            "output_type": "set_partition_shard_reply"
+        },
+        {
+            "name": "alter_client_quotas",
+            "input_type": "client_quota::alter_quotas_request",
+            "output_type": "client_quota::alter_quotas_response"
         }
     ]
 }

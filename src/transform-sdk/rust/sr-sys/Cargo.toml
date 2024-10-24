@@ -1,0 +1,18 @@
+[package]
+name = "redpanda-transform-sdk-sr-sys"
+description = "Redpanda Schema Registry ABI contract for redpanda-transform-sdk-sr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+redpanda-transform-sdk-sr-types = { path = "../sr-types", version = "=0.0.0-dev" }
+redpanda-transform-sdk-varint = { path = "../varint", version = "=0.0.0-dev" }

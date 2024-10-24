@@ -1,0 +1,6 @@
+GRUB_TIMEOUT=5
+GRUB_DISTRIBUTOR="$(sed 's, release .*$,,g' /etc/system-release)"
+GRUB_TERMINAL_OUTPUT="console"
+GRUB_DEFAULT=saved
+GRUB_CMDLINE_LINUX="noht rd.lvm.lv=fedora/root resume=/dev/mapper/fedora-swap"
+GRUB_DISABLE_SUBMENU=true

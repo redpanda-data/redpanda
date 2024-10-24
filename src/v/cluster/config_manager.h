@@ -12,12 +12,16 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
+#include "cluster/notification.h"
 #include "features/feature_table.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "rpc/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 namespace YAML {
 class Node;
@@ -51,15 +55,25 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::members_table>&,
       ss::sharded<ss::abort_source>&);
 
-    static ss::future<preload_result> preload(YAML::Node const&);
+    // Preload early in startup, from bootstrap file or config cache
+    static ss::future<preload_result> preload(const YAML::Node&);
+
+    // Preload while joining the cluster, from a controller snapshot sent
+    // in response to a join request.
+    static ss::future<preload_result>
+    preload_join(const controller_join_snapshot&);
+
     ss::future<> start();
     ss::future<> stop();
 
     // mux_state_machine interface
     bool is_batch_applicable(const model::record_batch& b);
     ss::future<std::error_code> apply_update(model::record_batch);
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
     // Result of trying to apply a delta to a configuration
     struct apply_result {
@@ -68,7 +82,7 @@ public:
         std::vector<ss::sstring> invalid;
     };
 
-    status_map const& get_status() const { return status; }
+    const status_map& get_status() const { return status; }
 
     status_map get_projected_status() const;
 
@@ -82,17 +96,19 @@ public:
         }
     }
 
+    static ss::future<> write_local_cache(
+      config_version, const std::map<ss::sstring, ss::sstring>&);
+
 private:
     void merge_apply_result(
       config_status&,
-      cluster_config_delta_cmd_data const&,
-      apply_result const&);
+      const cluster_config_delta_cmd_data&,
+      const apply_result&);
 
     bool should_send_status();
     ss::future<> reconcile_status();
     ss::future<std::error_code> apply_delta(cluster_config_delta_cmd&&);
-    ss::future<> store_delta(
-      config_version const& version, cluster_config_delta_cmd_data const& data);
+    ss::future<> store_delta(const cluster_config_delta_cmd_data& data);
 
     bool _bootstrap_complete{false};
     void start_bootstrap();
@@ -100,12 +116,14 @@ private:
 
     static ss::future<preload_result> load_cache();
     static ss::future<bool> load_bootstrap();
-    static ss::future<> load_legacy(YAML::Node const&);
+    static ss::future<> load_legacy(const YAML::Node&);
 
     ss::future<std::error_code> apply_status(cluster_config_status_cmd&& cmd);
 
     static std::filesystem::path bootstrap_path();
     static std::filesystem::path cache_path();
+    ss::future<> wait_for_bootstrap();
+    void handle_cluster_members_update(model::node_id, model::membership_state);
 
     config_status my_latest_status;
     status_map status;
@@ -118,6 +136,9 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<cluster::members_table>& _members;
+    notification_id_type _member_update_notification;
+    notification_id_type _raft0_leader_changed_notification;
 
     ss::condition_variable _reconcile_wait;
     ss::sharded<ss::abort_source>& _as;

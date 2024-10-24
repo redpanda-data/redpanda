@@ -9,26 +9,22 @@
 
 #include "pandaproxy/json/requests/fetch.h"
 
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/protocol/fetch.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
-#include "model/record.h"
 #include "model/timestamp.h"
-#include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
-#include "seastarx.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
-
-#include <type_traits>
 
 namespace ppj = pandaproxy::json;
 
@@ -38,14 +34,14 @@ make_record_set(model::offset offset, size_t count) {
         return std::nullopt;
     }
     iobuf record_set;
-    auto writer{kafka::response_writer(record_set)};
-    kafka::writer_serialize_batch(writer, make_batch(offset, count));
+    auto writer{kafka::protocol::encoder(record_set)};
+    kafka::protocol::writer_serialize_batch(writer, make_batch(offset, count));
     return kafka::batch_reader{std::move(record_set)};
 }
 
 auto make_fetch_response(
   std::vector<model::topic_partition> tps, model::offset offset, size_t count) {
-    std::vector<kafka::fetch_response::partition> parts;
+    chunked_vector<kafka::fetch_response::partition> parts;
     for (const auto& tp : tps) {
         kafka::fetch_response::partition res{tp.topic};
         res.partitions.push_back(kafka::fetch_response::partition_response{
@@ -71,7 +67,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_empty) {
     auto fmt = ppj::serialization_format::binary_v2;
 
     ::json::StringBuffer str_buf;
-    ::json::Writer<::json::StringBuffer> w(str_buf);
+    ::json::iobuf_writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected = R"([])";
@@ -89,7 +85,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_one) {
     auto fmt = ppj::serialization_format::binary_v2;
 
     ::json::StringBuffer str_buf;
-    ::json::Writer<::json::StringBuffer> w(str_buf);
+    ::json::iobuf_writer<::json::StringBuffer> w(str_buf);
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected

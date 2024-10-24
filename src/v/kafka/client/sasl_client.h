@@ -14,8 +14,6 @@
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "random/generators.h"
-#include "security/scram_algorithm.h"
-#include "security/scram_authenticator.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -33,5 +31,8 @@ ss::future<> do_authenticate_scram256(
 
 ss::future<> do_authenticate_scram512(
   shared_broker_t broker, ss::sstring username, ss::sstring password);
+
+ss::future<>
+do_authenticate_oauthbearer(shared_broker_t broker, ss::sstring token);
 
 } // namespace kafka::client

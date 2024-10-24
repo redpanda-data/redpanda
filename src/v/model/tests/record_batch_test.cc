@@ -78,3 +78,31 @@ SEASTAR_THREAD_TEST_CASE(set_max_timestamp) {
     BOOST_TEST(crc == batch.header().crc);
     BOOST_TEST(hdr_crc == batch.header().header_crc);
 }
+
+SEASTAR_THREAD_TEST_CASE(iterator) {
+    auto b = model::test::make_random_batch(model::offset(0), 10, false);
+
+    auto it = model::record_batch_iterator::create(b);
+    for (int i = 0; i < b.record_count(); ++i) {
+        BOOST_TEST(it.has_next());
+        model::record r = it.next();
+        BOOST_TEST(r.offset_delta() == i);
+    }
+    BOOST_TEST(!it.has_next());
+}
+
+SEASTAR_THREAD_TEST_CASE(extra_bytes_iterator) {
+    auto b = model::test::make_random_batch(model::offset(0), 1, false);
+    auto buf = b.data().copy();
+    // If there are extra bytes at the end of the batch we should throw.
+    constexpr std::string_view extra_data = "foobar";
+    buf.append(extra_data.data(), extra_data.size());
+    auto header = b.header();
+    header.size_bytes = static_cast<int32_t>(
+      model::packed_record_batch_header_size + buf.size_bytes());
+    b = model::record_batch(
+      header, std::move(buf), model::record_batch::tag_ctor_ng{});
+    auto it = model::record_batch_iterator::create(b);
+    BOOST_TEST(it.has_next());
+    BOOST_REQUIRE_THROW(it.next(), std::out_of_range);
+}

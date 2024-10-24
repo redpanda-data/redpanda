@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using delete_groups_handler = single_stage_handler<delete_groups_api, 0, 1>;
+using delete_groups_handler = single_stage_handler<delete_groups_api, 0, 2>;
 
 }

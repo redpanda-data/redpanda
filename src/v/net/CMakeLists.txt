@@ -13,7 +13,9 @@ v_cc_library(
     Seastar::seastar
     absl::node_hash_map
     v::config
-    v::rphashing
+    v::metrics
+    v::hashing
+    v::compression
   )
 
 add_subdirectory(tests)

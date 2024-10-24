@@ -1,0 +1,13 @@
+[workspace]
+[package]
+name = "thirdparty"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "/dev/null"
+
+[dependencies]
+wasmtime-c-api = { version = "25.0.0", package = "wasmtime-c-api-impl", default-features = false, features = ["async", "addr2line", "wat", "cranelift"] }
+wasmtime = { version = "25.0.0", package = "wasmtime", default-features = false, features = ["async", "addr2line", "wat", "cranelift"] }

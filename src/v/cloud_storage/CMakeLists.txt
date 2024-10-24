@@ -1,32 +1,77 @@
+v_cc_library(
+  NAME segment_meta_cstore
+  SRCS
+    segment_meta_cstore.cc
+  DEPS
+    v::bytes
+    v::model
+    absl::btree
+    v::config
+)
 
 v_cc_library(
   NAME cloud_storage
   SRCS
+    base_manifest.cc
     cache_service.cc
     access_time_tracker.cc
     cache_probe.cc
-    topic_manifest.cc
+    download_exception.cc
+    topic_mount_manifest.cc
     partition_manifest.cc
+    partition_manifest_downloader.cc
+    partition_path_utils.cc
     recursive_directory_walker.cc
     remote.cc
+    remote_file.cc
+    remote_path_provider.cc
     offset_translation_layer.cc
-    probe.cc
-    partition_probe.cc
-    partition_recovery_manager.cc
+    remote_probe.cc
+    read_path_probes.cc
     types.cc
     remote_segment.cc
     remote_partition.cc
     remote_segment_index.cc
     tx_range_manifest.cc
+    materialized_resources.cc
+    segment_state.cc
+    recovery_errors.cc
+    recovery_request.cc
+    recovery_utils.cc
+    segment_meta_cstore.cc
+    segment_chunk.cc
+    segment_chunk_api.cc
+    segment_chunk_data_source.cc
+    segment_path_utils.cc
+    topic_manifest.cc
+    topic_manifest_downloader.cc
+    topic_mount_handler.cc
+    topic_path_utils.cc
+    async_manifest_view.cc
+    materialized_manifest_cache.cc
+    anomalies_detector.cc
+    inventory/inv_ops.cc
+    inventory/aws_ops.cc
+    inventory/types.cc
+    inventory/report_parser.cc
+    inventory/inv_consumer.cc
+    inventory/ntp_hashes.cc
+    inventory/utils.cc
   DEPS
     Seastar::seastar
     v::bytes
+    v::cloud_io
     v::http
-    v::s3
+    v::cluster_topic_properties
+    v::cloud_storage_clients
     v::json
     v::model
-    v::rphashing
+    v::hashing
     v::cloud_roles
+    v::segment_meta_cstore
+    v::raft
     # NOTE: do not add v::cloud as a dependency
 )
+
 add_subdirectory(tests)
+add_subdirectory(inventory/tests)

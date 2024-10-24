@@ -1,0 +1,278 @@
+---
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+name: transform-sdk-build
+on:
+  push:
+    tags: ['*']
+    branches: [dev, 'v*']
+    paths:
+      - 'src/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
+  pull_request:
+    branches: [dev, 'v*']
+    paths:
+      - 'src/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
+env:
+  RUST_VERSION: '1.80'
+  GO_VERSION: '1.22'
+  TINYGO_VERSION: 'v0.31.0-rpk2'
+  BINARYEN_VERSION: '117'
+jobs:
+  build-integration-tests:
+    name: Build integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
+      - name: Build integration tests
+        working-directory: src/transform-sdk/tests
+        run: go test -c -o ./wasm-integration-test
+      - name: Upload integration test binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/tests/wasm-integration-test
+          retention-days: 1
+  test-golang:
+    name: Test Golang Transform SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
+      - name: Run tests
+        working-directory: src/transform-sdk/go/transform
+        run: go test -v ./...
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout 5m
+          working-directory: src/transform-sdk/go/transform
+  integration-test-golang:
+    name: Integration Test Golang Transform SDK
+    needs: [test-golang, build-integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: src/transform-sdk/go/transform/go.sum
+      - name: Set up Tinygo
+        working-directory: src/transform-sdk/go/transform
+        run: |
+          curl -S -s -L "https://github.com/redpanda-data/tinygo/releases/download/${{ env.TINYGO_VERSION }}/tinygo-linux-amd64.tar.gz" | tar -xvz
+          echo "$PWD/tinygo/bin" >> $GITHUB_PATH
+      - name: Build integration tests
+        working-directory: src/transform-sdk/go/transform/internal/testdata
+        run: |
+          tinygo build -scheduler=none -target=wasi -o identity.wasm ./identity
+          tinygo build -scheduler=none -target=wasi -o identity_logging.wasm ./identity_logging
+          tinygo build -scheduler=none -target=wasi -o tee.wasm ./tee
+          tinygo build -scheduler=none -target=wasi -o sr.wasm ./schema-registry
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/go/transform/internal/testdata
+      - name: Run integration tests
+        working-directory: src/transform-sdk/go/transform/internal/testdata
+        env:
+          IDENTITY: identity.wasm
+          LOGGING: identity_logging.wasm
+          TEE: tee.wasm
+          SCHEMA_REGISTRY: sr.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
+  test-rust:
+    name: Test Rust Transform SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        run: |
+          rustup update --no-self-update ${{ env.RUST_VERSION }}
+          rustup component add --toolchain ${{ env.RUST_VERSION }} rustfmt rust-src clippy
+          rustup default ${{ env.RUST_VERSION }}
+      - name: Run tests
+        working-directory: src/transform-sdk/rust
+        run: cargo test --workspace
+      - name: Check format
+        working-directory: src/transform-sdk/rust
+        run: cargo fmt --check --all
+      - name: Run clippy
+        working-directory: src/transform-sdk/rust
+        run: cargo clippy --all
+  integration-test-rust:
+    name: Integration Test Rust Transform SDK
+    needs: [test-rust, build-integration-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        run: |
+          rustup update --no-self-update ${{ env.RUST_VERSION }}
+          rustup component add --toolchain ${{ env.RUST_VERSION }} rustfmt rust-src clippy
+          rustup default ${{ env.RUST_VERSION }}
+          rustup target add wasm32-wasi
+      - name: Build integration tests
+        working-directory: src/transform-sdk/rust
+        run: |
+          cargo build --target=wasm32-wasi --release \
+            --example=identity \
+            --example=identity_logging \
+            --example=tee \
+            --example=schema_registry
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/rust
+      - name: Run integration tests
+        working-directory: src/transform-sdk/rust
+        env:
+          IDENTITY: target/wasm32-wasi/release/examples/identity.wasm
+          LOGGING: target/wasm32-wasi/release/examples/identity_logging.wasm
+          TEE: target/wasm32-wasi/release/examples/tee.wasm
+          SCHEMA_REGISTRY: target/wasm32-wasi/release/examples/schema_registry.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
+  test-cpp:
+    name: Test C++ Transform SDK
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Clang
+        run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake
+      - name: Run tests
+        working-directory: src/transform-sdk/cpp
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build
+          cmake --build build
+          ctest --output-on-failure --test-dir build
+      - name: Run clang-tidy
+        working-directory: src/transform-sdk/cpp
+        run: clang-tidy --quiet -p build/compile_commands.json src/transform_sdk.cc
+  integration-test-cpp:
+    name: Integration Test C++ Transform SDK
+    needs: [test-cpp, build-integration-tests]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build integration tests
+        working-directory: src/transform-sdk/cpp/examples
+        run: cmake -B build && cmake --build build
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/cpp/examples
+      - name: Run integration tests
+        working-directory: src/transform-sdk/cpp/examples
+        env:
+          IDENTITY: build/identity_transform
+          LOGGING: build/identity_logging_transform
+          TEE: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: "@UNIMPLEMENTED@"
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v
+  test-js:
+    name: Test JS Transform SDK
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Clang
+        run: dnf install -y clang clang-tools-extra libcxx libcxxabi libcxx-devel libcxxabi-devel cmake git
+      - name: Run tests
+        working-directory: src/transform-sdk/js
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug
+          ctest --output-on-failure --test-dir build/debug
+      - name: Run clang-tidy
+        working-directory: src/transform-sdk/js
+        run: clang-tidy --quiet -p build/debug/compile_commands.json js_vm.cc js_vm_test.cc main.cc
+  integration-test-js:
+    name: Integration Test JS Transform SDK
+    needs: [test-js, build-integration-tests]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build integration tests
+        working-directory: src/transform-sdk/js
+        run: |
+          apt update
+          apt install -y git curl python3
+          cmake --preset release-static
+          cmake --build --preset release-static -- redpanda_js_transform
+          cat identity.js | python3 generate_js_provider.py > identity_source.wat
+          cat identity_logging.js | python3 generate_js_provider.py > logging_source.wat
+          (cd schema_registry_example && npm install && npm run build)
+          cat schema_registry_example/dist/schema_registry_example.js | python3 generate_js_provider.py > sr_source.wat
+          curl -SLO https://github.com/WebAssembly/binaryen/releases/download/version_${{ env.BINARYEN_VERSION }}/binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          tar xf binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          rm binaryen-version_${{ env.BINARYEN_VERSION }}-x86_64-linux.tar.gz
+          ./binaryen-version_${{ env.BINARYEN_VERSION }}/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./identity_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o identity.wasm
+          ./binaryen-version_${{ env.BINARYEN_VERSION }}/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./logging_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o logging.wasm
+          ./binaryen-version_117/bin/wasm-merge \
+            ./build/release-static/redpanda_js_transform js_vm \
+            ./sr_source.wat redpanda_js_provider \
+            -mvp --enable-simd --enable-bulk-memory --enable-multimemory \
+            -o sr.wasm
+      - name: Download integration test suite
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-integration-test
+          path: src/transform-sdk/js
+      - name: Run integration tests
+        working-directory: src/transform-sdk/js
+        env:
+          IDENTITY: identity.wasm
+          LOGGING: logging.wasm
+          TEE: "@UNIMPLEMENTED@"
+          SCHEMA_REGISTRY: sr.wasm
+        run: |
+          chmod +x wasm-integration-test
+          ./wasm-integration-test -test.v

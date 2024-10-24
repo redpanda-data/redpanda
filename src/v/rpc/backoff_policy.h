@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -32,10 +32,27 @@ public:
         virtual void reset() = 0;
 
         virtual ~impl() noexcept = default;
+
+        virtual std::unique_ptr<impl> clone() const = 0;
     };
 
     explicit backoff_policy(std::unique_ptr<impl> i)
       : _impl(std::move(i)) {}
+
+    backoff_policy(backoff_policy&&) = default;
+    backoff_policy& operator=(backoff_policy&&) = default;
+
+    backoff_policy(const backoff_policy& o) {
+        if (o._impl) {
+            _impl = o._impl->clone();
+        }
+    }
+    backoff_policy& operator=(const backoff_policy& o) {
+        if (o._impl && &o != this) {
+            _impl = o._impl->clone();
+        }
+        return *this;
+    }
 
     void next_backoff() { _impl->next_backoff(); }
 
@@ -76,6 +93,10 @@ backoff_policy make_exponential_backoff_policy(
         }
 
         void reset() final { _current = 0; }
+
+        std::unique_ptr<impl> clone() const final {
+            return std::make_unique<policy>(*this);
+        }
 
     private:
         DurationType _base_duration;

@@ -11,26 +11,19 @@
 
 #pragma once
 
-#include "bytes/details/io_fragment.h"
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "http/chunk_encoding.h"
 #include "http/iobuf_body.h"
-#include "http/logger.h"
 #include "http/probe.h"
 #include "net/transport.h"
-#include "seastarx.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/deleter.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/timer.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/core.hpp>
@@ -39,8 +32,6 @@
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/string_body.hpp>
 #include <boost/beast/http/verb.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/system/system_error.hpp>
 
 #include <chrono>
 #include <exception>
@@ -65,12 +56,44 @@ enum class reconnect_result_t {
     timed_out,
 };
 
-/// Http client
-class client : protected net::base_transport {
-    enum {
-        protocol_version = 11,
-    };
+enum class content_type {
+    json,
+};
 
+/**
+ * Return the HTTP content-type string for the given type.
+ */
+std::string_view content_type_string(content_type type);
+
+// A fully drained, collected response. The iobuf contains the data from the
+// response stream ref which has been read. Only suitable for short responses,
+// should be avoided when reading large objects like segments.
+struct downloaded_response {
+    boost::beast::http::status status;
+    iobuf body;
+};
+
+// Interface to allow testing the http client with mocks
+class abstract_client {
+public:
+    // Helper expected to fully drain the response stream and return it.
+    // Intended for use with small objects such as JSON/XML responses which can
+    // be easily held in memory
+    virtual ss::future<downloaded_response> request_and_collect_response(
+      boost::beast::http::request_header<>&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout)
+      = 0;
+
+    virtual ss::future<> shutdown_and_stop() = 0;
+
+    virtual ~abstract_client() = default;
+};
+
+/// Http client
+class client
+  : protected net::base_transport
+  , public abstract_client {
 public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
@@ -88,8 +111,13 @@ public:
       ss::shared_ptr<client_probe> probe,
       ss::lowres_clock::duration max_idle_time = {});
 
+    /// Stop must be called before destroying the client object.
     ss::future<> stop();
     using net::base_transport::shutdown;
+    using net::base_transport::wait_input_shutdown;
+
+    // close the connect gate and fail_outstanding_futures which calls shutdown
+    ss::future<> shutdown_and_stop() final { co_return co_await stop(); }
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error
@@ -107,12 +135,9 @@ public:
         explicit response_stream(client* client, verb v, ss::sstring target);
 
         response_stream(response_stream&&) = delete;
-        response_stream(response_stream const&) = delete;
-        response_stream& operator=(response_stream const&) = delete;
+        response_stream(const response_stream&) = delete;
+        response_stream& operator=(const response_stream&) = delete;
         response_stream operator=(response_stream&&) = delete;
-
-        /// \brief Shutdown connection gracefully
-        ss::future<> shutdown();
 
         /// Return true if the whole http payload is received and parsed
         bool is_done() const;
@@ -122,7 +147,7 @@ public:
 
         /// Access response headers (should only be called if is_headers_done()
         /// == true)
-        response_header const& get_headers() const;
+        const response_header& get_headers() const;
 
         /// Prefetch HTTP headers. Read data from the socket until the header is
         /// received and parsed (is_headers_done = true).
@@ -163,8 +188,8 @@ public:
         explicit request_stream(client* client, request_header&& hdr);
 
         request_stream(request_stream&&) = delete;
-        request_stream(request_stream const&) = delete;
-        request_stream& operator=(request_stream const&) = delete;
+        request_stream(const request_stream&) = delete;
+        request_stream& operator=(const request_stream&) = delete;
         request_stream operator=(request_stream&&) = delete;
         ~request_stream() override = default;
 
@@ -201,12 +226,6 @@ public:
     using request_response_t
       = std::tuple<request_stream_ref, response_stream_ref>;
 
-    // Make http_request, if the transport is not yet connected it will connect
-    // first otherwise the future will resolve immediately.
-    ss::future<request_response_t> make_request(
-      request_header&& header,
-      ss::lowres_clock::duration timeout = default_connect_timeout);
-
     /// Utility function that executes request with the body and returns
     /// stream. Returned future becomes ready when the body is sent.
     /// Using the stream returned by the future client can pull response.
@@ -223,9 +242,43 @@ public:
       request_header&& header,
       ss::lowres_clock::duration timeout = default_connect_timeout);
 
+    ss::future<downloaded_response> request_and_collect_response(
+      request_header&& request,
+      std::optional<iobuf> payload = std::nullopt,
+      ss::lowres_clock::duration timeout = default_connect_timeout) final;
+
+    /**
+     * Dispatch a request with the provided headers and body.
+     *
+     * Returns the response stream.
+     */
+    seastar::future<response_stream_ref> request(
+      request_header header,
+      iobuf body,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
+    /**
+     * Dispach a POST request to the provided path.
+     *
+     * @param path request target path
+     * @param body body the request
+     * @param type content type (e.g. json)
+     * @return the response stream
+     */
+    seastar::future<response_stream_ref> post(
+      std::string_view path,
+      iobuf body,
+      content_type type,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+
 private:
     template<class BufferSeq>
     static ss::future<> forward(client* client, BufferSeq&& seq);
+
+    // Make http_request, if the transport is not yet connected it will connect
+    // first otherwise the future will resolve immediately.
+    ss::future<request_response_t>
+    make_request(request_header&& header, ss::lowres_clock::duration timeout);
 
     /// Receive bytes from the remote endpoint
     ss::future<ss::temporary_buffer<char>> receive();
@@ -235,6 +288,8 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    bool _stopped{false};
+    std::string _host_with_port;
     ss::gate _connect_gate;
     const ss::abort_source* _as;
     ss::shared_ptr<http::client_probe> _probe;
@@ -257,12 +312,39 @@ inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     auto scattered = iobuf_as_scattered(std::forward<BufferSeq>(seq));
     return client->send(std::move(scattered));
 }
+
+/// Helper to close an http client after a function has been called on it.
+/// Modeled after ss::with_file
+template<typename Func>
+auto with_client(client&& cl, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+    return ss::do_with(
+      std::move(cl), [func = std::move(func)](client& cl) mutable {
+          return ss::futurize_invoke(func, cl).finally([&cl] {
+              return cl.stop().then([&cl] {
+                  cl.shutdown();
+                  return ss::make_ready_future<>();
+              });
+          });
+      });
+}
+
+const std::unordered_set<std::variant<boost::beast::http::field, std::string>>
+redacted_fields();
+
+ss::future<boost::beast::http::status>
+status(client::response_stream_ref response);
+
+ss::future<iobuf> drain(client::response_stream_ref response);
+
 } // namespace http
 
 template<>
 struct fmt::formatter<http::client::request_header> {
-    constexpr auto parse(fmt::format_parse_context& ctx)
-      -> decltype(ctx.begin()) {
+    constexpr auto
+    parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
         return ctx.begin();
     }
 
@@ -273,5 +355,31 @@ struct fmt::formatter<http::client::request_header> {
         std::stringstream s;
         s << redacted;
         return fmt::format_to(ctx.out(), "{}", s.str());
+    }
+};
+
+template<>
+struct fmt::formatter<http::client::response_header> {
+    char presentation = 'u'; // 'u' for unchanged, 'l' for one line
+    constexpr auto parse(format_parse_context& ctx) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        if (it != end && (*it == 'l' || *it == 'u')) presentation = *it++;
+        if (it != end && *it != '}') throw format_error("invalid format");
+        return it;
+    }
+
+    auto format(http::client::response_header& h, auto& ctx) const {
+        if (presentation == 'u') {
+            std::stringstream s;
+            s << h;
+            return fmt::format_to(ctx.out(), "{}", s.str());
+        }
+        // format one line
+        auto out = ctx.out();
+        for (auto& f : h) {
+            out = fmt::format_to(out, "[{}: {}];", f.name_string(), f.value());
+        }
+        return out;
     }
 };

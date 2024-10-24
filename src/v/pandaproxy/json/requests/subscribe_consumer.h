@@ -11,15 +11,16 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
+#include "container/fragmented_vector.h"
 #include "json/encodings.h"
 #include "json/types.h"
 #include "kafka/protocol/errors.h"
-#include "kafka/types.h"
+#include "model/fundamental.h"
 #include "pandaproxy/json/iobuf.h"
 #include "pandaproxy/json/rjson_parse.h"
-#include "seastarx.h"
-#include "utils/string_switch.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -28,7 +29,7 @@
 namespace pandaproxy::json {
 
 struct subscribe_consumer_request {
-    std::vector<model::topic> topics;
+    chunked_vector<model::topic> topics;
 };
 
 template<typename Encoding = ::json::UTF8<>>

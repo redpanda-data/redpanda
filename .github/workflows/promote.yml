@@ -1,0 +1,28 @@
+---
+name: promote
+on:
+  release:
+    types: [published]
+jobs:
+  trigger-promote:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/buildkite_token
+          parse-json-secrets: true
+      - uses: buildkite/trigger-pipeline-action@v2
+        with:
+          buildkite_api_access_token: ${{ env.BUILDKITE_TOKEN }}
+          pipeline: "redpanda/redpanda"
+          branch: dev
+          message: ":github: Promote redpanda packages"
+          build_env_vars: '{"PROMOTE_REDPANDA_FROM_STAGING": "1", "TARGET_VERSION": "${{ github.ref_name }}"}'

@@ -29,3 +29,16 @@ SEASTAR_THREAD_TEST_CASE(test_xor) {
       data4,
       bytes(reinterpret_cast<const uint8_t*>(data3.data()), data3.size()));
 }
+
+SEASTAR_THREAD_TEST_CASE(bytes_lt) {
+    for (int a = 0; a <= 255; ++a) {
+        for (int b = 0; b <= 255; ++b) {
+            uint8_t real_a = a;
+            uint8_t real_b = b;
+            bytes bytes_a(&real_a, 1);
+            bytes bytes_b(&real_b, 1);
+            BOOST_REQUIRE_EQUAL(bytes_a < bytes_b, real_a < real_b);
+            BOOST_REQUIRE_EQUAL(bytes_a == bytes_b, real_a == real_b);
+        }
+    }
+}

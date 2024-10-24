@@ -1,24 +1,72 @@
-"/v1/raft/{group_id}/transfer_leadership": {
-  "post": {
-    "summary": "transfer raft group leadership",
-    "operationId": "raft_transfer_leadership",
-    "parameters": [
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/raft",
+  "produces": [
+    "application/json"
+  ],
+  "apis": [
+    {
+      "path": "/v1/raft/{group_id}/transfer_leadership",
+      "operations": [
         {
-            "name": "group_id",
-            "in": "path",
-            "required": true,
-            "type": "integer"
-        },
-        {
-            "name":"target",
-            "in":"query",
-            "required":false,
-            "type":"integer"
+          "method": "POST",
+          "summary": "transfer raft group leadership",
+          "nickname": "raft_transfer_leadership",
+          "produces": [
+            "application/json"
+          ],
+          "parameters": [
+            {
+              "name": "group_id",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            },
+            {
+              "name": "target",
+              "in": "query",
+              "required": false,
+              "type": "integer"
+            }
+          ]
         }
-    ],
-    "responses": {
-      "200": {
-        "description": "Raft leadership transfer"
+      ]
+    },
+    {
+      "path": "/v1/raft/recovery/status",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Get this node's recovery status",
+          "type": "recovery_status",
+          "nickname": "get_raft_recovery_status",
+          "produces": [
+            "application/json"
+          ],
+          "parameters": []
+        }
+      ]
+    }
+  ],
+  "models": {
+    "recovery_status": {
+      "id": "recovery_status",
+      "description": "Node raft recovery status",
+      "properties": {
+        "partitions_to_recover": {
+          "type": "long",
+          "description": "Total partitions needing recovery"
+        },
+        "partitions_active": {
+          "type": "long",
+          "description": "Partitions currently in recovery"
+        },
+        "offsets_pending": {
+          "type": "long",
+          "description": "Offsets currently awaiting recovery"
+        }
       }
     }
   }

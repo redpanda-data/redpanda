@@ -22,9 +22,8 @@ class record;
 
 void crc_record_batch_header(crc::crc32c&, const record_batch_header&);
 
-/// \brief int32_t because that's what kafka uses
-int32_t crc_record_batch(const record_batch& b);
-int32_t crc_record_batch(const record_batch_header&, const iobuf&);
+uint32_t crc_record_batch(const record_batch& b);
+uint32_t crc_record_batch(const record_batch_header&, const iobuf&);
 
 /// \brief uint32_t because that's what crc32c uses
 /// it is *only* record_batch_header.header_crc;

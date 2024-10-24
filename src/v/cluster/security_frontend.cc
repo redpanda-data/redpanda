@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
@@ -25,14 +26,18 @@
 #include "model/namespace.h"
 #include "model/validation.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "security/authorizer.h"
+#include "security/role.h"
 #include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 
 #include <seastar/core/coroutine.hh>
+
+#include <boost/algorithm/string/split.hpp>
 
 #include <regex>
 
@@ -75,6 +80,7 @@ static inline cluster::errc map_errc(std::error_code ec) {
 
 security_frontend::security_frontend(
   model::node_id self,
+  controller* controller,
   ss::sharded<controller_stm>& s,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
@@ -82,6 +88,7 @@ security_frontend::security_frontend(
   ss::sharded<ss::abort_source>& as,
   ss::sharded<security::authorizer>& authorizer)
   : _self(self)
+  , _controller(controller)
   , _stm(s)
   , _connections(connections)
   , _leaders(leaders)
@@ -94,13 +101,13 @@ ss::future<std::error_code> security_frontend::create_user(
   security::scram_credential credential,
   model::timeout_clock::time_point tout) {
     create_user_cmd cmd(std::move(username), std::move(credential));
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
 ss::future<std::error_code> security_frontend::delete_user(
   security::credential_user username, model::timeout_clock::time_point tout) {
     delete_user_cmd cmd(std::move(username), 0 /* unused */);
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
 ss::future<std::error_code> security_frontend::update_user(
@@ -108,7 +115,50 @@ ss::future<std::error_code> security_frontend::update_user(
   security::scram_credential credential,
   model::timeout_clock::time_point tout) {
     update_user_cmd cmd(std::move(username), std::move(credential));
-    return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+    return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::create_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    auto feature_enabled = _features.local().is_preparing(
+                             features::feature::role_based_access_control)
+                           || _features.local().is_active(
+                             features::feature::role_based_access_control);
+    if (!feature_enabled) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    upsert_role_cmd_data data{.name = std::move(name), .role = std::move(role)};
+    create_role_cmd cmd(0 /*unused*/, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::delete_role(
+  security::role_name name, model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    delete_role_cmd_data data{.name = std::move(name)};
+    delete_role_cmd cmd(0 /* unused */, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
+}
+
+ss::future<std::error_code> security_frontend::update_role(
+  security::role_name name,
+  security::role role,
+  model::timeout_clock::time_point tout) {
+    if (!_features.local().is_active(
+          features::feature::role_based_access_control)) {
+        vlog(clusterlog.warn, "RBAC feature is not yet active");
+        co_return cluster::errc::feature_disabled;
+    }
+    upsert_role_cmd_data data{.name = std::move(name), .role = std::move(role)};
+    update_role_cmd cmd(0 /*unused*/, std::move(data));
+    co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), tout);
 }
 
 ss::future<std::vector<errc>> security_frontend::create_acls(
@@ -174,11 +224,7 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
     errc err;
     try {
         auto ec = co_await replicate_and_wait(
-          _stm,
-          _features,
-          _as,
-          std::move(cmd),
-          model::timeout_clock::now() + timeout);
+          _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
         err = map_errc(ec);
     } catch (const std::exception& e) {
         vlog(clusterlog.warn, "Unable to create ACLs: {}", e);
@@ -216,11 +262,7 @@ ss::future<std::vector<delete_acls_result>> security_frontend::do_delete_acls(
     errc err;
     try {
         auto ec = co_await replicate_and_wait(
-          _stm,
-          _features,
-          _as,
-          std::move(cmd),
-          model::timeout_clock::now() + timeout);
+          _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
         err = map_errc(ec);
     } catch (const std::exception& e) {
         vlog(clusterlog.warn, "Unable to delete ACLs: {}", e);
@@ -309,59 +351,127 @@ security_frontend::dispatch_delete_acls_to_leader(
       });
 }
 
-/**
- * For use during cluster creation, if RP_BOOTSTRAP_USER is set
- * then write a user creation message to the controller log.
- *
- * @returns an error code if controller log write failed.  If the
- *          environment variable is missing or malformed this is
- *          not considered an error.
- *
- */
-ss::future<std::error_code> security_frontend::maybe_create_bootstrap_user() {
-    static const ss::sstring bootstrap_user_env_key{"RP_BOOTSTRAP_USER"};
+static const ss::sstring bootstrap_user_env_key{"RP_BOOTSTRAP_USER"};
 
+/*static*/ std::optional<user_and_credential>
+security_frontend::get_bootstrap_user_creds_from_env() {
     auto creds_str_ptr = std::getenv(bootstrap_user_env_key.c_str());
     if (creds_str_ptr == nullptr) {
         // Environment variable is not set
-        co_return errc::success;
+        return {};
     }
 
-    ss::sstring creds_str = creds_str_ptr;
-    auto colon = creds_str.find(":");
-    if (colon == ss::sstring::npos || colon == creds_str.size() - 1) {
+    std::string_view creds = creds_str_ptr;
+    std::vector<std::string_view> parts;
+    parts.reserve(3);
+    boost::algorithm::split(parts, creds, [](char c) { return c == ':'; });
+    if (
+      !(parts.size() == 2 || parts.size() == 3) || parts[0].empty()
+      || parts[1].empty()) {
         // Malformed value.  Do not log the value, it may be malformed
         // but it is still a secret.
         vlog(
           clusterlog.warn,
-          "Invalid value of {} (expected \"username:password\")",
+          "Invalid value of {} (expected \"username:password[:mechanism]\")",
           bootstrap_user_env_key);
-        co_return errc::success;
+        return {};
+    }
+    std::variant<security::scram_sha256, security::scram_sha512> scram;
+    if (parts.size() == 3) {
+        if (parts[2] == security::scram_sha512_authenticator::name) {
+            scram = security::scram_sha512{};
+        } else if (parts[2] != security::scram_sha256_authenticator::name) {
+            throw std::invalid_argument(
+              fmt::format("Invalid SCRAM mechanism: {}", parts[2]));
+        }
+    }
+    return std::optional<user_and_credential>(
+      std::in_place,
+      security::credential_user{parts[0]},
+      ss::visit(scram, [&](const auto& scram) {
+          using scram_t = std::decay_t<decltype(scram)>;
+          return scram_t::make_credentials(
+            ss::sstring{parts[1]}, scram_t::min_iterations);
+      }));
+}
+
+ss::future<result<model::offset>> security_frontend::get_leader_committed(
+  model::timeout_clock::duration timeout) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        return ss::make_ready_future<result<model::offset>>(
+          make_error_code(errc::no_leader_controller));
     }
 
-    auto username = security::credential_user{creds_str.substr(0, colon)};
-    auto password = creds_str.substr(colon + 1);
-    auto credentials = security::scram_sha256::make_credentials(
-      password, security::scram_sha256::min_iterations);
-
-    auto err = co_await create_user(
-      username, credentials, model::timeout_clock::now() + 5s);
-
-    if (err) {
-        vlog(
-          clusterlog.warn,
-          "Failed to apply {}: {}",
-          bootstrap_user_env_key,
-          err.message());
-    } else {
-        vlog(
-          clusterlog.info,
-          "Created user '{}' via {}",
-          username,
-          bootstrap_user_env_key);
+    if (leader == _self) {
+        return ss::smp::submit_to(controller_stm_shard, [this, timeout]() {
+            return ss::with_timeout(
+                     model::timeout_clock::now() + timeout,
+                     _controller->linearizable_barrier())
+              .handle_exception_type([](const ss::timed_out_error&) {
+                  return result<model::offset>(errc::timeout);
+              });
+        });
     }
 
-    co_return err;
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        timeout,
+        [timeout](controller_client_protocol cp) mutable {
+            return cp.get_controller_committed_offset(
+              controller_committed_offset_request{},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<controller_committed_offset_reply>)
+      .then([](result<controller_committed_offset_reply> r) {
+          if (r.has_error()) {
+              return result<model::offset>(r.error());
+          } else if (r.value().result != errc::success) {
+              return result<model::offset>(r.value().result);
+          }
+          return result<model::offset>(r.value().last_committed);
+      });
+}
+
+ss::future<std::error_code> security_frontend::wait_until_caughtup_with_leader(
+  model::timeout_clock::duration timeout) {
+    /// Grab the leader committed offset - the leader may be this node or
+    /// another
+    const auto start = model::timeout_clock::now();
+    const auto leader_committed = co_await get_leader_committed(timeout);
+    if (leader_committed.has_error()) {
+        co_return leader_committed.error();
+    }
+
+    /// Subtract the difference of the time already spent waiting
+    const auto elapsed = model::timeout_clock::now() - start;
+    if (elapsed > timeout) {
+        co_return make_error_code(errc::timeout);
+    }
+    timeout -= elapsed;
+
+    /// Waiting up until the leader committed offset means its possible that
+    /// waiting on an offset higher then neccessary is performed but the
+    /// alternative of waiting on the last_applied isn't a complete solution
+    /// as its possible that this offset is behind the actual last_applied
+    /// of a previously elected leader, resulting in a stale response being
+    /// returned.
+    co_return co_await _stm.invoke_on(
+      controller_stm_shard,
+      [timeout, leader_committed = leader_committed.value()](auto& stm) {
+          return stm
+            .wait(leader_committed, model::timeout_clock::now() + timeout)
+            .then([] { return make_error_code(errc::success); })
+            .handle_exception_type([](ss::abort_requested_exception) {
+                return make_error_code(errc::shutting_down);
+            })
+            .handle_exception_type([](ss::timed_out_error) {
+                return make_error_code(errc::timeout);
+            });
+      });
 }
 
 } // namespace cluster

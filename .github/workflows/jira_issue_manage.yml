@@ -1,0 +1,55 @@
+---
+name: Manage JIRA Issue
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+      - edited
+      - closed
+      - deleted
+      - labeled
+      - unlabeled
+jobs:
+  manage_jira_issue:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      - name: install dependencies
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+        run: |
+          python3 -mvenv /tmp/venv/jira
+          source /tmp/venv/jira/bin/activate
+          pip install -r ${SCRIPT_DIR}/requirements.txt
+      - name: install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.RP_AWS_CRED_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.RP_AWS_CRED_ACCOUNT_ID }}:role/${{ vars.RP_AWS_CRED_BASE_ROLE_NAME }}${{ github.event.repository.name }}
+      - uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            ,sdlc/prod/github/jira
+          parse-json-secrets: true
+      - name: Manage JIRA Issue
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}/.github/workflows/scripts
+          JIRA_TOKEN: ${{ env.JIRA_TOKEN  }}
+          JIRA_USER: ${{ env.JIRA_USER  }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name) }}
+          ISSUE_STATE: ${{ github.event.issue.state }}
+          EVENT_NAME: ${{ github.event.action }}
+        run: /tmp/venv/jira/bin/python ${SCRIPT_DIR}/jira_helper.py ISSUE --verbose -p CORE

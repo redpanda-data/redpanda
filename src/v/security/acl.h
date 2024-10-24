@@ -9,27 +9,26 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/types.h"
+#include "base/seastarx.h"
+#include "base/type_traits.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
+#include "serde/envelope.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
 #include "utils/named_type.h"
-#include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_set.h>
-#include <fmt/core.h>
 
+#include <iosfwd>
 #include <variant>
 
 namespace security {
-
-namespace details {
-template<class T>
-struct dependent_false : std::false_type {};
-} // namespace details
 
 // cluster is a resource type and the acl data model requires that resources
 // have names, so this is a fixed name for that resource.
@@ -54,7 +53,7 @@ enum class resource_type : int8_t {
 };
 
 template<typename T>
-inline resource_type get_resource_type() {
+consteval resource_type get_resource_type() {
     if constexpr (std::is_same_v<T, model::topic>) {
         return resource_type::topic;
     } else if constexpr (std::is_same_v<T, kafka::group_id>) {
@@ -64,7 +63,7 @@ inline resource_type get_resource_type() {
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
     } else {
-        static_assert(details::dependent_false<T>::value, "Unsupported type");
+        static_assert(base::unsupported_type<T>::value, "Unsupported type");
     }
 }
 
@@ -97,56 +96,7 @@ enum class acl_operation : int8_t {
     idempotent_write = 10,
 };
 
-/*
- * Compute the implied operations based on the specified operation.
- */
-inline std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
-    switch (operation) {
-    case acl_operation::describe:
-        return {
-          acl_operation::describe,
-          acl_operation::read,
-          acl_operation::write,
-          acl_operation::remove,
-          acl_operation::alter,
-        };
-    case acl_operation::describe_configs:
-        return {
-          acl_operation::describe_configs,
-          acl_operation::alter_configs,
-        };
-    default:
-        return {operation};
-    }
-}
-
-inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
-    switch (op) {
-    case acl_operation::all:
-        return os << "all";
-    case acl_operation::read:
-        return os << "read";
-    case acl_operation::write:
-        return os << "write";
-    case acl_operation::create:
-        return os << "create";
-    case acl_operation::remove:
-        return os << "remove";
-    case acl_operation::alter:
-        return os << "alter";
-    case acl_operation::describe:
-        return os << "describe";
-    case acl_operation::cluster_action:
-        return os << "cluster_action";
-    case acl_operation::describe_configs:
-        return os << "describe_configs";
-    case acl_operation::alter_configs:
-        return os << "alter_configs";
-    case acl_operation::idempotent_write:
-        return os << "idempotent_write";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, acl_operation);
 
 /*
  * Grant or deny access.
@@ -158,15 +108,7 @@ enum class acl_permission : int8_t {
     allow = 1,
 };
 
-inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
-    switch (perm) {
-    case acl_permission::deny:
-        return os << "deny";
-    case acl_permission::allow:
-        return os << "allow";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, acl_permission);
 
 /*
  * Principal type
@@ -178,73 +120,129 @@ inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
  */
 enum class principal_type : int8_t {
     user = 0,
+    ephemeral_user = 1,
+    role = 2,
 };
 
-inline std::ostream& operator<<(std::ostream& os, resource_type type) {
-    switch (type) {
-    case resource_type::topic:
-        return os << "topic";
-    case resource_type::group:
-        return os << "group";
-    case resource_type::cluster:
-        return os << "cluster";
-    case resource_type::transactional_id:
-        return os << "transactional_id";
-    }
-    __builtin_unreachable();
-}
+std::ostream& operator<<(std::ostream&, resource_type);
+std::ostream& operator<<(std::ostream&, pattern_type);
+std::ostream& operator<<(std::ostream&, principal_type);
 
-inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
-    switch (type) {
-    case pattern_type::literal:
-        return os << "literal";
-    case pattern_type::prefixed:
-        return os << "prefixed";
-    }
-    __builtin_unreachable();
-}
-
-inline std::ostream& operator<<(std::ostream& os, principal_type type) {
-    switch (type) {
-    case principal_type::user:
-        return os << "user";
-    }
-    __builtin_unreachable();
-}
-
-/*
- * Kafka principal is (principal-type, principal)
+/**
+ * Abstract interface for Kafka principals.
+ *
+ * A Kafka principal is (principal-type, principal).
+ *
+ * Note that no virtual destructor is provided here. This is intentional.
+ * acl_principal_base is meant to support polymorphic references at various
+ * auth APIs, **not** to support polymorphic construction/destruction of
+ * principal instances.
+ *
  */
-class acl_principal : public serde::envelope<acl_principal, serde::version<0>> {
+class acl_principal_base {
+public:
+    /**
+     * Get a view to the principal name.
+     */
+    virtual std::string_view name_view() const = 0;
+    /**
+     * Get the principal type
+     */
+    virtual principal_type type() const = 0;
+
+private:
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_principal_base& e) {
+        return H::combine(std::move(h), e.type(), e.name_view());
+    }
+
+    friend bool
+    operator==(const acl_principal_base& l, const acl_principal_base& r) {
+        return l.type() == r.type() && l.name_view() == r.name_view();
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const acl_principal_base&);
+};
+
+/**
+ * Concrete instance of a Kafka principal.
+ *
+ * This implementation owns the memory for its name.
+ */
+class acl_principal final
+  : public serde::
+      envelope<acl_principal, serde::version<0>, serde::compat_version<0>>
+  , public acl_principal_base {
 public:
     acl_principal() = default;
     acl_principal(principal_type type, ss::sstring name)
       : _type(type)
       , _name(std::move(name)) {}
 
-    friend bool operator==(const acl_principal&, const acl_principal&)
-      = default;
-
-    template<typename H>
-    friend H AbslHashValue(H h, const acl_principal& e) {
-        return H::combine(std::move(h), e._type, e._name);
+    /**
+     * Get a view to the principal name.
+     */
+    std::string_view name_view() const override { return _name; }
+    /**
+     * Get the principal type
+     */
+    principal_type type() const override { return _type; }
+    /**
+     * Check whether this is a 'wildcard' principal.
+     *
+     * Note that this is type()-dependent. A principal of type 'role' is
+     * always exempt from wildcard matching.
+     */
+    bool wildcard() const {
+        switch (_type) {
+        case principal_type::user:
+        case principal_type::ephemeral_user:
+            return _name == "*";
+        case principal_type::role:
+            return false;
+        }
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const acl_principal& principal) {
-        fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
-        return os;
-    }
-
+    // Needed for ADL serialization
     const ss::sstring& name() const { return _name; }
-    principal_type type() const { return _type; }
-    bool wildcard() const { return _name == "*"; }
 
     auto serde_fields() { return std::tie(_type, _name); }
 
 private:
     principal_type _type;
     ss::sstring _name;
+};
+
+/**
+ * Concrete instance of a Kafka principal.
+ *
+ * This implementation does _not_ own the memory for its name. Use
+ * with care, similarly to a string_view, only when the lifetime of
+ * the view is known not to exceed the referenced principal.
+ *
+ */
+class acl_principal_view final : public acl_principal_base {
+public:
+    acl_principal_view() = delete;
+    acl_principal_view(principal_type type, std::string_view name)
+      : _type(type)
+      , _name(name) {}
+    explicit acl_principal_view(const acl_principal& p)
+      : _type(p.type())
+      , _name(p.name_view()) {}
+
+    /**
+     * Get a view to the principal name.
+     */
+    std::string_view name_view() const override { return _name; }
+    /**
+     * Get the principal type
+     */
+    principal_type type() const override { return _type; }
+
+private:
+    principal_type _type;
+    std::string_view _name;
 };
 
 inline const acl_principal acl_wildcard_user(principal_type::user, "*");
@@ -254,7 +252,8 @@ inline const acl_principal acl_wildcard_user(principal_type::user, "*");
  * pattern type changes how matching occurs (e.g. literal, name prefix).
  */
 class resource_pattern
-  : public serde::envelope<resource_pattern, serde::version<0>> {
+  : public serde::
+      envelope<resource_pattern, serde::version<0>, serde::compat_version<0>> {
 public:
     static constexpr const char* wildcard = "*";
     resource_pattern() = default;
@@ -271,16 +270,7 @@ public:
         return H::combine(std::move(h), e._resource, e._name, e._pattern);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const resource_pattern& r) {
-        fmt::print(
-          os,
-          "type {{{}}} name {{{}}} pattern {{{}}}",
-          r._resource,
-          r._name,
-          r._pattern);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const resource_pattern&);
 
     resource_type resource() const { return _resource; }
     const ss::sstring& name() const { return _name; }
@@ -297,7 +287,9 @@ private:
 /*
  * A host (or wildcard) in an ACL rule.
  */
-class acl_host : public serde::envelope<acl_host, serde::version<0>> {
+class acl_host
+  : public serde::
+      envelope<acl_host, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_host() = default;
     explicit acl_host(const ss::sstring& host)
@@ -319,16 +311,7 @@ public:
         }
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const acl_host& host) {
-        if (host._addr) {
-            fmt::print(os, "{{{}}}", *host._addr);
-        } else {
-            // we can log whatever representation we want for a wildcard host,
-            // but kafka expects "*" as the wildcard representation.
-            os << "{{any_host}}";
-        }
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_host&);
 
     std::optional<ss::net::inet_address> address() const { return _addr; }
 
@@ -345,7 +328,9 @@ inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
  * permitted to execute an operation on. When associated with a resource, it
  * describes if the principal can execute the operation on that resource.
  */
-class acl_entry : public serde::envelope<acl_entry, serde::version<0>> {
+class acl_entry
+  : public serde::
+      envelope<acl_entry, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_entry() = default;
     acl_entry(
@@ -366,16 +351,7 @@ public:
           std::move(h), e._principal, e._host, e._operation, e._permission);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
-        fmt::print(
-          os,
-          "{{principal {} host {} op {} perm {}}}",
-          entry._principal,
-          entry._host,
-          entry._operation,
-          entry._permission);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_entry&);
 
     const acl_principal& principal() const { return _principal; }
     const acl_host& host() const { return _host; }
@@ -397,7 +373,9 @@ private:
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
  * binding describes if a principal may access resources.
  */
-class acl_binding : public serde::envelope<acl_binding, serde::version<0>> {
+class acl_binding
+  : public serde::
+      envelope<acl_binding, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_binding() = default;
     acl_binding(resource_pattern pattern, acl_entry entry)
@@ -411,12 +389,7 @@ public:
         return H::combine(std::move(h), e._pattern, e._entry);
     }
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const acl_binding& binding) {
-        fmt::print(
-          os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
-        return os;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_binding&);
 
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
@@ -432,7 +405,10 @@ private:
  * A filter for matching resources.
  */
 class resource_pattern_filter
-  : public serde::envelope<resource_pattern_filter, serde::version<0>> {
+  : public serde::envelope<
+      resource_pattern_filter,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     enum class serialized_pattern_type {
         literal = 0,
@@ -454,11 +430,7 @@ public:
         friend bool operator==(const pattern_match&, const pattern_match&)
           = default;
 
-        friend std::ostream&
-        operator<<(std::ostream& os, const pattern_match&) {
-            fmt::print(os, "{{}}");
-            return os;
-        }
+        friend std::ostream& operator<<(std::ostream&, const pattern_match&);
     };
     using pattern_filter_type = std::variant<pattern_type, pattern_match>;
 
@@ -475,7 +447,7 @@ public:
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     resource_pattern_filter(const resource_pattern& resource)
       : resource_pattern_filter(
-        resource.resource(), resource.name(), resource.pattern()) {}
+          resource.resource(), resource.name(), resource.pattern()) {}
 
     /*
      * A filter that matches any resource.
@@ -493,71 +465,28 @@ public:
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
 
+    template<typename H>
+    friend H AbslHashValue(H h, const pattern_match&) {
+        return H::combine(std::move(h), 0x1B3A5CD7); // random number
+    }
+    template<typename H>
+    friend H AbslHashValue(H h, const resource_pattern_filter& f) {
+        return H::combine(std::move(h), f._resource, f._name, f._pattern);
+    }
+
     friend void read_nested(
       iobuf_parser& in,
       resource_pattern_filter& filter,
-      size_t const bytes_left_limit) {
-        using serde::read_nested;
+      const size_t bytes_left_limit);
 
-        read_nested(in, filter._resource, bytes_left_limit);
-        read_nested(in, filter._name, bytes_left_limit);
-
-        auto pattern = read_nested<std::optional<serialized_pattern_type>>(
-          in, bytes_left_limit);
-
-        if (!pattern) {
-            filter._pattern = std::nullopt;
-            return;
-        }
-
-        switch (*pattern) {
-        case serialized_pattern_type::literal:
-            filter._pattern = security::pattern_type::literal;
-            break;
-
-        case serialized_pattern_type::prefixed:
-            filter._pattern = security::pattern_type::prefixed;
-            break;
-        case serialized_pattern_type::match:
-            filter._pattern
-              = security::resource_pattern_filter::pattern_match{};
-            break;
-        }
-    }
-
-    friend void write(iobuf& out, resource_pattern_filter filter) {
-        using serde::write;
-        std::optional<serialized_pattern_type> pattern;
-        if (filter.pattern()) {
-            if (std::holds_alternative<
-                  security::resource_pattern_filter::pattern_match>(
-                  *filter.pattern())) {
-                pattern = serialized_pattern_type::match;
-            } else {
-                auto source_pattern = std::get<security::pattern_type>(
-                  *filter.pattern());
-                pattern = to_pattern(source_pattern);
-            }
-        }
-        write(out, filter._resource);
-        write(out, filter._name);
-        write(out, pattern);
-    }
+    friend void write(iobuf& out, resource_pattern_filter filter);
 
     friend bool
     operator==(const resource_pattern_filter&, const resource_pattern_filter&)
       = default;
 
     friend std::ostream&
-    operator<<(std::ostream& o, const resource_pattern_filter& f) {
-        fmt::print(
-          o,
-          "{{ resource: {} name: {} pattern: {} }}",
-          f._resource,
-          f._name,
-          f._pattern);
-        return o;
-    }
+    operator<<(std::ostream&, const resource_pattern_filter&);
 
 private:
     std::optional<resource_type> _resource;
@@ -565,98 +494,24 @@ private:
     std::optional<pattern_filter_type> _pattern;
 };
 
-inline std::ostream& operator<<(
-  std::ostream& os, resource_pattern_filter::serialized_pattern_type type) {
-    using pattern_type = resource_pattern_filter::serialized_pattern_type;
-    switch (type) {
-    case pattern_type::literal:
-        return os << "literal";
-    case pattern_type::match:
-        return os << "match";
-    case pattern_type::prefixed:
-        return os << "prefixed";
-    }
-    __builtin_unreachable();
-}
-
-inline bool
-resource_pattern_filter::matches(const resource_pattern& pattern) const {
-    if (_resource && *_resource != pattern.resource()) {
-        return false;
-    }
-
-    if (
-      _pattern && std::holds_alternative<pattern_type>(*_pattern)
-      && std::get<pattern_type>(*_pattern) != pattern.pattern()) {
-        return false;
-    }
-
-    if (!_name) {
-        return true;
-    }
-
-    if (
-      !_pattern || (std::holds_alternative<pattern_type>(*_pattern)
-      && std::get<pattern_type>(*_pattern) == pattern.pattern())) {
-        return _name == pattern.name();
-    }
-
-    switch (pattern.pattern()) {
-    case pattern_type::literal:
-        return _name == pattern.name()
-               || pattern.name() == resource_pattern::wildcard;
-
-    case pattern_type::prefixed:
-        return std::string_view(*_name).starts_with(pattern.name());
-    }
-
-    __builtin_unreachable();
-}
-
-inline std::vector<resource_pattern>
-resource_pattern_filter::to_resource_patterns() const {
-    if (!_resource || !_name) {
-        return {};
-    }
-
-    if (
-      _pattern
-      && std::holds_alternative<resource_pattern_filter::pattern_match>(
-        *_pattern)) {
-        return {};
-    }
-
-    if (_pattern) {
-        if (std::holds_alternative<resource_pattern_filter::pattern_match>(
-              *_pattern)) {
-            return {};
-        }
-        return {
-          resource_pattern(
-            *_resource, *_name, std::get<pattern_type>(*_pattern)),
-        };
-    } else {
-        return {
-          resource_pattern(*_resource, *_name, pattern_type::literal),
-          resource_pattern(*_resource, *_name, pattern_type::prefixed),
-        };
-    }
-}
+std::ostream&
+operator<<(std::ostream&, resource_pattern_filter::serialized_pattern_type);
 
 /*
  * A filter for matching ACL entries.
  */
 class acl_entry_filter
-  : public serde::envelope<acl_entry_filter, serde::version<0>> {
+  : public serde::
+      envelope<acl_entry_filter, serde::version<0>, serde::compat_version<0>> {
 public:
     acl_entry_filter() = default;
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     acl_entry_filter(const acl_entry& entry)
       : acl_entry_filter(
-        entry.principal(),
-        entry.host(),
-        entry.operation(),
-        entry.permission()) {}
+          entry.principal(),
+          entry.host(),
+          entry.operation(),
+          entry.permission()) {}
 
     acl_entry_filter(
       std::optional<acl_principal> principal,
@@ -664,7 +519,7 @@ public:
       std::optional<acl_operation> operation,
       std::optional<acl_permission> permission)
       : _principal(std::move(principal))
-      , _host(std::move(host))
+      , _host(host)
       , _operation(operation)
       , _permission(permission) {}
 
@@ -688,20 +543,16 @@ public:
         return std::tie(_principal, _host, _operation, _permission);
     }
 
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_entry_filter& f) {
+        return H::combine(
+          std::move(h), f._principal, f._host, f._operation, f._permission);
+    }
+
     friend bool operator==(const acl_entry_filter&, const acl_entry_filter&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const acl_entry_filter& f) {
-        fmt::print(
-          o,
-          "{{ pattern: {} host: {} operation: {}, permission: {} }}",
-          f._principal,
-          f._host,
-          f._operation,
-          f._permission);
-        return o;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_entry_filter&);
 
 private:
     std::optional<acl_principal> _principal;
@@ -710,32 +561,24 @@ private:
     std::optional<acl_permission> _permission;
 };
 
-inline bool acl_entry_filter::matches(const acl_entry& other) const {
-    if (_principal && _principal != other.principal()) {
-        return false;
-    }
-
-    if (_host && _host != other.host()) {
-        return false;
-    }
-
-    if (_operation && *_operation != other.operation()) {
-        return false;
-    }
-
-    return !_permission || *_permission == other.permission();
-}
-
 /*
  * A filter for matching ACL bindings.
  */
 class acl_binding_filter
-  : public serde::envelope<acl_binding_filter, serde::version<0>> {
+  : public serde::envelope<
+      acl_binding_filter,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     acl_binding_filter() = default;
     acl_binding_filter(resource_pattern_filter pattern, acl_entry_filter acl)
       : _pattern(std::move(pattern))
       , _acl(std::move(acl)) {}
+
+    template<typename H>
+    friend H AbslHashValue(H h, const acl_binding_filter& f) {
+        return H::combine(std::move(h), f._pattern, f._acl);
+    }
 
     /*
      * A filter that matches any ACL binding.
@@ -757,11 +600,7 @@ public:
     friend bool operator==(const acl_binding_filter&, const acl_binding_filter&)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const acl_binding_filter& f) {
-        fmt::print(o, "{{ pattern: {} acl: {} }}", f._pattern, f._acl);
-        return o;
-    }
+    friend std::ostream& operator<<(std::ostream&, const acl_binding_filter&);
 
     auto serde_fields() { return std::tie(_pattern, _acl); }
 
@@ -769,5 +608,9 @@ private:
     resource_pattern_filter _pattern;
     acl_entry_filter _acl;
 };
+
+/// Name of the principal the kafka client for auditing will be using
+inline const acl_principal audit_principal{
+  principal_type::ephemeral_user, "__auditing"};
 
 } // namespace security

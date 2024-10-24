@@ -547,4 +547,18 @@
           }
         }
       }
+    },
+    "/status/ready": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "http_rest_status_ready",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }

@@ -12,10 +12,10 @@
 
 #include "cloud_roles/logger.h"
 #include "cloud_roles/probe.h"
-#include "cloud_roles/request_response_helpers.h"
-#include "cloud_roles/signature.h"
+#include "cloud_roles/types.h"
+#include "config/configuration.h"
+#include "http/client.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -31,16 +31,12 @@ struct retry_params {
 
 class refresh_credentials {
 public:
-    enum class client_tls_enabled : bool {
-        yes = true,
-        no = false,
-    };
+    using client_tls_enabled = ss::bool_class<struct client_tls_enabled_t>;
 
     class impl {
     public:
         impl(
-          ss::sstring api_host,
-          uint16_t api_port,
+          net::unresolved_address address,
           aws_region_name region,
           ss::abort_source& as,
           retry_params retry_params);
@@ -72,20 +68,13 @@ public:
         /// go over the max limit, abort the operation by throwing an exception.
         void increment_retries();
 
-        void reset_retries() {
-            if (unlikely(_retries != 0)) {
-                vlog(
-                  clrl_log.info,
-                  "resetting retry counter from {} to 0",
-                  _retries);
-                _retries = 0;
-            }
-        }
+        void reset_retries();
 
     protected:
         /// Returns an http client with the API host and port applied
-        ss::future<http::client>
-        make_api_client(client_tls_enabled enable_tls = client_tls_enabled::no);
+        ss::future<http::client> make_api_client(
+          ss::sstring name = "",
+          client_tls_enabled enable_tls = client_tls_enabled::no);
 
         /// Helper to parse the iobuf returned from API into a credentials
         /// object, customized to API response structure
@@ -94,13 +83,7 @@ public:
         /// Sets the amount of seconds to sleep before making the next API call
         /// to fetch credentials. Depends on expiry time of current set of
         /// credentials.
-        void next_sleep_duration(std::chrono::milliseconds sd) {
-            vlog(
-              clrl_log.trace,
-              "setting next sleep duration to {} seconds",
-              std::chrono::duration_cast<std::chrono::seconds>(sd).count());
-            _sleep_duration = sd;
-        }
+        void next_sleep_duration(std::chrono::milliseconds sd);
 
         /// Calculates sleep duration given a time point in future where the
         /// credentials will expire. Keeps a small buffer to allow for network
@@ -116,24 +99,19 @@ public:
 
         uint8_t retries() const { return _retries; }
 
-        const ss::sstring& api_host() const { return _api_host; }
-
-        uint16_t api_port() const { return _api_port; }
+        const net::unresolved_address& address() const { return _address; }
 
         aws_region_name region() const { return _region; }
 
     private:
         /// Initializes certificate_credentials on first client creation.
         /// Subsequent clients which are created will reuse the certs.
-        ss::future<> init_tls_certs();
+        ss::future<> init_tls_certs(ss::sstring name);
 
-        /// The hostname to query for credentials. Can be overridden using env
-        /// variable `RP_SI_CREDS_API_HOST`
-        ss::sstring _api_host;
+        /// The address to query for credentials. Can be overridden using env
+        /// variable `RP_SI_CREDS_API_ADDRESS`
+        net::unresolved_address _address;
 
-        /// The port to query for credentials. Can be overridden using env
-        /// variable `RP_SI_CREDS_API_PORT`
-        uint16_t _api_port;
         aws_region_name _region;
         uint8_t _retries{0};
 
@@ -148,7 +126,6 @@ public:
 
     refresh_credentials(
       std::unique_ptr<impl> impl,
-      ss::gate& gate,
       ss::abort_source& as,
       credentials_update_cb_t creds_update,
       aws_region_name region);
@@ -160,6 +137,8 @@ public:
     ss::future<api_response> fetch_credentials() {
         return _impl->fetch_credentials();
     }
+
+    ss::future<> stop();
 
 private:
     ss::future<> do_start();
@@ -179,11 +158,11 @@ private:
 
 private:
     std::unique_ptr<impl> _impl;
-    ss::gate& _gate;
+    ss::gate _gate;
     ss::abort_source& _as;
     credentials_update_cb_t _credentials_update;
     aws_region_name _region;
-    auth_refresh_probe _probe;
+    std::unique_ptr<auth_refresh_probe> _probe;
 };
 
 std::ostream& operator<<(std::ostream& os, const refresh_credentials& rc);
@@ -193,25 +172,42 @@ static constexpr retry_params default_retry_params{
 
 template<typename CredentialsProvider>
 refresh_credentials make_refresh_credentials(
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params) {
-    auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
+    ss::sstring host = {
+      CredentialsProvider::default_host.data(),
+      CredentialsProvider::default_host.size()};
+    if (endpoint) {
+        host = endpoint->host();
+    }
+    if (auto cfg_host
+        = config::shard_local_cfg().cloud_storage_credentials_host();
+        cfg_host.has_value()) {
+        vlog(
+          clrl_log.info,
+          "overriding default cloud roles credentials host {} with {} set "
+          "in configuration.",
+          host,
+          cfg_host.value());
+        host = cfg_host.value();
+    }
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
-      host.data(), port, region, as, retry_params);
+      net::unresolved_address{{host.data(), host.size()}, port},
+      region,
+      as,
+      retry_params);
     return refresh_credentials{
-      std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
+      std::move(impl), as, std::move(creds_update_cb), std::move(region)};
 }
 
-/// Builds a refresh_credentials object based on the credentials source set in
-/// configuration.
+/// Builds a refresh_credentials object based on the credentials source set
+/// in configuration.
 refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,

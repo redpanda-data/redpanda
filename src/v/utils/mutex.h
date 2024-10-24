@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/semaphore.h"
 
 /*
@@ -32,10 +32,10 @@ class mutex {
 public:
     using duration = typename ss::semaphore::duration;
     using time_point = typename ss::semaphore::time_point;
+    using units = typename ssx::semaphore_units;
 
-    // TODO constructor to pass through name & change callers.
-    mutex()
-      : _sem(1, "mutex") {}
+    explicit mutex(ss::sstring name)
+      : _sem(1, std::move(name)) {}
 
     template<typename Func>
     auto with(Func&& func) noexcept {
@@ -56,13 +56,21 @@ public:
           });
     }
 
-    auto get_units() noexcept { return ss::get_units(_sem, 1); }
+    ss::future<units> get_units() noexcept { return ss::get_units(_sem, 1); }
 
-    auto try_get_units() noexcept { return ss::try_get_units(_sem, 1); }
+    ss::future<units> get_units(ss::abort_source& as) noexcept {
+        return ss::get_units(_sem, 1, as);
+    }
+
+    std::optional<units> try_get_units() noexcept {
+        return ss::try_get_units(_sem, 1);
+    }
 
     void broken() noexcept { _sem.broken(); }
 
-    bool ready() { return _sem.waiters() == 0 && _sem.available_units() == 1; }
+    bool ready() const noexcept {
+        return _sem.waiters() == 0 && _sem.available_units() == 1;
+    }
 
     size_t waiters() const noexcept { return _sem.waiters(); }
 

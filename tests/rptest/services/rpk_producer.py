@@ -19,7 +19,10 @@ class RpkProducer(BackgroundThreadService):
                  acks: Optional[int] = None,
                  printable=False,
                  quiet: bool = False,
-                 produce_timeout: Optional[int] = None):
+                 produce_timeout: Optional[int] = None,
+                 *,
+                 partition: Optional[int] = None,
+                 max_message_bytes: Optional[int] = None):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -30,6 +33,8 @@ class RpkProducer(BackgroundThreadService):
         self._stopping = Event()
         self._quiet = quiet
         self._output_line_count = 0
+        self._partition = partition
+        self._max_message_bytes = max_message_bytes
 
         if produce_timeout is None:
             produce_timeout = 10
@@ -57,6 +62,12 @@ class RpkProducer(BackgroundThreadService):
             # Suppress default "Produced to..." output lines by setting output template to empty string
             cmd += " -o \"\""
 
+        if self._partition is not None:
+            cmd += f" -p {self._partition}"
+
+        if self._max_message_bytes is not None:
+            cmd += f" --max-message-bytes {self._max_message_bytes}"
+
         self._stopping.clear()
         try:
             for line in node.account.ssh_capture(
@@ -79,3 +90,6 @@ class RpkProducer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("rpk", clean_shutdown=False)
+
+    def clean_node(self, node):
+        pass

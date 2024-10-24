@@ -8,23 +8,32 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
+#include "cloud_storage/async_manifest_view.h"
+#include "cloud_storage/download_exception.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/tests/util.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
+#include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
-#include "s3/client.h"
-#include "seastarx.h"
+#include "ssx/future-util.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/segment.h"
@@ -42,15 +51,16 @@
 #include <seastar/core/thread.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
-#include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
+#include <iterator>
 #include <numeric>
-#include <random>
+#include <stdexcept>
 #include <system_error>
 
 using namespace std::chrono_literals;
@@ -58,176 +68,13 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
-static constexpr model::cloud_credentials_source config_file{
-  model::cloud_credentials_source::config_file};
-
-static std::unique_ptr<storage::continuous_batch_parser>
-make_recording_batch_parser(
-  iobuf buf,
-  std::vector<model::record_batch_header>& headers,
-  std::vector<iobuf>& records,
-  std::vector<uint64_t>& file_offsets) {
-    auto stream = make_iobuf_input_stream(std::move(buf));
-    auto parser = std::make_unique<storage::continuous_batch_parser>(
-      std::make_unique<recording_batch_consumer>(
-        headers, records, file_offsets),
-      storage::segment_reader_handle(std::move(stream)));
-    return parser;
-}
-
-ss::sstring linearize_iobuf(iobuf io) {
-    ss::sstring bytes;
-    for (const auto& f : io) {
-        bytes.append(f.get(), f.size());
-    }
-    return bytes;
-}
-
-struct in_memory_segment {
-    ss::sstring bytes;
-    std::vector<model::record_batch_header> headers;
-    std::vector<iobuf> records;
-    std::vector<uint64_t> file_offsets;
-    model::offset base_offset, max_offset;
-    segment_name sname;
-    int num_config_batches{0};
-    int num_config_records{0};
-};
-
-static in_memory_segment make_segment(model::offset base, int num_batches) {
-    iobuf segment_bytes = generate_segment(base, num_batches);
-    std::vector<model::record_batch_header> hdr;
-    std::vector<iobuf> rec;
-    std::vector<uint64_t> off;
-    auto p1 = make_recording_batch_parser(
-      iobuf_deep_copy(segment_bytes), hdr, rec, off);
-    p1->consume().get();
-    in_memory_segment s;
-    s.bytes = linearize_iobuf(std::move(segment_bytes));
-    s.base_offset = hdr.front().base_offset;
-    s.max_offset = hdr.back().last_offset();
-    s.headers = std::move(hdr);
-    s.records = std::move(rec);
-    s.file_offsets = std::move(off);
-    s.sname = segment_name(fmt::format("{}-1-v1.log", s.base_offset()));
-    p1->close().get();
-    return s;
-}
-
-static in_memory_segment
-make_segment(model::offset base, const std::vector<batch_t>& batches) {
-    auto num_config_batches = std::count_if(
-      batches.begin(), batches.end(), [](batch_t t) {
-          return t.type != model::record_batch_type::raft_data;
-      });
-    auto num_config_records = std::accumulate(
-      batches.begin(), batches.end(), 0U, [](size_t acc, batch_t b) {
-          if (b.type == model::record_batch_type::raft_data) {
-              return acc;
-          }
-          return acc + b.num_records;
-      });
-    iobuf segment_bytes = generate_segment(base, batches);
-    std::vector<model::record_batch_header> hdr;
-    std::vector<iobuf> rec;
-    std::vector<uint64_t> off;
-    auto p1 = make_recording_batch_parser(
-      iobuf_deep_copy(segment_bytes), hdr, rec, off);
-    p1->consume().get();
-    p1->close().get();
-    in_memory_segment s;
-    s.bytes = linearize_iobuf(std::move(segment_bytes));
-    s.base_offset = hdr.front().base_offset;
-    s.max_offset = hdr.back().last_offset();
-    s.headers = std::move(hdr);
-    s.records = std::move(rec);
-    s.file_offsets = std::move(off);
-    s.sname = segment_name(fmt::format("{}-1-v1.log", s.base_offset()));
-    s.num_config_batches = num_config_batches;
-    s.num_config_records = num_config_records;
-    return s;
-}
-
-static std::vector<in_memory_segment>
-make_segments(int num_segments, int num_batches) {
-    std::vector<in_memory_segment> s;
-    model::offset base_offset{0};
-    for (int i = 0; i < num_segments; i++) {
-        s.push_back(make_segment(base_offset, num_batches));
-        base_offset = s.back().max_offset + model::offset(1);
-    }
-    return s;
-}
-
-static std::vector<in_memory_segment>
-make_segments(const std::vector<std::vector<batch_t>>& segments) {
-    std::vector<in_memory_segment> s;
-    model::offset base_offset{0};
-    for (int i = 0; i < segments.size(); i++) {
-        const auto& batches = segments[i];
-        s.push_back(make_segment(base_offset, batches));
-        base_offset = s.back().max_offset + model::offset(1);
-    }
-    return s;
-}
-
-static std::ostream& operator<<(std::ostream& o, const in_memory_segment& ims) {
-    fmt::print(
-      o,
-      "name {}, base-offset {}, max-offset {}\n",
-      ims.sname,
-      ims.base_offset,
-      ims.max_offset);
-    for (size_t i = 0; i < ims.headers.size(); i++) {
-        fmt::print(o, "\trecord-batch {}\n", ims.headers[i]);
-    }
-    return o;
-}
-
 static void print_segments(const std::vector<in_memory_segment>& segments) {
     for (const auto& s : segments) {
         vlog(test_log.debug, "segment: {}", s);
     }
 }
 
-static std::vector<cloud_storage_fixture::expectation>
-make_imposter_expectations(
-  cloud_storage::partition_manifest& m,
-  const std::vector<in_memory_segment>& segments,
-  bool truncate_segments = false) {
-    std::vector<cloud_storage_fixture::expectation> results;
-    model::offset delta{0};
-    for (const auto& s : segments) {
-        auto body = s.bytes;
-        if (truncate_segments) {
-            body = s.bytes.substr(0, s.bytes.size() / 2);
-        }
-
-        cloud_storage::partition_manifest::segment_meta meta{
-          .is_compacted = false,
-          .size_bytes = s.bytes.size(),
-          .base_offset = s.base_offset,
-          .committed_offset = s.max_offset,
-          .base_timestamp = {},
-          .max_timestamp = {},
-          .delta_offset = model::offset_delta(delta),
-          .ntp_revision = m.get_revision_id(),
-        };
-        m.add(s.sname, meta);
-
-        delta = delta + model::offset(s.num_config_records);
-        auto res = parse_segment_name(s.sname);
-        auto url = m.generate_segment_path(*res, meta);
-        results.push_back(cloud_storage_fixture::expectation{
-          .url = "/" + url().string(), .body = body});
-    }
-    std::stringstream ostr;
-    m.serialize(ostr);
-    results.push_back(cloud_storage_fixture::expectation{
-      .url = "/" + m.get_manifest_path()().string(),
-      .body = ss::sstring(ostr.str())});
-    return results;
-}
+static const remote_path_provider path_provider(std::nullopt, std::nullopt);
 
 /// Return vector<bool> which have a value for every recrod_batch_header in
 /// 'segments' If i'th value is true then the value are present in both
@@ -265,13 +112,19 @@ static std::vector<bool> get_coverage(
     return result;
 }
 
-using namespace cloud_storage;
-using namespace std::chrono_literals;
-
-class test_consumer final {
+/// Consumer that accepts fixed number of record
+/// batches.
+class counting_batch_consumer final {
 public:
+    explicit counting_batch_consumer(size_t count)
+      : _count(count) {}
+
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        vlog(test_log.debug, "record batch #{}: {}", headers.size(), b);
         headers.push_back(b.header());
+        if (headers.size() == _count) {
+            co_return ss::stop_iteration::yes;
+        }
         co_return ss::stop_iteration::no;
     }
 
@@ -279,59 +132,29 @@ public:
         return std::move(headers);
     }
 
+    size_t _count;
     std::vector<model::record_batch_header> headers;
 };
 
-static auto setup_s3_imposter(
-  cloud_storage_fixture& fixture,
-  int num_segments,
-  int num_batches_per_segment,
-  bool truncate_segments = false) {
-    // Create test data
-    auto segments = make_segments(num_segments, num_batches_per_segment);
-    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
-    auto expectations = make_imposter_expectations(
-      manifest, segments, truncate_segments);
-    fixture.set_expectations_and_listen(expectations);
-    return segments;
-}
-
-static auto setup_s3_imposter(
-  cloud_storage_fixture& fixture, std::vector<std::vector<batch_t>> batches) {
-    // Create test data
-    auto segments = make_segments(batches);
-    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
-    auto expectations = make_imposter_expectations(manifest, segments);
-    fixture.set_expectations_and_listen(expectations);
-    return segments;
-}
-
-static partition_manifest
-hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
-    partition_manifest m(manifest_ntp, manifest_revision);
-    retry_chain_node rtc(1s, 200ms);
-    auto key = m.get_manifest_path();
-    auto res = api.download_manifest(bucket, key, m, rtc).get();
-    BOOST_REQUIRE(res == cloud_storage::download_result::success);
-    return m;
-}
-
 /// This test reads only a tip of the log
 static model::record_batch_header read_single_batch_from_remote_partition(
-  cloud_storage_fixture& fixture, model::offset target) {
+  cloud_storage_fixture& fixture,
+  model::offset target,
+  bool expect_exists = true) {
     auto conf = fixture.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
-    auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
-    auto manifest = hydrate_manifest(api, bucket);
-
+    auto manifest = hydrate_manifest(fixture.api.local(), fixture.bucket_name);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      fixture.api, fixture.cache, manifest, fixture.bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, fixture.cache.local(), bucket);
+      manifest_view,
+      fixture.api.local(),
+      fixture.cache.local(),
+      fixture.bucket_name,
+      probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
@@ -339,40 +162,413 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    vlog(test_log.debug, "num headers: {}", headers_read.size());
-    BOOST_REQUIRE(headers_read.size() == 1);
-    vlog(test_log.debug, "batch found: {}", headers_read.front());
-    return headers_read.front();
+    vlog(
+      test_log.debug,
+      "num headers for offset {}: {}",
+      target,
+      headers_read.size());
+    if (expect_exists) {
+        BOOST_REQUIRE(headers_read.size() == 1);
+        vlog(test_log.debug, "batch found: {}", headers_read.front());
+        return headers_read.front();
+    }
+    BOOST_REQUIRE(headers_read.empty());
+    return model::record_batch_header{};
 }
 
-/// Similar to prev function but scans the range of offsets instead of
-/// returning a single one
-static std::vector<model::record_batch_header> scan_remote_partition(
-  cloud_storage_fixture& imposter, model::offset base, model::offset max) {
-    auto conf = imposter.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
-    auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
-    storage::log_reader_config reader_config(
-      base, max, ss::default_priority_class());
+// Returns true if a kafka::offset scan returns the expected existence of the
+// record.
+bool check_fetch(
+  cloud_storage_fixture& fixture, kafka::offset ko, bool expect_exists) {
+    auto hdr = read_single_batch_from_remote_partition(
+      fixture, kafka::offset_cast(ko), expect_exists);
+    bool exists = hdr.record_count > 0;
+    bool ret = expect_exists == exists;
+    if (!ret) {
+        test_log.error("Unexpected result", hdr);
+    }
+    return ret;
+}
 
-    auto manifest = hydrate_manifest(api, bucket);
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool check_scan(
+  cloud_storage_fixture& fixture, kafka::offset ko, int expected_num_records) {
+    auto seg_hdrs = scan_remote_partition(fixture, kafka::offset_cast(ko));
+    int num_data_records = 0;
+    for (const auto& hdr : seg_hdrs) {
+        num_data_records += hdr.record_count;
+    }
+    auto ret = expected_num_records == num_data_records;
+    if (!ret) {
+        test_log.error(
+          "Expected {} records, got {}: {}",
+          expected_num_records,
+          num_data_records,
+          seg_hdrs);
+    }
+    return ret;
+}
 
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_no_partitions,
+  cloud_storage_fixture) {
+    auto segments = setup_s3_imposter(*this, 0, 0);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, imposter.cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
-
     partition->start().get();
 
-    auto reader = partition->make_reader(reader_config).get().reader;
+    /*
+     * there are no materialized segments and no segments in the manifest.
+     */
+    BOOST_REQUIRE(!manifest.last_segment().has_value());
 
-    auto headers_read
-      = reader.consume(test_consumer(), model::no_timeout).get();
+    /*
+     * in this case we have really not much information to estimate anything
+     * other than configuration values. for example, we don't know if the
+     * segments support chunking or not. so we use just use the info we do have.
+     */
+
+    // synchronize with remote_partition::get_cache_usage
+    constexpr auto min_chunks = 1;
+    constexpr auto wanted_chunks = 20;
+    constexpr auto min_segments = 1;
+    constexpr auto wanted_segments = 2;
+
+    auto usage = partition->get_cache_usage_target();
+    if (config::shard_local_cfg().cloud_storage_disable_chunk_reads()) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_segments * config::shard_local_cfg().log_segment_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_segments * config::shard_local_cfg().log_segment_size());
+    } else {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    }
+}
+
+static void
+test_remote_partition_cache_size_estimate_materialized_segments_args(
+  cloud_storage_fixture& context,
+  ss::sharded<remote>& api,
+  ss::sharded<cloud_storage::cache>& cache,
+  cloud_storage::segment_name_format sname_format) {
+    auto segments = setup_s3_imposter(
+      context, 3, 10, manifest_inconsistency::none, sname_format);
+    auto manifest = hydrate_manifest(api.local(), context.bucket_name);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, context.bucket_name, path_provider);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), context.bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    // synchronize with remote_partition::get_cache_usage
+    constexpr auto min_chunks = 1;
+    constexpr auto wanted_chunks = 20;
+    constexpr auto min_segments = 1;
+    constexpr auto wanted_segments = 2;
+
+    /*
+     * This is the rule for legacy segments. it determines how we should
+     * calculate the cache size that we'll test for from the cache estimate api
+     * because the segments may be chunked or not.
+     *
+     * this is only for the case where segments haven't been materialized. see
+     * below for that.
+     *
+     * When there are no materialized segments to examine then rely on the
+     * manifest itself to inquire about the state of segment.
+     */
+    BOOST_REQUIRE(manifest.last_segment().has_value());
+    auto usage = partition->get_cache_usage_target();
+    if (usage.chunked) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    } else {
+        auto seg = manifest.last_segment();
+        BOOST_REQUIRE(
+          usage.target_min_bytes = min_segments * seg.value().size_bytes);
+        BOOST_REQUIRE(
+          usage.target_bytes = wanted_segments * seg.value().size_bytes);
+    }
+
+    /*
+     * Now materialize all the segments as remote segments
+     */
+    partition->start().get();
+    auto base = segments[0].base_offset;
+    auto max = segments[2].max_offset;
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
+    auto reader = partition->make_reader(reader_config).get().reader;
+    reader.consume(test_consumer(), model::no_timeout).get();
     std::move(reader).release();
 
-    return headers_read;
+    /*
+     * this should now use the in memory representation of the segments to
+     * calculate usage. it is preferred because it is doesn't need to do any
+     * decoding of manifest info.
+     */
+    usage = partition->get_cache_usage_target();
+    if (usage.chunked) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    } else {
+        auto seg = manifest.last_segment();
+        BOOST_REQUIRE(
+          usage.target_min_bytes = min_segments * seg.value().size_bytes);
+        BOOST_REQUIRE(
+          usage.target_bytes = wanted_segments * seg.value().size_bytes);
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_materialized_segments_v2,
+  cloud_storage_fixture) {
+    test_remote_partition_cache_size_estimate_materialized_segments_args(
+      *this, api, cache, segment_name_format::v2);
+}
+
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_materialized_segments_v3,
+  cloud_storage_fixture) {
+    test_remote_partition_cache_size_estimate_materialized_segments_args(
+      *this, api, cache, segment_name_format::v3);
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17 18
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     2 3     5 6     8 9
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 8; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(9), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(9), false));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(10), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(10), false));
+}
+
+FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+    };
+
+    auto segments = make_segments(batch_types, model::offset(0));
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(
+      manifest,
+      segments,
+      false,
+      model::offset_delta(0),
+      // Use v1 format because it only includes the base offset, not the
+      // committed offset.  We will modify the committed offset.
+      segment_name_format::v1);
+
+    std::stringstream sstr;
+    manifest.serialize_json(sstr);
+
+    auto body = sstr.str();
+    std::string_view to_replace = "\"committed_offset\":5";
+    body.replace(
+      body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
+    // overwrite uploaded manifest with a json version
+    expectations.back() = {
+      .url = prefixed_partition_manifest_json_path(
+        manifest.get_ntp(), manifest.get_revision_id()),
+      .body = body};
+    set_expectations_and_listen(expectations);
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 3     5 6     8
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(3), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 2; i++) {
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
+    }
+    for (int i = 3; i <= 8; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(9), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(9), false));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(10), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(10), false));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_repeats, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     2 3     3 3     3
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 3; i++) {
+        vlog(test_log.info, "Checking offset {}, expect {} batches", i, 4 - i);
+        BOOST_CHECK(check_scan(*this, kafka::offset(i), 4 - i));
+        BOOST_CHECK(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
+}
+FIXTURE_TEST(
+  test_scan_by_kafka_offset_repeats_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 3     3 3     3
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(3), batch_types);
+    print_segments(segments);
+    BOOST_REQUIRE_EXCEPTION(
+      check_fetch(*this, kafka::offset(2), false),
+      std::runtime_error,
+      [](const std::runtime_error& e) {
+          return std::string(e.what()).find(
+                   "Failed to query spillover manifests")
+                 != std::string::npos;
+      });
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(3), 1));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(3), true));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_same_bounds, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17 18
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     5 6     6 6     6 7
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data},
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 6; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 7 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(7), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(7), false));
+}
+
+FIXTURE_TEST(
+  test_scan_by_kafka_offset_same_bounds_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 6     6 6     6
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i < 6; i++) {
+        BOOST_REQUIRE_EXCEPTION(
+          check_fetch(*this, kafka::offset(i), false),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(6), 1));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(6), true));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(7), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(7), false));
 }
 
 FIXTURE_TEST(
@@ -434,7 +630,8 @@ FIXTURE_TEST(test_remote_partition_single_batch_5, cloud_storage_fixture) {
 FIXTURE_TEST(
   test_remote_partition_single_batch_truncated_segments,
   cloud_storage_fixture) {
-    auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
+    auto segments = setup_s3_imposter(
+      *this, 3, 10, manifest_inconsistency::truncated_segments);
     auto target = segments[2].max_offset;
     vlog(test_log.debug, "target offset: {}", target);
     print_segments(segments);
@@ -469,7 +666,8 @@ FIXTURE_TEST(
   test_remote_partition_scan_full_truncated_segments, cloud_storage_fixture) {
     constexpr int num_segments = 3;
 
-    auto segments = setup_s3_imposter(*this, 3, 10, /*truncate_segments=*/true);
+    auto segments = setup_s3_imposter(
+      *this, 3, 10, manifest_inconsistency::truncated_segments);
     auto base = segments[0].base_offset;
     auto max = segments[num_segments - 1].max_offset;
 
@@ -799,181 +997,6 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(headers_read.size(), 0);
 }
 
-struct segment_layout {
-    std::vector<std::vector<batch_t>> segments;
-    size_t num_data_batches;
-};
-
-static segment_layout generate_segment_layout(int num_segments, int seed) {
-    static constexpr size_t max_segment_size = 20;
-    static constexpr size_t max_batch_size = 10;
-    static constexpr size_t max_record_bytes = 2048;
-    size_t num_data_batches = 0;
-    auto gen_segment = [&num_data_batches]() {
-        size_t sz = random_generators::get_int((size_t)1, max_segment_size - 1);
-        std::vector<batch_t> res;
-        res.reserve(sz);
-        model::record_batch_type types[] = {
-          model::record_batch_type::raft_data,
-          model::record_batch_type::raft_configuration,
-          model::record_batch_type::archival_metadata,
-        };
-        constexpr auto num_types
-          = (sizeof(types) / sizeof(model::record_batch_type));
-        for (size_t i = 0; i < sz; i++) {
-            auto type = types[random_generators::get_int(num_types - 1)];
-            size_t batch_size = random_generators::get_int(
-              (size_t)1, max_batch_size - 1);
-            if (type == model::record_batch_type::raft_configuration) {
-                // raft_configuration can only have one record
-                // archival_metadata can have more than one records
-                batch_size = 1;
-            }
-            std::vector<size_t> sizes;
-            for (int j = 0; j < batch_size; j++) {
-                sizes.push_back(
-                  random_generators::get_int(max_record_bytes - 1));
-            }
-            batch_t b{
-              .num_records = static_cast<int>(batch_size),
-              .type = type,
-              .record_sizes = sizes,
-            };
-            if (b.type == model::record_batch_type::raft_data) {
-                num_data_batches++;
-            }
-            res.push_back(b);
-        }
-        return res;
-    };
-    std::vector<std::vector<batch_t>> all_batches;
-    all_batches.reserve(num_segments);
-    for (int i = 0; i < num_segments; i++) {
-        all_batches.push_back(gen_segment());
-    }
-    return {.segments = all_batches, .num_data_batches = num_data_batches};
-}
-
-/// This test scans the entire range of offsets
-FIXTURE_TEST(
-  test_remote_partition_scan_translate_full_random, cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
-    const auto [batch_types, num_data_batches] = generate_segment_layout(
-      num_segments, 42);
-    auto segments = setup_s3_imposter(*this, batch_types);
-    auto base = segments[0].base_offset;
-    auto max = segments[num_segments - 1].max_offset;
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-    auto headers_read = scan_remote_partition(*this, base, max);
-    model::offset expected_offset{0};
-    for (const auto& header : headers_read) {
-        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
-        expected_offset = header.last_offset() + model::offset(1);
-    }
-    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
-}
-
-/// Similar to prev function but scans the range of offsets instead of
-/// returning a single one
-static std::vector<model::record_batch_header>
-scan_remote_partition_incrementally(
-  cloud_storage_fixture& imposter, model::offset base, model::offset max) {
-    auto conf = imposter.get_configuration();
-    static auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
-    auto action = ss::defer([&api] { api.stop().get(); });
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
-
-    auto manifest = hydrate_manifest(api, bucket);
-    auto partition = ss::make_shared<remote_partition>(
-      manifest, api, imposter.cache.local(), bucket);
-    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
-
-    partition->start().get();
-
-    std::vector<model::record_batch_header> headers;
-
-    storage::log_reader_config reader_config(
-      base, max, ss::default_priority_class());
-
-    // starting max_bytes
-    constexpr size_t max_bytes_limit = 4_KiB;
-    reader_config.max_bytes = max_bytes_limit;
-
-    auto next = base;
-
-    int num_fetches = 0;
-    while (next < max) {
-        reader_config.start_offset = next;
-        reader_config.max_bytes = random_generators::get_int(
-          max_bytes_limit - 1);
-        vlog(test_log.info, "reader_config {}", reader_config);
-        auto reader = partition->make_reader(reader_config).get().reader;
-        auto headers_read
-          = reader.consume(test_consumer(), model::no_timeout).get();
-        if (headers_read.empty()) {
-            break;
-        }
-        for (const auto& header : headers_read) {
-            vlog(test_log.info, "header {}", header);
-        }
-        next = headers_read.back().last_offset() + model::offset(1);
-        std::copy(
-          headers_read.begin(),
-          headers_read.end(),
-          std::back_inserter(headers));
-        num_fetches++;
-    }
-    BOOST_REQUIRE(num_fetches > 0);
-    vlog(test_log.info, "{} fetch operations performed", num_fetches);
-    return headers;
-}
-
-FIXTURE_TEST(
-  test_remote_partition_scan_incrementally_random, cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
-    const auto [batch_types, num_data_batches] = generate_segment_layout(
-      num_segments, 42);
-    auto segments = setup_s3_imposter(*this, batch_types);
-    auto base = segments[0].base_offset;
-    auto max = segments[num_segments - 1].max_offset;
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-    auto headers_read = scan_remote_partition_incrementally(*this, base, max);
-    model::offset expected_offset{0};
-    for (const auto& header : headers_read) {
-        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
-        expected_offset = header.last_offset() + model::offset(1);
-    }
-    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_btree_iterator_range_scan) {
-    using map_t = absl::btree_map<int, int>;
-    using iter_t = cloud_storage::details::btree_map_stable_iterator<int, int>;
-    static constexpr int N = 1000;
-    static constexpr int M = 500;
-    map_t map;
-    for (int i = 0; i < N; i++) {
-        map[i] = i * 2;
-    }
-    iter_t begin(map, 0);
-    iter_t end(map);
-    int cnt = 0;
-    for (auto i = begin; i != end; i++) {
-        BOOST_REQUIRE_EQUAL(i->first, cnt);
-        BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
-        cnt++;
-    }
-
-    cnt = M;
-    for (auto i = iter_t(map, M); i != end; i++) {
-        BOOST_REQUIRE_EQUAL(i->first, cnt);
-        BOOST_REQUIRE_EQUAL(i->second, 2 * cnt);
-        cnt++;
-    }
-}
-
 FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // This test checks index materialization code path.
     // It's triggered when the segment is already present in the cache
@@ -1000,13 +1023,10 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote api(s3_connection_limit(10), conf, config_file);
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
 
     // starting max_bytes
     constexpr size_t max_bytes_limit = 4_KiB;
@@ -1014,8 +1034,11 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using first remote_partition instance.
     // After this block finishes the segment will be hydrated.
     {
+        partition_probe probe(manifest.get_ntp());
+        auto manifest_view = ss::make_shared<async_manifest_view>(
+          api, cache, manifest, bucket_name, path_provider);
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api, cache.local(), bucket);
+          manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1035,8 +1058,11 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using second remote_partition instance.
     // This will trigger offset_index materialization from cache.
     {
+        partition_probe probe(manifest.get_ntp());
+        auto manifest_view = ss::make_shared<async_manifest_view>(
+          api, cache, manifest, bucket_name, path_provider);
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api, cache.local(), bucket);
+          manifest_view, api.local(), cache.local(), bucket_name, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1052,4 +1078,1427 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
           = reader.consume(test_consumer(), model::no_timeout).get();
         BOOST_REQUIRE(!headers_read.empty());
     }
+}
+
+static void remove_segment_from_s3(
+  const cloud_storage::partition_manifest& m,
+  model::offset o,
+  cloud_storage::remote& api,
+  const cloud_storage_clients::bucket_name& bucket) {
+    static ss::abort_source never_abort;
+
+    auto meta = m.get(o);
+    BOOST_REQUIRE(meta.has_value());
+    auto path = m.generate_segment_path(*meta, path_provider);
+    retry_chain_node fib(never_abort, 60s, 1s);
+    auto res = api
+                 .delete_object(
+                   bucket, cloud_storage_clients::object_key(path()), fib)
+                 .get();
+    BOOST_REQUIRE(res == cloud_storage::upload_result::success);
+}
+
+/// This test scans the entire range of offsets
+FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // create a reader that consumes segments one by one
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(1), model::no_timeout).get();
+
+        BOOST_REQUIRE(headers_read.size() == 1);
+        BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
+
+        remove_segment_from_s3(
+          manifest, model::offset(0), api.local(), bucket_name);
+        BOOST_REQUIRE(manifest.advance_start_offset(model::offset(400)));
+        manifest.truncate();
+        manifest.advance_insync_offset(model::offset(10000));
+        vlog(
+          test_log.debug,
+          "cloud_storage truncate manifest to {}",
+          manifest.get_start_offset().value());
+
+        // Try to consume remaining 99 batches. This reader should only be able
+        // to consume from the cached segment, so only 9 batches will be present
+        // in the list.
+        headers_read
+          = reader.consume(counting_batch_consumer(99), model::no_timeout)
+              .get();
+        std::move(reader).release();
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 9);
+    }
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          model::offset(400),
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        vlog(test_log.debug, "Creating new reader {}", reader_config);
+
+        // After truncation reading from the old end should be impossible
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(100), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 60);
+        BOOST_REQUIRE_EQUAL(
+          headers_read.front().base_offset, model::offset(400));
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_query_below_cutoff_point, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // create a reader that consumes segments one by one
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    model::offset cutoff_offset(500);
+
+    remove_segment_from_s3(
+      manifest, model::offset(0), api.local(), bucket_name);
+    BOOST_REQUIRE(manifest.advance_start_offset(cutoff_offset));
+    manifest.truncate();
+    manifest.advance_insync_offset(model::offset(10000));
+    vlog(
+      test_log.debug,
+      "cloud_storage truncate manifest to {}",
+      manifest.get_start_offset().value());
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          model::offset(200),
+          model::offset(299),
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        vlog(test_log.debug, "Creating new reader {}", reader_config);
+
+        // After truncation reading from the old end should be impossible
+        BOOST_REQUIRE_EXCEPTION(
+          partition->make_reader(reader_config).get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              return std::string(e.what()).find(
+                       "Failed to query spillover manifests")
+                     != std::string::npos;
+          });
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_compacted_segments_reupload, cloud_storage_fixture) {
+    constexpr int num_segments = 10;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+
+    const std::vector<std::vector<batch_t>> non_compacted_layout = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto segments = setup_s3_imposter(*this, non_compacted_layout);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    const std::vector<std::vector<batch_t>> compacted_layout = {
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data,
+       data, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto compacted_segments = make_segments(compacted_layout);
+
+    // create a reader that consumes segments one by one
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    // No re-uploads yet
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(1000), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE(headers_read.size() == 100);
+        BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
+    }
+
+    // Re-upload some of the segments
+
+    {
+        ss::abort_source as;
+        storage::log_reader_config reader_config(
+          base,
+          max,
+          0,
+          std::numeric_limits<size_t>::max(),
+          ss::default_priority_class(),
+          std::nullopt,
+          std::nullopt,
+          as);
+
+        // Start consuming before truncation, only consume one batch
+        auto reader = partition->make_reader(reader_config).get().reader;
+        auto headers_read
+          = reader.consume(counting_batch_consumer(50), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 50);
+        BOOST_REQUIRE_EQUAL(headers_read.front().base_offset, model::offset(0));
+        BOOST_REQUIRE_EQUAL(
+          headers_read.back().base_offset, model::offset(490));
+
+        for (int i = 0; i < 10; i++) {
+            const int batches_per_segment = 100;
+            remove_segment_from_s3(
+              manifest,
+              model::offset(i * batches_per_segment),
+              api.local(),
+              bucket_name);
+        }
+        reupload_compacted_segments(*this, manifest, compacted_segments);
+        manifest.advance_insync_offset(model::offset(10000));
+
+        headers_read
+          = reader.consume(counting_batch_consumer(50), model::no_timeout)
+              .get();
+
+        BOOST_REQUIRE_EQUAL(headers_read.size(), 50);
+        BOOST_REQUIRE_EQUAL(
+          headers_read.front().base_offset, model::offset(500));
+        BOOST_REQUIRE_EQUAL(
+          headers_read.back().base_offset, model::offset(990));
+    }
+}
+
+static std::vector<size_t> client_batch_sizes = {
+  0,
+  10,
+  50,
+  100,
+  200,
+  300,
+  400,
+  500,
+  600,
+  700,
+  800,
+  900,
+  1000,
+  2000,
+  3000,
+  4000,
+  5000,
+  6000};
+
+/// This test scans the entire range of offsets
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_tx_fence, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 9;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t tx_fence = {
+      .num_records = 1, .type = model::record_batch_type::tx_fence};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, tx_fence, data, data, data, data, data, data, data, data},
+      {conf, data, tx_fence, data, data, data, data, data, data, data},
+      {conf, data, data, tx_fence, data, data, data, data, data, data},
+      {conf, data, data, data, tx_fence, data, data, data, data, data},
+      {conf, data, data, data, data, tx_fence, data, data, data, data},
+      {conf, data, data, data, data, data, tx_fence, data, data, data},
+      {conf, data, data, data, data, data, data, tx_fence, data, data},
+      {conf, data, data, data, data, data, data, data, tx_fence, data},
+      {conf, data, data, data, data, data, data, data, data, tx_fence},
+    };
+
+    auto num_conf_batches = 0;
+    auto num_tx_batches = 0;
+    for (const auto& segment : batch_types) {
+        for (const auto& b : segment) {
+            if (b.type == model::record_batch_type::raft_configuration) {
+                num_conf_batches++;
+            } else if (b.type == model::record_batch_type::tx_fence) {
+                num_tx_batches++;
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::none);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t sz : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, sz, 5, 5);
+
+        BOOST_REQUIRE_EQUAL(
+          headers_read.size(),
+          total_batches - num_conf_batches - num_tx_batches);
+    }
+}
+
+namespace {
+ss::future<> sleep_and_abort(ss::abort_source* as, ss::gate* gate) {
+    auto holder = gate->hold();
+    auto rand_ms = random_generators::get_int(1, 50);
+    co_await ss::sleep(rand_ms * 1ms);
+    as->request_abort_ex(
+      std::system_error(std::make_error_code(std::errc::connection_aborted)));
+}
+ss::future<>
+read(storage::log_reader_config reader_config, remote_partition* partition) {
+    auto next = reader_config.start_offset;
+    while (true) {
+        reader_config.start_offset = next;
+        auto translating_reader = co_await partition->make_reader(
+          reader_config);
+        auto reader = std::move(translating_reader.reader);
+        auto headers_read = co_await reader.consume(
+          test_consumer(), model::no_timeout);
+        if (headers_read.empty()) {
+            break;
+        }
+        next = headers_read.back().last_offset() + model::offset(1);
+    }
+}
+} // anonymous namespace
+
+// With some scheduling points/sleeps injected here and there, regression test
+// for a crash seen when racing a client disconnect with the stopping of a
+// reader.
+FIXTURE_TEST(test_remote_partition_abort_eos_race, cloud_storage_fixture) {
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t tx_fence = {
+      .num_records = 1, .type = model::record_batch_type::tx_fence};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, data, data, data, data, tx_fence, data},
+      {conf, data, data, data, data, data, data, tx_fence, data},
+      {conf, data, data, data, data, data, data, tx_fence, data},
+    };
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::none);
+    auto base = segments[0].base_offset;
+    auto max = segments[0].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    ss::lowres_clock::update();
+    auto manifest = hydrate_manifest(api.local(), bucket_name);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket_name, path_provider);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view, api.local(), cache.local(), bucket_name, probe);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    // Intentionally use max - 1 so the reader stops early and is forced to
+    // handle it as an EOS.
+    ss::abort_source as;
+    storage::log_reader_config reader_config(
+      base, model::offset{max() - 1}, ss::default_priority_class());
+    reader_config.abort_source = as;
+
+    std::vector<ss::future<>> futs;
+    ss::gate gate;
+
+    // Explicitly abort, simulating the behavior when a client disconnects.
+    ssx::background = sleep_and_abort(&as, &gate);
+    for (int i = 0; i < 10; i++) {
+        futs.emplace_back(read(reader_config, partition.get()));
+    }
+    for (auto& f : futs) {
+        // Ignore exceptions from the reader -- we only care that we don't
+        // crash.
+        try {
+            std::move(f).get();
+        } catch (...) {
+        }
+    }
+    gate.close().get();
+}
+
+/// This test scans the partition with overlapping segments
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_overlap_1, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 10;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto num_conf_batches = 0;
+    for (const auto& segment : batch_types) {
+        for (const auto& b : segment) {
+            if (b.type == model::record_batch_type::raft_configuration) {
+                num_conf_batches++;
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::overlapping_segments);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t sz : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, sz);
+
+        BOOST_REQUIRE_EQUAL(
+          headers_read.size(), total_batches - num_conf_batches);
+    }
+}
+
+/// This test scans the partition with duplicates
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_with_duplicates_1,
+  cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 10;
+    constexpr int num_segments_with_duplicates = num_segments * 2;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, data, data, data},
+    };
+
+    auto num_conf_batches = 0;
+    auto num_data_batches = 0;
+    for (const auto& segment : batch_types) {
+        for (const auto& b : segment) {
+            if (b.type == model::record_batch_type::raft_configuration) {
+                num_conf_batches++;
+            } else {
+                num_data_batches++;
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::duplicate_offset_ranges);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments_with_duplicates - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t bsize : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, bsize);
+        if (headers_read.size() != num_data_batches) {
+            vlog(
+              test_log.error,
+              "Number of headers read: {}, expected: {}",
+              headers_read.size(),
+              total_batches - num_conf_batches);
+            for (const auto& hdr : headers_read) {
+                vlog(
+                  test_log.info,
+                  "base offset: {}, last offset: {}",
+                  hdr.base_offset,
+                  hdr.last_offset());
+            }
+        }
+        BOOST_REQUIRE(headers_read.size() == num_data_batches);
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_translate_with_duplicates_2,
+  cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 10;
+    constexpr int num_segments_with_duplicates = num_segments * 2;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+      {conf, data, data, conf, data, data, conf, data, data, conf},
+    };
+
+    auto num_conf_batches = 0;
+    auto num_data_batches = 0;
+    for (const auto& segment : batch_types) {
+        for (const auto& b : segment) {
+            if (b.type == model::record_batch_type::raft_configuration) {
+                num_conf_batches++;
+            } else {
+                num_data_batches++;
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, batch_types, manifest_inconsistency::duplicate_offset_ranges);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments_with_duplicates - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t bsize : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, bsize);
+        if (headers_read.size() != num_data_batches) {
+            vlog(
+              test_log.error,
+              "Number of headers read: {}, expected: {}",
+              headers_read.size(),
+              total_batches - num_conf_batches);
+            for (const auto& hdr : headers_read) {
+                vlog(
+                  test_log.info,
+                  "base offset: {}, last offset: {}",
+                  hdr.base_offset,
+                  hdr.last_offset());
+            }
+        }
+        BOOST_REQUIRE(headers_read.size() == num_data_batches);
+    }
+}
+
+FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
+    const char* manifest_json = R"json({
+      "version": 1,
+      "namespace": "kafka",
+      "topic": "test-topic",
+      "partition": 42,
+      "revision": 0,
+      "last_offset": 1311,
+      "insync_offset": 1313,
+      "start_offset": 0,
+      "segments": {
+        "0-1-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 15468,
+          "committed_offset": 225,
+          "base_offset": 0,
+          "base_timestamp": 1680714100332,
+          "max_timestamp": 1680714107958,
+          "delta_offset": 0,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "226-1-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 190,
+          "committed_offset": 226,
+          "base_offset": 226,
+          "base_timestamp": 1680714108861,
+          "max_timestamp": 1680714107958,
+          "delta_offset": 1,
+          "archiver_term": 2,
+          "segment_term": 1,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "227-2-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 7976,
+          "committed_offset": 340,
+          "base_offset": 227,
+          "base_timestamp": 1680714332546,
+          "max_timestamp": 1680714337548,
+          "delta_offset": 2,
+          "archiver_term": 3,
+          "segment_term": 2,
+          "delta_offset_end": 4,
+          "sname_format": 2
+        },
+        "341-3-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 5256,
+          "committed_offset": 414,
+          "base_offset": 341,
+          "base_timestamp": 1680714341227,
+          "max_timestamp": 1680714343949,
+          "delta_offset": 4,
+          "archiver_term": 4,
+          "segment_term": 3,
+          "delta_offset_end": 6,
+          "sname_format": 2
+        },
+        "415-4-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 6616,
+          "committed_offset": 508,
+          "base_offset": 415,
+          "base_timestamp": 1680714353405,
+          "max_timestamp": 1680714356759,
+          "delta_offset": 6,
+          "archiver_term": 5,
+          "segment_term": 4,
+          "delta_offset_end": 8,
+          "sname_format": 2
+        },
+        "501-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 32708,
+          "committed_offset": 989,
+          "base_offset": 501,
+          "base_timestamp": 1680714817104,
+          "max_timestamp": 1680714832463,
+          "delta_offset": 1,
+          "archiver_term": 5,
+          "segment_term": 5,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "990-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 10596,
+          "committed_offset": 1143,
+          "base_offset": 990,
+          "base_timestamp": 1680714833102,
+          "max_timestamp": 1680714842970,
+          "delta_offset": 1,
+          "archiver_term": 5,
+          "segment_term": 5,
+          "delta_offset_end": 2,
+          "sname_format": 2
+        },
+        "1144-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 192,
+          "committed_offset": 1144,
+          "base_offset": 1144,
+          "base_timestamp": 1680714846258,
+          "max_timestamp": 1680714842970,
+          "delta_offset": 2,
+          "archiver_term": 6,
+          "segment_term": 5,
+          "delta_offset_end": 2,
+          "sname_format": 2
+        },
+        "1145-6-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 9846,
+          "committed_offset": 1310,
+          "base_offset": 1145,
+          "base_timestamp": 1680714852301,
+          "max_timestamp": 1680714857884,
+          "delta_offset": 3,
+          "archiver_term": 6,
+          "segment_term": 6,
+          "delta_offset_end": 5,
+          "sname_format": 2
+        },
+        "1311-6-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 193,
+          "committed_offset": 1311,
+          "base_offset": 1311,
+          "base_timestamp": 1680714866941,
+          "max_timestamp": 1680714857884,
+          "delta_offset": 5,
+          "archiver_term": 7,
+          "segment_term": 6,
+          "delta_offset_end": 5,
+          "sname_format": 2
+        }
+      }
+    })json";
+
+    cloud_storage::partition_manifest manifest;
+    iobuf manifest_body;
+    manifest_body.append(manifest_json, std::strlen(manifest_json));
+    auto is = make_iobuf_input_stream(std::move(manifest_body));
+    manifest.update(manifest_format::json, std::move(is)).get();
+
+    auto segments = setup_s3_imposter(*this, manifest);
+
+    auto base = segments.front().base_offset;
+    auto max = segments.back().max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t sz : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, sz);
+
+        // Check that there are no holes in the offset range.
+        // This test works only with batches that contain a single record
+        // so a simple check like this works.
+        model::offset prev;
+        for (const auto& hdr : headers_read) {
+            BOOST_REQUIRE_EQUAL(hdr.base_offset, model::next_offset(prev));
+            prev = hdr.base_offset;
+        }
+    }
+}
+
+/// This test scans compacted segment support
+FIXTURE_TEST(
+  test_remote_partition_scan_compacted_hole_in_the_middle,
+  cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t hole = {
+      .num_records = 10,
+      .type = model::record_batch_type::raft_data,
+      .hole = true};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, hole, data, data, data, data, data, data, data, data},
+      {conf, data, conf, data, hole, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, hole, data, data},
+    };
+
+    auto num_holes = 3;
+    auto num_configs = 4;
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition(*this, base, max);
+    BOOST_REQUIRE_EQUAL(
+      headers_read.size(), total_batches - num_configs - num_holes);
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_compacted_hole_at_the_end, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t hole = {
+      .num_records = 10,
+      .type = model::record_batch_type::raft_data,
+      .hole = true};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, data, data, data, data, data, data, hole},
+      {conf, data, conf, data, data, data, data, data, data, hole},
+      {conf, data, data, data, data, data, data, data, data, hole},
+    };
+
+    auto num_holes = 3;
+    auto num_configs = 4;
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition(*this, base, max);
+    BOOST_REQUIRE_EQUAL(
+      headers_read.size(), total_batches - num_configs - num_holes);
+}
+
+std::vector<model::record_batch_header> scan_remote_partition_with_replacements(
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  std::vector<std::vector<batch_t>> segments,
+  size_t maybe_max_segments,
+  size_t maybe_max_readers) {
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    ss::lowres_clock::update();
+    auto conf = imposter.get_configuration();
+    if (maybe_max_segments) {
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard.set_value(
+            maybe_max_segments);
+    }
+    if (maybe_max_readers) {
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.set_value(
+            maybe_max_readers);
+    }
+    storage::log_reader_config read_one(
+      base, model::next_offset(base), ss::default_priority_class());
+    storage::log_reader_config read_all(
+      base, max, ss::default_priority_class());
+
+    // 1. Hydrate the manifest and create the remote partition.
+    // 2. Make a reader.
+    // 3. Replace the segment in the cloud storage.
+    // 4. Create another reader to consume the offset range.
+    // 5. Make sure that the reuploaded segment is hydrated, not the replaced
+    // one.
+
+    auto manifest = hydrate_manifest(
+      imposter.api.local(), imposter.bucket_name);
+    partition_probe probe(manifest.get_ntp());
+
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      imposter.api,
+      imposter.cache,
+      manifest,
+      imposter.bucket_name,
+      path_provider);
+
+    auto partition = ss::make_shared<remote_partition>(
+      manifest_view,
+      imposter.api.local(),
+      imposter.cache.local(),
+      imposter.bucket_name,
+      probe);
+
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    partition->start().get();
+
+    vlog(
+      test_log.debug,
+      "Start remote_partition reader, reader config: {}",
+      read_one);
+    auto reader_1 = partition->make_reader(read_one).get().reader;
+
+    auto to_json = [](const partition_manifest& m) {
+        std::stringstream s;
+        m.serialize_json(s);
+        return s.str();
+    };
+
+    // Replace offset range
+    vlog(
+      test_log.debug,
+      "Replace segments called, original manifest: {}",
+      to_json(manifest));
+    replace_segments(
+      imposter, manifest, base, model::offset_delta(0), segments);
+    vlog(
+      test_log.debug,
+      "Replace segments completed, updated manifest: {}",
+      to_json(manifest));
+
+    bool first_reader_failed = false;
+    try {
+        reader_1.consume(test_consumer(), model::no_timeout).get();
+    } catch (const download_exception&) {
+        // We expect the first reader to fail because it was created
+        // before the segment was deleted. The 'consume' call will
+        // trigger hydration because the 'remote_segment' is created
+        // with the reader but the segment hydration is delayed until
+        // the reader starts consuming.
+        first_reader_failed = true;
+        vlog(
+          test_log.error,
+          "Can't consume from the reader: {}",
+          std::current_exception());
+    }
+    std::move(reader_1).release();
+    BOOST_REQUIRE(first_reader_failed);
+
+    vlog(
+      test_log.debug,
+      "Start remote_partition reader, reader config: {}",
+      read_all);
+
+    // The 'remote_partition' stores one 'remote_segment' that references
+    // the deleted segment in the cloud storage. If the reader will pick it
+    // up it won't be able to consume anything. If it functions properly it
+    // should be able to detect the fact that the offset range that the
+    // 'remote_segment' covers was replaced and to discard the stale
+    // 'remote_segment'.
+    auto reader_2 = partition->make_reader(read_all).get().reader;
+    auto all_headers
+      = reader_2.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader_2).release();
+
+    return all_headers;
+}
+
+FIXTURE_TEST(test_stale_reader, cloud_storage_fixture) {
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+
+    batch_t merged = {
+      .num_records = 2, .type = model::record_batch_type::raft_data};
+
+    // offsets 0-29
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+      {data, data, data, data, data, data, data, data, data, data},
+    };
+    const std::vector<std::vector<batch_t>> merged_batch_types = {
+      {merged, merged, merged, merged, merged},
+      {merged, merged, merged, merged, merged},
+      {merged, merged, merged, merged, merged},
+    };
+
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition_with_replacements(
+      *this, model::offset(0), model::offset(29), merged_batch_types, 0, 0);
+
+    BOOST_REQUIRE_EQUAL(headers_read.size(), 15);
+}
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool timequery(
+  cloud_storage_fixture& fixture,
+  model::offset min,
+  model::timestamp tm,
+  int expected_num_records) {
+    auto scan_res = scan_remote_partition(
+      fixture, min, tm, model::offset::max());
+    int num_data_records = 0;
+    size_t bytes_read_acc = 0;
+    for (const auto& hdr : scan_res.headers) {
+        test_log.debug("Consumed header: {}", hdr);
+        num_data_records += hdr.record_count;
+        bytes_read_acc += hdr.size_bytes;
+    }
+
+    // These values are computed using metric
+    test_log.debug(
+      "Read bytes: {}, read records: {}, num headers: {}, expected records: "
+      "{}, bytes read: {}, bytes read accumulated: {}, bytes skipped: {}, "
+      "bytes accepted: {}",
+      scan_res.bytes_read,
+      scan_res.records_read,
+      num_data_records,
+      expected_num_records,
+      scan_res.bytes_read,
+      bytes_read_acc,
+      scan_res.bytes_skip,
+      scan_res.bytes_accept);
+
+    auto ret = expected_num_records == num_data_records
+               && scan_res.records_read == expected_num_records;
+
+    if (expected_num_records == 0) {
+        if (scan_res.bytes_skip != 0) {
+            // Validate that we're not scanning anything if we're not expecting
+            // any data to be present
+            test_log.error(
+              "Expected 0 records, got {}, skipped {} bytes",
+              scan_res.records_read,
+              scan_res.bytes_skip);
+            return false;
+        }
+    }
+
+    if (!ret) {
+        test_log.error(
+          "Expected {} records, got {}: {}",
+          expected_num_records,
+          num_data_records,
+          scan_res.headers);
+    }
+    return ret;
+}
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool timequery(
+  cloud_storage_fixture& fixture,
+  model::timestamp tm,
+  int expected_num_records) {
+    return timequery(fixture, model::offset(0), tm, expected_num_records);
+}
+
+FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
+    // Build cloud partition with provided timestamps and query
+    // it using the timequery.
+    auto hole = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::ghost_batch,
+          .hole = true,
+          .timestamp = model::timestamp(t)};
+    };
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+    auto conf = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_configuration,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {hole(1000), conf(1002), conf(1004), data(1006), data(1008), data(1010)},
+      {data(1012), conf(1014), conf(1016), data(1018), data(1020), data(1022)},
+      {conf(1024), data(1026), conf(1028), data(1030), data(1032), conf(1034)},
+    };
+
+    std::vector<model::timestamp> data_timestamps;
+    for (const auto& segm : batch_types) {
+        for (const auto& bt : segm) {
+            if (bt.type == model::record_batch_type::raft_data) {
+                data_timestamps.push_back(bt.timestamp.value());
+            }
+        }
+    }
+
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+
+    print_segments(segments);
+    auto num_data_batches = data_timestamps.size();
+
+    for (int i = 0; i < num_data_batches; i++) {
+        kafka::offset ko(i);
+        size_t num_offsets = num_data_batches - i;
+        test_log.debug(
+          "Data timestamp {}, num_offsets to consume: {}, first kafka offset: "
+          "{}",
+          data_timestamps.at(i),
+          num_offsets,
+          ko);
+        BOOST_REQUIRE(timequery(*this, data_timestamps.at(i), num_offsets));
+    }
+
+    test_log.debug("Timestamp overshoots the partition");
+    BOOST_REQUIRE(timequery(*this, model::timestamp(10000), 0));
+
+    test_log.debug("Timestamp undershoots the partition");
+    BOOST_REQUIRE(timequery(*this, model::timestamp(100), num_data_batches));
+}
+
+FIXTURE_TEST(test_out_of_range_query, cloud_storage_fixture) {
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batches = {
+      {data(1000), data(1002), data(1004), data(1006), data(1008), data(1010)},
+      {data(1012), data(1014), data(1016), data(1018), data(1020), data(1022)},
+    };
+
+    auto segments = make_segments(batches, false, false);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(manifest, segments);
+    set_expectations_and_listen(expectations);
+
+    // Advance start offset as-if archiver did apply retention but didn't
+    // run GC yet (the clean offset is not updated).
+    BOOST_REQUIRE(manifest.advance_start_offset(segments[1].base_offset));
+    auto serialize_manifest = [](const cloud_storage::partition_manifest& m) {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
+    std::ostringstream ostr;
+    manifest.serialize_json(ostr);
+
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(path_provider),
+      ostr.str());
+
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    auto base = segments[0].base_offset;
+    auto max = segments[segments.size() - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    BOOST_REQUIRE(
+      scan_remote_partition(*this, segments[1].base_offset, max).size() == 6);
+
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    test_log.debug("Timestamp undershoots the partition");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(100), 6));
+
+    test_log.debug("Timestamp withing segment");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp(1014), 5));
+}
+
+FIXTURE_TEST(test_out_of_range_spillover_query, cloud_storage_fixture) {
+    auto data = [&](size_t t) {
+        return batch_t{
+          .num_records = 1,
+          .type = model::record_batch_type::raft_data,
+          .timestamp = model::timestamp(t)};
+    };
+
+    const std::vector<std::vector<batch_t>> batches = {
+      {data(1000), data(1002), data(1004), data(1006), data(1008), data(1010)},
+      {data(1012), data(1014), data(1016), data(1018), data(1020), data(1022)},
+      {data(1024), data(1026), data(1028), data(1030), data(1032), data(1034)},
+      {data(1036), data(1038), data(1040), data(1042), data(1044), data(1046)},
+      {data(1048), data(1050), data(1052), data(1054), data(1056), data(1058)},
+      {data(1060), data(1062), data(1064), data(1066), data(1068), data(1070)},
+    };
+
+    auto segments = make_segments(batches, false, false);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
+    auto expectations = make_imposter_expectations(manifest, segments);
+    set_expectations_and_listen(expectations);
+
+    for (int i = 0; i < 2; i++) {
+        spillover_manifest spm(manifest_ntp, manifest_revision);
+
+        for (int j = 0; auto s : manifest) {
+            spm.add(s);
+            if (++j == 2) {
+                break;
+            }
+        }
+        manifest.spillover(spm.make_manifest_metadata());
+
+        std::ostringstream ostr;
+        spm.serialize_json(ostr);
+
+        vlog(
+          test_util_log.info,
+          "Uploading spillover manifest at {}:\n{}",
+          spm.get_manifest_path(path_provider),
+          ostr.str());
+
+        auto s_data = spm.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        add_expectations({cloud_storage_fixture::expectation{
+          .url = spm.get_manifest_path(path_provider)().string(),
+          .body = ss::sstring(buf.begin(), buf.end()),
+        }});
+    }
+
+    // Advance start offset as-if archiver did apply retention but didn't
+    // run GC yet (the clean offset is not updated).
+    //
+    // We set it to the second segment of the second spillover manifest in an
+    // attempt to cover more potential edge cases.
+    auto archive_start = segments[3].base_offset;
+    manifest.set_archive_start_offset(archive_start, model::offset_delta(0));
+
+    // Upload latest manifest version.
+    auto serialize_manifest = [](const cloud_storage::partition_manifest& m) {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
+    std::ostringstream ostr;
+    manifest.serialize_json(ostr);
+
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(path_provider),
+      ostr.str());
+
+    auto manifest_url = manifest.get_manifest_path(path_provider)().string();
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    auto base = segments[0].base_offset;
+    auto max = segments[segments.size() - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+
+    // Can query from start of the archive.
+    BOOST_REQUIRE(
+      scan_remote_partition(*this, archive_start, max).size() == 3 * 6);
+
+    // Can timequery from start of the archive.
+    BOOST_TEST_REQUIRE(
+      timequery(*this, archive_start, model::timestamp(100), 3 * 6));
+
+    // Can't query from the start of partition.
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't timequery from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      timequery(*this, base, model::timestamp(100), 3 * 6),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't query from start of the still valid spillover manifest.
+    // Since we don't rewrite spillover manifests we want to be sure that
+    // we don't allow querying stale segments (below the start offset).
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, segments[2].base_offset, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Can't query from start of the still valid spillover manifest.
+    // Since we don't rewrite spillover manifests we want to be sure that
+    // we don't allow querying stale segments (below the start offset).
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    // BOOST_REQUIRE_EXCEPTION(
+    //   timequery(*this, segments[2].base_offset, model::timestamp(100), 3 *
+    //   6), std::runtime_error,
+    //   [](const auto& ex) {
+    //       ss::sstring what{ex.what()};
+    //       return what.find("Failed to query spillover manifests") !=
+    //       what.npos;
+    //   });
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
+
+    test_log.debug("Timestamp within valid spillover but below archive start");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_timestamp.value(), 3 * 6));
+
+    test_log.debug("Valid timestamp start of retention");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, batches[3][0].timestamp.value(), 3 * 6));
+
+    test_log.debug("Valid timestamp within retention");
+    BOOST_TEST_REQUIRE(
+      timequery(*this, batches[3][1].timestamp.value(), 3 * 6 - 1));
+
+    test_log.debug("Timestamp overshoots the partition");
+    BOOST_TEST_REQUIRE(timequery(*this, model::timestamp::max(), 0));
+
+    // Rewrite the manifest with clean offset to match start offset.
+    manifest.set_archive_clean_offset(
+      archive_start, manifest.archive_size_bytes() / 2);
+    vlog(
+      test_util_log.info,
+      "Rewriting manifest at {}:\n{}",
+      manifest.get_manifest_path(path_provider),
+      ostr.str());
+
+    remove_expectations({manifest_url});
+    add_expectations({
+      cloud_storage_fixture::expectation{
+        .url = manifest_url, .body = serialize_manifest(manifest)},
+    });
+
+    // Still can't query from the base offset.
+    BOOST_REQUIRE_EXCEPTION(
+      scan_remote_partition(*this, base, max),
+      std::runtime_error,
+      [](const auto& ex) {
+          ss::sstring what{ex.what()};
+          return what.find("Failed to query spillover manifests") != what.npos;
+      });
+
+    // Timequery from base offset must fail too as the regular query.
+    // BUG: Currently it succeeds. This is a bug and should be fixed.
+    BOOST_TEST_REQUIRE(timequery(*this, base, model::timestamp(100), 3 * 6));
+    BOOST_TEST_REQUIRE(
+      timequery(*this, segments[2].base_offset, model::timestamp(100), 3 * 6));
 }

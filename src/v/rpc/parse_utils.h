@@ -11,14 +11,16 @@
 
 #pragma once
 
-#include "compression/stream_zstd.h"
+#include "base/likely.h"
+#include "base/seastarx.h"
+#include "base/vlog.h"
+#include "bytes/iostream.h"
+#include "compression/async_stream_zstd.h"
 #include "hashing/xx.h"
-#include "likely.h"
 #include "reflection/async_adl.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
-#include "seastarx.h"
-#include "vlog.h"
+#include "serde/async.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -89,7 +91,7 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
  * types used in coproc which will remain in legacy adl format for now.
  *
  * we use the type system to enforce these rules and allow types to be opt-out
- * on a case-by-case basis for adl (new messages) or serde (legacy like coproc).
+ * on a case-by-case basis for adl (new messages) or serde.
  *
  * the `rpc_adl_exempt` and `rpc_serde_exempt` type trait helpers can be used to
  * opt-out a type T from adl or serde support. a type is marked exempt by
@@ -106,14 +108,10 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
  * then use the `is_rpc_adl_exempt` or `is_rpc_serde_exempt` concept to test.
  */
 template<typename T>
-concept is_rpc_adl_exempt = requires {
-    typename T::rpc_adl_exempt;
-};
+concept is_rpc_adl_exempt = requires { typename T::rpc_adl_exempt; };
 
 template<typename T>
-concept is_rpc_serde_exempt = requires {
-    typename T::rpc_serde_exempt;
-};
+concept is_rpc_serde_exempt = requires { typename T::rpc_serde_exempt; };
 
 /*
  * Encode a client request for the given transport version.
@@ -140,9 +138,10 @@ encode_for_version(iobuf& out, T msg, transport_version version) {
             return transport_version::v0;
         });
     } else if constexpr (is_rpc_adl_exempt<T>) {
-        return ss::do_with(std::move(msg), [&out](T& msg) {
-            return serde::write_async(out, std::move(msg)).then([] {
-                return transport_version::v2;
+        vassert(version >= transport_version::v2, "Can't encode serde <= v2");
+        return ss::do_with(std::move(msg), [&out, version](T& msg) {
+            return serde::write_async(out, std::move(msg)).then([version] {
+                return version;
             });
         });
     } else {
@@ -275,25 +274,28 @@ ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
         validate_payload_and_header(io, h);
 
+        ss::future<iobuf> iobuf_fut = ss::make_ready_future<iobuf>();
+
         switch (h.compression) {
         case compression_type::none:
+            iobuf_fut = ss::make_ready_future<iobuf>(std::move(io));
             break;
-
         case compression_type::zstd: {
-            compression::stream_zstd fn;
-            io = fn.uncompress(std::move(io));
+            auto& zstd_inst = compression::async_stream_zstd_instance();
+            iobuf_fut = zstd_inst.uncompress(std::move(io));
             break;
         }
-
         default:
-            return ss::make_exception_future<T>(std::runtime_error(
+            iobuf_fut = ss::make_exception_future<iobuf>(std::runtime_error(
               fmt::format("no compression supported. header: {}", h)));
         }
 
-        auto p = std::make_unique<iobuf_parser>(std::move(io));
-        auto raw = p.get();
-        return Codec::template decode<T>(*raw, h.version)
-          .finally([p = std::move(p)] {});
+        return iobuf_fut.then([h](iobuf io) {
+            auto p = std::make_unique<iobuf_parser>(std::move(io));
+            auto raw = p.get();
+            return Codec::template decode<T>(*raw, h.version)
+              .finally([p = std::move(p)] {});
+        });
     });
 }
 

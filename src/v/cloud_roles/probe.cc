@@ -11,13 +11,13 @@
 #include "cloud_roles/probe.h"
 
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
 
 namespace cloud_roles {
 
-auth_refresh_probe::auth_refresh_probe() {
+void auth_refresh_probe::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }

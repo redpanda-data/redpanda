@@ -27,7 +27,7 @@ func TestWriteSizedFileCmdRender(t *testing.T) {
 		int64(1),
 	)
 
-	expected := "truncate -s 1 /some/made/up/filepath.txt"
+	expected := "truncate -s 1 /some/made/up/filepath.txt\n"
 	var buf bytes.Buffer
 
 	w := bufio.NewWriter(&buf)

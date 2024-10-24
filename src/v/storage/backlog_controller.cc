@@ -8,11 +8,11 @@
 // by the Apache License, Version 2.0
 #include "storage/backlog_controller.h"
 
+#include "base/vlog.h"
 #include "config/configuration.h"
-#include "prometheus/prometheus_sanitize.h"
+#include "metrics/prometheus_sanitize.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
-#include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
+cd /opt/redpanda-tests/go/byoc-mock
+go mod tidy
+go build -o .rpk.managed-byoc

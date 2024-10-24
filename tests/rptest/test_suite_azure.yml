@@ -1,0 +1,9 @@
+azure:
+  included:
+    - tests
+    - transactions
+
+  excluded:
+    - tests/librdkafka_test.py # normally disabled
+    - tests/e2e_iam_role_test.py # use static credentials
+    - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile

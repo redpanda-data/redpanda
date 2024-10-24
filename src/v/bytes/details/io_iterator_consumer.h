@@ -51,7 +51,7 @@ public:
         const_iterator;
 
     io_iterator_consumer(
-      io_const_iterator const& begin, io_const_iterator const& end) noexcept
+      const io_const_iterator& begin, const io_const_iterator& end) noexcept
       : _frag(begin)
       , _frag_end(end) {
         if (_frag != _frag_end) {
@@ -65,20 +65,21 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid skip(n). Expected:{}, but skipped:{}", n, c);
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
+              "Invalid skip(n). Expected:{}, but skipped:{}", n, c));
         }
     }
     template<typename Output>
     [[gnu::always_inline]] void consume_to(size_t n, Output out) {
         size_t c = consume(n, [&out](const char* src, size_t max) {
-            std::copy_n(src, max, out);
-            out += max;
+            out = std::copy_n(src, max, out);
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
-              "Invalid consume_to(n, out), expected:{}, but consumed:{}", n, c);
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
+              "Invalid consume_to(n, out), expected:{}, but consumed:{}",
+              n,
+              c));
         }
     }
 
@@ -102,11 +103,11 @@ public:
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
-            details::throw_out_of_range(
+            ss::throw_with_backtrace<std::out_of_range>(fmt::format(
               "Invalid consume_to(n, placeholder), expected:{}, but "
               "consumed:{}",
               n,
-              c);
+              c));
         }
     }
 

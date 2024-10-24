@@ -7,26 +7,26 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/commands.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tests/topic_table_fixture.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/types.h"
+#include "raft/fundamental.h"
 #include "test_utils/fixture.h"
-#include "topic_table_fixture.h"
-#include "units.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/variant_utils.hh>
 
-#include <bits/stdint-intn.h>
 #include <boost/test/tools/old/interface.hpp>
 
 #include <vector>
@@ -38,16 +38,26 @@ namespace {
 // Fake command type used to test serde-only types.
 static constexpr int8_t fake_serde_only_cmd_type = 0;
 struct fake_serde_only_key
-  : serde::envelope<fake_serde_only_key, serde::version<0>> {
+  : serde::envelope<
+      fake_serde_only_key,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;
+
+    auto serde_fields() { return std::tie(str); }
 };
 struct fake_serde_only_val
-  : serde::envelope<fake_serde_only_val, serde::version<0>> {
+  : serde::envelope<
+      fake_serde_only_val,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     ss::sstring str;
+
+    auto serde_fields() { return std::tie(str); }
 };
 using fake_serde_only_cmd = cluster::controller_command<
   fake_serde_only_key,
@@ -94,7 +104,7 @@ struct cmd_test_fixture {
         return model::topic_namespace(test_ns, model::topic(tp));
     }
 
-    std::vector<cluster::partition_assignment>
+    ss::chunked_fifo<cluster::partition_assignment>
     allocate(const cluster::topic_configuration& cfg) {
         std::vector<cluster::partition_assignment> ret;
         ret.reserve(cfg.partition_count);
@@ -118,7 +128,7 @@ FIXTURE_TEST(test_serde_only_cmd, cmd_test_fixture) {
     auto deser = cluster::deserialize(
                    std::move(batch),
                    cluster::make_commands_list<fake_serde_only_cmd>())
-                   .get0();
+                   .get();
     ss::visit(deser, [&cmd](fake_serde_only_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key.str, cmd.key.str);
         BOOST_REQUIRE_EQUAL(c.value.str, cmd.value.str);
@@ -128,11 +138,11 @@ FIXTURE_TEST(test_serde_only_cmd, cmd_test_fixture) {
 FIXTURE_TEST(test_create_topic_cmd_serialization, cmd_test_fixture) {
     auto cmd = make_create_topic_cmd("test_tp", 2, 3);
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser = cluster::deserialize(
                    std::move(batch),
                    cluster::make_commands_list<cluster::create_topic_cmd>())
-                   .get0();
+                   .get();
     ss::visit(deser, [&cmd](cluster::create_topic_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key.tp, cmd.key.tp);
         BOOST_REQUIRE_EQUAL(
@@ -155,11 +165,11 @@ FIXTURE_TEST(test_create_topic_cmd_serialization, cmd_test_fixture) {
 FIXTURE_TEST(test_delete_topic_cmd_serialization, cmd_test_fixture) {
     auto cmd = make_delete_topic_cmd("test_tp");
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser = cluster::deserialize(
                    std::move(batch),
                    cluster::make_commands_list<cluster::delete_topic_cmd>())
-                   .get0();
+                   .get();
     ss::visit(deser, [&cmd](cluster::delete_topic_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key.tp, cmd.key.tp);
         BOOST_REQUIRE_EQUAL(c.value, cmd.value);
@@ -175,16 +185,16 @@ FIXTURE_TEST(test_move_partition_replicass_command, cmd_test_fixture) {
     };
     auto cmd = make_move_partition_replicas_cmd(ntp, replicas);
 
-    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto batch = cluster::serde_serialize_cmd(cmd);
     auto deser
       = cluster::deserialize(
           std::move(batch),
           cluster::make_commands_list<cluster::move_partition_replicas_cmd>())
-          .get0();
+          .get();
 
     ss::visit(deser, [&cmd](cluster::move_partition_replicas_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key, cmd.key);
-        for (int i = 0; i < cmd.value.size(); ++i) {
+        for (size_t i = 0; i < cmd.value.size(); ++i) {
             BOOST_REQUIRE_EQUAL(c.value[i].node_id, cmd.value[i].node_id);
             BOOST_REQUIRE_EQUAL(c.value[i].shard, cmd.value[i].shard);
         }

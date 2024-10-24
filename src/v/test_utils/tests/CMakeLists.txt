@@ -1,10 +1,15 @@
 rp_test(
-    UNIT_TEST
-    BINARY_NAME test_http_imposter
-    SOURCES
-    http_imposter_test.cc
-    DEFINITIONS BOOST_TEST_DYN_LINK
-    LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::http
-    LABELS http_imposter
-    ARGS "-- -c 1"
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_test
+  SOURCES gtest_test.cc
+  LIBRARIES v::gtest_main)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME gtest_listener
+  SOURCES
+    gtest_listener_test.cc
+  LIBRARIES v_gtest_utils GTest::gtest
 )

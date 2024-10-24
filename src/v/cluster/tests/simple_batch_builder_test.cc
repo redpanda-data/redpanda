@@ -81,8 +81,8 @@ SEASTAR_THREAD_TEST_CASE(round_trip_test) {
     ss::circular_buffer<model::record_batch> batches;
     batches.push_back(std::move(batch));
 
-    tests::persist_log_file(base_dir, test_ntp, std::move(batches)).get0();
-    auto read = tests::read_log_file(base_dir, test_ntp).get0();
+    tests::persist_log_file(base_dir, test_ntp, std::move(batches)).get();
+    auto read = tests::read_log_file(base_dir, test_ntp).get();
 
     BOOST_REQUIRE_EQUAL(read.size(), 1);
     BOOST_REQUIRE_EQUAL(read[0].header().last_offset_delta, 3);

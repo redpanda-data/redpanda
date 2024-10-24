@@ -1,0 +1,14 @@
+v_cc_library(
+  NAME
+    metrics
+  HDRS
+    "metrics.h"
+    "metrics_registry.h"
+    "aggregate_metrics_watcher.h"
+  SRCS
+    metrics.cc
+    metrics_registry.cc
+  DEPS
+    Seastar::seastar
+    v::config
+  )

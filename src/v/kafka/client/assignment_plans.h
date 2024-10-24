@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"
-#include "kafka/types.h"
 #include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -36,14 +36,14 @@ struct assignment_plan {
     virtual ~assignment_plan() = default;
 
     virtual assignments plan(
-      const std::vector<member_id>& members,
-      const std::vector<metadata_response::topic>& topics)
+      const chunked_vector<member_id>& members,
+      const chunked_vector<metadata_response::topic>& topics)
       = 0;
 
     sync_group_request_assignment
     encode(const assignments::value_type& m) const;
 
-    std::vector<sync_group_request_assignment>
+    chunked_vector<sync_group_request_assignment>
     encode(const assignments& assignments) const;
 
     assignment decode(const bytes& b) const;
@@ -56,14 +56,14 @@ make_assignment_plan(const protocol_name& protocol_name);
 struct assignment_range final : public assignment_plan {
     static inline const protocol_name name{"range"};
     assignments plan(
-      const std::vector<member_id>& members,
-      const std::vector<metadata_response::topic>& topics) final;
+      const chunked_vector<member_id>& members,
+      const chunked_vector<metadata_response::topic>& topics) final;
 };
 
 join_group_request_protocol
 make_join_group_request_protocol_range(const std::vector<model::topic>& topics);
 
-std::vector<join_group_request_protocol>
-make_join_group_request_protocols(const std::vector<model::topic>& topics);
+chunked_vector<join_group_request_protocol>
+make_join_group_request_protocols(const chunked_vector<model::topic>& topics);
 
 } // namespace kafka::client

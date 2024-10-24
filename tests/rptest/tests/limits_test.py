@@ -14,12 +14,11 @@ from rptest.clients.rpk import RpkException, RpkTool
 from rptest.services import redpanda
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 import string
-
-from rptest.util import wait_until
 
 
 def _timed_out(e: RpkException):

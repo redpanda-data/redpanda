@@ -10,13 +10,16 @@
 package irq
 
 import (
+	"fmt"
 	"path"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type DeviceInfo interface {
@@ -35,14 +38,22 @@ type deviceInfo struct {
 	fs       afero.Fs
 }
 
+type EmptyMSIRQError struct {
+	device string
+}
+
+func (e EmptyMSIRQError) Error() string {
+	return fmt.Sprintf("device %q uses MSI IRQs but the list of msi_irqs in sysfs is empty; see https://github.com/redpanda-data/redpanda/issues/10838", e.device)
+}
+
 func (deviceInfo *deviceInfo) GetIRQs(
 	irqConfigDir string, xenDeviceName string,
 ) ([]int, error) {
-	log.Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
+	zap.L().Sugar().Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
 	msiIRQsDirName := path.Join(irqConfigDir, "msi_irqs")
 	var irqs []int
 	if exists, _ := afero.Exists(deviceInfo.fs, msiIRQsDirName); exists {
-		log.Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
+		zap.L().Sugar().Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
 		files := utils.ListFilesInPath(deviceInfo.fs, msiIRQsDirName)
 		for _, file := range files {
 			irq, err := strconv.Atoi(file)
@@ -51,10 +62,13 @@ func (deviceInfo *deviceInfo) GetIRQs(
 			}
 			irqs = append(irqs, irq)
 		}
+		if len(irqs) == 0 {
+			return nil, &EmptyMSIRQError{irqConfigDir}
+		}
 	} else {
 		irqFileName := path.Join(irqConfigDir, "irq")
 		if exists, _ := afero.Exists(deviceInfo.fs, irqFileName); exists {
-			log.Debugf("Device '%s' uses INT#x IRQs", irqConfigDir)
+			zap.L().Sugar().Debugf("Device '%s' uses INT#x IRQs", irqConfigDir)
 			lines, err := utils.ReadFileLines(deviceInfo.fs, irqFileName)
 			if err != nil {
 				return nil, err
@@ -67,7 +81,10 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				irqs = append(irqs, irq)
 			}
 		} else {
-			modAliasFileName := path.Join(irqConfigDir, "modalias")
+			modAliasFileName, err := findModalias(deviceInfo.fs, irqConfigDir)
+			if err != nil {
+				return nil, fmt.Errorf("unable to find device info in %q: %v", irqConfigDir, err)
+			}
 			lines, err := utils.ReadFileLines(deviceInfo.fs, modAliasFileName)
 			if err != nil {
 				return nil, err
@@ -78,7 +95,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				return nil, err
 			}
 			if strings.Contains(modAlias, "virtio") {
-				log.Debugf("Device '%s' is a virtio device type", irqConfigDir)
+				zap.L().Sugar().Debugf("Device '%s' is a virtio device type", irqConfigDir)
 				fileNames := utils.ListFilesInPath(deviceInfo.fs, path.Join(irqConfigDir, "driver"))
 				for _, name := range fileNames {
 					if strings.Contains(name, "virtio") {
@@ -88,13 +105,16 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				}
 			} else {
 				if strings.Contains(modAlias, "xen:") {
-					log.Debugf("Reading '%s' device IRQs from /proc/interrupts", irqConfigDir)
+					zap.L().Sugar().Debugf("Reading '%s' device IRQs from /proc/interrupts", irqConfigDir)
 					irqs = deviceInfo.getIRQsForLinesMatching(xenDeviceName, irqProcFileLines)
 				}
 			}
 		}
 	}
-	log.Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
+
+	sort.Ints(irqs)
+
+	zap.L().Sugar().Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
 	return irqs, nil
 }
 
@@ -108,4 +128,20 @@ func (*deviceInfo) getIRQsForLinesMatching(
 		}
 	}
 	return irqs
+}
+
+// findModalias recursively tries to find the modalias file in all the parent
+// directories until we reach /sys/devices or root. It returns the filepath
+// to the modalias file.
+func findModalias(fs afero.Fs, dir string) (string, error) {
+	if dir == "/sys/devices" || dir == "/" {
+		return "", fmt.Errorf("unable to find modalias")
+	}
+
+	modAliasFileName := path.Join(dir, "modalias")
+	if exists, _ := afero.Exists(fs, modAliasFileName); exists {
+		return modAliasFileName, nil
+	}
+
+	return findModalias(fs, filepath.Dir(dir))
 }

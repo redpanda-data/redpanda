@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "storage/backlog_controller.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
@@ -28,7 +28,7 @@ static ss::logger ctrl_logger{"test-controller"};
 
 struct simple_backlog_sampler : storage::backlog_controller::sampler {
     explicit simple_backlog_sampler(int64_t& b)
-      : current_backlog(b){};
+      : current_backlog(b) {}
     ss::future<int64_t> sample_backlog() final { co_return current_backlog; }
 
     int64_t& current_backlog;
@@ -38,7 +38,10 @@ struct backlog_controller_fixture {
     const std::map<ss::sstring, ss::sstring> sch_group_label = {
       {"group", "sch_control_gr"}, {"shard", "0"}};
     backlog_controller_fixture()
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
       : iopc(ss::io_priority_class::register_one("io_control_gr", 100)) {
+#pragma clang diagnostic pop
         sg = ss::create_scheduling_group("sch_control_gr", 100).get();
         /**
          * Controller settings:
@@ -79,7 +82,7 @@ struct backlog_controller_fixture {
 };
 
 FIXTURE_TEST(test_feedback_loop, backlog_controller_fixture) {
-    ctrl->start().get0();
+    ctrl->start().get();
     /**
      * current backlog is equal to 0, setpoint is set to 20, error = 20.0
      * since error hasn't changed and want some more backlog we will down

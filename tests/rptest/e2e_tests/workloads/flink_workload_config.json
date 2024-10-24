@@ -1,0 +1,16 @@
+{
+    "connector_path": "File:///opt/flink/connectors/flink-sql-connector-kafka-3.0.1-1.18.jar",
+    "python_lib_path": "File:///opt/flink/opt/flink-python-1.18.0.jar",
+    "logger_path": "/workloads",
+    "data_path": "File:////workloads/data",
+    "log_level": "DEBUG",
+    "brokers": "localhost:9092",
+    "producer_group": "flink_produce_group",
+    "consumer_group": "flink_consume_group",
+    "topic_name": "flink_workload_topic",
+    "mode": "produce",
+    "msg_size": 4096,
+    "word_size": 512,
+    "batch_size": 256,
+    "count": 10
+}

@@ -10,9 +10,9 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "seastarx.h"
 #include "storage/api.h"
 
 #include <seastar/core/thread.hh>
@@ -30,26 +30,41 @@ static inline ss::future<> persist_log_file(
     return ss::async([base_dir = std::move(base_dir),
                       file_ntp = std::move(file_ntp),
                       batches = std::move(batches)]() mutable {
-        storage::api storage(
-          [base_dir]() {
-              return storage::kvstore_config(
-                1_MiB,
-                config::mock_binding(10ms),
-                base_dir,
-                storage::debug_sanitize_files::yes);
-          },
-          [base_dir]() {
-              return storage::log_config(
-                storage::log_config::storage_type::disk,
-                base_dir,
-                1_GiB,
-                storage::debug_sanitize_files::yes);
-          });
-        storage.start().get();
-        auto& mgr = storage.log_mgr();
+        ss::sharded<features::feature_table> feature_table;
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
+        seastar::logger test_logger("test");
+
+        ss::sharded<storage::api> storage;
+        storage
+          .start(
+            [base_dir]() {
+                return storage::kvstore_config(
+                  1_MiB,
+                  config::mock_binding(10ms),
+                  base_dir,
+                  storage::make_sanitized_file_config());
+            },
+            [base_dir]() {
+                return storage::log_config(
+                  base_dir,
+                  1_GiB,
+                  ss::default_priority_class(),
+                  storage::make_sanitized_file_config());
+            },
+            std::ref(feature_table))
+          .get();
+        storage.invoke_on_all(&storage::api::start).get();
+
+        auto& mgr = storage.local().log_mgr();
         try {
             mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
-              .then([b = std::move(batches)](storage::log log) mutable {
+              .then([b = std::move(batches)](
+                      ss::shared_ptr<storage::log> log) mutable {
                   storage::log_append_config cfg{
                     storage::log_append_config::fsync::yes,
                     ss::default_priority_class(),
@@ -57,16 +72,18 @@ static inline ss::future<> persist_log_file(
                   auto reader = model::make_memory_record_batch_reader(
                     std::move(b));
                   return std::move(reader)
-                    .for_each_ref(log.make_appender(cfg), cfg.timeout)
+                    .for_each_ref(log->make_appender(cfg), cfg.timeout)
                     .then([log](storage::append_result) mutable {
-                        return log.flush();
+                        return log->flush();
                     })
                     .finally([log] {});
               })
               .get();
             storage.stop().get();
+            feature_table.stop().get();
         } catch (...) {
             storage.stop().get();
+            feature_table.stop().get();
             throw;
         }
     });
@@ -91,29 +108,42 @@ static inline ss::future<ss::circular_buffer<model::record_batch>>
 read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::async([base_dir = std::move(base_dir),
                       file_ntp = std::move(file_ntp)]() mutable {
-        storage::api storage(
-          [base_dir]() {
-              return storage::kvstore_config(
-                1_MiB,
-                config::mock_binding(10ms),
-                base_dir,
-                storage::debug_sanitize_files::yes);
-          },
-          [base_dir]() {
-              return storage::log_config(
-                storage::log_config::storage_type::disk,
-                base_dir,
-                1_GiB,
-                storage::debug_sanitize_files::yes);
-          });
-        storage.start().get();
-        auto& mgr = storage.log_mgr();
+        ss::sharded<features::feature_table> feature_table;
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
+        seastar::logger test_logger("test");
+
+        ss::sharded<storage::api> storage;
+        storage
+          .start(
+            [base_dir]() {
+                return storage::kvstore_config(
+                  1_MiB,
+                  config::mock_binding(10ms),
+                  base_dir,
+                  storage::make_sanitized_file_config());
+            },
+            [base_dir]() {
+                return storage::log_config(
+                  base_dir,
+                  1_GiB,
+                  ss::default_priority_class(),
+                  storage::make_sanitized_file_config());
+            },
+            std::ref(feature_table))
+          .get();
+        storage.invoke_on_all(&storage::api::start).get();
+        auto& mgr = storage.local().log_mgr();
         try {
             auto batches
               = mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
-                  .then([](storage::log log) mutable {
+                  .then([](ss::shared_ptr<storage::log> log) mutable {
                       return log
-                        .make_reader(storage::log_reader_config(
+                        ->make_reader(storage::log_reader_config(
                           model::offset(0),
                           model::model_limits<model::offset>::max(),
                           ss::default_priority_class()))
@@ -122,11 +152,13 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                               to_vector_consumer(), model::no_timeout);
                         });
                   })
-                  .get0();
+                  .get();
             storage.stop().get();
+            feature_table.stop().get();
             return batches;
         } catch (...) {
             storage.stop().get();
+            feature_table.stop().get();
             throw;
         }
     });

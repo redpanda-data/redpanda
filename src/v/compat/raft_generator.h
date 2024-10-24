@@ -130,6 +130,7 @@ struct instance_generator<raft::transfer_leadership_request> {
         return {
           .group = tests::random_named_int<raft::group_id>(),
           .target = tests::random_named_int<model::node_id>(),
+          .timeout = tests::random_duration_ms(),
         };
     }
 
@@ -138,22 +139,27 @@ struct instance_generator<raft::transfer_leadership_request> {
           {
             .group = tests::random_named_int<raft::group_id>(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::min(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::max(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::min(),
             .target = tests::random_named_int<model::node_id>(),
+            .timeout = tests::random_duration_ms(),
           },
           {
             .group = raft::group_id::max(),
             .target = tests::random_named_int<model::node_id>(),
+            .timeout = tests::random_duration_ms(),
           },
         };
     }
@@ -184,7 +190,7 @@ struct instance_generator<raft::install_snapshot_request> {
           .chunk = bytes_to_iobuf(
             random_generators::get_bytes(random_generators::get_int(1, 512))),
           .done = tests::random_bool(),
-        };
+          .dirty_offset = tests::random_named_int<model::offset>()};
     }
 
     static std::vector<raft::install_snapshot_request> limits() { return {}; }
@@ -245,6 +251,7 @@ struct instance_generator<raft::protocol_metadata> {
           .prev_log_index = tests::random_named_int<model::offset>(),
           .prev_log_term = tests::random_named_int<model::term_id>(),
           .last_visible_index = tests::random_named_int<model::offset>(),
+          .dirty_offset = tests::random_named_int<model::offset>(),
         };
     }
 
@@ -280,6 +287,12 @@ struct instance_generator<raft::heartbeat_request> {
           },
         }};
 
+        for (auto& hb : ret.heartbeats) {
+            // for heartbeats dirty_offset and prev_log_index are always the
+            // same.
+            hb.meta.dirty_offset = hb.meta.prev_log_index;
+        }
+
         /*
          * the serialization step for heartbeat_request will automatically sort
          * the heartbeats. so for equality to work as expected we need to also
@@ -310,9 +323,8 @@ struct instance_generator<raft::append_entries_request> {
           instance_generator<raft::vnode>::random(),
           instance_generator<raft::protocol_metadata>::random(),
           model::make_memory_record_batch_reader(
-            model::test::make_random_batches(model::offset(0), 3, false)),
-          raft::append_entries_request::flush_after_append(
-            tests::random_bool()),
+            model::test::make_random_batches(model::offset(0), 3, false).get()),
+          raft::flush_after_append(tests::random_bool()),
         };
     }
 
@@ -331,10 +343,11 @@ struct instance_generator<raft::append_entries_reply> {
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
           .result = random_generators::random_choice(
-            {raft::append_entries_reply::status::success,
-             raft::append_entries_reply::status::failure,
-             raft::append_entries_reply::status::group_unavailable,
-             raft::append_entries_reply::status::timeout}),
+            {raft::reply_result::success,
+             raft::reply_result::failure,
+             raft::reply_result::group_unavailable,
+             raft::reply_result::timeout}),
+          .may_recover = tests::random_bool(),
         };
     }
 
@@ -379,6 +392,12 @@ struct instance_generator<raft::heartbeat_reply> {
         };
 
         std::sort(ret.meta.begin(), ret.meta.end(), sorter_fn{});
+
+        // For old-style heartbeats may_recover is not serialized and defaults
+        // to true.
+        for (auto& r : ret.meta) {
+            r.may_recover = true;
+        }
 
         return ret;
     }

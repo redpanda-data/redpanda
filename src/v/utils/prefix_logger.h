@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "seastarx.h"
+#include "base/seastarx.h"
 #include "ssx/sformat.h"
 
 #include <seastar/util/log.hh>
@@ -61,10 +61,13 @@ public:
     template<typename... Args>
     ss::sstring format(const char* format, Args&&... args) const {
         auto line_fmt = ss::sstring("{} - ") + format;
-        return fmt::format(
+        return ssx::sformat(
           fmt::runtime(fmt::string_view(line_fmt.begin(), line_fmt.length())),
+          _prefix,
           std::forward<Args>(args)...);
     }
+
+    const ss::logger& logger() const { return _logger; }
 
 private:
     ss::logger& _logger;

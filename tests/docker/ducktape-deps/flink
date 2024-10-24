@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -e
+mkdir /opt/flink
+
+# Download
+FLINK_VERSION=1.18.1
+FLINK_SCALA_VERSION=2.12
+FLINK_FILE=flink-${FLINK_VERSION}-bin-scala_${FLINK_SCALA_VERSION}.tgz
+# Instead of using main download link, use our s3. Alternative is to use archive.apache.org,
+# but it will ban frequent downloads after some time.
+# This will prevent us from getting an HTTP:404 when new version will be introduced
+# old: FLINK_URL=https://downloads.apache.org/flink/flink-${FLINK_VERSION}/${FLINK_FILE}
+DEPS_BASEURL=https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies
+FLINK_URL=${DEPS_BASEURL}/${FLINK_FILE}
+KAFKA_CONNECTOR=flink-sql-connector-kafka-3.0.1-1.18.jar
+wget ${FLINK_URL}
+
+# Extract
+tar -xvf ${FLINK_FILE} -C /opt/flink --strip-components 1
+rm ${FLINK_FILE}
+
+# Download connector
+mkdir /opt/flink/connectors
+wget ${DEPS_BASEURL}/${KAFKA_CONNECTOR} -O /opt/flink/connectors/${KAFKA_CONNECTOR}
+
+# Show version
+/opt/flink/bin/flink --version
+
+# Prepare python venv archive
+
+# At this point, for ARM64 there is no JAVA_HOME, but java is installed
+# So get the folder from java itself
+if [[ -z $JAVA_HOME ]]; then
+  export JAVA_HOME=$(java -XshowSettings:properties -version 2>&1 >/dev/null | grep 'java.home' | cut -d'=' -f2 | xargs)
+fi
+echo "Using Java home folder at $JAVA_HOME"
+
+cd /opt/flink/
+pip install virtualenv
+virtualenv flink_venv
+. /opt/flink/flink_venv/bin/activate
+pip install apache-flink
+deactivate
+pip uninstall -y virtualenv
+cd flink_venv
+tar -zcvf ../flink_venv.tgz ./*
+cd ..
+rm -rf flink_venv

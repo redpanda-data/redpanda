@@ -9,9 +9,9 @@
 
 #pragma once
 
+#include "base/vlog.h"
 #include "json/_include_first.h"
 #include "json/logger.h"
-#include "vlog.h"
 
 #include <fmt/format.h>
 #include <rapidjson/allocators.h>

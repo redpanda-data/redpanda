@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.services.compatibility.example_runner import ExampleRunner
@@ -17,6 +16,7 @@ from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig
 
 
 class KafkaStreamsTest(RedpandaTest):
@@ -29,10 +29,12 @@ class KafkaStreamsTest(RedpandaTest):
     # The java program is represented by a wrapper in KafkaStreamExamples.
     Example = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
-        super(KafkaStreamsTest, self).__init__(test_context=test_context,
-                                               enable_pp=enable_pp,
-                                               enable_sr=enable_sr)
+    def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
+                 schema_registry_config: SchemaRegistryConfig):
+        super(KafkaStreamsTest,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=pandaproxy_config,
+                             schema_registry_config=schema_registry_config)
 
         self._ctx = test_context
 
@@ -61,10 +63,12 @@ class KafkaStreamsDriverBase(KafkaStreamsTest):
     # wrapper in KafkaStreamExamples.
     Driver = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
-        super(KafkaStreamsDriverBase, self).__init__(test_context=test_context,
-                                                     enable_pp=enable_pp,
-                                                     enable_sr=enable_sr)
+    def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
+                 schema_registry_config: SchemaRegistryConfig):
+        super(KafkaStreamsDriverBase,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=pandaproxy_config,
+                             schema_registry_config=schema_registry_config)
 
     @cluster(num_nodes=5)
     def test_kafka_streams(self):
@@ -98,11 +102,12 @@ class KafkaStreamsProdConsBase(KafkaStreamsTest):
     # The producer should be an extension to KafProducer
     PRODUCER = None
 
-    def __init__(self, test_context, enable_pp, enable_sr):
+    def __init__(self, test_context, pandaproxy_config: PandaproxyConfig,
+                 schema_registry_config: SchemaRegistryConfig):
         super(KafkaStreamsProdConsBase,
               self).__init__(test_context=test_context,
-                             enable_pp=enable_pp,
-                             enable_sr=enable_sr)
+                             pandaproxy_config=pandaproxy_config,
+                             schema_registry_config=schema_registry_config)
 
     def is_valid_msg(self, msg):
         raise NotImplementedError("is_valid_msg() undefined.")
@@ -159,8 +164,8 @@ class KafkaStreamsTopArticles(KafkaStreamsDriverBase):
     def __init__(self, test_context):
         super(KafkaStreamsTopArticles,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
@@ -179,8 +184,8 @@ class KafkaStreamsSessionWindow(KafkaStreamsDriverBase):
     def __init__(self, test_context):
         super(KafkaStreamsSessionWindow,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
@@ -197,9 +202,10 @@ class KafkaStreamsJsonToAvro(KafkaStreamsDriverBase):
     Driver = KafkaStreamExamples.KafkaStreamsJsonToAvro
 
     def __init__(self, test_context):
-        super(KafkaStreamsJsonToAvro, self).__init__(test_context=test_context,
-                                                     enable_pp=True,
-                                                     enable_sr=True)
+        super(KafkaStreamsJsonToAvro,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class KafkaStreamsPageView(RedpandaTest):
@@ -214,9 +220,10 @@ class KafkaStreamsPageView(RedpandaTest):
     )
 
     def __init__(self, test_context):
-        super(KafkaStreamsPageView, self).__init__(test_context=test_context,
-                                                   enable_pp=True,
-                                                   enable_sr=True)
+        super(KafkaStreamsPageView,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
         self._timeout = 300
 
@@ -258,13 +265,13 @@ class KafkaStreamsWikipedia(RedpandaTest):
     )
 
     def __init__(self, test_context):
-        super(KafkaStreamsWikipedia, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
+        super(KafkaStreamsWikipedia,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
         self._timeout = 300
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/2889
     @cluster(num_nodes=5)
     def test_kafka_streams_wikipedia(self):
         example_jar = KafkaStreamExamples.KafkaStreamsWikipedia(
@@ -306,9 +313,10 @@ class KafkaStreamsSumLambda(KafkaStreamsDriverBase):
     Driver = KafkaStreamExamples.KafkaStreamsSumLambda
 
     def __init__(self, test_context):
-        super(KafkaStreamsSumLambda, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
+        super(KafkaStreamsSumLambda,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
 
 class AnomalyProducer(KafProducer):
@@ -338,8 +346,8 @@ class KafkaStreamsAnomalyDetection(KafkaStreamsProdConsBase):
     def __init__(self, test_context):
         super(KafkaStreamsAnomalyDetection,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -371,9 +379,10 @@ class KafkaStreamsUserRegion(KafkaStreamsProdConsBase):
     PRODUCER = RegionProducer
 
     def __init__(self, test_context):
-        super(KafkaStreamsUserRegion, self).__init__(test_context=test_context,
-                                                     enable_pp=True,
-                                                     enable_sr=True)
+        super(KafkaStreamsUserRegion,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -406,9 +415,10 @@ class KafkaStreamsWordCount(KafkaStreamsProdConsBase):
     PRODUCER = WordProducer
 
     def __init__(self, test_context):
-        super(KafkaStreamsWordCount, self).__init__(test_context=test_context,
-                                                    enable_pp=True,
-                                                    enable_sr=True)
+        super(KafkaStreamsWordCount,
+              self).__init__(test_context=test_context,
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         key = msg["key"]
@@ -433,8 +443,8 @@ class KafkaStreamsMapFunction(KafkaStreamsProdConsBase):
     def __init__(self, test_context):
         super(KafkaStreamsMapFunction,
               self).__init__(test_context=test_context,
-                             enable_pp=True,
-                             enable_sr=True)
+                             pandaproxy_config=PandaproxyConfig(),
+                             schema_registry_config=SchemaRegistryConfig())
 
     def is_valid_msg(self, msg):
         value = msg["value"]

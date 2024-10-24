@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/brokers.h"
@@ -18,17 +19,16 @@
 #include "kafka/client/consumer.h"
 #include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
-#include "kafka/client/retry_with_mitigation.h"
 #include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
 #include "kafka/client/types.h"
+#include "kafka/client/utils.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/list_offsets.h"
-#include "kafka/types.h"
-#include "net/unresolved_address.h"
+#include "kafka/protocol/list_offset.h"
 #include "ssx/semaphore.h"
 #include "utils/retry.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/condition-variable.hh>
 
@@ -64,9 +64,21 @@ private:
     ssx::semaphore _lock{1, "k/client"};
 };
 
+namespace impl {
+
+constexpr auto default_external_mitigate = [](std::exception_ptr ex) {
+    return ss::make_exception_future(ex);
+};
+
+} // namespace impl
+
 class client {
 public:
-    explicit client(YAML::Node const& cfg);
+    using external_mitigate
+      = ss::noncopyable_function<ss::future<>(std::exception_ptr)>;
+    explicit client(
+      const YAML::Node& cfg,
+      external_mitigate mitigater = impl::default_external_mitigate);
 
     /// \brief Connect to all brokers.
     ss::future<> connect();
@@ -76,16 +88,13 @@ public:
     /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
     std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
-        return ss::try_with_gate(_gate, [this, func{std::move(func)}]() {
-            return retry_with_mitigation(
-              _config.retries(),
-              _config.retry_base_backoff(),
-              [this, func{std::move(func)}]() {
-                  _gate.check();
-                  return func();
-              },
-              [this](std::exception_ptr ex) { return mitigate_error(ex); });
-        });
+        return gated_retry_with_mitigation_impl(
+          _gate,
+          _config.retries(),
+          _config.retry_base_backoff(),
+          std::move(func),
+          [this](std::exception_ptr ex) { return mitigate_error(ex); },
+          _as);
     }
 
     /// \brief Dispatch a request to any broker.
@@ -124,14 +133,14 @@ public:
     ss::future<shared_consumer_t>
     get_consumer(const group_id& g_id, const member_id& m_id);
 
-    ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
+    ss::future<> remove_consumer(group_id g_id, const member_id& m_id);
 
     ss::future<> subscribe_consumer(
       const group_id& group_id,
       const member_id& member_id,
-      std::vector<model::topic> topics);
+      chunked_vector<model::topic> topics);
 
-    ss::future<std::vector<model::topic>>
+    ss::future<chunked_vector<model::topic>>
     consumer_topics(const group_id& g_id, const member_id& m_id);
 
     ss::future<assignment>
@@ -162,6 +171,9 @@ public:
     configuration& config() { return _config; }
 
 private:
+    ss::future<list_offsets_response>
+    do_list_offsets(model::topic_partition tp);
+
     /// \brief Connect and update metdata.
     ss::future<> do_connect(net::unresolved_address addr);
 
@@ -179,6 +191,14 @@ private:
 
     /// \brief Apply metadata update
     ss::future<> apply(metadata_response res);
+
+    /// \brief Log the client ID if it exists, otherwise don't log
+    friend std::ostream& operator<<(std::ostream& os, const client& c) {
+        if (c._config.client_identifier().has_value()) {
+            fmt::print(os, "{}: ", c._config.client_identifier().value());
+        }
+        return os;
+    }
 
     /// \brief Client holds a copy of its configuration
     configuration _config;
@@ -204,6 +224,10 @@ private:
       _consumers;
     /// \brief Wait for retries.
     ss::gate _gate;
+
+    ss::noncopyable_function<ss::future<>(std::exception_ptr)>
+      _external_mitigate;
+    ss::abort_source _as;
 };
 
 } // namespace kafka::client

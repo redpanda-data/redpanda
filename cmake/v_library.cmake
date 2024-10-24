@@ -2,9 +2,7 @@ include(CMakeParseArguments)
 
 set(V_CXX_STANDARD 20)
 set(V_DEFAULT_LINKOPTS)
-set(V_DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers)
-set(V_COMMON_INCLUDE_DIRS
-  "${PROJECT_SOURCE_DIR}/src/v")
+set(V_DEFAULT_COPTS -Wall -Wextra -Werror -Wno-missing-field-initializers -Wimplicit-fallthrough)
 # v_cc_library()
 #
 # CMake function to imitate Bazel's cc_library rule.
@@ -62,15 +60,11 @@ function(v_cc_library)
   set(_NAME "v_${V_CC_LIB_NAME}")
 
   # Check if this is a header-only library
-  # Note that as of February 2019, many popular OS's (for example, Ubuntu
-  # 16.04 LTS) only come with cmake 3.5 by default.  For this reason, we can't
-  # use list(FILTER...)
+  # We now have cmake minimum required version 3.12.0.
+  # For this reason, we now use list(FILTER...) rather 
+  # than list(REMOVE_ITEM ...)
   set(V_CC_SRCS "${V_CC_LIB_SRCS}")
-  foreach(src_file IN LISTS V_CC_SRCS)
-    if(${src_file} MATCHES ".*\\.(h|inc)")
-      list(REMOVE_ITEM V_CC_SRCS "${src_file}")
-    endif()
-  endforeach()
+  list(FILTER V_CC_SRCS EXCLUDE REGEX ".*\\.(h|inc)")
   if("${V_CC_SRCS}" STREQUAL "")
     set(V_CC_LIB_IS_INTERFACE 1)
   else()
@@ -89,11 +83,7 @@ function(v_cc_library)
     endif()
     target_sources(${_NAME} PRIVATE ${V_CC_LIB_SRCS} ${V_CC_LIB_HDRS})
     target_include_directories(${_NAME}
-      PUBLIC
-      "$<BUILD_INTERFACE:${V_COMMON_INCLUDE_DIRS}>"
-      # we don't install targets
-      # $<INSTALL_INTERFACE:${V_INSTALL_INCLUDEDIR}>
-      )
+      PUBLIC ${CMAKE_CURRENT_LIST_DIR}/include)
     target_compile_options(${_NAME}
       PRIVATE ${V_DEFAULT_COPTS}
       PRIVATE ${V_CC_LIB_COPTS})
@@ -116,13 +106,9 @@ function(v_cc_library)
       )
   else()
     # Generating header-only library
-    add_library(${_NAME} INTERFACE)
+    add_library(${_NAME} INTERFACE ${V_CC_LIB_SRCS})
     target_include_directories(${_NAME}
-      INTERFACE
-      "$<BUILD_INTERFACE:${V_COMMON_INCLUDE_DIRS}>"
-      # We don't install
-      #$<INSTALL_INTERFACE:${V_INSTALL_INCLUDEDIR}>
-      )
+      INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
     target_link_libraries(${_NAME}
       INTERFACE
       ${V_CC_LIB_DEPS}

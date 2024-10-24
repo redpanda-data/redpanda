@@ -10,10 +10,10 @@
  */
 
 #pragma once
+#include "base/outcome.h"
 #include "model/metadata.h"
-#include "model/timeout_clock.h"
-#include "outcome.h"
-#include "raft/errc.h"
+#include "raft/heartbeats.h"
+#include "raft/transfer_leadership.h"
 #include "raft/types.h"
 #include "rpc/types.h"
 
@@ -31,11 +31,17 @@ public:
         vote(model::node_id, vote_request&&, rpc::client_opts) = 0;
 
         virtual ss::future<result<append_entries_reply>> append_entries(
-          model::node_id, append_entries_request&&, rpc::client_opts)
+          model::node_id,
+          append_entries_request&&,
+          rpc::client_opts,
+          bool use_all_serde_encoding)
           = 0;
 
         virtual ss::future<result<heartbeat_reply>>
         heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) = 0;
+        virtual ss::future<result<heartbeat_reply_v2>>
+        heartbeat_v2(model::node_id, heartbeat_request_v2&&, rpc::client_opts)
+          = 0;
 
         virtual ss::future<result<install_snapshot_reply>> install_snapshot(
           model::node_id, install_snapshot_request&&, rpc::client_opts)
@@ -68,9 +74,10 @@ public:
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id target_node,
       append_entries_request&& r,
-      rpc::client_opts opts) {
+      rpc::client_opts opts,
+      bool use_all_serde_encoding) {
         return _impl->append_entries(
-          target_node, std::move(r), std::move(opts));
+          target_node, std::move(r), std::move(opts), use_all_serde_encoding);
     }
 
     ss::future<result<heartbeat_reply>> heartbeat(
@@ -78,6 +85,12 @@ public:
       heartbeat_request&& r,
       rpc::client_opts opts) {
         return _impl->heartbeat(target_node, std::move(r), std::move(opts));
+    }
+    ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
+      model::node_id target_node,
+      heartbeat_request_v2&& r,
+      rpc::client_opts opts) {
+        return _impl->heartbeat_v2(target_node, std::move(r), std::move(opts));
     }
 
     ss::future<result<install_snapshot_reply>> install_snapshot(

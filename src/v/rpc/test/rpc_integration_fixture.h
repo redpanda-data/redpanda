@@ -10,15 +10,14 @@
  */
 
 #pragma once
+#include "base/seastarx.h"
 #include "config/tls_config.h"
 #include "net/dns.h"
 #include "net/server.h"
 #include "rpc/rpc_server.h"
 #include "rpc/service.h"
-#include "rpc/simple_protocol.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
@@ -30,11 +29,11 @@ class rpc_base_integration_fixture {
 public:
     explicit rpc_base_integration_fixture(uint16_t port)
       : _listen_address("127.0.0.1", port)
-      , _ssg(ss::create_smp_service_group({5000}).get0())
+      , _ssg(ss::create_smp_service_group({5000}).get())
       , _sg(ss::default_scheduling_group()) {}
 
     virtual ~rpc_base_integration_fixture() {
-        destroy_smp_service_group(_ssg).get0();
+        destroy_smp_service_group(_ssg).get();
     }
 
     virtual void start_server() = 0;
@@ -52,7 +51,7 @@ public:
           .server_addr = _listen_address,
           .credentials
           = credentials
-              ? credentials->build_reloadable_certificate_credentials().get0()
+              ? credentials->build_reloadable_certificate_credentials().get()
               : nullptr};
     }
 
@@ -65,7 +64,7 @@ private:
     virtual void check_server() = 0;
 };
 
-template<std::derived_from<net::server::protocol> T>
+template<std::derived_from<net::server> T>
 class rpc_fixture_swappable_proto : public rpc_base_integration_fixture {
 public:
     explicit rpc_fixture_swappable_proto(uint16_t port)
@@ -75,7 +74,6 @@ public:
 
     void start_server() override {
         check_server();
-        _server->set_protocol(std::move(_proto));
         _server->start();
     }
 
@@ -95,34 +93,41 @@ public:
           resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get0()
+                .get()
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        _server = std::make_unique<net::server>(std::move(scfg));
-        _proto = std::make_unique<T>();
+        if constexpr (std::is_same_v<T, rpc::rpc_server>) {
+            _server = std::make_unique<T>(std::move(scfg));
+        } else {
+            _server = std::make_unique<T>(std::move(scfg), rpc::rpclog);
+        }
     }
 
     template<typename Service, typename... Args>
     void register_service(Args&&... args) {
         check_server();
-        _proto->template register_service<Service>(
+        _server->template register_service<Service>(
           _sg, _ssg, std::forward<Args>(args)...);
+    }
+
+    T& server() {
+        check_server();
+        return *_server;
     }
 
 private:
     void check_server() override {
-        if (!_server || !_proto) {
+        if (!_server) {
             throw std::runtime_error("Configure server first!!!");
         }
     }
 
-    std::unique_ptr<T> _proto;
-    std::unique_ptr<net::server> _server;
+    std::unique_ptr<T> _server;
 };
 
 using rpc_simple_integration_fixture
-  = rpc_fixture_swappable_proto<rpc::simple_protocol>;
+  = rpc_fixture_swappable_proto<rpc::rpc_server>;
 
 class rpc_sharded_integration_fixture : public rpc_base_integration_fixture {
 public:
@@ -149,7 +154,7 @@ public:
           resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
-                .get0()
+                .get()
             : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
@@ -169,7 +174,7 @@ private:
                                        },
                                        true,
                                        std::logical_and<>())
-                                       .get0();
+                                       .get();
         if (!all_initialized) {
             throw std::runtime_error("Configure server first!!!");
         }

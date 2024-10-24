@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -23,22 +24,52 @@ public:
     void put() { ++_num_puts; }
     void get() { ++_num_gets; }
     void cached_get() { ++_num_cached_gets; }
+    void miss_get() { ++_num_miss_gets; }
 
-    void set_size(uint64_t size) { _cur_size_bytes = size; }
-    void set_num_files(uint64_t num_files) { _cur_num_files = num_files; }
+    void set_size(uint64_t size) {
+        _cur_size_bytes = size;
+        _hwm_size_bytes = std::max(_cur_size_bytes, _hwm_size_bytes);
+    }
+    void set_num_files(uint64_t num_files) {
+        _cur_num_files = num_files;
+        _hwm_num_files = std::max(_cur_num_files, _hwm_num_files);
+    }
     void put_started() { ++_cur_in_progress_files; }
     void put_ended() { --_cur_in_progress_files; }
+
+    void set_tracker_size(uint64_t size) { _tracker_size = size; }
+
+    void fast_trim() { ++_fast_trims; }
+    void exhaustive_trim() { ++_exhaustive_trims; }
+    void carryover_trim() { ++_carryover_trims; }
+    void failed_trim() { ++_failed_trims; }
+    void in_mem_trim() { ++_in_mem_trims; }
+
+    void tracker_sync() { ++_tracker_syncs; }
 
 private:
     uint64_t _num_puts = 0;
     uint64_t _num_gets = 0;
     uint64_t _num_cached_gets = 0;
+    uint64_t _num_miss_gets = 0;
 
     int64_t _cur_size_bytes = 0;
+    int64_t _hwm_size_bytes = 0;
     int64_t _cur_num_files = 0;
+    int64_t _hwm_num_files = 0;
     int64_t _cur_in_progress_files = 0;
+    uint64_t _tracker_size{0};
 
-    ss::metrics::metric_groups _metrics;
+    int64_t _fast_trims{0};
+    int64_t _exhaustive_trims{0};
+    int64_t _carryover_trims{0};
+    int64_t _failed_trims{0};
+    int64_t _in_mem_trims{0};
+
+    uint64_t _tracker_syncs{0};
+
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

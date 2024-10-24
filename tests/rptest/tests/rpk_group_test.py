@@ -46,15 +46,19 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.producer.start()
 
     def validate_partition(self, partition, exp_current_offset,
-                           exp_log_end_offset, exp_lag):
+                           exp_log_start_offset, exp_log_end_offset, exp_lag):
         assert partition.current_offset == exp_current_offset
+        assert partition.log_start_offset == exp_log_start_offset
         assert partition.log_end_offset == exp_log_end_offset
         assert partition.lag == exp_lag
+
+    def _assert_eq(self, lhs, rhs):
+        assert lhs == rhs, f"Unexpected: {lhs} != {rhs}"
 
     @cluster(num_nodes=3)
     def test_group_list_and_delete(self):
         """
-        Simple listing and deleting one of the groups.
+        Simple listing and deleting one of the groups. Also tests group state-based filtering.
         """
         topic = "test_group"
         self._rpk_produce_to_topic(topic, 20)
@@ -66,13 +70,24 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.rpk.consume(topic, group=group_2, n=10)
 
         # groups will show up until they're deleted or until all offsets expire
-        groups = self.rpk.group_list()
-        assert group_1 in groups
-        assert group_2 in groups
+        group_names = self.rpk.group_list_names()
+        assert group_1 in group_names
+        assert group_2 in group_names
 
         self.rpk.group_delete(group_1)
-        groups = self.rpk.group_list()
-        assert group_1 not in groups
+        group_names = self.rpk.group_list_names()
+        assert group_1 not in group_names
+
+        all_groups = self.rpk.group_list()
+        self._assert_eq(all_groups[0].group, group_2)
+        self._assert_eq(all_groups[0].state, "Empty")
+
+        e_s_groups = self.rpk.group_list(states=["Empty", "Stable"])
+        self._assert_eq(e_s_groups[0].group, group_2)
+        self._assert_eq(e_s_groups[0].state, "Empty")
+
+        pr_groups = self.rpk.group_list(states=["PreparingRebalance"])
+        self._assert_eq(len(pr_groups), 0)
 
     @cluster(num_nodes=5)
     def test_group_describe(self):
@@ -111,7 +126,7 @@ class RpkGroupCommandsTest(RedpandaTest):
 
         assert rpk_group.state == "Empty"
         assert rpk_group.name == group_1
-        self.validate_partition(rpk_group.partitions[0], 10, 20, 10)
+        self.validate_partition(rpk_group.partitions[0], 10, 0, 20, 10)
 
     @cluster(num_nodes=1)
     def test_group_seek_to(self):
@@ -125,15 +140,15 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.rpk.consume(topic, group=group_1, n=10)
 
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 10, 20, 10)
+        self.validate_partition(rpk_group.partitions[0], 10, 0, 20, 10)
 
         self.rpk.group_seek_to(group_1, "end")
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 20, 20, 0)
+        self.validate_partition(rpk_group.partitions[0], 20, 0, 20, 0)
 
         self.rpk.group_seek_to(group_1, "start")
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 0, 20, 20)
+        self.validate_partition(rpk_group.partitions[0], 0, 0, 20, 20)
 
     @cluster(num_nodes=1)
     def test_group_seek_to_group(self):
@@ -161,7 +176,7 @@ class RpkGroupCommandsTest(RedpandaTest):
         assert rpk_group_1.partitions == rpk_group_2.partitions
         # Now that we know both are equals, we check the values
         # only in group_1
-        self.validate_partition(rpk_group_1.partitions[0], 20, 30, 10)
+        self.validate_partition(rpk_group_1.partitions[0], 20, 0, 30, 10)
 
     @cluster(num_nodes=1)
     def test_group_seek_to_file(self):
@@ -188,8 +203,8 @@ class RpkGroupCommandsTest(RedpandaTest):
 
         # We describe topics that don't have commited offsets too:
         assert len(rpk_group.partitions) == 2
-        self.validate_partition(rpk_group.partitions[0], 29, 30, 1)
-        self.validate_partition(rpk_group.partitions[1], 0, 30, 30)
+        self.validate_partition(rpk_group.partitions[0], 29, 0, 30, 1)
+        self.validate_partition(rpk_group.partitions[1], 0, 0, 30, 30)
 
     @cluster(num_nodes=1)
     def test_group_seek_to_timestamp(self):
@@ -208,14 +223,19 @@ class RpkGroupCommandsTest(RedpandaTest):
 
         # Before seeking:
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 10, 10, 0)
+        self.validate_partition(rpk_group.partitions[0], 10, 0, 10, 0)
 
         # Seek to the beginning
         self.rpk.group_seek_to(group_1, time_0)
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 0, 10, 10)
+        self.validate_partition(rpk_group.partitions[0], 0, 0, 10, 10)
 
         # Seek to the middle
         self.rpk.group_seek_to(group_1, time_1)
         rpk_group = self.rpk.group_describe(group_1)
-        self.validate_partition(rpk_group.partitions[0], 5, 10, 5)
+        self.validate_partition(rpk_group.partitions[0], 5, 0, 10, 5)
+
+        # Seek to the future
+        self.rpk.group_seek_to(group_1, str(int(time.time()) + 10))
+        rpk_group = self.rpk.group_describe(group_1)
+        self.validate_partition(rpk_group.partitions[0], 10, 0, 10, 0)

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+mkdir /opt/librdkafka
+curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.2.0.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
+cd /opt/librdkafka
+./configure
+make -j$(nproc)
+make install
+cd /opt/librdkafka/tests
+make build -j$(nproc)

@@ -1,46 +1,55 @@
-## Cover letter
-
-Describe in plain language the motivation (bug, feature, etc.) behind the change in this PR and how the included commits address it.
-
-<!-- Use the GitHub keyword `Fixes` to link to bug(s) this PR will fix. -->
-Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
-
-## Backport Required
-
-<!-- Specify which branches this should be backported to, e.g.: -->
-- [ ] not a bug fix
-- [ ] issue does not exist in previous branches
-- [ ] papercut/not impactful enough to backport
-- [ ] v22.2.x
-- [ ] v22.1.x
-- [ ] v21.11.x
-
-## UX changes
-
-Describe in plain language how this PR affects an end-user. What topic flags, configuration flags, command line flags, deprecation policies etc are added/changed.
-
-<!-- don't ship user breaking changes. Ping PMs for help with user visible changes  -->
-
-## Release notes
 <!--
+See https://github.com/redpanda-data/redpanda/blob/dev/CONTRIBUTING.md#pull-request-body
+for more details and examples of what is expected in a PR body.
 
-If this PR does not need to be included in the release notes, then
-simply have a bullet point for `none` directly under the `Release notes`
-section, e.g.
+Content in this top section is REQUIRED. Describe, in plain language, the motivation
+behind the change (bug fix, feature, improvement) in this PR and how the included
+commits address it.
+
+Add the GitHub keyword `Fixes` to link to bug(s) this PR will fix, e.g.
+  Fixes #ISSUE-NUMBER, Fixes #ISSUE-NUMBER, ...
+
+If this PR is a backport, link to the original with `Backport of PR`, e.g.
+  Backport of PR #PR-NUMBER
+-->
+
+## Backports Required
+
+<!-- Checking at least one of the checkboxes is REQUIRED if this PR is not a backport. -->
+
+- [ ] none - not a bug fix
+- [ ] none - this is a backport
+- [ ] none - issue does not exist in previous branches
+- [ ] none - papercut/not impactful enough to backport
+- [ ] v24.2.x
+- [ ] v24.1.x
+- [ ] v23.3.x
+
+## Release Notes
+
+<!--
+If the changes in this PR do not need to be mentioned in the release
+notes, then don't add a sub-section and simply list `none`, e.g.
 
 * none
 
-Otherwise, add one or more of the following sections. A section must have
-at least 1 bullet point. You can add multiple sections with multiple
-bullet points if this PR represents multiple release note items. See
-the CONTRIBUTING.md guidelines for more details.
+Otherwise, adding a sub-section or `none` is REQUIRED if the PR is not a backport PR.
+If this is a backport PR, adding contents to this section will override
+the release notes section inherited from the original PR to dev.
+
+Add one or more of the sub-sections with a short description bullet
+point of the change, e.g.
+
+### Bug Fixes
+
+* Short description of the bug fix if this is a PR to `dev` branch.
 
 ### Features
 
-* Short description of the feature. Explain how to configure the new feature if applicable.
+* Short description of the feature. Explain how to configure.
 
 ### Improvements
 
-* Short description of how this PR improves redpanda.
+* Short description of how this PR improves existing behavior.
 
 -->

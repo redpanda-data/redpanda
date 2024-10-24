@@ -11,12 +11,13 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/client/partitioners.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -41,12 +42,13 @@ public:
     topic_cache() = default;
     topic_cache(const topic_cache&) = delete;
     topic_cache(topic_cache&&) = default;
-    topic_cache& operator=(topic_cache const&) = delete;
+    topic_cache& operator=(const topic_cache&) = delete;
     topic_cache& operator=(topic_cache&&) = delete;
     ~topic_cache() noexcept = default;
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(std::vector<metadata_response::topic>&& topics);
+    ss::future<>
+    apply(small_fragment_vector<metadata_response::topic>&& topics);
 
     /// \brief Obtain the leader for the given topic-partition
     ss::future<model::node_id> leader(model::topic_partition tp) const;

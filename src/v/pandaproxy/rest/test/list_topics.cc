@@ -16,8 +16,6 @@
 #include <boost/beast/http/verb.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
-namespace pp = pandaproxy;
-
 FIXTURE_TEST(pandaproxy_list_topics, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
 

@@ -41,6 +41,24 @@
             ]
         },
         {
+            "path": "/v1/broker_uuids",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get a list of node id to UUID mappings",
+                    "type": "array",
+                    "items": {
+                        "type": "broker_uuid_mapping"
+                    },
+                    "nickname": "get_broker_uuids",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/brokers/{id}",
             "operations": [
                 {
@@ -65,6 +83,23 @@
         {
             "path": "/v1/brokers/{id}/decommission",
             "operations": [
+                {
+                    "method": "GET",
+                    "summary": "get broker decommission progress",
+                    "type": "void",
+                    "nickname": "get_decommission",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                },
                 {
                     "method": "PUT",
                     "summary": "decommission broker",
@@ -200,6 +235,20 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/reset_crash_tracking",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Reset the crash tracking of queried broker.",
+                    "type": "void",
+                    "nickname": "reset_crash_tracking",
+                    "produces": [
+                        "application/json"
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -231,6 +280,18 @@
                     "type": "long",
                     "description": "cores"
                 },
+                "rack": {
+                    "type": "string",
+                    "description": "rack id"
+                },
+                "internal_rpc_address": {
+                    "type": "string",
+                    "description": "Internal RPC address (usually, but not necessarily, a hostname)"
+                },
+                "internal_rpc_port": {
+                    "type": "long",
+                    "description": "Internal RPC port"
+                },
                 "membership_status": {
                     "type": "string",
                     "description": "Broker membership status"
@@ -238,6 +299,10 @@
                 "is_alive": {
                     "type": "boolean",
                     "description": "is node seen as alive by the cluster"
+                },
+                "recovery_mode_enabled": {
+                    "type": "boolean",
+                    "description": "was node booted up in recovery mode"
                 },
                 "disk_space": {
                     "type": "array",
@@ -253,6 +318,10 @@
                 "maintenance_status": {
                     "type": "maintenance_status",
                     "description": "Node maintenance status"
+                },
+                "in_fips_mode": {
+                    "type": "string",
+                    "description": "indicates if node is operating in FIPS Mode"
                 }
             }
         },
@@ -275,15 +344,15 @@
         },
         "maintenance_status": {
             "id": "maintenance_status",
-            "description": "Drain status",
+            "description": "Status of maintenance mode",
             "properties": {
                 "draining": {
                     "type": "boolean",
-                    "description": "in maintenance state"
+                    "description": "Flag indicating if maintenance mode is enabled."
                 },
                 "finished": {
                     "type": "boolean",
-                    "description": "drain finished"
+                    "description": "Indicates that draining is finished. Note that the draining flag will always be true if maintenance mode is enable and draining has finished."
                 },
                 "errors": {
                     "type": "boolean",
@@ -304,6 +373,101 @@
                 "failed": {
                     "type": "long",
                     "description": "failed transfer partition count"
+                }
+            }
+        },
+        "decommission_status": {
+            "id": "decommission_status",
+            "description": "Node decommissioning status",
+            "properties": {
+                "finished": {
+                    "type": "boolean",
+                    "description": "indicate if decommissioning is finished"
+                },
+                "replicas_left": {
+                    "type": "long",
+                    "description": "number of replicas left on a node"
+                },
+                "allocation_failures": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "description": "ntp"
+                    },
+                    "description": "a subset of partitions originating from this node with allocation failures. "
+                },
+                "partitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "partition_reconfiguration_status"
+                    },
+                    "description": "Array of partition reconfiguration statues"
+                }
+            }
+        },
+        "partition_reconfiguration_status": {
+            "id": "partition_reconfiguration_status",
+            "description": "Partition reconfiguration status",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition": {
+                    "type": "int",
+                    "description": "partition"
+                },
+                "moving_to": {
+                    "type": "broker_shard",
+                    "description": "information where the partition is being moved"
+                },
+                "bytes_left_to_move": {
+                    "type": "long",
+                    "description": "bytes left to move to new replica"
+                },
+                "bytes_moved": {
+                    "type": "long",
+                    "description": "bytes moved to target broker"
+                },
+                "partition_size": {
+                    "type": "long",
+                    "description": "current size of partition"
+                },
+                "reconfiguration_policy": {
+                    "type": "string",
+                    "description": "Policy used to reconfigure partition replica set"
+                }
+            }
+        },
+        "broker_shard": {
+            "id": "broker_shard",
+            "description": "Replica placement",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "id of a node"
+                },
+                "core": {
+                    "type": "int",
+                    "description": "id of a core on a given node"
+                }
+            }
+        },
+        "broker_uuid_mapping": {
+            "id": "broker_uuid_mapping",
+            "description": "Mapping between UUID and node id",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "Broker assigned id"
+                },
+                "uuid": {
+                    "type": "string",
+                    "description": "Broker unique identifier. UUID is generated when Redpanda starts with empty data folder"
                 }
             }
         }

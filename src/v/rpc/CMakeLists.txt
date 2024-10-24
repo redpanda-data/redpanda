@@ -6,11 +6,13 @@ v_cc_library(
     transport.cc
     reconnect_transport.cc
     connection_cache.cc
-    simple_protocol.cc
+    connection_set.cc
+    rpc_server.cc
+    rpc_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
-    v::rphashing
+    v::hashing
     v::utils
     v::reflection
     absl::flat_hash_map

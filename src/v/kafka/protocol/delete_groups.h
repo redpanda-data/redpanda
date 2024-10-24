@@ -12,7 +12,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/delete_groups_request.h"
 #include "kafka/protocol/schemata/delete_groups_response.h"
-#include "kafka/types.h"
 
 namespace kafka {
 
@@ -21,11 +20,11 @@ struct delete_groups_request final {
 
     delete_groups_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -45,7 +44,7 @@ struct delete_groups_response final {
         data.results = std::move(results);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

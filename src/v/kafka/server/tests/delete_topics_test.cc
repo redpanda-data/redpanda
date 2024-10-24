@@ -7,13 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "container/fragmented_vector.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/server/handlers/topics/types.h"
-#include "kafka/types.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/async.h"
@@ -41,26 +41,24 @@ public:
         topic.num_partitions = partitions;
         topic.replication_factor = rf;
 
-        std::vector<kafka::creatable_topic> topics;
-        topics.push_back(std::move(topic));
         auto req = kafka::create_topics_request{.data{
-          .topics = std::move(topics),
+          .topics = {topic},
           .timeout_ms = 10s,
           .validate_only = false,
         }};
 
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
+        auto client = make_kafka_client().get();
+        client.connect().get();
         auto resp
-          = client.dispatch(std::move(req), kafka::api_version(2)).get0();
+          = client.dispatch(std::move(req), kafka::api_version(2)).get();
     }
 
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
+        auto client = make_kafka_client().get();
+        client.connect().get();
 
-        return client.dispatch(std::move(req), kafka::api_version(2)).get0();
+        return client.dispatch(std::move(req), kafka::api_version(2)).get();
     }
 
     void
@@ -78,14 +76,15 @@ public:
     }
 
     kafka::metadata_response get_topic_metadata(const model::topic& tp) {
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
-        std::vector<kafka::metadata_request_topic> topics;
+        auto client = make_kafka_client().get();
+        client.connect().get();
+        chunked_vector<kafka::metadata_request_topic> topics;
         topics.push_back(kafka::metadata_request_topic{tp});
         kafka::metadata_request md_req{
-          .data = {.topics = topics, .allow_auto_topic_creation = false},
+          .data
+          = {.topics = std::move(topics), .allow_auto_topic_creation = false},
           .list_all_topics = false};
-        return client.dispatch(md_req).get0();
+        return client.dispatch(std::move(md_req)).get();
     }
 
     ss::future<kafka::metadata_response> get_all_metadata() {
@@ -108,8 +107,8 @@ public:
     void validate_topic_is_deleteted(const model::topic& tp) {
         kafka::metadata_response resp = get_topic_metadata(tp);
         auto it = std::find_if(
-          std::cbegin(resp.data.topics),
-          std::cend(resp.data.topics),
+          resp.data.topics.begin(),
+          resp.data.topics.end(),
           [tp](const kafka::metadata_response::topic& md_tp) {
               return md_tp.name == tp;
           });
@@ -118,7 +117,7 @@ public:
     }
 
     kafka::delete_topics_request make_delete_topics_request(
-      std::vector<model::topic> topics, std::chrono::milliseconds timeout) {
+      chunked_vector<model::topic> topics, std::chrono::milliseconds timeout) {
         kafka::delete_topics_request req;
         req.data.topic_names = std::move(topics);
         req.data.timeout_ms = timeout;
@@ -147,14 +146,16 @@ FIXTURE_TEST(delete_valid_topics, delete_topics_request_fixture) {
 
     create_topic("topic-1", 1, 1);
     // Single topic
-    validate_valid_delete_topics_request(
-      make_delete_topics_request({model::topic("topic-1")}, 10s));
+    validate_valid_delete_topics_request(make_delete_topics_request(
+      chunked_vector<model::topic>{{model::topic("topic-1")}}, 10s));
 
     create_topic("topic-2", 5, 1);
     create_topic("topic-3", 1, 1);
     // Multi topic
     validate_valid_delete_topics_request(make_delete_topics_request(
-      {model::topic("topic-2"), model::topic("topic-3")}, 10s));
+      chunked_vector<model::topic>{
+        {model::topic("topic-2"), model::topic("topic-3")}},
+      10s));
 }
 
 #if 0
@@ -166,7 +167,7 @@ FIXTURE_TEST(error_delete_topics_request, delete_topics_request_fixture) {
 
     // Basic
     validate_error_delete_topic_request(
-      make_delete_topics_request({model::topic("invalid-topic")}, 10s),
+      make_delete_topics_request(chunked_vector<model::topic>{{model::topic("invalid-topic")}}, 10s),
       {{model::topic("invalid-topic"),
         kafka::error_code::unknown_topic_or_partition}});
 
@@ -175,8 +176,8 @@ FIXTURE_TEST(error_delete_topics_request, delete_topics_request_fixture) {
 
     validate_error_delete_topic_request(
       make_delete_topics_request(
-        {model::topic("partial-topic-1"),
-         model::topic("partial-invalid-topic")},
+        chunked_vector<model::topic>{{model::topic("partial-topic-1"),
+         model::topic("partial-invalid-topic")}},
         10s),
       {{model::topic("partial-topic-1"), kafka::error_code::none},
        {model::topic("partial-invalid-topic"),
@@ -186,13 +187,13 @@ FIXTURE_TEST(error_delete_topics_request, delete_topics_request_fixture) {
     create_topic("timeout-topic", 1, 1);
     auto tp = model::topic("timeout-topic");
     validate_error_delete_topic_request(
-      make_delete_topics_request({tp}, 0ms),
+      make_delete_topics_request(chunked_vector<model::topic>{{tp}}, 0ms),
       {{tp, kafka::error_code::request_timed_out}});
 
     tests::cooperative_spin_wait_with_timeout(5s, [this, tp] {
         return get_all_metadata().then(
           [](kafka::metadata_response resp) { return resp.topics.empty(); });
-    }).get0();
+    }).get();
 
     validate_topic_is_deleteted(model::topic("timeout-topic"));
 }

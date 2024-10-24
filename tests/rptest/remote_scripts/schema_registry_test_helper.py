@@ -22,12 +22,13 @@ HTTP_POST_HEADERS = {
     "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
 
-schema_template = '{"type":"record","name":"record_%s","fields":[{"type":"string","name":"f1"}]}'
+schema_template = '{"type":"record","name":"record_%s","fields":[{"name":"f1","type":"string"}]}'
 
 
 class WriteWorker(threading.Thread):
     def __init__(self, name, count, node_names):
         super(WriteWorker, self).__init__()
+        self.daemon = True
         self.name = name
         self.count = count
         self.schema_counter = 1

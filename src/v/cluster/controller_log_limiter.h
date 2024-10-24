@@ -12,14 +12,13 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "config/configuration.h"
-#include "ssx/metrics.h"
+#include "metrics/metrics.h"
 #include "utils/token_bucket.h"
-#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <optional>
+#include <type_traits>
 
 namespace cluster {
 
@@ -60,8 +59,7 @@ private:
     config::binding<std::optional<size_t>> _capacity_binding;
     token_bucket<> _throttler;
     int64_t _dropped_requests_amount{};
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    metrics::public_metric_groups _public_metrics;
 };
 
 class controller_log_limiter {
@@ -78,25 +76,25 @@ public:
           std::is_same_v<Cmd, delete_topic_cmd> ||            //
           std::is_same_v<Cmd, update_topic_properties_cmd> || //
           std::is_same_v<Cmd, create_partition_cmd> ||        //
-          std::is_same_v<Cmd, create_non_replicable_topic_cmd>) {
+          std::is_same_v<Cmd, set_topic_partitions_disabled_cmd>) {
             return _topic_operations_limiter.try_throttle();
         } else if constexpr (
-          std::is_same_v<Cmd, move_partition_replicas_cmd> || //
-          std::is_same_v<Cmd, cancel_moving_partition_replicas_cmd>) {
+          std::is_same_v<Cmd, move_partition_replicas_cmd> ||          //
+          std::is_same_v<Cmd, cancel_moving_partition_replicas_cmd> || //
+          std::is_same_v<Cmd, update_partition_replicas_cmd>) {
             return _move_operations_limiter.try_throttle();
         } else if constexpr (
           std::is_same_v<Cmd, create_user_cmd> || //
           std::is_same_v<Cmd, delete_user_cmd> || //
           std::is_same_v<Cmd, update_user_cmd> || //
           std::is_same_v<Cmd, create_acls_cmd> || //
-          std::is_same_v<Cmd, delete_acls_cmd>) {
+          std::is_same_v<Cmd, delete_acls_cmd> || //
+          std::is_same_v<Cmd, create_role_cmd> || //
+          std::is_same_v<Cmd, delete_role_cmd> || //
+          std::is_same_v<Cmd, update_role_cmd>) {
             return _acls_and_users_operations_limiter.try_throttle();
         } else if constexpr (
-          std::is_same_v<Cmd, create_data_policy_cmd> ||    //
-          std::is_same_v<Cmd, delete_data_policy_cmd> ||    //
-          std::is_same_v<Cmd, cluster_config_delta_cmd> ||  //
-          std::is_same_v<Cmd, cluster_config_status_cmd> || //
-          std::is_same_v<Cmd, feature_update_cmd> ||        //
+          std::is_same_v<Cmd, cluster_config_delta_cmd> || //
           std::is_same_v<Cmd, feature_update_license_update_cmd>) {
             return _configuration_operations_limiter.try_throttle();
         } else if constexpr (

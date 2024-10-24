@@ -181,6 +181,10 @@ std::string_view error_code_to_str(error_code error) {
         return "preferred_leader_not_available";
     case error_code::group_max_size_reached:
         return "group_max_size_reached";
+    case error_code::no_reassignment_in_progress:
+        return "no_reassignment_in_progress";
+    case error_code::group_subscribed_to_topic:
+        return "group_subscribed_to_topic";
     case error_code::fenced_instance_id:
         return "fenced_instance_id";
     case error_code::invalid_record:
@@ -189,8 +193,10 @@ std::string_view error_code_to_str(error_code error) {
         return "unstable_offset_commit";
     case error_code::throttling_quota_exceeded:
         return "throttling_quota_exceeded";
+    case error_code::transactional_id_not_found:
+        return "transactional_id_not_found";
     default:
-        std::terminate(); // make gcc happy
+        return "unknown_error_code";
     }
 }
 
@@ -199,18 +205,19 @@ std::ostream& operator<<(std::ostream& o, error_code code) {
              << (int16_t)code << "] }";
 }
 
-struct error_category final : std::error_category {
-    const char* name() const noexcept override { return "kafka"; }
-    std::string message(int ec) const override {
-        return std::string(
-          kafka::error_code_to_str(static_cast<kafka::error_code>(ec)));
-    }
-};
-
-const error_category kafka_error_category{};
-
 std::error_code make_error_code(kafka::error_code ec) {
-    return {static_cast<int>(ec), kafka_error_category};
+    return {static_cast<int>(ec), error_category()};
 }
 
+const std::error_category& error_category() noexcept {
+    struct error_category final : std::error_category {
+        const char* name() const noexcept override { return "kafka"; }
+        std::string message(int ec) const override {
+            return std::string(
+              kafka::error_code_to_str(static_cast<kafka::error_code>(ec)));
+        }
+    };
+    static error_category e;
+    return e;
+}
 } // namespace kafka

@@ -11,11 +11,12 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
@@ -25,7 +26,7 @@
 namespace kafka::client {
 
 /// \brief during connection, the node_id isn't known.
-const model::node_id unknown_node_id{-1};
+inline const model::node_id unknown_node_id{-1};
 
 class brokers {
     using brokers_t
@@ -33,10 +34,10 @@ class brokers {
 
 public:
     explicit brokers(const configuration& config)
-      : _config(config){};
+      : _config(config) {};
     brokers(const brokers&) = delete;
     brokers(brokers&&) = default;
-    brokers& operator=(brokers const&) = delete;
+    brokers& operator=(const brokers&) = delete;
     brokers& operator=(brokers&&) = delete;
     ~brokers() noexcept = default;
 
@@ -55,7 +56,7 @@ public:
     ss::future<> erase(model::node_id id);
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(std::vector<metadata_response::broker>&& brokers);
+    ss::future<> apply(chunked_vector<metadata_response::broker>&& brokers);
 
     /// \brief Returns true if there are no connected brokers
     ss::future<bool> empty() const;

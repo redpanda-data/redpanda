@@ -14,7 +14,7 @@
 #include "model/fundamental.h"
 #include "storage/parser_utils.h"
 
-static ss::logger slog{"test"};
+static ss::logger slog{"log_gap_test"};
 namespace storage {
 
 log_gap_analysis make_log_gap_analysis(

@@ -34,6 +34,7 @@ struct compat_check<cluster::begin_tx_request> {
         json_write(pid);
         json_write(tx_seq);
         json_write(transaction_timeout_ms);
+        json_write(tm_partition);
     }
     static cluster::begin_tx_request from_json(json::Value& rd) {
         cluster::begin_tx_request obj;
@@ -41,13 +42,14 @@ struct compat_check<cluster::begin_tx_request> {
         json_read(pid);
         json_read(tx_seq);
         json_read(transaction_timeout_ms);
+        json_read(tm_partition);
         return obj;
     }
     static std::vector<compat_binary> to_binary(cluster::begin_tx_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::begin_tx_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -74,10 +76,10 @@ struct compat_check<cluster::begin_tx_reply> {
         return obj;
     }
     static std::vector<compat_binary> to_binary(cluster::begin_tx_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::begin_tx_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 

@@ -14,13 +14,15 @@
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/strings/str_join.h>
+#include <absl/strings/str_split.h>
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
 #include <sstream>
 
 std::chrono::time_point<std::chrono::system_clock>
-parse_time(std::string const& timestr) {
+parse_time(const std::string& timestr) {
     std::tm tm = {};
     std::stringstream ss(timestr + "0");
     ss >> std::get_time(&tm, "%Y%m%dT%H%M%SZ%Z");
@@ -49,7 +51,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_1) {
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::range, "bytes=0-9");
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -86,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_2) {
     header.insert(
       boost::beast::http::field::date, "Fri, 24 May 2013 00:00:00 GMT");
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -121,7 +123,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_3) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -154,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
-    sign.sign_header(header, sha256);
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header, sha256), std::error_code{});
 
     std::string expected
       = "AWS4-HMAC-SHA256 "
@@ -166,9 +168,65 @@ SEASTAR_THREAD_TEST_CASE(test_signature_computation_4) {
       header.at(boost::beast::http::field::authorization), expected);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation) {
+    cloud_roles::private_key_str shared_key{
+      "fszSAFOYI+AH3Befu2gnvip9B9QKZA9i8+"
+      "vbwsGtgA29ouezYToMSW2eR0PtSw7ZMPh2cmpsGFnU+AStcy+jUg=="};
+    cloud_roles::storage_account storage_acc{"vladstorageaccount123"};
+    // Get Blob Request
+    std::string host = "vladstorageaccount123.blob.core.windows.net";
+    std::string target = "/vlad-container/one-blob?timeout=10";
+
+    auto tp = parse_time("20221220T110100Z");
+    cloud_roles::signature_abs sign(
+      storage_acc, shared_key, cloud_roles::time_source(tp));
+
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
+
+    std::string expected
+      = "SharedKey "
+        "vladstorageaccount123:W5Xz1fJNgftpQm0ppLUcOJRzXStXct7OEe8pgj7Og5A=";
+
+    BOOST_REQUIRE_EQUAL(
+      header.at(boost::beast::http::field::authorization), expected);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
+    cloud_roles::private_key_str shared_key{
+      "fszSAFOYI+AH3Befu2gnvip9B9QKZA9i8+"
+      "vbwsGtgA29ouezYToMSW2eR0PtSw7ZMPh2cmpsGFnU+AStcy+jUg=="};
+    cloud_roles::storage_account storage_acc{"vladstorageaccount123"};
+    std::string host = "vladstorageaccount123.blob.core.windows.net";
+    // List Containers Request
+    std::string target = "/?comp=list&timeout=20";
+
+    auto tp = parse_time("20221220T111700Z");
+    cloud_roles::signature_abs sign(
+      storage_acc, shared_key, cloud_roles::time_source(tp));
+
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    BOOST_REQUIRE_EQUAL(sign.sign_header(header), std::error_code{});
+
+    std::string expected
+      = "SharedKey "
+        "vladstorageaccount123:2P67qqyi833QDaUq+ghFvwewOJkJFjA8PY3hnssTy0M=";
+
+    BOOST_REQUIRE_EQUAL(
+      header.at(boost::beast::http::field::authorization), expected);
+}
+
 /// Test is based on this example
 /// https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html
-SEASTAR_THREAD_TEST_CASE(test_gnutls) {
+SEASTAR_THREAD_TEST_CASE(test_sig_gen) {
     std::string ksecret = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
     std::string date = "20150830";
     std::string region = "us-east-1";
@@ -180,4 +238,28 @@ SEASTAR_THREAD_TEST_CASE(test_gnutls) {
     BOOST_REQUIRE_EQUAL(
       to_hex(bytes_view{result.data(), 32}),
       "c4afb1cc5771d871763a393e44b703571b55cc28424d1a5e86da6ed3c154a4b9");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_redact_headers_from_string) {
+    std::vector<ss::sstring> lines{};
+    lines.emplace_back(fmt::format("{}:{}", "x-amz-security-token", "abcd"));
+    lines.emplace_back(fmt::format("{}:{}", "x-amz-content-sha256", "secret"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token111", "abcd111"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token222", "abcd222"));
+    lines.emplace_back(
+      fmt::format("{}:{}", "x-amz-security-token", "abcdabcd"));
+
+    const std::string redacted = cloud_roles::redact_headers_from_string(
+      absl::StrJoin(lines, "\n"));
+
+    const auto redacted_lines = absl::StrSplit(redacted, "\n");
+    auto it = redacted_lines.begin();
+
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token:[secret]");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-content-sha256:[secret]");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token111:abcd111");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token222:abcd222");
+    BOOST_REQUIRE_EQUAL(*(it++), "x-amz-security-token:[secret]");
 }

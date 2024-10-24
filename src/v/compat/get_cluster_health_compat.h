@@ -17,7 +17,7 @@
 
 namespace compat {
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::get_cluster_health_request,
   {
       json_write(filter);
@@ -30,7 +30,7 @@ GEN_COMPAT_CHECK(
       json_read(decoded_version);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::get_cluster_health_reply,
   {
       json_write(error);

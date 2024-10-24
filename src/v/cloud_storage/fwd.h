@@ -16,11 +16,16 @@ class cache;
 class partition_recovery_manager;
 class remote;
 class remote_partition;
+class remote_path_provider;
 class remote_segment;
 class partition_manifest;
+class topic_mount_manifest;
 class topic_manifest;
+class partition_probe;
+class async_manifest_view;
 
 struct log_recovery_result;
 struct offset_range;
+struct topic_recovery_service;
 
 } // namespace cloud_storage

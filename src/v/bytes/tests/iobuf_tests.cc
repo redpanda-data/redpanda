@@ -10,12 +10,14 @@
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iobuf_parser.h"
-#include "bytes/tests/utils.h"
-#include "bytes/utils.h"
+#include "bytes/iostream.h"
+#include "bytes/random.h"
+#include "bytes/scattered_message.h"
+#include "bytes/streambuf.h"
+#include "utils.h"
 
+#include <seastar/core/memory.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -23,6 +25,32 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
+
+#include <cstdint>
+#include <iterator>
+#include <span>
+
+SEASTAR_THREAD_TEST_CASE(test_copy_equal) {
+    iobuf buf;
+    buf.reserve_memory(10000000);
+
+    {
+        iobuf tmp;
+        tmp.append("abcd", 4);
+        buf.append_fragments(std::move(tmp));
+    }
+
+    auto copy = buf.copy();
+    BOOST_CHECK_EQUAL(buf, copy);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_lt) {
+    BOOST_CHECK_LT(iobuf::from(""), iobuf::from("cat"));
+    BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("dog"));
+    BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("catastrophe"));
+    BOOST_CHECK_EQUAL(false, iobuf::from("cat") < iobuf::from("cat"));
+    BOOST_CHECK_EQUAL(false, iobuf{} < iobuf{});
+}
 
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;
@@ -85,6 +113,22 @@ SEASTAR_THREAD_TEST_CASE(test_writing_placeholders) {
     BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_writing_placeholders_at_end) {
+    iobuf buf;
+    ss::sstring s = "hello world";
+    const int32_t val = 55;
+
+    auto ph = buf.reserve(sizeof(val) * 2);
+    buf.append(s.data(), s.size());
+    ph.write_end(reinterpret_cast<const uint8_t*>(&val), sizeof(val));
+    buf.trim_front(sizeof(val));
+
+    const auto& in = *buf.begin();
+    const int32_t copy = *reinterpret_cast<const int32_t*>(in.get());
+    BOOST_REQUIRE_EQUAL(copy, val);
+    BOOST_REQUIRE_EQUAL(buf.size_bytes(), 15);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_temporary_buffs) {
     iobuf buf;
     ss::temporary_buffer<char> x(55);
@@ -98,7 +142,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_istream) {
 
     BOOST_CHECK_THROW(in.consume_type<char>(), std::out_of_range);
 
-    bytes b = ss::uninitialized_string<bytes>(10);
+    bytes b(bytes::initialized_later{}, 10);
     BOOST_CHECK_THROW(in.consume_to(1, b.begin()), std::out_of_range);
     in.consume_to(0, b.begin());
 }
@@ -421,6 +465,62 @@ SEASTAR_THREAD_TEST_CASE(test_appending_frament_takes_ownership) {
       target_frags_cnt + other_frags_cnt);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_zero_copy_large_append) {
+    // Test that zero copy operations involve source buffers with
+    // max-size (128K) fragements are zero-copy.
+
+    if (seastar::memory::stats().allocated_memory() == 0) {
+        // we are running in debug mode, skip this test as our
+        // asserts rely on allocation behavior
+        return;
+    }
+
+    constexpr size_t chunk_count = 10;
+    constexpr auto max_chunk = details::io_allocation_size::max_chunk_size;
+    std::vector<char> max_vec(max_chunk, 'x');
+    auto max_buf = ss::temporary_buffer<char>(max_vec.data(), max_vec.size());
+    // this allocates the first time it is called, so get it out of the
+    // way to avoid including it in the allocation numbers below
+    max_buf.share();
+
+    auto mem_before = seastar::memory::stats();
+    auto allocated_bytes = [=] {
+        return seastar::memory::stats().allocated_memory()
+               - mem_before.allocated_memory();
+    };
+
+    // appending a max-sized temporary buffer shouldn't allocate anything
+    // since we should use zero-copy
+    iobuf target;
+
+    auto allocated_count = [=] {
+        return seastar::memory::stats().mallocs() - mem_before.mallocs();
+    };
+
+    for (size_t i = 0; i < chunk_count; i++) {
+        target.append(max_buf.share());
+    }
+
+    // We do a few small allocations for the fragments themselves (not the
+    // payload). This usually still reads as 0 since allocated_memory() only
+    // considers the large page pool and small allocs are mostly invisible, but
+    // we check against 128K since otherwise this test could flake when memory
+    // lines up just right and the small allocations require some new pages for
+    // the small pool. 128K is the largest amount the small pool will ask for
+    // from the page allocator.
+    BOOST_CHECK_LE(allocated_bytes(), 128 * 1024);
+    // each fragment allocates for the fragment
+    BOOST_CHECK_EQUAL(chunk_count, allocated_count());
+    BOOST_CHECK_EQUAL(chunk_count * max_chunk, target.size_bytes());
+
+    iobuf target2;
+    target2.append(target.share(0, target.size_bytes()));
+    target2.append(target.share(0, target.size_bytes()));
+    BOOST_CHECK_EQUAL(target2.size_bytes(), target.size_bytes() * 2);
+
+    BOOST_CHECK_LE(allocated_bytes(), 128 * 1024);
+}
+
 /*
  * testing various trim_front scenarios
  *
@@ -526,7 +626,7 @@ SEASTAR_THREAD_TEST_CASE(test_iobuf_input_stream_from_trimmed_iobuf) {
     buf.prepend(ss::temporary_buffer<char>(100));
     buf.trim_front(10);
     auto stream = make_iobuf_input_stream(std::move(buf));
-    auto res = stream.read().get0();
+    auto res = stream.read().get();
     BOOST_TEST(res.size() == 90);
 }
 
@@ -647,28 +747,40 @@ SEASTAR_THREAD_TEST_CASE(iobuf_parser_peek) {
     BOOST_REQUIRE(dst_a == dst_b);
 }
 
-SEASTAR_THREAD_TEST_CASE(iobuf_is_zero_test) {
-    const auto a = random_generators::gen_alphanum_string(1024);
-    const auto b = bytes("abc");
-    std::array<char, 1024> zeros{0};
-    std::array<char, 1> one{1};
+SEASTAR_THREAD_TEST_CASE(iobuf_parser_consume_to) {
+    auto frag_gen = [](std::span<const uint8_t> in) {
+        auto tmp = iobuf{};
+        tmp.append(in.data(), in.size());
+        return tmp;
+    };
+    auto reference_data = std::vector<uint8_t>{
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
 
-    // non zero iobuf
-    iobuf non_zero_1;
-    non_zero_1.append(a.data(), a.size());
-    non_zero_1.append(b.data(), b.size());
-    BOOST_REQUIRE_EQUAL(is_zero(non_zero_1), false);
+    // create an interesting iobuf composed of more than one fragment
+    auto src = iobuf{};
+    src.append_fragments(frag_gen(std::span{reference_data}.first(5)));
 
-    iobuf non_zero_2;
-    non_zero_2.append(zeros.data(), zeros.size());
-    non_zero_2.append(one.data(), one.size());
-    BOOST_REQUIRE_EQUAL(is_zero(non_zero_2), false);
-    // empty iobuf is not zero
-    iobuf empty;
-    BOOST_REQUIRE_EQUAL(is_zero(empty), false);
+    src.append_fragments(frag_gen(std::span{reference_data}.subspan(5, 5)));
+    src.append_fragments(frag_gen(std::span{reference_data}.last(5)));
 
-    iobuf zero;
-    zero.append(zeros.data(), zeros.size());
-    zero.append(zeros.data(), zeros.size());
-    BOOST_REQUIRE_EQUAL(is_zero(zero), true);
+    // construct iobuf_parser with the interesting iobuf
+    auto stream = iobuf_parser{std::move(src)};
+
+    // consume all the data to a std::vector
+    auto out = std::vector<uint8_t>{};
+    stream.consume_to(stream.bytes_left(), std::back_inserter(out));
+
+    BOOST_REQUIRE(out == reference_data);
+
+    BOOST_REQUIRE(stream.bytes_left() == 0);
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_hexdump) {
+    static constexpr std::string_view t = "Aenean sed leo porttitor.";
+    iobuf buf;
+    buf.append(t.data(), t.size());
+    auto h = buf.hexdump(1000);
+    BOOST_TEST_REQUIRE(h == R"(
+  00000000 | 41 65 6e 65 61 6e 20 73  65 64 20 6c 65 6f 20 70  | Aenean sed leo p
+  00000010 | 6f 72 74 74 69 74 6f 72  2e                       | orttitor.)");
 }

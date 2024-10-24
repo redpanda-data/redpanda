@@ -30,7 +30,7 @@ FIXTURE_TEST(schema_registry_get_schema_types, pandaproxy_test_fixture) {
         auto res = http_request(client, "/schemas/types");
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
-        BOOST_REQUIRE_EQUAL(res.body, R"(["PROTOBUF","AVRO"])");
+        BOOST_REQUIRE_EQUAL(res.body, R"(["JSON","PROTOBUF","AVRO"])");
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
           to_header_value(ppj::serialization_format::schema_registry_v1_json));
@@ -46,7 +46,7 @@ FIXTURE_TEST(schema_registry_get_schema_types, pandaproxy_test_fixture) {
           ppj::serialization_format::schema_registry_json);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
-        BOOST_REQUIRE_EQUAL(res.body, R"(["PROTOBUF","AVRO"])");
+        BOOST_REQUIRE_EQUAL(res.body, R"(["JSON","PROTOBUF","AVRO"])");
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
           to_header_value(ppj::serialization_format::schema_registry_json));

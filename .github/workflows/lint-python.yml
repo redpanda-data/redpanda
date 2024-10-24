@@ -1,0 +1,31 @@
+---
+name: Lint python
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '**.py'
+      - '.github/workflows/lint-python.yml'
+    tags-ignore:
+      - '**'
+  pull_request:
+    paths:
+      - '**.py'
+      - '.github/workflows/lint-python.yml'
+jobs:
+  py:
+    name: Lint python files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install yapf
+        run: |
+          python3 -mvenv /tmp/venv/yapf
+          source /tmp/venv/yapf/bin/activate
+          pip install yapf==0.40.1
+      - name: Run yapf
+        run: |
+          python3 -mvenv /tmp/env/yapf
+          source /tmp/venv/yapf/bin/activate
+          find . -type f -name '*.py' | xargs -n8 yapf -d

@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -e
+set -x
+
+function retry {
+  local retries=$1
+  shift
+
+  local count=0
+  until "$@"; do
+    exit=$?
+    count=$((count + 1))
+    if [ $count -lt $retries ]; then
+      echo "Retry $count/$retries exited $exit, retrying..."
+    else
+      echo "Retry $count/$retries exited $exit, no more retries left."
+      return $exit
+    fi
+  done
+  return 0
+}
+
+mkdir -p /opt/transforms/tinygo/
+
+cd /transform-sdk/go/transform/internal/testdata
+
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/identity.wasm" ./identity
+
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/identity_logging.wasm" ./identity_logging
+
+retry 5 tinygo build -target wasi -opt=z \
+  -panic print -scheduler none \
+  -o "/opt/transforms/tinygo/tee.wasm" ./tee
+
+# The following are some invalid wasm binarys for Redpanda, they either are invalid
+# as they are invalid bytes, or don't adhere to our ABI contract somehow
+#
+# Decode these at https://webassembly.github.io/wabt/demo/wasm2wat/
+mkdir -p /opt/transforms/validation/
+
+# Random bytes sourced from /dev/urandom with valid wasm prefix:
+echo "AGFzbQEAAAABBwFgAn9/63noHo07OzANmns7oZTsdHHpORQ=" |
+  base64 --decode >/opt/transforms/validation/garbage.wasm
+
+# WebAssembly Text Format of this module:
+# (module
+#  (func (export "addTwo") (param i32 i32) (result i32)
+#    local.get 0
+#    local.get 1
+#    i32.add))
+echo "AGFzbQEAAAABBwFgAn9/AX8DAgEABwoBBmFkZFR3bwAACgkBBwAgACABagsACgRuYW1lAgMBAAA=" |
+  base64 --decode >/opt/transforms/validation/add_two.wasm
+
+# WebAssembly Text Format of this module:
+# (module
+#  (memory (export "memory") 1)
+#  (func (export "_start")))
+echo "AGFzbQEAAAABBAFgAAADAgEABQMBAAEHEwIGbWVtb3J5AgAGX3N0YXJ0AAAKBAECAAsACgRuYW1lAgMBAAA=" |
+  base64 --decode >/opt/transforms/validation/wasi.wasm
