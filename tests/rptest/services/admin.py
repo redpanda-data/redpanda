@@ -321,14 +321,14 @@ class OutboundDataMigration:
 
 class InboundTopic:
     def __init__(self,
-                 src_topic: NamespacedTopic,
+                 source_topic_reference: NamespacedTopic,
                  alias: NamespacedTopic | None = None):
-        self.src_topic = src_topic
+        self.source_topic_reference = source_topic_reference
         self.alias = alias
 
     def as_dict(self):
         d = {
-            'source_topic': self.src_topic.as_dict(),
+            'source_topic_reference': self.source_topic_reference.as_dict(),
         }
         if self.alias:
             d['alias'] = self.alias.as_dict()

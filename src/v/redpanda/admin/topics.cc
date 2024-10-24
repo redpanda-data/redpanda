@@ -70,10 +70,10 @@ json::validator make_mount_configuration_validator() {
         "inbound_topic": {
             "type": "object",
             "required": [
-                "source_topic"
+                "source_topic_reference"
             ],
             "properties": {
-                "source_topic": {
+                "source_topic_reference": {
                     "$ref": "#/definitions/namespaced_topic"
                 },
                 "alias": {
