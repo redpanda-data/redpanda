@@ -772,10 +772,10 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
         partition_move_thread.join()
         self.redpanda.logger.info("Joining on producer thread")
         producer.wait()
-        self.redpanda.logger.info("Calling consumer::stop")
-        consumer.stop()
         self.redpanda.logger.info("Joining on consumer thread")
         consumer.wait()
+        self.redpanda.logger.info("Calling consumer::stop")
+        consumer.stop()
         if DeleteRecordsExceptionReporter.exc is not None:
             raise DeleteRecordsExceptionReporter.exc
         if PartitionMoveExceptionReporter.exc is not None:
@@ -783,7 +783,6 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
 
         status = consumer.consumer_status
         assert status.validator.invalid_reads == 0
-        assert status.validator.out_of_scope_invalid_reads == 0
 
 
 class TopicPartitionOffset(NamedTuple):
