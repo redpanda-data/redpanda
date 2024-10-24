@@ -497,6 +497,13 @@ func fromCloudCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.Resour
 			isMTLS = mtls.Enabled
 		}
 	}
+	if c.SchemaRegistry != nil {
+		p.SR.Addresses = []string{c.SchemaRegistry.Url}
+		p.SR.TLS = new(config.TLS)
+		if mtls := c.SchemaRegistry.Mtls; !isMTLS && mtls != nil {
+			isMTLS = mtls.Enabled
+		}
+	}
 	return CloudClusterOutputs{
 		Profile:           p,
 		ResourceGroupName: rg.Name,
@@ -520,6 +527,10 @@ func fromVirtualCluster(yAuth *config.RpkCloudAuth, rg *controlplanev1beta2.Reso
 		},
 		AdminAPI: config.RpkAdminAPI{
 			Addresses: []string{vc.Status.Listeners.ConsoleURL},
+			TLS:       new(config.TLS),
+		},
+		SR: config.RpkSchemaRegistryAPI{
+			Addresses: vc.Status.Listeners.SchemaRegistryURL,
 			TLS:       new(config.TLS),
 		},
 		CloudCluster: config.RpkCloudCluster{
