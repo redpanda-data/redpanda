@@ -31,7 +31,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.utils.mode_checks import skip_debug_mode
 
-OPERATIONS_LIMIT = 3
+OPERATIONS_LIMIT = 2  # assumes that we can issue requests faster than 2 per second
 TOO_MANY_REQUESTS_ERROR_CODE = 89
 TOO_MANY_REQUESTS_HTTP_ERROR_CODE = 429
 
@@ -283,19 +283,24 @@ class ControllerAclsAndUsersLimitTest(RedpandaTest):
         wait_until(lambda: self.check_capacity_is_full(OPERATIONS_LIMIT),
                    timeout_sec=10,
                    backoff_sec=1)
+        success_count = 0
+        quota_error_count = 0
         for i in range(OPERATIONS_LIMIT * 2):
             try:
                 rpk.sasl_create_user(
                     f"testuser_{i}", "password",
                     self.redpanda.SUPERUSER_CREDENTIALS.algorithm)
             except RpkException as err:
-                if i >= OPERATIONS_LIMIT:
-                    assert 'Too many requests' in err.stderr
+                if 'Too many requests' in err.stderr:
+                    quota_error_count += 1
                 else:
                     raise err
             else:
-                if i >= OPERATIONS_LIMIT:
-                    assert 0, "Too Many Requests error must be raised"
+                success_count += 1
+
+        self.logger.info(f"{success_count=}, {quota_error_count=}")
+        assert success_count >= OPERATIONS_LIMIT
+        assert quota_error_count > 0
 
     @cluster(num_nodes=3)
     def test_create_acl_limit(self):
