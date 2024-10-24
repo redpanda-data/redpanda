@@ -28,7 +28,7 @@
     },
     "created": {
       "description": "When the job was started, in milliseconds since epoch",
-      "type": "int"
+      "type": "long"
     },
     "filename": {
       "description": "Path in API to get the file",
@@ -36,7 +36,7 @@
     },
     "file_size": {
       "description": "Size of the file in bytes",
-      "type": "int"
+      "type": "long"
     },
     "stdout": {
       "description": "Only filled in once the process completes.  Content of stdout from rpk",
