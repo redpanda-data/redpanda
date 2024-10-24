@@ -54,9 +54,9 @@ struct_value record(Args... field) {
 }
 
 template<typename... Args>
-list_value list(Args... field) {
-    chunked_vector<list_element> fields;
-    (fields.push_back(list_element{std::move(field)}), ...);
+repeated_value list(Args... field) {
+    chunked_vector<repeated_element> fields;
+    (fields.push_back(repeated_element{std::move(field)}), ...);
     return fields;
 }
 
@@ -189,7 +189,7 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
       /*Name*/
       list(record(
         /*Language*/
-        list_value(),
+        repeated_value(),
         /*Url*/
         string_value(iobuf::from("http://C")))));
     value_collector collector(document_schema);

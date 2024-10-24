@@ -68,11 +68,8 @@ auto fmt::formatter<serde::parquet::value>::format(
       [&ctx](const struct_value& v) {
           return fmt::format_to(ctx.out(), "({})", fmt::join(v, ", "));
       },
-      [&ctx](const list_value& v) {
+      [&ctx](const repeated_value& v) {
           return fmt::format_to(ctx.out(), "[{}]", fmt::join(v, ", "));
-      },
-      [&ctx](const map_value& v) {
-          return fmt::format_to(ctx.out(), "{{{}}}", fmt::join(v, ", "));
       });
 }
 
@@ -82,17 +79,8 @@ auto fmt::formatter<serde::parquet::struct_field>::format(
     return fmt::format_to(ctx.out(), "{}", f.field);
 }
 
-auto fmt::formatter<serde::parquet::list_element>::format(
-  const serde::parquet::list_element& e, fmt::format_context& ctx) const
-  -> decltype(ctx.out()) {
+auto fmt::formatter<serde::parquet::repeated_element>::format(
+  const serde::parquet::repeated_element& e,
+  fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "{}", e.element);
-}
-
-auto fmt::formatter<serde::parquet::map_entry>::format(
-  const serde::parquet::map_entry& e, fmt::format_context& ctx) const
-  -> decltype(ctx.out()) {
-    if (e.val.has_value()) {
-        return fmt::format_to(ctx.out(), "{}: {}", e.key, e.val.value());
-    }
-    return fmt::format_to(ctx.out(), "{}", e.key);
 }

@@ -60,14 +60,9 @@ void for_each_required_child(
             "unexpected null value for required schema element {}",
             element.name));
       },
-      [&element](list_value&) {
+      [&element](repeated_value&) {
           throw std::runtime_error(fmt::format(
             "unexpected list value for non-repeated schema element {}",
-            element.name));
-      },
-      [&element](map_value&) {
-          throw std::runtime_error(fmt::format(
-            "unexpected map value for non-repeated schema element {}",
             element.name));
       },
       [&element](auto& v) {
@@ -112,14 +107,9 @@ void for_each_optional_child(
               cb(child, levels, value(v));
           }
       },
-      [&element](list_value&) {
+      [&element](repeated_value&) {
           throw std::runtime_error(fmt::format(
             "unexpected list value for non-repeated schema element {}",
-            element.name));
-      },
-      [&element](map_value&) {
-          throw std::runtime_error(fmt::format(
-            "unexpected map value for non-repeated schema element {}",
             element.name));
       },
       [&element](auto& v) {
@@ -141,7 +131,7 @@ void for_each_repeated_child(
       [&element, levels, cb](null_value& v) {
           for_each_optional_child(v, element, levels, cb);
       },
-      [&element, levels, cb](list_value& list) {
+      [&element, levels, cb](repeated_value& list) {
           // Empty lists are equivalent to a `null` value.
           if (list.empty()) {
               for_each_optional_child(null_value(), element, levels, cb);
@@ -157,10 +147,6 @@ void for_each_repeated_child(
                 std::move(member.element), element, child_levels, cb);
               child_levels.repetition_level = child_levels.repetition_depth;
           }
-      },
-      [&element](map_value&) {
-          throw std::runtime_error(
-            fmt::format("TODO(rockwood) handle maps: {}", element.name));
       },
       [&element](struct_value&) {
           throw std::runtime_error(fmt::format(
@@ -201,7 +187,7 @@ void emit_leaf(
   absl::FunctionRef<void(shredded_value)> cb) {
     ss::visit(
       std::move(val),
-      [cb, &element, levels](list_value& list) {
+      [cb, &element, levels](repeated_value& list) {
           // Empty lists are treated as `null`
           if (list.empty()) {
               emit_leaf(element, null_value(), levels, cb);
@@ -216,10 +202,6 @@ void emit_leaf(
               emit_leaf(element, std::move(member.element), child_levels, cb);
               child_levels.repetition_level = child_levels.repetition_depth;
           }
-      },
-      [&element](map_value&) {
-          throw std::runtime_error(
-            fmt::format("TODO(rockwood) handle maps: {}", element.name));
       },
       [&element](struct_value&) {
           throw std::runtime_error(fmt::format(
