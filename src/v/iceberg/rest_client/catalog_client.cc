@@ -147,11 +147,6 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         request_builder.with_content_length(payload.value().size_bytes());
     }
 
-    auto request = request_builder.host(_endpoint).build();
-    if (!request.has_value()) {
-        co_return tl::unexpected(request.error());
-    }
-
     std::vector<http_call_error> retriable_errors{};
 
     while (true) {
@@ -160,14 +155,17 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             co_return tl::unexpected(
               retries_exhausted{.errors = std::move(retriable_errors)});
         }
-
-        std::optional<iobuf> request_payload;
-        if (payload.has_value()) {
-            request_payload.emplace(payload->copy());
+        auto request = request_builder.host(_endpoint).build();
+        if (!request.has_value()) {
+            co_return tl::unexpected(request.error());
         }
+
         auto response_f = co_await ss::coroutine::as_future(
           _http_client->request_and_collect_response(
-            std::move(request.value()), std::move(request_payload)));
+            std::move(request.value()),
+            payload.has_value() ? std::make_optional(payload->copy())
+                                : std::nullopt));
+
         auto call_res = _retry_policy->should_retry(std::move(response_f));
 
         if (call_res.has_value()) {
