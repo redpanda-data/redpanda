@@ -16,9 +16,9 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 )
 
 const pluginBaseURL = "https://rpk-plugins.redpanda.com"
@@ -75,13 +75,9 @@ type connectRepoClient struct {
 }
 
 func newRepoClient() (*connectRepoClient, error) {
-	timeout := 240 * time.Second
-	if t := os.Getenv("RPK_PLUGIN_DOWNLOAD_TIMEOUT"); t != "" {
-		duration, err := time.ParseDuration(t)
-		if err != nil {
-			return nil, fmt.Errorf("unable to parse RPK_PLUGIN_DOWNLOAD_TIMEOUT: %v", err)
-		}
-		timeout = duration
+	timeout, err := plugin.GetPluginDownloadTimeout()
+	if err != nil {
+		return nil, err
 	}
 	return &connectRepoClient{
 		cl: httpapi.NewClient(
