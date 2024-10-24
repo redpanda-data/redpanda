@@ -459,3 +459,50 @@ TEST_F(RestCatalogTest, CommitTxnHappyPath) {
                     .get();
     ASSERT_FALSE(result.has_error());
 }
+
+ss::future<http::downloaded_response> handle_load_table_check_concurrency(
+  boost::beast::http::request_header<>&& r,
+  std::optional<iobuf>,
+  [[maybe_unused]] ss::lowres_clock::duration timeout) {
+    static thread_local mutex m("test/rest_catalog");
+
+    // the mutex must always be ready as there is currently only one inflight
+    // request
+    EXPECT_TRUE(m.ready());
+    auto u = co_await m.get_units();
+    EXPECT_EQ(r.at(boost::beast::http::field::host), "localhost:8181");
+    // sleep to simulate long running request
+    co_await ss::sleep(10ms);
+
+    co_return http::downloaded_response{
+      .status = boost::beast::http::status::ok,
+      .body = iobuf::from(table_metadata)};
+}
+
+TEST_F(RestCatalogTest, TestConcurrentAccesses) {
+    auto client = make_catalog_client({[](client_mock& m) {
+        setup_token_request_expectations(m);
+        // setup mock to always reply in a
+        EXPECT_CALL(
+          m,
+          request_and_collect_response(
+            AllOf(
+              Property(
+                &boost::beast::http::request_header<>::target,
+                EndsWith("/foo%1Fbar%1Fbaz/tables/panda_table")),
+              Property(
+                &boost::beast::http::request_header<>::method,
+                Eq(boost::beast::http::verb::get))),
+            _,
+            _))
+          .WillRepeatedly(handle_load_table_check_concurrency);
+    }});
+
+    iceberg::rest_catalog catalog(
+      std::move(client), config::mock_binding<std::chrono::milliseconds>(10s));
+    auto t_id = iceberg::table_identifier{
+      .ns = {"foo", "bar", "baz"}, .table = "panda_table"};
+    ss::parallel_for_each(boost::irange(20), [&](int) {
+        return catalog.load_table(t_id).discard_result();
+    }).get();
+}
