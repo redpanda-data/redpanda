@@ -266,3 +266,6 @@ vbuild/
 
 # bazel
 user.bazelrc
+
+# Ctest
+/Testing
