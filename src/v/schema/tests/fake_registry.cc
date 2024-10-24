@@ -51,19 +51,30 @@ schema::fake_store::get_schema_definition(ppsr::schema_id id) {
     }
     throw std::runtime_error("unknown schema id");
 }
+
+void schema::fake_registry::maybe_throw_injected_failure() const {
+    if (_injected_failure) {
+        std::rethrow_exception(_injected_failure);
+    }
+}
+
 ss::future<ppsr::canonical_schema_definition>
 schema::fake_registry::get_schema_definition(ppsr::schema_id id) const {
+    maybe_throw_injected_failure();
     return _store.get_schema_definition(id);
 }
 ss::future<ppsr::subject_schema> schema::fake_registry::get_subject_schema(
   ppsr::subject sub, std::optional<ppsr::schema_version> version) const {
+    maybe_throw_injected_failure();
     return _store.get_subject_schema(sub, version, ppsr::include_deleted::no);
 }
 ss::future<ppsr::schema_getter*> schema::fake_registry::getter() const {
+    maybe_throw_injected_failure();
     co_return &_store;
 }
 ss::future<ppsr::schema_id>
 schema::fake_registry::create_schema(ppsr::unparsed_schema unparsed) {
+    maybe_throw_injected_failure();
     // This is wrong, but simple for our testing.
     for (const auto& s : _store.schemas) {
         if (s.schema.def().raw()() == unparsed.def().raw()()) {
@@ -93,5 +104,6 @@ schema::fake_registry::create_schema(ppsr::unparsed_schema unparsed) {
     co_return _store.schemas.back().id;
 }
 const std::vector<ppsr::subject_schema>& schema::fake_registry::get_all() {
+    maybe_throw_injected_failure();
     return _store.schemas;
 }
