@@ -739,6 +739,10 @@ private:
     // Built in trial license to fall back to if there is no license set
     std::optional<security::license> _builtin_trial_license;
 
+    // Whether _builtin_trial_license has ever been initialized
+    // Used for implementing revoking the trial license for testing
+    bool _builtin_trial_license_initialized{false};
+
     model::offset _applied_offset{};
 
     // feature_manager is a friend so that they can initialize

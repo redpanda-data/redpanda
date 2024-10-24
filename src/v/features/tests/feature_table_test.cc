@@ -370,6 +370,10 @@ FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
     BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
     BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), false);
     BOOST_CHECK_EQUAL(ft.should_sanction(), false);
+
+    ft.revoke_license();
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), true);
 }
 
 SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
