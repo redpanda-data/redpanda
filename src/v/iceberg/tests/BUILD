@@ -538,3 +538,52 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "table_requests_json_test",
+    timeout = "short",
+    srcs = [
+        "table_requests_json_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:json_writer",
+        "//src/v/iceberg:partition_json",
+        "//src/v/iceberg:schema_json",
+        "//src/v/iceberg:table_requests",
+        "//src/v/iceberg:table_requests_json",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "rest_catalog_test",
+    timeout = "short",
+    srcs = [
+        "rest_catalog_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:json_writer",
+        "//src/v/iceberg:partition_json",
+        "//src/v/iceberg:rest_catalog",
+        "//src/v/iceberg:schema_json",
+        "//src/v/iceberg:table_metadata_json",
+        "//src/v/iceberg:table_requests",
+        "//src/v/iceberg:table_requests_json",
+        "//src/v/iceberg/rest_client:client",
+        "//src/v/json",
+        "//src/v/test_utils:gtest",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

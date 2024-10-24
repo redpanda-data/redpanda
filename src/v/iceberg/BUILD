@@ -59,6 +59,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        "//src/v/container:chunked_hash_map",
         "//src/v/json",
         "@fmt",
     ],
@@ -92,6 +93,7 @@ redpanda_cc_library(
     deps = [
         ":partition",
         ":schema",
+        ":table_identifier",
         ":transaction",
         "//src/v/base",
         "@seastar",
@@ -622,6 +624,37 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_identifier",
+    srcs = [
+        "table_identifier.cc",
+    ],
+    hdrs = [
+        "table_identifier.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "storage_credentials",
+    hdrs = [
+        "storage_credentials.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_metadata",
     hdrs = [
         "table_metadata.h",
@@ -675,6 +708,9 @@ redpanda_cc_library(
     deps = [
         ":partition",
         ":schema",
+        ":storage_credentials",
+        ":table_identifier",
+        ":table_metadata",
         ":table_requirement",
         ":table_update",
         "//src/v/container:chunked_hash_map",
@@ -699,6 +735,23 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "table_requirement_json",
+    srcs = [
+        "table_requirement_json.cc",
+    ],
+    hdrs = [
+        "table_requirement_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_writer",
+        ":table_requirement",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "table_update",
     hdrs = [
         "table_update.h",
@@ -710,6 +763,26 @@ redpanda_cc_library(
         ":snapshot",
         "//src/v/container:fragmented_vector",
         "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_update_json",
+    srcs = [
+        "table_update_json.cc",
+    ],
+    hdrs = [
+        "table_update_json.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_writer",
+        ":partition_json",
+        ":schema_json",
+        ":snapshot_json",
+        ":table_update",
+        "//src/v/base",
+        "@seastar",
     ],
 )
 
@@ -932,5 +1005,57 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/container:fragmented_vector",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_requests_json",
+    srcs = [
+        "table_requests_json.cc",
+    ],
+    hdrs = [
+        "table_requests_json.h",
+    ],
+    implementation_deps = [
+        ":partition_json",
+        ":schema_json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":json_utils",
+        ":json_writer",
+        ":table_metadata_json",
+        ":table_requests",
+        ":table_requirement_json",
+        ":table_update_json",
+        "//src/v/json",
+    ],
+)
+
+redpanda_cc_library(
+    name = "rest_catalog",
+    srcs = [
+        "rest_catalog.cc",
+    ],
+    hdrs = [
+        "rest_catalog.h",
+    ],
+    implementation_deps = [
+        ":partition_json",
+        ":schema_json",
+        ":snapshot_json",
+        ":table_metadata_json",
+        ":table_update_json",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        ":catalog",
+        ":json_utils",
+        ":json_writer",
+        ":table_requests",
+        ":table_requirement_json",
+        "//src/v/iceberg/rest_client:client",
+        "//src/v/json",
+        "//src/v/utils:mutex",
     ],
 )

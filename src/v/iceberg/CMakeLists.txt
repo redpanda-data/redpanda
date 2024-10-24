@@ -48,6 +48,7 @@ v_cc_library(
     partition_key.cc
     partition_key_type.cc
     partition_json.cc
+    rest_catalog.cc
     schema.cc
     schema_avro.cc
     schema_json.cc
@@ -55,8 +56,12 @@ v_cc_library(
     struct_accessor.cc
     table_io.cc
     table_metadata_json.cc
+    table_requests_json.cc
     table_update_applier.cc
+    table_requirement_json.cc
+    table_update_json.cc
     time_transform_visitor.cc
+    table_identifier.cc
     transaction.cc
     transform.cc
     transform_json.cc

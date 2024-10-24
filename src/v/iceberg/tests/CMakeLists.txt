@@ -37,6 +37,7 @@ rp_test(
     snapshot_json_test.cc
     struct_accessor_test.cc
     table_metadata_json_test.cc
+    table_requests_json_test.cc
     table_update_applier_test.cc
     test_table_metadata.cc
     transform_json_test.cc
@@ -46,6 +47,7 @@ rp_test(
     values_avro_test.cc
     values_bytes_test.cc
     metadata_query_test.cc
+    rest_catalog_test.cc
   LIBRARIES
     Avro::avro
     Boost::iostreams

@@ -175,6 +175,12 @@ void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
 void rjson_serialize(
   iceberg::json_writer& w, const iceberg::snapshot_reference& s) {
     w.StartObject();
+    serialize_snapshot_reference_properties(w, s);
+    w.EndObject();
+}
+
+void serialize_snapshot_reference_properties(
+  iceberg::json_writer& w, const iceberg::snapshot_reference& s) {
     w.Key("snapshot-id");
     w.Int64(s.snapshot_id());
     w.Key("type");
@@ -191,7 +197,6 @@ void rjson_serialize(
         w.Key("min-snapshots-to-keep");
         w.Int(s.min_snapshots_to_keep.value());
     }
-    w.EndObject();
 }
 
 } // namespace json

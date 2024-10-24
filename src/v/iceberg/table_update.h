@@ -23,27 +23,58 @@ namespace iceberg::table_update {
 struct add_schema {
     schema schema;
     std::optional<nested_field::id_t> last_column_id;
+    add_schema copy() const {
+        return {
+          .schema = schema.copy(),
+          .last_column_id = last_column_id,
+        };
+    }
 };
 
 struct set_current_schema {
     schema::id_t schema_id;
+    set_current_schema copy() const {
+        return {
+          .schema_id = schema_id,
+        };
+    }
 };
 
 struct add_spec {
     partition_spec spec;
+    add_spec copy() const {
+        return {
+          .spec = spec.copy(),
+        };
+    }
 };
 
 struct add_snapshot {
     snapshot snapshot;
+    add_snapshot copy() const {
+        return {
+          .snapshot = snapshot,
+        };
+    }
 };
 
 struct remove_snapshots {
     chunked_vector<snapshot_id> snapshot_ids;
+    remove_snapshots copy() const {
+        return {.snapshot_ids = snapshot_ids.copy()};
+    }
 };
 
 struct set_snapshot_ref {
     ss::sstring ref_name;
     snapshot_reference ref;
+
+    set_snapshot_ref copy() const {
+        return {
+          .ref_name = ref_name,
+          .ref = ref,
+        };
+    }
 };
 
 // TODO: not yet implemented

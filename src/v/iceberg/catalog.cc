@@ -12,10 +12,7 @@
 #include <fmt/format.h>
 
 namespace iceberg {
-std::ostream& operator<<(std::ostream& o, const table_identifier& id) {
-    return o << fmt::format(
-             "{{ns: {}, table: {}}}", fmt::join(id.ns, "/"), id.table);
-}
+
 std::ostream& operator<<(std::ostream& o, catalog::errc e) {
     switch (e) {
     case catalog::errc::io_error:

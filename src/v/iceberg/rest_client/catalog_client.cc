@@ -13,7 +13,10 @@
 #include "bytes/iobuf_parser.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
+#include "iceberg/json_writer.h"
+#include "iceberg/rest_client/entities.h"
 #include "iceberg/rest_client/json.h"
+#include "iceberg/table_requests_json.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -32,6 +35,15 @@ T trim_slashes(std::optional<T> input, typename T::type default_value) {
     return T{absl::StripSuffix(absl::StripPrefix(input.value()(), "/"), "/")};
 }
 
+template<typename T>
+iobuf serialize_payload_as_json(const T& payload) {
+    json::chunked_buffer buf;
+    iceberg::json_writer writer(buf);
+    rjson_serialize(writer, payload);
+
+    return std::move(buf).as_iobuf();
+}
+static constexpr std::string_view json_content_type = "application/json";
 } // namespace
 
 namespace iceberg::rest_client {
@@ -135,11 +147,6 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         request_builder.with_content_length(payload.value().size_bytes());
     }
 
-    auto request = request_builder.host(_endpoint).build();
-    if (!request.has_value()) {
-        co_return tl::unexpected(request.error());
-    }
-
     std::vector<http_call_error> retriable_errors{};
 
     while (true) {
@@ -148,14 +155,17 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             co_return tl::unexpected(
               retries_exhausted{.errors = std::move(retriable_errors)});
         }
-
-        std::optional<iobuf> request_payload;
-        if (payload.has_value()) {
-            request_payload.emplace(payload->copy());
+        auto request = request_builder.host(_endpoint).build();
+        if (!request.has_value()) {
+            co_return tl::unexpected(request.error());
         }
+
         auto response_f = co_await ss::coroutine::as_future(
           _http_client->request_and_collect_response(
-            std::move(request.value()), std::move(request_payload)));
+            std::move(request.value()),
+            payload.has_value() ? std::make_optional(payload->copy())
+                                : std::nullopt));
+
         auto call_res = _retry_policy->should_retry(std::move(response_f));
 
         if (call_res.has_value()) {
@@ -170,6 +180,61 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         retriable_errors.emplace_back(std::move(error.err));
         co_await ss::sleep_abortable(permit.delay, rtc.root_abort_source());
     }
+}
+
+ss::future<expected<load_table_result>> catalog_client::create_table(
+  const chunked_vector<ss::sstring>& ns,
+  create_table_request req,
+  retry_chain_node& rtc) {
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return tl::unexpected(token.error());
+    }
+    auto http_request = table{root_path(), ns}
+                          .create()
+                          .with_bearer_auth(token.value())
+                          .with_content_type(json_content_type);
+
+    co_return (co_await perform_request(
+                 rtc, http_request, serialize_payload_as_json(req)))
+      .and_then(parse_json)
+      .and_then(parse_as_expected("create_table", parse_load_table_result));
+}
+
+ss::future<expected<load_table_result>> catalog_client::load_table(
+  const chunked_vector<ss::sstring>& ns,
+  const ss::sstring& table_name,
+  retry_chain_node& rtc) {
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return tl::unexpected(token.error());
+    }
+
+    auto http_request
+      = table(root_path(), ns).get(table_name).with_bearer_auth(token.value());
+
+    co_return (co_await perform_request(rtc, http_request))
+      .and_then(parse_json)
+      .and_then(parse_as_expected("load_table", parse_load_table_result));
+}
+
+ss::future<expected<commit_table_response>> catalog_client::commit_table_update(
+  commit_table_request commit_request, retry_chain_node& rtc) {
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return tl::unexpected(token.error());
+    }
+
+    auto http_request = table(root_path(), commit_request.identifier.ns)
+                          .update(commit_request.identifier.table)
+                          .with_bearer_auth(token.value())
+                          .with_content_type(json_content_type);
+
+    co_return (co_await perform_request(
+                 rtc, http_request, serialize_payload_as_json(commit_request)))
+      .and_then(parse_json)
+      .and_then(
+        parse_as_expected("commit_table_update", parse_commit_table_response));
 }
 
 path_components::path_components(

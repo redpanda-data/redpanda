@@ -12,6 +12,9 @@
 #include "container/fragmented_vector.h"
 #include "iceberg/partition.h"
 #include "iceberg/schema.h"
+#include "iceberg/storage_credentials.h"
+#include "iceberg/table_identifier.h"
+#include "iceberg/table_metadata.h"
 #include "iceberg/table_requirement.h"
 #include "iceberg/table_update.h"
 
@@ -32,9 +35,22 @@ struct create_table_request {
     std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
 };
 
+struct load_table_result {
+    table_metadata metadata;
+    std::optional<ss::sstring> metadata_location;
+    std::optional<chunked_hash_map<ss::sstring, ss::sstring>> config;
+    std::optional<chunked_vector<storage_credentials>> storage_credentials;
+};
+
 struct commit_table_request {
+    table_identifier identifier;
     chunked_vector<table_update::update> updates;
     chunked_vector<table_requirement::requirement> requirements;
+};
+
+struct commit_table_response {
+    ss::sstring metadata_location;
+    table_metadata table_metadata;
 };
 
 } // namespace iceberg
