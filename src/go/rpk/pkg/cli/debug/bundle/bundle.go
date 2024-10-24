@@ -42,6 +42,7 @@ type bundleParams struct {
 	controllerLogLimitBytes int
 	timeout                 time.Duration
 	metricsInterval         time.Duration
+	metricsSampleCount      int
 	partitions              []topicPartitionFilter
 	labelSelector           map[string]string
 	cpuProfilerWait         time.Duration
@@ -68,9 +69,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		labelSelector           []string
 		partitionFlag           []string
 
-		timeout         time.Duration
-		metricsInterval time.Duration
-		cpuProfilerWait time.Duration
+		timeout            time.Duration
+		metricsInterval    time.Duration
+		metricsSampleCount int
+		cpuProfilerWait    time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "bundle",
@@ -83,6 +85,10 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			//  result in no samples being returned.
 			if cpuProfilerWait < 15*time.Second {
 				out.Die("--cpu-profiler-wait must be higher than 15 seconds")
+			}
+
+			if metricsSampleCount < 2 {
+				out.Die("--metrics-samples must be 2 or higher")
 			}
 
 			cfg, err := p.Load(fs)
@@ -128,6 +134,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				controllerLogLimitBytes: int(controllerLogsLimit),
 				timeout:                 timeout,
 				metricsInterval:         metricsInterval,
+				metricsSampleCount:      metricsSampleCount,
 				partitions:              partitions,
 				cpuProfilerWait:         cpuProfilerWait,
 			}
@@ -161,6 +168,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
 	f.DurationVar(&timeout, "timeout", 31*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
 	f.DurationVar(&metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots (e.g. 30s, 1.5m)")
+	f.IntVar(&metricsSampleCount, "metrics-samples", 2, "Number of metrics samples to take (at the interval of --metrics-interval). Must be >= 2")
 	f.StringVar(&logsSince, "logs-since", "yesterday", "Include logs dated from specified date onward; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options")
 	f.StringVar(&logsUntil, "logs-until", "", "Include logs older than the specified date; (journalctl date format: YYYY-MM-DD, 'yesterday', or 'today'). Refer to journalctl documentation for more options")
 	f.StringVar(&logsSizeLimit, "logs-size-limit", "100MiB", "Read the logs until the given size is reached (e.g. 3MB, 1GiB)")
