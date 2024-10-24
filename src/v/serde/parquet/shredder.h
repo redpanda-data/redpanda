@@ -18,7 +18,7 @@ namespace serde::parquet {
 // (for determining list index) and definition level (for
 // determining where the null value in the hierarchy is).
 struct shredded_value {
-    int32_t column_index;
+    int32_t schema_element_index;
     value val;
     uint8_t rep_level;
     uint8_t def_level;

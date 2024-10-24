@@ -44,7 +44,7 @@ void for_each_required_child(
                 "fields. At column {}",
                 element.children.size(),
                 fields.size(),
-                element.column_index));
+                element.index));
           }
           // Levels don't change for require elements because they always have
           // to be there so no additional bits need to be tracked (they'd be
@@ -88,7 +88,7 @@ void for_each_optional_child(
                 "fields. At column {}",
                 element.children.size(),
                 fields.size(),
-                element.column_index));
+                element.index));
           }
           traversal_levels child_levels = levels;
           // Increment the definition level as this node in the hierarchy is
@@ -210,7 +210,7 @@ void emit_leaf(
       },
       [cb, &element, levels](null_value& v) {
           cb({
-            .column_index = element.column_index,
+            .schema_element_index = element.index,
             .val = v,
             .rep_level = levels.repetition_level,
             .def_level = levels.definition_level,
@@ -222,7 +222,7 @@ void emit_leaf(
               ++leaf_levels.definition_level;
           }
           cb({
-            .column_index = element.column_index,
+            .schema_element_index = element.index,
             .val = value(std::move(v)),
             .rep_level = leaf_levels.repetition_level,
             .def_level = leaf_levels.definition_level,

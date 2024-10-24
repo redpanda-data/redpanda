@@ -20,7 +20,7 @@ namespace {
 
 indexed_schema_element transform(int32_t index, const schema_element& root) {
     indexed_schema_element out{
-      .column_index = index,
+      .index = index,
       .type = root.type,
       .repetition_type = root.repetition_type,
       .name = root.name,
@@ -84,9 +84,9 @@ auto fmt::formatter<serde::parquet::indexed_schema_element>::format(
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{column_index: {}, type: {}, repetition_type: {}, name: {}, "
+      "{{index: {}, type: {}, repetition_type: {}, name: {}, "
       "logical_type: {}, field_id: {}, children: [{}]}}",
-      e.column_index,
+      e.index,
       e.type.index(),
       static_cast<uint8_t>(e.repetition_type),
       e.name,

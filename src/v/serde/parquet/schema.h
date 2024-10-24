@@ -298,7 +298,7 @@ struct schema_element {
  */
 struct indexed_schema_element {
     /** the overall index of the schema element within the schema. */
-    int32_t column_index;
+    int32_t index;
 
     /**
      * The physical encoding of the data. Left unset for intermediate nodes.

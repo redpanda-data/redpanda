@@ -51,7 +51,7 @@ indexed_schema_element indexed_group_node(
     chunked_vector<indexed_schema_element> children;
     (children.push_back(std::move(args)), ...);
     return {
-      .column_index = index,
+      .index = index,
       .type = std::monostate{},
       .repetition_type = rep_type,
       .name = std::move(name),
@@ -66,7 +66,7 @@ indexed_schema_element indexed_leaf_node(
   physical_type ptype,
   logical_type ltype = logical_type{}) {
     return {
-      .column_index = index,
+      .index = index,
       .type = ptype,
       .repetition_type = rep_type,
       .name = std::move(name),

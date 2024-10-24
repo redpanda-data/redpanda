@@ -75,7 +75,7 @@ struct value_collector {
     }
 
     void operator()(shredded_value val) const {
-        auto it = column_mapping.find(val.column_index);
+        auto it = column_mapping.find(val.schema_element_index);
         ASSERT_NE(it, column_mapping.end()) << "invalid column index";
         columns[it->second].push_back(std::move(val));
     }
