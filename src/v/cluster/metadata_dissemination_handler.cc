@@ -19,9 +19,11 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "ssx/async_algorithm.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/smp.hh>
 
 #include <boost/range/irange.hpp>
@@ -49,29 +51,28 @@ metadata_dissemination_handler::update_leadership_v2(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
-  fragmented_vector<ntp_leader_revision> leaders) {
+  chunked_vector<ntp_leader_revision> leaders) {
     vlog(clusterlog.trace, "Received a metadata update");
-    co_await ss::parallel_for_each(
-      boost::irange<ss::shard_id>(0, ss::smp::count),
-      [this, leaders = std::move(leaders)](ss::shard_id shard) {
-          fragmented_vector<ntp_leader_revision> local_leaders;
-          local_leaders.reserve(leaders.size());
-          std::copy(
-            leaders.begin(), leaders.end(), std::back_inserter(local_leaders));
-
-          return ss::smp::submit_to(
-            shard, [this, leaders = std::move(local_leaders)] {
-                for (auto& leader : leaders) {
-                    _leaders.local().update_partition_leader(
-                      leader.ntp,
-                      leader.revision,
-                      leader.term,
-                      leader.leader_id);
-                }
-            });
-      });
-
-    co_return update_leadership_reply{};
+    return ss::do_with(
+             std::move(leaders),
+             [this](const chunked_vector<ntp_leader_revision>& leaders) {
+                 return ss::parallel_for_each(
+                   boost::irange<ss::shard_id>(0, ss::smp::count),
+                   [this, &leaders](ss::shard_id shard) {
+                       return ss::smp::submit_to(shard, [this, &leaders] {
+                           return ssx::async_for_each(
+                             leaders,
+                             [this](const ntp_leader_revision& leader) {
+                                 _leaders.local().update_partition_leader(
+                                   leader.ntp,
+                                   leader.revision,
+                                   leader.term,
+                                   leader.leader_id);
+                             });
+                       });
+                   });
+             })
+      .then([] { return update_leadership_reply{}; });
 }
 
 namespace {

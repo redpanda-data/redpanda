@@ -47,7 +47,7 @@ public:
 
 private:
     ss::future<update_leadership_reply>
-      do_update_leadership(fragmented_vector<ntp_leader_revision>);
+      do_update_leadership(chunked_vector<ntp_leader_revision>);
 
     ss::sharded<partition_leaders_table>& _leaders;
 }; // namespace cluster
