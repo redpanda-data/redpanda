@@ -696,6 +696,15 @@ const std::optional<security::license>& feature_table::get_license() const {
     return _license;
 }
 
+bool feature_table::should_sanction() const {
+    if (_license) {
+        return _license->is_expired();
+    }
+
+    // We are yet to initialize the evaluation license in feature_manager
+    return false;
+}
+
 void feature_table::testing_activate_all() {
     for (auto& s : _feature_state) {
         if (

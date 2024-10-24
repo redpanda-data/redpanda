@@ -589,6 +589,9 @@ public:
 
     const std::optional<security::license>& get_license() const;
 
+    /// Whether to act on an expired license or evaluation period by restricting
+    /// enterprise feature usage
+    bool should_sanction() const;
     /**
      * For use in unit tests: activate all features that would
      * be auto-activated after a normal cluster startup of the
