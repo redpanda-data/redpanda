@@ -12,6 +12,7 @@ v_cc_library(
     Seastar::seastar
     v::avro_test_utils
     v::schema
+    v::schema_test_fixture
     v::storage
 )
 
@@ -70,9 +71,13 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
-  BINARY_NAME translation_task
-  SOURCES translation_task_test.cc
+  BINARY_NAME datalake_cloud
+  SOURCES
+    record_multiplexer_test.cc
+    translation_task_test.cc
   LIBRARIES
+    Boost::iostreams
+    v::datalake_test_utils
     v::gtest_main
     v::datalake_writer
     v::cloud_io_utils

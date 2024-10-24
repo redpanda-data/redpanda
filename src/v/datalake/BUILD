@@ -300,6 +300,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "record_multiplexer",
+    srcs = [
+        "record_multiplexer.cc",
+    ],
+    hdrs = [
+        "record_multiplexer.h",
+    ],
+    implementation_deps = [
+        ":catalog_schema_manager",
+        ":conversion_outcome",
+        ":logger",
+        ":record_schema_resolver",
+        ":record_translator",
+        "//src/v/base",
+        "//src/v/storage:parser_utils",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":partitioning_writer",
+        ":schema_identifier",
+        ":writer",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "record_schema_resolver",
     srcs = [
         "record_schema_resolver.cc",

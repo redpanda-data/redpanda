@@ -9,7 +9,9 @@
  */
 #include "datalake/base_types.h"
 #include "datalake/batching_parquet_writer.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/record_multiplexer.h"
+#include "datalake/record_schema_resolver.h"
 #include "datalake/tests/test_data_writer.h"
 #include "model/fundamental.h"
 #include "model/tests/random_batch.h"
@@ -22,13 +24,21 @@
 
 #include <filesystem>
 
+using namespace datalake;
+namespace {
+simple_schema_manager simple_schema_mgr;
+binary_type_resolver bin_resolver;
+const auto ntp = model::ntp{};
+} // namespace
+
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     int record_count = 10;
     int batch_count = 10;
     int start_offset = 1005;
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       false);
-    datalake::record_multiplexer multiplexer(std::move(writer_factory));
+    datalake::record_multiplexer multiplexer(
+      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -61,7 +71,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int batch_count = 10;
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       true);
-    datalake::record_multiplexer multiplexer(std::move(writer_factory));
+    datalake::record_multiplexer multiplexer(
+      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -94,7 +105,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     auto writer_factory
       = std::make_unique<datalake::batching_parquet_writer_factory>(
         datalake::local_path(tmp_dir.get_path()), "data", 100, 10000);
-    datalake::record_multiplexer multiplexer(std::move(writer_factory));
+    datalake::record_multiplexer multiplexer(
+      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;

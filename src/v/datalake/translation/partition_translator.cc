@@ -13,11 +13,13 @@
 #include "cluster/archival/types.h"
 #include "cluster/partition.h"
 #include "datalake/batching_parquet_writer.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/logger.h"
 #include "datalake/record_multiplexer.h"
+#include "datalake/record_schema_resolver.h"
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
@@ -27,7 +29,14 @@
 
 #include <seastar/coroutine/as_future.hh>
 
+namespace datalake::translation {
+
 namespace {
+
+// TODO: configure these with topic configs, maybe make them be owned by the
+// datalake manager
+auto schema_mgr = std::make_unique<simple_schema_manager>();
+auto schema_resolver = std::make_unique<binary_type_resolver>();
 
 // A simple utility to conditionally retry with backoff on failures.
 static constexpr std::chrono::milliseconds initial_backoff{300};
@@ -73,8 +82,6 @@ ss::futurize_t<FuncRet> retry_with_backoff(
 }
 
 } // namespace
-
-namespace datalake::translation {
 
 static constexpr std::chrono::milliseconds translation_jitter{500};
 constexpr ::model::timeout_clock::duration wait_timeout = 5s;
@@ -177,7 +184,7 @@ partition_translator::do_translation_for_range(
       "", // todo(iceberg): generate a prefix with offset information
       max_rows_per_row_group,
       max_bytes_per_row_group);
-    auto task = translation_task{**_cloud_io};
+    auto task = translation_task{**_cloud_io, *schema_mgr, *schema_resolver};
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_file_path_prefix, ntp.path(), _term)};
@@ -186,6 +193,7 @@ partition_translator::do_translation_for_range(
                               : std::make_optional("translator stopping");
     }};
     auto result = co_await task.translate(
+      ntp,
       std::move(writer_factory),
       std::move(rdr),
       remote_path_prefix,

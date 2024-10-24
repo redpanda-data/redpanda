@@ -25,7 +25,10 @@ namespace datalake {
  */
 class translation_task {
 public:
-    explicit translation_task(cloud_data_io& uploader);
+    explicit translation_task(
+      cloud_data_io& uploader,
+      schema_manager& schema_mgr,
+      type_resolver& type_resolver);
     enum class errc {
         file_io_error,
         cloud_io_error,
@@ -36,6 +39,7 @@ public:
      * stopped and a root retry chain node.
      */
     ss::future<checked<coordinator::translated_offset_range, errc>> translate(
+      const model::ntp& ntp,
       std::unique_ptr<data_writer_factory> writer_factory,
       model::record_batch_reader reader,
       const remote_path& remote_path_prefix,
@@ -59,5 +63,7 @@ private:
 
     static constexpr std::chrono::milliseconds _read_timeout{30000};
     cloud_data_io* _cloud_io;
+    schema_manager* _schema_mgr;
+    type_resolver* _type_resolver;
 };
 } // namespace datalake

@@ -188,6 +188,33 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "record_multiplexer_test",
+    timeout = "short",
+    srcs = [
+        "record_multiplexer_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":catalog_and_registry_fixture",
+        ":record_generator",
+        ":test_data_writer",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:record_multiplexer",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:table_definition",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/schema:registry",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "record_schema_resolver_test",
     timeout = "short",
     srcs = [
