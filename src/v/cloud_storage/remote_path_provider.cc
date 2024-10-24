@@ -14,6 +14,7 @@
 #include "cloud_storage/segment_path_utils.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/topic_mount_manifest.h"
+#include "cloud_storage/topic_mount_manifest_path.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -121,11 +122,10 @@ ss::sstring remote_path_provider::spillover_manifest_path(
 
 ss::sstring remote_path_provider::topic_mount_manifest_path(
   const topic_mount_manifest& manifest) const {
-    return fmt::format(
-      "migration/{}/{}/{}",
+    return ss::sstring(cloud_storage::topic_mount_manifest_path(
       manifest.get_source_label().cluster_uuid,
-      manifest.get_tp_ns().path(),
-      manifest.get_revision_id());
+      manifest.get_tp_ns(),
+      manifest.get_revision_id()));
 }
 
 ss::sstring remote_path_provider::segment_path(

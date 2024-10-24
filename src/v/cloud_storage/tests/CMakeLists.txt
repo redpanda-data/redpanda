@@ -39,6 +39,7 @@ rp_test(
   BINARY_NAME gtest_cloud_storage
   SOURCES
     topic_mount_manifest_test.cc
+    topic_mount_manifest_path_test.cc
   LIBRARIES
     v::gtest_main
     v::seastar_testing_main

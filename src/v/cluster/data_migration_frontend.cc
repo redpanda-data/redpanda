@@ -10,6 +10,7 @@
  */
 #include "cluster/data_migration_frontend.h"
 
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_stm.h"
@@ -26,6 +27,7 @@
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
 #include "ssx/single_sharded.h"
+#include "utils/retry_chain_node.h"
 
 #include <fmt/ostream.h>
 
@@ -39,6 +41,8 @@ frontend::frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<rpc::connection_cache>& connections,
+  std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
+    topic_mount_handler,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _cloud_storage_api_initialized(cloud_storage_api_initialized)
@@ -47,6 +51,7 @@ frontend::frontend(
   , _controller(stm)
   , _leaders_table(leaders)
   , _connections(connections)
+  , _topic_mount_handler(topic_mount_handler)
   , _as(as)
   , _operation_timeout(10s) {}
 
@@ -301,6 +306,19 @@ frontend::get_migration(id migration_id) {
                    ? result<migration_metadata>(maybe_migration->get().copy())
                    : errc::data_migration_not_exists;
       });
+}
+
+ss::future<frontend::list_mountable_topics_result>
+frontend::list_mountable_topics() {
+    if (!_topic_mount_handler.has_value()) {
+        vlog(dm_log.info, "topic mount handler is not initialized");
+        co_return co_await ssx::now<frontend::list_mountable_topics_result>(
+          errc::feature_disabled);
+    }
+
+    auto rtc = retry_chain_node{_as.local(), 30s, 100ms};
+
+    co_return co_await _topic_mount_handler->get().list_mountable_topics(rtc);
 }
 
 ss::future<std::error_code> frontend::insert_barrier() {

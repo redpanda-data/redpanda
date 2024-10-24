@@ -11,6 +11,7 @@
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/topic_mount_manifest.h"
+#include "cloud_storage/topic_mount_manifest_path.h"
 #include "cloud_storage/topic_path_utils.h"
 #include "cloud_storage/types.h"
 #include "gtest/gtest.h"
@@ -386,6 +387,12 @@ TEST(RemotePathProviderTest, TestTopicMountManifestPath) {
     EXPECT_STREQ(
       path_provider.topic_mount_manifest_path(manifest).c_str(),
       "migration/deadbeef-0000-0000-0000-000000000000/kafka/tp/21");
+
+    const auto reverse = topic_mount_manifest_path::parse(
+      path_provider.topic_mount_manifest_path(manifest));
+    ASSERT_TRUE(reverse.has_value());
+    EXPECT_EQ(reverse->cluster_uuid(), test_label.cluster_uuid);
+    EXPECT_EQ(reverse->tp_ns(), test_tp_ns);
 }
 
 INSTANTIATE_TEST_SUITE_P(

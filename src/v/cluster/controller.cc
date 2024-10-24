@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "base/likely.h"
+#include "cloud_storage/topic_mount_handler.h"
 #include "cluster/bootstrap_backend.h"
 #include "cluster/client_quota_backend.h"
 #include "cluster/client_quota_frontend.h"
@@ -305,6 +306,13 @@ ss::future<> controller::start(
       std::ref(_members_table),
       std::ref(_as));
 
+    if (auto bucket_opt = get_configured_bucket(); bucket_opt.has_value()) {
+        co_await _topic_mount_handler.start(
+          bucket_opt.value(), ss::sharded_parameter([this] {
+              return std::ref(_cloud_storage_api.local());
+          }));
+    }
+
     co_await _data_migration_frontend.start(
       _raft0->self().id(),
       _cloud_storage_api.local_is_initialized(),
@@ -313,6 +321,15 @@ ss::future<> controller::start(
       std::ref(_stm),
       std::ref(_partition_leaders),
       std::ref(_connections),
+      ss::sharded_parameter(
+        [this]() -> std::optional<
+                   std::reference_wrapper<cloud_storage::topic_mount_handler>> {
+            if (_topic_mount_handler.local_is_initialized()) {
+                return std::ref(_topic_mount_handler.local());
+            } else {
+                return {};
+            }
+        }),
       std::ref(_as));
 
     co_await _data_migration_worker.start(
@@ -786,6 +803,9 @@ ss::future<> controller::start(
       _cloud_storage_api.local_is_initialized()
         ? std::make_optional(std::ref(_cloud_storage_api.local()))
         : std::nullopt,
+      _topic_mount_handler.local_is_initialized()
+        ? std::make_optional(std::ref(_topic_mount_handler.local()))
+        : std::nullopt,
       std::ref(_as.local()));
     co_await _data_migration_backend.invoke_on_instance(
       &data_migrations::backend::start);
@@ -850,6 +870,7 @@ ss::future<> controller::stop() {
     co_await _members_backend.stop();
     co_await _data_migration_worker.stop();
     co_await _data_migration_frontend.stop();
+    co_await _topic_mount_handler.stop();
     co_await _config_manager.stop();
     co_await _api.stop();
     co_await _shard_balancer.stop();

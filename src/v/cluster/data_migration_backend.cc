@@ -88,6 +88,8 @@ backend::backend(
   shard_table& shard_table,
   std::optional<std::reference_wrapper<cloud_storage::remote>>
     cloud_storage_api,
+  std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
+    topic_mount_handler,
   ss::abort_source& as)
   : _self(*config::node().node_id())
   , _table(table)
@@ -98,6 +100,7 @@ backend::backend(
   , _topic_table(topic_table)
   , _shard_table(shard_table)
   , _cloud_storage_api(cloud_storage_api)
+  , _topic_mount_handler(topic_mount_handler)
   , _as(as) {}
 
 ss::future<> backend::start() {
@@ -137,14 +140,6 @@ ss::future<> backend::start() {
       });
 
     if (_cloud_storage_api) {
-        auto maybe_bucket = cloud_storage::configuration::get_bucket_config()();
-        vassert(
-          maybe_bucket, "cloud_storage_api active but no bucket configured");
-        cloud_storage_clients::bucket_name bucket{*maybe_bucket};
-        _topic_mount_handler
-          = std::make_unique<cloud_storage::topic_mount_handler>(
-            bucket, *_cloud_storage_api);
-
         _table_notification_id = _table.register_notification([this](id id) {
             ssx::spawn_with_gate(
               _gate, [this, id]() { return handle_migration_update(id); });
@@ -697,7 +692,7 @@ ss::future<errc> backend::prepare_mount_topic(
       "trying to prepare mount topic, cfg={}, rev_id={}",
       *cfg,
       *rev_id);
-    auto mnt_res = co_await _topic_mount_handler->prepare_mount_topic(
+    auto mnt_res = co_await _topic_mount_handler->get().prepare_mount_topic(
       *cfg, *rev_id, rcn);
     if (mnt_res == cloud_storage::topic_mount_result::mount_manifest_exists) {
         co_return errc::success;
@@ -723,7 +718,7 @@ ss::future<errc> backend::confirm_mount_topic(
       "trying to confirm mount topic, cfg={}, rev_id={}",
       *cfg,
       *rev_id);
-    auto mnt_res = co_await _topic_mount_handler->confirm_mount_topic(
+    auto mnt_res = co_await _topic_mount_handler->get().confirm_mount_topic(
       *cfg, *rev_id, rcn);
     if (
       mnt_res
@@ -769,7 +764,7 @@ ss::future<errc> backend::do_unmount_topic(
         co_return errc::success;
     }
 
-    auto umnt_res = co_await _topic_mount_handler->unmount_topic(
+    auto umnt_res = co_await _topic_mount_handler->get().unmount_topic(
       *cfg, *rev_id, rcn);
     if (umnt_res == cloud_storage::topic_unmount_result::success) {
         co_return errc::success;

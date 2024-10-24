@@ -123,6 +123,20 @@
         ]
     }
 },
+"/v1/topics/mountable": {
+    "get": {
+        "operationId": "list_mountable_topics",
+        "summary": "List mountable topics",
+        "responses": {
+            "200": {
+                "description": "List of mountable topics",
+                "schema": {
+                    "$ref": "list_mountable_topics_response"
+                }
+            }
+        }
+    }
+},
 "/v1/topics/mount": {
     "post": {
         "operationId": "mount_topics",

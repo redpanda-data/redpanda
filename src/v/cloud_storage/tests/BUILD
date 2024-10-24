@@ -209,8 +209,25 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         "//src/v/cloud_storage",
+        "//src/v/cloud_storage:topic_mount_manifest_path",
         "//src/v/model",
         "//src/v/model/tests:random",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:uuid",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "topic_mount_manifest_path_test",
+    timeout = "short",
+    srcs = [
+        "topic_mount_manifest_path_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_storage:topic_mount_manifest_path",
+        "//src/v/model",
         "//src/v/test_utils:gtest",
         "//src/v/utils:uuid",
         "@googletest//:gtest",

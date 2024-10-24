@@ -665,6 +665,8 @@ private:
       delete_migration(std::unique_ptr<ss::http::request>);
 
     // Topic routes
+    ss::future<std::unique_ptr<ss::http::reply>> list_mountable_topics(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<ss::json::json_return_type>
       mount_topics(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>

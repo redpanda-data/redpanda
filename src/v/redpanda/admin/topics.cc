@@ -13,11 +13,20 @@
 #include "cluster/data_migration_frontend.h"
 #include "cluster/data_migration_types.h"
 #include "container/fragmented_vector.h"
+#include "json/chunked_buffer.h"
 #include "json/validator.h"
 #include "redpanda/admin/api-doc/migration.json.hh"
 #include "redpanda/admin/data_migration_utils.h"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "ssx/async_algorithm.h"
+
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/do_with.hh>
+#include <seastar/core/iostream.hh>
+#include <seastar/json/json_elements.hh>
+
+#include <optional>
 
 using admin::apply_validator;
 
@@ -120,9 +129,42 @@ json::validator make_unmount_array_validator() {
     return json::validator(schema);
 }
 
+seastar::httpd::migration_json::mountable_topic to_admin_type(
+  const cloud_storage::topic_mount_manifest_path& mount_manifest_path) {
+    seastar::httpd::migration_json::mountable_topic ret;
+    ret.topic_location = fmt::format(
+      "{}/{}/{}",
+      mount_manifest_path.tp_ns().tp(),
+      mount_manifest_path.cluster_uuid(),
+      mount_manifest_path.rev());
+    ret.topic = mount_manifest_path.tp_ns().tp();
+    ret.ns = mount_manifest_path.tp_ns().ns();
+    return ret;
+}
+
+// Note: A similar method exists in pandaproxy::json. Extract it to
+// `src/v/bytes/iostream.h`.
+auto iobuf_body_writer(iobuf buf) {
+    return [buf = std::move(buf)](ss::output_stream<char> out) mutable {
+        return ss::do_with(
+          std::move(out),
+          [buf = std::move(buf)](ss::output_stream<char>& out) mutable {
+              return write_iobuf_to_output_stream(std::move(buf), out)
+                .finally([&out] { return out.close(); });
+          });
+    };
+}
+
 } // namespace
 
 void admin_server::register_topic_routes() {
+    register_route_raw_async<superuser>(
+      ss::httpd::migration_json::list_mountable_topics,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> reply) {
+          return list_mountable_topics(std::move(req), std::move(reply));
+      });
     register_route<superuser>(
       ss::httpd::migration_json::mount_topics,
       [this](std::unique_ptr<ss::http::request> req) {
@@ -133,6 +175,44 @@ void admin_server::register_topic_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           return unmount_topics(std::move(req));
       });
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::list_mountable_topics(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> reply) {
+    auto result = co_await _controller->get_data_migration_frontend()
+                    .local()
+                    .list_mountable_topics();
+    if (!result) {
+        vlog(
+          adminlog.warn,
+          "unable list mountable topics - error: {}",
+          result.error());
+        co_await throw_on_error(*req, result.error(), model::controller_ntp);
+        throw ss::httpd::server_error_exception(
+          "unknown error when listing mountable topics");
+    }
+
+    json::chunked_buffer buf;
+    json::Writer<json::chunked_buffer> writer(buf);
+    writer.StartObject();
+    writer.Key("topics");
+    writer.StartArray();
+    co_await ssx::async_for_each(
+      result.value().begin(),
+      result.value().end(),
+      [&writer](const cloud_storage::topic_mount_manifest_path& topic) {
+          auto json_str = to_admin_type(topic).to_json();
+          writer.RawValue(
+            json_str.c_str(), json_str.size(), rapidjson::Type::kObjectType);
+      });
+    writer.EndArray();
+    writer.EndObject();
+
+    reply->write_body("json", iobuf_body_writer(std::move(buf).as_iobuf()));
+
+    co_return std::move(reply);
 }
 
 ss::future<ss::json::json_return_type>
