@@ -25,7 +25,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":model",
-        "//src/v/cluster",
+        "//src/v/cluster:state_machine_registry",
         "//src/v/datalake:logger",
         "//src/v/raft",
         "//src/v/serde",
