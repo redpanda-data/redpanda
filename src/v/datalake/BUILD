@@ -271,3 +271,31 @@ redpanda_cc_library(
         "//src/v/pandaproxy",
     ],
 )
+
+redpanda_cc_library(
+    name = "record_schema_resolver",
+    srcs = [
+        "record_schema_resolver.cc",
+    ],
+    hdrs = [
+        "record_schema_resolver.h",
+    ],
+    implementation_deps = [
+        ":conversion_outcome",
+        ":logger",
+        ":schema_registry",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:schema_avro",
+        "//src/v/pandaproxy",
+        "//src/v/schema:registry",
+        "@avro",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":schema_identifier",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "@seastar",
+    ],
+)

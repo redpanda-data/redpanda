@@ -124,3 +124,23 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "record_schema_resolver_test",
+    timeout = "short",
+    srcs = [
+        "record_schema_resolver_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/datalake:logger",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/iceberg:datatypes",
+        "//src/v/pandaproxy",
+        "//src/v/schema:registry",
+        "//src/v/schema/tests:fake_registry",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
