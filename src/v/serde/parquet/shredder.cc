@@ -255,6 +255,9 @@ void shred_record(
   const indexed_schema_element& root,
   struct_value record,
   absl::FunctionRef<void(shredded_value)> callback) {
+    if (root.repetition_type != field_repetition_type::required) {
+        throw std::runtime_error("schema root nodes must be required");
+    }
     shred_record(root, std::move(record), traversal_levels{}, callback);
 }
 

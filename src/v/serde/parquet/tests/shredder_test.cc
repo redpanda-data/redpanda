@@ -230,4 +230,181 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
           IsVal("NULL", 1, 1),
           IsVal("http://C", 0, 2))));
 }
+
+TEST(RecordShredding, ListOfStrings) {
+    schema_element schema = group_node(
+      "ExampleList",
+      field_repetition_type::required,
+      leaf_node("list", field_repetition_type::repeated, byte_array_type{}));
+    struct_value r = record(list(
+      string_value(iobuf::from("a")),
+      string_value(iobuf::from("b")),
+      string_value(iobuf::from("c"))));
+    value_collector collector(schema);
+    auto indexed_schema = index_schema(schema);
+    shred_record(indexed_schema, std::move(r), collector);
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(
+        ElementsAre(IsVal("a", 0, 1), IsVal("b", 1, 1), IsVal("c", 1, 1))));
+}
+
+TEST(RecordShredding, LogicalMap) {
+    schema_element schema = group_node(
+      "ExampleMap",
+      field_repetition_type::required,
+      group_node(
+        "map",
+        field_repetition_type::repeated,
+        leaf_node("key", field_repetition_type::required, byte_array_type()),
+        leaf_node(
+          "value", field_repetition_type::optional, byte_array_type())));
+    struct_value r = record(list(
+      record(
+        string_value(iobuf::from("AL")), string_value(iobuf::from("Alabama"))),
+      record(
+        string_value(iobuf::from("AK")), string_value(iobuf::from("Alaska")))));
+    value_collector collector(schema);
+    auto indexed_schema = index_schema(schema);
+    shred_record(indexed_schema, std::move(r), collector);
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(
+        ElementsAre(IsVal("AL", 0, 1), IsVal("AK", 1, 1)),
+        ElementsAre(IsVal("Alabama", 0, 2), IsVal("Alaska", 1, 2))));
+}
+
+TEST(RecordShredding, DefinitionLevels) {
+    schema_element schema = group_node(
+      "ExampleDefinitionLevel",
+      field_repetition_type::required,
+      group_node(
+        "a",
+        field_repetition_type::optional,
+        group_node(
+          "b",
+          field_repetition_type::optional,
+          leaf_node("c", field_repetition_type::optional, i32_type()))));
+    struct_value r1 = record(record(record(int32_value(42))));
+    struct_value r2 = record(record(record(null_value())));
+    struct_value r3 = record(record(null_value()));
+    struct_value r4 = record(null_value());
+    value_collector collector(schema);
+    auto indexed_schema = index_schema(schema);
+    shred_record(indexed_schema, std::move(r1), collector);
+    shred_record(indexed_schema, std::move(r2), collector);
+    shred_record(indexed_schema, std::move(r3), collector);
+    shred_record(indexed_schema, std::move(r4), collector);
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(ElementsAre(
+        IsVal("42", 0, 3),
+        IsVal("NULL", 0, 2),
+        IsVal("NULL", 0, 1),
+        IsVal("NULL", 0, 0))));
+}
+
+TEST(RecordShredding, RepetitionLevels) {
+    schema_element schema = group_node(
+      "NestedLists",
+      field_repetition_type::required,
+      group_node(
+        "level1",
+        field_repetition_type::repeated,
+        leaf_node(
+          "level2", field_repetition_type::repeated, byte_array_type())));
+    struct_value r1 = record(list(
+      record(list(
+        string_value(iobuf::from("a")),
+        string_value(iobuf::from("b")),
+        string_value(iobuf::from("c")))),
+      record(list(
+        string_value(iobuf::from("d")),
+        string_value(iobuf::from("e")),
+        string_value(iobuf::from("f")),
+        string_value(iobuf::from("g"))))));
+    struct_value r2 = record(list(
+      record(list(string_value(iobuf::from("h")))),
+      record(
+        list(string_value(iobuf::from("i")), string_value(iobuf::from("j"))))));
+    value_collector collector(schema);
+    auto indexed_schema = index_schema(schema);
+    shred_record(indexed_schema, std::move(r1), collector);
+    shred_record(indexed_schema, std::move(r2), collector);
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(ElementsAre(
+        IsVal("a", 0, 2),
+        IsVal("b", 2, 2),
+        IsVal("c", 2, 2),
+        IsVal("d", 1, 2),
+        IsVal("e", 2, 2),
+        IsVal("f", 2, 2),
+        IsVal("g", 2, 2),
+        IsVal("h", 0, 2),
+        IsVal("i", 1, 2),
+        IsVal("j", 2, 2))));
+}
+
+TEST(RecordShredding, AddressBookExample) {
+    schema_element schema = group_node(
+      "AddressBook",
+      field_repetition_type::required,
+      leaf_node(
+        "owner",
+        field_repetition_type::required,
+        byte_array_type(),
+        string_type()),
+      leaf_node(
+        "ownerPhoneNumbers",
+        field_repetition_type::repeated,
+        byte_array_type(),
+        string_type()),
+      group_node(
+        "contacts",
+        field_repetition_type::repeated,
+        leaf_node(
+          "name",
+          field_repetition_type::required,
+          byte_array_type(),
+          string_type()),
+        leaf_node(
+          "phoneNumber",
+          field_repetition_type::optional,
+          byte_array_type(),
+          string_type())));
+    struct_value r1 = record(
+      string_value(iobuf::from("Julien Le Dem")),
+      list(
+        string_value(iobuf::from("555 123 4567")),
+        string_value(iobuf::from("555 666 1337"))),
+      list(
+        record(
+          string_value(iobuf::from("Dmitriy Ryaboy")),
+          string_value(iobuf::from("555 987 6543"))),
+        record(string_value(iobuf::from("Chris Anizczyk")), null_value())));
+    struct_value r2 = record(
+      string_value(iobuf::from("A. Nonymous")), list(), list());
+    value_collector collector(schema);
+    auto indexed_schema = index_schema(schema);
+    shred_record(indexed_schema, std::move(r1), collector);
+    shred_record(indexed_schema, std::move(r2), collector);
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(
+        ElementsAre(IsVal("Julien Le Dem", 0, 0), IsVal("A. Nonymous", 0, 0)),
+        ElementsAre(
+          IsVal("555 123 4567", 0, 1),
+          IsVal("555 666 1337", 1, 1),
+          IsVal("NULL", 0, 0)),
+        ElementsAre(
+          IsVal("Dmitriy Ryaboy", 0, 1),
+          IsVal("Chris Anizczyk", 1, 1),
+          IsVal("NULL", 0, 0)),
+        ElementsAre(
+          IsVal("555 987 6543", 0, 2),
+          IsVal("NULL", 1, 1),
+          IsVal("NULL", 0, 0))));
+}
+
 // NOLINTEND(*magic-number*)

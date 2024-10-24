@@ -246,7 +246,7 @@ struct schema_element {
      * repetition of the field. The root of the schema does not have a
      * repetition_type. All other nodes must have one.
      *
-     * (this field is ignored on the schema root).
+     * This must be set to required on the schema root
      */
     field_repetition_type repetition_type;
 
@@ -309,7 +309,7 @@ struct indexed_schema_element {
      * repetition of the field. The root of the schema does not have a
      * repetition_type. All other nodes must have one.
      *
-     * (this field is ignored on the schema root).
+     * This must be set to required on the schema root.
      */
     field_repetition_type repetition_type;
 
