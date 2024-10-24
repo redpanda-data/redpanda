@@ -348,6 +348,9 @@ public:
       partition_properties_stm::writes_disabled disable,
       model::timeout_clock::time_point deadline);
 
+    bool started() const noexcept { return _started; }
+    void mark_started() noexcept { _started = true; }
+
 private:
     ss::future<result<ssx::rwlock_unit>> hold_writes_enabled();
 
@@ -409,6 +412,8 @@ private:
     // acquire shared ("read") for produce,
     // exclusive ("write") for enabling/disabling writes
     ssx::rwlock _produce_lock;
+
+    bool _started{false};
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

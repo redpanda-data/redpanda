@@ -297,6 +297,12 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     co_await p->start(_stm_registry, xst_state);
 
+    // this is not done in partition::start itself because the purpose of this
+    // flag is to operate in an uninterruptible context with watcher
+    // notification below to avoid registration while this fiber is blocked,
+    // leading to double notifications.
+    p->mark_started();
+
     _manage_watchers.notify(p->ntp(), p);
 
     co_return c;

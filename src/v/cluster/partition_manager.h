@@ -122,7 +122,9 @@ public:
             cb(std::move(p));
         });
         for (auto& e : _ntp_table) {
-            init.notify(e.first, e.second);
+            if (e.second->started()) {
+                init.notify(e.first, e.second);
+            }
         }
 
         // now setup the permenant callback for new partitions
@@ -134,7 +136,9 @@ public:
         init.register_notify(
           ns, [&cb](ss::lw_shared_ptr<partition> p) { cb(std::move(p)); });
         for (auto& e : _ntp_table) {
-            init.notify(e.first, e.second);
+            if (e.second->started()) {
+                init.notify(e.first, e.second);
+            }
         }
         return _manage_watchers.register_notify(ns, std::move(cb));
     }
