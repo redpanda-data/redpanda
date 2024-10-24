@@ -213,9 +213,6 @@ json::validator make_migration_validator() {
                 },
                 "alias": {
                     "$ref": "#/definitions/namespaced_topic"
-                },
-                "location": {
-                    "type": "string"
                 }
             },
             "additionalProperties": false
