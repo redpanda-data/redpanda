@@ -3,6 +3,8 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = [
     "//src/v/cloud_topics/batcher:__pkg__",
     "//src/v/cloud_topics/batcher/tests:__pkg__",
+    "//src/v/cloud_topics/dl_stm:__pkg__",
+    "//src/v/cloud_topics/dl_stm/tests:__pkg__",
     "//src/v/cloud_topics/reader:__pkg__",
     "//src/v/cloud_topics/reader/tests:__pkg__",
     "//src/v/cloud_topics/tests:__pkg__",

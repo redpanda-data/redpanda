@@ -19,6 +19,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cloud_topics/dl_stm/dl_stm_factory.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
 #include "cluster/archival/ntp_archiver_service.h"
@@ -2938,6 +2939,9 @@ void application::start_runtime_services(
           pm.register_factory<datalake::coordinator::stm_factory>();
           pm.register_factory<datalake::translation::stm_factory>();
 #endif
+          if (config::shard_local_cfg().development_enable_cloud_topics()) {
+              pm.register_factory<experimental::cloud_topics::dl_stm_factory>();
+          }
       })
       .get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

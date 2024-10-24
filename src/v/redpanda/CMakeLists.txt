@@ -82,6 +82,7 @@ v_cc_library(
     v::version 
     v::wasm
     v::cloud_topics_app
+    v::cloud_topics_dl_stm
   )
 
 add_subdirectory(tests)
