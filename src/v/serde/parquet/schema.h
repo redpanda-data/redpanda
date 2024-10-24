@@ -75,13 +75,35 @@ enum class field_repetition_type : uint8_t {
 };
 
 /** Empty structs to use as logical type annotations */
-struct string_type {}; // allowed for BYTE_ARRAY, must be encoded with UTF-8
-struct uuid_type {};   // allowed for FIXED[16], must encoded raw UUID bytes
-struct map_type {};    // see LogicalTypes.md
-struct list_type {};   // see LogicalTypes.md
-struct enum_type {};   // allowed for BYTE_ARRAY, must be encoded with UTF-8
-struct date_type {};   // allowed for INT32
-struct f16_type {};    // allowed for FIXED[2], must encoded raw FLOAT16 bytes
+
+// allowed for BYTE_ARRAY, must be encoded with UTF-8
+struct string_type {
+    bool operator==(const string_type&) const = default;
+};
+// allowed for FIXED[16], must encoded raw UUID bytes
+struct uuid_type {
+    bool operator==(const uuid_type&) const = default;
+};
+// see LogicalTypes.md
+struct map_type {
+    bool operator==(const map_type&) const = default;
+};
+// see LogicalTypes.md
+struct list_type {
+    bool operator==(const list_type&) const = default;
+};
+// allowed for BYTE_ARRAY, must be encoded with UTF-8
+struct enum_type {
+    bool operator==(const enum_type&) const = default;
+};
+// allowed for INT32
+struct date_type {
+    bool operator==(const date_type&) const = default;
+};
+// allowed for FIXED[2], must encoded raw FLOAT16 bytes
+struct f16_type {
+    bool operator==(const f16_type&) const = default;
+};
 
 /**
  * Logical type to annotate a column that is always null.
@@ -90,7 +112,9 @@ struct f16_type {};    // allowed for FIXED[2], must encoded raw FLOAT16 bytes
  * null and the physical type can't be determined. This annotation signals
  * the case where the physical type was guessed from all null values.
  */
-struct null_type {}; // allowed for any physical type, only null values stored
+struct null_type {
+    bool operator==(const null_type&) const = default;
+}; // allowed for any physical type, only null values stored
 
 /**
  * Decimal logical type annotation
@@ -107,6 +131,7 @@ struct null_type {}; // allowed for any physical type, only null values stored
 struct decimal_type {
     int32_t scale;
     int32_t precision;
+    bool operator==(const decimal_type&) const = default;
 };
 
 /**
@@ -129,6 +154,7 @@ enum class time_unit : int8_t {
 struct timestamp_type {
     bool is_adjusted_to_utc;
     time_unit unit;
+    bool operator==(const timestamp_type&) const = default;
 };
 
 /**
@@ -139,6 +165,7 @@ struct timestamp_type {
 struct time_type {
     bool is_adjusted_to_utc;
     time_unit unit;
+    bool operator==(const time_type&) const = default;
 };
 
 /**
@@ -151,6 +178,7 @@ struct time_type {
 struct int_type {
     int8_t bit_width = 0;
     bool is_signed = false;
+    bool operator==(const int_type&) const = default;
 };
 
 /**
@@ -158,14 +186,18 @@ struct int_type {
  *
  * Allowed for physical types: BYTE_ARRAY
  */
-struct json_type {};
+struct json_type {
+    bool operator==(const json_type&) const = default;
+};
 
 /**
  * Embedded BSON logical type annotation
  *
  * Allowed for physical types: BYTE_ARRAY
  */
-struct bson_type {};
+struct bson_type {
+    bool operator==(const bson_type&) const = default;
+};
 
 /**
  * LogicalType annotations to replace ConvertedType.
@@ -258,6 +290,7 @@ struct schema_element {
 
     /** If this is a leaf in the schema.*/
     bool is_leaf() const;
+    bool operator==(const schema_element&) const = default;
 };
 
 /**
@@ -301,6 +334,8 @@ struct indexed_schema_element {
 
     /** If this is a leaf in the schema.*/
     bool is_leaf() const;
+
+    bool operator==(const indexed_schema_element&) const = default;
 };
 
 /**

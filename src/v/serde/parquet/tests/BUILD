@@ -20,6 +20,22 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
+    name = "schema_test",
+    timeout = "short",
+    srcs = [
+        "schema_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "shredder_test",
     timeout = "short",
     srcs = [
