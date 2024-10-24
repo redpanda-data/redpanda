@@ -321,6 +321,8 @@ redpanda_cc_gtest(
     ],
     deps = [
         ":test_schemas",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:field_collecting_visitor",
         "//src/v/iceberg:schema",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

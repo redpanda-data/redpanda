@@ -6,6 +6,8 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
+#include "iceberg/datatypes.h"
+#include "iceberg/field_collecting_visitor.h"
 #include "iceberg/schema.h"
 #include "iceberg/tests/test_schemas.h"
 
@@ -89,6 +91,34 @@ TEST(SchemaTest, TestGetFromEmptySchema) {
     const auto ids_to_types = s.ids_to_types();
     ASSERT_TRUE(ids_to_types.empty());
     ASSERT_FALSE(s.highest_field_id().has_value());
+}
+
+TEST(SchemaTest, TestAssignFreshFieldIds) {
+    schema s{
+      .schema_struct = std::get<struct_type>(test_nested_schema_type()),
+      .schema_id = schema::id_t{0},
+      .identifier_field_ids = {},
+    };
+    // Reset all the fields in the schema to ID 0.
+    chunked_vector<nested_field*> to_visit;
+    for (auto& f : std::ranges::reverse_view(s.schema_struct.fields)) {
+        to_visit.emplace_back(f.get());
+    }
+    while (!to_visit.empty()) {
+        auto* f = to_visit.back();
+        f->id = nested_field::id_t{0};
+        to_visit.pop_back();
+        std::visit(reverse_field_collecting_visitor{to_visit}, f->type);
+    }
+    ASSERT_TRUE(s.highest_field_id().has_value());
+    ASSERT_EQ(0, s.highest_field_id().value()());
+
+    // Reassign the IDs and ensure that they match the original, which are hard
+    // coded to match what is expected by Iceberg.
+    s.assign_fresh_ids();
+    ASSERT_EQ(17, s.highest_field_id().value()());
+    ASSERT_EQ(
+      s.schema_struct, std::get<struct_type>(test_nested_schema_type()));
 }
 
 TEST(SchemaTest, TestGetTypesNestedSchemaNoneFilter) {
