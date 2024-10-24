@@ -166,6 +166,7 @@ redpanda_cc_library(
         "//src/v/bytes:scattered_message",
         "//src/v/cloud_storage",
         "//src/v/cluster",
+        "//src/v/cluster:state_machine_registry",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",

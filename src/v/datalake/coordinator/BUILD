@@ -193,7 +193,7 @@ redpanda_cc_library(
         ":model",
         ":state",
         ":state_update",
-        "//src/v/cluster",
+        "//src/v/cluster:state_machine_registry",
         "//src/v/datalake:logger",
         "//src/v/model",
         "//src/v/raft",
