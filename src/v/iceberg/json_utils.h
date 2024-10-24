@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "json/document.h"
 
 namespace iceberg {
@@ -46,5 +47,11 @@ bool parse_required_bool(const json::Value& v, std::string_view member_name);
 
 std::string_view
 extract_between(char start_ch, char end_ch, std::string_view s);
+
+chunked_hash_map<ss::sstring, ss::sstring>
+parse_required_string_map(const json::Value&, std::string_view);
+
+std::optional<chunked_hash_map<ss::sstring, ss::sstring>>
+parse_optional_string_map(const json::Value&, std::string_view);
 
 } // namespace iceberg

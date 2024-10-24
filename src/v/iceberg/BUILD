@@ -59,6 +59,7 @@ redpanda_cc_library(
     ],
     include_prefix = "iceberg",
     deps = [
+        "//src/v/container:chunked_hash_map",
         "//src/v/json",
         "@fmt",
     ],

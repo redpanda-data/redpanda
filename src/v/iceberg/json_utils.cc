@@ -7,13 +7,38 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "json/document.h"
+#include "iceberg/json_utils.h"
 
 #include <fmt/format.h>
 
 #include <stdexcept>
 
 namespace iceberg {
+
+namespace {
+chunked_hash_map<ss::sstring, ss::sstring>
+parse_string_map(const json::Value& map_json, std::string_view member_name) {
+    if (!map_json.IsObject()) {
+        throw std::invalid_argument(fmt::format(
+          "Expected map field '{}' to be an object type", member_name));
+    }
+    const auto& map_obj = map_json.GetObject();
+    chunked_hash_map<ss::sstring, ss::sstring> ret;
+    ret.reserve(map_obj.MemberCount());
+    for (const auto& property : map_obj) {
+        if (!property.name.IsString() || !property.value.IsString()) {
+            throw std::invalid_argument(fmt::format(
+              "Expected '{}' field to be a string map. Current type map<{},{}>",
+              member_name,
+              property.name.GetType(),
+              property.value.GetType()));
+        }
+
+        ret.emplace(property.name.GetString(), property.value.GetString());
+    }
+    return ret;
+}
+} // namespace
 
 std::optional<std::reference_wrapper<const json::Value>>
 parse_optional(const json::Value& v, std::string_view member_name) {
@@ -180,6 +205,22 @@ extract_between(char start_ch, char end_ch, std::string_view s) {
     }
     throw std::invalid_argument(
       fmt::format("Missing wrappers '{}' or '{}' in {}", start_ch, end_ch, s));
+}
+
+chunked_hash_map<ss::sstring, ss::sstring>
+parse_required_string_map(const json::Value& v, std::string_view member_name) {
+    const auto& map_json = parse_required(v, member_name);
+
+    return parse_string_map(map_json, member_name);
+}
+
+std::optional<chunked_hash_map<ss::sstring, ss::sstring>>
+parse_optional_string_map(const json::Value& v, std::string_view member_name) {
+    const auto& map_json = parse_optional(v, member_name);
+    if (!map_json) {
+        return std::nullopt;
+    }
+    return parse_string_map(*map_json, member_name);
 }
 
 } // namespace iceberg
