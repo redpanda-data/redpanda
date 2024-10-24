@@ -10,13 +10,10 @@
  */
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 
-#include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
-#include <absl/container/node_hash_map.h>
 #include <roaring/roaring64map.hh>
 
 namespace cluster::leader_balancer_types {
@@ -37,12 +34,12 @@ struct reassignment {
     reassignment() = default;
 };
 
-using index_type = absl::node_hash_map<
+using index_type = chunked_hash_map<
   model::broker_shard,
-  absl::btree_map<raft::group_id, std::vector<model::broker_shard>>>;
+  chunked_hash_map<raft::group_id, std::vector<model::broker_shard>>>;
 
 using group_id_to_topic_revision_t
-  = absl::btree_map<raft::group_id, model::revision_id>;
+  = chunked_hash_map<raft::group_id, model::revision_id>;
 
 using muted_groups_t = roaring::Roaring64Map;
 /*

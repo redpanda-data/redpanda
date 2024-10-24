@@ -62,7 +62,8 @@ BOOST_AUTO_TEST_CASE(greedy_movement) {
     // 10 partitions per shard
     // r=3 (3 replicas)
     auto index = leader_balancer_test_utils::make_cluster_index(10, 2, 10, 3);
-    auto shard_index = lbt::shard_index(index);
+    auto shard_index = lbt::shard_index(
+      leader_balancer_test_utils::copy_cluster_index(index));
     auto mute_index = lbt::muted_index({}, {});
 
     auto greed = lbt::even_shard_load_constraint(shard_index, mute_index);
@@ -74,14 +75,15 @@ BOOST_AUTO_TEST_CASE(greedy_movement) {
     index[shard20][raft::group_id(21)] = index[shard20][raft::group_id(3)];
     index[shard20][raft::group_id(22)] = index[shard20][raft::group_id(3)];
 
-    auto shard_index2 = lbt::shard_index(index);
-    auto greed2 = lbt::even_shard_load_constraint(shard_index2, mute_index);
+    shard_index = lbt::shard_index(
+      leader_balancer_test_utils::copy_cluster_index(index));
+    auto greed2 = lbt::even_shard_load_constraint(shard_index, mute_index);
     BOOST_REQUIRE_GT(greed2.error(), 0);
 
     // movement should be _from_ the overloaded shard
     auto movement = greed2.recommended_reassignment();
     BOOST_REQUIRE(movement);
-    check_valid(shard_index2.shards(), *movement);
+    check_valid(shard_index.shards(), *movement);
     BOOST_REQUIRE_EQUAL(movement->from, shard20);
 }
 
@@ -216,7 +218,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distribution_empty) {
     auto [shard_index, muted_index] = from_spec({});
 
     auto even_topic_con = lbt::even_topic_distributon_constraint(
-      gntp_i, shard_index, muted_index);
+      std::move(gntp_i), shard_index, muted_index);
 
     BOOST_REQUIRE(even_topic_con.error() == 0);
 }
@@ -239,7 +241,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distribution_constraint_no_error) {
     auto mute_i = lbt::muted_index({}, {});
 
     auto topic_constraint = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, index_cl, mute_i);
+      std::move(g_id_to_t_id), index_cl, mute_i);
 
     BOOST_REQUIRE(topic_constraint.error() == 0);
 }
@@ -261,7 +263,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_uniform_move) {
     auto mute_i = lbt::muted_index({}, {});
 
     auto topic_constraint = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, index_cl, mute_i);
+      std::move(g_id_to_t_id), index_cl, mute_i);
     auto reassignment = re(1, 0, 1);
 
     BOOST_REQUIRE(topic_constraint.error() != 0);
@@ -295,7 +297,7 @@ BOOST_AUTO_TEST_CASE(even_topic_constraint_too_many_replicas) {
     auto mute_i = lbt::muted_index({}, {});
 
     auto topic_constraint = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, index_cl, mute_i);
+      std::move(g_id_to_t_id), index_cl, mute_i);
 }
 
 BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_find_reassignment) {
@@ -318,7 +320,7 @@ BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_find_reassignment) {
     auto mute_i = lbt::muted_index({}, {});
 
     auto topic_constraint = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, index_cl, mute_i);
+      std::move(g_id_to_t_id), index_cl, mute_i);
     auto reassignment = re(1, 0, 1);
 
     BOOST_REQUIRE(topic_constraint.error() != 0);
@@ -355,7 +357,7 @@ BOOST_AUTO_TEST_CASE(even_shard_no_error_even_topic_error) {
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
     auto even_topic_con = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, shard_index, muted_index);
+      std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() == 0);
     BOOST_REQUIRE(even_topic_con.error() > 0);
@@ -392,7 +394,7 @@ BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
     auto even_topic_con = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, shard_index, muted_index);
+      std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() > 0);
     BOOST_REQUIRE(even_shard_con.recommended_reassignment().has_value());
@@ -454,29 +456,37 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     // OMB testing. It ensures that the random hill climbing strategy
     // can properly balance this state. The minimum number of reassignments
     // needed to balance is 2.
-    auto g_id_to_t_id = group_to_topic_from_spec({
-      {0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
-      {1, {10, 11, 12, 13, 14}},
-    });
+    auto index_fn = [] {
+        return std::make_tuple(
+          from_spec(
+            {
+              {{0, 2, 10, 11, 12}, {13, 14, 1, 3, 4, 5, 6, 7, 8, 9}},
+              {{1, 6, 8, 13, 14}, {10, 11, 12, 0, 2, 3, 4, 5, 7, 9}},
+              {{3, 4, 5, 7, 9}, {10, 11, 12, 13, 14, 0, 1, 2, 6, 8}},
+            },
+            {}),
+          group_to_topic_from_spec({
+            {0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+            {1, {10, 11, 12, 13, 14}},
+          }));
+    };
 
-    auto [shard_index, muted_index] = from_spec(
-      {
-        {{0, 2, 10, 11, 12}, {13, 14, 1, 3, 4, 5, 6, 7, 8, 9}},
-        {{1, 6, 8, 13, 14}, {10, 11, 12, 0, 2, 3, 4, 5, 7, 9}},
-        {{3, 4, 5, 7, 9}, {10, 11, 12, 13, 14, 0, 1, 2, 6, 8}},
-      },
-      {});
-
+    auto [o, g_id_to_t_id] = index_fn();
+    auto [shard_index, muted_index] = std::move(o);
     auto even_shard_con = lbt::even_shard_load_constraint(
       shard_index, muted_index);
     auto even_topic_con = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, shard_index, muted_index);
+      std::move(g_id_to_t_id), shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() == 0);
     BOOST_REQUIRE(even_topic_con.error() > 0);
 
+    auto [o1, g_id_to_t_id1] = index_fn();
+    auto [shard_index1, muted_index1] = std::move(o1);
     auto rhc = lbt::random_hill_climbing_strategy(
-      shard_index.shards(), g_id_to_t_id, lbt::muted_index{{}, {}});
+      leader_balancer_test_utils::copy_cluster_index(shard_index1.shards()),
+      std::move(g_id_to_t_id1),
+      std::move(muted_index1));
 
     cluster::leader_balancer_types::muted_groups_t muted_groups{};
 
@@ -492,6 +502,7 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
         rhc.apply_movement(*movement_opt);
         even_shard_con.update_index(*movement_opt);
         even_topic_con.update_index(*movement_opt);
+        shard_index.update_index(*movement_opt);
         muted_groups.add(static_cast<uint64_t>(movement_opt->group));
 
         auto new_error = rhc.error();
