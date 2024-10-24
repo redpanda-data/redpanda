@@ -25,6 +25,7 @@ v_cc_library(
     json.cc
     protobuf.cc
     validation.cc
+    util.cc
     ${schema_registry_file}
   DEPS
     v::pandaproxy_common
