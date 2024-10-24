@@ -354,18 +354,22 @@ FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
     expired_license.expiry = 0s;
 
     BOOST_CHECK_EQUAL(ft.get_license().has_value(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
 
     ft.set_builtin_trial_license(model::timestamp::now());
     BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
     BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
 
     ft.set_license(expired_license);
     BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
     BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), true);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), true);
 
     ft.set_license(license);
     BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
     BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
 }
 
 SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
