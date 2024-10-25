@@ -15,7 +15,6 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/schema_registry/util.h"
 
-#include <absl/algorithm/container.h>
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
