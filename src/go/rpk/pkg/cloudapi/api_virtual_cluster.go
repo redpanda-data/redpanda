@@ -30,8 +30,9 @@ type (
 
 		Status struct {
 			Listeners struct {
-				ConsoleURL    string   `json:"consoleUrl"`
-				SeedAddresses []string `json:"seedAddress"`
+				ConsoleURL        string   `json:"consoleUrl"`
+				SeedAddresses     []string `json:"seedAddress"`
+				SchemaRegistryURL []string `json:"schemaRegistryUrl,omitempty"`
 			} `json:"listeners"`
 		} `json:"status"`
 	}
