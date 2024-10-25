@@ -2378,7 +2378,7 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
 } // namespace
 
 ss::future<json_schema_definition>
-make_json_schema_definition(sharded_store&, canonical_schema schema) {
+make_json_schema_definition(schema_getter&, canonical_schema schema) {
     auto doc
       = parse_json(schema.def().shared_raw()()).value(); // throws on error
     std::string_view name = schema.sub()();

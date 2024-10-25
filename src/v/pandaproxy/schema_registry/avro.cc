@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "strings/string_switch.h"
@@ -544,7 +545,7 @@ private:
 };
 
 ss::future<collected_schema> collect_schema(
-  sharded_store& store,
+  schema_getter& store,
   collected_schema collected,
   ss::sstring name,
   canonical_schema schema) {
@@ -561,7 +562,7 @@ ss::future<collected_schema> collect_schema(
 }
 
 ss::future<avro_schema_definition>
-make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
+make_avro_schema_definition(schema_getter& store, canonical_schema schema) {
     std::optional<avro::Exception> ex;
     try {
         auto name = schema.sub()();

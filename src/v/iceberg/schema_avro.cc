@@ -213,8 +213,8 @@ struct_type_to_avro(const struct_type& type, std::string_view name) {
     return avro_schema;
 }
 
-nested_field_ptr
-child_field_from_avro(const avro::NodePtr& parent, size_t child_idx) {
+nested_field_ptr child_field_from_avro(
+  const avro::NodePtr& parent, size_t child_idx, with_field_ids with_ids) {
     const auto& type = parent->type();
     if (type != avro::AVRO_RECORD) {
         throw std::invalid_argument("Expected Avro record type");
@@ -228,7 +228,10 @@ child_field_from_avro(const avro::NodePtr& parent, size_t child_idx) {
     const auto& attrs = parent->customAttributesAt(child_idx);
     auto field_id_str = attrs.getAttribute("field-id");
     if (!field_id_str.has_value()) {
-        throw std::invalid_argument("Missing field-id attribute");
+        if (with_ids) {
+            throw std::invalid_argument("Missing field-id attribute");
+        }
+        field_id_str = "0";
     }
     auto field_id = std::stoi(field_id_str.value());
     type_and_required parsed_child = maybe_optional_from_avro(child);
@@ -236,7 +239,7 @@ child_field_from_avro(const avro::NodePtr& parent, size_t child_idx) {
       field_id, name, parsed_child.required, std::move(parsed_child.type));
 }
 
-field_type type_from_avro(const avro::NodePtr& n) {
+field_type type_from_avro(const avro::NodePtr& n, with_field_ids with_ids) {
     const auto& type = n->type();
     switch (type) {
     case avro::AVRO_STRING:
@@ -275,7 +278,7 @@ field_type type_from_avro(const avro::NodePtr& n) {
         struct_type ret;
         const auto num_leaves = n->leaves();
         for (size_t i = 0; i < num_leaves; i++) {
-            ret.fields.emplace_back(child_field_from_avro(n, i));
+            ret.fields.emplace_back(child_field_from_avro(n, i, with_ids));
         }
         return ret;
     }
@@ -296,8 +299,8 @@ field_type type_from_avro(const avro::NodePtr& n) {
                 throw std::invalid_argument(fmt::format(
                   "Expected 2 leaves in key-value record: {}", n->leaves()));
             }
-            auto key_field = child_field_from_avro(kv_node, 0);
-            auto val_field = child_field_from_avro(kv_node, 1);
+            auto key_field = child_field_from_avro(kv_node, 0, with_ids);
+            auto val_field = child_field_from_avro(kv_node, 1, with_ids);
             return map_type::create(
               key_field->id,
               std::move(key_field->type),

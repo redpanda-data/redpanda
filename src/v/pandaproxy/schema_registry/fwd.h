@@ -17,6 +17,7 @@ class api;
 struct configuration;
 class schema_id_cache;
 class schema_id_validation_probe;
+class schema_getter;
 class seq_writer;
 class service;
 class sharded_store;

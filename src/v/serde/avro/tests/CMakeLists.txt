@@ -2,6 +2,16 @@ find_package(Avro)
 
 set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 
+v_cc_library(
+  NAME avro_test_utils
+  HDRS
+    data_generator.h
+  SRCS
+    data_generator.cc
+  DEPS
+    Avro::avro
+    v::random
+)
 
 rp_test(
   UNIT_TEST
@@ -13,6 +23,7 @@ rp_test(
   LIBRARIES
     Avro::avro
     Boost::iostreams
+    v::avro_test_utils
     v::bytes
     v::gtest_main
     v::serde_avro

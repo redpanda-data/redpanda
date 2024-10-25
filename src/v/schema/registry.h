@@ -12,6 +12,7 @@
 #pragma once
 
 #include "pandaproxy/schema_registry/fwd.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/types.h"
 
 namespace schema {
@@ -38,6 +39,12 @@ public:
     virtual ~registry() = default;
 
     virtual bool is_enabled() const = 0;
+
+    virtual ss::future<pandaproxy::schema_registry::schema_getter*>
+    getter() const = 0;
+
+    ss::future<pandaproxy::schema_registry::valid_schema>
+    get_valid_schema(pandaproxy::schema_registry::schema_id schema_id) const;
 
     virtual ss::future<pandaproxy::schema_registry::canonical_schema_definition>
       get_schema_definition(pandaproxy::schema_registry::schema_id) const = 0;

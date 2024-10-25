@@ -42,6 +42,7 @@ redpanda_cc_library(
         "avro_utils.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
@@ -533,10 +534,12 @@ redpanda_cc_library(
         "schema_avro.h",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         "@avro",
         "@fmt",
+        "@seastar",
     ],
 )
 
@@ -954,6 +957,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
         ":values",
