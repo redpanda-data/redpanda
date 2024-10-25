@@ -132,7 +132,8 @@ class FailureInjectorBase:
         return len(self._in_flight)
 
     def time_till_next_recovery(self):
-        return min(run_time for spec, run_time in self._in_flight) - self.now()
+        return min(run_time
+                   for spec, run_time in self._in_flight.items()) - self.now()
 
     @classmethod
     def now(cls):
@@ -156,9 +157,9 @@ class FailureInjectorBase:
         elif tp == FailureSpec.FAILURE_NETEM_PACKET_DUPLICATE:
             return self._netem_duplicate
 
-    def _stop_func(self, tp):
+    def _stop_func(self, tp, wait=False):
         if tp == FailureSpec.FAILURE_KILL or tp == FailureSpec.FAILURE_TERMINATE:
-            return self._start
+            return self._start_and_wait if wait else self._start
         elif tp == FailureSpec.FAILURE_SUSPEND:
             return self._continue
         elif tp == FailureSpec.FAILURE_ISOLATE:
@@ -197,6 +198,9 @@ class FailureInjectorBase:
         pass
 
     def _start(self, node):
+        pass
+
+    def _start_and_wait(self, node):
         pass
 
     def _netem(self, node, op):
@@ -317,7 +321,7 @@ class FailureInjector(FailureInjectorBase):
                 pass  # timer just emptied the set: GIL off???
             else:
                 self.redpanda.logger.debug(f"_undo_all stopping spec={spec}")
-                self._stop_func(spec.type)(spec.node)
+                self._stop_func(spec.type, wait=True)(spec.node)
 
     def _suspend(self, node):
         self.redpanda.logger.info(
@@ -350,6 +354,10 @@ class FailureInjector(FailureInjectorBase):
             self.redpanda.logger.info(
                 f"skipping starting redpanda on {node.account.hostname}, already running with pid: {[pid]}"
             )
+
+    def _start_and_wait(self, node):
+        self._start(node)
+        time.sleep(1)  # should be sufficient for the node to start responding
 
     def _netem(self, node, op):
         self.redpanda.logger.info(
