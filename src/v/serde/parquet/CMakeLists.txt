@@ -5,6 +5,9 @@ v_cc_library(
     metadata.cc
     encoding.cc
     flattened_schema.cc
+    value.cc
+    schema.cc
+    shredder.cc
   DEPS
     Seastar::seastar
     v::bytes
