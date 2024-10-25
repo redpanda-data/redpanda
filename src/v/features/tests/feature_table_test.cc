@@ -12,6 +12,7 @@
 #include "cluster/feature_update_action.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
+#include "model/timestamp.h"
 #include "security/license.h"
 #include "test_utils/fixture.h"
 
@@ -334,6 +335,45 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
     BOOST_CHECK(
       ft.get_state(feature::test_alpha).get_state()
       == feature_state::state::active);
+}
+
+FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
+    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
+    if (sample_valid_license == nullptr) {
+        const char* is_on_ci = std::getenv("CI");
+        BOOST_TEST_REQUIRE(
+          !is_on_ci,
+          "Expecting the REDPANDA_SAMPLE_LICENSE env var in the CI "
+          "enviornment");
+        return;
+    }
+    const ss::sstring license_str{sample_valid_license};
+    const auto license = security::make_license(license_str);
+
+    auto expired_license = license;
+    expired_license.expiry = 0s;
+
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
+
+    ft.set_builtin_trial_license(model::timestamp::now());
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
+    BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
+
+    ft.set_license(expired_license);
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
+    BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), true);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), true);
+
+    ft.set_license(license);
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), true);
+    BOOST_CHECK_EQUAL(ft.get_license()->is_expired(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), false);
+
+    ft.revoke_license();
+    BOOST_CHECK_EQUAL(ft.get_license().has_value(), false);
+    BOOST_CHECK_EQUAL(ft.should_sanction(), true);
 }
 
 SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
