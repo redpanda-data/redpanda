@@ -96,9 +96,6 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
-        "//src/v/bytes:iobuf",
-        "//src/v/container:fragmented_vector",
-        "//src/v/utils:vint",
         "@seastar",
     ],
 )

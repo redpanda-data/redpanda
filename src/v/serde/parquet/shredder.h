@@ -9,8 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/seastarx.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
+
+#include <seastar/core/future.hh>
 
 namespace serde::parquet {
 
@@ -26,9 +29,9 @@ struct shredded_value {
 
 // Preform the dremel record shredding algoritm on this struct,
 // emitting shredded_values as they are emitted.
-void shred_record(
+ss::future<> shred_record(
   const indexed_schema_element& root,
   struct_value record,
-  absl::FunctionRef<void(shredded_value)> callback);
+  absl::FunctionRef<ss::future<>(shredded_value)> callback);
 
 } // namespace serde::parquet

@@ -74,10 +74,13 @@ struct value_collector {
         });
     }
 
-    void operator()(shredded_value val) const {
+    ss::future<> operator()(shredded_value val) const {
         auto it = column_mapping.find(val.schema_element_index);
-        ASSERT_NE(it, column_mapping.end()) << "invalid column index";
+        if (it == column_mapping.end()) {
+            throw std::runtime_error("invalid column index");
+        }
         columns[it->second].push_back(std::move(val));
+        return ss::now();
     }
 
     std::unordered_map<int32_t, size_t> column_mapping;
@@ -194,8 +197,8 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
         string_value(iobuf::from("http://C")))));
     value_collector collector(document_schema);
     auto indexed_schema = index_schema(document_schema);
-    shred_record(indexed_schema, std::move(r1), collector);
-    shred_record(indexed_schema, std::move(r2), collector);
+    shred_record(indexed_schema, std::move(r1), collector).get();
+    shred_record(indexed_schema, std::move(r2), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(
@@ -242,7 +245,7 @@ TEST(RecordShredding, ListOfStrings) {
       string_value(iobuf::from("c"))));
     value_collector collector(schema);
     auto indexed_schema = index_schema(schema);
-    shred_record(indexed_schema, std::move(r), collector);
+    shred_record(indexed_schema, std::move(r), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(
@@ -266,7 +269,7 @@ TEST(RecordShredding, LogicalMap) {
         string_value(iobuf::from("AK")), string_value(iobuf::from("Alaska")))));
     value_collector collector(schema);
     auto indexed_schema = index_schema(schema);
-    shred_record(indexed_schema, std::move(r), collector);
+    shred_record(indexed_schema, std::move(r), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(
@@ -291,10 +294,10 @@ TEST(RecordShredding, DefinitionLevels) {
     struct_value r4 = record(null_value());
     value_collector collector(schema);
     auto indexed_schema = index_schema(schema);
-    shred_record(indexed_schema, std::move(r1), collector);
-    shred_record(indexed_schema, std::move(r2), collector);
-    shred_record(indexed_schema, std::move(r3), collector);
-    shred_record(indexed_schema, std::move(r4), collector);
+    shred_record(indexed_schema, std::move(r1), collector).get();
+    shred_record(indexed_schema, std::move(r2), collector).get();
+    shred_record(indexed_schema, std::move(r3), collector).get();
+    shred_record(indexed_schema, std::move(r4), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(ElementsAre(
@@ -329,8 +332,8 @@ TEST(RecordShredding, RepetitionLevels) {
         list(string_value(iobuf::from("i")), string_value(iobuf::from("j"))))));
     value_collector collector(schema);
     auto indexed_schema = index_schema(schema);
-    shred_record(indexed_schema, std::move(r1), collector);
-    shred_record(indexed_schema, std::move(r2), collector);
+    shred_record(indexed_schema, std::move(r1), collector).get();
+    shred_record(indexed_schema, std::move(r2), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(ElementsAre(
@@ -387,8 +390,8 @@ TEST(RecordShredding, AddressBookExample) {
       string_value(iobuf::from("A. Nonymous")), list(), list());
     value_collector collector(schema);
     auto indexed_schema = index_schema(schema);
-    shred_record(indexed_schema, std::move(r1), collector);
-    shred_record(indexed_schema, std::move(r2), collector);
+    shred_record(indexed_schema, std::move(r1), collector).get();
+    shred_record(indexed_schema, std::move(r2), collector).get();
     EXPECT_THAT(
       collector.columns,
       ElementsAre(
