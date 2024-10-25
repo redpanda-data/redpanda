@@ -72,7 +72,7 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
     migration.migration_type = migration_type_enum::inbound;
     for (auto& inbound_t : idm.topics) {
         ss::httpd::migration_json::inbound_topic inbound_tp;
-        inbound_tp.source_topic = to_admin_type(
+        inbound_tp.source_topic_reference = to_admin_type(
           inbound_t.source_topic_name, inbound_t.cloud_storage_location);
         if (inbound_t.alias) {
             inbound_tp.alias = to_admin_type(*inbound_t.alias);
@@ -205,17 +205,14 @@ json::validator make_migration_validator() {
         "inbound_topic": {
             "type": "object",
             "required": [
-                "source_topic"
+                "source_topic_reference"
             ],
             "properties": {
-                "source_topic": {
+                "source_topic_reference": {
                     "$ref": "#/definitions/namespaced_topic"
                 },
                 "alias": {
                     "$ref": "#/definitions/namespaced_topic"
-                },
-                "location": {
-                    "type": "string"
                 }
             },
             "additionalProperties": false

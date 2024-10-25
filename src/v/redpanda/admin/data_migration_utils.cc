@@ -29,7 +29,8 @@ model::topic_namespace parse_topic_namespace(json::Value& json) {
 
 cluster::data_migrations::inbound_topic parse_inbound_topic(json::Value& json) {
     cluster::data_migrations::inbound_topic ret;
-    ret.source_topic_name = parse_topic_namespace(json["source_topic"]);
+    ret.source_topic_name = parse_topic_namespace(
+      json["source_topic_reference"]);
 
     // extract location hint from topic name
     std::pair<std::string, std::string> split = absl::StrSplit(
