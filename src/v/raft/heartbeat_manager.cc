@@ -340,6 +340,17 @@ void heartbeat_manager::process_reply(
         return;
     }
     auto& reply = r.value();
+
+    if (reply.source() != n) {
+        vlog(
+          raftlog.warn,
+          "got heartbeat reply from a different node id {} (expected {}), "
+          "ignoring",
+          reply.source(),
+          n);
+        return;
+    }
+
     reply.for_each_lw_reply([this, n, target = reply.target(), &groups](
                               group_id group, reply_result result) {
         auto it = _consensus_groups.find(group);
