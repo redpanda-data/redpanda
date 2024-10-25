@@ -217,4 +217,18 @@ std::ostream& operator<<(std::ostream& o, const state_transition_error& err) {
     return o;
 }
 
+void probe::add_ongoing() { ++open_transactions; }
+
+void probe::add_committed(size_t num_partitions, size_t num_groups) {
+    --open_transactions;
+    ++committed_transactions;
+    participants_per_transaction.record(num_partitions + num_groups);
+}
+
+void probe::add_aborted(size_t num_partitions, size_t num_groups) {
+    --open_transactions;
+    ++aborted_transactions;
+    participants_per_transaction.record(num_partitions + num_groups);
+}
+
 } // namespace cluster
