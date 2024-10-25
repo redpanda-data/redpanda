@@ -1999,7 +1999,10 @@ void application::wire_up_redpanda_services(
           std::ref(raft_group_manager),
           std::ref(partition_manager),
           std::ref(cloud_io),
-          cloud_configs.local().bucket_name)
+          cloud_configs.local().bucket_name,
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg().iceberg_catalog_base_location();
+          }))
           .get();
         construct_service(
           _datalake_coordinator_fe,
