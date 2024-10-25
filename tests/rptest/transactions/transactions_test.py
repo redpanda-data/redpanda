@@ -1422,6 +1422,7 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
         self.check_consume(2)
 
+    @skip_fips_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def upgrade_coordinator_test(self):
         def get_tx_coordinator():
@@ -1433,6 +1434,7 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
         self.do_upgrade_with_tx(get_tx_coordinator)
 
+    @skip_fips_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def upgrade_topic_test(self):
         topic_name = self.topics[0].name
