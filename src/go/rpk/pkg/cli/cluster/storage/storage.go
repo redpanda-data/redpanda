@@ -28,6 +28,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newMountList(fs, p),
 		newMountStatus(fs, p),
 		newMountCancel(fs, p),
+		newListMountable(fs, p),
 	)
 	return cmd
 }
