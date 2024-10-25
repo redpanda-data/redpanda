@@ -92,7 +92,8 @@ def safe_listdir(p: Path) -> list[Path]:
 
 
 def md5_for_bytes(calculate_md5: bool, data: bytes) -> str:
-    return hashlib.md5(data).hexdigest() if calculate_md5 else ''
+    return hashlib.md5(
+        data, usedforsecurity=False).hexdigest() if calculate_md5 else ''
 
 
 def md5_for_filename(calculate_md5: bool, file: Path) -> str:

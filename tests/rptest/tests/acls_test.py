@@ -19,6 +19,7 @@ from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException,
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
+from rptest.utils.mode_checks import skip_fips_mode
 from typing import Optional
 from enum import Enum
 
@@ -540,6 +541,7 @@ class AccessControlListTestUpgrade(AccessControlListTest):
 
     # Test that a cluster configured with enable_sasl can be upgraded
     # from v22.1.x, and still have sasl enabled. See PR 5292.
+    @skip_fips_mode
     @cluster(num_nodes=3,
              log_allow_list=[
                  r'rpc - .* The TLS connection was non-properly terminated.*'
