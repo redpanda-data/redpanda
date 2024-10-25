@@ -36,7 +36,6 @@ go_library(
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go_pkg_kmsg//:kmsg",
         "@com_github_twmb_franz_go_pkg_sr//:sr",
-        "@com_github_twmb_types//:types",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -55,6 +54,7 @@ go_test(
     deps = [
         "//src/go/rpk/pkg/config",
         "@com_github_spf13_afero//:afero",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
