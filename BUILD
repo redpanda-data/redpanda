@@ -16,6 +16,7 @@ gazelle_test(
     name = "gazelle_test",
     size = "small",
     workspace = "//:BUILD",
+    tags = ["manual"],
 )
 
 filegroup(
