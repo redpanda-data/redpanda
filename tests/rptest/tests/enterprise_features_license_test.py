@@ -1,6 +1,7 @@
 import time
 import json
 from enum import IntEnum
+import requests
 
 from rptest.utils.rpenv import sample_license
 from rptest.clients.rpk import RpkTool
@@ -15,7 +16,7 @@ from rptest.utils.mode_checks import skip_fips_mode
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize, matrix
-from rptest.util import wait_until_result
+from rptest.util import wait_until_result, expect_exception
 
 
 class EnterpriseFeaturesTestBase(RedpandaTest):
@@ -41,6 +42,20 @@ class Features(IntEnum):
     datalake_iceberg = 9
     leadership_pinning = 10
 
+
+# TODO(oren): extend to multiple configs?
+FEATURE_DEPENDENT_CONFIG = {
+    Features.audit_logging: 'audit_enabled',
+    Features.cloud_storage: 'cloud_storage_enabled',
+    Features.partition_auto_balancing_continuous:
+    'partition_autobalancing_mode',
+    Features.core_balancing_continuous: 'core_balancing_continuous',
+    Features.gssapi: 'sasl_mechanisms',
+    Features.oidc: 'sasl_mechanisms',
+    Features.schema_id_validation: 'enable_schema_id_validation',
+    Features.datalake_iceberg: 'datalake_iceberg',
+    Features.leadership_pinning: 'default_leaders_preference',
+}
 
 SKIP_FEATURES = [
     Features.audit_logging,  # NOTE(oren): omit due to shutdown issues
@@ -140,78 +155,96 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                     "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
                 return
 
-        if feature == Features.audit_logging:
-            self.redpanda.set_cluster_config(
-                {
-                    'audit_enabled': True,
-                },
-                expect_restart=True,
-            )
-        elif feature == Features.cloud_storage:
-            self.redpanda.set_cluster_config({'cloud_storage_enabled': 'true'},
-                                             expect_restart=True)
-        elif feature == Features.partition_auto_balancing_continuous:
-            self.redpanda.set_cluster_config(
-                {'partition_autobalancing_mode': 'continuous'})
-        elif feature == Features.core_balancing_continuous:
-            self.redpanda.set_cluster_config(
-                {'core_balancing_continuous': 'true'})
-        elif feature == Features.gssapi:
-            self.redpanda.set_cluster_config(
-                {'sasl_mechanisms': ['SCRAM', 'GSSAPI']})
-        elif feature == Features.oidc:
-            self.redpanda.set_cluster_config(
-                {'sasl_mechanisms': ['SCRAM', 'OAUTHBEARER']})
-        elif feature == Features.schema_id_validation:
-            self.redpanda.set_cluster_config(
-                {'enable_schema_id_validation': 'compat'})
-        elif feature == Features.rbac:
+        def try_set_config(feature):
+            if feature == Features.audit_logging:
+                self.redpanda.set_cluster_config(
+                    {
+                        'audit_enabled': True,
+                    },
+                    expect_restart=True,
+                )
+            elif feature == Features.cloud_storage:
+                self.redpanda.set_cluster_config(
+                    {'cloud_storage_enabled': 'true'}, expect_restart=True)
+            elif feature == Features.partition_auto_balancing_continuous:
+                self.redpanda.set_cluster_config(
+                    {'partition_autobalancing_mode': 'continuous'})
+            elif feature == Features.core_balancing_continuous:
+                self.redpanda.set_cluster_config(
+                    {'core_balancing_continuous': 'true'})
+            elif feature == Features.gssapi:
+                self.redpanda.set_cluster_config(
+                    {'sasl_mechanisms': ['SCRAM', 'GSSAPI']})
+            elif feature == Features.oidc:
+                self.redpanda.set_cluster_config(
+                    {'sasl_mechanisms': ['SCRAM', 'OAUTHBEARER']})
+            elif feature == Features.schema_id_validation:
+                self.redpanda.set_cluster_config(
+                    {'enable_schema_id_validation': 'compat'})
+            elif feature == Features.rbac:
 
-            # NOTE(oren): make sure the role has propagated to every node since we don't know
-            # where the get_enterprise request will go
-            def has_role(r: str):
-                return all(
-                    len(
-                        RolesList.from_response(
-                            self.admin.list_roles(filter=r, node=n)).roles) > 0
-                    for n in self.redpanda.nodes)
+                # NOTE(oren): make sure the role has propagated to every node since we don't know
+                # where the get_enterprise request will go
+                def has_role(r: str):
+                    return all(
+                        len(
+                            RolesList.from_response(
+                                self.admin.list_roles(filter=r, node=n)).roles)
+                        > 0 for n in self.redpanda.nodes)
 
-            self.admin.create_role('dummy')
-            wait_until(lambda: has_role('dummy'),
-                       timeout_sec=30,
-                       backoff_sec=1)
-        elif feature == Features.fips:
-            self.redpanda.rolling_restart_nodes(
-                self.redpanda.nodes,
-                override_cfg_params={
-                    'fips_mode':
-                    'permissive',
-                    "openssl_config_file":
-                    self.redpanda.get_openssl_config_file_path(),
-                    "openssl_module_directory":
-                    self.redpanda.get_openssl_modules_directory()
-                })
-        elif feature == Features.datalake_iceberg:
-            self.redpanda.set_cluster_config({'iceberg_enabled': 'true'},
-                                             expect_restart=True)
-        elif feature == Features.leadership_pinning:
-            RpkTool(self.redpanda).create_topic(
-                "foo",
-                partitions=1,
-                replicas=1,
-                config={"redpanda.leaders.preference": "racks:rack1"})
+                self.admin.create_role('dummy')
+                wait_until(lambda: has_role('dummy'),
+                           timeout_sec=30,
+                           backoff_sec=1)
+            elif feature == Features.fips:
+                self.redpanda.rolling_restart_nodes(
+                    self.redpanda.nodes,
+                    override_cfg_params={
+                        'fips_mode':
+                        'permissive',
+                        "openssl_config_file":
+                        self.redpanda.get_openssl_config_file_path(),
+                        "openssl_module_directory":
+                        self.redpanda.get_openssl_modules_directory()
+                    })
+            elif feature == Features.datalake_iceberg:
+                self.redpanda.set_cluster_config({'iceberg_enabled': 'true'},
+                                                 expect_restart=True)
+            elif feature == Features.leadership_pinning:
+                self.redpanda.set_cluster_config(
+                    {"default_leaders_preference": "racks:rack1"},
+                    expect_restart=True)
+                RpkTool(self.redpanda).create_topic(
+                    "foo",
+                    partitions=1,
+                    replicas=1,
+                    config={"redpanda.leaders.preference": "racks:rack1"})
+            else:
+                assert False, f"Unexpected feature={feature}"
+
+        expect_fail = not with_license and not (
+            feature
+            == Features.rbac  # or feature == Features.leadership_pinning
+        )
+
+        if expect_fail:
+            with expect_exception(
+                    requests.exceptions.HTTPError,
+                    lambda e: FEATURE_DEPENDENT_CONFIG[
+                        feature] in e.response.json().keys()):
+                try_set_config(feature)
         else:
-            assert False, f"Unexpected feature={feature}"
+            try_set_config(feature)
 
         rsp = self.admin.get_enterprise_features().json()
         enabled = {f['name']: f['enabled'] for f in rsp['features']}
         for f in Features:
-            if f == feature:
+            if f == feature and not expect_fail:
                 assert enabled[f.name], \
-                    f"expected {f} enabled, got {json.dumps(enabled, indent=1)}"
+                    f"expected {f.name} enabled, got {json.dumps(enabled, indent=1)}"
             else:
                 assert not enabled[f.name], \
-                    f"expected {f} not enabled, got {json.dumps(enabled, indent=1)}"
+                    f"expected {f.name} not enabled, got {json.dumps(enabled, indent=1)}"
 
         expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.not_present
         status_str = rsp.get('license_status')
@@ -221,6 +254,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         except ValueError:
             assert False, f"Unexpected status in response: {status_str}"
 
-        violation = rsp.get('violation')
-        assert violation == (not with_license), \
-            f"Expected{' no' if with_license else ''} enterprise license violation, got violation='{violation}'"
+        # TODO(oren): with this change, we can't enter a violated state at all
+        #   Probably want a test case where we bootstrap the cluster w/ all this stuff on to demonstrate the original functionality
+        #   Either that or we push a license then revoke it or something, but I don't know whether we can do that from outside
+        # violation = rsp.get('violation')
+        # assert violation == (not with_license), \
+        #     f"Expected{' no' if with_license else ''} enterprise license violation, got violation='{violation}'"

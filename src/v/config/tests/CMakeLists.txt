@@ -12,7 +12,8 @@ set(srcs
     validator_tests.cc
     throughput_control_group_test.cc
     node_override_test.cc
-    leaders_preference_test.cc)
+    leaders_preference_test.cc
+  )
 
 rp_test(
   UNIT_TEST
@@ -20,4 +21,14 @@ rp_test(
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::config
   LABELS config
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_enterprise_property
+  SOURCES  enterprise_property_test.cc
+  LIBRARIES
+    v::config
+    v::gtest_main
 )

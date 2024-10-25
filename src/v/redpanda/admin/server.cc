@@ -1832,6 +1832,10 @@ admin_server::patch_cluster_config_handler(
               tmp_p = p;
           });
 
+        const auto& lic
+          = _controller->get_feature_table().local().get_license();
+        bool valid_license = lic.has_value() && !lic.value().is_expired();
+
         // Configuration properties cannot do multi-property validation
         // themselves, so there is some special casing here for critical
         // properties.
@@ -1860,6 +1864,21 @@ admin_server::patch_cluster_config_handler(
                       yaml_name,
                       property.format_raw(yaml_value),
                       validation_err.value().error_message());
+                } else if (auto restricted_err = property.check_restricted(val);
+                           restricted_err.has_value() && !valid_license) {
+                    // TODO(oren): prob better to format the whole message like
+                    // the log?
+                    errors[yaml_name] = restricted_err.value().error_message();
+                    vlog(
+                      adminlog.warn,
+                      "Rejected config due to invalid enterprise license {}: "
+                      "'{}' ({})",
+                      yaml_name,
+                      property.format_raw(yaml_value),
+                      restricted_err.value().error_message());
+                    // Rejected
+                    // TODO(oren): I think we don't need to do anything here,
+                    // since the property is set on the next branch?
                 } else {
                     // In case any property subclass might throw
                     // from it's value setter even after a non-throwing
