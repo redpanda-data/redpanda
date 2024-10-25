@@ -86,6 +86,7 @@ redpanda_cc_library(
         "catalog.h",
     ],
     implementation_deps = [
+        ":logger",
         "@fmt",
     ],
     include_prefix = "iceberg",
