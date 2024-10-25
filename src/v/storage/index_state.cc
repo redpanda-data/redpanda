@@ -28,7 +28,224 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#include <exception>
+#include <optional>
+
 namespace storage {
+
+uint32_t
+compressed_index_columns::get_relative_offset_index(int ix) const noexcept {
+    // This is relatively inefficient (at least compared to array access by
+    // index) but it is possible to optimize this by using iterators instead of
+    // indexes.
+    auto res = _relative_offset_index.at_index(ix);
+    vassert(
+      res != _relative_offset_index.end(), "Index lookup failed at {}", ix);
+    return static_cast<uint32_t>(*res);
+}
+
+uint32_t
+compressed_index_columns::get_relative_time_index(int ix) const noexcept {
+    auto res = _relative_time_index.at_index(ix);
+    vassert(res != _relative_time_index.end(), "Index lookup failed at {}", ix);
+    return static_cast<uint32_t>(*res);
+}
+
+uint64_t compressed_index_columns::get_position_index(int ix) const noexcept {
+    auto res = _position_index.at_index(ix);
+    vassert(res != _position_index.end(), "Index lookup failed at {}", ix);
+    return *res;
+}
+
+std::optional<int>
+compressed_index_columns::offset_lower_bound(uint32_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _relative_offset_index.lower_bound(needle);
+    if (it != _relative_offset_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+std::optional<int>
+compressed_index_columns::position_upper_bound(uint64_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _position_index.upper_bound(needle);
+    if (it != _position_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+std::optional<int>
+compressed_index_columns::time_lower_bound(uint32_t needle) const noexcept {
+    assert_column_sizes();
+    auto it = _relative_time_index.lower_bound(needle);
+    if (it != _relative_time_index.end()) {
+        return it.index();
+    }
+    return std::nullopt;
+}
+
+bool compressed_index_columns::try_reset_relative_time_index(uint32_t t) {
+    if (_relative_time_index.size() != 1) {
+        return false;
+    }
+    _relative_time_index = {};
+    _relative_time_index.append(t);
+    return true;
+}
+
+bool compressed_index_columns::empty() const noexcept {
+    assert_column_sizes();
+    return _relative_offset_index.empty();
+}
+
+size_t compressed_index_columns::size() const noexcept {
+    assert_column_sizes();
+    return _relative_offset_index.size();
+}
+
+chunked_vector<uint32_t>
+compressed_index_columns::copy_relative_offset_index() const noexcept {
+    chunked_vector<uint32_t> res;
+    res.reserve(size());
+    for (const auto r : _relative_offset_index) {
+        res.push_back(static_cast<uint32_t>(r));
+    }
+    return res;
+}
+
+chunked_vector<uint32_t>
+compressed_index_columns::copy_relative_time_index() const noexcept {
+    chunked_vector<uint32_t> res;
+    res.reserve(size());
+    for (const auto r : _relative_time_index) {
+        res.push_back(static_cast<uint32_t>(r));
+    }
+    return res;
+}
+
+chunked_vector<uint64_t>
+compressed_index_columns::copy_position_index() const noexcept {
+    chunked_vector<uint64_t> res;
+    res.reserve(size());
+    for (const auto r : _position_index) {
+        res.push_back(r);
+    }
+    return res;
+}
+
+void compressed_index_columns::assign_relative_offset_index(
+  chunked_vector<uint32_t> xs) noexcept {
+    _relative_offset_index = {};
+    for (auto x : xs) {
+        _relative_offset_index.append(x);
+    }
+}
+
+void compressed_index_columns::assign_relative_time_index(
+  chunked_vector<uint32_t> xs) noexcept {
+    _relative_time_index = {};
+    for (auto x : xs) {
+        _relative_time_index.append(x);
+    }
+}
+
+void compressed_index_columns::assign_position_index(
+  chunked_vector<uint64_t> xs) noexcept {
+    _position_index = {};
+    for (auto x : xs) {
+        _position_index.append(x);
+    }
+}
+
+void compressed_index_columns::add_entry(uint32_t o, uint32_t t, uint64_t p) {
+    // Updates are transactional to guarantee that we're either add element to
+    // all three columns or to non of the columns.
+    auto offset_tx = _relative_offset_index.append_tx(o);
+    auto time_tx = _relative_time_index.append_tx(t);
+    auto pos_tx = _position_index.append_tx(p);
+
+    // The code below is guaranteed not to throw exceptions
+    // because 'commit' is 'noexcept'
+    if (offset_tx.has_value()) {
+        std::move(offset_tx.value()).commit();
+    }
+    if (time_tx.has_value()) {
+        std::move(time_tx.value()).commit();
+    }
+    if (pos_tx.has_value()) {
+        std::move(pos_tx.value()).commit();
+    }
+    assert_column_sizes();
+}
+
+void compressed_index_columns::pop_back(int n) {
+    // The 'pop_back' implementation partially copies all columns
+    // but this is OK because 'pop_back' is never invoked in the hot path
+    column_t tmp_offsets;
+    column_t tmp_timestamps;
+    pos_column_t tmp_positions;
+    auto expected_size = _relative_offset_index.size();
+    if (static_cast<size_t>(n) >= expected_size) {
+        // Fast path for full cleanup
+        _relative_offset_index = {};
+        _relative_time_index = {};
+        _position_index = {};
+        return;
+    } else {
+        expected_size -= static_cast<size_t>(n);
+    }
+    std::for_each_n(
+      _relative_offset_index.begin(),
+      expected_size,
+      [&tmp_offsets](uint64_t o) { tmp_offsets.append(o); });
+    std::for_each_n(
+      _relative_time_index.begin(),
+      expected_size,
+      [&tmp_timestamps](uint64_t t) { tmp_timestamps.append(t); });
+    std::for_each_n(
+      _position_index.begin(), expected_size, [&tmp_positions](uint64_t p) {
+          tmp_positions.append(p);
+      });
+    _relative_offset_index = std::move(tmp_offsets);
+    _relative_time_index = std::move(tmp_timestamps);
+    _position_index = std::move(tmp_positions);
+    assert_column_sizes();
+}
+
+void compressed_index_columns::shrink_to_fit() { assert_column_sizes(); }
+
+compressed_index_columns compressed_index_columns::copy() const {
+    compressed_index_columns res;
+    for_each_relative_offset_index(
+      [&res](uint32_t n) { res._relative_offset_index.append(n); });
+    for_each_relative_time_index(
+      [&res](uint32_t n) { res._relative_time_index.append(n); });
+    for_each_position_index(
+      [&res](uint64_t n) { res._position_index.append(n); });
+    return res;
+}
+
+bool operator==(
+  const compressed_index_columns& lhs, const compressed_index_columns& rhs) {
+    // TODO: improve (used only for testing so corners could be cut)
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    return true;
+}
+
+std::ostream& operator<<(std::ostream& o, const compressed_index_columns& s) {
+    fmt::print(
+      o,
+      "index({}, {}, {})",
+      s._relative_offset_index.size(),
+      s._relative_time_index.size(),
+      s._position_index.size());
+    return o;
+}
 
 uint32_t index_columns::get_relative_offset_index(int ix) const noexcept {
     return _relative_offset_index[ix];
@@ -637,18 +854,14 @@ iobuf index_state_serde::encode(const index_state& st) {
       st.base_timestamp(),
       st.max_timestamp(),
       uint32_t(st.index.size()));
-    const uint32_t vsize = st.index.size();
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(
-          out, st.index.get_relative_offset_index(i));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint32_t>{}.to(
-          out, st.index.get_relative_time_index(i));
-    }
-    for (auto i = 0U; i < vsize; ++i) {
-        reflection::adl<uint64_t>{}.to(out, st.index.get_position_index(i));
-    }
+    st.index.for_each_relative_offset_index([&out](uint64_t n) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    });
+    st.index.for_each_relative_time_index([&out](uint64_t n) {
+        reflection::adl<uint32_t>{}.to(out, static_cast<uint32_t>(n));
+    });
+    st.index.for_each_position_index(
+      [&out](uint64_t n) { reflection::adl<uint64_t>{}.to(out, n); });
     // add back the version and size field
     const auto expected_size = final_size + sizeof(int8_t) + sizeof(uint32_t);
     vassert(

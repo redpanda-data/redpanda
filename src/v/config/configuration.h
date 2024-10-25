@@ -118,6 +118,7 @@ struct configuration final : public config_store {
     bounded_property<uint64_t> compacted_log_segment_size;
     property<std::chrono::milliseconds> readers_cache_eviction_timeout_ms;
     bounded_property<size_t> readers_cache_target_max_size;
+    property<bool> log_segment_index_compression;
 
     bounded_property<std::optional<std::chrono::milliseconds>> log_segment_ms;
     bounded_property<std::chrono::milliseconds> log_segment_ms_min;

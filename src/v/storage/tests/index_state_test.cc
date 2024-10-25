@@ -8,6 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "test_utils/scoped_config.h"
+
+#include <boost/test/tools/old/interface.hpp>
 #define BOOST_TEST_MODULE storage
 
 #include "bytes/bytes.h"
@@ -16,6 +19,21 @@
 #include "storage/index_state.h"
 
 #include <boost/test/unit_test.hpp>
+
+#ifdef NDEBUG
+inline constexpr int num_test_runs = 100;
+inline constexpr int num_samples = 10000;
+#else
+inline constexpr int num_test_runs = 1;
+inline constexpr int num_samples = 1000;
+#endif
+
+static auto make_random_compression_config() {
+    bool use_compression = random_generators::get_int<int>() % 2 == 0;
+    scoped_config cfg;
+    cfg.get("log_segment_index_compression").set_value(use_compression);
+    return cfg;
+}
 
 static storage::index_state make_random_index_state(
   storage::offset_delta_time apply_offset = storage::offset_delta_time::yes) {
@@ -36,14 +54,19 @@ static storage::index_state make_random_index_state(
         }
     }
 
-    const auto n = random_generators::get_int(1, 10000);
+    uint32_t offset = random_generators::get_int<uint32_t>(1, 10000);
+    uint32_t tx = random_generators::get_int<uint32_t>(1, 10000);
+    uint64_t pos = random_generators::get_int<uint64_t>(1, 10000);
+
+    const auto n = random_generators::get_int(1, num_samples);
     for (auto i = 0; i < n; ++i) {
         st.add_entry(
-          random_generators::get_int<uint32_t>(),
-          storage::offset_time_index{
-            model::timestamp{random_generators::get_int<int64_t>()},
-            apply_offset},
-          random_generators::get_int<uint64_t>());
+          offset,
+          storage::offset_time_index{model::timestamp{tx}, apply_offset},
+          pos);
+        offset += random_generators::get_int<uint32_t>(0, 1000);
+        tx += random_generators::get_int<uint32_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(0, 1000);
     }
 
     if (apply_offset == storage::offset_delta_time::no) {
@@ -68,7 +91,8 @@ static void set_version(iobuf& buf, int8_t version) {
 
 // encode/decode using new serde framework
 BOOST_AUTO_TEST_CASE(serde_basic) {
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < num_test_runs; ++i) {
+        auto cfg = make_random_compression_config();
         auto input = make_random_index_state();
         const auto input_copy = input.copy();
         BOOST_REQUIRE_EQUAL(input, input_copy);
@@ -89,7 +113,8 @@ BOOST_AUTO_TEST_CASE(serde_basic) {
 }
 
 BOOST_AUTO_TEST_CASE(serde_no_time_offseting_for_existing_indices) {
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < num_test_runs; ++i) {
+        auto cfg = make_random_compression_config();
         // Create index without time offsetting
         auto input = make_random_index_state(storage::offset_delta_time::no);
         const auto input_copy = input.copy();
@@ -118,7 +143,8 @@ BOOST_AUTO_TEST_CASE(serde_no_time_offseting_for_existing_indices) {
 
 // accept decoding supported old version
 BOOST_AUTO_TEST_CASE(serde_supported_deprecated) {
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < num_test_runs; ++i) {
+        auto cfg = make_random_compression_config();
         auto input = make_random_index_state(storage::offset_delta_time::no);
         const auto output = serde::from_iobuf<storage::index_state>(
           storage::serde_compat::index_state_serde::encode(input));
@@ -133,6 +159,7 @@ BOOST_AUTO_TEST_CASE(serde_supported_deprecated) {
 // reject decoding unsupported old versins
 BOOST_AUTO_TEST_CASE(serde_unsupported_deprecated) {
     auto test = [](int version) {
+        auto cfg = make_random_compression_config();
         auto input = make_random_index_state(storage::offset_delta_time::no);
         auto buf = storage::serde_compat::index_state_serde::encode(input);
         set_version(buf, version);
@@ -154,6 +181,7 @@ BOOST_AUTO_TEST_CASE(serde_unsupported_deprecated) {
 
 // decoding should fail if all the data isn't available
 BOOST_AUTO_TEST_CASE(serde_clipped) {
+    auto cfg = make_random_compression_config();
     auto input = make_random_index_state(storage::offset_delta_time::no);
     auto buf = serde::to_iobuf(std::move(input));
 
@@ -172,6 +200,7 @@ BOOST_AUTO_TEST_CASE(serde_clipped) {
 
 // decoding deprecated format should fail if not all data is available
 BOOST_AUTO_TEST_CASE(serde_deprecated_clipped) {
+    auto cfg = make_random_compression_config();
     auto input = make_random_index_state(storage::offset_delta_time::no);
     auto buf = storage::serde_compat::index_state_serde::encode(input);
 
@@ -190,6 +219,7 @@ BOOST_AUTO_TEST_CASE(serde_deprecated_clipped) {
 }
 
 BOOST_AUTO_TEST_CASE(serde_crc) {
+    auto cfg = make_random_compression_config();
     auto input = make_random_index_state();
     auto good_buf = serde::to_iobuf(std::move(input));
 
@@ -208,6 +238,7 @@ BOOST_AUTO_TEST_CASE(serde_crc) {
 }
 
 BOOST_AUTO_TEST_CASE(serde_deprecated_crc) {
+    auto cfg = make_random_compression_config();
     auto input = make_random_index_state(storage::offset_delta_time::no);
     auto good_buf = storage::serde_compat::index_state_serde::encode(input);
 
@@ -265,6 +296,7 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
     // format. In order to do this the index_state has to be refactored and the
     // columnar part has to be extracted. But the serialized form shouldn't
     // change.
+    auto cfg = make_random_compression_config();
     auto expected_state = storage::index_state::make_empty_index(
       storage::offset_delta_time::yes);
     // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
@@ -355,4 +387,87 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
     auto actual_bytes = bytes_to_iobuf(serde_serialized);
     BOOST_REQUIRE_EQUAL(expected_bytes.size_bytes(), actual_bytes.size_bytes());
     BOOST_REQUIRE(expected_bytes == actual_bytes);
+}
+
+auto make_random_index_columns() {
+    storage::index_columns col;
+    storage::compressed_index_columns zip;
+
+    uint32_t offset = random_generators::get_int<uint32_t>(1, 10000);
+    uint32_t tx = random_generators::get_int<uint32_t>(1, 10000);
+    uint64_t pos = random_generators::get_int<uint64_t>(1, 10000);
+
+    const auto n = random_generators::get_int(1, num_samples);
+    for (auto i = 0; i < n; ++i) {
+        col.add_entry(offset, tx, pos);
+        zip.add_entry(offset, tx, pos);
+        offset += random_generators::get_int<uint32_t>(0, 1000);
+        tx += random_generators::get_int<uint32_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(0, 1000);
+    }
+
+    return std::make_tuple(std::move(col), std::move(zip));
+}
+
+BOOST_AUTO_TEST_CASE(index_columns_AB) {
+    auto [a, b] = make_random_index_columns();
+    BOOST_REQUIRE_EQUAL(a.empty(), b.empty());
+    BOOST_REQUIRE_EQUAL(a.size(), b.size());
+    for (size_t i = 0; i < a.size(); i++) {
+        BOOST_REQUIRE_EQUAL(a.get_position_index(i), b.get_position_index(i));
+        BOOST_REQUIRE_EQUAL(
+          a.get_relative_offset_index(i), b.get_relative_offset_index(i));
+        BOOST_REQUIRE_EQUAL(
+          a.get_relative_time_index(i), b.get_relative_time_index(i));
+    }
+    auto offset_index = a.copy_relative_offset_index();
+    auto time_index = a.copy_relative_time_index();
+    auto pos_index = a.copy_position_index();
+
+    for (auto needle : offset_index) {
+        auto r1 = a.offset_lower_bound(needle);
+        auto r2 = b.offset_lower_bound(needle);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        r1 = a.offset_lower_bound(needle - 1);
+        r2 = b.offset_lower_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != offset_index.back()) {
+            r1 = a.offset_lower_bound(needle + 1);
+            r2 = b.offset_lower_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
+
+    for (auto needle : time_index) {
+        auto r1 = a.time_lower_bound(needle);
+        auto r2 = b.time_lower_bound(needle);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        r1 = a.time_lower_bound(needle - 1);
+        r2 = b.time_lower_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != time_index.back()) {
+            r1 = a.time_lower_bound(needle + 1);
+            r2 = b.time_lower_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
+
+    for (auto needle : pos_index) {
+        auto r1 = a.position_upper_bound(needle - 1);
+        auto r2 = b.position_upper_bound(needle - 1);
+        BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+
+        if (needle != pos_index.back()) {
+            r1 = a.position_upper_bound(needle);
+            r2 = b.position_upper_bound(needle);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+            r1 = a.position_upper_bound(needle + 1);
+            r2 = b.position_upper_bound(needle + 1);
+            BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
+        }
+    }
 }

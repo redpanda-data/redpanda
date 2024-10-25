@@ -91,6 +91,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       200,
       {.min = 0, .max = 10000})
+  , log_segment_index_compression(
+      *this,
+      "log_segment_index_compression",
+      "Enables in-memory compression for log segment indexes.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
   , log_segment_ms(
       *this,
       "log_segment_ms",

@@ -85,6 +85,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/config",
         "//src/v/hashing:crc32c",
         "//src/v/hashing:xx",
         "//src/v/reflection:adl",
@@ -92,6 +93,7 @@ redpanda_cc_library(
         "//src/v/serde:iobuf",
         "//src/v/serde:optional",
         "//src/v/serde:vector",
+        "//src/v/utils:delta_for",
         "//src/v/utils:to_string",
         "@fmt",
     ],
@@ -409,6 +411,7 @@ redpanda_cc_library(
         "//src/v/ssx:sformat",
         "//src/v/strings:string_switch",
         "//src/v/utils:adjustable_semaphore",
+        "//src/v/utils:delta_for",
         "//src/v/utils:directory_walker",
         "//src/v/utils:file_io",
         "//src/v/utils:filtered_lower_bound",
