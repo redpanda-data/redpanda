@@ -724,12 +724,12 @@ ss::future<> controller::start(
     co_await _partition_balancer.start_single(
       _raft0,
       std::ref(_stm),
+      std::ref(_feature_table),
       std::ref(_partition_balancer_state),
       std::ref(_hm_backend),
       std::ref(_partition_allocator),
       std::ref(_tp_frontend),
       std::ref(_members_frontend),
-      config::shard_local_cfg().partition_autobalancing_mode.bind(),
       config::shard_local_cfg()
         .partition_autobalancing_node_availability_timeout_sec.bind(),
       config::shard_local_cfg()
