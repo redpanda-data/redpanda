@@ -43,15 +43,15 @@ schema_element leaf_node(
 }
 
 template<typename... Args>
-indexed_schema_element indexed_group_node(
+schema_element indexed_group_node(
   int32_t index,
   ss::sstring name,
   field_repetition_type rep_type,
   Args... args) {
-    chunked_vector<indexed_schema_element> children;
+    chunked_vector<schema_element> children;
     (children.push_back(std::move(args)), ...);
     return {
-      .index = index,
+      .position = index,
       .type = std::monostate{},
       .repetition_type = rep_type,
       .name = std::move(name),
@@ -59,14 +59,14 @@ indexed_schema_element indexed_group_node(
     };
 }
 
-indexed_schema_element indexed_leaf_node(
+schema_element indexed_leaf_node(
   int32_t index,
   ss::sstring name,
   field_repetition_type rep_type,
   physical_type ptype,
   logical_type ltype = logical_type{}) {
     return {
-      .index = index,
+      .position = index,
       .type = ptype,
       .repetition_type = rep_type,
       .name = std::move(name),
@@ -104,7 +104,7 @@ TEST(Schema, CanBeIndexed) {
               repeated,
               leaf_node("number", optional, byte_array_type(), string_type()),
               leaf_node("type", optional, byte_array_type(), enum_type()))))));
-    auto indexed = index_schema(root);
+    index_schema(root);
     auto expected = indexed_group_node(
       0,
       "schema",
@@ -140,6 +140,7 @@ TEST(Schema, CanBeIndexed) {
                 10, "number", optional, byte_array_type(), string_type()),
               indexed_leaf_node(
                 11, "type", optional, byte_array_type(), enum_type()))))));
-    EXPECT_EQ(indexed, expected);
+    EXPECT_EQ(root, expected)
+      << fmt::format("root={}\nexpected={}", root, expected);
 }
 // NOLINTEND(*magic-number*)

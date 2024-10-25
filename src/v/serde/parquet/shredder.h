@@ -21,7 +21,7 @@ namespace serde::parquet {
 // (for determining list index) and definition level (for
 // determining where the null value in the hierarchy is).
 struct shredded_value {
-    int32_t schema_element_index;
+    int32_t schema_element_position;
     value val;
     uint8_t rep_level;
     uint8_t def_level;
@@ -30,7 +30,7 @@ struct shredded_value {
 // Preform the dremel record shredding algoritm on this struct,
 // emitting shredded_values as they are emitted.
 ss::future<> shred_record(
-  const indexed_schema_element& root,
+  const schema_element& root,
   struct_value record,
   absl::FunctionRef<ss::future<>(shredded_value)> callback);
 
