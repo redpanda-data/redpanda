@@ -18,6 +18,8 @@
 #include "storage/logger.h"
 #include "storage/offset_translator_state.h"
 #include "storage/parser_errc.h"
+#include "storage/segment_set.h"
+#include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -78,6 +80,20 @@ std::vector<model::record_batch> make_ghost_batches(
 }
 
 } // anonymous namespace
+
+template<>
+struct fmt::formatter<storage::log_reader> : fmt::formatter<std::string_view> {
+    auto format(const storage::log_reader& r, auto& ctx) const {
+        auto str = fmt::format(
+          "{{eos: {}, lb: {}, lsd: {}, config: {}}}",
+          r.is_end_of_stream(),
+          r._last_base,
+          r._load_slice_depth,
+          r._config);
+
+        return fmt::formatter<std::string_view>::format(str, ctx);
+    }
+};
 
 namespace storage {
 using records_t = ss::circular_buffer<model::record_batch>;
@@ -285,25 +301,13 @@ log_reader::log_reader(
   probe& probe,
   ss::lw_shared_ptr<const storage::offset_translator_state> tr) noexcept
   : _lease(std::move(l))
-  , _iterator(_lease->range.begin())
-  , _config(config)
-  , _expected_next(
-      _config.fill_gaps
-        ? std::make_optional<model::offset>(_config.start_offset)
-        : std::nullopt)
+  , _iterator({})                // overwritten in reset() below
+  , _config(empty_reader_config) // overwritten in reset() below
   , _probe(probe)
   , _translator(std::move(tr)) {
-    if (config.abort_source) {
-        auto op_sub = config.abort_source.value().get().subscribe(
-          [this]() noexcept { set_end_of_stream(); });
-
-        if (op_sub) {
-            _as_sub = std::move(*op_sub);
-        } else {
-            // already aborted
-            set_end_of_stream();
-        }
-    }
+    // we lean on reset_config for most of the initialization as much as so that
+    // it is shared with the reset path (which occurs on reader cache hit).
+    reset(config, iterator_pair{_lease->range.begin()}, false);
 
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
@@ -394,16 +398,11 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             co_await _iterator.close();
             co_return log_reader::storage_t{};
         }
-        if (_last_base == _config.start_offset) {
-            set_end_of_stream();
-            co_await _iterator.close();
-            co_return log_reader::storage_t{};
-        }
-        /**
-         * We do not want to close the reader if we stopped because requested
-         * range was read. This way we make it possible to reset configuration
-         * and reuse underlying file input stream.
-         */
+
+        // We do not want to close the reader if we stopped because requested
+        // range was read. This way we make it possible to reset configuration
+        // and reuse underlying file input stream.
+
         if (
           _config.start_offset > _config.max_offset
           || _config.bytes_consumed > _config.max_bytes
@@ -411,6 +410,13 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             set_end_of_stream();
             co_return log_reader::storage_t{};
         }
+
+        if (_last_base == _config.start_offset) {
+            set_end_of_stream();
+            co_await _iterator.close();
+            co_return log_reader::storage_t{};
+        }
+
         maybe_log_load_slice_depth_warning("reading more");
         _last_base = _config.start_offset;
         ss::future<> fut = find_next_valid_iterator();
@@ -515,6 +521,47 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         std::rethrow_exception(e);
     }
 }
+
+std::optional<log_reader::private_flags> log_reader::get_flags() const {
+    return private_flags{
+      .is_reusable = is_reusable(),
+      // log_reader objects which are cached are contained inside a reader_cache
+      // entry object which overrides this to return true (if we had a cache
+      // hit)
+      .was_cached = _was_cached};
+};
+
+void log_reader::reset_config(log_reader_config cfg) {
+    reset(
+      cfg, {_iterator.current_reader_seg, std::move(_iterator.reader)}, true);
+};
+
+void log_reader::reset(
+  log_reader_config cfg, iterator_pair itr, bool cache_hit) {
+    _config = cfg;
+    _iterator = std::move(itr);
+    _expected_next = _config.fill_gaps
+                       ? std::make_optional(_config.start_offset)
+                       : std::nullopt;
+
+    _last_base = {};
+
+    // indicates that this reader was reset because it will be re-used as a
+    // result of a reader cache hit
+    _was_cached = cache_hit;
+
+    if (_config.abort_source) {
+        auto op_sub = _config.abort_source.value().get().subscribe(
+          [this]() noexcept { set_end_of_stream(); });
+
+        if (op_sub) {
+            _as_sub = std::move(*op_sub);
+        } else {
+            // already aborted
+            set_end_of_stream();
+        }
+    }
+};
 
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
     if (s.empty()) {

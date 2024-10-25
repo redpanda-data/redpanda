@@ -449,6 +449,11 @@ struct log_reader_config {
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };
 
+// Empty, invalid reader config which is sometimes useful as a placeholder
+// since log_reader_config doesn't have a default constructor.
+static const log_reader_config empty_reader_config{
+  {}, {}, ss::default_priority_class()};
+
 struct gc_config {
     gc_config(model::timestamp upper, std::optional<size_t> max_bytes_in_log)
       : eviction_time(upper)
