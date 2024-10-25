@@ -46,12 +46,12 @@ public:
     template<typename... Args>
     controller_stm(
       limiter_configuration limiter_conf,
-      const ss::sharded<features::feature_table>& feature_table,
+      ss::sharded<features::feature_table>& feature_table,
       config::binding<std::chrono::seconds>&& snapshot_max_age,
       Args&&... stm_args)
       : mux_state_machine(std::forward<Args>(stm_args)...)
       , _limiter(std::move(limiter_conf))
-      , _feature_table(feature_table.local())
+      , _feature_table(feature_table)
       , _snapshot_max_age(std::move(snapshot_max_age))
       , _snapshot_debounce_timer([this] { snapshot_timer_callback(); }) {}
 
@@ -91,7 +91,7 @@ private:
 
 private:
     controller_log_limiter _limiter;
-    const features::feature_table& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     config::binding<std::chrono::seconds> _snapshot_max_age;
 
     metrics_reporter_cluster_info _metrics_reporter_cluster_info;

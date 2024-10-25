@@ -142,9 +142,24 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
          * (ntp_config::default_remote_delete) on the construction of
          * topic_properties(), so there is no need to overwrite it here.
          */
-        if (!tp.cfg.properties.shadow_indexing.has_value()) {
-            tp.cfg.properties.shadow_indexing
-              = _metadata_cache.get_default_shadow_indexing_mode();
+        const auto& defaults = _metadata_cache.get_default_properties();
+        auto& si = tp.cfg.properties.shadow_indexing;
+        if (!si.has_value()) {
+            si = defaults.shadow_indexing.value_or(
+              _metadata_cache.get_default_shadow_indexing_mode());
+        }
+
+        const bool requires_licence = si.value()
+                                        != model::shadow_indexing_mode::disabled
+                                      || tp.cfg.properties.recovery.value_or(
+                                        defaults.recovery.value_or(true));
+        if (requires_licence) {
+            if (_features.local().should_sanction()) {
+                // TODO (ben): probably best to partition the requests and
+                // only fail the topics that have SI enabled
+                return ss::make_ready_future<std::vector<topic_result>>(
+                  make_error_topic_results(topics, errc::feature_disabled));
+            }
         }
     }
 
@@ -216,6 +231,24 @@ cluster::errc map_errc(std::error_code ec) {
     return errc::replication_error;
 }
 
+namespace {
+bool has_enterprise(const topic_properties_update& update) {
+    constexpr auto is_true = [](const auto& v) { return v == true; };
+    constexpr auto is_not_disabled = [](const auto& v) {
+        return v != model::shadow_indexing_mode::disabled;
+    };
+    constexpr auto becomes_enterprise = [](const auto& v, auto pred) {
+        return v.op == incremental_update_operation::set && pred(v.value);
+    };
+    const auto& props = update.properties;
+    return becomes_enterprise(props.remote_read, is_true)
+           || becomes_enterprise(props.remote_write, is_true)
+           || becomes_enterprise(props.remote_delete, is_true)
+           || becomes_enterprise(props.get_shadow_indexing(), is_not_disabled);
+}
+
+} // namespace
+
 ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
   topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
@@ -240,6 +273,12 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
 
     // current node is a leader, just replicate
     if (cluster_leader == _self) {
+        if (std::ranges::any_of(updates, &has_enterprise)) {
+            if (_features.local().should_sanction()) {
+                co_return make_error_topic_results(
+                  updates, errc::feature_disabled);
+            }
+        }
         // replicate empty batch to make sure leader local state is up to date.
         auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {

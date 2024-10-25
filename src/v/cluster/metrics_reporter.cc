@@ -25,6 +25,7 @@
 #include "config/configuration.h"
 #include "config/validators.h"
 #include "features/enterprise_features.h"
+#include "features/feature_table.h"
 #include "hashing/secure.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -312,10 +313,14 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     auto& first_cfg = batches.front();
 
+    _cluster_info.creation_timestamp = first_cfg.header().first_timestamp;
+    co_await _feature_table.invoke_on_all([&](features::feature_table& ft) {
+        ft.set_builtin_trial_license(_cluster_info.creation_timestamp);
+    });
+
     auto data_bytes = iobuf_to_bytes(first_cfg.data());
     hash_sha256 sha256;
     sha256.update(data_bytes);
-    _cluster_info.creation_timestamp = first_cfg.header().first_timestamp;
     // use timestamps of first two batches in raft-0 log.
     for (int i = 0; i < 2; ++i) {
         sha256.update(iobuf_to_bytes(
