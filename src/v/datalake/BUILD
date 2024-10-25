@@ -243,3 +243,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema_avro",
+    srcs = [
+        "schema_avro.cc",
+    ],
+    hdrs = [
+        "schema_avro.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        "//src/v/iceberg:datatypes",
+        "@avro",
+        "@fmt",
+        "@seastar",
+    ],
+)

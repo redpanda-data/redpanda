@@ -132,6 +132,7 @@ struct nested_field {
     nested_field_ptr copy() const;
 
     friend bool operator==(const nested_field& lhs, const nested_field& rhs);
+    friend std::ostream& operator<<(std::ostream&, const nested_field&);
 };
 
 } // namespace iceberg

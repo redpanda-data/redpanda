@@ -9,6 +9,7 @@
 
 #include "iceberg/datatypes.h"
 
+#include <ranges>
 #include <variant>
 
 namespace iceberg {
@@ -172,18 +173,38 @@ std::ostream& operator<<(std::ostream& o, const binary_type&) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const struct_type&) {
-    o << "struct";
+std::ostream& operator<<(std::ostream& o, const struct_type& st) {
+    fmt::print(o, "struct{{ fields: {{");
+    auto it = st.fields.begin();
+    if (!st.fields.empty()) {
+        fmt::print(o, "{}", **it);
+    }
+    ++it;
+    for (; it != st.fields.end(); ++it) {
+        fmt::print(o, ", {}", **it);
+    }
+    fmt::print(o, "}}");
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const list_type&) {
-    o << "list";
+std::ostream& operator<<(std::ostream& o, const list_type& lt) {
+    fmt::print(o, "list<{}>", *lt.element_field);
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const map_type&) {
-    o << "map";
+std::ostream& operator<<(std::ostream& o, const map_type& mt) {
+    fmt::print(o, "map<{},{}>", *mt.key_field, *mt.value_field);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const nested_field& nf) {
+    fmt::print(
+      o,
+      "id: {}, name: {}, required: {}, type: {}",
+      nf.id,
+      nf.name,
+      nf.required,
+      nf.type);
     return o;
 }
 

@@ -142,3 +142,18 @@ rp_test(
   LABELS storage
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  USE_CWD
+  BINARY_NAME datalake_avro
+  SOURCES 
+    datalake_avro_tests.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake_writer
+    v::iceberg_test_utils
+  LABELS datalake
+  ARGS "-- -c 1"
+)
