@@ -5,6 +5,15 @@ Due to Redpanda's usage of Seastar off the shelf preexisting parquet libraries d
 our strict requirements, imposed by our userland task scheduler and virtual memory avoiding 
 allocator.
 
+### Record Shredding
+
+Parquet shreds records into a columnar format using the [same algorithm][twitter-parquet] as published in the [Dremel
+paper][dremel]. A very helpful step by step explainer of the algorithm can be found [here][random-useful-wiki].
+Our implmentation of this can be found in `shredder.cc`.
+
+[random-useful-wiki]: https://github.com/julienledem/redelm/wiki/The-striping-and-assembly-algorithms-from-the-Dremel-paper#step-by-step
+[twitter-parquet]: https://blog.x.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet
+[dremel]: https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/36632.pdf
 
 ### Metadata
 
