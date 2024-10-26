@@ -23,10 +23,19 @@ namespace serde::parquet {
 
 namespace {
 
+// A struct to track all the level related information we need during the tree
+// shredding traversal.
 struct traversal_levels {
-    uint8_t repetition_depth;
-    uint8_t repetition_level;
-    uint8_t definition_level;
+    uint8_t repetition_level = 0;
+    uint8_t definition_level = 0;
+    // repetition_depth is the current number of ancestor schema nodes in the
+    // schema tree that are set to be repeated. We track this seperately because
+    // repeated is only set for the additional values in the repeated node, so
+    // the first time we repeat we need to use the current repetition_level so
+    // that assembly knows at which level the repetition is starting at, but
+    // additional repetitions need to use the current repetition_depth as the
+    // repetition_level.
+    uint8_t repetition_depth = 0;
 };
 
 ss::future<> process_required_struct(
