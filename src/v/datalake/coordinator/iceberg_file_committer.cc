@@ -112,8 +112,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
 
     // TODO: update the table schema if it differs from the input files!
 
-    iceberg::transaction txn(io_, std::move(table_res.value()));
-    auto icb_append_res = co_await txn.merge_append(std::move(icb_files));
+    iceberg::transaction txn(std::move(table_res.value()));
+    auto icb_append_res = co_await txn.merge_append(io_, std::move(icb_files));
     if (icb_append_res.has_error()) {
         co_return log_and_convert_action_errc(
           icb_append_res.error(),

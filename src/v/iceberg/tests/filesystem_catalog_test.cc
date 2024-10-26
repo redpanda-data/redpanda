@@ -98,7 +98,7 @@ TEST_F(FileSystemCatalogTest, TestCommit) {
       = catalog.create_table(id, schema{}, partition_spec{}).get();
     ASSERT_FALSE(create_res.has_error());
     manifest_io manifest_io(remote(), bucket_name);
-    transaction txn(manifest_io, std::move(create_res.value()));
+    transaction txn(std::move(create_res.value()));
     auto set_schema_res = txn
                             .set_schema(schema{
                               .schema_struct = std::get<struct_type>(
@@ -137,7 +137,7 @@ TEST_F(FileSystemCatalogTest, TestCommit) {
     EXPECT_EQ(1, load_res.value().schemas.back().schema_id());
 
     // Now try committing a transaction to the wrong table.
-    transaction another_txn(manifest_io, std::move(create_res.value()));
+    transaction another_txn(std::move(create_res.value()));
     set_schema_res = another_txn
                        .set_schema(schema{
                          .schema_struct = std::get<struct_type>(

@@ -447,9 +447,9 @@ TEST_F(RestCatalogTest, CommitTxnHappyPath) {
       .partition = iceberg::partition_key{.val = std::move(partition_key_val)},
     });
 
-    iceberg::transaction txn(io, std::move(table_md));
+    iceberg::transaction txn(std::move(table_md));
 
-    auto outcome = txn.merge_append(std::move(files)).get();
+    auto outcome = txn.merge_append(io, std::move(files)).get();
     ASSERT_FALSE(outcome.has_error());
     auto result = catalog
                     .commit_txn(

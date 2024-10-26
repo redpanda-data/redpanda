@@ -68,9 +68,9 @@ ss::future<transaction::txn_outcome> transaction::set_schema(schema s) {
 }
 
 ss::future<transaction::txn_outcome>
-transaction::merge_append(chunked_vector<data_file> files) {
+transaction::merge_append(manifest_io& io, chunked_vector<data_file> files) {
     auto a = std::make_unique<merge_append_action>(
-      io_, table_, std::move(files));
+      io, table_, std::move(files));
     co_return co_await apply(std::move(a));
 }
 
