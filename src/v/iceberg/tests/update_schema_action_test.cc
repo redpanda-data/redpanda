@@ -199,3 +199,18 @@ TEST_F(UpdateSchemaActionTest, TestInvalidSchema) {
     ASSERT_TRUE(res.has_error());
     ASSERT_TRUE(tx.error().has_value());
 }
+
+TEST_F(UpdateSchemaActionTest, TestAssignFieldIds) {
+    transaction tx(create_table());
+    auto new_schema = make_schema(12345, 10);
+    auto new_schema_len = new_schema.schema_struct.fields.size();
+    auto res = tx.set_schema(std::move(new_schema)).get();
+    ASSERT_FALSE(res.has_error());
+
+    const auto& add_update = std::get<add_schema>(tx.updates().updates[0]);
+    ASSERT_EQ(add_update.schema.schema_struct.fields.size(), new_schema_len);
+
+    auto highest_field = add_update.schema.highest_field_id();
+    ASSERT_TRUE(highest_field.has_value());
+    ASSERT_EQ(27, highest_field.value()());
+}
