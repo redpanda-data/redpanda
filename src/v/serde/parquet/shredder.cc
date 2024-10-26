@@ -44,7 +44,7 @@ ss::future<> shred_record(
   traversal_levels levels,
   absl::FunctionRef<ss::future<>(shredded_value)> cb);
 
-ss::future<> process_required_struct(
+ss::future<> process_required_group_value(
   // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   traversal_levels levels,
@@ -68,7 +68,7 @@ ss::future<> process_required_struct(
     }
 }
 
-ss::future<> for_each_required_child(
+ss::future<> process_required_group_node(
   value val,
   const schema_element& element,
   traversal_levels levels,
@@ -76,7 +76,7 @@ ss::future<> for_each_required_child(
     return ss::visit(
       std::move(val),
       [&element, levels, cb](struct_value& fields) -> ss::future<> {
-          return process_required_struct(
+          return process_required_group_value(
             element, levels, std::move(fields), cb);
       },
       [&element](null_value&) -> ss::future<> {
@@ -97,7 +97,7 @@ ss::future<> for_each_required_child(
       });
 }
 
-ss::future<> process_optional_struct(
+ss::future<> process_optional_group_value(
   const schema_element& element,
   traversal_levels levels,
   struct_value fields,
@@ -105,10 +105,10 @@ ss::future<> process_optional_struct(
     // Increment the definition level as this node in the hierarchy is
     // defined.
     ++levels.definition_level;
-    return process_required_struct(element, levels, std::move(fields), cb);
+    return process_required_group_value(element, levels, std::move(fields), cb);
 }
 
-ss::future<> process_null_optional(
+ss::future<> process_optional_null_value(
   // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   traversal_levels levels,
@@ -120,7 +120,7 @@ ss::future<> process_null_optional(
     }
 }
 
-ss::future<> for_each_optional_child(
+ss::future<> process_optional_group_node(
   value val,
   const schema_element& element,
   traversal_levels levels,
@@ -128,11 +128,11 @@ ss::future<> for_each_optional_child(
     return ss::visit(
       std::move(val),
       [&element, levels, cb](struct_value& fields) -> ss::future<> {
-          return process_optional_struct(
+          return process_optional_group_value(
             element, levels, std::move(fields), cb);
       },
       [&element, levels, cb](null_value&) -> ss::future<> {
-          return process_null_optional(element, levels, cb);
+          return process_optional_null_value(element, levels, cb);
       },
       [&element](repeated_value&) -> ss::future<> {
           return ss::make_exception_future(std::runtime_error(fmt::format(
@@ -155,7 +155,7 @@ ss::future<> process_repeated(
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     // Empty lists are equivalent to a `null` value.
     if (list.empty()) {
-        co_return co_await process_null_optional(element, levels, cb);
+        co_return co_await process_optional_null_value(element, levels, cb);
     }
     traversal_levels child_levels = levels;
     // We are marking that there is a higher depth here we
@@ -163,21 +163,22 @@ ss::future<> process_repeated(
     // *when* we are repeating (so not for the first element).
     ++child_levels.repetition_depth;
     for (auto& member : list) {
-        co_await for_each_optional_child(
+        co_await process_optional_group_node(
           std::move(member.element), element, child_levels, cb);
         child_levels.repetition_level = child_levels.repetition_depth;
     }
 }
 
-ss::future<> for_each_repeated_child(
+ss::future<> process_repeated_group_node(
   value val,
   const schema_element& element,
   traversal_levels levels,
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
-      [&element, levels, cb](null_value& v) {
-          return for_each_optional_child(v, element, levels, cb);
+      [&element, levels, cb](null_value&) {
+          // empty lists and nulls are treated the same for repeated
+          return process_repeated(element, levels, repeated_value(), cb);
       },
       [&element, levels, cb](repeated_value& list) {
           return process_repeated(element, levels, std::move(list), cb);
@@ -195,18 +196,18 @@ ss::future<> for_each_repeated_child(
       });
 }
 
-ss::future<> for_each_child(
+ss::future<> process_group_node(
   value val,
   const schema_element& element,
   traversal_levels levels,
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     switch (element.repetition_type) {
     case field_repetition_type::required:
-        return for_each_required_child(std::move(val), element, levels, cb);
+        return process_required_group_node(std::move(val), element, levels, cb);
     case field_repetition_type::optional:
-        return for_each_optional_child(std::move(val), element, levels, cb);
+        return process_optional_group_node(std::move(val), element, levels, cb);
     case field_repetition_type::repeated:
-        return for_each_repeated_child(std::move(val), element, levels, cb);
+        return process_repeated_group_node(std::move(val), element, levels, cb);
     }
 }
 
@@ -283,7 +284,7 @@ ss::future<> shred_record(
     if (element.is_leaf()) {
         return emit_leaf(element, std::move(val), levels, cb);
     }
-    return for_each_child(std::move(val), element, levels, cb);
+    return process_group_node(std::move(val), element, levels, cb);
 }
 
 } // namespace
