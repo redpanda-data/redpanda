@@ -81,6 +81,27 @@ redpanda_test_cc_library(
 )
 
 redpanda_cc_gtest(
+    name = "catalog_schema_manager_test",
+    timeout = "short",
+    srcs = [
+        "catalog_schema_manager_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/iceberg:table_identifier",
+        "//src/v/iceberg/tests:test_schemas",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "datalake_protobuf_test",
     timeout = "short",
     srcs = [

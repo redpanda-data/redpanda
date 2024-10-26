@@ -62,6 +62,23 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME catalog_schema_manager
+  SOURCES catalog_schema_manager_test.cc
+  LIBRARIES
+    Boost::iostreams
+    v::cloud_io_utils
+    v::datalake_writer
+    v::iceberg
+    v::iceberg_test_utils
+    v::gtest_main
+    v::s3_imposter
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+rp_test(
   FIXTURE_TEST
   GTEST
   BINARY_NAME translator_test
