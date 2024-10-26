@@ -38,13 +38,18 @@ struct traversal_levels {
     uint8_t repetition_depth = 0;
 };
 
+ss::future<> shred_record(
+  const schema_element& element,
+  value val,
+  traversal_levels levels,
+  absl::FunctionRef<ss::future<>(shredded_value)> cb);
+
 ss::future<> process_required_struct(
   // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   traversal_levels levels,
   struct_value fields,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     if (fields.size() != element.children.size()) {
         throw std::runtime_error(fmt::format(
           "schema/struct mismatch, schema had {} children, struct had {} "
@@ -59,7 +64,7 @@ ss::future<> process_required_struct(
     for (size_t i = 0; i < element.children.size(); ++i) {
         struct_field& member = fields[i];
         const schema_element& child = element.children[i];
-        co_await cb(child, levels, std::move(member.field));
+        co_await shred_record(child, std::move(member.field), levels, cb);
     }
 }
 
@@ -67,8 +72,7 @@ ss::future<> for_each_required_child(
   value val,
   const schema_element& element,
   traversal_levels levels,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
       [&element, levels, cb](struct_value& fields) -> ss::future<> {
@@ -97,8 +101,7 @@ ss::future<> process_optional_struct(
   const schema_element& element,
   traversal_levels levels,
   struct_value fields,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     // Increment the definition level as this node in the hierarchy is
     // defined.
     ++levels.definition_level;
@@ -109,12 +112,11 @@ ss::future<> process_null_optional(
   // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   traversal_levels levels,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     // If the value is `null`, we use the parent definition_level so that
     // assembly can determine where the `null` started.
     for (const auto& child : element.children) {
-        co_await cb(child, levels, null_value());
+        co_await shred_record(child, null_value(), levels, cb);
     }
 }
 
@@ -122,8 +124,7 @@ ss::future<> for_each_optional_child(
   value val,
   const schema_element& element,
   traversal_levels levels,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
       [&element, levels, cb](struct_value& fields) -> ss::future<> {
@@ -151,12 +152,10 @@ ss::future<> process_repeated(
   const schema_element& element,
   traversal_levels levels,
   repeated_value list,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     // Empty lists are equivalent to a `null` value.
     if (list.empty()) {
-        co_return co_await for_each_optional_child(
-          null_value(), element, levels, cb);
+        co_return co_await process_null_optional(element, levels, cb);
     }
     traversal_levels child_levels = levels;
     // We are marking that there is a higher depth here we
@@ -174,8 +173,7 @@ ss::future<> for_each_repeated_child(
   value val,
   const schema_element& element,
   traversal_levels levels,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
       [&element, levels, cb](null_value& v) {
@@ -201,8 +199,7 @@ ss::future<> for_each_child(
   value val,
   const schema_element& element,
   traversal_levels levels,
-  absl::FunctionRef<
-    ss::future<>(const schema_element&, traversal_levels, value)> cb) {
+  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     switch (element.repetition_type) {
     case field_repetition_type::required:
         return for_each_required_child(std::move(val), element, levels, cb);
@@ -279,21 +276,14 @@ ss::future<> emit_leaf(
 }
 
 ss::future<> shred_record(
-  // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   value val,
   traversal_levels levels,
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     if (element.is_leaf()) {
-        co_return co_await emit_leaf(element, std::move(val), levels, cb);
+        return emit_leaf(element, std::move(val), levels, cb);
     }
-    auto callback =
-      [cb](const schema_element& element, traversal_levels levels, value val) {
-          return shred_record(element, std::move(val), levels, cb);
-      };
-    // NOTE: This takes an absl::FunctionRef, so make sure to keep the callback
-    // alive on the stack and use a coroutine for this method.
-    co_await for_each_child(std::move(val), element, levels, callback);
+    return for_each_child(std::move(val), element, levels, cb);
 }
 
 } // namespace
