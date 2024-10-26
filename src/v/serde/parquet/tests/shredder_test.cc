@@ -12,13 +12,13 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "serde/parquet/shredder.h"
+#include "serde/parquet/value.h"
 
 #include <gtest/gtest.h>
 
 #include <variant>
 
-using namespace serde::parquet;
-
+namespace serde::parquet {
 namespace {
 template<typename... Args>
 schema_element
@@ -47,9 +47,9 @@ schema_element leaf_node(
 }
 
 template<typename... Args>
-struct_value record(Args... field) {
-    chunked_vector<struct_field> fields;
-    (fields.push_back(struct_field{std::move(field)}), ...);
+group_value record(Args... field) {
+    chunked_vector<group_member> fields;
+    (fields.push_back(group_member{std::move(field)}), ...);
     return fields;
 }
 
@@ -91,6 +91,9 @@ MATCHER_P3(IsVal, val, r, d, "") {
 }
 
 } // namespace
+} // namespace serde::parquet
+
+using namespace serde::parquet;
 
 // NOLINTNEXTLINE(*internal-linkage*)
 void PrintTo(
@@ -145,7 +148,7 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
           field_repetition_type::optional,
           byte_array_type{},
           string_type{})));
-    struct_value r1 = record(
+    group_value r1 = record(
       /*DocId*/ int64_value(10),
       /*Links*/
       record(
@@ -181,7 +184,7 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
               string_value(iobuf::from("gb")))),
           /*Url*/
           null_value())));
-    struct_value r2 = record(
+    group_value r2 = record(
       /*DocId*/ int64_value(20),
       /*Links*/
       record(
@@ -237,7 +240,7 @@ TEST(RecordShredding, ListOfStrings) {
       "ExampleList",
       field_repetition_type::required,
       leaf_node("list", field_repetition_type::repeated, byte_array_type{}));
-    struct_value r = record(list(
+    group_value r = record(list(
       string_value(iobuf::from("a")),
       string_value(iobuf::from("b")),
       string_value(iobuf::from("c"))));
@@ -260,7 +263,7 @@ TEST(RecordShredding, LogicalMap) {
         leaf_node("key", field_repetition_type::required, byte_array_type()),
         leaf_node(
           "value", field_repetition_type::optional, byte_array_type())));
-    struct_value r = record(list(
+    group_value r = record(list(
       record(
         string_value(iobuf::from("AL")), string_value(iobuf::from("Alabama"))),
       record(
@@ -286,10 +289,10 @@ TEST(RecordShredding, DefinitionLevels) {
           "b",
           field_repetition_type::optional,
           leaf_node("c", field_repetition_type::optional, i32_type()))));
-    struct_value r1 = record(record(record(int32_value(42))));
-    struct_value r2 = record(record(record(null_value())));
-    struct_value r3 = record(record(null_value()));
-    struct_value r4 = record(null_value());
+    group_value r1 = record(record(record(int32_value(42))));
+    group_value r2 = record(record(record(null_value())));
+    group_value r3 = record(record(null_value()));
+    group_value r4 = record(null_value());
     index_schema(schema);
     value_collector collector(schema);
     shred_record(schema, std::move(r1), collector).get();
@@ -314,7 +317,7 @@ TEST(RecordShredding, RepetitionLevels) {
         field_repetition_type::repeated,
         leaf_node(
           "level2", field_repetition_type::repeated, byte_array_type())));
-    struct_value r1 = record(list(
+    group_value r1 = record(list(
       record(list(
         string_value(iobuf::from("a")),
         string_value(iobuf::from("b")),
@@ -324,7 +327,7 @@ TEST(RecordShredding, RepetitionLevels) {
         string_value(iobuf::from("e")),
         string_value(iobuf::from("f")),
         string_value(iobuf::from("g"))))));
-    struct_value r2 = record(list(
+    group_value r2 = record(list(
       record(list(string_value(iobuf::from("h")))),
       record(
         list(string_value(iobuf::from("i")), string_value(iobuf::from("j"))))));
@@ -374,7 +377,7 @@ TEST(RecordShredding, AddressBookExample) {
           field_repetition_type::optional,
           byte_array_type(),
           string_type())));
-    struct_value r1 = record(
+    group_value r1 = record(
       string_value(iobuf::from("Julien Le Dem")),
       list(
         string_value(iobuf::from("555 123 4567")),
@@ -384,7 +387,7 @@ TEST(RecordShredding, AddressBookExample) {
           string_value(iobuf::from("Dmitriy Ryaboy")),
           string_value(iobuf::from("555 987 6543"))),
         record(string_value(iobuf::from("Chris Anizczyk")), null_value())));
-    struct_value r2 = record(
+    group_value r2 = record(
       string_value(iobuf::from("A. Nonymous")), list(), list());
     index_schema(schema);
     value_collector collector(schema);

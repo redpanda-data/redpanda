@@ -65,7 +65,7 @@ auto fmt::formatter<serde::parquet::value>::format(
       [&ctx](const fixed_byte_array_value& v) {
           return fmt::format_to(ctx.out(), "{}", iobuf_to_base64(v.val));
       },
-      [&ctx](const struct_value& v) {
+      [&ctx](const group_value& v) {
           return fmt::format_to(ctx.out(), "({})", fmt::join(v, ", "));
       },
       [&ctx](const repeated_value& v) {
@@ -73,8 +73,8 @@ auto fmt::formatter<serde::parquet::value>::format(
       });
 }
 
-auto fmt::formatter<serde::parquet::struct_field>::format(
-  const serde::parquet::struct_field& f,
+auto fmt::formatter<serde::parquet::group_member>::format(
+  const serde::parquet::group_member& f,
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "{}", f.field);
 }

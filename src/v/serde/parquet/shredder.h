@@ -31,7 +31,7 @@ struct shredded_value {
 // emitting shredded_values as they are emitted.
 ss::future<> shred_record(
   const schema_element& root,
-  struct_value record,
+  group_value record,
   absl::FunctionRef<ss::future<>(shredded_value)> callback);
 
 } // namespace serde::parquet

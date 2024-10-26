@@ -48,7 +48,7 @@ ss::future<> process_required_group_value(
   // NOLINTNEXTLINE(*reference*)
   const schema_element& element,
   traversal_levels levels,
-  struct_value fields,
+  group_value fields,
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     if (fields.size() != element.children.size()) {
         throw std::runtime_error(fmt::format(
@@ -62,7 +62,7 @@ ss::future<> process_required_group_value(
     // to be there so no additional bits need to be tracked (they'd be
     // wasteful).
     for (size_t i = 0; i < element.children.size(); ++i) {
-        struct_field& member = fields[i];
+        group_member& member = fields[i];
         const schema_element& child = element.children[i];
         co_await shred_record(child, std::move(member.field), levels, cb);
     }
@@ -75,7 +75,7 @@ ss::future<> process_required_group_node(
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
-      [&element, levels, cb](struct_value& fields) -> ss::future<> {
+      [&element, levels, cb](group_value& fields) -> ss::future<> {
           return process_required_group_value(
             element, levels, std::move(fields), cb);
       },
@@ -100,7 +100,7 @@ ss::future<> process_required_group_node(
 ss::future<> process_optional_group_value(
   const schema_element& element,
   traversal_levels levels,
-  struct_value fields,
+  group_value fields,
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     // Increment the definition level as this node in the hierarchy is
     // defined.
@@ -127,7 +127,7 @@ ss::future<> process_optional_group_node(
   absl::FunctionRef<ss::future<>(shredded_value)> cb) {
     return ss::visit(
       std::move(val),
-      [&element, levels, cb](struct_value& fields) -> ss::future<> {
+      [&element, levels, cb](group_value& fields) -> ss::future<> {
           return process_optional_group_value(
             element, levels, std::move(fields), cb);
       },
@@ -183,7 +183,7 @@ ss::future<> process_repeated_group_node(
       [&element, levels, cb](repeated_value& list) {
           return process_repeated(element, levels, std::move(list), cb);
       },
-      [&element](struct_value&) {
+      [&element](group_value&) {
           return ss::make_exception_future(std::runtime_error(fmt::format(
             "unexpected struct value for repeated schema element {}",
             element.name)));
@@ -249,7 +249,7 @@ ss::future<> emit_leaf(
       [cb, &element, levels](repeated_value& list) {
           return process_repeated_leaf(element, std::move(list), levels, cb);
       },
-      [&element](struct_value&) {
+      [&element](group_value&) {
           return ss::make_exception_future(std::runtime_error(fmt::format(
             "unexpected struct value for leaf schema element {}",
             element.name)));
@@ -291,7 +291,7 @@ ss::future<> shred_record(
 
 ss::future<> shred_record(
   const schema_element& root,
-  struct_value record,
+  group_value record,
   absl::FunctionRef<ss::future<>(shredded_value)> callback) {
     if (root.repetition_type != field_repetition_type::required) {
         throw std::runtime_error("schema root nodes must be required");

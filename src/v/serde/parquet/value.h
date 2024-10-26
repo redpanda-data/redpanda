@@ -77,18 +77,19 @@ struct fixed_byte_array_value {
 };
 
 struct repeated_element;
-struct struct_field;
+struct group_member;
 
-// The struct field ordering here matters - it must be the same as specified in
+// The group member ordering here matters - it must be the same as specified in
 // the schema.
 //
-// This maps to any group node or non-leaf element in a schema.
-using struct_value = chunked_vector<struct_field>;
+// This maps to any "group node" (protobuf v2 naming) or non-leaf element in a
+// schema.
+using group_value = chunked_vector<group_member>;
 
 // Repeated values are what should wrap any repeated value in the schema,
-// it does *not* directly encode a logical list type value. See the parquet
-// spec on logical types for more information about how translate logical lists
-// into a parquet schema.
+// it does *not* directly encode a logical list type value (this is the same as
+// protocol buffer semantics). See the parquet spec on logical types for more
+// information about how translate logical lists into a parquet schema.
 using repeated_value = chunked_vector<repeated_element>;
 
 // Parquet proper actually supports a lot more types than this, but we only need
@@ -108,10 +109,10 @@ using value = std::variant<
   uuid_value,
   byte_array_value,
   fixed_byte_array_value,
-  struct_value,
+  group_value,
   repeated_value>;
 
-struct struct_field {
+struct group_member {
     value field;
 };
 
@@ -129,9 +130,9 @@ struct fmt::formatter<serde::parquet::value>
 };
 
 template<>
-struct fmt::formatter<serde::parquet::struct_field>
+struct fmt::formatter<serde::parquet::group_member>
   : fmt::formatter<std::string_view> {
-    auto format(const serde::parquet::struct_field&, fmt::format_context& ctx)
+    auto format(const serde::parquet::group_member&, fmt::format_context& ctx)
       const -> decltype(ctx.out());
 };
 
