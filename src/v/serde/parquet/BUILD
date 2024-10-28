@@ -96,6 +96,7 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
+        "@boost//:range",
         "@seastar",
     ],
 )

@@ -29,6 +29,10 @@ struct shredded_value {
 
 // Preform the dremel record shredding algoritm on this struct,
 // emitting shredded_values as they are emitted.
+//
+// NOTE: the caller is responsible for ensuring that the schema
+// element and the callback both live until the returned future
+// completes.
 ss::future<> shred_record(
   const schema_element& root,
   group_value record,

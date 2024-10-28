@@ -13,11 +13,17 @@
 
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
-#include "src/v/serde/parquet/schema.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <boost/range/irange.hpp>
+
+#include <ranges>
 #include <stdexcept>
+
+using boost::irange;
+using std::ranges::reverse_view;
 
 namespace serde::parquet {
 
@@ -38,265 +44,266 @@ struct traversal_levels {
     uint8_t repetition_depth = 0;
 };
 
-ss::future<> shred_record(
-  const schema_element& element,
-  value val,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb);
-
-ss::future<> process_required_group_value(
-  // NOLINTNEXTLINE(*reference*)
-  const schema_element& element,
-  traversal_levels levels,
-  group_value fields,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    if (fields.size() != element.children.size()) {
-        throw std::runtime_error(fmt::format(
-          "schema/struct mismatch, schema had {} children, struct had {} "
-          "fields. At column {}",
-          element.children.size(),
-          fields.size(),
-          element.position));
+class record_shredder {
+public:
+    record_shredder(
+      const schema_element& root,
+      group_value record,
+      absl::FunctionRef<ss::future<>(shredded_value)> cb)
+      : _callback(cb) {
+        if (root.repetition_type != field_repetition_type::required) {
+            throw std::runtime_error("schema root nodes must be required");
+        }
+        _stack.emplace_back(
+          &root, traversal_levels{}, value(std::move(record)));
     }
-    // Levels don't change for require elements because they always have
-    // to be there so no additional bits need to be tracked (they'd be
-    // wasteful).
-    for (size_t i = 0; i < element.children.size(); ++i) {
-        group_member& member = fields[i];
-        const schema_element& child = element.children[i];
-        co_await shred_record(child, std::move(member.field), levels, cb);
+
+    ss::future<> shred() {
+        while (!_stack.empty()) {
+            auto [element, levels, value] = std::move(_stack.back());
+            _stack.pop_back();
+            if (element->is_leaf()) {
+                co_await process_leaf_value(element, levels, std::move(value));
+            } else {
+                co_await process_group_node(element, levels, std::move(value));
+            }
+        }
     }
-}
 
-ss::future<> process_required_group_node(
-  value val,
-  const schema_element& element,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    return ss::visit(
-      std::move(val),
-      [&element, levels, cb](group_value& fields) -> ss::future<> {
-          return process_required_group_value(
-            element, levels, std::move(fields), cb);
-      },
-      [&element](null_value&) -> ss::future<> {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected null value for required schema element {}",
-            element.name)));
-      },
-      [&element](repeated_value&) -> ss::future<> {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected list value for non-repeated schema element {}",
-            element.name)));
-      },
-      [&element](auto& v) -> ss::future<> {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected leaf value for required schema element {}: {}",
-            element.name,
-            value(std::move(v)))));
-      });
-}
-
-ss::future<> process_optional_group_value(
-  const schema_element& element,
-  traversal_levels levels,
-  group_value fields,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    // Increment the definition level as this node in the hierarchy is
-    // defined.
-    ++levels.definition_level;
-    return process_required_group_value(element, levels, std::move(fields), cb);
-}
-
-ss::future<> process_optional_null_value(
-  // NOLINTNEXTLINE(*reference*)
-  const schema_element& element,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    // If the value is `null`, we use the parent definition_level so that
-    // assembly can determine where the `null` started.
-    for (const auto& child : element.children) {
-        co_await shred_record(child, null_value(), levels, cb);
+private:
+    ss::future<> process_leaf_value(
+      const schema_element* element, traversal_levels levels, value val) {
+        return ss::visit(
+          std::move(val),
+          [this, element, levels](repeated_value& list) {
+              return process_repeated_leaf_value(
+                element, std::move(list), levels);
+          },
+          [element](group_value&) {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected struct value for leaf schema element {}",
+                element->name)));
+          },
+          [this, element, levels](null_value& v) {
+              return _callback({
+                .schema_element_position = element->position,
+                .val = v,
+                .rep_level = levels.repetition_level,
+                .def_level = levels.definition_level,
+              });
+          },
+          [this, element, levels](auto& v) {
+              traversal_levels leaf_levels = levels;
+              if (element->repetition_type != field_repetition_type::required) {
+                  ++leaf_levels.definition_level;
+              }
+              return _callback({
+                .schema_element_position = element->position,
+                .val = value(std::move(v)),
+                .rep_level = leaf_levels.repetition_level,
+                .def_level = leaf_levels.definition_level,
+              });
+          });
     }
-}
 
-ss::future<> process_optional_group_node(
-  value val,
-  const schema_element& element,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    return ss::visit(
-      std::move(val),
-      [&element, levels, cb](group_value& fields) -> ss::future<> {
-          return process_optional_group_value(
-            element, levels, std::move(fields), cb);
-      },
-      [&element, levels, cb](null_value&) -> ss::future<> {
-          return process_optional_null_value(element, levels, cb);
-      },
-      [&element](repeated_value&) -> ss::future<> {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected list value for non-repeated schema element {}",
-            element.name)));
-      },
-      [&element](auto& v) -> ss::future<> {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected leaf value for optional schema element {}: {}",
-            element.name,
-            value(std::move(v)))));
-      });
-}
-
-ss::future<> process_repeated(
-  // NOLINTNEXTLINE(*reference*)
-  const schema_element& element,
-  traversal_levels levels,
-  repeated_value list,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    // Empty lists are equivalent to a `null` value.
-    if (list.empty()) {
-        co_return co_await process_optional_null_value(element, levels, cb);
+    ss::future<> process_repeated_leaf_value(
+      const schema_element* element,
+      repeated_value list,
+      traversal_levels levels) {
+        // Empty lists are treated as `null`
+        if (list.empty()) {
+            co_return co_await _callback({
+              .schema_element_position = element->position,
+              .val = null_value(),
+              .rep_level = levels.repetition_level,
+              .def_level = levels.definition_level,
+            });
+        }
+        traversal_levels child_levels = levels;
+        // We are marking that there is a higher depth here we
+        // need to record, but the repetition_level is only set
+        // *when* we are repeating (so not for the first element).
+        ++child_levels.repetition_depth;
+        auto it = list.begin();
+        co_await process_leaf_value(
+          element, child_levels, std::move(it->element));
+        child_levels.repetition_level = child_levels.repetition_depth;
+        for (++it; it != list.end(); ++it) {
+            co_await process_leaf_value(
+              element, child_levels, std::move(it->element));
+        }
     }
-    traversal_levels child_levels = levels;
-    // We are marking that there is a higher depth here we
-    // need to record, but the repetition_level is only set
-    // *when* we are repeating (so not for the first element).
-    ++child_levels.repetition_depth;
-    for (auto& member : list) {
+
+    ss::future<> process_group_node(
+      const schema_element* element, traversal_levels levels, value val) {
+        switch (element->repetition_type) {
+        case field_repetition_type::required:
+            return process_required_group_node(element, levels, std::move(val));
+        case field_repetition_type::optional:
+            return process_optional_group_node(element, levels, std::move(val));
+        case field_repetition_type::repeated:
+            return process_repeated_group_node(element, levels, std::move(val));
+        }
+    }
+
+    ss::future<> process_required_group_node(
+      const schema_element* element, traversal_levels levels, value val) {
+        return ss::visit(
+          std::move(val),
+          [this, element, levels](group_value& groups) -> ss::future<> {
+              return process_required_group_value(
+                element, levels, std::move(groups));
+          },
+          [element](null_value&) -> ss::future<> {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected null value for required schema element {}",
+                element->name)));
+          },
+          [element](repeated_value&) -> ss::future<> {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected list value for non-repeated schema element {}",
+                element->name)));
+          },
+          [element](auto& v) -> ss::future<> {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected leaf value for required schema element {}: {}",
+                element->name,
+                value(std::move(v)))));
+          });
+    }
+
+    ss::future<> process_repeated_group_node(
+      const schema_element* element, traversal_levels levels, value val) {
+        return ss::visit(
+          std::move(val),
+          [this, element, levels](null_value&) {
+              return process_optional_null_value(element, levels);
+          },
+          [this, element, levels](repeated_value& list) {
+              return process_repeated_value(element, levels, std::move(list));
+          },
+          [element](group_value&) {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected struct value for repeated schema element {}",
+                element->name)));
+          },
+          [element](auto& v) {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected leaf value for repeated schema element {}: {}",
+                element->name,
+                value(std::move(v)))));
+          });
+    }
+
+    ss::future<> process_optional_group_node(
+      const schema_element* element, traversal_levels levels, value val) {
+        return ss::visit(
+          std::move(val),
+          [this, element, levels](group_value& group) -> ss::future<> {
+              return process_optional_group_value(
+                element, levels, std::move(group));
+          },
+          [this, element, levels](null_value&) -> ss::future<> {
+              return process_optional_null_value(element, levels);
+          },
+          [element](repeated_value&) -> ss::future<> {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected list value for non-repeated schema element {}",
+                element->name)));
+          },
+          [element](auto& v) -> ss::future<> {
+              return ss::make_exception_future(std::runtime_error(fmt::format(
+                "unexpected leaf value for optional schema element {}: {}",
+                element->name,
+                value(std::move(v)))));
+          });
+    }
+
+    ss::future<> process_repeated_value(
+      const schema_element* element,
+      traversal_levels levels,
+      repeated_value list) {
+        // Empty lists are equivalent to a `null` value.
+        if (list.empty()) {
+            co_return co_await process_optional_null_value(element, levels);
+        }
+        traversal_levels child_levels = levels;
+        // We are marking that there is a higher depth here we
+        // need to record, but the repetition_level is only set
+        // *when* we are repeating (so not for the first element).
+        ++child_levels.repetition_depth;
+        child_levels.repetition_level = child_levels.repetition_depth;
+        for (size_t i = list.size() - 1; i > 0; --i) {
+            co_await process_optional_group_node(
+              element, child_levels, std::move(list[i].element));
+        }
+        child_levels.repetition_level = levels.repetition_level;
         co_await process_optional_group_node(
-          std::move(member.element), element, child_levels, cb);
-        child_levels.repetition_level = child_levels.repetition_depth;
+          element, child_levels, std::move(list.front().element));
     }
-}
 
-ss::future<> process_repeated_group_node(
-  value val,
-  const schema_element& element,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    return ss::visit(
-      std::move(val),
-      [&element, levels, cb](null_value&) {
-          // empty lists and nulls are treated the same for repeated
-          return process_repeated(element, levels, repeated_value(), cb);
-      },
-      [&element, levels, cb](repeated_value& list) {
-          return process_repeated(element, levels, std::move(list), cb);
-      },
-      [&element](group_value&) {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected struct value for repeated schema element {}",
-            element.name)));
-      },
-      [&element](auto& v) {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected leaf value for repeated schema element {}: {}",
-            element.name,
-            value(std::move(v)))));
-      });
-}
-
-ss::future<> process_group_node(
-  value val,
-  const schema_element& element,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    switch (element.repetition_type) {
-    case field_repetition_type::required:
-        return process_required_group_node(std::move(val), element, levels, cb);
-    case field_repetition_type::optional:
-        return process_optional_group_node(std::move(val), element, levels, cb);
-    case field_repetition_type::repeated:
-        return process_repeated_group_node(std::move(val), element, levels, cb);
+    ss::future<> process_optional_group_value(
+      const schema_element* element,
+      traversal_levels levels,
+      group_value groups) {
+        // Increment the definition level as this node in the hierarchy is
+        // defined.
+        ++levels.definition_level;
+        return process_required_group_value(element, levels, std::move(groups));
     }
-}
 
-ss::future<> emit_leaf(
-  const schema_element& element,
-  value val,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb);
-
-ss::future<> process_repeated_leaf(
-  // NOLINTNEXTLINE(*reference*)
-  const schema_element& element,
-  repeated_value list,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    // Empty lists are treated as `null`
-    if (list.empty()) {
-        co_return co_await emit_leaf(element, null_value(), levels, cb);
+    ss::future<> process_optional_null_value(
+      const schema_element* element, traversal_levels levels) {
+        // If the value is `null`, we use the parent definition_level so that
+        // assembly can determine where the `null` started.
+        for (size_t i : reverse_view(irange(element->children.size()))) {
+            const schema_element* child = &element->children[i];
+            _stack.emplace_back(child, levels, value(null_value()));
+            co_await ss::coroutine::maybe_yield();
+        }
     }
-    traversal_levels child_levels = levels;
-    // We are marking that there is a higher depth here we
-    // need to record, but the repetition_level is only set
-    // *when* we are repeating (so not for the first element).
-    ++child_levels.repetition_depth;
-    for (auto& member : list) {
-        co_await emit_leaf(
-          element, std::move(member.element), child_levels, cb);
-        child_levels.repetition_level = child_levels.repetition_depth;
-    }
-}
 
-ss::future<> emit_leaf(
-  const schema_element& element,
-  value val,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    return ss::visit(
-      std::move(val),
-      [cb, &element, levels](repeated_value& list) {
-          return process_repeated_leaf(element, std::move(list), levels, cb);
-      },
-      [&element](group_value&) {
-          return ss::make_exception_future(std::runtime_error(fmt::format(
-            "unexpected struct value for leaf schema element {}",
-            element.name)));
-      },
-      [cb, &element, levels](null_value& v) {
-          return cb({
-            .schema_element_position = element.position,
-            .val = v,
-            .rep_level = levels.repetition_level,
-            .def_level = levels.definition_level,
-          });
-      },
-      [cb, &element, levels](auto& v) {
-          traversal_levels leaf_levels = levels;
-          if (element.repetition_type != field_repetition_type::required) {
-              ++leaf_levels.definition_level;
-          }
-          return cb({
-            .schema_element_position = element.position,
-            .val = value(std::move(v)),
-            .rep_level = leaf_levels.repetition_level,
-            .def_level = leaf_levels.definition_level,
-          });
-      });
-}
-
-ss::future<> shred_record(
-  const schema_element& element,
-  value val,
-  traversal_levels levels,
-  absl::FunctionRef<ss::future<>(shredded_value)> cb) {
-    if (element.is_leaf()) {
-        return emit_leaf(element, std::move(val), levels, cb);
+    ss::future<> process_required_group_value(
+      const schema_element* element,
+      traversal_levels levels,
+      group_value group) {
+        if (group.size() != element->children.size()) {
+            throw std::runtime_error(fmt::format(
+              "schema/struct mismatch, schema had {} children, struct had {} "
+              "fields. At column {}",
+              element->children.size(),
+              group.size(),
+              element->position));
+        }
+        // Levels don't change for require elements because they always have
+        // to be there so no additional bits need to be tracked (they'd be
+        // wasteful).
+        for (size_t i : reverse_view(irange(group.size()))) {
+            group_member& member = group[i];
+            const schema_element* child = &element->children[i];
+            _stack.emplace_back(child, levels, std::move(member.field));
+            co_await ss::coroutine::maybe_yield();
+        }
     }
-    return process_group_node(std::move(val), element, levels, cb);
-}
+
+    struct entry {
+        const schema_element* element;
+        traversal_levels levels;
+        value val;
+    };
+    chunked_vector<entry> _stack;
+    absl::FunctionRef<ss::future<>(shredded_value)> _callback;
+};
 
 } // namespace
 
 ss::future<> shred_record(
+  // NOLINTNEXTLINE(*reference*)
   const schema_element& root,
   group_value record,
   absl::FunctionRef<ss::future<>(shredded_value)> callback) {
-    if (root.repetition_type != field_repetition_type::required) {
-        throw std::runtime_error("schema root nodes must be required");
-    }
-    return shred_record(root, std::move(record), traversal_levels{}, callback);
+    record_shredder shredder(root, std::move(record), callback);
+    co_return co_await shredder.shred();
 }
 
 } // namespace serde::parquet
