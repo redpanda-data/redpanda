@@ -48,3 +48,19 @@ struct fmt::formatter<experimental::cloud_topics::dl_stm_key>
       experimental::cloud_topics::dl_stm_key,
       fmt::format_context& ctx) const -> decltype(ctx.out());
 };
+
+template<>
+struct fmt::formatter<experimental::cloud_topics::object_id>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      const experimental::cloud_topics::object_id&,
+      fmt::format_context& ctx) const -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<experimental::cloud_topics::dl_stm_object_ownership>
+  : fmt::formatter<std::string_view> {
+    auto format(
+      experimental::cloud_topics::dl_stm_object_ownership,
+      fmt::format_context& ctx) const -> decltype(ctx.out());
+};
