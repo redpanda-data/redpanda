@@ -18,7 +18,7 @@ bool_flag(
 
 bool_flag(
     name = "heap_profiling",
-    build_setting_default = False,
+    build_setting_default = True,
 )
 
 # "Enable the compile-time {fmt} check when formatting logging messages" ON
