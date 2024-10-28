@@ -330,7 +330,7 @@ void feature_manager::verify_enterprise_license() {
         return;
     }
 
-    const auto& license = _feature_table.local().get_configured_license();
+    const auto& license = _feature_table.local().get_license();
     std::optional<security::license> fallback_license = std::nullopt;
     auto fallback_license_str = std::getenv(
       "REDPANDA_FALLBACK_ENTERPRISE_LICENSE");
