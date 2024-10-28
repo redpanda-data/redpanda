@@ -1071,6 +1071,7 @@ redpanda_cc_library(
         ":table_update_json",
     ],
     include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
     deps = [
         ":catalog",
         ":json_utils",
