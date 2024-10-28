@@ -35,8 +35,8 @@ using object_id = named_type<uuid_t, struct object_id_tag>;
 
 /// Type of ownership
 enum class dl_stm_object_ownership {
-    exclusive,
-    shared,
+    exclusive = 0,
+    shared = 1,
 };
 
 } // namespace experimental::cloud_topics
