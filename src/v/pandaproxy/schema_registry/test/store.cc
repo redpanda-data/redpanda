@@ -73,7 +73,7 @@ bool upsert(
   pps::store& store,
   pps::subject sub,
   pps::canonical_schema_definition def,
-  pps::schema_type type,
+  pps::schema_type,
   pps::schema_id id,
   pps::schema_version version,
   pps::is_deleted deleted) {

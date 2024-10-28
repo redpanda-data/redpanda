@@ -25,7 +25,7 @@ namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_cross_shard_def) {
-    constexpr size_t id_n = 1000;
+    constexpr int id_n = 1000;
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store] { store.stop().get(); });
