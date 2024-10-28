@@ -7,13 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/base_property.h"
 #include "config/config_store.h"
 #include "config/property.h"
 #include "config/types.h"
 
+#include <gtest/gtest-typed-test.h>
 #include <gtest/gtest.h>
 #include <yaml-cpp/yaml.h>
 
+#include <concepts>
 #include <iostream>
 
 namespace config {
@@ -34,7 +37,7 @@ struct test_config : public config_store {
           true,
           "enterprise_bool",
           "An enterprise-only bool config",
-          meta{},
+          meta{.needs_restart = needs_restart::no},
           false,
           property<bool>::noop_validator,
           std::nullopt)
@@ -43,27 +46,28 @@ struct test_config : public config_store {
           std::vector<ss::sstring>{"bar"},
           "enterprise_str_enum",
           "An enterprise-only enum property",
-          meta{},
+          meta{.needs_restart = needs_restart::no},
           "foo",
           std::vector<ss::sstring>{"foo", "bar", "baz"})
       , enterprise_str_vec(
           *this,
           std::vector<ss::sstring>{"GSSAPI"},
           "enterprise_str_vec",
-          "An enterprise-only vector of strings")
+          "An enterprise-only vector of strings",
+          meta{.needs_restart = needs_restart::no})
       , enterprise_opt_int(
           *this,
           [](const int& v) -> bool { return v > 1000; },
           "enterprise_opt_int",
           "An enterprise-only optional int",
-          meta{},
+          meta{.needs_restart = needs_restart::no},
           0)
       , enterprise_enum(
           *this,
           std::vector<tls_version>{tls_version::v1_3},
           "enterprise_str_enum",
           "An enterprise-only enum property",
-          meta{},
+          meta{.needs_restart = needs_restart::no},
           tls_version::v1_1,
           std::vector<tls_version>{
             tls_version::v1_0,

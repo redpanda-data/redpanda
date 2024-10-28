@@ -197,6 +197,10 @@ public:
         return std::nullopt;
     }
 
+    bool check_restricted(const T& value) const {
+        return do_check_restricted(value);
+    }
+
     void reset() override {
         auto v = default_value();
         update_value(std::move(v));
@@ -301,6 +305,11 @@ protected:
     const std::optional<legacy_default<value_type>> _legacy_default;
 
 private:
+    virtual bool do_check_restricted(const T&) const {
+        // Config properties are unrestricted by default
+        return false;
+    }
+
     validator _validator;
 
     friend class binding_base<value_type>;
@@ -1060,6 +1069,9 @@ public:
         assert_no_default_conflict();
     }
 
+    // Needed because the following override shadows the rest of the overloads
+    using P::check_restricted;
+
     /**
      * Decodes the given YAML node into the underlying property's value_type and
      * checks whether that value should be restricted to enterprise clusters
@@ -1067,7 +1079,7 @@ public:
      */
     std::optional<validation_error> check_restricted(YAML::Node n) const final {
         auto v = std::move(n.as<T>());
-        if (check_restricted(v)) {
+        if (do_check_restricted(v)) {
             return std::make_optional<validation_error>(
               P::name().data(),
               ssx::sformat(
@@ -1077,14 +1089,7 @@ public:
     }
 
 private:
-    void assert_no_default_conflict() const {
-        vassert(
-          !check_restricted(this->default_value()),
-          "Enterprise properties must not restrict the default value of the "
-          "underlying property!");
-    }
-
-    bool check_restricted(const T& setting) const {
+    bool do_check_restricted(const T& setting) const final {
         // depending on how the restriction was defined, construct an applicable
         // check function for bare instances of the underlying value type
         auto restriction_check = [this](const val_t& v) -> bool {
@@ -1111,6 +1116,13 @@ private:
         if constexpr (std::is_same_v<T, val_t>) {
             return restriction_check(setting);
         }
+    }
+
+    void assert_no_default_conflict() const {
+        vassert(
+          !do_check_restricted(this->default_value()),
+          "Enterprise properties must not restrict the default value of the "
+          "underlying property!");
     }
 
     restrict_variant_t _restriction;
