@@ -23,7 +23,8 @@
 namespace cluster {
 
 ss::future<> controller_stm::on_batch_applied() {
-    if (!_feature_table.is_active(features::feature::controller_snapshots)) {
+    if (!_feature_table.local().is_active(
+          features::feature::controller_snapshots)) {
         co_return;
     }
     if (_gate.is_closed()) {
@@ -106,7 +107,8 @@ ss::future<std::optional<iobuf>>
 controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     auto started_at = ss::steady_clock_type::now();
 
-    if (!_feature_table.is_active(features::feature::controller_snapshots)) {
+    if (!_feature_table.local().is_active(
+          features::feature::controller_snapshots)) {
         vlog(clusterlog.warn, "skipping snapshotting, feature not enabled");
         co_return std::nullopt;
     }
@@ -200,6 +202,10 @@ ss::future<> controller_stm::apply_snapshot(
     }
 
     _metrics_reporter_cluster_info = snapshot.metrics_reporter.cluster_info;
+    co_await _feature_table.invoke_on_all([&](features::feature_table& ft) {
+        ft.set_builtin_trial_license(
+          _metrics_reporter_cluster_info.creation_timestamp);
+    });
 }
 
 } // namespace cluster
