@@ -36,6 +36,9 @@ build --sandbox_default_allow_network=false
 # leaking into the build.
 build --incompatible_strict_action_env
 
+# Add stack guards by default for better debugging, we disable them in release builds
+build --@seastar//:stack_guards=True
+
 # =================================
 # Sanitizer
 # =================================
@@ -85,6 +88,7 @@ build:release --compilation_mode opt
 build:release --config=secure
 build:release --copt -mllvm --copt -inline-threshold=2500
 build:release --linkopt=-flto
+build:release --@seastar//:stack_guards=False
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
 
