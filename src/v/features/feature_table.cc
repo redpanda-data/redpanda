@@ -287,7 +287,7 @@ public:
             sm::make_gauge(
               "enterprise_license_expiry_sec",
               [&ft = _parent]() {
-                  return calculate_expiry_metric(ft.get_configured_license());
+                  return calculate_expiry_metric(ft.get_license());
               },
               sm::description("Number of seconds remaining until the "
                               "Enterprise license expires"))
