@@ -13,8 +13,8 @@ auto fmt::formatter<experimental::cloud_topics::dl_stm_key>::format(
   experimental::cloud_topics::dl_stm_key key,
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     switch (key) {
-    case experimental::cloud_topics::dl_stm_key::overlay:
-        return fmt::format_to(ctx.out(), "overlay");
+    case experimental::cloud_topics::dl_stm_key::push_overlay:
+        return fmt::format_to(ctx.out(), "push_overlay");
     default:
         return fmt::format_to(ctx.out(), "unknown");
     }

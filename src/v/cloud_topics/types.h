@@ -20,7 +20,7 @@
 namespace experimental::cloud_topics {
 
 enum class dl_stm_key {
-    overlay,
+    push_overlay = 0,
     // TODO: add all commands
 };
 
