@@ -495,7 +495,7 @@ class DataMigrationsApiTest(RedpandaTest):
 
             for t in inbound_topics:
                 self.logger.info(
-                    f"inbound topic: {self.client().describe_topic(t.src_topic.topic)}"
+                    f"inbound topic: {self.client().describe_topic(t.source_topic_reference.topic)}"
                 )
 
             self.execute_data_migration_action_flaky(in_migration_id,
@@ -606,7 +606,7 @@ class DataMigrationsApiTest(RedpandaTest):
                 for i, t in enumerate(topics[:3])
             ]
             inbound_topics_spec = [
-                TopicSpec(name=(it.alias or it.src_topic).topic,
+                TopicSpec(name=(it.alias or it.source_topic_reference).topic,
                           partition_count=3) for it in inbound_topics
             ]
             reply = self.admin.mount_topics(inbound_topics).json()
@@ -913,7 +913,8 @@ class DataMigrationsApiTest(RedpandaTest):
             # two cycles max: to cancel halfway and to complete + check e2e
             while not remounted:
                 in_migration = InboundDataMigration(topics=[
-                    InboundTopic(src_topic=workload_ns_topic, alias=alias)
+                    InboundTopic(source_topic_reference=workload_ns_topic,
+                                 alias=alias)
                 ],
                                                     consumer_groups=[])
                 in_migration_id = self.create_and_wait(in_migration)

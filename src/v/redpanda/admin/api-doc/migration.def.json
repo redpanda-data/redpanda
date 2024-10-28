@@ -112,7 +112,7 @@
 "inbound_topic": {
     "type": "object",
     "properties": {
-        "source_topic": {
+        "source_topic_reference": {
             "description": "Name of the topic in object storage. To uniquely identify the topic, append the name with /cluster_uuid/initial_revision. ",
             "type": "namespaced_topic",
             "$ref": "namespaced_topic"
