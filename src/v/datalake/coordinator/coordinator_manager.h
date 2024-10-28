@@ -35,7 +35,8 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<cloud_io::remote>&,
-      cloud_storage_clients::bucket_name);
+      cloud_storage_clients::bucket_name,
+      ss::sstring base_location);
 
     ss::future<> start();
     ss::future<> stop();

@@ -3697,6 +3697,23 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(1min),
       {.min = 10ms})
+  , iceberg_catalog_commit_interval_ms(
+      *this,
+      "iceberg_catalog_commit_interval_ms",
+      "The frequency at which the Iceberg coordinator commits topic files to "
+      "the catalog. This is the interval between commit transactions across "
+      "all topics monitored by the coordinator, not the interval between "
+      "individual commits.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::milliseconds(1min),
+      {.min = 10ms})
+  , iceberg_catalog_base_location(
+      *this,
+      "iceberg_catalog_base_location",
+      "Base path for the cloud object storage-backed Iceberg catalog. After "
+      "Iceberg is enabled, do not change this value.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      "redpanda-iceberg-catalog")
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
