@@ -38,14 +38,28 @@ get_schema_id_result get_value_schema_id(iobuf& buf) {
 
 // TODO: this is mostly a copy-and-paste of get_proto_offsets from
 // pandaproxy::schema_registry with a slightly different interface. Unify these.
-get_proto_offsets_result get_proto_offsets(iobuf& buf) {
+get_proto_offsets_result get_schema_proto_offsets(iobuf& buf) {
     auto header = get_value_schema_id(buf);
     if (!header.has_value()) {
         return header.error();
     }
     proto_schema_message_data result;
     result.schema_id = header.value().schema_id;
-    iobuf_const_parser parser(header.value().shared_message_data);
+    auto pb_offsets_res = get_proto_offsets(header.value().shared_message_data);
+    if (pb_offsets_res.has_error()) {
+        return pb_offsets_res.error();
+    }
+    result.protobuf_offsets = std::move(
+      pb_offsets_res.value().protobuf_offsets);
+    result.shared_message_data = std::move(
+      pb_offsets_res.value().shared_message_data);
+    return result;
+}
+
+result<proto_offsets_message_data, get_schema_error>
+get_proto_offsets(iobuf& buf) {
+    proto_offsets_message_data result;
+    iobuf_const_parser parser(buf.share(0, buf.size_bytes()));
 
     // The encoding is a length, followed by indexes into the file or message.
     // Each number is a zigzag encoded integer.
@@ -59,7 +73,7 @@ get_proto_offsets_result get_proto_offsets(iobuf& buf) {
     }
     if (offset_count == 0) {
         result.protobuf_offsets.push_back(0);
-        result.shared_message_data = header.value().shared_message_data.share(
+        result.shared_message_data = buf.share(
           parser.bytes_consumed(), parser.bytes_left());
         return result;
     }
@@ -74,7 +88,7 @@ get_proto_offsets_result get_proto_offsets(iobuf& buf) {
         }
     }
 
-    result.shared_message_data = header.value().shared_message_data.share(
+    result.shared_message_data = buf.share(
       parser.bytes_consumed(), parser.bytes_left());
     return result;
 }
