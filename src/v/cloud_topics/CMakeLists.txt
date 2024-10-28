@@ -2,6 +2,7 @@
 v_cc_library(
   NAME cloud_topics
   SRCS
+    dl_overlay.cc
     logger.cc
     types.cc
   DEPS

@@ -26,9 +26,16 @@ redpanda_cc_gtest(
         "dl_stm_test.cc",
     ],
     deps = [
+        "//src/v/cloud_topics:dl_overlay",
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/dl_stm",
+        "//src/v/cloud_topics/dl_stm:dl_stm_api",
         "//src/v/cloud_topics/dl_stm:dl_stm_factory",
+        "//src/v/cloud_topics/dl_stm:dl_stm_state",
+        "//src/v/model",
         "//src/v/raft/tests:raft_fixture",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
