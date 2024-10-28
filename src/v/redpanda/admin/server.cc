@@ -2252,7 +2252,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
               fmt::format("License is expired: {}", license));
         }
         const auto& ft = _controller->get_feature_table().local();
-        const auto& loaded_license = ft.get_configured_license();
+        const auto& loaded_license = ft.get_license();
         if (loaded_license && (*loaded_license == license)) {
             /// Loaded license is idential to license in request, do
             /// nothing and return 200(OK)
@@ -2291,7 +2291,7 @@ admin_server::get_enterprise_handler(std::unique_ptr<ss::http::request>) {
       enterprise_response_license_status;
 
     const auto& license
-      = _controller->get_feature_table().local().get_configured_license();
+      = _controller->get_feature_table().local().get_license();
     auto license_status = [&license]() {
         auto present = license.has_value();
         auto exp = present && license.value().is_expired();
@@ -2407,7 +2407,7 @@ void admin_server::register_features_routes() {
           ss::httpd::features_json::license_response res;
           res.loaded = false;
           const auto& ft = _controller->get_feature_table().local();
-          const auto& license = ft.get_configured_license();
+          const auto& license = ft.get_license();
           if (license) {
               res.loaded = true;
               ss::httpd::features_json::license_contents lc;
