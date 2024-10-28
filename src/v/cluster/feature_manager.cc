@@ -298,8 +298,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     if (_feature_table.local().is_active(features::feature::license)) {
         auto enterprise_features = report_enterprise_features();
         if (enterprise_features.any()) {
-            const auto& license
-              = _feature_table.local().get_configured_license();
+            const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
                   clusterlog.warn,

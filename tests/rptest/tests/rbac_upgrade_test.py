@@ -29,7 +29,9 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         super().__init__(test_ctx, **kwargs)
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
-            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}',
+            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
+            True
         })
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
