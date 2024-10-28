@@ -1342,8 +1342,13 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
         const auto offset = _cloud_gc_offset.value();
         _cloud_gc_offset.reset();
 
-        vassert(
-          is_cloud_retention_active(), "Expected remote retention active");
+        if (!is_cloud_retention_active()) {
+            vlog(
+              gclog.warn,
+              "[{}] expected remote retention to be active",
+              config().ntp());
+            co_return std::nullopt;
+        }
 
         vlog(
           gclog.info,
