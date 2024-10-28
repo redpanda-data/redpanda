@@ -295,13 +295,11 @@ class AdminUUIDOperationsTest(RedpandaTest):
                    backoff_sec=2,
                    err_msg=f"{to_stop.name} did not take the UUID override")
 
-        self.logger.debug(f"Wait for the cluster to become healthy...")
-
-        self.wait_until_cluster_healthy(timeout_sec=30)
-
-        self.logger.debug(
-            f".. and decommission ghost node [{ghost_node_id}]...")
+        self.logger.debug(f"Decommission ghost node [{ghost_node_id}]...")
         self._decommission(ghost_node_id)
+
+        self.logger.debug(f"...and wait for the cluster to become healthy.")
+        self.wait_until_cluster_healthy(timeout_sec=30)
 
         self.logger.debug(
             "Check that all this state sticks across a rolling restart")
@@ -393,14 +391,11 @@ class AdminUUIDOperationsTest(RedpandaTest):
                 auto_assign_node_id=True,
             )
 
-        self.logger.debug("Wait for the cluster to become healthy...")
+        self.logger.debug(f"Decommission ghost node [{ghost_node_id}]...")
+        self._decommission(ghost_node_id)
 
+        self.logger.debug("...and wait for the cluster to become healthy.")
         controller_leader = self.wait_until_cluster_healthy(timeout_sec=30)
 
         assert controller_leader is not None, "Didn't elect a controller leader"
         assert controller_leader not in to_stop, f"Unexpected controller leader {controller_leader.account.hostname}"
-
-        self.logger.debug(
-            f"...and decommission ghost node [{ghost_node_id}]...")
-
-        self._decommission(ghost_node_id)

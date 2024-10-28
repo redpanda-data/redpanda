@@ -3959,7 +3959,7 @@ reply_result consensus::lightweight_heartbeat(
           target_node,
           _self,
           source_node);
-        return reply_result::failure;
+        return reply_result::group_unavailable;
     }
 
     /**
@@ -4014,7 +4014,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
           target_vnode,
           _self,
           source_vnode);
-        reply.result = reply_result::failure;
+        reply.result = reply_result::group_unavailable;
         co_return reply;
     }
     /**

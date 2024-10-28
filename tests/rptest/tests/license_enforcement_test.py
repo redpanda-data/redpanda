@@ -13,6 +13,7 @@ from ducktape.mark import matrix
 
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.redpanda import LoggingConfig
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
@@ -132,15 +133,17 @@ class LicenseEnforcementTest(RedpandaTest):
             {"partition_autobalancing_mode": "continuous"})
 
         first_upgraded = self.redpanda.nodes[0]
+        first_upgraded_id = self.redpanda.node_id(first_upgraded)
         self.logger.info(
-            f"Upgrading node {first_upgraded} with an license injected via the environment variable escape hatch expecting it to succeed"
+            f"Upgrading node {first_upgraded.name} with an license injected via the environment variable escape hatch expecting it to succeed"
         )
         installer.install([first_upgraded], latest_version)
         self.redpanda.stop_node(first_upgraded)
 
         if clean_node_before_upgrade:
-            self.logger.info(f"Cleaning node {first_upgraded}")
+            self.logger.info(f"Cleaning node {first_upgraded.name}")
             self.redpanda.remove_local_data(first_upgraded)
+            Admin(self.redpanda).decommission_broker(first_upgraded_id)
 
         license = sample_license(assert_exists=True)
         self.redpanda.set_environment(
