@@ -12,12 +12,16 @@
 #include "base/vlog.h"
 #include "datalake/logger.h"
 #include "datalake/schema_identifier.h"
+#include "datalake/schema_protobuf.h"
 #include "datalake/schema_registry.h"
 #include "iceberg/schema_avro.h"
+#include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/registry.h"
 
 #include <seastar/coroutine/as_future.hh>
+
+#include <google/protobuf/descriptor.h>
 
 #include <exception>
 
@@ -60,9 +64,46 @@ struct schema_translating_visitor {
         }
     }
     ss::future<checked<type_and_buf, record_schema_resolver::errc>>
-    operator()(const ppsr::protobuf_schema_definition&) {
-        // XXX: a subsequent PR will add protobuf support.
-        co_return type_and_buf::make_raw_binary(std::move(buf_no_id));
+    operator()(const ppsr::protobuf_schema_definition& pb_def) {
+        const google::protobuf::Descriptor* d;
+        proto_offsets_message_data offsets;
+        try {
+            auto offsets_res = get_proto_offsets(buf_no_id);
+            if (offsets_res.has_error()) {
+                co_return record_schema_resolver::errc::bad_input;
+            }
+            offsets = std::move(offsets_res.value());
+            // TODO: maybe there's another caching opportunity here.
+            auto d_res = descriptor(pb_def, offsets.protobuf_offsets);
+            if (d_res.has_error()) {
+                co_return record_schema_resolver::errc::bad_input;
+            }
+            d = &d_res.value().get();
+        } catch (...) {
+            vlog(
+              datalake_log.error,
+              "Error getting protobuf offsets from buffer: {}",
+              std::current_exception());
+            co_return record_schema_resolver::errc::bad_input;
+        }
+        try {
+            auto type = type_to_iceberg(*d).value();
+            co_return type_and_buf{
+              .type = resolved_type{
+                .schema = *d,
+                .id = {.schema_id = id, .protobuf_offsets = std::move(offsets.protobuf_offsets)},
+                .type = std::move(type),
+                .type_name = d->name(),
+              },
+              .parsable_buf = std::move(offsets.shared_message_data),
+            };
+        } catch (...) {
+            vlog(
+              datalake_log.error,
+              "Protobuf schema translation failed: {}",
+              std::current_exception());
+            co_return record_schema_resolver::errc::translation_error;
+        }
     }
     ss::future<checked<type_and_buf, record_schema_resolver::errc>>
     operator()(const ppsr::json_schema_definition&) {
