@@ -16,7 +16,7 @@
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "storage/types.h"
-#include "utils/mutex.h"
+#include "strings/static_str.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
@@ -136,7 +136,7 @@ readers_cache::get_reader(const log_reader_config& cfg) {
     /**
      * dispose unused readers in background
      */
-    dispose_in_background(std::move(to_evict));
+    dispose_in_background(std::move(to_evict), "evicted in get_reader");
     if (it == _readers.end()) {
         _probe.cache_miss();
         vlog(stlog.trace, "{} - reader cache miss for: {}", _ntp, cfg);
@@ -271,6 +271,10 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
             return _underlying->do_load_slice(tout);
         }
 
+        virtual std::optional<private_flags> get_flags() const final {
+            return _underlying->get_flags();
+        }
+
         ss::future<> finally() noexcept final { return ss::now(); }
 
         void print(std::ostream& o) final { return _underlying->print(o); };
@@ -290,33 +294,38 @@ readers_cache::~readers_cache() {
       "readers cache have to be closed before destorying");
 }
 
+void readers_cache::remove_entry(entry* e, static_str reason) {
+    vlog(
+      stlog.trace,
+      "{} - removing reader (reason: {}): [{},{}] lower_bound: {}",
+      _ntp,
+      reason,
+      e->reader->lease_range_base_offset(),
+      e->reader->lease_range_end_offset(),
+      e->reader->next_read_lower_bound());
+    _probe.reader_evicted();
+    delete e; // NOLINT(cppcoreguidelines-owning-memory)
+}
+
 ss::future<> readers_cache::dispose_entries(
-  uncounted_intrusive_list<entry, &entry::_hook> entries) {
+  uncounted_intrusive_list<entry, &entry::_hook> entries, static_str reason) {
     for (auto& e : entries) {
         co_await e.reader->finally();
     }
 
-    entries.clear_and_dispose([this](entry* e) {
-        vlog(
-          stlog.trace,
-          "{} - removing reader: [{},{}] lower_bound: {}",
-          _ntp,
-          e->reader->lease_range_base_offset(),
-          e->reader->lease_range_end_offset(),
-          e->reader->next_read_lower_bound());
-        _probe.reader_evicted();
-        delete e; // NOLINT
-    });
+    entries.clear_and_dispose(
+      [this, reason](entry* e) { remove_entry(e, reason); });
 }
 
 void readers_cache::dispose_in_background(
-  uncounted_intrusive_list<entry, &entry::_hook> entries) {
-    ssx::spawn_with_gate(_gate, [this, entries = std::move(entries)]() mutable {
-        return dispose_entries(std::move(entries));
-    });
+  uncounted_intrusive_list<entry, &entry::_hook> entries, static_str reason) {
+    ssx::spawn_with_gate(
+      _gate, [this, entries = std::move(entries), reason]() mutable {
+          return dispose_entries(std::move(entries), reason);
+      });
 }
 
-void readers_cache::dispose_in_background(entry* e) {
+void readers_cache::dispose_in_background(entry* e, static_str reason) {
     if (_gate.is_closed()) {
         /**
          * since gate is closed and we failed to call finally on the reader we
@@ -330,18 +339,9 @@ void readers_cache::dispose_in_background(entry* e) {
          */
         _readers.push_back(*e);
     } else {
-        ssx::spawn_with_gate(_gate, [this, e] {
-            return e->reader->finally().finally([this, e] {
-                vlog(
-                  stlog.trace,
-                  "{} - removing reader: [{},{}] lower_bound: {}",
-                  _ntp,
-                  e->reader->lease_range_base_offset(),
-                  e->reader->lease_range_end_offset(),
-                  e->reader->next_read_lower_bound());
-                _probe.reader_evicted();
-                delete e; // NOLINT
-            });
+        ssx::spawn_with_gate(_gate, [this, e, reason] {
+            return e->reader->finally().finally(
+              [this, e, reason] { remove_entry(e, reason); });
         });
     }
 }
@@ -372,7 +372,7 @@ void readers_cache::maybe_evict_size() {
     _readers.pop_front_and_dispose(
       [&to_evict](entry* e) { to_evict.push_back(*e); });
 
-    dispose_in_background(std::move(to_evict));
+    dispose_in_background(std::move(to_evict), "maybe_evict_size");
 }
 
 readers_cache::stats readers_cache::get_stats() const {

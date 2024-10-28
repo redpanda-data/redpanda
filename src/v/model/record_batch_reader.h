@@ -53,6 +53,8 @@ public:
     };
     using storage_t = std::variant<data_t, foreign_data_t>;
 
+    struct private_flags;
+
     class impl {
     public:
         impl() noexcept = default;
@@ -62,12 +64,16 @@ public:
         impl& operator=(const impl& o) = delete;
         virtual ~impl() noexcept = default;
 
+        using private_flags = record_batch_reader::private_flags;
+
         virtual bool is_end_of_stream() const = 0;
 
         virtual ss::future<storage_t>
           do_load_slice(timeout_clock::time_point) = 0;
 
         virtual void print(std::ostream&) = 0;
+
+        virtual std::optional<private_flags> get_flags() const { return {}; }
 
         bool is_slice_empty() const {
             return ss::visit(
@@ -292,6 +298,19 @@ public:
 
     std::unique_ptr<impl> release() && { return std::move(_impl); }
 
+    // record batch readers may expose these private flags for testing
+    // purposes
+    struct private_flags {
+        // if the reader is reusable, i.e., would it be eligible for caching
+        // note that if the reader wasn't obtained through the cache, this can
+        // still return true even though the reader will ultimately not be
+        // cached
+        bool is_reusable : 1;
+        // True iff this reader was obtained via a cache hit from the readers
+        // cache.
+        bool was_cached : 1;
+    };
+
 private:
     std::unique_ptr<impl> _impl;
 
@@ -301,6 +320,13 @@ private:
 
     friend std::ostream&
     operator<<(std::ostream& os, const record_batch_reader& r);
+
+    std::optional<private_flags> get_flags() const {
+        return _impl->get_flags();
+    }
+
+    // get at our guts in a test
+    friend struct record_batch_reader_accessor;
 };
 
 template<typename Impl, typename... Args>
