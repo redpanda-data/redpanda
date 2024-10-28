@@ -20,6 +20,7 @@ v_cc_library(
         state_update.cc
         translated_offset_range.cc
         types.cc
+        catalog_factory.cc
     DEPS
         generated_datalake_coordinator_rpc
         v::cluster
