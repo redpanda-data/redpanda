@@ -194,8 +194,8 @@ public:
           conf,
           name,
           desc,
-          meta,
-          def,
+          std::move(meta),
+          std::move(def),
           [this](T new_value) -> std::optional<ss::sstring> {
               // Extract inner value if we are an optional<>,
               // and pass through into numeric_bounds::validate
@@ -212,7 +212,7 @@ public:
               }
           },
           legacy)
-      , _bounds(bounds)
+      , _bounds(std::move(bounds))
       , _example(generate_example()) {}
 
     using property<T>::set_value;

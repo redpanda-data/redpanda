@@ -24,7 +24,7 @@ base_property::base_property(
   , _desc(desc)
   , _meta(std::move(meta)) {
     conf._properties.emplace(name, this);
-    for (const auto& alias : _meta.aliases) {
+    for (const auto& alias : aliases()) {
         auto [_, inserted] = conf._aliases.emplace(alias, this);
 
         vassert(inserted, "Two properties tried to register the same alias");
@@ -55,7 +55,7 @@ std::string_view to_string_view(visibility v) {
  */
 void base_property::assert_live_settable() const {
     vassert(
-      _meta.needs_restart == needs_restart::no,
+      !needs_restart(),
       "Property {} must be be marked as needs_restart::no",
       name());
 }

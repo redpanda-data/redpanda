@@ -14,6 +14,7 @@
 #include "utils/unresolved_address.h"
 
 namespace config {
+using meta = config::base_property::meta;
 
 node_config::node_config() noexcept
   : developer_mode(
@@ -21,13 +22,13 @@ node_config::node_config() noexcept
       "developer_mode",
       "Skips most of the checks performed at startup, not recomended for "
       "production use",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       false)
   , data_directory(
       *this,
       "data_directory",
       "Path to the directory for storing Redpanda's streaming data files.",
-      {.required = required::yes, .visibility = visibility::user})
+      meta{.required = required::yes, .visibility = visibility::user})
   , node_id(
       *this,
       "node_id",
@@ -35,7 +36,7 @@ node_config::node_config() noexcept
       "`null` (the default value), Redpanda automatically assigns an ID. If "
       "set, it must be non-negative value. The `node_id` property must not be "
       "changed after a broker joins the cluster.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt,
       [](std::optional<model::node_id> id) -> std::optional<ss::sstring> {
           if (id && (*id)() < 0) {
@@ -50,7 +51,7 @@ node_config::node_config() noexcept
       "brokers in the same failure zone. When `enable_rack_awareness` is set "
       "to `true` at the cluster level, the system uses the rack labels to "
       "spread partition replicas across different failure zones.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , seed_servers(
       *this,
@@ -75,7 +76,7 @@ node_config::node_config() noexcept
       "for expansion beyond the foundational members. The `seed_servers` list "
       "must be consistent across all seed brokers to prevent cluster "
       "fragmentation and ensure stable cluster formation.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {},
       [](std::vector<seed_server> s) -> std::optional<ss::sstring> {
           std::sort(s.begin(), s.end());
@@ -94,26 +95,26 @@ node_config::node_config() noexcept
       "works with the `seed_servers` setting to form a cluster. For backward "
       "compatibility, `true` is the default. Redpanda recommends using `false` "
       "in production environments to prevent accidental cluster formation.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       true)
   , rpc_server(
       *this,
       "rpc_server",
       "IP address and port for the Remote Procedure Call (RPC) server.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       net::unresolved_address("127.0.0.1", 33145))
   , rpc_server_tls(
       *this,
       "rpc_server_tls",
       "TLS configuration for the RPC server.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       tls_config(),
       tls_config::validate)
   , kafka_api(
       *this,
       "kafka_api",
       "IP address and port of the Kafka API endpoint that handles requests.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {config::broker_authn_endpoint{
         .address = net::unresolved_address("127.0.0.1", 9092),
         .authn_method = std::nullopt}})
@@ -122,20 +123,20 @@ node_config::node_config() noexcept
       "kafka_api_tls",
       "Transport Layer Security (TLS) configuration for the Kafka API "
       "endpoint.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {},
       endpoint_tls_config::validate_many)
   , admin(
       *this,
       "admin",
       "Network address for the Admin API[] server.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {model::broker_endpoint(net::unresolved_address("127.0.0.1", 9644))})
   , admin_api_tls(
       *this,
       "admin_api_tls",
       "Specifies the TLS configuration for the HTTP Admin API.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {},
       endpoint_tls_config::validate_many)
   , coproc_supervisor_server(*this, "coproc_supervisor_server")
@@ -144,13 +145,13 @@ node_config::node_config() noexcept
       "emergency_disable_data_transforms",
       "Override the cluster property `data_transforms_enabled` and disable "
       "Wasm-powered data transforms. This is an emergency shutoff button.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       false)
   , admin_api_doc_dir(
       *this,
       "admin_api_doc_dir",
       "Path to the API specifications for the Admin API.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       "/usr/share/redpanda/admin-api-doc")
   , dashboard_dir(*this, "dashboard_dir")
   , cloud_storage_cache_directory(
@@ -158,14 +159,14 @@ node_config::node_config() noexcept
       "cloud_storage_cache_directory",
       "Directory for archival cache. Should be present when "
       "`cloud_storage_enabled` is present",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , cloud_storage_inventory_hash_store(
       *this,
       "cloud_storage_inventory_hash_path_directory",
       "Directory to store inventory report hashes for use by cloud storage "
       "scrubber",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , enable_central_config(*this, "enable_central_config")
   , crash_loop_limit(
@@ -177,42 +178,42 @@ node_config::node_config() noexcept
       "information see "
       "https://docs.redpanda.com/current/reference/properties/"
       "broker-properties/#crash_loop_limit.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       5) // default value
   , upgrade_override_checks(
       *this,
       "upgrade_override_checks",
       "Whether to violate safety checks when starting a Redpanda version newer "
       "than the cluster's consensus version.",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       false)
   , memory_allocation_warning_threshold(
       *this,
       "memory_allocation_warning_threshold",
       "Threshold for log messages that contain a larger memory allocation than "
       "specified.",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       128_KiB + 1) // 128 KiB is the largest allowed allocation size
   , storage_failure_injection_enabled(
       *this,
       "storage_failure_injection_enabled",
       "If `true`, inject low level storage failures on the write path. Do "
       "_not_ use for production instances.",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       false)
   , recovery_mode_enabled(
       *this,
       "recovery_mode_enabled",
       "If `true`, start Redpanda in recovery mode, where user partitions are "
       "not loaded and only administrative operations are allowed.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       false)
   , storage_failure_injection_config_path(
       *this,
       "storage_failure_injection_config_path",
       "Path to the configuration file used for low level storage failure "
       "injection.",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       std::nullopt)
   , verbose_logging_timeout_sec_max(
       *this,
@@ -221,7 +222,7 @@ node_config::node_config() noexcept
       "Values configured above this will be clamped. If null (the default) "
       "there is no limit. Can be overridden in the Admin API on a per-request "
       "basis.",
-      {.visibility = visibility::tunable},
+      meta{.visibility = visibility::tunable},
       std::nullopt,
       {.min = 1s})
   , fips_mode(
@@ -238,7 +239,7 @@ node_config::node_config() noexcept
       "the operating system is enabled for FIPS by checking "
       "`/proc/sys/crypto/fips_enabled`. If the file does not exist or does not "
       "return `1`, Redpanda immediately exits.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       fips_mode_flag::disabled,
       {fips_mode_flag::disabled,
        fips_mode_flag::enabled,
@@ -248,14 +249,14 @@ node_config::node_config() noexcept
       "openssl_config_file",
       "Path to the configuration file used by OpenSSL to properly load the "
       "FIPS-compliant module.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , openssl_module_directory(
       *this,
       "openssl_module_directory",
       "Path to the directory that contains the OpenSSL FIPS-compliant module. "
       "The filename that Redpanda looks for is `fips.so`.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , node_id_overrides(
       *this,
@@ -264,19 +265,19 @@ node_config::node_config() noexcept
       "Each entry includes the current UUID and desired ID and UUID. Each "
       "entry applies to a given node if and only if 'current' matches that "
       "node's current UUID.",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {})
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
       "Address of RPC endpoint published to other cluster members",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       std::nullopt)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
       "Address of Kafka API published to the clients",
-      {.visibility = visibility::user},
+      meta{.visibility = visibility::user},
       {}) {}
 
 void validate_multi_node_property_config(

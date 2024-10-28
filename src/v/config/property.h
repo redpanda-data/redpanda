@@ -80,9 +80,9 @@ public:
       T def = T{},
       property::validator validator = property::noop_validator,
       std::optional<legacy_default<T>> ld = std::nullopt)
-      : base_property(conf, name, desc, meta)
-      , _value(def)
-      , _default(std::move(def))
+      : base_property(conf, name, desc, std::move(meta))
+      , _value(std::move(def))
+      , _default(_value)
       , _legacy_default(std::move(ld))
       , _validator(std::move(validator)) {}
 
@@ -215,8 +215,8 @@ public:
     }
 
     std::optional<std::string_view> example() const override {
-        if (_meta.example.has_value()) {
-            return _meta.example;
+        if (_meta.example != nullptr) {
+            return {_meta.example};
         } else {
             if constexpr (std::is_same_v<T, bool>) {
                 // Provide an example that is the opposite of the default
@@ -820,7 +820,7 @@ private:
 class deprecated_property : public property<ss::sstring> {
 public:
     deprecated_property(config_store& conf, std::string_view name)
-      : property(conf, name, "", {.visibility = visibility::deprecated}) {}
+      : property(conf, name, "", meta{.visibility = visibility::deprecated}) {}
 
     void set_value(std::any) override { return; }
 };
@@ -839,8 +839,8 @@ public:
           conf,
           name,
           desc,
-          meta,
-          def,
+          std::move(meta),
+          std::move(def),
           [this](T new_value) -> std::optional<ss::sstring> {
               auto found = std::find_if(
                 _values.begin(), _values.end(), [&new_value](const T& v) {
@@ -852,7 +852,7 @@ public:
                   return std::nullopt;
               }
           })
-      , _values(values) {}
+      , _values(std::move(values)) {}
 
     std::optional<validation_error>
     validate(YAML::Node n) const final override {
@@ -947,7 +947,13 @@ public:
       base_property::metadata meta,
       T def,
       property<T>::validator validator = property<T>::noop_validator)
-      : property<T>(conf, name, desc, meta, def, std::move(validator)) {}
+      : property<T>(
+          conf,
+          name,
+          desc,
+          std::move(meta),
+          std::move(def),
+          std::move(validator)) {}
 
     bool is_hidden() const override {
         return this->value() == this->default_value();

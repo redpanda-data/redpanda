@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "config/base_property.h"
 #include "config/property.h"
 #include "utils/to_string.h"
 
@@ -111,7 +112,7 @@ public:
             // A validation error is fatal if the property was required,
             // e.g. if someone entered a non-integer node_id, or an invalid
             // internal RPC address.
-            if (!ok && prop->is_required()) {
+            if (!ok && prop->is_required() == required::yes) {
                 throw std::invalid_argument(fmt::format(
                   "Property {} is required and has invalid value", name));
             }
