@@ -145,6 +145,8 @@ private:
     ss::future<> maybe_log_license_check_info();
     bool need_to_verify_enterprise_license();
 
+    ss::future<> try_insert_trial_license();
+
     // Compose a command struct, replicate it via raft and wait for apply.
     // Silently swallow not_leader errors, raise on other errors;
     ss::future<> replicate_feature_update_cmd(feature_update_cmd_data data);

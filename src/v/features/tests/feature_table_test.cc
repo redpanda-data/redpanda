@@ -12,6 +12,7 @@
 #include "cluster/feature_update_action.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
+#include "model/timestamp.h"
 #include "security/license.h"
 #include "test_utils/fixture.h"
 

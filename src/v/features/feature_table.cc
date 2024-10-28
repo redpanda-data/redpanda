@@ -17,12 +17,16 @@
 #include "features/logger.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "model/timestamp.h"
+#include "security/license.h"
 #include "version/version.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/shard_id.hh>
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 // The feature table is closely related to cluster and uses many types from it
 using namespace cluster;

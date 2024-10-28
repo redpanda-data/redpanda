@@ -167,7 +167,9 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
                              **kwargs)
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
-            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}',
+            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
+            True
         })
 
     def _has_license_nag(self):

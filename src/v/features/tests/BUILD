@@ -9,6 +9,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/cluster:features",
         "//src/v/features",
+        "//src/v/model",
         "//src/v/security:license",
         "//src/v/test_utils:seastar_boost",
         "@seastar",

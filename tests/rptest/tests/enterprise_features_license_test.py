@@ -69,6 +69,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
 
         self.redpanda.set_security_settings(self.security)
 
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+
     def _put_license(self):
         license = sample_license()
         if license is None:
@@ -76,13 +79,13 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         assert self.admin.put_license(license).status_code == 200, \
             "License update failed"
 
-        def obtain_license(node):
+        def obtain_configured_license(node):
             lic = self.admin.get_license(node=node)
-            return (lic is not None and lic['loaded'] is True, lic)
+            return (self.admin.is_sample_license(lic), lic)
 
         result = None
         for n in self.redpanda.nodes:
-            resp = wait_until_result(lambda: obtain_license(n),
+            resp = wait_until_result(lambda: obtain_configured_license(n),
                                      timeout_sec=5,
                                      backoff_sec=1)
             assert resp['license'] is not None, "License upload failed!"
@@ -106,7 +109,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
 
         rsp = self.admin.get_enterprise_features().json()
 
-        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.not_present
+        # The built in trial license is always present, so we can only observe valid or expired
+        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.expired
+
         status = rsp.get('license_status', None)
         assert type(status) == str, f"Ill-formed license_status {type(status)}"
         try:
@@ -213,7 +218,9 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                 assert not enabled[f.name], \
                     f"expected {f} not enabled, got {json.dumps(enabled, indent=1)}"
 
-        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.not_present
+        # The built in trial license is always present, so we can only observe valid or expired
+        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.expired
+
         status_str = rsp.get('license_status')
         try:
             status = EnterpriseLicenseStatus(status_str)
