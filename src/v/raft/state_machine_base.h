@@ -42,7 +42,7 @@ public:
       model::offset,
       model::timeout_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>> as
-      = std::nullopt);
+      = std::nullopt) const;
 
     /**
      * Applies the batch and updates the next offset to be applied.
@@ -126,7 +126,7 @@ protected:
     friend class state_machine_manager;
 
 private:
-    offset_monitor _waiters;
+    mutable offset_monitor _waiters;
     model::offset _next{0};
 };
 

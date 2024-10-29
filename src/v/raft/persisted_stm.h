@@ -203,7 +203,7 @@ public:
       model::offset offset,
       model::timeout_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>
-      = std::nullopt) noexcept;
+      = std::nullopt) const noexcept;
 
     model::offset max_collectible_offset() override;
     ss::future<fragmented_vector<model::tx_range>>

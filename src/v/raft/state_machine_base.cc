@@ -41,7 +41,7 @@ ss::future<> state_machine_base::stop() {
 ss::future<> state_machine_base::wait(
   model::offset offset,
   model::timeout_clock::time_point timeout,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+  std::optional<std::reference_wrapper<ss::abort_source>> as) const {
     co_await _waiters.wait(offset, timeout, as);
 }
 
