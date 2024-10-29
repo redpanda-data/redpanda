@@ -13,7 +13,9 @@
 
 #include "cluster/controller_backend.h"
 #include "cluster/shard_placement_table.h"
+#include "config/property.h"
 #include "container/chunked_hash_map.h"
+#include "features/enterprise_features.h"
 #include "random/simple_time_jitter.h"
 #include "ssx/event.h"
 #include "utils/mutex.h"
@@ -41,7 +43,6 @@ public:
       ss::sharded<topic_table>&,
       ss::sharded<controller_backend>&,
       config::binding<bool> balancing_on_core_count_change,
-      config::binding<bool> balancing_continuous,
       config::binding<std::chrono::milliseconds> debounce_timeout,
       config::binding<uint32_t> partitions_per_shard,
       config::binding<uint32_t> partitions_reserve_shard0);
@@ -116,7 +117,7 @@ private:
     model::node_id _self;
 
     config::binding<bool> _balancing_on_core_count_change;
-    config::binding<bool> _balancing_continuous;
+    features::sanctioning_binding<config::property<bool>> _balancing_continuous;
     config::binding<std::chrono::milliseconds> _debounce_timeout;
     simple_time_jitter<ss::lowres_clock> _debounce_jitter;
     config::binding<uint32_t> _partitions_per_shard;
