@@ -248,6 +248,12 @@ RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
 
 #################################
 
+FROM base as trino 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/trino /
+RUN /trino && rm /trino
+
+#################################
+
 FROM librdkafka AS final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
@@ -340,6 +346,7 @@ COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
 COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
 COPY --from=iceberg-rest /opt/iceberg-rest-catalog /opt/iceberg-rest-catalog
+COPY --from=trino /opt/trino /opt/trino
 
 RUN ldconfig
 

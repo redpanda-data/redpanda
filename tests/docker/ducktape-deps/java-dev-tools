@@ -8,7 +8,8 @@ apt install -y \
   git \
   maven \
   cmake \
-  curl
+  curl \
+  wget
 
 SCRIPTPATH="$(
   cd -- "$(dirname "$0")" >/dev/null 2>&1
@@ -16,6 +17,24 @@ SCRIPTPATH="$(
 )"
 $SCRIPTPATH/protobuf
 ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
+
+architecture=""
+case $ARCH in
+    amd64) architecture="x64" ;;
+    aarch64) architecture="aarch64";;
+esac
+
+if [ -z "${architecture}" ]; then
+  echo "Unable to determine arch to download JDK22, exiting."
+  exit 1
+fi
+
+# JDK 22 is not available universe repos
+tar_file=openjdk-22.0.2_linux-${architecture}_bin.tar.gz
+java22_url=https://download.java.net/java/GA/jdk22.0.2/c9ecb94cd31b495da20a27d4581645e8/9/GPL/${tar_file}
+
+wget $java22_url && tar xvf $tar_file  && rm -f $tar_file
+mv jdk-22.0.2 /usr/lib/jvm/java-22-openjdk-${ARCH}
 
 update-java-alternatives -s java-1.17.0-openjdk-${ARCH}
 mkdir /opt/java
@@ -31,3 +50,9 @@ JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}"
 /usr/lib/jvm/java-17-openjdk-${ARCH}/bin/java "\$@"
 EOF
 chmod +x /opt/java/java-17
+
+cat <<EOF >/opt/java/java-22
+JAVA_HOME="/usr/lib/jvm/java-22-openjdk-${ARCH}"
+/usr/lib/jvm/java-22-openjdk-${ARCH}/bin/java "\$@"
+EOF
+chmod +x /opt/java/java-22
