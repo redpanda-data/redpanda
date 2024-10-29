@@ -203,8 +203,7 @@ ss::future<consensus_ptr> partition_manager::manage(
                   ntp_cfg, manifest, max_offset);
             }
         } else {
-            // Manifest is not empty since we were able to recovery
-            // some data.
+            // Manifest is not empty since we were able to recover some data.
             auto last_segment = manifest.last_segment();
             vassert(last_segment.has_value(), "Manifest is empty");
             last_included_term = last_segment->archiver_term;
