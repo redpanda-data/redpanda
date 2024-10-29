@@ -1556,7 +1556,7 @@ class TopicRecoveryTest(RedpandaTest):
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_no_data(self, cloud_storage_type):
-        """If we're trying to recovery a topic which didn't have any data
+        """If we're trying to recover a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
         test_case = NoDataCase(self.redpanda, self.cloud_storage_client,
