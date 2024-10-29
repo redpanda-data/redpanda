@@ -854,10 +854,8 @@ public:
           meta,
           def,
           [this](T new_value) -> std::optional<ss::sstring> {
-              auto found = std::find_if(
-                _values.begin(), _values.end(), [&new_value](const T& v) {
-                    return v == new_value;
-                });
+              auto found = std::ranges::find_if(
+                _values, [&new_value](const T& v) { return v == new_value; });
               if (found == _values.end()) {
                   return help_text();
               } else {
