@@ -95,7 +95,7 @@ TEST(DatalakeSchemaRegistry, GetProtoOffsetsOk) {
     }
     value.append(payload.data(), payload.size());
 
-    auto res = datalake::get_proto_offsets(value);
+    auto res = datalake::get_schema_proto_offsets(value);
     ASSERT_TRUE(res.has_value());
     const auto& offsets = res.value().protobuf_offsets;
     EXPECT_THAT(offsets, testing::ElementsAre(0, 1, 2, 3, 4));
@@ -117,7 +117,7 @@ TEST(DatalakeSchemaRegistry, GetProtoOffsetsDefaultZero) {
 
     iobuf value = buf_from(magic, schema_id_encoded, encoded, payload);
 
-    auto res = datalake::get_proto_offsets(value);
+    auto res = datalake::get_schema_proto_offsets(value);
     ASSERT_TRUE(res.has_value());
     const auto& offsets = res.value().protobuf_offsets;
     EXPECT_EQ(offsets.size(), 1);
@@ -141,7 +141,7 @@ TEST(DatalakeSchemaRegistry, GetProtoOffsetsNotEnoughData) {
         value.append(encoded.data(), encoded.size());
     }
 
-    auto res = datalake::get_proto_offsets(value);
+    auto res = datalake::get_schema_proto_offsets(value);
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), datalake::get_schema_error::not_enough_bytes);
 }
