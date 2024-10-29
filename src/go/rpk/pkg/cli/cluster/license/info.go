@@ -3,6 +3,7 @@ package license
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/redpanda-data/common-go/rpadmin"
@@ -133,17 +134,21 @@ func printTextLicenseInfo(resp infoResponse) {
 		if *resp.Expired {
 			tw.Print("License expired:", *resp.Expired)
 		}
-		checkLicenseExpiry(resp.ExpiresUnix)
+		checkLicenseExpiry(resp.ExpiresUnix, resp.Type)
 	}
 	out.Section("LICENSE INFORMATION")
 	tw.Flush()
 }
 
-func checkLicenseExpiry(expiresUnix int64) {
+func checkLicenseExpiry(expiresUnix int64, licenseType string) {
 	ut := time.Unix(expiresUnix, 0)
 	daysLeft := int(time.Until(ut).Hours() / 24)
 
-	if daysLeft < 30 && !ut.Before(time.Now()) {
+	dayThreshold := 30
+	if strings.EqualFold(licenseType, "free_trial") {
+		dayThreshold = 15
+	}
+	if daysLeft < dayThreshold && !ut.Before(time.Now()) {
 		fmt.Fprintf(os.Stderr, "WARNING: your license will expire soon.\n\n")
 	}
 }
