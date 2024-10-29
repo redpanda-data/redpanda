@@ -449,8 +449,14 @@ descriptor(
         return kafka::error_code::invalid_record;
     }
     auto f = fields.begin();
+    if (def().fd->message_type_count() <= *f) {
+        return kafka::error_code::invalid_record;
+    }
     auto d = def().fd->message_type(*f++);
     while (fields.end() != f && d) {
+        if (d->nested_type_count() <= *f) {
+            return kafka::error_code::invalid_record;
+        }
         d = d->nested_type(*f++);
     }
     if (!d) {
