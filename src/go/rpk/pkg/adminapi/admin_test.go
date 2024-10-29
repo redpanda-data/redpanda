@@ -2,6 +2,7 @@ package adminapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ func Test_licenseFeatureChecks(t *testing.T) {
 	tests := []struct {
 		name         string
 		prof         *config.RpkProfile
-		responseCase string // See the mapLicenseResponses below.
+		responseCase string // See the mapLicenseFeatureResponses below.
 		expContain   string
 		withErr      bool
 		checkCache   func(t *testing.T, before int64, after int64)
@@ -26,6 +27,18 @@ func Test_licenseFeatureChecks(t *testing.T) {
 			prof:         &config.RpkProfile{},
 			responseCase: "ok",
 			expContain:   "",
+		},
+		{
+			name:         "free_trial about to expire, no features",
+			prof:         &config.RpkProfile{},
+			responseCase: "ok-free",
+			expContain:   "",
+		},
+		{
+			name:         "free_trial about to expire, with features",
+			prof:         &config.RpkProfile{},
+			responseCase: "ok-features",
+			expContain:   "WARNING: your TRIAL license is about to expire",
 		},
 		{
 			name: "license ok, cache valid",
@@ -144,16 +157,33 @@ type response struct {
 	body   string
 }
 
-var mapLicenseResponses = map[string]response{
-	"ok":            {http.StatusOK, `{"license_status": "valid", "violation": false}`},
+var mapLicenseFeatureResponses = map[string]response{
+	"ok":            {http.StatusOK, `{"license_status": "valid", "violation": false, "features": [{"name": "fips", "enabled": true},{"name": "partition_auto_balancing_continuous", "enabled": false}]}`},
 	"inViolation":   {http.StatusOK, `{"license_status": "expired", "violation": true, "features": [{"name": "partition_auto_balancing_continuous", "enabled": true}]}`},
 	"failedRequest": {http.StatusBadRequest, ""},
+	"ok-free":       {http.StatusOK, `{"license_status": "valid", "violation": false}`},
+	"ok-features":   {http.StatusOK, `{"license_status": "valid", "violation": false, "features": [{"name": "partition_auto_balancing_continuous", "enabled": true}]}`},
+}
+
+var mapLicenseInfoResponses = map[string]response{
+	"ok":            {http.StatusOK, fmt.Sprintf(`{"loaded": true, "license": {"type": "enterprise", "expires": %d}}`, time.Now().Add(60*24*time.Hour).Unix())},
+	"inViolation":   {http.StatusOK, fmt.Sprintf(`{"loaded": true, "license": {"type": "enterprise", "expires": %d}}`, time.Now().Add(60*24*time.Hour).Unix())},
+	"failedRequest": {http.StatusBadRequest, ""},
+	"ok-free":       {http.StatusOK, fmt.Sprintf(`{"loaded": true, "license": {"type": "free_trial", "expires": %d}}`, time.Now().Add(24*time.Hour).Unix())}, // expires in 1 day.
+	"ok-features":   {http.StatusOK, fmt.Sprintf(`{"loaded": true, "license": {"type": "free_trial", "expires": %d}}`, time.Now().Add(24*time.Hour).Unix())},
 }
 
 func licenseHandler(respCase string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		resp := mapLicenseResponses[respCase]
-		w.WriteHeader(resp.status)
-		w.Write([]byte(resp.body))
+		fmt.Println(r.URL.Path)
+		if r.URL.Path == "/v1/features/enterprise" {
+			resp := mapLicenseFeatureResponses[respCase]
+			w.WriteHeader(resp.status)
+			w.Write([]byte(resp.body))
+		} else if r.URL.Path == "/v1/features/license" {
+			resp := mapLicenseInfoResponses[respCase]
+			w.WriteHeader(resp.status)
+			w.Write([]byte(resp.body))
+		}
 	}
 }
