@@ -585,6 +585,7 @@ public:
 
     void set_license(security::license license);
 
+    // Used only for testing
     void revoke_license();
 
     const std::optional<security::license>& get_license() const;
@@ -722,6 +723,10 @@ private:
 
     // Currently loaded redpanda license details
     std::optional<security::license> _license;
+
+    // Used for testing to ensure that after a call to `revoke_license()`,
+    // `should_sanction()` returns true
+    bool _license_initialized{false};
 
     model::offset _applied_offset{};
 

@@ -688,6 +688,7 @@ feature_table::resolve_name(std::string_view feature_name) const {
 
 void feature_table::set_license(security::license license) {
     _license = std::move(license);
+    _license_initialized = true;
 }
 
 void feature_table::revoke_license() { _license = std::nullopt; }
@@ -701,8 +702,9 @@ bool feature_table::should_sanction() const {
         return _license->is_expired();
     }
 
-    // We are yet to initialize the evaluation license in feature_manager
-    return false;
+    // Do not sanction if we are yet to initialize the evaluation license in
+    // feature_manager
+    return _license_initialized;
 }
 
 void feature_table::testing_activate_all() {
