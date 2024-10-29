@@ -22,6 +22,9 @@
 #include "ssx/sformat.h"
 #include "storage/config.h"
 
+#include <seastar/core/reactor.hh>
+#include <seastar/core/thread.hh>
+
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -3774,8 +3777,39 @@ configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     return config_store::read_yaml(root_node["redpanda"], std::move(ignore));
 }
 
+std::unique_ptr<configuration> make_config() {
+    // Constructing `configuration` requires about 90KB of stack space in debug.
+    // In some tests this makes us run out of stack space/into stackoverflows as
+    // the default stack for ss::thread is 128KiB.
+    //
+    // Hence we construct the configuration object in a separate thread with
+    // increased stack size.
+    //
+    // Also we want to keep the configuration object of the stack itself as it's
+    // even larger (>90KB). Hence, we take the unique_ptr indirection and store
+    // it on the heap. This also avoids having to rely on RVO and friends.
+    //
+    // Note this is above our usual max allocation limit of 128KiB but this
+    // isn't much of an issue here as this happens on startup (and also before
+    // the warning threshold is set up)
+    //
+    // Note all of this only happens when running with the reactor active and on
+    // a ss::thread.  ss::thread requires the reactor to be inited. This isn't
+    // the case in all tests (BOOST_AUTO_TEST_CASE). Further, otherwise we are
+    // running on a native posix thread with large stack anyway so this isn't an
+    // issue.
+    auto make_cfg = []() { return std::make_unique<configuration>(); };
+    if (seastar::engine_is_ready() && ss::thread::running_in_thread()) {
+        ss::thread_attributes attrs;
+        attrs.stack_size = 512_KiB;
+        return ss::async(attrs, make_cfg).get();
+    } else {
+        return make_cfg();
+    }
+}
+
 configuration& shard_local_cfg() {
-    static thread_local configuration cfg;
-    return cfg;
+    static thread_local std::unique_ptr<configuration> cfg = make_config();
+    return *cfg;
 }
 } // namespace config
