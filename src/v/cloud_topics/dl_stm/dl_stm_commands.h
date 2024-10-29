@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_topics/dl_overlay.h"
+#include "cloud_topics/dl_version.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
@@ -26,6 +27,31 @@ struct push_overlay_cmd
     auto serde_fields() { return std::tie(overlay); }
 
     dl_overlay overlay;
+};
+
+struct start_snapshot_cmd
+  : public serde::envelope<
+      start_snapshot_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    start_snapshot_cmd() noexcept = default;
+
+    auto serde_fields() { return std::tie(); }
+};
+
+struct remove_snapshots_before_version_cmd
+  : public serde::envelope<
+      remove_snapshots_before_version_cmd,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    remove_snapshots_before_version_cmd() noexcept = default;
+    explicit remove_snapshots_before_version_cmd(
+      dl_version last_version_to_keep)
+      : last_version_to_keep(last_version_to_keep) {}
+
+    auto serde_fields() { return std::tie(last_version_to_keep); }
+
+    dl_version last_version_to_keep{};
 };
 
 } // namespace experimental::cloud_topics

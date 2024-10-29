@@ -3,6 +3,7 @@ v_cc_library(
   NAME cloud_topics_base
   SRCS
     dl_overlay.cc
+    dl_snapshot.cc
     logger.cc
     types.cc
   DEPS

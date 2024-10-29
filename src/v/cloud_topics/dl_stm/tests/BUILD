@@ -8,6 +8,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/cloud_topics:dl_overlay",
+        "//src/v/cloud_topics:dl_version",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/dl_stm:dl_stm_state",

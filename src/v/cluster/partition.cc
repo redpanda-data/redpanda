@@ -585,6 +585,14 @@ ss::future<> partition::stop() {
         co_await _cloud_storage_manifest_view->stop();
     }
 
+    if (_dl_stm_api) {
+        vlog(
+          clusterlog.debug,
+          "Stopping dl_stm_api on partition: {}",
+          partition_ntp);
+        co_await _dl_stm_api->stop();
+    }
+
     _probe.clear_metrics();
     vlog(clusterlog.debug, "Stopped partition {}", partition_ntp);
 }

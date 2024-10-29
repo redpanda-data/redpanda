@@ -24,6 +24,12 @@ class dl_stm_fixture : public raft::raft_fixture {
 public:
     static constexpr auto node_count = 3;
 
+    ~dl_stm_fixture() override {
+        for (auto& entry : api_by_vnode) {
+            entry.second->stop().get();
+        }
+    };
+
     ss::future<> start() {
         for (auto i = 0; i < node_count; ++i) {
             add_node(model::node_id(i), model::revision_id(0));
@@ -87,4 +93,32 @@ TEST_F_CORO(dl_stm_fixture, test_basic) {
 
     ASSERT_TRUE_CORO(
       api(node(*get_leader())).lower_bound(kafka::offset(0)).has_value());
+
+    auto snapshot_res = co_await api(node(*get_leader())).start_snapshot();
+    ASSERT_FALSE_CORO(res.has_error());
+
+    ASSERT_TRUE_CORO(
+      api(node(*get_leader())).read_snapshot(snapshot_res.value()).has_value());
+    ASSERT_EQ_CORO(
+      api(node(*get_leader()))
+        .read_snapshot(snapshot_res.value())
+        ->overlays.size(),
+      1);
+
+    auto snapshot_res2 = co_await api(node(*get_leader())).start_snapshot();
+
+    ASSERT_TRUE_CORO(api(node(*get_leader()))
+                       .read_snapshot(snapshot_res2.value())
+                       .has_value());
+
+    auto remove_res = co_await api(node(*get_leader()))
+                        .remove_snapshots_before(snapshot_res2.value().version);
+    ASSERT_FALSE_CORO(remove_res.has_error());
+
+    ASSERT_FALSE_CORO(
+      api(node(*get_leader())).read_snapshot(snapshot_res.value()).has_value());
+
+    ASSERT_TRUE_CORO(api(node(*get_leader()))
+                       .read_snapshot(snapshot_res2.value())
+                       .has_value());
 }

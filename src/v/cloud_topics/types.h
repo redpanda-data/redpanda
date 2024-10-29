@@ -21,6 +21,8 @@ namespace experimental::cloud_topics {
 
 enum class dl_stm_key {
     push_overlay = 0,
+    start_snapshot = 1,
+    remove_snapshots_before_version = 2,
     // TODO: add all commands
 };
 

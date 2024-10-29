@@ -17,6 +17,11 @@ auto fmt::formatter<experimental::cloud_topics::dl_stm_key>::format(
     switch (key) {
     case experimental::cloud_topics::dl_stm_key::push_overlay:
         return fmt::format_to(ctx.out(), "push_overlay");
+    case experimental::cloud_topics::dl_stm_key::start_snapshot:
+        return fmt::format_to(ctx.out(), "start_snapshot");
+    case experimental::cloud_topics::dl_stm_key::
+      remove_snapshots_before_version:
+        return fmt::format_to(ctx.out(), "remove_snapshots_before_version");
     }
     return fmt::format_to(
       ctx.out(), "unknown dl_stm_key({})", static_cast<int>(key));
