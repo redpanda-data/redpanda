@@ -144,3 +144,19 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "schema_registry_test",
+    timeout = "short",
+    srcs = [
+        "schema_registry_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/datalake:schema_registry",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:vint",
+        "@googletest//:gtest",
+    ],
+)
