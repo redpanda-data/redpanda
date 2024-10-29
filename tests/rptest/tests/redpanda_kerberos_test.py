@@ -168,8 +168,6 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
             f'{self.LICENSE_CHECK_INTERVAL_SEC}',
-            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
-            True
         })
 
     def _has_license_nag(self):
@@ -197,6 +195,15 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
         self.logger.debug("Setting cluster config")
         self.redpanda.set_cluster_config(
             {"sasl_mechanisms": ["GSSAPI", "SCRAM"]})
+
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': '1'})
+        self.redpanda.stop()
+        self.redpanda.start(clean_nodes=False)
+
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
 
         self.logger.debug("Waiting for license nag")
         wait_until(self._has_license_nag,
