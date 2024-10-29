@@ -146,6 +146,7 @@ class DebugBundleTestBase(RedpandaTest):
         if cancel_after_start:
             res = admin.delete_debug_bundle(job_id=job_id, node=node)
             assert res.status_code == requests.codes.no_content, f"Failed to cancel debug bundle: {res.json()}"
+            assert len(res.content) == 0, f"Response not empty: {res.content}"
 
         expected_status = 'error' if cancel_after_start else 'success'
 
@@ -304,7 +305,7 @@ class DebugBundleTest(DebugBundleTestBase):
         # Delete the debug bundle file
         res = self.admin.delete_debug_bundle_file(filename=filename, node=node)
         assert res.status_code == requests.codes.no_content, res.json()
-        assert res.headers['Content-Type'] == 'application/json', res.json()
+        assert len(res.content) == 0, f"Response not empty: {res.content}"
         assert not node.account.exists(file)
 
         # Get the non-existant debug bundle

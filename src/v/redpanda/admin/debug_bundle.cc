@@ -59,10 +59,10 @@ as_json_doc(ss::http::request* req) {
 template<typename T>
 std::unique_ptr<ss::http::reply> make_json_body(
   ss::http::reply::status_type status,
-  const T& t,
+  T&& t,
   std::unique_ptr<ss::http::reply> rep) {
     rep->set_status(status);
-    rep->write_body("json", ss::json::stream_object(t));
+    rep->write_body("json", ss::json::stream_object(std::forward<T>(t)));
     return rep;
 }
 
@@ -259,10 +259,8 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_debug_bundle(
         co_return make_error_body(res.assume_error(), std::move(rep));
     }
 
-    co_return make_json_body(
-      ss::http::reply::status_type::no_content,
-      ss::json::json_void{},
-      std::move(rep));
+    rep->set_status(ss::http::reply::status_type::no_content);
+    co_return rep;
 }
 
 namespace {
@@ -326,8 +324,6 @@ admin_server::delete_debug_bundle_file(
         co_return make_error_body(del_res.assume_error(), std::move(rep));
     }
 
-    co_return make_json_body(
-      ss::http::reply::status_type::no_content,
-      ss::json::json_void{},
-      std::move(rep));
+    rep->set_status(ss::http::reply::status_type::no_content);
+    co_return rep;
 }
