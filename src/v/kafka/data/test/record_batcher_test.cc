@@ -10,12 +10,12 @@
  */
 
 #include "base/units.h"
-#include "kafka/client/record_batcher.h"
-#include "kafka/client/test/utils.h"
+#include "kafka/data/record_batcher.h"
+#include "kafka/data/test/utils.h"
 
 #include <gtest/gtest.h>
 
-namespace kafka::client {
+namespace kafka::data {
 
 TEST(TransformLoggingRecordBatcherTest, TestMaxBytes) {
     constexpr size_t batch_max_bytes = 1_KiB;
@@ -64,4 +64,4 @@ TEST(TransformLoggingRecordBatcherTest, TestReuseBatcher) {
     }
 }
 
-} // namespace kafka::client
+} // namespace kafka::data

@@ -81,7 +81,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/hashing:murmur",
         "//src/v/json",
-        "//src/v/kafka/client:record_batcher",
+        "//src/v/kafka/data:record_batcher",
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:time_jitter",

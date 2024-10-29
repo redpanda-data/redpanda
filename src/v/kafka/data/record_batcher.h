@@ -18,7 +18,7 @@
 
 #include <optional>
 
-namespace kafka::client {
+namespace kafka::data {
 
 namespace detail {
 class batcher_impl;
@@ -71,4 +71,4 @@ public:
 private:
     std::unique_ptr<detail::batcher_impl> _impl;
 };
-} // namespace kafka::client
+} // namespace kafka::data

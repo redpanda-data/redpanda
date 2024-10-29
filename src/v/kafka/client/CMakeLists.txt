@@ -1,15 +1,4 @@
 v_cc_library(
-  NAME kc_record_batcher
-  HDRS
-    record_batcher.h
-  SRCS
-    record_batcher.cc
-  DEPS
-    v::model
-    v::storage
-)
-
-v_cc_library(
   NAME kafka_client
   SRCS
     assignment_plans.cc
