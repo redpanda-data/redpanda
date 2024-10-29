@@ -10,11 +10,24 @@
  */
 #pragma once
 
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "schema/registry.h"
 
 #include <seastar/core/future.hh>
 
 namespace schema {
+
+struct fake_store : public pandaproxy::schema_registry::schema_getter {
+public:
+    ss::future<pandaproxy::schema_registry::subject_schema> get_subject_schema(
+      pandaproxy::schema_registry::subject sub,
+      std::optional<pandaproxy::schema_registry::schema_version> version,
+      pandaproxy::schema_registry::include_deleted inc_dec) final;
+    ss::future<pandaproxy::schema_registry::canonical_schema_definition>
+    get_schema_definition(pandaproxy::schema_registry::schema_id id) final;
+
+    std::vector<pandaproxy::schema_registry::subject_schema> schemas;
+};
 
 // This is a fake schema registry for testing. Schemas are maintained in local
 // memory only, not replicated or persisted to stable storage.
@@ -22,6 +35,8 @@ class fake_registry : public schema::registry {
 public:
     bool is_enabled() const override { return true; };
 
+    ss::future<pandaproxy::schema_registry::schema_getter*>
+    getter() const override;
     ss::future<pandaproxy::schema_registry::canonical_schema_definition>
     get_schema_definition(
       pandaproxy::schema_registry::schema_id id) const override;
@@ -36,7 +51,14 @@ public:
 
     const std::vector<pandaproxy::schema_registry::subject_schema>& get_all();
 
+    void set_inject_failures(const std::exception_ptr& injected) {
+        _injected_failure = injected;
+    }
+
 private:
-    std::vector<pandaproxy::schema_registry::subject_schema> _schemas;
+    void maybe_throw_injected_failure() const;
+
+    std::exception_ptr _injected_failure;
+    mutable fake_store _store;
 };
 } // namespace schema

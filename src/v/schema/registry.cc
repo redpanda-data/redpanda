@@ -12,9 +12,13 @@
 #include "schema/registry.h"
 
 #include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/avro.h"
+#include "pandaproxy/schema_registry/json.h"
+#include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -33,6 +37,11 @@ public:
       : _service(service) {}
 
     bool is_enabled() const override { return true; };
+
+    ss::future<ppsr::schema_getter*> getter() const override {
+        auto [reader, _] = co_await service();
+        co_return reader;
+    }
 
     ss::future<ppsr::canonical_schema_definition>
     get_schema_definition(ppsr::schema_id id) const override {
@@ -70,6 +79,10 @@ class disabled_schema_registry : public registry {
 public:
     bool is_enabled() const override { return false; };
 
+    ss::future<ppsr::schema_getter*> getter() const override {
+        throw std::logic_error(
+          "invalid attempted usage of a disabled schema registry");
+    }
     ss::future<ppsr::canonical_schema_definition>
     get_schema_definition(ppsr::schema_id) const override {
         throw std::logic_error(
@@ -86,6 +99,30 @@ public:
     }
 };
 } // namespace
+
+ss::future<ppsr::valid_schema>
+registry::get_valid_schema(ppsr::schema_id schema_id) const {
+    auto reader = co_await getter();
+    auto schema_def = co_await reader->get_schema_definition(schema_id);
+    auto schema_type = schema_def.type();
+    switch (schema_type) {
+    case ppsr::schema_type::json: {
+        co_return co_await ppsr::make_json_schema_definition(
+          *reader,
+          {ppsr::subject("r"), {std::move(schema_def).raw(), schema_type}});
+    }
+    case ppsr::schema_type::avro: {
+        co_return co_await ppsr::make_avro_schema_definition(
+          *reader,
+          {ppsr::subject("r"), {std::move(schema_def).raw(), schema_type}});
+    }
+    case ppsr::schema_type::protobuf: {
+        co_return co_await ppsr::make_protobuf_schema_definition(
+          *reader,
+          {ppsr::subject("r"), {std::move(schema_def).raw(), schema_type}});
+    }
+    }
+}
 
 std::unique_ptr<registry> registry::make_default(ppsr::api* sr) {
     if (!sr) {

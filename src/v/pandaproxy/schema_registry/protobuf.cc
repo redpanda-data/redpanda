@@ -341,7 +341,7 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 /// Recursively import references into the DescriptorPool, building the
 /// files on stack unwind.
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
-  pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
+  pb::DescriptorPool& dp, schema_getter& store, canonical_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         if (dp.FindFileByName(ref.name)) {
             continue;
@@ -361,7 +361,7 @@ ss::future<const pb::FileDescriptor*> build_file_with_refs(
 ///\brief Import a schema in the DescriptorPool and return the
 /// FileDescriptor.
 ss::future<const pb::FileDescriptor*> import_schema(
-  pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
+  pb::DescriptorPool& dp, schema_getter& store, canonical_schema schema) {
     try {
         co_return co_await build_file_with_refs(dp, store, schema.share());
     } catch (const exception& e) {
@@ -461,7 +461,7 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
 }
 
 ss::future<protobuf_schema_definition>
-make_protobuf_schema_definition(sharded_store& store, canonical_schema schema) {
+make_protobuf_schema_definition(schema_getter& store, canonical_schema schema) {
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
     auto refs = schema.def().refs();
     impl->fd = co_await import_schema(impl->_dp, store, std::move(schema));

@@ -30,6 +30,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "schema_identifier",
+    hdrs = [
+        "schema_identifier.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/pandaproxy",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_protobuf",
     srcs = [
         "schema_protobuf.cc",
@@ -240,6 +253,49 @@ redpanda_cc_library(
         "//src/v/utils:retry_chain_node",
         "//src/v/utils:stream_provider",
         "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "schema_registry",
+    srcs = ["schema_registry.cc"],
+    hdrs = ["schema_registry.h"],
+    implementation_deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/pandaproxy",
+    ],
+)
+
+redpanda_cc_library(
+    name = "record_schema_resolver",
+    srcs = [
+        "record_schema_resolver.cc",
+    ],
+    hdrs = [
+        "record_schema_resolver.h",
+    ],
+    implementation_deps = [
+        ":conversion_outcome",
+        ":logger",
+        ":schema_registry",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:schema_avro",
+        "//src/v/pandaproxy",
+        "//src/v/schema:registry",
+        "@avro",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":schema_identifier",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
         "@seastar",
     ],
 )

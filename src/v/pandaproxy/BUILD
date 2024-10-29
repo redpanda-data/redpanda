@@ -206,6 +206,7 @@ redpanda_cc_library(
         "schema_registry/requests/get_subject_versions_version.h",
         "schema_registry/requests/mode.h",
         "schema_registry/requests/post_subject_versions.h",
+        "schema_registry/schema_getter.h",
         "schema_registry/schema_id_cache.h",
         "schema_registry/seq_writer.h",
         "schema_registry/service.h",

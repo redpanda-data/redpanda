@@ -10,6 +10,8 @@
 
 #include "iceberg/datatypes.h"
 
+#include <seastar/util/bool_class.hh>
+
 #include <avro/CustomAttributes.hh>
 #include <avro/LogicalType.hh>
 #include <avro/Schema.hh>
@@ -27,6 +29,8 @@ avro::Schema struct_type_to_avro(const struct_type&, std::string_view name);
 // attributes).
 nested_field_ptr
 child_field_from_avro(const avro::NodePtr& parent, size_t child_idx);
-field_type type_from_avro(const avro::NodePtr&);
+using with_field_ids = ss::bool_class<struct field_id_tag>;
+field_type type_from_avro(
+  const avro::NodePtr&, with_field_ids with_ids = with_field_ids::yes);
 
 } // namespace iceberg
