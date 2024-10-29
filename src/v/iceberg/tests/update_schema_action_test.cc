@@ -7,8 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cloud_io/tests/scoped_remote.h"
-#include "cloud_storage/tests/s3_imposter.h"
 #include "iceberg/tests/test_schemas.h"
 #include "iceberg/transaction.h"
 
@@ -18,15 +16,8 @@ using namespace iceberg;
 using namespace iceberg::table_update;
 using namespace iceberg::table_requirement;
 
-class UpdateSchemaActionTest
-  : public s3_imposter_fixture
-  , public ::testing::Test {
+class UpdateSchemaActionTest : public ::testing::Test {
 public:
-    UpdateSchemaActionTest()
-      : sr(cloud_io::scoped_remote::create(10, conf))
-      , io(sr->remote.local(), bucket_name) {
-        set_expectations_and_listen({});
-    }
     // Create a nested schema, adding columns as requested.
     schema make_schema(int32_t id, size_t extra_cols = 0) {
         constexpr nested_field::id_t base_field_id{50};
@@ -63,14 +54,10 @@ public:
           .last_partition_id = partition_field::id_t{-1},
         };
     }
-
-    // These tests don't do IO, but this is to begin a transaction.
-    std::unique_ptr<cloud_io::scoped_remote> sr;
-    manifest_io io;
 };
 
 TEST_F(UpdateSchemaActionTest, TestExistingCurrentSchema) {
-    transaction tx(io, create_table());
+    transaction tx(create_table());
 
     // Point to a new schema id that has the same type. The id is ignored and
     // the type is used to identify the schema.
@@ -89,7 +76,7 @@ TEST_F(UpdateSchemaActionTest, TestExistingSchema) {
     table.current_schema_id = schema::id_t{1};
 
     // Update to the same schema as schema_id 0.
-    transaction tx(io, std::move(table));
+    transaction tx(std::move(table));
     ASSERT_EQ(tx.table().schemas.size(), 2);
     auto res = tx.set_schema(make_schema(12345)).get();
 
@@ -116,7 +103,7 @@ TEST_F(UpdateSchemaActionTest, TestExistingSchema) {
 }
 
 TEST_F(UpdateSchemaActionTest, TestNewSchema) {
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     auto new_schema = make_schema(12345, 1);
     auto new_schema_len = new_schema.schema_struct.fields.size();
     auto res = tx.set_schema(std::move(new_schema)).get();
@@ -164,7 +151,7 @@ TEST_F(UpdateSchemaActionTest, TestNewSchema) {
 }
 
 TEST_F(UpdateSchemaActionTest, TestNewMultipleSchemas) {
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     auto new_schema = make_schema(12345, 1);
     auto new_schema_len = new_schema.schema_struct.fields.size();
     auto res = tx.set_schema(std::move(new_schema)).get();
@@ -198,7 +185,7 @@ TEST_F(UpdateSchemaActionTest, TestNewMultipleSchemas) {
 
 TEST_F(UpdateSchemaActionTest, TestInvalidSchema) {
     // Removing columns is not yet supported.
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     auto new_schema = make_schema(12345);
     new_schema.schema_struct.fields.pop_back();
 
@@ -211,4 +198,19 @@ TEST_F(UpdateSchemaActionTest, TestInvalidSchema) {
     res = tx.set_schema(std::move(new_new_schema)).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_TRUE(tx.error().has_value());
+}
+
+TEST_F(UpdateSchemaActionTest, TestAssignFieldIds) {
+    transaction tx(create_table());
+    auto new_schema = make_schema(12345, 10);
+    auto new_schema_len = new_schema.schema_struct.fields.size();
+    auto res = tx.set_schema(std::move(new_schema)).get();
+    ASSERT_FALSE(res.has_error());
+
+    const auto& add_update = std::get<add_schema>(tx.updates().updates[0]);
+    ASSERT_EQ(add_update.schema.schema_struct.fields.size(), new_schema_len);
+
+    auto highest_field = add_update.schema.highest_field_id();
+    ASSERT_TRUE(highest_field.has_value());
+    ASSERT_EQ(27, highest_field.value()());
 }

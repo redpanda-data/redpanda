@@ -8,6 +8,10 @@
 // by the Apache License, Version 2.0
 #include "iceberg/schema.h"
 
+#include "iceberg/field_collecting_visitor.h"
+
+#include <ranges>
+
 namespace iceberg {
 
 namespace {
@@ -88,6 +92,24 @@ std::optional<nested_field::id_t> schema::highest_field_id() const {
         std::visit(nested_field_collecting_visitor{to_visit}, type);
     }
     return highest;
+}
+
+void schema::assign_fresh_ids() {
+    int next_id = 1;
+    chunked_vector<nested_field*> to_visit_stack;
+    for (auto& f : std::ranges::reverse_view(schema_struct.fields)) {
+        to_visit_stack.push_back(f.get());
+    }
+    while (!to_visit_stack.empty()) {
+        auto* field = to_visit_stack.back();
+        to_visit_stack.pop_back();
+        if (!field) {
+            continue;
+        }
+        auto& type = field->type;
+        field->id = nested_field::id_t{next_id++};
+        std::visit(reverse_field_collecting_visitor{to_visit_stack}, type);
+    }
 }
 
 } // namespace iceberg

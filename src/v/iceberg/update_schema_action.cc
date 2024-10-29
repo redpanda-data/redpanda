@@ -40,6 +40,10 @@ ss::future<action::action_outcome> update_schema_action::build_updates() && {
     // current schema.
     const schema::id_t new_schema_id{highest_schema_id() + 1};
     new_schema_.schema_id = new_schema_id;
+
+    // TODO: when we support schema evolution, we'll need to assign IDs to only
+    // the new fields.
+    new_schema_.assign_fresh_ids();
     auto last_column_id = new_schema_.highest_field_id();
     ret.updates.emplace_back(table_update::add_schema{
       .schema = std::move(new_schema_),

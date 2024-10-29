@@ -99,12 +99,17 @@ public:
      * Generates table with 5 snapshots.
      */
     ss::future<transaction> generate_metadata() {
-        transaction tx(io, create_table());
-        (void)co_await tx.merge_append(create_data_files("test_1", 1, 10, 1));
-        (void)co_await tx.merge_append(create_data_files("test_2", 2, 20, 2));
-        (void)co_await tx.merge_append(create_data_files("test_3", 3, 30, 3));
-        (void)co_await tx.merge_append(create_data_files("test_4", 2, 40, 4));
-        (void)co_await tx.merge_append(create_data_files("test_5", 1, 50, 5));
+        transaction tx(create_table());
+        (void)co_await tx.merge_append(
+          io, create_data_files("test_1", 1, 10, 1));
+        (void)co_await tx.merge_append(
+          io, create_data_files("test_2", 2, 20, 2));
+        (void)co_await tx.merge_append(
+          io, create_data_files("test_3", 3, 30, 3));
+        (void)co_await tx.merge_append(
+          io, create_data_files("test_4", 2, 40, 4));
+        (void)co_await tx.merge_append(
+          io, create_data_files("test_5", 1, 50, 5));
         co_return tx;
     }
 

@@ -108,13 +108,14 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
       = merge_append_action::default_min_to_merge_new_files;
     const size_t files_per_man = 2;
     const size_t rows_per_man = 25;
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     // Repeatedly add new data files. Each iteration creates a new manifest
     // because we're below the merge count threshhold.
     for (size_t i = 0; i < num_to_merge_at; i++) {
         const auto expected_snapshots = i + 1;
         const auto expected_manifests = expected_snapshots;
         auto res = tx.merge_append(
+                       io,
                        create_data_files("foo", files_per_man, rows_per_man))
                      .get();
         ASSERT_FALSE(res.has_error()) << res.error();
@@ -134,7 +135,7 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
     // At the merge threshold, we expect the latest snapshot contains a merged
     // manifest.
     auto res = tx.merge_append(
-                   create_data_files("foo", files_per_man, rows_per_man))
+                   io, create_data_files("foo", files_per_man, rows_per_man))
                  .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     const auto& table = tx.table();
@@ -169,13 +170,14 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
     const size_t num_to_merge_at = 9;
     const size_t files_per_man = 1;
     const size_t rows_per_man = 25;
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     for (size_t i = 0; i < num_to_merge_at; i++) {
         const auto expected_snapshots = i + 1;
         const auto expected_manifests = expected_snapshots;
-        auto res = tx.merge_append(create_data_files(
-                                     path_base, files_per_man, rows_per_man))
-                     .get();
+        auto res
+          = tx.merge_append(
+                io, create_data_files(path_base, files_per_man, rows_per_man))
+              .get();
         ASSERT_FALSE(res.has_error()) << res.error();
         const auto& table = tx.table();
         ASSERT_TRUE(table.snapshots.has_value());
@@ -193,6 +195,7 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
     // At the merge threshold, we expect the latest snapshot contains a merged
     // manifest.
     auto res = tx.merge_append(
+                   io,
                    create_data_files(path_base, files_per_man, rows_per_man))
                  .get();
     ASSERT_FALSE(res.has_error()) << res.error();
@@ -248,13 +251,13 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
 }
 
 TEST_F(MergeAppendActionTest, TestUniqueSnapshotIds) {
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     const auto& table = tx.table();
     chunked_hash_set<snapshot_id> snap_ids;
     const size_t num_snapshots = 1000;
     for (auto i = 0; i < 1000; i++) {
         const auto expected_snapshots = i + 1;
-        auto res = tx.merge_append(create_data_files("foo", 1, 1)).get();
+        auto res = tx.merge_append(io, create_data_files("foo", 1, 1)).get();
         ASSERT_FALSE(res.has_error()) << res.error();
         ASSERT_TRUE(table.snapshots.has_value());
         ASSERT_TRUE(table.current_snapshot_id.has_value());
@@ -278,14 +281,15 @@ TEST_F(MergeAppendActionTest, TestUniqueSnapshotIds) {
 TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
     const size_t num_to_merge_at
       = merge_append_action::default_min_to_merge_new_files;
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     const auto& table = tx.table();
     chunked_hash_set<snapshot_id> snap_ids;
     const int32_t base_pk = 300;
     for (size_t i = 0; i < num_to_merge_at; i++) {
         int32_t pk = base_pk + i;
         const auto expected_manifests = i + 1;
-        auto res = tx.merge_append(create_data_files("foo", 1, 1, pk)).get();
+        auto res
+          = tx.merge_append(io, create_data_files("foo", 1, 1, pk)).get();
         ASSERT_FALSE(res.has_error()) << res.error();
 
         // Download the resulting manifest list and make sure we only added a
@@ -316,7 +320,8 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
     }
     // Write one more manifest, triggering a merge.
     const int32_t last_pk = base_pk + num_to_merge_at + 123;
-    auto res = tx.merge_append(create_data_files("foo", 1, 1, last_pk)).get();
+    auto res
+      = tx.merge_append(io, create_data_files("foo", 1, 1, last_pk)).get();
     ASSERT_FALSE(res.has_error()) << res.error();
     auto latest_mlist_path = table.snapshots.value().back().manifest_list_path;
     auto latest_mlist_res
@@ -341,8 +346,8 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
 TEST_F(MergeAppendActionTest, TestBadMetadata) {
     chunked_vector<table_metadata> bad_tables;
     auto check_bad = [this](table_metadata t) {
-        transaction tx(io, std::move(t));
-        auto res = tx.merge_append(create_data_files("foo", 1, 1)).get();
+        transaction tx(std::move(t));
+        auto res = tx.merge_append(io, create_data_files("foo", 1, 1)).get();
         ASSERT_TRUE(res.has_error());
         ASSERT_EQ(res.error(), action::errc::unexpected_state);
     };
@@ -385,12 +390,12 @@ TEST_F(MergeAppendActionTest, TestBadMetadata) {
 }
 
 TEST_F(MergeAppendActionTest, TestBadFile) {
-    transaction tx(io, create_table());
+    transaction tx(create_table());
     auto bad_files = create_data_files("foo", 1, 1);
     for (auto& f : bad_files) {
         f.partition = partition_key{};
     }
-    auto res = tx.merge_append(std::move(bad_files)).get();
+    auto res = tx.merge_append(io, std::move(bad_files)).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), action::errc::unexpected_state);
 }

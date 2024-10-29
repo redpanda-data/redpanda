@@ -34,6 +34,11 @@ struct schema {
       ids_to_types(chunked_hash_set<nested_field::id_t> = {}) const;
     std::optional<nested_field::id_t> highest_field_id() const;
 
+    // Assigns new IDs to each field. Field IDs are assigned depth first in
+    // each field: a parent field is assigned an ID, and then each child is
+    // assigned IDs, before moving onto the next parent field.
+    void assign_fresh_ids();
+
     schema copy() const {
         return schema{
           .schema_struct = schema_struct.copy(),

@@ -59,6 +59,11 @@ public:
     virtual ss::future<checked<table_metadata, errc>>
     load_table(const table_identifier& table_ident) = 0;
 
+    ss::future<checked<table_metadata, errc>> load_or_create_table(
+      const table_identifier& table_ident,
+      const struct_type& type,
+      const partition_spec& spec);
+
     // Commits the given transaction to the catalog.
     //
     // Note that regardless of whether this succeeds or fails, the resulting

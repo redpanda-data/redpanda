@@ -112,8 +112,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
 
     // TODO: update the table schema if it differs from the input files!
 
-    iceberg::transaction txn(io_, std::move(table_res.value()));
-    auto icb_append_res = co_await txn.merge_append(std::move(icb_files));
+    iceberg::transaction txn(std::move(table_res.value()));
+    auto icb_append_res = co_await txn.merge_append(io_, std::move(icb_files));
     if (icb_append_res.has_error()) {
         co_return log_and_convert_action_errc(
           icb_append_res.error(),
@@ -141,38 +141,13 @@ iceberg_file_committer::table_id_for_topic(const model::topic& t) const {
 ss::future<checked<iceberg::table_metadata, file_committer::errc>>
 iceberg_file_committer::load_or_create_table(
   const iceberg::table_identifier& table_id) const {
-    auto load_res = co_await catalog_.load_table(table_id);
-    if (load_res.has_value()) {
-        co_return std::move(load_res.value());
-    }
-    if (load_res.error() != iceberg::catalog::errc::not_found) {
+    auto res = co_await catalog_.load_or_create_table(
+      table_id, schemaless_struct_type(), hour_partition_spec());
+    if (res.has_error()) {
         co_return log_and_convert_catalog_errc(
-          load_res.error(),
-          fmt::format("Iceberg table {} failed to load", table_id));
+          res.error(), fmt::format("Failed to load or create {}", table_id));
     }
-    vlog(
-      datalake_log.info,
-      "Iceberg table {} not found in catalog, creating new table",
-      table_id);
-    auto create_res = co_await catalog_.create_table(
-      table_id, default_schema(), datalake::hour_partition_spec());
-    if (create_res.has_value()) {
-        co_return std::move(create_res.value());
-    }
-    if (create_res.error() != iceberg::catalog::errc::already_exists) {
-        co_return log_and_convert_catalog_errc(
-          create_res.error(),
-          fmt::format("Iceberg table {} failed to create", table_id));
-    }
-    load_res = co_await catalog_.load_table(table_id);
-    if (load_res.has_value()) {
-        co_return std::move(load_res.value());
-    }
-    // If it fails to load even after creating, regardless of what it is, just
-    // fail the request.
-    co_return log_and_convert_catalog_errc(
-      load_res.error(),
-      fmt::format("Iceberg table {} failed to load after creating", table_id));
+    co_return std::move(res.value());
 }
 
 } // namespace datalake::coordinator
