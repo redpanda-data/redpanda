@@ -190,6 +190,7 @@ use_repo(
     "com_github_hashicorp_go_multierror",
     "com_github_kballard_go_shellquote",
     "com_github_kr_pretty",
+    "com_github_kr_text",
     "com_github_lestrrat_go_jwx",
     "com_github_linkedin_goavro_v2",
     "com_github_lorenzosaino_go_sysctl",

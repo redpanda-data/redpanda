@@ -9,6 +9,8 @@ go_library(
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/oauth",
         "//src/go/rpk/pkg/oauth/providers/auth0",
+        "@com_github_kr_text//:text",
+        "@com_github_moby_term//:term",
         "@com_github_redpanda_data_common_go_rpadmin//:rpadmin",
         "@com_github_spf13_afero//:afero",
         "@org_uber_go_zap//:zap",

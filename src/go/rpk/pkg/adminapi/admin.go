@@ -19,6 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kr/text"
+	mTerm "github.com/moby/term"
+
 	"go.uber.org/zap"
 
 	"github.com/redpanda-data/common-go/rpadmin"
@@ -177,6 +180,10 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *rpadmin.AdminAPI
 				}
 			}
 		}
+	}
+	if ws, err := mTerm.GetWinsize(0); err == nil {
+		// text.Wrap removes the newline from the text. We add it back.
+		msg = "\n" + text.Wrap(msg, int(ws.Width)) + "\n"
 	}
 	return msg
 }

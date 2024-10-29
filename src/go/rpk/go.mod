@@ -26,6 +26,7 @@ require (
 	github.com/hamba/avro/v2 v2.25.2
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
+	github.com/kr/text v0.2.0
 	github.com/lestrrat-go/jwx v1.2.30
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/lorenzosaino/go-sysctl v0.3.1
