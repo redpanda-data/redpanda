@@ -411,4 +411,26 @@ TEST(RecordShredding, AddressBookExample) {
           IsVal("NULL", 0, 0))));
 }
 
+TEST(RecordShredding, RequiredGroupWrappedInOptionalGroup) {
+    schema_element schema = group_node(
+      "Root",
+      field_repetition_type::required,
+      group_node(
+        "optional",
+        field_repetition_type::optional,
+        group_node(
+          "required",
+          field_repetition_type::required,
+          leaf_node("leaf", field_repetition_type::required, i32_type()))));
+    group_value r1 = record(null_value());
+    group_value r2 = record(record(record(int32_value(42))));
+    index_schema(schema);
+    value_collector collector(schema);
+    shred_record(schema, std::move(r1), collector).get();
+    shred_record(schema, std::move(r2), collector).get();
+    EXPECT_THAT(
+      collector.columns,
+      ElementsAre(ElementsAre(IsVal("NULL", 0, 0), IsVal("42", 0, 1))));
+}
+
 // NOLINTEND(*magic-number*)

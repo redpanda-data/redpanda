@@ -154,10 +154,14 @@ private:
               return process_required_group_value(
                 element, levels, std::move(groups));
           },
-          [element](null_value&) -> ss::future<> {
-              return ss::make_exception_future(std::runtime_error(fmt::format(
-                "unexpected null value for required schema element {}",
-                element->name)));
+          [this, element, levels](null_value&) -> ss::future<> {
+              // We need to handle a required node who's parent is optional and
+              // `null`, so we can't raise an error here.
+              // TODO: We should have validation that this value isn't directly
+              // `null` - we should be able to do this with the level
+              // information if we track each node's expected max
+              // definition level for this node in the tree.
+              return process_optional_null_group(element, levels);
           },
           [element](repeated_value&) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
@@ -177,7 +181,7 @@ private:
         return ss::visit(
           std::move(val),
           [this, element, levels](null_value&) {
-              return process_optional_null_value(element, levels);
+              return process_optional_null_group(element, levels);
           },
           [this, element, levels](repeated_value& list) {
               return process_repeated_value(element, levels, std::move(list));
@@ -204,7 +208,7 @@ private:
                 element, levels, std::move(group));
           },
           [this, element, levels](null_value&) -> ss::future<> {
-              return process_optional_null_value(element, levels);
+              return process_optional_null_group(element, levels);
           },
           [element](repeated_value&) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
@@ -225,7 +229,7 @@ private:
       repeated_value list) {
         // Empty lists are equivalent to a `null` value.
         if (list.empty()) {
-            co_return co_await process_optional_null_value(element, levels);
+            co_return co_await process_optional_null_group(element, levels);
         }
         traversal_levels child_levels = levels;
         // We are marking that there is a higher depth here we
@@ -252,7 +256,7 @@ private:
         return process_required_group_value(element, levels, std::move(groups));
     }
 
-    ss::future<> process_optional_null_value(
+    ss::future<> process_optional_null_group(
       const schema_element* element, traversal_levels levels) {
         // If the value is `null`, we use the parent definition_level so that
         // assembly can determine where the `null` started.
