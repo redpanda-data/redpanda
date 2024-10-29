@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/kr/text"
+	mTerm "github.com/moby/term"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -717,6 +719,10 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *AdminAPI, p *con
 				}
 			}
 		}
+	}
+	if ws, err := mTerm.GetWinsize(0); err == nil {
+		// text.Wrap removes the newline from the text. We add it back.
+		msg = "\n" + text.Wrap(msg, int(ws.Width)) + "\n"
 	}
 	return msg
 }
