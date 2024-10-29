@@ -69,6 +69,7 @@ public:
 template<class T>
 class property : public base_property {
 public:
+    using value_type = T;
     using validator =
       typename ss::noncopyable_function<std::optional<ss::sstring>(const T&)>;
 
@@ -77,9 +78,9 @@ public:
       std::string_view name,
       std::string_view desc,
       base_property::metadata meta = {},
-      T def = T{},
+      value_type def = value_type{},
       property::validator validator = property::noop_validator,
-      std::optional<legacy_default<T>> ld = std::nullopt)
+      std::optional<legacy_default<value_type>> ld = std::nullopt)
       : base_property(conf, name, desc, meta)
       , _value(def)
       , _default(std::move(def))
@@ -92,7 +93,7 @@ public:
      * use in unit tests of things like kafka client that carry
      * around a config_store as a member.
      */
-    property(property<T>&& rhs)
+    property(property<value_type>&& rhs)
       : base_property(rhs)
       , _value(std::move(rhs._value))
       , _default(std::move(rhs._default))
@@ -109,11 +110,11 @@ public:
         }
     }
 
-    const T& value() { return _value; }
+    const value_type& value() { return _value; }
 
-    const T& value() const { return _value; }
+    const value_type& value() const { return _value; }
 
-    const T& default_value() const { return _default; }
+    const value_type& default_value() const { return _default; }
 
     std::string_view type_name() const override;
 
@@ -131,11 +132,11 @@ public:
         return get_visibility() == visibility::deprecated;
     }
 
-    const T& operator()() { return value(); }
+    const value_type& operator()() { return value(); }
 
-    const T& operator()() const { return value(); }
+    const value_type& operator()() const { return value(); }
 
-    operator T() const { return value(); } // NOLINT
+    operator value_type() const { return value(); } // NOLINT
 
     void print(std::ostream& o) const override {
         o << name() << ":";
@@ -160,22 +161,22 @@ public:
     }
 
     void set_value(std::any v) override {
-        update_value(std::any_cast<T>(std::move(v)));
+        update_value(std::any_cast<value_type>(std::move(v)));
     }
 
     template<typename U>
-    requires std::constructible_from<T, U>
+    requires std::constructible_from<value_type, U>
     void set_value(U&& v) {
         // needs to go through virtual inheritance chain, since this class is
         // not final
-        set_value(std::make_any<T>(std::forward<U>(v)));
+        set_value(std::make_any<value_type>(std::forward<U>(v)));
     }
 
     bool set_value(YAML::Node n) override {
         return update_value(std::move(n.as<T>()));
     }
 
-    std::optional<validation_error> validate(const T& v) const {
+    std::optional<validation_error> validate(const value_type& v) const {
         if (auto err = _validator(v); err) {
             return std::make_optional<validation_error>(name().data(), *err);
         }
@@ -183,7 +184,7 @@ public:
     }
 
     std::optional<validation_error> validate(YAML::Node n) const override {
-        auto v = std::move(n.as<T>());
+        auto v = std::move(n.as<value_type>());
         return validate(v);
     }
 
@@ -193,7 +194,7 @@ public:
     }
 
     base_property& operator=(const base_property& pr) override {
-        auto v = dynamic_cast<const property<T>&>(pr)._value;
+        auto v = dynamic_cast<const property<value_type>&>(pr)._value;
         update_value(std::move(v));
         return *this;
     }
@@ -203,13 +204,14 @@ public:
      * value of the property as well as the ability to watch for
      * changes to the property.
      */
-    binding<T> bind() {
+    binding<value_type> bind() {
         assert_live_settable();
         return {*this};
     }
 
     template<typename U>
-    auto bind(std::function<U(const T&)> conv) -> conversion_binding<U, T> {
+    auto bind(std::function<U(const value_type&)> conv)
+      -> conversion_binding<U, value_type> {
         assert_live_settable();
         return {*this, std::move(conv)};
     }
@@ -218,7 +220,7 @@ public:
         if (_meta.example.has_value()) {
             return _meta.example;
         } else {
-            if constexpr (std::is_same_v<T, bool>) {
+            if constexpr (std::is_same_v<value_type, bool>) {
                 // Provide an example that is the opposite of the default
                 // (i.e. an example of how to _change_ the setting)
                 return _default ? "false" : "true";
@@ -248,7 +250,7 @@ public:
     };
 
 protected:
-    void notify_watchers(const T& new_value) {
+    void notify_watchers(const value_type& new_value) {
         std::exception_ptr ex;
         for (auto& binding : _bindings) {
             try {
@@ -269,7 +271,7 @@ protected:
         }
     }
 
-    bool update_value(T&& new_value) {
+    bool update_value(value_type&& new_value) {
         if (new_value != _value) {
             // Update the main value first, in case one of the binding updates
             // throws.
@@ -282,19 +284,20 @@ protected:
         }
     }
 
-    T _value;
-    T _default;
+    value_type _value;
+    value_type _default;
 
     // An alternative default that applies if the cluster's original logical
     // version is <= the defined version
-    const std::optional<legacy_default<T>> _legacy_default;
+    const std::optional<legacy_default<value_type>> _legacy_default;
 
 private:
     validator _validator;
 
-    friend class binding_base<T>;
-    friend class mock_property<T>;
-    intrusive_list<binding_base<T>, &binding_base<T>::_hook> _bindings;
+    friend class binding_base<value_type>;
+    friend class mock_property<value_type>;
+    intrusive_list<binding_base<value_type>, &binding_base<value_type>::_hook>
+      _bindings;
 };
 
 template<class T>
