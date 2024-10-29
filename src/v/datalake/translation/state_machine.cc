@@ -113,6 +113,10 @@ model::offset translation_stm::max_collectible_offset() {
     if (!_raft->log_config().iceberg_enabled()) {
         return model::offset::max();
     }
+    // if offset is not initialized, do not attempt translation.
+    if (_highest_translated_offset == kafka::offset{}) {
+        return model::offset{};
+    }
     return _raft->log()->to_log_offset(
       kafka::offset_cast(_highest_translated_offset));
 }
