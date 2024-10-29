@@ -530,16 +530,40 @@ TEST_F(AvroParserTest, TestRandomBytes) {
 //       std::invalid_argument);
 // }
 
+// returns true if deserialization was successful
+
+bool try_deserialize_with_avro_lib(
+  const ::avro::ValidSchema& schema, const iobuf& buffer) {
+    auto linearized_buffer = iobuf_to_bytes(buffer);
+    auto in = ::avro::memoryInputStream(
+      linearized_buffer.data(), linearized_buffer.size());
+    auto decoder = ::avro::binaryDecoder();
+    decoder->init(*in);
+    ::avro::GenericReader avro_lib_reader(schema, decoder);
+    ::avro::GenericDatum datum;
+    try {
+        avro_lib_reader.read(datum);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 TEST_F(AvroParserTest, TestIncorrectSchema) {
     auto valid_schema = load_json_schema("record2");
     generator_state state;
     ::avro::GenericDatum random_value = generate_random_value(
       valid_schema.root(), state, 10);
     iobuf buffer = serialize_with_avro(random_value, valid_schema);
-
-    // parse with incorrect schema
     auto invalid_schema = load_json_schema("tree2");
-    ASSERT_THROW(
-      serde::avro::parse(std::move(buffer), invalid_schema).get(),
-      std::invalid_argument);
+    auto success = try_deserialize_with_avro_lib(invalid_schema, buffer);
+    // parse with incorrect schema
+    if (success) {
+        ASSERT_NO_THROW(
+          serde::avro::parse(std::move(buffer), invalid_schema).get());
+    } else {
+        ASSERT_THROW(
+          serde::avro::parse(std::move(buffer), invalid_schema).get(),
+          std::invalid_argument);
+    }
 }

@@ -51,6 +51,14 @@ public:
         }
         case ::avro::AVRO_INT: {
             auto [value, _] = _parser.read_varlong();
+            using limits_t = std::numeric_limits<int32_t>;
+            if (value < limits_t::min() || value > limits_t::max()) {
+                throw std::invalid_argument(fmt::format(
+                  "Value {} is outside of avro int limits: [{},{}]",
+                  value,
+                  limits_t::min(),
+                  limits_t::max()));
+            }
             co_return std::make_unique<parsed::message>(
               parsed::primitive(static_cast<int32_t>(value)));
         }
