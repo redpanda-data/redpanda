@@ -255,7 +255,7 @@ frontend::add_translated_data_files_locally(
   ss::shard_id shard) {
     co_return co_await _coordinator_mgr->invoke_on(
       shard,
-      [&coordinator_partition,
+      [coordinator_partition,
        req = std::move(request)](coordinator_manager& mgr) mutable {
           return add_files(mgr, coordinator_partition, std::move(req));
       });
@@ -277,7 +277,7 @@ frontend::fetch_latest_data_file_locally(
   ss::shard_id shard) {
     co_return co_await _coordinator_mgr->invoke_on(
       shard,
-      [&coordinator_partition,
+      [coordinator_partition,
        req = std::move(request)](coordinator_manager& mgr) mutable {
           auto partition = mgr.get(coordinator_partition);
           if (!partition) {
