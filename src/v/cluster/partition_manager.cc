@@ -25,6 +25,7 @@
 #include "cluster/partition_recovery_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -41,6 +42,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
@@ -178,6 +180,8 @@ ss::future<consensus_ptr> partition_manager::manage(
             manifest.disable_permanently();
         }
 
+        model::term_id last_included_term{0};
+
         if (min_offset == max_offset && min_offset == model::offset{0}) {
             // Here two cases are possible:
             // - Recover failed and we didn't download anything.
@@ -203,7 +207,7 @@ ss::future<consensus_ptr> partition_manager::manage(
             // some data.
             auto last_segment = manifest.last_segment();
             vassert(last_segment.has_value(), "Manifest is empty");
-            auto last_included_term = last_segment->archiver_term;
+            last_included_term = last_segment->archiver_term;
 
             vlog(
               clusterlog.info,
@@ -235,20 +239,26 @@ ss::future<consensus_ptr> partition_manager::manage(
               model::next_offset(manifest.get_last_offset()),
               manifest.last_segment()->delta_offset_end);
 
-            co_await raft::details::bootstrap_pre_existing_partition(
-              _storage,
-              ntp_cfg,
-              group,
-              min_offset,
-              max_offset,
-              last_included_term,
-              initial_nodes,
-              dl_result.ot_state);
-
             // Initialize archival snapshot
             co_await archival_metadata_stm::make_snapshot(
               ntp_cfg, manifest, max_offset);
         }
+        // in any case create a snapshot to indicate we don't need
+        // to re-download logs
+        if (!dl_result.ot_state) {
+            dl_result.ot_state
+              = ss::make_lw_shared<storage::offset_translator_state>(
+                ntp_cfg.ntp());
+        }
+        co_await raft::details::bootstrap_pre_existing_partition(
+          _storage,
+          ntp_cfg,
+          group,
+          min_offset,
+          max_offset,
+          last_included_term,
+          initial_nodes,
+          dl_result.ot_state);
     }
     auto translator_batch_types = raft::offset_translator_batch_types(
       ntp_cfg.ntp());
@@ -313,20 +323,32 @@ partition_manager::maybe_download_log(
   storage::ntp_config& ntp_cfg,
   std::optional<remote_topic_properties> rtp,
   cloud_storage::remote_path_provider& path_provider) {
-    if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
-        auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg,
-          rtp->remote_revision,
-          rtp->remote_partition_count,
-          path_provider);
-        co_return res;
+    if (!rtp.has_value() || !_partition_recovery_mgr.local_is_initialized()) {
+        vlog(
+          clusterlog.debug,
+          "Logs can't be downloaded because cloud storage is not configured. "
+          "Continue creating {} without downloading the logs.",
+          ntp_cfg);
+        co_return cloud_storage::log_recovery_result{};
     }
-    vlog(
-      clusterlog.debug,
-      "Logs can't be downloaded because cloud storage is not configured. "
-      "Continue creating {} without downloading the logs.",
-      ntp_cfg);
-    co_return cloud_storage::log_recovery_result{};
+
+    storage::simple_snapshot_manager tmp_snapshot_mgr(
+      std::filesystem::path(ntp_cfg.work_directory()),
+      storage::simple_snapshot_manager::default_snapshot_filename,
+      raft_priority());
+    if (co_await ss::file_exists(tmp_snapshot_mgr.snapshot_path().string())) {
+        vlog(
+          clusterlog.debug,
+          "Skip logs download for {}, as a snapshot already exists",
+          ntp_cfg.ntp());
+        co_return cloud_storage::log_recovery_result{};
+    }
+
+    co_return co_await _partition_recovery_mgr.local().download_log(
+      ntp_cfg,
+      rtp->remote_revision,
+      rtp->remote_partition_count,
+      path_provider);
 }
 
 ss::future<> partition_manager::stop_partitions() {
