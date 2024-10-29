@@ -254,6 +254,13 @@ RUN /trino && rm /trino
 
 #################################
 
+FROM base as spark 
+COPY --chown=0:0 tests/java/spark-iceberg-dependencies /opt/spark-iceberg-dependencies
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/spark /
+RUN /spark && rm /spark
+
+#################################
+
 FROM librdkafka AS final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/python-deps /
@@ -347,6 +354,7 @@ COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
 COPY --from=iceberg-rest /opt/iceberg-rest-catalog /opt/iceberg-rest-catalog
 COPY --from=trino /opt/trino /opt/trino
+COPY --from=spark /opt/spark /opt/spark
 
 RUN ldconfig
 
