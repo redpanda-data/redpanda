@@ -54,6 +54,6 @@ std::optional<ss::sstring>
 validate_audit_excluded_topics(const std::vector<ss::sstring>&);
 
 std::optional<ss::sstring>
-validate_cloud_storage_api_endpoint(const std::optional<ss::sstring>& os);
+validate_api_endpoint(const std::optional<ss::sstring>& os);
 
 }; // namespace config

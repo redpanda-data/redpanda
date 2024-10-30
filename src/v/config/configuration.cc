@@ -1891,7 +1891,7 @@ configuration::configuration()
       "assigned. - GCP: Uses `storage.googleapis.com`.",
       {.visibility = visibility::user},
       std::nullopt,
-      &validate_cloud_storage_api_endpoint)
+      &validate_api_endpoint)
   , cloud_storage_url_style(
       *this,
       "cloud_storage_url_style",
