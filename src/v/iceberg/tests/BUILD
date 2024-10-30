@@ -586,3 +586,19 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "uri_test",
+    timeout = "short",
+    srcs = [
+        "uri_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_schemas",
+        "//src/v/iceberg:uri",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

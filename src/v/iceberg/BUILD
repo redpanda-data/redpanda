@@ -1080,3 +1080,20 @@ redpanda_cc_library(
         "//src/v/utils:mutex",
     ],
 )
+
+redpanda_cc_library(
+    name = "uri",
+    srcs = [
+        "uri.cc",
+    ],
+    hdrs = [
+        "uri.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
