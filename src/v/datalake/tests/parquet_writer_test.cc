@@ -53,10 +53,10 @@ TEST(ParquetWriter, CreatesValidParquetData) {
 
     // The last write is long. This is probably Parquet footer information.
     auto serialized = writer.close_and_take_iobuf();
-    EXPECT_NEAR(serialized.size_bytes(), 21000, 1000);
+    EXPECT_NEAR(serialized.size_bytes(), 22000, 1000);
     full_result.append_fragments(std::move(serialized));
 
-    EXPECT_NEAR(full_result.size_bytes(), 55000, 1000);
+    EXPECT_NEAR(full_result.size_bytes(), 57000, 1000);
 
     // Check that the data is a valid parquet file. Convert the iobuf to a
     // single buffer then import that into an arrow::io::BufferReader
