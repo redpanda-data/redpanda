@@ -645,6 +645,8 @@ redpanda_cc_library(
         "//src/v/cloud_storage:remote_label",
         "//src/v/cloud_storage:topic_mount_manifest_path",
         "//src/v/cloud_storage_clients",
+        "//src/v/cloud_topics/dl_stm",
+        "//src/v/cloud_topics/dl_stm:dl_stm_api",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:contiguous_range_map",

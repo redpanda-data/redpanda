@@ -273,6 +273,7 @@ v_cc_library(
     v::security
     v::model
     v::cloud_storage
+    v::cloud_topics_dl_stm
     v::cluster_topic_properties
     v::features
     v::version
