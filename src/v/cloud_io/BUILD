@@ -60,6 +60,9 @@ redpanda_cc_library(
     ],
     include_prefix = "cloud_io",
     visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_storage_clients",
+    ],
 )
 
 redpanda_cc_library(

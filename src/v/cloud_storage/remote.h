@@ -66,10 +66,6 @@ struct api_activity_notification {
 // references/pointers to this interface instead of remote to enable testing.
 class cloud_storage_api {
 public:
-    using list_result = result<
-      cloud_storage_clients::client::list_bucket_result,
-      cloud_storage_clients::error_outcome>;
-
     /// Functor that attempts to consume the input stream. If the connection
     /// is broken during the download the functor is responsible for he cleanup.
     /// The functor should be reenterable since it can be called many times.

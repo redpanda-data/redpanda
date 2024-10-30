@@ -526,7 +526,7 @@ remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
   std::deque<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent);
 
-ss::future<remote::list_result> remote::list_objects(
+ss::future<list_result> remote::list_objects(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& parent,
   std::optional<cloud_storage_clients::object_key> prefix,

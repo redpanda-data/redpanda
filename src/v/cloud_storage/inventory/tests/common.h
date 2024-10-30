@@ -13,6 +13,7 @@
 #include "cloud_storage/inventory/inv_consumer.h"
 #include "cloud_storage/inventory/report_parser.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/types.h"
 
 #include <gmock/gmock.h>
 
@@ -31,7 +32,7 @@ public:
       (cloud_storage::download_request),
       (override));
     MOCK_METHOD(
-      ss::future<cloud_storage::cloud_storage_api::list_result>,
+      ss::future<cloud_storage::list_result>,
       list_objects,
       (const cloud_storage_clients::bucket_name&,
        retry_chain_node&,

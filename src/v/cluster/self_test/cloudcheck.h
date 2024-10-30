@@ -93,7 +93,7 @@ private:
       const iobuf& payload);
 
     struct verify_list_result {
-        cloud_storage::remote::list_result list_result;
+        cloud_storage::list_result list_result;
         self_test_result test_result;
     };
 

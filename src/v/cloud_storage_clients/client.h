@@ -105,6 +105,8 @@ public:
         std::vector<ss::sstring> common_prefixes;
     };
 
+    using list_result = result<list_bucket_result, error_outcome>;
+
     /// A predicate to allow list_objects to collect items selectively, saving
     /// memory. This cannot be ss::noncopyable_function because remote needs to
     /// copy this object for calls in a loop.
@@ -122,7 +124,7 @@ public:
     /// \param collect_item_if if present, only items passing this predicate are
     /// collected.
     /// \return future that becomes ready when the request is completed
-    virtual ss::future<result<list_bucket_result, error_outcome>> list_objects(
+    virtual ss::future<list_result> list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,

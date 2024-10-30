@@ -54,10 +54,6 @@ struct basic_download_request {
 using download_request = basic_download_request<ss::lowres_clock>;
 using remote_path = named_type<ss::sstring, struct remote_path_tag>;
 
-using list_result = result<
-  cloud_storage_clients::client::list_bucket_result,
-  cloud_storage_clients::error_outcome>;
-
 /// Functor that attempts to consume the input stream. If the connection
 /// is broken during the download the functor is responsible for he cleanup.
 /// The functor should be reenterable since it can be called many times.
