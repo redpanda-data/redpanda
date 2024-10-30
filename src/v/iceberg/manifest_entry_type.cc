@@ -47,12 +47,6 @@ struct_type data_file_type(partition_key_type partition_type) {
       map_type::create(
         121, int_type(), 122, field_required::yes, long_type())));
     r2_type.fields.emplace_back(nested_field::create(
-      111,
-      "distinct_counts",
-      field_required::no,
-      map_type::create(
-        123, int_type(), 124, field_required::yes, long_type())));
-    r2_type.fields.emplace_back(nested_field::create(
       137,
       "nan_value_counts",
       field_required::no,
