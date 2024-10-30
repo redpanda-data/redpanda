@@ -501,7 +501,7 @@ template<typename BaseT, supported_stm_snapshot T>
 ss::future<bool> persisted_stm_base<BaseT, T>::wait_no_throw(
   model::offset offset,
   model::timeout_clock::time_point deadline,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) noexcept {
+  std::optional<std::reference_wrapper<ss::abort_source>> as) const noexcept {
     return BaseT::wait(offset, deadline, as)
       .then([] { return true; })
       .handle_exception_type([](const ss::abort_requested_exception&) {
