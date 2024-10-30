@@ -18,7 +18,7 @@ bool_flag(
 
 bool_flag(
     name = "heap_profiling",
-    build_setting_default = False,
+    build_setting_default = True,
 )
 
 # "Enable the compile-time {fmt} check when formatting logging messages" ON
@@ -579,6 +579,11 @@ cc_library(
     ],
     local_defines = [
         "SEASTAR_DEFERRED_ACTION_REQUIRE_NOEXCEPT",
+        # This is nested in a `#ifdef SEASTAR_ASAN_ENABLED` so it's safe
+        # to always enable this as it will only have effect if ASAN is
+        # is enabled for the build.
+        # NOTE: SEASTAR_ASAN_ENABLED is auto detected - it's not set here
+        "SEASTAR_HAVE_ASAN_FIBER_SUPPORT",
     ] + select({
         ":use_debug_allocations": ["SEASTAR_DEBUG_ALLOCATIONS"],
         "//conditions:default": [],
