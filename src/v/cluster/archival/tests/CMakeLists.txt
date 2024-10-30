@@ -81,4 +81,20 @@ else()
       LABELS archival
       ARGS "-- -c 1"
     )
+
+    rp_test(
+      UNIT_TEST
+      GTEST
+      BINARY_NAME gtest_archival_policy
+      SOURCES
+      archival_policy_test.cc
+      LIBRARIES
+        v::cluster
+        v::storage
+        v::storage_test_utils
+        v::gtest_main
+      LABELS archival
+      ARGS "-- -c 1"
+    )
+
 endif()
