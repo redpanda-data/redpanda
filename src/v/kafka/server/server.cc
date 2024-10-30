@@ -1583,6 +1583,11 @@ ss::future<response_ptr> create_acls_handler::handle(
               auto ec = map_topic_error_code(results[i]);
               response.data.results.push_back(
                 creatable_acl_result{.error_code = ec});
+              if (results[i] == cluster::errc::feature_disabled) {
+                  response.data.results.back().error_message.emplace(
+                    "An enterprise license is required to create "
+                    "Role-bound ACLs");
+              }
           },
           [&response](creatable_acl_result r) {
               response.data.results.push_back(std::move(r));
