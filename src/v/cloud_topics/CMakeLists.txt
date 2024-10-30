@@ -1,6 +1,6 @@
 
 v_cc_library(
-  NAME cloud_topics
+  NAME cloud_topics_base
   SRCS
     dl_overlay.cc
     logger.cc
@@ -8,7 +8,6 @@ v_cc_library(
   DEPS
     v::model
     v::serde
-    v::cloud_topics_reconciler
 )
 
 v_cc_library(
@@ -16,7 +15,8 @@ v_cc_library(
   SRCS
     app.cc
   DEPS
-    v::cloud_topics
+    v::cloud_topics_base
+    v::cloud_topics_reconciler
 )
 
 add_subdirectory(dl_stm)
