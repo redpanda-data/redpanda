@@ -59,4 +59,8 @@ table_io::version_hint_exists(const version_hint_path& path) {
     return object_exists(path, "iceberg::version_hint");
 }
 
+uri table_io::to_uri(const ss::sstring& path) const {
+    return make_uri(bucket_(), std::filesystem::path(path));
+}
+
 } // namespace iceberg

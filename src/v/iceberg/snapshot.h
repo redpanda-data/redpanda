@@ -10,6 +10,7 @@
 
 #include "iceberg/manifest_entry.h"
 #include "iceberg/schema.h"
+#include "iceberg/uri.h"
 #include "model/timestamp.h"
 
 #include <absl/container/btree_map.h>
@@ -73,7 +74,7 @@ struct snapshot {
 
     // Location of a manifest list for this snapshot that tracks manifest files
     // and additional metadata.
-    ss::sstring manifest_list_path;
+    uri manifest_list_path;
 
     // Current schema at the time the snapshot was created.
     std::optional<schema::id_t> schema_id;

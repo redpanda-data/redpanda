@@ -139,7 +139,7 @@ static constexpr std::string_view table_metadata = R"J(
 "metadata":{
     "format-version": 2,
     "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
-    "location": "some-location",
+    "location": "s3://bucket/foo/bar/baz",
     "last-sequence-number": 123,
     "last-updated-ms": 11231231,
     "last-column-id": 2,
@@ -152,7 +152,7 @@ static constexpr std::string_view table_metadata = R"J(
     "sort-orders":[{"order-id":3,"fields":[{"transform":"identity","source-ids":[2],"direction":"asc","null-order":"nulls-first"}]}],
     "properties":{"read.split.target.size":"134217728"},
     "current-snapshot-id": 200,
-    "snapshots": [{"snapshot-id": 200, "sequence-number": 0, "timestamp-ms": 0, "manifest-list": "foo/bar/baz", "schema-id": 1, "summary": {"operation": "append"}}]
+    "snapshots": [{"snapshot-id": 200, "sequence-number": 0, "timestamp-ms": 0, "manifest-list": "s3://bucket/foo/bar/baz/ml.avro", "schema-id": 1, "summary": {"operation": "append"}}]
   }
 }
 )J";
@@ -212,7 +212,7 @@ iceberg::table_metadata create_table_metadata() {
     return {
       .format_version = iceberg::format_version::v2,
       .table_uuid = uuid_t::from_string("9c12d441-03fe-4693-9a96-a0705ddf69c1"),
-      .location = "some-location",
+      .location = iceberg::uri("s3://bucket/foo/bar/baz"),
       .last_sequence_number = iceberg::sequence_number(123),
       .last_updated_ms = model::timestamp(11231231),
       .last_column_id = iceberg::nested_field::id_t(2),
@@ -231,7 +231,7 @@ iceberg::table_metadata create_table_metadata() {
         .timestamp_ms = model::timestamp(0),
         .summary = iceberg::
           snapshot_summary{.operation = iceberg::snapshot_operation::append},
-        .manifest_list_path = "foo/bar/baz",
+        .manifest_list_path = iceberg::uri("s3://bucket/foo/bar/baz/ml.avro"),
         .schema_id = iceberg::schema::id_t{1},
       }},
       .sort_orders = create_sort_orders(),
@@ -396,7 +396,7 @@ iceberg::table_metadata create_empty_table_metadata(const ss::sstring& bucket) {
     return {
       .format_version = iceberg::format_version::v2,
       .table_uuid = uuid_t::from_string("9c12d441-03fe-4693-9a96-a0705ddf69c1"),
-      .location = fmt::format("{}/foo_table", bucket),
+      .location = iceberg::make_uri(bucket, "foo_table"),
       .last_sequence_number = iceberg::sequence_number(0),
       .last_updated_ms = model::timestamp(11231231),
       .last_column_id = iceberg::nested_field::id_t(2),

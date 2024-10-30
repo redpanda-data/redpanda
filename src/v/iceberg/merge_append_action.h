@@ -94,7 +94,7 @@ private:
     // Uploads the given manifest entries as a new manifest, returning the size
     // of the resulting file.
     ss::future<checked<size_t, metadata_io::errc>> upload_as_manifest(
-      const manifest_path& path,
+      const uri& path,
       const schema& schema,
       const partition_spec& pspec,
       chunked_vector<manifest_entry> entries);

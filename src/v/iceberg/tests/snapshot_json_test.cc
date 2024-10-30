@@ -42,7 +42,7 @@ TEST(SnapshotJsonSerde, TestSnapshot) {
     ASSERT_EQ(snapshot_operation::append, snap.summary.operation);
     ASSERT_EQ(1, snap.summary.other.size());
     ASSERT_EQ("bar", snap.summary.other.at("foo"));
-    ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path.c_str());
+    ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path().c_str());
     ASSERT_TRUE(snap.schema_id.has_value());
     ASSERT_EQ(0, snap.schema_id.value());
 
@@ -77,7 +77,7 @@ TEST(SnapshotJsonSerde, TestSnapshotMissingOptionals) {
     ASSERT_EQ(snapshot_operation::append, snap.summary.operation);
     ASSERT_EQ(1, snap.summary.other.size());
     ASSERT_EQ("bar", snap.summary.other.at("foo"));
-    ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path.c_str());
+    ASSERT_STREQ("s3://b/wh/.../s1.avro", snap.manifest_list_path().c_str());
     ASSERT_FALSE(snap.schema_id.has_value());
 
     const auto parsed_orig_as_str = iceberg::to_json_str(snap);

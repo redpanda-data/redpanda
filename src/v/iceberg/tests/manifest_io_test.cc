@@ -65,7 +65,7 @@ public:
         manifest_list m;
         for (int i = 0; i < 1024; i++) {
             manifest_file file;
-            file.manifest_path = "path/to/file";
+            file.manifest_path = uri("s3://bucket/path/to/file");
             file.partition_spec_id = partition_spec::id_t{1};
             file.content = manifest_file_content::data;
             file.seq_number = sequence_number{3};
@@ -130,18 +130,18 @@ TEST_F(ManifestIOTest, TestManifestRoundtripURIs) {
     auto io = manifest_io(remote(), bucket_name);
     auto path = manifest_path{"foo/bar/baz"};
     auto test_uri = io.to_uri(path);
-    ASSERT_TRUE(test_uri.starts_with("s3://"));
+    ASSERT_TRUE(test_uri().starts_with("s3://"));
 
     auto up_res = io.upload_manifest(path, m).get();
     ASSERT_FALSE(up_res.has_error());
 
     // Use the URI string.
-    auto dl_res = io.download_manifest_uri(test_uri, empty_pk_type()).get();
+    auto dl_res = io.download_manifest(test_uri, empty_pk_type()).get();
     ASSERT_FALSE(dl_res.has_error());
     ASSERT_EQ(m, dl_res.value());
 
     // As a safety measure, we'll still parse the raw path if given.
-    dl_res = io.download_manifest_uri(path().native(), empty_pk_type()).get();
+    dl_res = io.download_manifest(path, empty_pk_type()).get();
     ASSERT_FALSE(dl_res.has_error());
     ASSERT_EQ(m, dl_res.value());
 }
@@ -151,18 +151,18 @@ TEST_F(ManifestIOTest, TestManifestListRoundtripURIs) {
     auto io = manifest_io(remote(), bucket_name);
     auto path = manifest_list_path{"foo/bar/baz"};
     auto test_uri = io.to_uri(path);
-    ASSERT_TRUE(test_uri.starts_with("s3://"));
+    ASSERT_TRUE(test_uri().starts_with("s3://"));
 
     auto up_res = io.upload_manifest_list(path, m).get();
     ASSERT_FALSE(up_res.has_error());
 
     // Use the URI string.
-    auto dl_res = io.download_manifest_list_uri(test_uri).get();
+    auto dl_res = io.download_manifest_list(test_uri).get();
     ASSERT_FALSE(dl_res.has_error());
     ASSERT_EQ(m, dl_res.value());
 
     // As a safety measure, we'll still parse the raw path if given.
-    dl_res = io.download_manifest_list_uri(path().native()).get();
+    dl_res = io.download_manifest_list(path).get();
     ASSERT_FALSE(dl_res.has_error());
     ASSERT_EQ(m, dl_res.value());
 }

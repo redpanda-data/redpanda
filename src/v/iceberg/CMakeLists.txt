@@ -67,6 +67,7 @@ v_cc_library(
     transform_json.cc
     transform_utils.cc
     update_schema_action.cc
+    uri.cc
     values.cc
     values_avro.cc
     values_bytes.cc

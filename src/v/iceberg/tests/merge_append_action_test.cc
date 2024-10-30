@@ -58,7 +58,7 @@ public:
         return table_metadata{
           .format_version = format_version::v2,
           .table_uuid = uuid_t::create(),
-          .location = "foo/bar",
+          .location = uri("s3://bucket/foo/bar"),
           .last_sequence_number = sequence_number{0},
           .last_updated_ms = model::timestamp::now(),
           .last_column_id = s.highest_field_id().value(),
@@ -89,7 +89,7 @@ public:
             const auto path = fmt::format("{}-{}", path_base, i);
             ret.emplace_back(data_file{
               .content_type = data_file_content_type::data,
-              .file_path = path,
+              .file_path = uri(path),
               .partition = partition_key{make_int_pk(pk_value)},
               .record_count = records_per_file,
               .file_size_bytes = 1_KiB,
@@ -126,8 +126,7 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
 
         auto latest_mlist_path
           = table.snapshots.value().back().manifest_list_path;
-        auto latest_mlist
-          = io.download_manifest_list_uri(latest_mlist_path).get();
+        auto latest_mlist = io.download_manifest_list(latest_mlist_path).get();
         ASSERT_TRUE(latest_mlist.has_value());
         ASSERT_EQ(latest_mlist.value().files.size(), expected_manifests);
     }
@@ -144,7 +143,7 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
 
     // Validate that the latest snapshot indeed contains a single manifest.
     auto latest_mlist_path = table.snapshots.value().back().manifest_list_path;
-    auto latest_mlist = io.download_manifest_list_uri(latest_mlist_path).get();
+    auto latest_mlist = io.download_manifest_list(latest_mlist_path).get();
     ASSERT_TRUE(latest_mlist.has_value());
     ASSERT_EQ(latest_mlist.value().files.size(), 1);
     const auto& merged_mfile = latest_mlist.value().files[0];
@@ -186,8 +185,7 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
 
         auto latest_mlist_path
           = table.snapshots.value().back().manifest_list_path;
-        auto latest_mlist
-          = io.download_manifest_list_uri(latest_mlist_path).get();
+        auto latest_mlist = io.download_manifest_list(latest_mlist_path).get();
         ASSERT_TRUE(latest_mlist.has_value());
         ASSERT_EQ(latest_mlist.value().files.size(), expected_manifests);
     }
@@ -207,7 +205,7 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
     // - the one containing 8 merged 1MB paths
     // - the two we added that weren't merged
     auto latest_mlist_path = table.snapshots.value().back().manifest_list_path;
-    auto latest_mlist = io.download_manifest_list_uri(latest_mlist_path).get();
+    auto latest_mlist = io.download_manifest_list(latest_mlist_path).get();
     ASSERT_TRUE(latest_mlist.has_value());
     ASSERT_EQ(latest_mlist.value().files.size(), 3);
 
@@ -297,7 +295,7 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
         auto latest_mlist_path
           = table.snapshots.value().back().manifest_list_path;
         auto latest_mlist_res
-          = io.download_manifest_list_uri(latest_mlist_path).get();
+          = io.download_manifest_list(latest_mlist_path).get();
         ASSERT_TRUE(latest_mlist_res.has_value());
         ASSERT_EQ(expected_manifests, latest_mlist_res.value().files.size());
 
@@ -324,8 +322,7 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
       = tx.merge_append(io, create_data_files("foo", 1, 1, last_pk)).get();
     ASSERT_FALSE(res.has_error()) << res.error();
     auto latest_mlist_path = table.snapshots.value().back().manifest_list_path;
-    auto latest_mlist_res
-      = io.download_manifest_list_uri(latest_mlist_path).get();
+    auto latest_mlist_res = io.download_manifest_list(latest_mlist_path).get();
     ASSERT_TRUE(latest_mlist_res.has_value());
     ASSERT_EQ(1, latest_mlist_res.value().files.size());
 

@@ -25,17 +25,17 @@
 namespace iceberg {
 
 namespace {
-manifest_path get_manifest_path(
-  const ss::sstring& location, const uuid_t& commit_uuid, size_t num) {
-    return manifest_path{
-      fmt::format("{}/metadata/{}-m{}.avro", location, commit_uuid, num)};
+uri get_manifest_path(
+  const uri& location, const uuid_t& commit_uuid, size_t num) {
+    return uri(
+      fmt::format("{}/metadata/{}-m{}.avro", location, commit_uuid, num));
 }
-manifest_list_path get_manifest_list_path(
-  const ss::sstring& location,
+uri get_manifest_list_path(
+  const uri& location,
   snapshot_id snap_id,
   const uuid_t& commit_uuid,
   size_t num) {
-    return manifest_path{fmt::format(
+    return uri{fmt::format(
       "{}/metadata/snap-{}-{}-{}.avro", location, snap_id(), commit_uuid, num)};
 }
 
@@ -45,6 +45,8 @@ action::errc to_action_errc(metadata_io::errc e) {
         return action::errc::io_failed;
     case metadata_io::errc::shutting_down:
         return action::errc::shutting_down;
+    case metadata_io::errc::invalid_uri:
+        return action::errc::unexpected_state;
     case metadata_io::errc::timedout:
         // NOTE: treat IO timeouts the same as other IO failures.
         // TODO: build out retry logic.
@@ -229,7 +231,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
               table_cur_snap_id);
             co_return action::errc::unexpected_state;
         }
-        auto mlist_res = co_await io_.download_manifest_list_uri(
+        auto mlist_res = co_await io_.download_manifest_list(
           snap_it->manifest_list_path);
         if (mlist_res.has_error()) {
             co_return to_action_errc(mlist_res.error());
@@ -294,7 +296,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
           .operation = snapshot_operation::append,
           .other = {},
       },
-      .manifest_list_path = io_.to_uri(new_mlist_path()),
+      .manifest_list_path = new_mlist_path,
       .schema_id = schema.schema_id,
     };
     updates_and_reqs ret;
@@ -315,7 +317,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
 
 ss::future<checked<size_t, metadata_io::errc>>
 merge_append_action::upload_as_manifest(
-  const manifest_path& path,
+  const uri& path,
   const schema& schema,
   const partition_spec& pspec,
   chunked_vector<manifest_entry> entries) {
@@ -382,7 +384,7 @@ merge_append_action::maybe_merge_mfiles_and_new_data(
         // Since this bin was too small to merge, we won't do anything else to
         // its manifests, just add them back to the returned container.
         ret.emplace_back(manifest_file{
-          .manifest_path = io_.to_uri(new_manifest_path()),
+          .manifest_path = new_manifest_path,
           .manifest_length = mfile_up_res.value(),
           .partition_spec_id = ctx.pspec.spec_id,
           .content = manifest_file_content::data,
@@ -437,7 +439,7 @@ merge_append_action::merge_mfiles(
     for (const auto& mfile : to_merge) {
         // Download the manifest file and collect the entries into the merged
         // container.
-        auto mfile_res = co_await io_.download_manifest_uri(
+        auto mfile_res = co_await io_.download_manifest(
           mfile.manifest_path, ctx.pk_type);
         if (mfile_res.has_error()) {
             co_return mfile_res.error();
@@ -473,7 +475,7 @@ merge_append_action::merge_mfiles(
         co_return mfile_up_res.error();
     }
     manifest_file merged_file{
-      .manifest_path = io_.to_uri(merged_manifest_path()),
+      .manifest_path = merged_manifest_path,
       .manifest_length = mfile_up_res.value(),
       .partition_spec_id = ctx.pspec.spec_id,
       .content = manifest_file_content::data,

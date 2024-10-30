@@ -55,7 +55,7 @@ public:
         return table_metadata{
           .format_version = format_version::v2,
           .table_uuid = uuid_t::create(),
-          .location = "foo/bar",
+          .location = uri("s3://foo/bar"),
           .last_sequence_number = sequence_number{0},
           .last_updated_ms = model::timestamp::now(),
           .last_column_id = s.highest_field_id().value(),
@@ -83,7 +83,7 @@ public:
         const auto records_per_file = record_count / num_files;
         const auto leftover_records = record_count % num_files;
         for (size_t i = 0; i < num_files; i++) {
-            const auto path = fmt::format("{}-{}", path_base, i);
+            const auto path = uri(fmt::format("{}-{}", path_base, i));
             ret.emplace_back(data_file{
               .content_type = data_file_content_type::data,
               .file_path = path,
@@ -119,7 +119,7 @@ public:
         chunked_vector<iceberg::manifest_file> files;
 
         for (auto& s : *table.snapshots) {
-            auto m_list = co_await io.download_manifest_list_uri(
+            auto m_list = co_await io.download_manifest_list(
               s.manifest_list_path);
             for (auto& f : m_list.assume_value().files) {
                 if (!paths.contains(f.manifest_path)) {
@@ -141,7 +141,7 @@ public:
         chunked_vector<iceberg::manifest> manifests;
         auto files = co_await collect_all_manifest_files(table);
         for (auto& f : files) {
-            auto m = co_await io.download_manifest_uri(
+            auto m = co_await io.download_manifest(
               f.manifest_path, make_partition_key_type(table));
             manifests.push_back(std::move(m.assume_value()));
         }

@@ -246,6 +246,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":partition_key",
+        ":uri",
         ":values",
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
@@ -687,6 +688,7 @@ redpanda_cc_library(
         ":partition",
         ":schema",
         ":snapshot",
+        ":uri",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/utils:named_type",
@@ -1078,5 +1080,22 @@ redpanda_cc_library(
         "//src/v/iceberg/rest_client:client",
         "//src/v/json",
         "//src/v/utils:mutex",
+    ],
+)
+
+redpanda_cc_library(
+    name = "uri",
+    srcs = [
+        "uri.cc",
+    ],
+    hdrs = [
+        "uri.h",
+    ],
+    include_prefix = "iceberg",
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "//src/v/utils:named_type",
+        "@seastar",
     ],
 )

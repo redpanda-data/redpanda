@@ -24,6 +24,8 @@ catalog::errc to_catalog_errc(metadata_io::errc e) {
         return catalog::errc::timedout;
     case metadata_io::errc::failed:
         return catalog::errc::io_error;
+    case metadata_io::errc::invalid_uri:
+        return catalog::errc::unexpected_state;
     }
 }
 constexpr std::string_view vhint_filename = "version-hint.text";
@@ -66,7 +68,7 @@ filesystem_catalog::create_table(
     table_metadata tmeta{
       .format_version = format_version::v2,
       .table_uuid = uuid_t::create(),
-      .location = table_location(table_ident),
+      .location = table_location_uri(table_ident),
       .last_sequence_number = sequence_number{0},
       .last_updated_ms = model::timestamp::now(),
       .last_column_id = highest_column_id,
@@ -136,6 +138,12 @@ filesystem_catalog::table_location(const table_identifier& id) const {
     return fmt::format(
       "{}/{}/{}", base_location_, fmt::join(id.ns, "/"), id.table);
 }
+
+uri filesystem_catalog::table_location_uri(const table_identifier& id) const {
+    return table_io_.to_uri(
+      fmt::format("{}/{}/{}", base_location_, fmt::join(id.ns, "/"), id.table));
+}
+
 version_hint_path
 filesystem_catalog::vhint_path(const table_identifier& id) const {
     return version_hint_path{

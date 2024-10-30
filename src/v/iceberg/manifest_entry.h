@@ -11,6 +11,7 @@
 #include "base/seastarx.h"
 #include "container/chunked_hash_map.h"
 #include "iceberg/partition_key.h"
+#include "iceberg/uri.h"
 #include "iceberg/values.h"
 
 #include <seastar/core/sstring.hh>
@@ -31,7 +32,7 @@ enum class data_file_format {
 
 struct data_file {
     data_file_content_type content_type;
-    ss::sstring file_path;
+    uri file_path;
     data_file_format file_format;
 
     partition_key partition;

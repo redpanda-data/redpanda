@@ -116,7 +116,7 @@ snapshot parse_snapshot(const json::Value& v) {
               .operation = operation.value(),
               .other = std::move(other_map),
           },
-          .manifest_list_path = manifest_list_path,
+          .manifest_list_path = uri(manifest_list_path),
           .schema_id = schema_id,
     };
 }
@@ -154,7 +154,7 @@ void rjson_serialize(iceberg::json_writer& w, const iceberg::snapshot& s) {
     w.Key("timestamp-ms");
     w.Int64(s.timestamp_ms.value());
     w.Key("manifest-list");
-    w.String(s.manifest_list_path);
+    w.String(s.manifest_list_path());
     if (s.schema_id.has_value()) {
         w.Key("schema-id");
         w.Int(s.schema_id.value()());
