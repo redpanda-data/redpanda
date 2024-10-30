@@ -22,13 +22,24 @@
 
 namespace serde::parquet {
 
-struct bool_type {};
-struct i32_type {};
-struct i64_type {};
-struct f32_type {};
-struct f64_type {};
+struct bool_type {
+    bool operator==(const bool_type&) const = default;
+};
+struct i32_type {
+    bool operator==(const i32_type&) const = default;
+};
+struct i64_type {
+    bool operator==(const i64_type&) const = default;
+};
+struct f32_type {
+    bool operator==(const f32_type&) const = default;
+};
+struct f64_type {
+    bool operator==(const f64_type&) const = default;
+};
 struct byte_array_type {
     std::optional<int32_t> fixed_length;
+    bool operator==(const byte_array_type&) const = default;
 };
 
 /**
@@ -64,13 +75,35 @@ enum class field_repetition_type : uint8_t {
 };
 
 /** Empty structs to use as logical type annotations */
-struct string_type {}; // allowed for BYTE_ARRAY, must be encoded with UTF-8
-struct uuid_type {};   // allowed for FIXED[16], must encoded raw UUID bytes
-struct map_type {};    // see LogicalTypes.md
-struct list_type {};   // see LogicalTypes.md
-struct enum_type {};   // allowed for BYTE_ARRAY, must be encoded with UTF-8
-struct date_type {};   // allowed for INT32
-struct f16_type {};    // allowed for FIXED[2], must encoded raw FLOAT16 bytes
+
+// allowed for BYTE_ARRAY, must be encoded with UTF-8
+struct string_type {
+    bool operator==(const string_type&) const = default;
+};
+// allowed for FIXED[16], must encoded raw UUID bytes
+struct uuid_type {
+    bool operator==(const uuid_type&) const = default;
+};
+// see LogicalTypes.md
+struct map_type {
+    bool operator==(const map_type&) const = default;
+};
+// see LogicalTypes.md
+struct list_type {
+    bool operator==(const list_type&) const = default;
+};
+// allowed for BYTE_ARRAY, must be encoded with UTF-8
+struct enum_type {
+    bool operator==(const enum_type&) const = default;
+};
+// allowed for INT32
+struct date_type {
+    bool operator==(const date_type&) const = default;
+};
+// allowed for FIXED[2], must encoded raw FLOAT16 bytes
+struct f16_type {
+    bool operator==(const f16_type&) const = default;
+};
 
 /**
  * Logical type to annotate a column that is always null.
@@ -79,7 +112,9 @@ struct f16_type {};    // allowed for FIXED[2], must encoded raw FLOAT16 bytes
  * null and the physical type can't be determined. This annotation signals
  * the case where the physical type was guessed from all null values.
  */
-struct null_type {}; // allowed for any physical type, only null values stored
+struct null_type {
+    bool operator==(const null_type&) const = default;
+}; // allowed for any physical type, only null values stored
 
 /**
  * Decimal logical type annotation
@@ -96,6 +131,7 @@ struct null_type {}; // allowed for any physical type, only null values stored
 struct decimal_type {
     int32_t scale;
     int32_t precision;
+    bool operator==(const decimal_type&) const = default;
 };
 
 /**
@@ -118,6 +154,7 @@ enum class time_unit : int8_t {
 struct timestamp_type {
     bool is_adjusted_to_utc;
     time_unit unit;
+    bool operator==(const timestamp_type&) const = default;
 };
 
 /**
@@ -128,6 +165,7 @@ struct timestamp_type {
 struct time_type {
     bool is_adjusted_to_utc;
     time_unit unit;
+    bool operator==(const time_type&) const = default;
 };
 
 /**
@@ -140,6 +178,7 @@ struct time_type {
 struct int_type {
     int8_t bit_width = 0;
     bool is_signed = false;
+    bool operator==(const int_type&) const = default;
 };
 
 /**
@@ -147,14 +186,18 @@ struct int_type {
  *
  * Allowed for physical types: BYTE_ARRAY
  */
-struct json_type {};
+struct json_type {
+    bool operator==(const json_type&) const = default;
+};
 
 /**
  * Embedded BSON logical type annotation
  *
  * Allowed for physical types: BYTE_ARRAY
  */
-struct bson_type {};
+struct bson_type {
+    bool operator==(const bson_type&) const = default;
+};
 
 /**
  * LogicalType annotations to replace ConvertedType.
@@ -195,6 +238,13 @@ using logical_type = std::variant<
  */
 struct schema_element {
     /**
+     * The overall index of the schema element within the schema.
+     *
+     * This is effectively an ID for the schema_element.
+     */
+    int32_t position = -1;
+
+    /**
      * The physical encoding of the data. Left unset for intermediate nodes.
      */
     physical_type type;
@@ -203,7 +253,7 @@ struct schema_element {
      * repetition of the field. The root of the schema does not have a
      * repetition_type. All other nodes must have one.
      *
-     * (this field is ignored on the schema root).
+     * This must be set to required on the schema root
      */
     field_repetition_type repetition_type;
 
@@ -244,6 +294,22 @@ struct schema_element {
             child.for_each(func);
         }
     }
+
+    /** If this is a leaf in the schema.*/
+    bool is_leaf() const;
+    bool operator==(const schema_element&) const = default;
 };
 
+/**
+ * Index the schema such that the position is known for each element.
+ */
+void index_schema(schema_element& root);
+
 } // namespace serde::parquet
+
+template<>
+struct fmt::formatter<serde::parquet::schema_element>
+  : fmt::formatter<std::string_view> {
+    auto format(const serde::parquet::schema_element&, fmt::format_context& ctx)
+      const -> decltype(ctx.out());
+};

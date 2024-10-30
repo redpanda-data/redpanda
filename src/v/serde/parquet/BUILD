@@ -8,6 +8,7 @@ redpanda_cc_library(
     name = "schema",
     srcs = [
         "flattened_schema.cc",
+        "schema.cc",
     ],
     hdrs = [
         "flattened_schema.h",
@@ -46,6 +47,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "value",
+    srcs = [
+        "value.cc",
+    ],
     hdrs = [
         "value.h",
     ],
@@ -54,8 +58,10 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
+        "//src/v/utils:base64",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/numeric:int128",
+        "@seastar",
     ],
 )
 
@@ -74,5 +80,23 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
         "//src/v/utils:vint",
+    ],
+)
+
+redpanda_cc_library(
+    name = "shredder",
+    srcs = [
+        "shredder.cc",
+    ],
+    hdrs = [
+        "shredder.h",
+    ],
+    include_prefix = "serde/parquet",
+    deps = [
+        ":schema",
+        ":value",
+        "//src/v/base",
+        "@boost//:range",
+        "@seastar",
     ],
 )

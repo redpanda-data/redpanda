@@ -19,6 +19,40 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "schema_test",
+    timeout = "short",
+    srcs = [
+        "schema_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:schema",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "shredder_test",
+    timeout = "short",
+    srcs = [
+        "shredder_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:shredder",
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_binary(
     name = "generate_metadata_binary",
     srcs = ["generate_metadata.cc"],
