@@ -34,9 +34,9 @@ public:
       model::node_id self,
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
+      std::unique_ptr<iceberg::catalog>,
       ss::sharded<cloud_io::remote>&,
-      cloud_storage_clients::bucket_name,
-      ss::sstring base_location);
+      cloud_storage_clients::bucket_name);
 
     ss::future<> start();
     ss::future<> stop();

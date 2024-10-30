@@ -14,6 +14,7 @@
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/state_machine.h"
+#include "datalake/logger.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/manifest_io.h"
 #include "model/fundamental.h"
@@ -26,15 +27,14 @@ coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
+  std::unique_ptr<iceberg::catalog> catalog,
   ss::sharded<cloud_io::remote>& io,
-  cloud_storage_clients::bucket_name bucket,
-  ss::sstring base_location)
+  cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
   , manifest_io_(io.local(), bucket)
-  , catalog_(std::make_unique<iceberg::filesystem_catalog>(
-      io.local(), bucket, std::move(base_location)))
+  , catalog_(std::move(catalog))
   , file_committer_(
       std::make_unique<iceberg_file_committer>(*catalog_, manifest_io_)) {}
 

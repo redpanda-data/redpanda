@@ -87,6 +87,7 @@
 #include "config/seed_server.h"
 #include "config/types.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/coordinator/catalog_factory.h"
 #ifndef BAZEL_DISABLE_DATALAKE_FEATURE
 #include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/coordinator_manager.h"
@@ -1998,11 +1999,17 @@ void application::wire_up_redpanda_services(
           node_id,
           std::ref(raft_group_manager),
           std::ref(partition_manager),
+          ss::sharded_parameter(
+            [](
+              cloud_io::remote& remote,
+              cloud_storage::configuration& cloud_config) {
+                return datalake::coordinator::create_catalog(
+                  remote, cloud_config.bucket_name, config::shard_local_cfg());
+            },
+            std::ref(cloud_io),
+            std::ref(cloud_configs)),
           std::ref(cloud_io),
-          cloud_configs.local().bucket_name,
-          ss::sharded_parameter([] {
-              return config::shard_local_cfg().iceberg_catalog_base_location();
-          }))
+          cloud_configs.local().bucket_name)
           .get();
         construct_service(
           _datalake_coordinator_fe,
