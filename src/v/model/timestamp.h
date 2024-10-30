@@ -96,6 +96,10 @@ inline timestamp_clock::duration duration_since_epoch(timestamp ts) {
       std::chrono::milliseconds{ts.value()});
 }
 
+inline timestamp_clock::time_point to_time_point(timestamp ts) {
+    return timestamp_clock::time_point(std::chrono::milliseconds(ts.value()));
+}
+
 inline timestamp to_timestamp(timestamp_clock::time_point ts) {
     return timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
                        ts.time_since_epoch())

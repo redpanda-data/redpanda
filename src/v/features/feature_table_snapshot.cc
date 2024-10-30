@@ -23,7 +23,7 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
     fts.states.reserve(feature_schema.size());
 
     fts.version = ft.get_active_version();
-    fts.license = ft.get_license();
+    fts.license = ft.get_configured_license();
     for (const auto& state : ft._feature_state) {
         auto& name = state.spec.name;
         fts.states.push_back(feature_state_snapshot{

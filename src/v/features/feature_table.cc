@@ -17,12 +17,16 @@
 #include "features/logger.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "model/timestamp.h"
+#include "security/license.h"
 #include "version/version.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/shard_id.hh>
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 // The feature table is closely related to cluster and uses many types from it
 using namespace cluster;
@@ -298,6 +302,30 @@ public:
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };
+
+namespace {
+
+security::license
+make_builtin_trial_license(security::license::clock::time_point start_time) {
+    auto expiry_time = start_time + std::chrono::days{45};
+    auto expiry = std::chrono::duration_cast<std::chrono::seconds>(
+      expiry_time.time_since_epoch());
+
+    if (std::getenv("__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE") != nullptr) {
+        // For testing, use an expired trial license
+        expiry = 0s;
+    }
+
+    return security::license{
+      .format_version = 0,
+      .type = security::license_type::free_trial,
+      .organization = "Redpanda Built-In Evaluation Period",
+      .expiry = expiry,
+      .checksum = "",
+    };
+}
+
+} // namespace
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
@@ -688,10 +716,45 @@ void feature_table::set_license(security::license license) {
     _license = std::move(license);
 }
 
-void feature_table::revoke_license() { _license = std::nullopt; }
+void feature_table::set_builtin_trial_license(
+  model::timestamp cluster_creation_timestamp) {
+    _builtin_trial_license = make_builtin_trial_license(
+      model::to_time_point(cluster_creation_timestamp));
+    _builtin_trial_license_initialized = true;
+
+    if (ss::this_shard_id() == 0) {
+        vlog(
+          featureslog.debug,
+          "Initialized builtin trial license expirying at "
+          "{}",
+          _builtin_trial_license->expiry);
+    }
+}
+
+void feature_table::revoke_license() {
+    _license = std::nullopt;
+    _builtin_trial_license = std::nullopt;
+}
 
 const std::optional<security::license>& feature_table::get_license() const {
+    return _license ? _license : _builtin_trial_license;
+}
+
+const std::optional<security::license>&
+feature_table::get_configured_license() const {
     return _license;
+}
+
+bool feature_table::should_sanction() const {
+    if (_license) {
+        return _license->is_expired();
+    } else if (_builtin_trial_license) {
+        return _builtin_trial_license->is_expired();
+    }
+
+    // While we are yet to initialize _builtin_trial_license on cluster
+    // creation, be permissive
+    return _builtin_trial_license_initialized;
 }
 
 void feature_table::testing_activate_all() {

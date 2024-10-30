@@ -62,7 +62,7 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         # Attempt to read license written by older version
         def license_loaded_ok():
             license = self.admin.get_license()
-            return license is not None and license['loaded'] is True
+            return self.admin.is_sample_license(license)
 
         wait_until(license_loaded_ok,
                    timeout_sec=30,

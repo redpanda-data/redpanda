@@ -247,11 +247,15 @@ class RpkClusterTest(RedpandaTest):
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
-        wait_until(lambda: self._get_license_expiry() == -1,
-                   timeout_sec=10,
-                   backoff_sec=1,
-                   retry_on_exc=True,
-                   err_msg="Unset license should return a -1 expiry")
+        evaluation_period = 3888000  # 45 days
+        wait_until(
+            lambda: self._get_license_expiry() <= evaluation_period,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg=
+            "Without a license we should observe the built in evaluation period trial license"
+        )
 
         with tempfile.NamedTemporaryFile() as tf:
             tf.write(bytes(license, 'UTF-8'))
@@ -260,7 +264,7 @@ class RpkClusterTest(RedpandaTest):
             assert "Successfully uploaded license" in output
 
         wait_until(
-            lambda: self._get_license_expiry() > 0,
+            lambda: self._get_license_expiry() > evaluation_period,
             timeout_sec=10,
             backoff_sec=1,
             retry_on_exc=True,

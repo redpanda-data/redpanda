@@ -592,9 +592,25 @@ public:
 
     void set_license(security::license license);
 
+    /// Sets the builtin trial license based on the cluster creation time
+    void set_builtin_trial_license(model::timestamp cluster_creation_timestamp);
+
     void revoke_license();
 
+    /// Returns the user-configured license or if not set, a built in trial
+    /// license. The built in trial license is initialized async on cluster
+    /// bootstrap and during startup on subsequent starts, so consider using
+    /// `should_sanction` instead for a general, permissive check on whether
+    /// to act on a missing valid license.
     const std::optional<security::license>& get_license() const;
+
+    /// Returns the user-configured license without falling back to the
+    /// evaluation period license
+    const std::optional<security::license>& get_configured_license() const;
+
+    /// Whether to act on an expired license or evaluation period by restricting
+    /// enterprise feature usage
+    bool should_sanction() const;
 
     /**
      * For use in unit tests: activate all features that would
@@ -726,6 +742,13 @@ private:
 
     // Currently loaded redpanda license details
     std::optional<security::license> _license;
+
+    // Built in trial license to fall back to if there is no license set
+    std::optional<security::license> _builtin_trial_license;
+
+    // Whether _builtin_trial_license has ever been initialized
+    // Used for implementing revoking the trial license for testing
+    bool _builtin_trial_license_initialized{false};
 
     model::offset _applied_offset{};
 

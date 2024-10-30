@@ -5355,7 +5355,7 @@ class RedpandaService(RedpandaServiceBase):
         def license_observable():
             for node in self.started_nodes():
                 license = self._admin.get_license(node)
-                if license is None or license['loaded'] is not True:
+                if not self._admin.is_sample_license(license):
                     return False
             return True
 

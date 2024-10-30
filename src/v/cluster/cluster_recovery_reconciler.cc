@@ -63,7 +63,7 @@ controller_snapshot_reconciler::get_actions(
 
     controller_actions actions;
     const auto& snap_license = snap.features.snap.license;
-    auto existing_license = _feature_table.get_license();
+    auto existing_license = _feature_table.get_configured_license();
     if (
       cur_stage < recovery_stage::recovered_license && !existing_license
       && snap_license.has_value()) {

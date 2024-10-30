@@ -205,8 +205,10 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     });
 
     // Sanity check we have a different cluster.
-    ASSERT_TRUE(
-      !app.controller->get_feature_table().local().get_license().has_value());
+    ASSERT_TRUE(!app.controller->get_feature_table()
+                   .local()
+                   .get_configured_license()
+                   .has_value());
     ASSERT_NE(
       1, config::shard_local_cfg().log_segment_size_jitter_percent.value());
     ASSERT_TRUE(!app.controller->get_credential_store().local().contains(
@@ -249,7 +251,7 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     auto validate_post_recovery = [&] {
         ASSERT_TRUE(app.controller->get_feature_table()
                       .local()
-                      .get_license()
+                      .get_configured_license()
                       .has_value());
         ASSERT_EQ(
           1, config::shard_local_cfg().log_segment_size_jitter_percent.value());

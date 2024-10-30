@@ -49,8 +49,10 @@ class LicenseEnforcementTest(RedpandaTest):
     )
     def test_license_enforcement(self, clean_node_before_recovery,
                                  clean_node_after_recovery):
-        installer = self.redpanda._installer
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
 
+        installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
         latest_version = installer.head_version()
@@ -110,8 +112,10 @@ class LicenseEnforcementTest(RedpandaTest):
     @cluster(num_nodes=5, log_allow_list=LOG_ALLOW_LIST)
     @matrix(clean_node_before_upgrade=[False, True])
     def test_escape_hatch_license_variable(self, clean_node_before_upgrade):
-        installer = self.redpanda._installer
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
 
+        installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
         latest_version = installer.head_version()

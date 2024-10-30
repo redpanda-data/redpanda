@@ -76,13 +76,13 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         assert self.admin.put_license(license).status_code == 200, \
             "License update failed"
 
-        def obtain_license(node):
+        def obtain_configured_license(node):
             lic = self.admin.get_license(node=node)
-            return (lic is not None and lic['loaded'] is True, lic)
+            return (self.admin.is_sample_license(lic), lic)
 
         result = None
         for n in self.redpanda.nodes:
-            resp = wait_until_result(lambda: obtain_license(n),
+            resp = wait_until_result(lambda: obtain_configured_license(n),
                                      timeout_sec=5,
                                      backoff_sec=1)
             assert resp['license'] is not None, "License upload failed!"
@@ -90,13 +90,15 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
 
         return result
 
+    def _disable_evaluation_period(self):
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
     @skip_fips_mode
     @cluster(num_nodes=3)
-    @matrix(with_license=[
-        True,
-        False,
-    ])
-    def test_get_enterprise(self, with_license):
+    @matrix(with_license=[True, False], with_evaluation_period=[True, False])
+    def test_get_enterprise(self, with_license, with_evaluation_period):
         if with_license:
             lic = self._put_license()
             if lic is None:
@@ -104,14 +106,21 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                     "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
                 return
 
+        if not with_evaluation_period:
+            self._disable_evaluation_period()
+
         rsp = self.admin.get_enterprise_features().json()
 
-        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.not_present
+        # The built in trial license is always present, so we can only observe valid or expired
+        expect_status = EnterpriseLicenseStatus.valid \
+            if (with_license or with_evaluation_period) \
+            else EnterpriseLicenseStatus.expired
+
         status = rsp.get('license_status', None)
         assert type(status) == str, f"Ill-formed license_status {type(status)}"
         try:
             assert EnterpriseLicenseStatus(status) == expect_status, \
-                f"Unexpected status '{status}'"
+                f"Unexpected status '{status}'. Expected: {expect_status}"
         except ValueError:
             assert False, f"Unexpected status in response: '{status}'"
 
@@ -128,11 +137,13 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
     @skip_fips_mode
     @cluster(num_nodes=3)
     @matrix(feature=[f for f in Features if f not in SKIP_FEATURES],
-            with_license=[
-                True,
-                False,
-            ])
-    def test_license_violation(self, feature, with_license):
+            with_license=[True, False],
+            with_evaluation_period=[True, False])
+    def test_license_violation(self, feature, with_license,
+                               with_evaluation_period):
+        if not with_evaluation_period:
+            self._disable_evaluation_period()
+
         if with_license:
             lic = self._put_license()
             if lic is None:
@@ -213,7 +224,11 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
                 assert not enabled[f.name], \
                     f"expected {f} not enabled, got {json.dumps(enabled, indent=1)}"
 
-        expect_status = EnterpriseLicenseStatus.valid if with_license else EnterpriseLicenseStatus.not_present
+        # The built in trial license is always present, so we can only observe valid or expired
+        expect_status = EnterpriseLicenseStatus.valid \
+            if (with_license or with_evaluation_period) \
+            else EnterpriseLicenseStatus.expired
+
         status_str = rsp.get('license_status')
         try:
             status = EnterpriseLicenseStatus(status_str)
@@ -221,6 +236,7 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
         except ValueError:
             assert False, f"Unexpected status in response: {status_str}"
 
+        has_valid_license = expect_status == EnterpriseLicenseStatus.valid
         violation = rsp.get('violation')
-        assert violation == (not with_license), \
-            f"Expected{' no' if with_license else ''} enterprise license violation, got violation='{violation}'"
+        assert violation == (not has_valid_license), \
+            f"Expected{' no' if has_valid_license else ''} enterprise license violation, got violation='{violation}'"

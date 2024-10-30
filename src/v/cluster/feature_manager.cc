@@ -298,8 +298,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     if (_feature_table.local().is_active(features::feature::license)) {
         auto enterprise_features = report_enterprise_features();
         if (enterprise_features.any()) {
-            const auto& license = _feature_table.local().get_license();
-            if (!license || license->is_expired()) {
+            if (_feature_table.local().should_sanction()) {
                 vlog(
                   clusterlog.warn,
                   "A Redpanda Enterprise Edition license is required to use "
@@ -329,7 +328,6 @@ void feature_manager::verify_enterprise_license() {
         return;
     }
 
-    const auto& license = _feature_table.local().get_license();
     std::optional<security::license> fallback_license = std::nullopt;
     auto fallback_license_str = std::getenv(
       "REDPANDA_FALLBACK_ENTERPRISE_LICENSE");
@@ -349,7 +347,7 @@ void feature_manager::verify_enterprise_license() {
     auto invalid = [](const std::optional<security::license>& license) {
         return !license || license->is_expired();
     };
-    auto license_missing_or_expired = invalid(license)
+    auto license_missing_or_expired = _feature_table.local().should_sanction()
                                       && invalid(fallback_license);
     auto enterprise_features = report_enterprise_features();
 
