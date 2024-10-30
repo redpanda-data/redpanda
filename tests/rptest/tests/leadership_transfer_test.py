@@ -387,6 +387,13 @@ class LeadershipPinningTest(RedpandaTest):
                 rack2count[rack] = rack2count.setdefault(rack, 0) + leaders
         return rack2count
 
+    def _get_topic2racks(self):
+        t2n2l = self._get_topic2node2leaders()
+        return {
+            topic: set(self._rack_counts(node2leaders).keys())
+            for topic, node2leaders in t2n2l.items()
+        }
+
     def wait_for_racks(self,
                        partition_counts,
                        topic2expected_racks,
@@ -577,3 +584,56 @@ class LeadershipPinningTest(RedpandaTest):
 
         assert get_leadership_pinning_status(), \
                 "Leadership pinning reported disabled while is it enabled"
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_leadership_pinning_sanctions(self):
+
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.set_extra_node_conf(node, {
+                'rack': self.RACK_LAYOUT[ix],
+            })
+        self.redpanda.add_extra_rp_conf(
+            {'default_leaders_preference': "racks: A"})
+        self.redpanda.start()
+
+        rpk = RpkTool(self.redpanda)
+
+        def get_leaders_preference(topic):
+            config = rpk.describe_topic_configs(topic)
+            return config["redpanda.leaders.preference"][0]
+
+        partition_counts = {"foo": 60, "bar": 20}
+
+        self.logger.info("creating topics")
+
+        rpk.create_topic("foo", partitions=60, replicas=3)
+        rpk.create_topic("bar",
+                         partitions=20,
+                         replicas=3,
+                         config={"redpanda.leaders.preference": "racks: C"})
+
+        # bigger timeout to allow balancer to activate, health reports to propagate, etc.
+        self.wait_for_racks(partition_counts, {
+            "foo": {"A"},
+            "bar": {"C"}
+        },
+                            timeout_sec=90)
+
+        # restart redpanda without an active license
+        environment = dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1')
+        self.redpanda.set_environment(environment)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # validate cluster and topic state
+        cluster_config = rpk.cluster_config_get("default_leaders_preference")
+        assert cluster_config == "racks:A", \
+                f"Failed to properly load cluster's config on restart. Got '{cluster_config}')."
+        topic_config = get_leaders_preference("bar")
+        assert topic_config == "racks:C", \
+                f"Failed to load topic's preferences on restart. Got '{topic_config}'."
+
+        # existing leadership preferences should be ignored as there is no active license
+        time.sleep(90)
+        t2r = self._get_topic2racks()
+        expected = {"foo": {"A", "B", "C"}, "bar": {"A", "B", "C"}}
+        assert t2r == expected, f"Expected topic-to-rack leaders {expected}. Got {t2r} instead"
