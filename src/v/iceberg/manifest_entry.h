@@ -65,6 +65,9 @@ enum class manifest_entry_status {
 };
 
 using snapshot_id = named_type<int64_t, struct snapshot_id_tag>;
+// some catalogs use -1 to indicate that the current snapshot id is not present
+static constexpr snapshot_id invalid_snapshot_id{-1};
+
 using sequence_number = named_type<int64_t, struct data_seq_tag>;
 using file_sequence_number = named_type<int64_t, struct file_seq_tag>;
 struct manifest_entry {

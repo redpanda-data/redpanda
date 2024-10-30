@@ -238,7 +238,9 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
         }
         mlist = std::move(mlist_res).value();
         old_snap_id = table_cur_snap_id;
-    } else if (table_.current_snapshot_id.has_value()) {
+    } else if (
+      table_.current_snapshot_id.has_value()
+      && table_.current_snapshot_id.value() != invalid_snapshot_id) {
         vlog(
           log.error,
           "Table's current snapshot id is set to {} but there are no "
