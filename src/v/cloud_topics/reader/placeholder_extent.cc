@@ -30,6 +30,8 @@ struct errc_converter<cloud_io::download_result, errc> {
         switch (r) {
         case cloud_io::download_result::notfound:
             return errc::download_not_found;
+        case cloud_io::download_result::precondition_failed:
+            [[fallthrough]];
         case cloud_io::download_result::failed:
             return errc::download_failure;
         case cloud_io::download_result::timedout:

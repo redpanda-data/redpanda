@@ -45,6 +45,9 @@ std::ostream& operator<<(std::ostream& o, s3_error_code code) {
     case s3_error_code::bucket_not_empty:
         o << "BucketNotEmpty";
         break;
+    case s3_error_code::conditional_request_conflict:
+        o << "ConditionalRequestConflict";
+        break;
     case s3_error_code::credentials_not_supported:
         o << "CredentialsNotSupported";
         break;
@@ -308,6 +311,7 @@ static const std::map<ss::sstring, s3_error_code> known_aws_error_codes = {
   {"BucketAlreadyExists", s3_error_code::bucket_already_exists},
   {"BucketAlreadyOwnedByYou", s3_error_code::bucket_already_owned_by_you},
   {"BucketNotEmpty", s3_error_code::bucket_not_empty},
+  {"ConditionalRequestConflict", s3_error_code::conditional_request_conflict},
   {"CredentialsNotSupported", s3_error_code::credentials_not_supported},
   {"CrossLocationLoggingProhibited",
    s3_error_code::cross_location_logging_prohibited},

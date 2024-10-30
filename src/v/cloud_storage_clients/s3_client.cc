@@ -514,6 +514,24 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               key,
               bucket);
             outcome = error_outcome::retry;
+        } else if (err.code() == s3_error_code::precondition_failed) {
+            // We support preconditions for cloud requests. If a request
+            // fails due to a precondition header, it
+            // should be handled differently than a regular `fail` outcome (as
+            // it may be expected).
+            vlog(
+              s3_log.debug, "{} response received for key {}", err.code(), key);
+            outcome = error_outcome::precondition_failed;
+        } else if (err.code() == s3_error_code::conditional_request_conflict) {
+            // This can happen when using conditional requests in S3.
+            // It is suggested that for this 409 error, the request should be
+            // retried.
+            // References:
+            // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html
+            // https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-requests.html
+            vlog(
+              s3_log.debug, "{} response received for key {}", err.code(), key);
+            outcome = error_outcome::retry;
         } else {
             // Unexpected REST API error, we can't recover from this
             // because the issue is not temporary (e.g. bucket doesn't

@@ -47,6 +47,7 @@ map_upload_result(cloud_io::upload_result result) {
         return std::nullopt;
     case cloud_io::upload_result::timedout:
         return cloud_data_io::errc::cloud_op_timeout;
+    case cloud_io::upload_result::precondition_failed:
     case cloud_io::upload_result::failed:
     case cloud_io::upload_result::cancelled:
         return cloud_data_io::errc::cloud_op_error;

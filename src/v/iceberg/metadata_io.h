@@ -11,6 +11,7 @@
 #include "base/outcome.h"
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
+#include "cloud_io/io_result.h"
 #include "cloud_io/provider.h"
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
@@ -112,6 +113,9 @@ protected:
         case notfound:
             // Not found is not a retriable error.
             [[fallthrough]];
+        case precondition_failed:
+            // Precondition failed is not a retriable error.
+            [[fallthrough]];
         case failed:
             co_return errc::failed;
         }
@@ -163,6 +167,8 @@ protected:
             co_return uploaded_size_bytes;
         case cancelled:
             co_return errc::shutting_down;
+        case precondition_failed:
+            [[fallthrough]];
         case failed:
             co_return errc::failed;
         case timedout:
@@ -201,6 +207,8 @@ protected:
             co_return true;
         case timedout:
             co_return errc::timedout;
+        case precondition_failed:
+            [[fallthrough]];
         case notfound:
             co_return false;
         case failed:

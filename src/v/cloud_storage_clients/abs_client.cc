@@ -549,6 +549,18 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
               key);
             outcome = error_outcome::operation_not_supported;
             _probe->register_failure(err.code());
+        } else if (err.code() == abs_error_code::precondition_failed) {
+            // We support preconditions for cloud requests. If a request
+            // fails due to a precondition header, it
+            // should be handled differently than a regular `fail` outcome (as
+            // it may be expected).
+            vlog(
+              abs_log.debug,
+              "ConditionNotMet response received for key {}",
+              key);
+            outcome = error_outcome::precondition_failed;
+            // TODO(willem): add a _precondition_failed counter to client probe
+            // and register failures?
         } else {
             vlog(
               abs_log.error,

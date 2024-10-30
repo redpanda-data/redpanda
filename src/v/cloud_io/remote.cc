@@ -12,6 +12,7 @@
 
 #include "base/unreachable.h"
 #include "bytes/iostream.h"
+#include "cloud_io/io_result.h"
 #include "cloud_io/logger.h"
 #include "cloud_io/provider.h"
 #include "cloud_io/transfer_details.h"
@@ -298,6 +299,9 @@ ss::future<upload_result> remote::upload_stream(
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
+            break;
         }
     }
 
@@ -409,6 +413,9 @@ ss::future<download_result> remote::download_stream(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -494,6 +501,9 @@ remote::download_object(download_request download_request) {
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     transfer_details.on_failure();
@@ -567,6 +577,9 @@ ss::future<download_result> remote::object_exists(
         case cloud_storage_clients::error_outcome::key_not_found:
             result = download_result::notfound;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = download_result::precondition_failed;
+            break;
         }
     }
     if (!result) {
@@ -630,6 +643,8 @@ remote::delete_object(transfer_details transfer_details) {
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::precondition_failed:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
@@ -790,6 +805,8 @@ ss::future<upload_result> remote::delete_object_batch(
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::operation_not_supported:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::precondition_failed:
             [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
@@ -1019,6 +1036,10 @@ ss::future<list_result> remote::list_objects(
             break;
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            // Preconditional failures are not expected for ListObjects
+            // requests.
+            [[fallthrough]];
         case cloud_storage_clients::error_outcome::fail:
             result = cloud_storage_clients::error_outcome::fail;
             break;
@@ -1104,6 +1125,9 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
         case cloud_storage_clients::error_outcome::fail:
             result = upload_result::failed;
             break;
+        case cloud_storage_clients::error_outcome::precondition_failed:
+            result = upload_result::precondition_failed;
+            break;
         }
     }
 
@@ -1126,6 +1150,7 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           transfer_details.bucket,
           *result,
           upload_type);
+        co_return *result;
     }
     co_return upload_result::timedout;
 }

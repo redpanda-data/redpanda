@@ -270,6 +270,8 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
             [[fallthrough]];
         case cloud_storage::upload_result::failed:
             [[fallthrough]];
+        case cloud_storage::upload_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::upload_result::cancelled:
             result.error = "Failed to upload to cloud storage.";
             break;
@@ -346,6 +348,8 @@ ss::future<cloudcheck::verify_head_result> cloudcheck::verify_head(
             [[fallthrough]];
         case cloud_storage::download_result::failed:
             [[fallthrough]];
+        case cloud_storage::download_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::download_result::notfound:
             result.error = "Failed to download from cloud storage.";
             break;
@@ -396,6 +400,8 @@ ss::future<cloudcheck::verify_download_result> cloudcheck::verify_download(
             [[fallthrough]];
         case cloud_storage::download_result::failed:
             [[fallthrough]];
+        case cloud_storage::download_result::precondition_failed:
+            [[fallthrough]];
         case cloud_storage::download_result::notfound:
             result.error = "Failed to download from cloud storage.";
             break;
@@ -430,6 +436,8 @@ ss::future<cloudcheck::verify_delete_result> cloudcheck::verify_delete(
         case cloud_storage::upload_result::timedout:
             [[fallthrough]];
         case cloud_storage::upload_result::failed:
+            [[fallthrough]];
+        case cloud_storage::upload_result::precondition_failed:
             [[fallthrough]];
         case cloud_storage::upload_result::cancelled:
             result.error = "Failed to delete from cloud storage.";
@@ -473,6 +481,8 @@ ss::future<cloudcheck::verify_deletes_result> cloudcheck::verify_deletes(
         case cloud_storage::upload_result::timedout:
             [[fallthrough]];
         case cloud_storage::upload_result::failed:
+            [[fallthrough]];
+        case cloud_storage::upload_result::precondition_failed:
             [[fallthrough]];
         case cloud_storage::upload_result::cancelled:
             result.error = "Failed to delete from cloud storage.";

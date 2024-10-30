@@ -25,6 +25,9 @@ std::ostream& operator<<(std::ostream& o, const download_result& r) {
     case download_result::failed:
         o << "{failed}";
         break;
+    case download_result::precondition_failed:
+        o << "{precondition_failed}";
+        break;
     };
     return o;
 }
@@ -42,6 +45,9 @@ std::ostream& operator<<(std::ostream& o, const upload_result& r) {
         break;
     case upload_result::cancelled:
         o << "{cancelled}";
+        break;
+    case upload_result::precondition_failed:
+        o << "{precondition_failed}";
         break;
     };
     return o;

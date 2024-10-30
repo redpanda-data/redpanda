@@ -525,6 +525,8 @@ public:
                 co_return error_outcome::shutting_down;
             case upload_result::timedout:
                 co_return error_outcome::timed_out;
+            case upload_result::precondition_failed:
+                [[fallthrough]];
             case upload_result::failed:
                 co_return error_outcome::unexpected_failure;
             case upload_result::success:
