@@ -15,4 +15,8 @@ TEST(DlStmKey, Formatting) {
     ASSERT_EQ(
       fmt::format("{}", experimental::cloud_topics::dl_stm_key::push_overlay),
       "push_overlay");
+
+    ASSERT_EQ(
+      fmt::format("{}", experimental::cloud_topics::dl_stm_key(999)),
+      "unknown dl_stm_key(999)");
 }

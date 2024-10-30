@@ -15,7 +15,7 @@ auto fmt::formatter<experimental::cloud_topics::dl_stm_key>::format(
     switch (key) {
     case experimental::cloud_topics::dl_stm_key::push_overlay:
         return fmt::format_to(ctx.out(), "push_overlay");
-    default:
-        return fmt::format_to(ctx.out(), "unknown");
     }
+    return fmt::format_to(
+      ctx.out(), "unknown dl_stm_key({})", static_cast<int>(key));
 }
