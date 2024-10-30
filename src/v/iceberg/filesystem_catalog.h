@@ -99,6 +99,9 @@ private:
     // use it to prefix data files.
     ss::sstring table_location(const table_identifier& id) const;
 
+    // Returns a location to use in table_metadata location field.
+    uri table_location_uri(const table_identifier& id) const;
+
     // Returns the version hint path for this table.
     version_hint_path vhint_path(const table_identifier&) const;
 

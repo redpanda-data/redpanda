@@ -12,7 +12,7 @@
 #include "container/fragmented_vector.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/partition.h"
-#include "utils/named_type.h"
+#include "iceberg/uri.h"
 
 namespace iceberg {
 
@@ -36,7 +36,7 @@ enum class manifest_file_content {
 };
 
 struct manifest_file {
-    ss::sstring manifest_path;
+    uri manifest_path;
     size_t manifest_length;
     partition_spec::id_t partition_spec_id;
     manifest_file_content content;

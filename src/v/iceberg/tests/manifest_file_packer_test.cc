@@ -22,7 +22,7 @@ namespace {
 
 manifest_file make_file(size_t size_bytes) {
     return manifest_file{
-      .manifest_path = "dummy",
+      .manifest_path = uri("s3://dummy/path"),
       .manifest_length = size_bytes,
     };
 }

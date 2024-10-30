@@ -183,7 +183,7 @@ table_metadata parse_table_meta(const json::Value& v) {
     return table_metadata{
       .format_version = format_version_from_int(format_version),
       .table_uuid = uuid_t::from_string(table_uuid),
-      .location = location,
+      .location = uri(location),
       .last_sequence_number = sequence_number{last_sequence_number},
       .last_updated_ms = model::timestamp{last_updated_ms},
       .last_column_id = nested_field::id_t{last_column_id},
@@ -243,7 +243,7 @@ void rjson_serialize(
     w.Key("table-uuid");
     w.String(fmt::to_string(m.table_uuid));
     w.Key("location");
-    w.String(m.location);
+    w.String(m.location());
     w.Key("last-sequence-number");
     w.Int64(m.last_sequence_number());
     w.Key("last-updated-ms");

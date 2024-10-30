@@ -40,8 +40,8 @@ public:
 
     ss::future<checked<bool, metadata_io::errc>>
     version_hint_exists(const version_hint_path& path);
-    // TODO: make uri handling more explicit, use separate named type
-    ss::sstring to_uri(const ss::sstring& p) const;
+
+    uri to_uri(const ss::sstring& p) const;
 };
 
 } // namespace iceberg

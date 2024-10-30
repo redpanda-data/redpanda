@@ -30,7 +30,7 @@ public:
         return table_metadata{
           .format_version = format_version::v2,
           .table_uuid = uuid_t::create(),
-          .location = "foo/bar",
+          .location = uri("s3://bucket/foo/bar"),
           .last_sequence_number = sequence_number{0},
           .last_updated_ms = model::timestamp::now(),
           .last_column_id = s.highest_field_id().value(),

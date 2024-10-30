@@ -76,7 +76,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 pk->fields.emplace_back(iceberg::int_value{f.hour});
                 icb_files.emplace_back(iceberg::data_file{
                   .content_type = iceberg::data_file_content_type::data,
-                  .file_path = f.remote_path,
+                  .file_path = io_.to_uri(std::filesystem::path(f.remote_path)),
                   .file_format = iceberg::data_file_format::parquet,
                   .partition = iceberg::partition_key{std::move(pk)},
                   .record_count = f.row_count,

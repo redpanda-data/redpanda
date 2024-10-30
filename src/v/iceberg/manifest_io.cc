@@ -23,17 +23,26 @@
 using namespace std::chrono_literals;
 
 namespace iceberg {
-ss::future<checked<manifest, metadata_io::errc>>
-manifest_io::download_manifest_uri(
-  const ss::sstring& uri, const partition_key_type& pk_type) {
-    auto path = manifest_path(from_uri(uri));
-    co_return co_await download_manifest(path, pk_type);
+ss::future<checked<manifest, metadata_io::errc>> manifest_io::download_manifest(
+  const uri& uri, const partition_key_type& pk_type) {
+    auto path_res = from_uri(uri);
+    if (path_res.has_error()) {
+        co_return path_res.error();
+    }
+
+    co_return co_await download_manifest(
+      manifest_path(path_res.value()), pk_type);
 }
 
 ss::future<checked<manifest_list, metadata_io::errc>>
-manifest_io::download_manifest_list_uri(const ss::sstring& uri) {
-    auto path = manifest_list_path(from_uri(uri));
-    co_return co_await download_manifest_list(path);
+manifest_io::download_manifest_list(const uri& uri) {
+    auto path_res = from_uri(uri);
+    if (path_res.has_error()) {
+        co_return path_res.error();
+    }
+
+    co_return co_await download_manifest_list(
+      manifest_list_path{path_res.value()});
 }
 
 ss::future<checked<manifest, metadata_io::errc>> manifest_io::download_manifest(
@@ -53,30 +62,49 @@ manifest_io::download_manifest_list(const manifest_list_path& path) {
 ss::future<checked<size_t, metadata_io::errc>>
 manifest_io::upload_manifest(const manifest_path& path, const manifest& m) {
     return upload_object<manifest>(
-      path(), m, "iceberg::manifest", [](const manifest& m) {
+      path().string(), m, "iceberg::manifest", [](const manifest& m) {
           return serialize_avro(m);
       });
+}
+
+ss::future<checked<size_t, metadata_io::errc>>
+manifest_io::upload_manifest(const uri& uri, const manifest& m) {
+    auto path_res = from_uri(uri);
+    if (path_res.has_error()) {
+        return ssx::now<checked<size_t, metadata_io::errc>>(path_res.error());
+    }
+    return upload_manifest(manifest_path(path_res.value()), m);
 }
 
 ss::future<checked<size_t, metadata_io::errc>>
 manifest_io::upload_manifest_list(
   const manifest_list_path& path, const manifest_list& m) {
     return upload_object<manifest_list>(
-      path(), m, "iceberg::manifest_list", [](const manifest_list& m) {
+      path().string(), m, "iceberg::manifest_list", [](const manifest_list& m) {
           return serialize_avro(m);
       });
 }
 
-ss::sstring manifest_io::to_uri(const std::filesystem::path& p) const {
-    return fmt::format("{}{}", uri_base(), p.native());
+ss::future<checked<size_t, metadata_io::errc>>
+manifest_io::upload_manifest_list(const uri& uri, const manifest_list& m) {
+    auto path_res = from_uri(uri);
+    if (path_res.has_error()) {
+        return ssx::now<checked<size_t, metadata_io::errc>>(path_res.error());
+    }
+    return upload_manifest_list(manifest_list_path(path_res.value()), m);
 }
 
-std::filesystem::path manifest_io::from_uri(const ss::sstring& s) const {
-    const auto base = uri_base();
-    if (!s.starts_with(base)) {
-        return std::filesystem::path{s};
+uri manifest_io::to_uri(const std::filesystem::path& p) const {
+    return make_uri(bucket_, p);
+}
+
+checked<std::filesystem::path, metadata_io::errc>
+manifest_io::from_uri(const uri& s) const {
+    try {
+        return std::filesystem::path(path_from_uri(s));
+    } catch (...) {
+        return metadata_io::errc::invalid_uri;
     }
-    return std::filesystem::path{s.substr(base.size())};
 }
 
 ss::sstring manifest_io::uri_base() const {

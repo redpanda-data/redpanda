@@ -15,6 +15,7 @@
 #include "iceberg/partition.h"
 #include "iceberg/snapshot.h"
 #include "iceberg/transform.h"
+#include "iceberg/uri.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
@@ -55,7 +56,7 @@ struct sort_order {
 struct table_metadata {
     format_version format_version;
     uuid_t table_uuid;
-    ss::sstring location;
+    uri location;
     sequence_number last_sequence_number;
     model::timestamp last_updated_ms;
     nested_field::id_t last_column_id;

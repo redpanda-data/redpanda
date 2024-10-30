@@ -165,7 +165,7 @@ data_file_format format_from_str(std::string_view s) {
 std::unique_ptr<struct_value> data_file_to_value(const data_file& file) {
     auto ret = std::make_unique<struct_value>();
     ret->fields.emplace_back(int_value(content_to_int(file.content_type)));
-    ret->fields.emplace_back(string_value(iobuf::from(file.file_path)));
+    ret->fields.emplace_back(string_value(iobuf::from(file.file_path())));
     ret->fields.emplace_back(string_value(format_to_str(file.file_format)));
     ret->fields.emplace_back(std::move(file.partition.copy().val));
     ret->fields.emplace_back(
@@ -205,8 +205,8 @@ data_file data_file_from_value(struct_value v) {
     }
     file.content_type = content_from_int(
       get_required_primitive<int_value>(std::move(fs[0])));
-    file.file_path = from_iobuf(
-      get_required_primitive<string_value>(std::move(fs[1])));
+    file.file_path = uri(
+      from_iobuf(get_required_primitive<string_value>(std::move(fs[1]))));
     file.file_format = format_from_str(
       from_iobuf(get_required_primitive<string_value>(std::move(fs[2]))));
     file.partition = {get_required_struct(std::move(fs[3]))};

@@ -246,6 +246,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":partition_key",
+        ":uri",
         ":values",
         "//src/v/base",
         "//src/v/container:chunked_hash_map",
@@ -687,6 +688,7 @@ redpanda_cc_library(
         ":partition",
         ":schema",
         ":snapshot",
+        ":uri",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/utils:named_type",

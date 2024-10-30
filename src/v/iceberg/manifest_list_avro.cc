@@ -88,7 +88,7 @@ field_summary summary_from_avro(const avrogen::r508& s) {
 
 avrogen::manifest_file file_to_avro(const manifest_file& f) {
     avrogen::manifest_file ret;
-    ret.manifest_path = f.manifest_path;
+    ret.manifest_path = f.manifest_path();
     ret.manifest_length = static_cast<int64_t>(f.manifest_length);
     ret.partition_spec_id = f.partition_spec_id();
     ret.content = static_cast<int32_t>(f.content);
@@ -120,7 +120,7 @@ avrogen::manifest_file file_to_avro(const manifest_file& f) {
 
 manifest_file file_from_avro(const avrogen::manifest_file& f) {
     manifest_file ret;
-    ret.manifest_path = f.manifest_path;
+    ret.manifest_path = uri(f.manifest_path);
     ret.manifest_length = f.manifest_length;
     ret.partition_spec_id = partition_spec::id_t{f.partition_spec_id};
     ret.content = content_type_from_int(f.content);

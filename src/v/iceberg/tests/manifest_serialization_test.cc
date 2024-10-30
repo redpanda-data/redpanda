@@ -56,7 +56,7 @@ TEST(ManifestSerializationTest, TestManifestEntry) {
     avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
-    entry.data_file.file_path = "path/to/file";
+    entry.data_file.file_path = "s3://bucket/path/to/file";
     entry.data_file.file_format = "PARQUET";
     entry.data_file.partition = {};
     entry.data_file.record_count = 3;
@@ -91,7 +91,7 @@ TEST(ManifestSerializationTest, TestManyManifestEntries) {
     avrogen::manifest_entry entry;
     entry.status = 1;
     entry.data_file.content = 2;
-    entry.data_file.file_path = "path/to/file";
+    entry.data_file.file_path = "s3://bucket/path/to/file";
     entry.data_file.file_format = "PARQUET";
     entry.data_file.partition = {};
     entry.data_file.record_count = 3;
@@ -131,7 +131,7 @@ TEST(ManifestSerializationTest, TestManifestList) {
     manifest_list l;
     for (int i = 0; i < 1024; ++i) {
         manifest_file file;
-        file.manifest_path = "path/to/file";
+        file.manifest_path = uri("s3://bucket/path/to/file");
         file.partition_spec_id = partition_spec::id_t{1};
         file.content = manifest_file_content::data;
         file.seq_number = sequence_number{3};
@@ -157,7 +157,7 @@ TEST(ManifestSerializationTest, TestManifestList) {
 
 TEST(ManifestSerializationTest, TestManifestFile) {
     avrogen::manifest_file manifest;
-    manifest.manifest_path = "path/to/file";
+    manifest.manifest_path = "s3://bucket/path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
     manifest.sequence_number = 3;
@@ -212,7 +212,7 @@ TEST(ManifestSerializationTest, TestManifestFile) {
 TEST(ManifestSerializationTest, TestManifestAvroReaderWriter) {
     const auto& manifest_file_schema = avrogen::manifest_file::valid_schema();
     avrogen::manifest_file manifest;
-    manifest.manifest_path = "path/to/file";
+    manifest.manifest_path = "s3://bucket/path/to/file";
     manifest.partition_spec_id = 1;
     manifest.content = 2;
     manifest.sequence_number = 3;
