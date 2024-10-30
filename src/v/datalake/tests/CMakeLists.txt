@@ -1,4 +1,19 @@
+find_package(Avro REQUIRED)
 set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+v_cc_library(
+  NAME datalake_test_utils
+  HDRS
+    record_generator.h
+  SRCS
+    record_generator.cc
+  DEPS
+    Avro::avro
+    Seastar::seastar
+    v::avro_test_utils
+    v::schema
+    v::storage
+)
 
 rp_test(
   UNIT_TEST

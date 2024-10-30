@@ -67,6 +67,33 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "record_generator",
+    srcs = [
+        "record_generator.cc",
+    ],
+    hdrs = [
+        "record_generator.h",
+    ],
+    implementation_deps = [
+        "//src/v/schema:registry",
+        "//src/v/serde/avro/tests:data_generator",
+        "@avro",
+    ],
+    include_prefix = "datalake/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "test_data_writer",
     hdrs = [
         "test_data_writer.h",
