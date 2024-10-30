@@ -35,6 +35,7 @@ redpanda_cc_library(
         "//src/v/iceberg:json_utils",
         "//src/v/json",
         "//src/v/utils:named_type",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
