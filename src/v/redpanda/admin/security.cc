@@ -397,6 +397,7 @@ void admin_server::register_security_routes() {
     register_route<superuser>(
       ss::httpd::security_json::create_role,
       request_handler_fn{[this](auto req, auto reply) {
+          check_license();
           return create_role_handler(std::move(req), std::move(reply));
       }});
 
