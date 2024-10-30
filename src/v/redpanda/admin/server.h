@@ -191,6 +191,8 @@ private:
         return auth_state;
     }
 
+    void check_license() const;
+
     void log_exception(
       const ss::sstring& url,
       const request_auth_result& auth_state,
