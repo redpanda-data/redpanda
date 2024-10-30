@@ -645,4 +645,33 @@ struct convert<config::leaders_preference> {
     }
 };
 
+template<>
+struct convert<config::datalake_catalog_type> {
+    static Node encode(const config::datalake_catalog_type& rhs) {
+        return Node(fmt::format("{}", rhs));
+    }
+
+    static bool decode(const Node& node, config::datalake_catalog_type& rhs) {
+        static constexpr auto acceptable_values
+          = config::acceptable_datalake_catalog_types();
+        auto value = node.as<std::string>();
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<config::datalake_catalog_type>(
+                std::string_view{value})
+                .match(
+                  to_string_view(config::datalake_catalog_type::rest),
+                  config::datalake_catalog_type::rest)
+                .match(
+                  to_string_view(config::datalake_catalog_type::filesystem),
+                  config::datalake_catalog_type::filesystem);
+
+        return true;
+    }
+};
+
 } // namespace YAML

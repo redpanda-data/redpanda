@@ -118,4 +118,37 @@ inline std::ostream& operator<<(std::ostream& os, const tls_version& v) {
     return os << to_string_view(v);
 }
 
+enum class datalake_catalog_type { filesystem, rest };
+
+constexpr std::string_view to_string_view(datalake_catalog_type ct) {
+    switch (ct) {
+    case datalake_catalog_type::filesystem:
+        return "filesystem";
+    case datalake_catalog_type::rest:
+        return "rest";
+    }
+}
+static constexpr auto acceptable_datalake_catalog_types() {
+    return std::to_array(
+      {to_string_view(datalake_catalog_type::rest),
+       to_string_view(datalake_catalog_type::filesystem)});
+}
+
+inline std::ostream& operator<<(std::ostream& o, datalake_catalog_type ct) {
+    return o << to_string_view(ct);
+}
+
+inline std::istream& operator>>(std::istream& is, datalake_catalog_type& ct) {
+    ss::sstring s;
+    is >> s;
+    ct = string_switch<datalake_catalog_type>(s)
+           .match(
+             to_string_view(datalake_catalog_type::rest),
+             datalake_catalog_type::rest)
+           .match(
+             to_string_view(datalake_catalog_type::filesystem),
+             datalake_catalog_type::filesystem);
+    return is;
+}
+
 } // namespace config
