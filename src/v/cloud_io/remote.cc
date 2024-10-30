@@ -1107,6 +1107,10 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
 
         if (res) {
             transfer_details.on_success();
+            // Set the ETag in the upload request, if the pointer exists.
+            if (upload_request.etag) {
+                *upload_request.etag = std::move(res.value().etag);
+            }
             co_return upload_result::success;
         }
 

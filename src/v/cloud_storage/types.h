@@ -449,6 +449,7 @@ struct upload_request {
     iobuf payload;
     bool accept_no_content_response{false};
     request_headers headers;
+    ss::sstring* etag{nullptr};
 
     // Sets the `If-None-Match` header in the HTTP request with the provided
     // ETag. This header is useful for guaranteeing atomic uploads to cloud

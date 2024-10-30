@@ -556,7 +556,8 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
        .display_str = to_string(req.type),
        .payload = std::move(req.payload),
        .accept_no_content_response = false,
-       .headers = std::move(req.headers.headers)});
+       .headers = std::move(req.headers.headers),
+       .etag = req.etag});
 }
 
 ss::future<api_activity_notification>

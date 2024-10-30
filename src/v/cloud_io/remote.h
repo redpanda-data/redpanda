@@ -42,6 +42,7 @@ struct basic_upload_request {
     iobuf payload;
     bool accept_no_content_response{false};
     cloud_storage_clients::header_map_t headers;
+    ss::sstring* etag{nullptr};
 };
 using upload_request = basic_upload_request<ss::lowres_clock>;
 
