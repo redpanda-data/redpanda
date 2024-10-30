@@ -1,6 +1,31 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "catalog_schema_manager",
+    srcs = [
+        "catalog_schema_manager.cc",
+    ],
+    hdrs = [
+        "catalog_schema_manager.h",
+    ],
+    implementation_deps = [
+        ":logger",
+        ":table_definition",
+        "//src/v/base",
+        "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/iceberg:transaction",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:table_identifier",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "conversion_outcome",
     srcs = [
     ],

@@ -31,6 +31,7 @@ v_cc_library(
   SRCS
     arrow_translator.cc
     batching_parquet_writer.cc
+    catalog_schema_manager.cc
     data_writer_interface.cc
     parquet_writer.cc
     record_multiplexer.cc
