@@ -34,8 +34,11 @@ public:
     // Return an Arrow field descriptor for this converter. This is needed both
     // for schema generation and for converters for compound types: list,
     // struct, map.
-    virtual std::shared_ptr<arrow::Field>
-    field(const std::string& name, iceberg::field_required required) = 0;
+    virtual std::shared_ptr<arrow::Field> field(
+      const std::string& name,
+      iceberg::field_required required,
+      iceberg::nested_field::id_t field_id)
+      = 0;
 
     // Return the underlying builder. This is needed to get the child builders
     // for compound types.
@@ -57,6 +60,16 @@ public:
     virtual void add_data(const iceberg::value& /*value*/) = 0;
 };
 
+namespace {
+static constexpr auto parquet_field_id_metadata_key = "PARQUET:field_id";
+// Iceberg uses field_ids to identify columns in parquet files.
+auto default_field_metadata(iceberg::nested_field::id_t id) {
+    return std::make_shared<arrow::KeyValueMetadata>(
+      std::unordered_map<std::string, std::string>(
+        {{parquet_field_id_metadata_key, fmt::to_string(id)}}));
+}
+} // namespace
+
 template<typename ArrowType>
 class scalar_converter : public converter_interface {
     using BuilderType = arrow::TypeTraits<ArrowType>::BuilderType;
@@ -66,8 +79,10 @@ public:
       const std::shared_ptr<arrow::DataType>& data_type,
       std::shared_ptr<BuilderType> builder);
 
-    std::shared_ptr<arrow::Field>
-    field(const std::string& name, iceberg::field_required required) override;
+    std::shared_ptr<arrow::Field> field(
+      const std::string& name,
+      iceberg::field_required required,
+      iceberg::nested_field::id_t field_id) override;
 
     std::shared_ptr<arrow::ArrayBuilder> builder() override;
 
@@ -85,8 +100,10 @@ class struct_converter : public converter_interface {
 public:
     explicit struct_converter(const iceberg::struct_type& schema);
 
-    std::shared_ptr<arrow::Field>
-    field(const std::string& name, iceberg::field_required required) override;
+    std::shared_ptr<arrow::Field> field(
+      const std::string& name,
+      iceberg::field_required required,
+      iceberg::nested_field::id_t field_id) override;
 
     std::shared_ptr<arrow::ArrayBuilder> builder() override;
 
@@ -114,8 +131,10 @@ class list_converter : public converter_interface {
 public:
     explicit list_converter(const iceberg::list_type& schema);
 
-    std::shared_ptr<arrow::Field>
-    field(const std::string& name, iceberg::field_required required) override;
+    std::shared_ptr<arrow::Field> field(
+      const std::string& name,
+      iceberg::field_required required,
+      iceberg::nested_field::id_t field_id) override;
 
     std::shared_ptr<arrow::ArrayBuilder> builder() override;
 
@@ -135,8 +154,10 @@ class map_converter : public converter_interface {
 public:
     explicit map_converter(const iceberg::map_type& schema);
 
-    std::shared_ptr<arrow::Field>
-    field(const std::string& name, iceberg::field_required required) override;
+    std::shared_ptr<arrow::Field> field(
+      const std::string& name,
+      iceberg::field_required required,
+      iceberg::nested_field::id_t field_id) override;
 
     std::shared_ptr<arrow::ArrayBuilder> builder() override;
 
@@ -296,9 +317,14 @@ scalar_converter<ArrowType>::scalar_converter(
 
 template<typename ArrowType>
 std::shared_ptr<arrow::Field> scalar_converter<ArrowType>::field(
-  const std::string& name, iceberg::field_required required) {
+  const std::string& name,
+  iceberg::field_required required,
+  iceberg::nested_field::id_t field_id) {
     return arrow::field(
-      name, _arrow_data_type, required == iceberg::field_required::no);
+      name,
+      _arrow_data_type,
+      required == iceberg::field_required::no,
+      default_field_metadata(field_id));
 }
 
 template<typename ArrowType>
@@ -492,7 +518,8 @@ struct_converter::struct_converter(const iceberg::struct_type& schema) {
             // constructed correctly.
             throw std::invalid_argument("Unable to construct child converter");
         }
-        _fields.push_back(child->field(field->name, field->required));
+        _fields.push_back(
+          child->field(field->name, field->required, field->id));
         _field_required.push_back(bool(field->required));
         child_builders.push_back(child->builder());
         _child_converters.push_back(std::move(child));
@@ -503,9 +530,14 @@ struct_converter::struct_converter(const iceberg::struct_type& schema) {
 }
 
 std::shared_ptr<arrow::Field> struct_converter::field(
-  const std::string& name, iceberg::field_required required) {
+  const std::string& name,
+  iceberg::field_required required,
+  iceberg::nested_field::id_t field_id) {
     return arrow::field(
-      name, _arrow_data_type, required == iceberg::field_required::no);
+      name,
+      _arrow_data_type,
+      required == iceberg::field_required::no,
+      default_field_metadata(field_id));
 }
 
 std::shared_ptr<arrow::ArrayBuilder> struct_converter::builder() {
@@ -583,7 +615,9 @@ list_converter::list_converter(const iceberg::list_type& schema) {
         throw std::runtime_error("Unable to construct child converter");
     }
     std::shared_ptr<arrow::Field> child_field = _child_converter->field(
-      schema.element_field->name, schema.element_field->required);
+      schema.element_field->name,
+      schema.element_field->required,
+      schema.element_field->id);
     if (child_field) {
         _arrow_data_type = arrow::list(child_field);
     } else {
@@ -596,9 +630,14 @@ list_converter::list_converter(const iceberg::list_type& schema) {
 }
 
 std::shared_ptr<arrow::Field> list_converter::field(
-  const std::string& name, iceberg::field_required required) {
+  const std::string& name,
+  iceberg::field_required required,
+  iceberg::nested_field::id_t field_id) {
     return arrow::field(
-      name, _arrow_data_type, required == iceberg::field_required::no);
+      name,
+      _arrow_data_type,
+      required == iceberg::field_required::no,
+      default_field_metadata(field_id));
 }
 
 std::shared_ptr<arrow::ArrayBuilder> list_converter::builder() {
@@ -657,9 +696,11 @@ map_converter::map_converter(const iceberg::map_type& schema) {
     }
 
     std::shared_ptr<arrow::Field> key_field = _key_converter->field(
-      schema.key_field->name, schema.key_field->required);
+      schema.key_field->name, schema.key_field->required, schema.key_field->id);
     std::shared_ptr<arrow::Field> value_field = _value_converter->field(
-      schema.value_field->name, schema.value_field->required);
+      schema.value_field->name,
+      schema.value_field->required,
+      schema.value_field->id);
     if (!key_field || !value_field) {
         _arrow_data_type = nullptr;
         throw std::runtime_error("Child converter has null field");
@@ -673,9 +714,14 @@ map_converter::map_converter(const iceberg::map_type& schema) {
 }
 
 std::shared_ptr<arrow::Field> map_converter::field(
-  const std::string& name, iceberg::field_required required) {
+  const std::string& name,
+  iceberg::field_required required,
+  iceberg::nested_field::id_t field_id) {
     return arrow::field(
-      name, _arrow_data_type, required == iceberg::field_required::no);
+      name,
+      _arrow_data_type,
+      required == iceberg::field_required::no,
+      default_field_metadata(field_id));
 }
 
 std::shared_ptr<arrow::ArrayBuilder> map_converter::builder() {
