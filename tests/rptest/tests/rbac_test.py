@@ -12,12 +12,13 @@ from requests.exceptions import HTTPError
 import random
 import time
 from typing import Optional
+from collections.abc import Callable
 
 from ducktape.utils.util import wait_until
 
 import ducktape.errors
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, matrix
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import (Admin, RedpandaNode, RoleMemberList,
                                    RoleUpdate, RoleErrorCode, RoleError,
@@ -629,9 +630,7 @@ class RBACLicenseTest(RBACTestBase):
         super().__init__(test_ctx, **kwargs)
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
-            f'{self.LICENSE_CHECK_INTERVAL_SEC}',
-            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
-            True
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
         })
 
     def _has_license_nag(self):
@@ -659,10 +658,120 @@ class RBACLicenseTest(RBACTestBase):
         self.logger.debug("Adding a role")
         self.superuser_admin.create_role(role=self.role_name0)
 
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': '1'})
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
+
         self.logger.debug("Waiting for license nag")
         wait_until(self._has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")
+
+    @cluster(num_nodes=1)
+    @skip_fips_mode
+    def test_sanction_role_acls(self):
+        rpk = RpkTool(self.redpanda)
+
+        def check_rpk_output(tbl: str, search: str, expect_found: bool):
+            rows = tbl.split("\n")[1:]
+            res = any(search in r for r in rows)
+            assert res is expect_found, \
+                f"{'' if expect_found else 'un'}expected '{search}' in {json.dumps(rows, indent=1)}"
+
+        self.logger.debug("Under trial license, we can bind an ACL to a Role")
+        check_rpk_output(
+            rpk.allow_principal("RedpandaRole:foo", ['all'], 'topic', 'bar'),
+            "UNKNOWN_SERVER_ERROR",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:foo", True)
+
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': '1'})
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+
+        self.logger.debug("Without a license, we cannot bind an ACL to a Role")
+
+        check_rpk_output(
+            rpk.allow_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
+            "UNKNOWN_SERVER_ERROR",
+            True,
+        )
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", False)
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:foo", True)
+
+        self.logger.debug("but we can still _delete_ an ACL bound to a role")
+
+        check_rpk_output(
+            rpk.delete_principal("RedpandaRole:foo", ['all'], 'topic', 'bar'),
+            "UNKNOWN_SERVER_ERROR",
+            False,
+        )
+
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:foo", False)
+
+        self.logger.debug(
+            "Install a license, everything  should work as expected")
+
+        self.redpanda.install_license()
+
+        check_rpk_output(
+            rpk.allow_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
+            "UNKNOWN_SERVER_ERROR",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", True)
+
+        check_rpk_output(
+            rpk.delete_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
+            "UNKNOWN_SERVER_ERROR",
+            False,
+        )
+        check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", False)
+
+    @cluster(num_nodes=1)
+    @skip_fips_mode
+    @matrix(disable_trial=[False, True])
+    def test_sanction_role_admin(self, disable_trial):
+        role_name_0 = "myrole"
+        role_name_1 = "anotherrole"
+        self.superuser_admin.create_role(role_name_0)
+        if disable_trial:
+            self.redpanda.set_environment(
+                {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': '1'})
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                use_maintenance_mode=False)
+
+        def check_action(fn: Callable, expect_exc: bool, code: int = -1):
+            if expect_exc:
+                assert code > 0, f"specify a valid status code (got {code})"
+                with expect_http_error(code):
+                    fn()
+            else:
+                rsp = fn()
+                success = [200, 201, 204]
+                assert rsp.status_code in success, \
+                    f"Expected one of {success}, got {rsp.status_code}"
+
+        admin = self.superuser_admin
+
+        self.logger.debug("Rejects create/update role requests w/o a license")
+        check_action(lambda: admin.create_role(role_name_1),
+                     disable_trial,
+                     code=403)
+
+        check_action(lambda: admin.update_role_members(
+            role_name_0, add=[RoleMember.User(ALICE.username)]),
+                     disable_trial,
+                     code=403)
+
+        self.logger.debug("Delete should work regardless")
+        check_action(lambda: admin.delete_role(role_name_0), False)
 
 
 class RBACEndToEndTest(RBACTestBase):
