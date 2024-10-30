@@ -45,6 +45,8 @@ action::errc to_action_errc(metadata_io::errc e) {
         return action::errc::io_failed;
     case metadata_io::errc::shutting_down:
         return action::errc::shutting_down;
+    case metadata_io::errc::invalid_uri:
+        return action::errc::unexpected_state;
     case metadata_io::errc::timedout:
         // NOTE: treat IO timeouts the same as other IO failures.
         // TODO: build out retry logic.

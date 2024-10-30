@@ -24,6 +24,8 @@ catalog::errc to_catalog_errc(metadata_io::errc e) {
         return catalog::errc::timedout;
     case metadata_io::errc::failed:
         return catalog::errc::io_error;
+    case metadata_io::errc::invalid_uri:
+        return catalog::errc::unexpected_state;
     }
 }
 constexpr std::string_view vhint_filename = "version-hint.text";

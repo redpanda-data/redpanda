@@ -35,6 +35,9 @@ public:
 
         // The call failed because the system is shutting down.
         shutting_down,
+
+        // Malformed URI
+        invalid_uri,
     };
     metadata_io(cloud_io::remote& io, cloud_storage_clients::bucket_name b)
       : io_(io)
