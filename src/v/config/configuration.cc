@@ -916,7 +916,7 @@ configuration::configuration()
       *this,
       "log_compaction_use_sliding_window",
       "Use sliding window compaction.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
   , retention_bytes(
       *this,
