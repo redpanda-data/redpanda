@@ -12,6 +12,7 @@
 
 namespace datalake {
 struct data_writer_result;
+class schema_manager;
 namespace coordinator {
 class coordinator_manager;
 class frontend;

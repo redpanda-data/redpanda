@@ -13,6 +13,7 @@ redpanda_cc_library(
         ":table_definition",
         "//src/v/base",
         "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/iceberg:schema",
         "//src/v/iceberg:transaction",
     ],
     include_prefix = "datalake",
