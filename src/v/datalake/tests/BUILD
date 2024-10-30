@@ -141,6 +141,7 @@ redpanda_cc_gtest(
         "//src/v/schema:registry",
         "//src/v/schema/tests:fake_registry",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:vint",
         "@googletest//:gtest",
     ],
 )

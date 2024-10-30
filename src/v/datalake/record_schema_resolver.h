@@ -20,14 +20,19 @@ namespace schema {
 class registry;
 } // namespace schema
 
+namespace google::protobuf {
+class Descriptor;
+} // namespace google::protobuf
+
 namespace datalake {
 
 // Represents an object that can be converted into an Iceberg schema.
 // NOTE: these aren't exactly just the schemas from the registry: Protobuf
 // schemas are FileDescriptors in the registry rather than Descriptors, and
 // require additional information to get the Descriptors.
-using resolved_schema
-  = std::variant<std::reference_wrapper<const avro::ValidSchema>>;
+using resolved_schema = std::variant<
+  std::reference_wrapper<const google::protobuf::Descriptor>,
+  std::reference_wrapper<const avro::ValidSchema>>;
 
 struct resolved_type {
     // The resolved schema that corresponds to the type.
@@ -59,6 +64,7 @@ public:
     enum class errc {
         registry_error,
         translation_error,
+        bad_input,
     };
     explicit record_schema_resolver(schema::registry& sr)
       : sr_(sr) {}
