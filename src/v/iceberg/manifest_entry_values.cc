@@ -143,11 +143,11 @@ data_file_content_type content_from_int(int c) {
 iobuf format_to_str(data_file_format f) {
     switch (f) {
     case data_file_format::avro:
-        return iobuf::from("avro");
+        return iobuf::from("AVRO");
     case data_file_format::orc:
-        return iobuf::from("orc");
+        return iobuf::from("ORC");
     case data_file_format::parquet:
-        return iobuf::from("parquet");
+        return iobuf::from("PARQUET");
     }
 }
 
