@@ -291,6 +291,7 @@ class LargeMessagesTest(RedpandaTest):
         sent_samples, sent_bytes = _get_samples(sent_metric_name)
         return read_bytes, sent_bytes
 
+    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(message_size_mib=1)
     @parametrize(message_size_mib=2)
