@@ -64,6 +64,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/pandaproxy",
         "//src/v/serde",
+        "@boost//:container_hash",
     ],
 )
 
