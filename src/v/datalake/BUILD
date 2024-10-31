@@ -329,6 +329,38 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "record_translator",
+    srcs = [
+        "record_translator.cc",
+    ],
+    hdrs = [
+        "record_translator.h",
+    ],
+    implementation_deps = [
+        ":conversion_outcome",
+        ":logger",
+        ":schema_registry",
+        ":table_definition",
+        ":values_protobuf",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:values",
+        "//src/v/iceberg:values_avro",
+        "@avro",
+        "@protobuf",
+        "@seastar",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":record_schema_resolver",
+        ":schema_identifier",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "schema_avro",
     srcs = [
         "schema_avro.cc",
