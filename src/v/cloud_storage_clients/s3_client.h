@@ -179,7 +179,7 @@ public:
     /// \param payload_size is a size of the object in bytes
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the upload is completed
-    ss::future<result<no_response, error_outcome>> put_object(
+    ss::future<result<put_object_result, error_outcome>> put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,
@@ -223,7 +223,7 @@ private:
       std::optional<http_byte_range> byte_range = std::nullopt,
       header_map_t headers = {});
 
-    ss::future<> do_put_object(
+    ss::future<put_object_result> do_put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,

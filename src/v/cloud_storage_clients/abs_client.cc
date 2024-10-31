@@ -22,6 +22,8 @@
 #include "json/document.h"
 #include "json/istreamwrapper.h"
 
+#include <boost/beast/http/status.hpp>
+
 #include <utility>
 
 namespace {
@@ -672,7 +674,7 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
     co_return response_stream;
 }
 
-ss::future<result<abs_client::no_response, error_outcome>>
+ss::future<result<abs_client::put_object_result, error_outcome>>
 abs_client::put_object(
   const bucket_name& name,
   const object_key& key,
@@ -689,14 +691,12 @@ abs_client::put_object(
         std::move(body),
         timeout,
         accept_no_content,
-        std::move(headers))
-        .then(
-          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+        std::move(headers)),
       key,
       op_type_tag::upload);
 }
 
-ss::future<> abs_client::do_put_object(
+ss::future<abs_client::put_object_result> abs_client::do_put_object(
   const bucket_name& name,
   const object_key& key,
   size_t payload_size,
@@ -723,18 +723,32 @@ ss::future<> abs_client::do_put_object(
     co_await response_stream->prefetch_headers();
     vassert(response_stream->is_header_done(), "Header is not received");
 
-    const auto status = response_stream->get_headers().result();
+    auto resp_headers = response_stream->get_headers();
+    const auto status = resp_headers.result();
     using enum boost::beast::http::status;
 
     if (const auto is_no_content_and_accepted = accept_no_content
                                                 && status == no_content;
         status != created && !is_no_content_and_accepted) {
-        const auto content_type = get_response_content_type(
-          response_stream->get_headers());
+        const auto content_type = get_response_content_type(resp_headers);
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
         throw parse_rest_error_response(content_type, status, std::move(buf));
     }
+
+    put_object_result result{};
+    // ABS response code is Created (201) if PutBlob request was accepted, see
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob#status-code.
+    // This differs from S3 (which returns an Ok (200) response).
+    if (status == created) {
+        if (auto etag_it = resp_headers.find(boost::beast::http::field::etag);
+            etag_it != resp_headers.end()) {
+            auto etag = etag_it->value();
+            result.etag = ss::sstring{etag.data(), etag.length()};
+        }
+    }
+
+    co_return result;
 }
 
 ss::future<result<abs_client::head_object_result, error_outcome>>

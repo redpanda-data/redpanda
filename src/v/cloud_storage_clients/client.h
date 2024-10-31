@@ -75,6 +75,10 @@ public:
       header_map_t headers = {})
       = 0;
 
+    struct put_object_result {
+        ss::sstring etag;
+    };
+
     /// Upload object to cloud storage
     ///
     /// \param name is a bucket name
@@ -84,7 +88,7 @@ public:
     /// \param timeout is a timeout of the operation
     /// \param accept_no_content accepts a 204 response as valid
     /// \return future that becomes ready when the upload is completed
-    virtual ss::future<result<no_response, error_outcome>> put_object(
+    virtual ss::future<result<put_object_result, error_outcome>> put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,

@@ -824,7 +824,8 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
       });
 }
 
-ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
+ss::future<result<s3_client::put_object_result, error_outcome>>
+s3_client::put_object(
   const bucket_name& name,
   const object_key& key,
   size_t payload_size,
@@ -840,14 +841,12 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
         std::move(body),
         timeout,
         accept_no_content,
-        std::move(headers))
-        .then(
-          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+        std::move(headers)),
       name,
       key);
 }
 
-ss::future<> s3_client::do_put_object(
+ss::future<s3_client::put_object_result> s3_client::do_put_object(
   const bucket_name& name,
   const object_key& id,
   size_t payload_size,
@@ -859,7 +858,7 @@ ss::future<> s3_client::do_put_object(
       name, id, payload_size, std::move(headers));
     if (!header) {
         return body.close().then([header] {
-            return ss::make_exception_future<>(
+            return ss::make_exception_future<put_object_result>(
               std::system_error(header.error()));
         });
     }
@@ -877,7 +876,8 @@ ss::future<> s3_client::do_put_object(
                     const http::client::response_stream_ref& ref) {
                 return util::drain_response_stream(ref).then(
                   [ref, id, accept_no_content](iobuf&& res) {
-                      auto status = ref->get_headers().result();
+                      auto resp_headers = ref->get_headers();
+                      auto status = resp_headers.result();
                       using enum boost::beast::http::status;
                       if (const auto is_no_content_and_accepted
                           = status == no_content && accept_no_content;
@@ -887,20 +887,33 @@ ss::future<> s3_client::do_put_object(
                             "S3 PUT request failed for key {}: {} {:l}",
                             id,
                             status,
-                            ref->get_headers());
-                          return parse_rest_error_response<>(
+                            resp_headers);
+                          return parse_rest_error_response<put_object_result>(
                             status, std::move(res));
                       }
-                      return ss::now();
+
+                      put_object_result result{};
+                      if (status == ok) {
+                          if (auto etag_it = resp_headers.find(
+                                boost::beast::http::field::etag);
+                              etag_it != resp_headers.end()) {
+                              auto etag = etag_it->value();
+                              result.etag = ss::sstring{
+                                etag.data(), etag.length()};
+                          }
+                      }
+
+                      return ss::make_ready_future<put_object_result>(
+                        std::move(result));
                   });
             })
             .handle_exception_type(
               [](const ss::abort_requested_exception& err) {
-                  return ss::make_exception_future<>(err);
+                  return ss::make_exception_future<put_object_result>(err);
               })
             .handle_exception_type([this](const rest_error_response& err) {
                 _probe->register_failure(err.code(), op_type_tag::upload);
-                return ss::make_exception_future<>(err);
+                return ss::make_exception_future<put_object_result>(err);
             })
             .handle_exception([id](std::exception_ptr eptr) {
                 vlog(
@@ -908,7 +921,7 @@ ss::future<> s3_client::do_put_object(
                   "S3 PUT request failed with error for key {}: {}",
                   id,
                   eptr);
-                return ss::make_exception_future<>(eptr);
+                return ss::make_exception_future<put_object_result>(eptr);
             })
             .finally([&body]() { return body.close(); });
       });
