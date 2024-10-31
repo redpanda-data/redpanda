@@ -475,7 +475,7 @@ public:
      * node is the leader then this only takes affect if leadership is lost.
      */
     void block_new_leadership() {
-        _node_priority_override = raft::zero_voter_priority;
+        _node_priority_override = raft::min_voter_priority;
     }
 
     /**

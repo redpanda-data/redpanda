@@ -3222,7 +3222,7 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
         });
     }
 
-    if (_node_priority_override == zero_voter_priority) {
+    if (_node_priority_override <= min_voter_priority) {
         vlog(
           _ctxlog.debug,
           "Ignoring timeout request in state {} with node voter priority zero "
