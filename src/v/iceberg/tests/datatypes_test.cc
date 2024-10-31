@@ -200,15 +200,15 @@ TEST(DatatypeTest, TestList) {
     ASSERT_TRUE(std::holds_alternative<list_type>(t1));
     ASSERT_TRUE(std::get<list_type>(t1).element_field == nullptr);
     ASSERT_NE(t1_move, t1);
-    ASSERT_EQ("list", fmt::format("{}", t1));
+    ASSERT_EQ("list<null>", fmt::format("{}", t1));
     // NOLINTEND(bugprone-use-after-move)
 
     ASSERT_EQ(t1_move, t1_dup);
-    ASSERT_EQ("list", fmt::format("{}", t2));
-    ASSERT_EQ("list", fmt::format("{}", t3));
-    ASSERT_EQ("list", fmt::format("{}", t4));
-    ASSERT_EQ("list", fmt::format("{}", t1_dup));
-    ASSERT_EQ("list", fmt::format("{}", t1_move));
+    ASSERT_EQ("list<boolean>", fmt::format("{}", t2));
+    ASSERT_EQ("list<boolean>", fmt::format("{}", t3));
+    ASSERT_EQ("list<string>", fmt::format("{}", t4));
+    ASSERT_EQ("list<boolean>", fmt::format("{}", t1_dup));
+    ASSERT_EQ("list<boolean>", fmt::format("{}", t1_move));
 }
 TEST(DatatypeTest, TestMap) {
     auto t1 = field_type{map_type::create(
@@ -238,15 +238,15 @@ TEST(DatatypeTest, TestMap) {
     ASSERT_TRUE(std::get<map_type>(t1).key_field == nullptr);
     ASSERT_TRUE(std::get<map_type>(t1).value_field == nullptr);
     ASSERT_NE(t1_move, t1);
-    ASSERT_EQ("map", fmt::format("{}", t1));
+    ASSERT_EQ("map<null,null>", fmt::format("{}", t1));
     // NOLINTEND(bugprone-use-after-move)
 
     ASSERT_EQ(t1_move, t1_dup);
-    ASSERT_EQ("map", fmt::format("{}", t2));
-    ASSERT_EQ("map", fmt::format("{}", t3));
-    ASSERT_EQ("map", fmt::format("{}", t4));
-    ASSERT_EQ("map", fmt::format("{}", t1_dup));
-    ASSERT_EQ("map", fmt::format("{}", t1_move));
+    ASSERT_EQ("map<string,string>", fmt::format("{}", t2));
+    ASSERT_EQ("map<boolean,string>", fmt::format("{}", t3));
+    ASSERT_EQ("map<string,string>", fmt::format("{}", t4));
+    ASSERT_EQ("map<string,string>", fmt::format("{}", t1_dup));
+    ASSERT_EQ("map<string,string>", fmt::format("{}", t1_move));
 
     // Regression test that would cause previous impl to crash if both types
     // are the same but keys are null.
@@ -284,16 +284,21 @@ TEST(DatatypeTest, TestStruct) {
     ASSERT_TRUE(std::holds_alternative<struct_type>(t1));
     ASSERT_TRUE(std::get<struct_type>(t1).fields.empty());
     ASSERT_NE(t1_move, t1);
-    ASSERT_EQ("struct", fmt::format("{}", t1));
+    ASSERT_EQ("struct[]", fmt::format("{}", t1));
     // NOLINTEND(bugprone-use-after-move)
 
     ASSERT_EQ(t1_move, t1_dup);
-    ASSERT_EQ("struct", fmt::format("{}", t2));
-    ASSERT_EQ("struct", fmt::format("{}", t3));
-    ASSERT_EQ("struct", fmt::format("{}", t4));
-    ASSERT_EQ("struct", fmt::format("{}", t5));
-    ASSERT_EQ("struct", fmt::format("{}", t1_dup));
-    ASSERT_EQ("struct", fmt::format("{}", t1_move));
+    ASSERT_EQ("struct[foo<string>]", fmt::format("{}", t2));
+    ASSERT_EQ("struct[food<string>]", fmt::format("{}", t3));
+    ASSERT_EQ("struct[foo<string>]", fmt::format("{}", t4));
+    ASSERT_EQ("struct[foo<boolean>]", fmt::format("{}", t5));
+    ASSERT_EQ("struct[foo<string>]", fmt::format("{}", t1_dup));
+    ASSERT_EQ("struct[foo<string>]", fmt::format("{}", t1_move));
+    // struct with two fields
+    auto t6 = struct_single(0, "foo", field_required::yes, boolean_type{});
+    std::get<struct_type>(t6).fields.push_back(
+      nested_field::create(2, "bar", field_required::yes, int_type{}));
+    ASSERT_EQ("struct[foo<boolean>, bar<int>]", fmt::to_string(t6));
 }
 
 TEST(DatatypeTest, TestBasicCopy) {

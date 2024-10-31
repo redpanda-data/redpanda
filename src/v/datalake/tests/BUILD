@@ -182,3 +182,21 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "datalake_avro_tests",
+    timeout = "short",
+    srcs = [
+        "datalake_avro_tests.cc",
+    ],
+    deps = [
+        "//src/v/datalake:schema_avro",
+        "//src/v/datalake:values_protobuf",
+        "//src/v/iceberg:datatypes",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
