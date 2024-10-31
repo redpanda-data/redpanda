@@ -58,6 +58,7 @@ catalog::load_or_create_table(
       .schema_id = schema::unassigned_id,
       .identifier_field_ids = {},
     };
+    schema.assign_fresh_ids();
     auto create_res = co_await create_table(table_ident, schema, spec);
     if (create_res.has_value()) {
         co_return std::move(create_res.value());
