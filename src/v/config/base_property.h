@@ -137,6 +137,14 @@ public:
      * to this property.
      */
     virtual std::optional<validation_error> validate(YAML::Node) const = 0;
+
+    /**
+     * Check whether a proposed new value is restricted before it has been
+     * assigned. Rejection logic should be accounted for at the call site.
+     */
+    virtual std::optional<validation_error>
+      check_restricted(YAML::Node) const = 0;
+
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
 

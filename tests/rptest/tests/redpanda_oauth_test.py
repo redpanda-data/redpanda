@@ -610,8 +610,6 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
             f'{self.LICENSE_CHECK_INTERVAL_SEC}',
-            '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
-            True
         })
 
     def _has_license_nag(self):
@@ -640,6 +638,15 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
 
         self.logger.debug("Setting cluster config")
         self.redpanda.set_cluster_config(authn_config)
+
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': '1'})
+
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
 
         self.logger.debug("Waiting for license nag")
         wait_until(self._has_license_nag,
