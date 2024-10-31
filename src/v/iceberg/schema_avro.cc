@@ -156,10 +156,11 @@ struct type_and_required {
 
 // Returns the parsed Iceberg type of the given node, handling unions as
 // optional values.
-type_and_required maybe_optional_from_avro(const avro::NodePtr& n) {
+type_and_required
+maybe_optional_from_avro(const avro::NodePtr& n, with_field_ids with_ids) {
     const auto& type = n->type();
     if (type != avro::AVRO_UNION) {
-        return {type_from_avro(n), field_required::yes};
+        return {type_from_avro(n, with_ids), field_required::yes};
     }
     if (n->leaves() != 2) {
         throw std::invalid_argument(
@@ -179,8 +180,8 @@ type_and_required maybe_optional_from_avro(const avro::NodePtr& n) {
           fmt::format("Expected 1 null in union: {}", num_nulls));
     }
     const auto& child = n->leafAt(child_idx);
-    field_type parsed_type = type_from_avro(child);
-    return {type_from_avro(child), field_required::no};
+    field_type parsed_type = type_from_avro(child, with_ids);
+    return {type_from_avro(child, with_ids), field_required::no};
 }
 
 } // namespace
@@ -234,7 +235,7 @@ nested_field_ptr child_field_from_avro(
         field_id_str = "0";
     }
     auto field_id = std::stoi(field_id_str.value());
-    type_and_required parsed_child = maybe_optional_from_avro(child);
+    type_and_required parsed_child = maybe_optional_from_avro(child, with_ids);
     return nested_field::create(
       field_id, name, parsed_child.required, std::move(parsed_child.type));
 }
@@ -310,11 +311,15 @@ field_type type_from_avro(const avro::NodePtr& n, with_field_ids with_ids) {
         }
         const auto& node = dynamic_cast<const avro::NodeArray&>(*n);
         if (!node.elementId_.has_value()) {
-            throw std::invalid_argument("Avro array type missing element id");
+            if (with_ids) {
+                throw std::invalid_argument(
+                  "Avro array type missing element id");
+            }
         }
-        type_and_required parsed_child = maybe_optional_from_avro(n->leafAt(0));
+        type_and_required parsed_child = maybe_optional_from_avro(
+          n->leafAt(0), with_ids);
         return list_type::create(
-          static_cast<int32_t>(*node.elementId_),
+          static_cast<int32_t>(with_ids ? *node.elementId_ : 0),
           parsed_child.required,
           std::move(parsed_child.type));
     }
