@@ -22,12 +22,13 @@ rp_test(
   BINARY_NAME gtest_record_multiplexer
   SOURCES gtest_record_multiplexer_test.cc
   LIBRARIES
-    v::application
-    v::features
-    v::gtest_main
-    v::kafka_test_utils
+    v::cloud_io_utils
     v::datalake_writer
+    v::datalake_test_utils
+    v::gtest_main
     v::model_test_utils
+    v::schema
+    v::s3_imposter
   LABELS datalake
   ARGS "-- -c 1"
 )
