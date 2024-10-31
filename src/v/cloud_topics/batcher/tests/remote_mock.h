@@ -47,7 +47,8 @@ public:
       (const cloud_storage_clients::bucket_name&,
        const cloud_storage_clients::object_key&,
        basic_retry_chain_node<ss::manual_clock>&,
-       std::string_view),
+       std::string_view,
+       cloud_storage_clients::header_map_t),
       (override));
 
     MOCK_METHOD(

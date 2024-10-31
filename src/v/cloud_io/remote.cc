@@ -460,7 +460,12 @@ remote::download_object(download_request download_request) {
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), download_request.expect_missing);
+          bucket,
+          path,
+          fib.get_timeout(),
+          download_request.expect_missing,
+          /*byte_range=*/std::nullopt,
+          download_request.headers);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -534,7 +539,8 @@ ss::future<download_result> remote::object_exists(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& path,
   retry_chain_node& parent,
-  std::string_view object_type) {
+  std::string_view object_type,
+  cloud_storage_clients::header_map_t headers) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
@@ -544,7 +550,7 @@ ss::future<download_result> remote::object_exists(
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto resp = co_await lease.client->head_object(
-          bucket, path, fib.get_timeout());
+          bucket, path, fib.get_timeout(), headers);
         if (resp) {
             vlog(
               ctxlog.debug,
@@ -1096,7 +1102,8 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
           fib.get_timeout(),
-          upload_request.accept_no_content_response);
+          upload_request.accept_no_content_response,
+          upload_request.headers);
 
         if (res) {
             transfer_details.on_success();

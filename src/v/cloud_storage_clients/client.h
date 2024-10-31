@@ -53,7 +53,8 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt)
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {})
       = 0;
 
     struct head_object_result {
@@ -70,7 +71,8 @@ public:
     virtual ss::future<result<head_object_result, error_outcome>> head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout)
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {})
       = 0;
 
     /// Upload object to cloud storage
@@ -88,7 +90,8 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false)
+      bool accept_no_content = false,
+      header_map_t headers = {})
       = 0;
 
     struct list_bucket_item {

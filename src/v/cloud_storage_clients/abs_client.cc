@@ -180,7 +180,8 @@ abs_request_creator::abs_request_creator(
 result<http::client::request_header> abs_request_creator::make_get_blob_request(
   const bucket_name& name,
   const object_key& key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     // GET /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -201,6 +202,11 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
             byte_range.value().first,
             byte_range.value().second));
     }
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
         return error_code;
@@ -210,7 +216,10 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
 }
 
 result<http::client::request_header> abs_request_creator::make_put_blob_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes,
+  header_map_t headers) {
     // PUT /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -231,6 +240,10 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
       std::to_string(payload_size_bytes));
     header.insert(blob_type_name, blob_type_value);
 
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
         return error_code;
@@ -241,7 +254,7 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
 
 result<http::client::request_header>
 abs_request_creator::make_get_blob_metadata_request(
-  const bucket_name& name, const object_key& key) {
+  const bucket_name& name, const object_key& key, header_map_t headers) {
     // HEAD /{container-id}/{blob-id}?comp=metadata HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -255,6 +268,10 @@ abs_request_creator::make_get_blob_metadata_request(
     header.method(boost::beast::http::verb::head);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
 
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
@@ -587,10 +604,16 @@ abs_client::get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     return send_request(
       do_get_object(
-        name, key, timeout, expect_no_such_key, std::move(byte_range)),
+        name,
+        key,
+        timeout,
+        expect_no_such_key,
+        std::move(byte_range),
+        std::move(headers)),
       key,
       op_type_tag::download);
 }
@@ -600,10 +623,11 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     bool is_byte_range_requested = byte_range.has_value();
     auto header = _requestor.make_get_blob_request(
-      name, key, std::move(byte_range));
+      name, key, std::move(byte_range), std::move(headers));
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
@@ -655,10 +679,17 @@ abs_client::put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  bool accept_no_content,
+  header_map_t headers) {
     return send_request(
       do_put_object(
-        name, key, payload_size, std::move(body), timeout, accept_no_content)
+        name,
+        key,
+        payload_size,
+        std::move(body),
+        timeout,
+        accept_no_content,
+        std::move(headers))
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       key,
@@ -671,8 +702,10 @@ ss::future<> abs_client::do_put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
-    auto header = _requestor.make_put_blob_request(name, key, payload_size);
+  bool accept_no_content,
+  header_map_t headers) {
+    auto header = _requestor.make_put_blob_request(
+      name, key, payload_size, std::move(headers));
     if (!header) {
         co_await body.close();
 
@@ -708,15 +741,19 @@ ss::future<result<abs_client::head_object_result, error_outcome>>
 abs_client::head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    return send_request(do_head_object(name, key, timeout), key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    return send_request(
+      do_head_object(name, key, timeout, std::move(headers)), key);
 }
 
 ss::future<abs_client::head_object_result> abs_client::do_head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    auto header = _requestor.make_get_blob_metadata_request(name, key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    auto header = _requestor.make_get_blob_metadata_request(
+      name, key, std::move(headers));
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());

@@ -95,7 +95,8 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type)
+      std::string_view object_type,
+      cloud_storage_clients::header_map_t headers = {})
       = 0;
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
@@ -182,7 +183,8 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type) override;
+      std::string_view object_type,
+      cloud_storage_clients::header_map_t headers = {}) override;
 
     /// \brief Delete object from S3
     ///

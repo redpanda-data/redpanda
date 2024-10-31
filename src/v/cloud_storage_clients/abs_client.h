@@ -37,7 +37,8 @@ public:
     result<http::client::request_header> make_put_blob_request(
       const bucket_name& name,
       const object_key& key,
-      size_t payload_size_bytes);
+      size_t payload_size_bytes,
+      header_map_t headers = {});
 
     /// \brief Create a 'Get Blob' request header
     ///
@@ -47,7 +48,8 @@ public:
     result<http::client::request_header> make_get_blob_request(
       const bucket_name& name,
       const object_key& key,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {});
 
     /// \brief Create a 'Get Blob Metadata' request header
     ///
@@ -55,7 +57,9 @@ public:
     /// \param key is a blob name
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_get_blob_metadata_request(
-      const bucket_name& name, const object_key& key);
+      const bucket_name& name,
+      const object_key& key,
+      header_map_t headers = {});
 
     /// \brief Create a 'Delete Blob' request header
     ///
@@ -150,7 +154,8 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt) override;
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {}) override;
 
     /// Send Get Blob Metadata request.
     /// \param name is a container name
@@ -160,7 +165,8 @@ public:
     ss::future<result<head_object_result, error_outcome>> head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout) override;
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {}) override;
 
     /// Put blob to ABS container.
     /// \param name is a container name
@@ -175,7 +181,8 @@ public:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false) override;
+      bool accept_no_content = false,
+      header_map_t headers = {}) override;
 
     /// Send List Blobs request
     /// \param name is a container name
@@ -256,7 +263,8 @@ private:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {});
 
     ss::future<> do_put_object(
       const bucket_name& name,
@@ -264,12 +272,14 @@ private:
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false);
+      bool accept_no_content = false,
+      header_map_t headers = {});
 
     ss::future<head_object_result> do_head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {});
 
     ss::future<> do_delete_object(
       const bucket_name& name,

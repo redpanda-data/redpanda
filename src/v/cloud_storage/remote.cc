@@ -463,6 +463,7 @@ remote::download_object(download_request download_request) {
       .transfer_details = std::move(details),
       .display_str = to_string(download_request.type),
       .payload = download_request.payload,
+      .headers = std::move(download_request.headers.headers),
     });
 }
 
@@ -550,12 +551,12 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
         details.on_req_cb = make_notify_cb(
           api_activity_type::object_upload, details.parent_rtc);
     }
-    return io().upload_object({
-      .transfer_details = std::move(details),
-      .display_str = to_string(req.type),
-      .payload = std::move(req.payload),
-      .accept_no_content_response = false,
-    });
+    return io().upload_object(
+      {.transfer_details = std::move(details),
+       .display_str = to_string(req.type),
+       .payload = std::move(req.payload),
+       .accept_no_content_response = false,
+       .headers = std::move(req.headers.headers)});
 }
 
 ss::future<api_activity_notification>

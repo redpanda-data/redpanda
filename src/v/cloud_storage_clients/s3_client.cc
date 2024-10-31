@@ -83,7 +83,8 @@ request_creator::request_creator(
 result<http::client::request_header> request_creator::make_get_object_request(
   const bucket_name& name,
   const object_key& key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     http::client::request_header header{};
     // Virtual Style:
     // GET /{object-id} HTTP/1.1
@@ -111,6 +112,11 @@ result<http::client::request_header> request_creator::make_get_object_request(
             byte_range.value().first,
             byte_range.value().second));
     }
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -119,7 +125,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
 }
 
 result<http::client::request_header> request_creator::make_head_object_request(
-  const bucket_name& name, const object_key& key) {
+  const bucket_name& name, const object_key& key, header_map_t headers) {
     http::client::request_header header{};
     // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
@@ -139,6 +145,11 @@ result<http::client::request_header> request_creator::make_head_object_request(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -148,7 +159,10 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes,
+  header_map_t headers) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -176,6 +190,10 @@ request_creator::make_unsigned_put_object_request(
     header.insert(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
 
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -657,10 +675,16 @@ s3_client::get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     return send_request(
       do_get_object(
-        name, key, timeout, expect_no_such_key, std::move(byte_range)),
+        name,
+        key,
+        timeout,
+        expect_no_such_key,
+        std::move(byte_range),
+        std::move(headers)),
       name,
       key);
 }
@@ -670,10 +694,11 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     bool is_byte_range_requested = byte_range.has_value();
     auto header = _requestor.make_get_object_request(
-      name, key, std::move(byte_range));
+      name, key, std::move(byte_range), std::move(headers));
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
@@ -737,15 +762,19 @@ ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    return send_request(do_head_object(name, key, timeout), name, key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    return send_request(
+      do_head_object(name, key, timeout, std::move(headers)), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    auto header = _requestor.make_head_object_request(name, key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    auto header = _requestor.make_head_object_request(
+      name, key, std::move(headers));
     if (!header) {
         return ss::make_exception_future<s3_client::head_object_result>(
           std::system_error(header.error()));
@@ -801,10 +830,17 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  bool accept_no_content,
+  header_map_t headers) {
     return send_request(
       do_put_object(
-        name, key, payload_size, std::move(body), timeout, accept_no_content)
+        name,
+        key,
+        payload_size,
+        std::move(body),
+        timeout,
+        accept_no_content,
+        std::move(headers))
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -817,9 +853,10 @@ ss::future<> s3_client::do_put_object(
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  bool accept_no_content,
+  header_map_t headers) {
     auto header = _requestor.make_unsigned_put_object_request(
-      name, id, payload_size);
+      name, id, payload_size, std::move(headers));
     if (!header) {
         return body.close().then([header] {
             return ss::make_exception_future<>(
