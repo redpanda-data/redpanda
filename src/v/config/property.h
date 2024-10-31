@@ -1092,16 +1092,13 @@ private:
               _restriction,
               [&v](const val_t& val) { return v == val; },
               [&v](const val_container_t& vals) {
-                  return std::ranges::find(vals, v) != vals.end();
+                  return std::ranges::find(vals, v) != std::ranges::end(vals);
               },
               [&v](const restrict_check_t& check) { return check(v); });
         };
 
         if constexpr (detail::Array<T>) {
-            return std::ranges::any_of(
-              setting, [&restriction_check](const auto& v) {
-                  return restriction_check(v);
-              });
+            return std::ranges::any_of(setting, restriction_check);
         }
 
         if constexpr (reflection::is_std_optional<T>) {
