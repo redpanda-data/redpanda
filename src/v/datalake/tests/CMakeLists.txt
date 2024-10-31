@@ -38,12 +38,17 @@ rp_test(
   GTEST
   BINARY_NAME datalake
   SOURCES
+    record_schema_resolver_test.cc
     parquet_writer_test.cc
     partitioning_writer_test.cc
   LIBRARIES
+    v::bytes
+    v::utils
     v::gtest_main
     v::datalake_writer
     v::iceberg_test_utils
+    v::schema
+    v::schema_test_fixture
   LABELS datalake
 )
 

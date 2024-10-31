@@ -32,7 +32,7 @@ namespace datalake {
 // require additional information to get the Descriptors.
 using resolved_schema = std::variant<
   std::reference_wrapper<const google::protobuf::Descriptor>,
-  std::reference_wrapper<const avro::ValidSchema>>;
+  avro::ValidSchema>;
 
 struct resolved_type {
     // The resolved schema that corresponds to the type.

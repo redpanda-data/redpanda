@@ -21,9 +21,9 @@ struct_type schemaless_struct_type() {
     res.fields.emplace_back(nested_field::create(
       2, "redpanda_timestamp", field_required::yes, timestamp_type{}));
     res.fields.emplace_back(nested_field::create(
-      3, "redpanda_key", field_required::no, string_type{}));
+      3, "redpanda_key", field_required::no, binary_type{}));
     res.fields.emplace_back(nested_field::create(
-      4, "redpanda_value", field_required::no, string_type{}));
+      4, "redpanda_value", field_required::no, binary_type{}));
 
     return res;
 }
