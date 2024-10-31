@@ -22,6 +22,7 @@ from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector
 from rptest.services.cluster import cluster
 from rptest.services.chaos.types import NoProgressError
+from rptest.utils.mode_checks import skip_debug_mode
 import rptest.services.chaos.workloads.all as workloads
 import rptest.services.chaos.faults.all as faults
 
@@ -332,6 +333,7 @@ class SingleTopicTest(SingleFaultTestBase):
 
     @cluster(num_nodes=4)
     @matrix(case_id=LIST_OFFSETS_CASES.keys())
+    @skip_debug_mode
     def test_list_offsets(self, case_id):
         case = self.LIST_OFFSETS_CASES[case_id]
         workload = workloads.ListOffsetsWorkload(self.test_context,
@@ -491,6 +493,7 @@ class TxSubscribeTest(SingleFaultTestBase):
 
     @cluster(num_nodes=8)
     @matrix(case_id=CASES.keys())
+    @skip_debug_mode
     def test(self, case_id):
         case = self.CASES[case_id]
         workload = workloads.TxSubscribeWorkload(
