@@ -40,13 +40,12 @@ std::ostream& operator<<(std::ostream&, license_required_feature);
  */
 class enterprise_feature_report {
     using vtype = absl::flat_hash_set<license_required_feature>;
-    using range = boost::iterator_range<vtype::const_iterator>;
 
 public:
     void set(license_required_feature feat, bool enabled);
     bool test(license_required_feature);
-    range enabled() const { return _enabled; }
-    range disabled() const { return _disabled; }
+    const vtype& enabled() const { return _enabled; }
+    const vtype& disabled() const { return _disabled; }
 
     // This method returns true if there are any feature(s) enabled that require
     // the enterprise license.  Currently the following features require a
