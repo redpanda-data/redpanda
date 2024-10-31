@@ -21,8 +21,8 @@ iceberg::struct_value schemaless_translator::translate_event(
     struct_value res;
     res.fields.emplace_back(long_value(offset));
     res.fields.emplace_back(timestamp_value(timestamp));
-    res.fields.emplace_back(string_value(std::move(key)));
-    res.fields.emplace_back(string_value(std::move(value)));
+    res.fields.emplace_back(binary_value(std::move(key)));
+    res.fields.emplace_back(binary_value(std::move(value)));
     return res;
 }
 
