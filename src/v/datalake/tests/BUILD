@@ -51,6 +51,20 @@ cc_proto_library(
     deps = [":proto2_proto"],
 )
 
+redpanda_test_cc_library(
+    name = "catalog_and_registry_fixture",
+    hdrs = ["catalog_and_registry_fixture.h"],
+    include_prefix = "datalake/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/schema/tests:fake_registry",
+    ],
+)
+
 #TODO: this wrapper can be removed when we completely remove cmake tests support
 redpanda_test_cc_library(
     name = "proto_definitions_wrapper",
