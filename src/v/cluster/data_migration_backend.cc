@@ -51,7 +51,7 @@ using namespace std::chrono_literals;
 namespace cluster::data_migrations {
 namespace {
 template<class TryFunc>
-ss::future<errc> retry_loop(retry_chain_node& rcn, TryFunc&& try_func) {
+ss::future<errc> retry_loop(retry_chain_node& rcn, TryFunc try_func) {
     while (true) {
         errc ec;
         try {
