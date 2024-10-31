@@ -142,6 +142,12 @@ private:
       cloud_storage_clients::bucket_name bucket,
       size_t num_objects = num_default_objects);
 
+    // Verify that conditional requests (both Put: write operation, using the
+    // `If-None-Match` header and Get: read operation, using the `If-Match`
+    // header) to cloud storage work.
+    ss::future<verify_upload_result>
+    verify_conditional_puts_and_gets(cloud_storage_clients::bucket_name bucket);
+
 private:
     static constexpr size_t num_default_objects = 5;
     bool _cancelled{false};

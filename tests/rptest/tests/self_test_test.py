@@ -83,14 +83,13 @@ class SelfTestTest(EndToEndTest):
 
         cloud_results = [r for r in reports if r['test_type'] == 'cloud']
 
-        read_tests = ['List', 'Head', 'Get']
-        write_tests = ['Put', 'Delete', 'Plural Delete']
+        cloudcheck_tests = [
+            'List', 'Head', 'Get', 'Put', 'Delete', 'Plural Delete',
+            'Conditional Puts and Gets'
+        ]
 
-        num_expected_cloud_storage_read_tests = num_nodes * len(read_tests)
-        num_expected_cloud_storage_write_tests = num_nodes * len(write_tests)
-        assert len(
-            cloud_results
-        ) == num_expected_cloud_storage_write_tests + num_expected_cloud_storage_read_tests
+        num_expected_cloud_storage_tests = num_nodes * len(cloudcheck_tests)
+        assert len(cloud_results) == num_expected_cloud_storage_tests
 
         # Ensure no other result sets exist
         assert len(disk_results) + len(network_results) + len(
