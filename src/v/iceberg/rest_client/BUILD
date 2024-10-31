@@ -104,6 +104,7 @@ redpanda_cc_library(
         "catalog_client.h",
     ],
     include_prefix = "iceberg/rest_client",
+    visibility = ["//visibility:public"],
     deps = [
         ":credentials",
         ":entities",
