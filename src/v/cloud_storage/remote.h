@@ -215,12 +215,16 @@ public:
     /// \param bucket is a bucket name
     /// \param manifest is a manifest to upload
     /// \param key is the remote object name
+    /// \param upload_if_not_exists If true, a conditional write to cloud
+    /// storage will be issued. If an existing manifest exists, this put request
+    /// will fail with a precondition_failed return value.
     /// \return future that returns success code
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
       const remote_manifest_path& key,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      bool upload_if_not_exists = false);
 
     /// \brief Upload segment to S3
     ///

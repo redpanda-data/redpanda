@@ -210,7 +210,8 @@ ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
   const remote_manifest_path& key,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  bool upload_if_not_exists) {
     auto buf = co_await manifest.serialize_buf();
     auto success_cb = [this, t = manifest.get_manifest_type()]() {
         switch (t) {
@@ -235,6 +236,12 @@ ss::future<upload_result> remote::upload_manifest(
             break;
         }
     };
+
+    request_headers headers;
+    if (upload_if_not_exists) {
+        headers.add_if_none_match("*");
+    }
+
     co_return co_await io().upload_object({
       .transfer_details = {
         .bucket = bucket,
@@ -248,6 +255,7 @@ ss::future<upload_result> remote::upload_manifest(
       .display_str = to_string(upload_type::manifest),
       .payload = std::move(buf),
       .accept_no_content_response = false,
+      .headers = std::move(headers.headers),
     });
 }
 
