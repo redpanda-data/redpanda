@@ -16,6 +16,9 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_map.h>
+#include <boost/beast/http/field.hpp>
+
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -27,6 +30,9 @@ using object_key = named_type<std::filesystem::path, struct s3_object_key>;
 using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
+
+using header_map_t
+  = absl::flat_hash_map<boost::beast::http::field, ss::sstring>;
 
 enum class error_outcome {
     /// Error condition that can be retried

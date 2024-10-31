@@ -41,6 +41,7 @@ struct basic_upload_request {
     std::string_view display_str;
     iobuf payload;
     bool accept_no_content_response{false};
+    cloud_storage_clients::header_map_t headers;
 };
 using upload_request = basic_upload_request<ss::lowres_clock>;
 
@@ -50,6 +51,7 @@ struct basic_download_request {
     std::string_view display_str;
     iobuf& payload;
     bool expect_missing{false};
+    cloud_storage_clients::header_map_t headers;
 };
 using download_request = basic_download_request<ss::lowres_clock>;
 using remote_path = named_type<ss::sstring, struct remote_path_tag>;

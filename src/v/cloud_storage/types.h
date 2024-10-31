@@ -424,11 +424,21 @@ enum class existence_check_type { object, segment, manifest };
 std::ostream& operator<<(std::ostream&, existence_check_type);
 
 class remote_probe;
+
+struct request_headers {
+    void add_header(boost::beast::http::field field, ss::sstring value) {
+        headers.insert_or_assign(field, std::move(value));
+    }
+
+    cloud_storage_clients::header_map_t headers;
+};
+
 struct upload_request {
     cloud_io::transfer_details transfer_details;
     upload_type type;
     iobuf payload;
     bool accept_no_content_response{false};
+    request_headers headers;
 };
 
 struct download_request {
@@ -436,6 +446,7 @@ struct download_request {
     download_type type;
     iobuf& payload;
     bool expect_missing{false};
+    request_headers headers;
 };
 
 } // namespace cloud_storage
