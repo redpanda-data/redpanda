@@ -446,7 +446,7 @@ inline constexpr std::array feature_schema{
     release_version::v24_2_1,
     "node_local_core_assignment",
     feature::node_local_core_assignment,
-    feature_spec::available_policy::explicit_only,
+    feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
   feature_spec{
     release_version::v24_2_1,
