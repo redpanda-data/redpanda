@@ -1868,8 +1868,7 @@ admin_server::patch_cluster_config_handler(
                     errors[yaml_name] = restricted_err.value().error_message();
                     vlog(
                       adminlog.warn,
-                      "Rejected config due to invalid enterprise license {}: "
-                      "'{}' ({})",
+                      "Rejected {}: '{}' ({})",
                       yaml_name,
                       property.format_raw(yaml_value),
                       restricted_err.value().error_message());
