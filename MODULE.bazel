@@ -185,6 +185,7 @@ use_repo(
     "com_github_docker_go_connections",
     "com_github_docker_go_units",
     "com_github_fatih_color",
+    "com_github_google_uuid",
     "com_github_hamba_avro",
     "com_github_hamba_avro_v2",
     "com_github_hashicorp_go_multierror",

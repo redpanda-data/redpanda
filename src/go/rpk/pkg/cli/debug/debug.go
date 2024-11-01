@@ -11,6 +11,7 @@ package debug
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/bundle"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/remotebundle"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -25,6 +26,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(
 		bundle.NewCommand(fs, p),
 		NewInfoCommand(),
+		remotebundle.NewCommand(fs, p),
 	)
 
 	return cmd
