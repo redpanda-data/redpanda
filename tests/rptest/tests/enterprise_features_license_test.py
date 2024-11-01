@@ -66,6 +66,12 @@ SKIP_FEATURES = [
 
 
 class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
+    OIDC_UPDATE_FAILURE_LOGS = [
+        # Example: security - oidc_service.cc:232 - Error updating jwks: security::exception (Invalid jwks: Invalid response from jwks_uri: https://auth.prd.cloud.redpanda.com:443/.well-known/jwks.json)"
+        "Error updating jwks",
+        "Error updating metadata",
+    ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
@@ -148,6 +154,8 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
             self.redpanda.set_cluster_config(
                 {'sasl_mechanisms': ['SCRAM', 'GSSAPI']})
         elif feature == Feature.oidc:
+            # Note: the default OIDC server is flaky in CI, so use `OIDC_UPDATE_FAILURE_LOGS`
+            # to ignore the related error logs in the background updater.
             self.redpanda.set_cluster_config(
                 {'sasl_mechanisms': ['SCRAM', 'OAUTHBEARER']})
         elif feature == Feature.schema_id_validation:
@@ -194,7 +202,7 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
             assert False, f"Unexpected feature={feature}"
 
     @skip_fips_mode
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=OIDC_UPDATE_FAILURE_LOGS)
     @matrix(feature=[f for f in Feature if f not in SKIP_FEATURES],
             install_license=[
                 True,
