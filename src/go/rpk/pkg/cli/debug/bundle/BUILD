@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/bundle",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/go/rpk/pkg/cli/debug/common",
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/httpapi",
         "//src/go/rpk/pkg/kafka",
