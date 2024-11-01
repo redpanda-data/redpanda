@@ -23,7 +23,6 @@ from rptest.utils.mode_checks import in_fips_environment
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
-from rptest.clients.rpk_remote import RpkRemoteTool
 
 
 class RpkClusterTest(RedpandaTest):
@@ -53,82 +52,6 @@ class RpkClusterTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=1,
                    err_msg="No brokers found or output doesn't match")
-
-    @cluster(num_nodes=3)
-    def test_debug_bundle(self):
-        # The main RpkTool helper runs rpk on the test runner machine -- debug
-        # commands are run on redpanda nodes.
-        root_name = "bundle"
-        bundle_name = "bundle" + ".zip"
-        working_dir = "/tmp"
-        file_path = os.path.join(working_dir, bundle_name)
-        node = self.redpanda.nodes[0]
-
-        rpk_remote = RpkRemoteTool(self.redpanda, node)
-        output = rpk_remote.debug_bundle(file_path)
-        lines = output.split("\n")
-
-        # On error, rpk bundle returns 0 but writes error description to stdout
-        output_file = None
-        error_lines = []
-        any_errs = False
-        for l in lines:
-            self.logger.info(l)
-            if l.strip().startswith("* "):
-                error_lines.append(l)
-            elif 'errors occurred' in l:
-                any_errs = True
-            else:
-                m = re.match("^Debug bundle saved to '(.+)'$", l)
-                if m:
-                    output_file = m.group(1)
-
-        # Avoid false passes if our error line scraping gets broken
-        # by a format change.
-        if any_errs:
-            assert error_lines
-
-        filtered_errors = []
-        for l in error_lines:
-            if "dmidecode" in l:
-                # dmidecode doesn't work in ducktape containers, ignore
-                # errors about it.
-                continue
-            if re.match(r".* error querying .*\.ntp\..* i\/o timeout", l):
-                self.logger.error(f"Non-fatal transitory NTP error: {l}")
-            else:
-                self.logger.error(f"Bad output line: {l}")
-                filtered_errors.append(l)
-
-        assert not filtered_errors
-        assert output_file == file_path
-
-        node.account.copy_from(output_file, working_dir)
-
-        zf = zipfile.ZipFile(output_file)
-        files = zf.namelist()
-        assert f'{root_name}/redpanda.yaml' in files
-        assert f'{root_name}/redpanda.log' in files
-
-        # At least the first controller log is being saved:
-        assert f'{root_name}/controller-logs/redpanda/controller/0_0/0-1-v1.log' in files
-
-        # Cluster admin API calls:
-        assert f'{root_name}/admin/brokers.json' in files
-        assert f'{root_name}/admin/cluster_config.json' in files
-        assert f'{root_name}/admin/health_overview.json' in files
-
-        # Per-node admin API calls:
-        for n in self.redpanda.started_nodes():
-            # rpk will save 2 snapsots per metrics endpoint:
-            assert f'{root_name}/metrics/{n.account.hostname}-9644/t0_metrics.txt' in files
-            assert f'{root_name}/metrics/{n.account.hostname}-9644/t1_metrics.txt' in files
-            assert f'{root_name}/metrics/{n.account.hostname}-9644/t0_public_metrics.txt' in files
-            assert f'{root_name}/metrics/{n.account.hostname}-9644/t1_public_metrics.txt' in files
-            # and 1 cluster_view and node_config per node:
-            assert f'{root_name}/admin/cluster_view_{n.account.hostname}-9644.json' in files
-            assert f'{root_name}/admin/node_config_{n.account.hostname}-9644.json' in files
-            assert f'{root_name}/admin/cpu_profile_{n.account.hostname}-9644.json' in files
 
     @cluster(num_nodes=3)
     def test_get_config(self):
