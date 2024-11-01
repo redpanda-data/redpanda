@@ -113,6 +113,17 @@ struct schema_translating_visitor {
 
 } // namespace
 
+std::ostream& operator<<(std::ostream& o, const type_resolver::errc& e) {
+    switch (e) {
+    case type_resolver::errc::registry_error:
+        return o << "type_resolver::errc::registry_error";
+    case type_resolver::errc::translation_error:
+        return o << "type_resolver::errc::translation_error";
+    case type_resolver::errc::bad_input:
+        return o << "type_resolver::errc::bad_input";
+    }
+}
+
 type_and_buf type_and_buf::make_raw_binary(iobuf b) {
     return type_and_buf{
       .type = std::nullopt,

@@ -79,6 +79,16 @@ fill_field_ids(iceberg::struct_type& dest, const iceberg::struct_type& source) {
 }
 } // namespace
 
+std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
+    switch (e) {
+    case schema_manager::errc::not_supported:
+        return o << "schema_manager::errc::not_supported";
+    case schema_manager::errc::failed:
+        return o << "schema_manager::errc::failed";
+    case schema_manager::errc::shutting_down:
+        return o << "schema_manager::errc::shutting_down";
+    }
+}
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 simple_schema_manager::get_registered_ids(
   const model::topic&, iceberg::struct_type& desired_type) {

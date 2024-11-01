@@ -53,6 +53,13 @@ struct value_translating_visitor {
 
 } // namespace
 
+std::ostream& operator<<(std::ostream& o, const record_translator::errc& e) {
+    switch (e) {
+    case record_translator::errc::translation_error:
+        return o << "record_translator::errc::translation_error";
+    }
+}
+
 record_type
 record_translator::build_type(std::optional<resolved_type> val_type) {
     auto ret_type = schemaless_struct_type();

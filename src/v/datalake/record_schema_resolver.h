@@ -66,6 +66,7 @@ public:
         translation_error,
         bad_input,
     };
+    friend std::ostream& operator<<(std::ostream&, const errc&);
     virtual ss::future<checked<type_and_buf, errc>>
     resolve_buf_type(iobuf b) const = 0;
     virtual ~type_resolver() = default;

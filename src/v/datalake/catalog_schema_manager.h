@@ -26,6 +26,8 @@ public:
         // The system is shutting down.
         shutting_down,
     };
+    friend std::ostream& operator<<(std::ostream&, const errc&);
+
     virtual ss::future<checked<std::nullopt_t, errc>>
     get_registered_ids(const model::topic&, iceberg::struct_type& desired_type)
       = 0;
