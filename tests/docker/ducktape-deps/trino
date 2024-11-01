@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -e
+
+mkdir /opt/trino
+
+TRINO_VERSION=463
+TRINO_FILE=trino-server-${TRINO_VERSION}.tar.gz
+TRINO_URL=https://repo1.maven.org/maven2/io/trino/trino-server/${TRINO_VERSION}/trino-server-${TRINO_VERSION}.tar.gz
+
+wget ${TRINO_URL}
+tar xvf ${TRINO_FILE} -C /opt/trino --strip-components 1 && rm -f ${TRINO_FILE}
+
+# Commonly used directories for data and configurations
+mkdir /opt/trino/data
+mkdir -p /opt/trino/etc/catalog
+
+cat <<EOF >/opt/trino/etc/node.properties
+node.environment=production
+node.id=ffffffff-ffff-ffff-ffff-ffffffffffff
+node.data-dir=/opt/trino/data
+EOF
+
+cat <<EOF >/opt/trino/etc/jvm.config
+-server
+-Xmx16G
+-XX:InitialRAMPercentage=80
+-XX:MaxRAMPercentage=80
+-XX:G1HeapRegionSize=32M
+-XX:+ExplicitGCInvokesConcurrent
+-XX:+ExitOnOutOfMemoryError
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:-OmitStackTraceInFastThrow
+-XX:ReservedCodeCacheSize=512M
+-XX:PerMethodRecompilationCutoff=10000
+-XX:PerBytecodeRecompilationCutoff=10000
+-Djdk.attach.allowAttachSelf=true
+-Djdk.nio.maxCachedBufferSize=2000000
+-Dfile.encoding=UTF-8
+# Allow loading dynamic agent used by JOL
+-XX:+EnableDynamicAgentLoading
+EOF
+
+# The same container acts a coordinator and worker
+# We use a custom 8083 port because Trino uses
+# 8080 httpd port which is prone to conflicts
+cat <<EOF >/opt/trino/etc/config.properties
+coordinator=true
+node-scheduler.include-coordinator=true
+http-server.http.port=8083
+discovery.uri=http://0.0.0.0:8083
+EOF
+
+ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
+
+start_cmd="PATH=/usr/lib/jvm/java-22-openjdk-${ARCH}/bin:\$PATH /opt/trino/bin/launcher \"\$@\""
+# Trino requires Java-22 and higher
+cat <<EOF >/opt/trino/bin/trino-launcher
+${start_cmd}
+EOF
+chmod +x /opt/trino/bin/trino-launcher

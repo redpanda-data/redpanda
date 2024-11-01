@@ -1,0 +1,79 @@
+/*
+ * Copyright 2024 Tabular Technologies Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+plugins {
+  id 'java'
+  id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+repositories {
+  mavenCentral()
+}
+
+ext {
+  icebergVersion = '1.6.0'
+  hadoopVersion = '3.3.6'
+  awsJavaSdkVersion = '1.12.367'
+}
+
+dependencies {
+  // Needed for HadoopCatalog's s3a access at runtime
+  // while technically this is just a runtime dependency there is
+  // some pollution in the shaded jar that pulls in duplicate
+  // implementations of S3ABlockOutputStream. Making it a compile
+  // time dependency works around the problem by probably loading
+  // it ahead of other implementations. This is a dirty hack but
+  // probably ok since this is just for tests and it is mind numbing
+  // to debug hadoop dependency mess :'(
+  implementation "org.apache.hadoop:hadoop-aws:${hadoopVersion}"
+  runtimeOnly "com.amazonaws:aws-java-sdk-bundle:${awsJavaSdkVersion}"
+  implementation "org.apache.iceberg:iceberg-api:${icebergVersion}"
+  implementation "org.apache.iceberg:iceberg-core:${icebergVersion}"
+  implementation "org.apache.iceberg:iceberg-core:${icebergVersion}:tests"
+  implementation "org.apache.iceberg:iceberg-aws:${icebergVersion}"
+  implementation "org.apache.iceberg:iceberg-azure:${icebergVersion}"
+  implementation "org.apache.iceberg:iceberg-gcp:${icebergVersion}"
+  implementation "org.apache.iceberg:iceberg-bundled-guava:${icebergVersion}"
+
+  implementation "org.apache.hadoop:hadoop-common:${hadoopVersion}"
+  implementation "org.apache.hadoop:hadoop-hdfs-client:${hadoopVersion}"
+
+  
+  runtimeOnly "org.apache.iceberg:iceberg-aws-bundle:${icebergVersion}"
+  runtimeOnly "org.apache.iceberg:iceberg-azure-bundle:${icebergVersion}"
+  runtimeOnly "org.apache.iceberg:iceberg-gcp-bundle:${icebergVersion}"
+
+  implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
+  implementation 'org.apache.httpcomponents.core5:httpcore5:5.2.5'
+
+  implementation 'com.google.guava:guava:33.3.0-jre'
+
+  implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+  implementation 'org.postgresql:postgresql:42.7.4'
+}
+
+jar {
+  manifest {
+    attributes 'Main-Class': 'org.apache.iceberg.rest.RESTCatalogServer'
+  }
+}
+
+shadowJar {
+  mergeServiceFiles()
+  zip64 true
+}
+
+build.dependsOn(shadowJar)

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -e
+
+mkdir /opt/spark
+
+SPARK_VERSION=3.5.3
+SPARK_FILE=spark-$SPARK_VERSION-bin-hadoop3.tgz
+SPARK_URL=https://dlcdn.apache.org/spark/spark-$SPARK_VERSION/spark-$SPARK_VERSION-bin-hadoop3.tgz
+
+wget ${SPARK_URL}
+tar xvf ${SPARK_FILE} -C /opt/spark --strip-components 1
+rm ${SPARK_FILE}
+
+# Copy over the jars needed for iceberg access.
+# These are not shipped with the binary distribution and are addons for iceberg
+# The versions are carefully checked for compatibility, think twice before changing
+# them :-)
+
+mvn -f /opt/spark-iceberg-dependencies/pom.xml -DoutputDirectory=/opt/spark/jars dependency:copy-dependencies
+
+HADOOP_DEPS=(
+    https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar
+    https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client/3.3.6/hadoop-client-3.3.6.jar
+    https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.20.18/bundle-2.20.18.jar
+    https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar
+)
+
+for jar in "${HADOOP_DEPS[@]}"; do
+    wget $jar -P /opt/spark/jars
+done

@@ -8,29 +8,32 @@
 # by the Apache License, Version 2.0
 
 import uuid
-from rptest.archival.s3_client import S3Client
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.redpanda import SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 
 
 class IcebergRESTCatalogTest(RedpandaTest):
+    """Create a iceberg REST catalog with a shared bucket as Redpanda"""
     def __init__(self, test_ctx, *args, **kwargs):
-        super(IcebergRESTCatalogTest, self).__init__(test_ctx, *args, **kwargs)
-        self.s3_client = S3Client(region="panda-region",
-                                  access_key="panda-user",
-                                  secret_key="panda-secret",
-                                  endpoint="http://minio-s3:9000",
-                                  logger=self.logger)
-        self.warehouse = f"warehouse-{uuid.uuid1()}"
+        si_settings = SISettings(test_context=test_ctx)
+        super(IcebergRESTCatalogTest, self).__init__(test_ctx,
+                                                     si_settings=si_settings,
+                                                     *args,
+                                                     **kwargs)
         self.catalog_service = IcebergRESTCatalog(
-            test_ctx, cloud_storage_warehouse=self.warehouse)
+            test_ctx,
+            cloud_storage_bucket=si_settings.cloud_storage_bucket,
+            cloud_storage_access_key=str(si_settings.cloud_storage_access_key),
+            cloud_storage_secret_key=str(si_settings.cloud_storage_secret_key),
+            cloud_storage_region=si_settings.cloud_storage_region,
+            cloud_storage_api_endpoint=str(si_settings.endpoint_url),
+            filesystem_wrapper_mode=False)
 
     def setUp(self):
-        self.s3_client.create_bucket(self.warehouse)
+        super().setUp()
         self.catalog_service.start()
-        return super().setUp()
 
     def tearDown(self):
         self.catalog_service.stop()
-        self.s3_client.empty_and_delete_bucket(self.warehouse)
         return super().tearDown()

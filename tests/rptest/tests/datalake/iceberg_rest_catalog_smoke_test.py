@@ -1,5 +1,6 @@
 from rptest.services.cluster import cluster
 
+from ducktape.mark import matrix
 from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
@@ -22,9 +23,19 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
                                                           extra_rp_conf={},
                                                           **kwargs)
 
-    @cluster(num_nodes=2)
-    def test_basic(self):
+    def setUp(self):
+        # custom startup logic below
+        pass
 
+    @cluster(num_nodes=2)
+    @matrix(filesystem_catalog_mode=[True, False])
+    def test_basic(self, filesystem_catalog_mode):
+
+        self.catalog_service.set_filesystem_wrapper_mode(
+            filesystem_catalog_mode)
+        super().setUp()
+
+        warehouse = self.catalog_service.cloud_storage_warehouse
         catalog = self.catalog_service.client()
         namespace = "test_ns"
         catalog.create_namespace(namespace)
@@ -59,8 +70,7 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
             ),
         )
         table = catalog.create_table(identifier=f"{namespace}.bids",
-                                     schema=schema,
-                                     location=f"s3a://{self.warehouse}/bids")
+                                     schema=schema)
         self.logger.info(f">>> {table}")
 
         assert "bids" in [t[1] for t in catalog.list_tables(namespace)]

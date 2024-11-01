@@ -27,45 +27,117 @@ class IcebergRESTCatalog(Service):
     PERSISTENT_ROOT = "/var/lib/iceberg_rest/"
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "iceberg_rest_server.log")
     JAR = "iceberg-rest-image-all.jar"
-    JAR_PATH = f"/opt/iceberg-rest-image/build/libs/{JAR}"
+    JAR_PATH = f"/opt/iceberg-rest-catalog/build/libs/{JAR}"
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
-    DEFAULT_CATALOG_IMPL = "org.apache.iceberg.jdbc.JdbcCatalog"
-    DEFAULT_CATALOG_JDBC_URI = f"jdbc:sqlite:file:/tmp/{uuid.uuid1()}_iceberg_rest_mode=memory"
-    DEFAULT_CATALOG_DB_USER = "user"
-    DEFAULT_CATALOG_DB_PASS = "password"
 
-    def __init__(self,
-                 ctx,
-                 cloud_storage_warehouse: str,
-                 cloud_storage_access_key: str = 'panda-user',
-                 cloud_storage_secret_key: str = 'panda-secret',
-                 cloud_storage_region: str = 'panda-region',
-                 cloud_storage_api_endpoint: str = "http://minio-s3:9000",
-                 node: ClusterNode | None = None):
+    DB_CATALOG_IMPL = "org.apache.iceberg.jdbc.JdbcCatalog"
+    DB_CATALOG_JDBC_URI = f"jdbc:sqlite:file:/tmp/{uuid.uuid1()}_iceberg_rest_mode=memory"
+    DB_CATALOG_DB_USER = "user"
+    DB_CATALOG_DB_PASS = "password"
+
+    FS_CATALOG_IMPL = "org.apache.iceberg.hadoop.HadoopCatalog"
+    FS_CATALOG_CONF_PATH = "/opt/iceberg-rest-catalog/core-site.xml"
+
+    HADOOP_CONF_TMPL = """<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<configuration>
+
+<property>
+    <name>fs.s3a.aws.credentials.provider</name>
+    <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+</property>
+<property>
+    <name>fs.s3a.endpoint</name>
+    <value>{fs_endpoint}</value>
+</property>
+<property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+</property>
+<property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>{fs_region}</value>
+</property>
+<property>
+    <name>fs.s3a.access.key</name>
+    <value>{fs_access_key}</value>
+</property>
+<property>
+    <name>fs.s3a.secret.key</name>
+    <value>{fs_secret_key}</value>
+</property>
+<property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+</property>
+</configuration>"""
+
+    def __init__(
+            self,
+            ctx,
+            cloud_storage_bucket: str,
+            cloud_storage_catalog_prefix: str = 'redpanda-iceberg-catalog',
+            cloud_storage_access_key: str = 'panda-user',
+            cloud_storage_secret_key: str = 'panda-secret',
+            cloud_storage_region: str = 'panda-region',
+            cloud_storage_api_endpoint: str = "http://minio-s3:9000",
+            filesystem_wrapper_mode: bool = False,
+            node: ClusterNode | None = None):
         super(IcebergRESTCatalog, self).__init__(ctx,
                                                  num_nodes=0 if node else 1)
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
         self.cloud_storage_region = cloud_storage_region
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
-        self.cloud_storage_warehouse = cloud_storage_warehouse
-
+        self.cloud_storage_bucket = cloud_storage_bucket
+        self.cloud_storage_catalog_prefix = cloud_storage_catalog_prefix
+        self.set_filesystem_wrapper_mode(filesystem_wrapper_mode)
+        # This REST server can operate in two modes.
+        # 1. filesystem wrapper mode
+        # 2. database mode
+        # In filesystem_wrapper_mode, it just wraps a HadoopCatalog implementation
+        # that coordinates iceberg metadata updates via S3 in a format equivalent to
+        # filesystem catalog mode in Redpanda). In db mode the metadata is stored partly
+        # in a self contained sqlite db and doesn't need S3 access and partially on S3.
+        #
+        # The former is useful to validate the correctness of the metadata format written
+        # by Redpanda catalog in filesystem mode while still enabling query engines like
+        # Trino that only support REST mode.
+        #
+        # Trino <-> REST server (HadoopCatalog) <-> S3
+        # Trino <-> REST server (JDBC Catalog) <-> local sqllite DB.
         self.catalog_url = None
+
+    def compute_warehouse_path(self):
+        s3_prefix = "s3"
+        if self.filesystem_wrapper_mode:
+            # For hadoop catalog compatibility
+            s3_prefix = "s3a"
+        self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
+
+    def set_filesystem_wrapper_mode(self, mode: bool):
+        self.filesystem_wrapper_mode = mode
+        self.compute_warehouse_path()
 
     def _make_env(self):
         env = dict()
+
+        # Common envs
         env["AWS_ACCESS_KEY_ID"] = self.cloud_storage_access_key
         env["AWS_SECRET_ACCESS_KEY"] = self.cloud_storage_secret_key
         env["AWS_REGION"] = self.cloud_storage_region
-        env["CATALOG_WAREHOUSE"] = f"s3a://{self.cloud_storage_warehouse}"
-        # This also takes org.apache.iceberg.aws.s3.S3FileIO
-        # to use a wrapper around S3 based catalog.
-        env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.DEFAULT_CATALOG_IMPL
-        env["CATALOG_URI"] = IcebergRESTCatalog.DEFAULT_CATALOG_JDBC_URI
-        env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DEFAULT_CATALOG_DB_USER
-        env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DEFAULT_CATALOG_DB_PASS
         env["CATALOG_S3_ENDPOINT"] = self.cloud_storage_api_endpoint
-        env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
+        env["CATALOG_WAREHOUSE"] = self.cloud_storage_warehouse
+        if self.filesystem_wrapper_mode:
+            env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.FS_CATALOG_IMPL
+            env["HADOOP_CONF_FILE_PATH"] = IcebergRESTCatalog.FS_CATALOG_CONF_PATH
+        else:
+            env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.DB_CATALOG_IMPL
+            env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI
+            env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DB_CATALOG_DB_USER
+            env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DB_CATALOG_DB_PASS
+            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
         return env
 
     def _cmd(self):
@@ -89,25 +161,39 @@ class IcebergRESTCatalog(Service):
     def start_node(self, node, timeout_sec=60, **kwargs):
         node.account.ssh("mkdir -p %s" % IcebergRESTCatalog.PERSISTENT_ROOT,
                          allow_fail=False)
+        # Delete any existing hadoop config and repopulate
+        node.account.ssh(f"rm -f {IcebergRESTCatalog.FS_CATALOG_CONF_PATH}")
+        config_tmpl = IcebergRESTCatalog.HADOOP_CONF_TMPL.format(
+            fs_endpoint=self.cloud_storage_api_endpoint,
+            fs_region=self.cloud_storage_region,
+            fs_access_key=self.cloud_storage_access_key,
+            fs_secret_key=self.cloud_storage_secret_key)
+        self.logger.debug(f"Using hadoop config: {config_tmpl}")
+        node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH,
+                                 config_tmpl)
+
         cmd = self._cmd()
         self.logger.info(
             f"Starting Iceberg REST catalog service on {node.name} with command {cmd}"
         )
         node.account.ssh(cmd, allow_fail=False)
         self.catalog_url = f"http://{node.account.hostname}:8181"
+        self.wait(timeout_sec=30)
 
     def wait_node(self, node, timeout_sec=None):
-        check_cmd = f"pyiceberg --uri http://localhost:8181 list"
+        check_cmd = f"pyiceberg --uri {self.catalog_url} create namespace default"
 
         def _ready():
-            out = node.account.ssh_output(check_cmd)
-            status_code = int(out.decode('utf-8'))
-            self.logger.info(f"health check result status code: {status_code}")
-            return status_code == 200
+            try:
+                node.account.ssh_output(check_cmd)
+                return True
+            except Exception as e:
+                self.logger.debug(f"Exception querying catalog", exc_info=True)
+            return False
 
         wait_until(_ready,
                    timeout_sec=timeout_sec,
-                   backoff_sec=0.4,
+                   backoff_sec=1,
                    err_msg="Error waiting for Iceberg REST catalog to start",
                    retry_on_exc=True)
         return True

@@ -242,8 +242,22 @@ RUN /polaris && rm /polaris
 #################################
 
 FROM base as iceberg-rest
+COPY --chown=0:0 tests/java/iceberg-rest /opt/iceberg-rest-catalog
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/iceberg-rest-catalog /
 RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
+
+#################################
+
+FROM base as trino 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/trino /
+RUN /trino && rm /trino
+
+#################################
+
+FROM base as spark 
+COPY --chown=0:0 tests/java/spark-iceberg-dependencies /opt/spark-iceberg-dependencies
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/spark /
+RUN /spark && rm /spark
 
 #################################
 
@@ -338,7 +352,9 @@ COPY --from=ocsf /opt/ocsf-schema/ /opt/ocsf-schema/
 COPY --from=ocsf /opt/ocsf-server/ /opt/ocsf-server/
 COPY --from=polaris /opt/polaris/ /opt/polaris/
 COPY --from=flink /opt/flink/ /opt/flink/
-COPY --from=iceberg-rest /opt/iceberg-rest-image /opt/iceberg-rest-image
+COPY --from=iceberg-rest /opt/iceberg-rest-catalog /opt/iceberg-rest-catalog
+COPY --from=trino /opt/trino /opt/trino
+COPY --from=spark /opt/spark /opt/spark
 
 RUN ldconfig
 
