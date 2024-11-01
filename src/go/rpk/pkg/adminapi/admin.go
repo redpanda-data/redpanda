@@ -21,14 +21,12 @@ import (
 
 	"github.com/kr/text"
 	mTerm "github.com/moby/term"
-
-	"go.uber.org/zap"
-
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 // GenericErrorBody is the JSON decodable body that is produced by generic error

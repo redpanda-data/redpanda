@@ -24,15 +24,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/common-go/rpadmin"
-
-	authorizationv1 "k8s.io/api/authorization/v1"
-
 	"github.com/hashicorp/go-multierror"
+	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	k8score "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -354,7 +353,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 				continue
 			}
 
-			aName := sanitizeName(a)
+			aName := common.SanitizeName(a)
 			r := []func() error{
 				func() error {
 					return requestAndSave(ctx, ps, fmt.Sprintf("admin/node_config_%v.json", aName), cl.RawNodeConfig)
@@ -427,7 +426,7 @@ func saveMetricsAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *co
 			}
 
 			endpoints := map[string]func(context.Context) ([]byte, error){"metrics": cl.PrometheusMetrics, "public_metrics": cl.PublicMetrics}
-			aName := sanitizeName(a)
+			aName := common.SanitizeName(a)
 			for endpointName, endpoint := range endpoints {
 				endpointPoller := func() error {
 					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_%s.txt", aName, endpointName), endpoint)
@@ -637,18 +636,6 @@ func parseJournalTime(str string, now time.Time) (time.Time, error) {
 		adjustedTime := now.Add(dur)
 		return adjustedTime, nil
 	}
-}
-
-// sanitizeName replace any of the following characters with "-": "<", ">", ":",
-// `"`, "/", "|", "?", "*". This is to avoid having forbidden names in Windows
-// environments.
-func sanitizeName(name string) string {
-	forbidden := []string{"<", ">", ":", `"`, "/", `\`, "|", "?", "*"}
-	r := name
-	for _, s := range forbidden {
-		r = strings.Replace(r, s, "-", -1)
-	}
-	return r
 }
 
 func saveExtraFuncs(ctx context.Context, ps *stepParams, cl *rpadmin.AdminAPI, partitionFilters []topicPartitionFilter) (funcs []func() error) {
