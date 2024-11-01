@@ -18,7 +18,10 @@ go_library(
 go_test(
     name = "buildpack_test",
     size = "small",
-    srcs = ["download_test.go"],
+    srcs = [
+        "download_test.go",
+        "url_test.go",
+    ],
     embed = [":buildpack"],
     deps = [
         "//src/go/rpk/pkg/testfs",
