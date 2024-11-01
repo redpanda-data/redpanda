@@ -720,7 +720,7 @@ func licenseFeatureChecks(ctx context.Context, fs afero.Fs, cl *AdminAPI, p *con
 			}
 		}
 	}
-	if ws, err := mTerm.GetWinsize(0); err == nil {
+	if ws, err := mTerm.GetWinsize(0); err == nil && msg != "" {
 		// text.Wrap removes the newline from the text. We add it back.
 		msg = "\n" + text.Wrap(msg, int(ws.Width)) + "\n"
 	}
