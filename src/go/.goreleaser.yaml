@@ -103,7 +103,7 @@ builds:
         #    QUILL_SIGN_P12, QUILL_SIGN_PASSWORD, QUILL_NOTARY_KEY, QUILL_NOTARY_KEY_ID, QUILL_NOTARY_ISSUER
         - cmd: quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
           env:
-            - QUILL_LOG_FILE=dist/quill-{{ .Target }}.log
+            - QUILL_LOG_FILE=quill-{{ .Target }}.log
 archives:
   - id: rpk-zip
     builds:
