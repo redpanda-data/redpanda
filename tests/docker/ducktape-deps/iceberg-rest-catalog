@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-cd /opt/iceberg-rest-catalog
+pushd /opt/redpanda-tests/java/iceberg-rest-catalog
 ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
 chmod +x ./gradlew
-JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}" ./gradlew --no-daemon --info shadowJar
+JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}" GRADLE_OPTS="-Dorg.gradle.project.buildDir=/opt/iceberg-rest-catalog/build" \
+    ./gradlew --no-daemon --info shadowJar
+popd
