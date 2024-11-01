@@ -357,7 +357,7 @@ void feature_manager::verify_enterprise_license() {
       "enterprise_features=[{}], license_missing_or_expired={}{}",
       _feature_table.local().get_active_version(),
       _feature_table.local().get_latest_logical_version(),
-      enterprise_features.enabled(),
+      fmt::join(enterprise_features.enabled(), ", "),
       license_missing_or_expired,
       fallback_license ? " (detected fallback license)" : "");
 
