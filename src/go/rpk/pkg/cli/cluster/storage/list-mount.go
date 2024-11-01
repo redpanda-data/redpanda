@@ -146,7 +146,7 @@ func rpadminMigrationStateToMigrationState(in []rpadmin.MigrationState) (resp []
 // rpadminTopicsToStringSlice converts a slice of rpadmin.NamespacedTopic to a slice of strings
 // if the topic has a non nil namespace it will appear as `namespace:topic`
 // otherwise it will appear as `topic`.
-func rpadminTopicsToStringSlice(in []rpadmin.NamespacedTopic) (resp []string) {
+func rpadminTopicsToStringSlice(in []rpadmin.NamespacedOrInboundTopic) (resp []string) {
 	for _, entry := range in {
 		if entry.Namespace != nil {
 			resp = append(resp, fmt.Sprintf("%s/%s", *entry.Namespace, entry.Topic))

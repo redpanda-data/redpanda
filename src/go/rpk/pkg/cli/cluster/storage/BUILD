@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "cancel-mount.go",
         "list-mount.go",
+        "list-mountable.go",
         "mount.go",
         "status-mount.go",
         "storage.go",

@@ -57,7 +57,7 @@ with my-new-topic as the new topic name
 				out.Die("topic is required")
 			}
 			topic := rpadmin.InboundTopic{
-				SourceTopic: rpadmin.NamespacedTopic{
+				SourceTopicReference: rpadmin.NamespacedTopic{
 					Namespace: string2pointer(n),
 					Topic:     t,
 				},
@@ -78,7 +78,7 @@ with my-new-topic as the new topic name
 			fmt.Printf(`
 Topic mount from Tiered Storage topic %v to your Redpanda Cluster topic %v
 has started with Migration ID %v
-To check the status run 'rpk cluster storage status-mount %d'\n`, t, alias, mg.ID, mg.ID)
+To check the status run 'rpk cluster storage status-mount %d`+"\n", t, alias, mg.ID, mg.ID)
 		},
 	}
 	cmd.Flags().StringVar(&to, "to", "", "New namespace/topic name for the mounted topic (optional)")
