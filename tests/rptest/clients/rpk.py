@@ -1993,3 +1993,38 @@ class RpkTool:
         cmd = [self._rpk_binary(), "pluginmock"] + cmd
         out = self._execute(cmd)
         return json.loads(out)
+
+    def remote_bundle_start(self, extra_flags=[]):
+        cmd = ["start", "--no-confirm"]
+
+        if len(extra_flags) > 1:
+            cmd += extra_flags
+
+        return self._run_remote_bundle(cmd)
+
+    def remote_bundle_status(self, format="json"):
+        cmd = ["status", "--format", format]
+        out = self._run_remote_bundle(cmd)
+
+        return json.loads(out) if format == "json" else out
+
+    def remote_bundle_download(self, job_id, output_file=None):
+        cmd = ["download", "--no-confirm", "--job-id", job_id]
+
+        if output_file is not None:
+            cmd += ["--output", output_file]
+
+        return self._run_remote_bundle(cmd)
+
+    def remote_bundle_cancel(self, job_id):
+        cmd = ["cancel", "--no-confirm", "--job-id", job_id]
+        return self._run_remote_bundle(cmd)
+
+    def _run_remote_bundle(self, cmd, format=None):
+        cmd = [self._rpk_binary(), "debug", "remote-bundle"
+               ] + cmd + ["-X", "admin.hosts=" + self._admin_host()]
+
+        if format is not None:
+            cmd += ["--format", format]
+
+        return self._execute(cmd)
