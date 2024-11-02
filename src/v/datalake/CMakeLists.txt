@@ -36,6 +36,7 @@ v_cc_library(
     parquet_writer.cc
     record_multiplexer.cc
     record_schema_resolver.cc
+    record_translator.cc
     schema_registry.cc
     schemaless_translator.cc
     schema_avro.cc

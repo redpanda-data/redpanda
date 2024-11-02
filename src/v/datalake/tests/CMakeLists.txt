@@ -1,4 +1,20 @@
+find_package(Avro REQUIRED)
 set(testdata_dir "${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+v_cc_library(
+  NAME datalake_test_utils
+  HDRS
+    record_generator.h
+  SRCS
+    record_generator.cc
+  DEPS
+    Avro::avro
+    Seastar::seastar
+    v::avro_test_utils
+    v::schema
+    v::schema_test_fixture
+    v::storage
+)
 
 rp_test(
   UNIT_TEST
@@ -6,12 +22,13 @@ rp_test(
   BINARY_NAME gtest_record_multiplexer
   SOURCES gtest_record_multiplexer_test.cc
   LIBRARIES
-    v::application
-    v::features
-    v::gtest_main
-    v::kafka_test_utils
+    v::cloud_io_utils
     v::datalake_writer
+    v::datalake_test_utils
+    v::gtest_main
     v::model_test_utils
+    v::schema
+    v::s3_imposter
   LABELS datalake
   ARGS "-- -c 1"
 )
@@ -55,9 +72,13 @@ rp_test(
 rp_test(
   UNIT_TEST
   GTEST
-  BINARY_NAME translation_task
-  SOURCES translation_task_test.cc
+  BINARY_NAME datalake_cloud
+  SOURCES
+    record_multiplexer_test.cc
+    translation_task_test.cc
   LIBRARIES
+    Boost::iostreams
+    v::datalake_test_utils
     v::gtest_main
     v::datalake_writer
     v::cloud_io_utils

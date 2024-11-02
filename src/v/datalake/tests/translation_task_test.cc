@@ -11,7 +11,9 @@
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "datalake/batching_parquet_writer.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/cloud_data_io.h"
+#include "datalake/record_schema_resolver.h"
 #include "datalake/translation_task.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"
@@ -24,6 +26,13 @@
 
 using namespace std::chrono_literals;
 using namespace testing;
+using namespace datalake;
+namespace {
+auto schema_mgr = std::make_unique<simple_schema_manager>();
+auto schema_resolver = std::make_unique<binary_type_resolver>();
+const auto ntp = model::ntp{};
+} // namespace
+
 class TranslateTaskTest
   : public s3_imposter_fixture
   , public ::testing::Test {
@@ -147,10 +156,11 @@ private:
 };
 
 TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
-    datalake::translation_task task(cloud_io);
+    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
 
     auto result = task
                     .translate(
+                      ntp,
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
@@ -173,13 +183,14 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
 }
 
 TEST_F(TranslateTaskTest, TestDataFileMissing) {
-    datalake::translation_task task(cloud_io);
+    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
     // create deleting task to cause local io error
     deleter del(tmp_dir.get_path().string());
     del.start();
     auto stop_deleter = ss::defer([&del] { del.stop().get(); });
     auto result = task
                     .translate(
+                      ntp,
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
@@ -192,7 +203,7 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
 }
 
 TEST_F(TranslateTaskTest, TestUploadError) {
-    datalake::translation_task task(cloud_io);
+    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
     // fail all PUT requests
     fail_request_if(
       [](const http_test_utils::request_info& req) -> bool {
@@ -204,6 +215,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
 
     auto result = task
                     .translate(
+                      ntp,
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),

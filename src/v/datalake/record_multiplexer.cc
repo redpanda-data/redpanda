@@ -9,17 +9,29 @@
  */
 #include "datalake/record_multiplexer.h"
 
+#include "base/vlog.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/data_writer_interface.h"
-#include "datalake/schemaless_translator.h"
-#include "iceberg/values.h"
+#include "datalake/logger.h"
+#include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
+#include "datalake/schema_identifier.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
 
+#include <seastar/core/loop.hh>
+
 namespace datalake {
+
 record_multiplexer::record_multiplexer(
-  std::unique_ptr<data_writer_factory> writer_factory)
-  : _translator{schemaless_translator()}
-  , _writer_factory{std::move(writer_factory)} {}
+  const model::ntp& ntp,
+  std::unique_ptr<data_writer_factory> writer_factory,
+  schema_manager& schema_mgr,
+  type_resolver& type_resolver)
+  : _ntp(ntp)
+  , _writer_factory{std::move(writer_factory)}
+  , _schema_mgr(schema_mgr)
+  , _type_resolver(type_resolver) {}
 
 ss::future<ss::stop_iteration>
 record_multiplexer::operator()(model::record_batch batch) {
@@ -34,11 +46,79 @@ record_multiplexer::operator()(model::record_batch batch) {
         auto record = it.next();
         iobuf key = record.release_key();
         iobuf val = record.release_value();
-        // *1000: Redpanda timestamps are milliseconds. Iceberg uses
-        // microseconds.
-        int64_t timestamp = (first_timestamp + record.timestamp_delta()) * 1000;
+        auto timestamp = model::timestamp{
+          first_timestamp + record.timestamp_delta()};
         kafka::offset offset{batch.base_offset()() + record.offset_delta()};
-        int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
+        int64_t estimated_size = key.size_bytes() + val.size_bytes();
+
+        auto val_type_res = co_await _type_resolver.resolve_buf_type(
+          std::move(val));
+        if (val_type_res.has_error()) {
+            switch (val_type_res.error()) {
+            case type_resolver::errc::bad_input:
+            case type_resolver::errc::translation_error:
+                // TODO: metric + use binary data?
+            case type_resolver::errc::registry_error:
+                vlog(
+                  datalake_log.warn,
+                  "[{}] Error resolving schema for record {}: {}",
+                  _ntp,
+                  offset,
+                  val_type_res.error());
+                _error = data_writer_error::parquet_conversion_error;
+                co_return ss::stop_iteration::yes;
+            }
+        }
+
+        auto record_data_res = co_await record_translator::translate_data(
+          offset,
+          std::move(key),
+          val_type_res.value().type,
+          std::move(val_type_res.value().parsable_buf),
+          timestamp);
+        if (record_data_res.has_error()) {
+            switch (record_data_res.error()) {
+            case record_translator::errc::translation_error:
+                // TODO: metric + use binary data?
+                vlog(
+                  datalake_log.warn,
+                  "[{}] Error translating data for record {}: {}",
+                  _ntp,
+                  offset,
+                  record_data_res.error());
+                _error = data_writer_error::parquet_conversion_error;
+                co_return ss::stop_iteration::yes;
+            }
+        }
+        auto record_type = record_translator::build_type(
+          std::move(val_type_res.value().type));
+        auto writer_iter = _writers.find(record_type.comps);
+        if (writer_iter == _writers.end()) {
+            auto get_ids_res = co_await _schema_mgr.get_registered_ids(
+              _ntp.tp.topic, record_type.type);
+            if (get_ids_res.has_error()) {
+                auto e = get_ids_res.error();
+                switch (e) {
+                case schema_manager::errc::not_supported:
+                    // TODO: metric + use binary data?
+                case schema_manager::errc::failed:
+                case schema_manager::errc::shutting_down:
+                    vlog(
+                      datalake_log.warn,
+                      "[{}] Error getting field IDs for record {}: {}",
+                      _ntp,
+                      offset,
+                      get_ids_res.error());
+                    _error = data_writer_error::parquet_conversion_error;
+                }
+                co_return ss::stop_iteration::yes;
+            }
+            auto [iter, _] = _writers.emplace(
+              record_type.comps,
+              std::make_unique<partitioning_writer>(
+                *_writer_factory, std::move(record_type.type)));
+            writer_iter = iter;
+        }
 
         // TODO: we want to ensure we're using an offset translating reader so
         // that these will be Kafka offsets, not Raft offsets.
@@ -50,21 +130,17 @@ record_multiplexer::operator()(model::record_batch batch) {
 
         _result.value().last_offset = offset;
 
-        // Translate the record
-        auto& translator = get_translator();
-        iceberg::struct_value data = translator.translate_event(
-          std::move(key), std::move(val), timestamp, offset);
-        // Send it to the writer
-        auto writer_result = co_await get_writer();
-        if (!writer_result.has_value()) {
-            _error = writer_result.error();
-            co_return ss::stop_iteration::yes;
-        }
-        auto& writer = writer_result.value().get();
-        auto write_result = co_await writer.add_data_struct(
-          std::move(data), estimated_size);
+        auto& writer = writer_iter->second;
+        auto write_result = co_await writer->add_data(
+          std::move(record_data_res.value()), estimated_size);
 
         if (write_result != data_writer_error::ok) {
+            vlog(
+              datalake_log.warn,
+              "[{}] Error adding data to writer for record {}: {}",
+              _ntp,
+              offset,
+              write_result);
             _error = write_result;
             // If a write fails, the writer is left in an indeterminate state,
             // we cannot continue in this case.
@@ -79,40 +155,20 @@ record_multiplexer::end_of_stream() {
     if (_error) {
         co_return *_error;
     }
-    // TODO: once we have multiple _writers this should be a loop
-    if (_writer) {
-        if (!_result.has_value()) {
-            co_return data_writer_error::no_data;
+    auto writers = std::move(_writers);
+    for (auto& [id, writer] : writers) {
+        auto res = co_await std::move(*writer).finish();
+        if (res.has_error()) {
+            _error = res.error();
+            continue;
         }
-        auto result_files = co_await _writer->finish();
-        if (result_files.has_value()) {
-            auto local_file = result_files.value();
-
-            _result->data_files.push_back(local_file);
-            co_return std::move(_result.value());
-        } else {
-            co_return result_files.error();
-        }
-    } else {
-        co_return data_writer_error::no_data;
+        auto& files = res.value();
+        std::move(
+          files.begin(), files.end(), std::back_inserter(_result->data_files));
     }
-}
-
-schemaless_translator& record_multiplexer::get_translator() {
-    return _translator;
-}
-
-ss::future<result<std::reference_wrapper<data_writer>, data_writer_error>>
-record_multiplexer::get_writer() {
-    if (!_writer) {
-        auto& translator = get_translator();
-        auto schema = translator.get_schema();
-        auto writer_result = co_await _writer_factory->create_writer(schema);
-        if (!writer_result.has_value()) {
-            co_return writer_result.error();
-        }
-        _writer = std::move(writer_result.value());
+    if (_error) {
+        co_return *_error;
     }
-    co_return *_writer;
+    co_return std::move(*_result);
 }
 } // namespace datalake

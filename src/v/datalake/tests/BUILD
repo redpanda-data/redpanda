@@ -51,6 +51,20 @@ cc_proto_library(
     deps = [":proto2_proto"],
 )
 
+redpanda_test_cc_library(
+    name = "catalog_and_registry_fixture",
+    hdrs = ["catalog_and_registry_fixture.h"],
+    include_prefix = "datalake/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/schema/tests:fake_registry",
+    ],
+)
+
 #TODO: this wrapper can be removed when we completely remove cmake tests support
 redpanda_test_cc_library(
     name = "proto_definitions_wrapper",
@@ -63,6 +77,33 @@ redpanda_test_cc_library(
         ":person_cc_proto",
         ":proto2_cc_proto",
         ":test_messages_cc_proto",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "record_generator",
+    srcs = [
+        "record_generator.cc",
+    ],
+    hdrs = [
+        "record_generator.h",
+    ],
+    implementation_deps = [
+        "//src/v/schema:registry",
+        "//src/v/serde/avro/tests:data_generator",
+        "@avro",
+    ],
+    include_prefix = "datalake/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/utils:named_type",
+        "@seastar",
     ],
 )
 
@@ -143,6 +184,33 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "record_multiplexer_test",
+    timeout = "short",
+    srcs = [
+        "record_multiplexer_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":catalog_and_registry_fixture",
+        ":record_generator",
+        ":test_data_writer",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:record_multiplexer",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:table_definition",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/schema:registry",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
 

@@ -15,10 +15,7 @@
 
 namespace datalake {
 
-// Manages interactions with the catalog when reconciling the current schema of
-// a given table. This is where Redpanda should make decisions about schema
-// evolution.
-class catalog_schema_manager {
+class schema_manager {
 public:
     enum class errc {
         // The requested operation is not supported (e.g. unsupported schema
@@ -29,6 +26,27 @@ public:
         // The system is shutting down.
         shutting_down,
     };
+    friend std::ostream& operator<<(std::ostream&, const errc&);
+
+    virtual ss::future<checked<std::nullopt_t, errc>>
+    get_registered_ids(const model::topic&, iceberg::struct_type& desired_type)
+      = 0;
+    virtual ~schema_manager() = default;
+};
+
+class simple_schema_manager : public schema_manager {
+public:
+    ss::future<checked<std::nullopt_t, schema_manager::errc>>
+    get_registered_ids(
+      const model::topic&, iceberg::struct_type& desired_type) override;
+    ~simple_schema_manager() override = default;
+};
+
+// Manages interactions with the catalog when reconciling the current schema of
+// a given table. This is where Redpanda should make decisions about schema
+// evolution.
+class catalog_schema_manager : public schema_manager {
+public:
     explicit catalog_schema_manager(iceberg::catalog& catalog)
       : catalog_(catalog) {}
 
@@ -39,8 +57,9 @@ public:
     // are going from the schemaless schema to a schema containing user
     // fields), the table's schema is updated to the desired type, and then the
     // fill is attempted again.
-    ss::future<checked<std::nullopt_t, errc>>
-    get_registered_ids(const model::topic&, iceberg::struct_type& desired_type);
+    ss::future<checked<std::nullopt_t, schema_manager::errc>>
+    get_registered_ids(
+      const model::topic&, iceberg::struct_type& desired_type) override;
 
 private:
     iceberg::table_identifier table_id_for_topic(const model::topic& t) const;

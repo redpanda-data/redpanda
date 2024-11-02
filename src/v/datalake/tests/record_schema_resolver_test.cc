@@ -235,7 +235,7 @@ TEST_F(RecordSchemaResolverTest, TestProtobufSchemaBadOffsets) {
     auto resolver = record_schema_resolver(*sr);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_TRUE(res.has_error());
-    ASSERT_EQ(res.error(), record_schema_resolver::errc::bad_input);
+    ASSERT_EQ(res.error(), type_resolver::errc::bad_input);
 }
 
 TEST_F(RecordSchemaResolverTest, TestMissingMagic) {
@@ -259,7 +259,7 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
     auto resolver = record_schema_resolver(*sr);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
     ASSERT_TRUE(res.has_error());
-    ASSERT_EQ(res.error(), record_schema_resolver::errc::registry_error);
+    ASSERT_EQ(res.error(), type_resolver::errc::registry_error);
 
     // We can try again when there are no injected errors and there should be
     // no issue.

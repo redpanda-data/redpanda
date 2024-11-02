@@ -233,14 +233,14 @@ TEST_F(CatalogSchemaManagerTest, TestOptionalMismatch) {
     type.fields[0]->required = field_required::no;
     auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
     ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.error(), catalog_schema_manager::errc::not_supported);
+    EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 
     // Make the destinations both required.
     type.fields[0]->required = field_required::yes;
     type.fields[1]->required = field_required::yes;
     res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
     ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.error(), catalog_schema_manager::errc::not_supported);
+    EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 }
 
 TEST_F(CatalogSchemaManagerTest, TestTypeMismatch) {
@@ -252,5 +252,5 @@ TEST_F(CatalogSchemaManagerTest, TestTypeMismatch) {
 
     auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
     ASSERT_TRUE(res.has_error());
-    EXPECT_EQ(res.error(), catalog_schema_manager::errc::not_supported);
+    EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 }

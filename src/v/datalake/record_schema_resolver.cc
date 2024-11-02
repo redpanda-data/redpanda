@@ -38,7 +38,7 @@ struct schema_translating_visitor {
     iobuf buf_no_id;
     ppsr::schema_id id;
 
-    ss::future<checked<type_and_buf, record_schema_resolver::errc>>
+    ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(const ppsr::avro_schema_definition& avro_def) {
         const auto& avro_schema = avro_def();
         try {
@@ -60,23 +60,23 @@ struct schema_translating_visitor {
               datalake_log.error,
               "Avro schema translation failed: {}",
               std::current_exception());
-            co_return record_schema_resolver::errc::translation_error;
+            co_return type_resolver::errc::translation_error;
         }
     }
-    ss::future<checked<type_and_buf, record_schema_resolver::errc>>
+    ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(const ppsr::protobuf_schema_definition& pb_def) {
         const google::protobuf::Descriptor* d;
         proto_offsets_message_data offsets;
         try {
             auto offsets_res = get_proto_offsets(buf_no_id);
             if (offsets_res.has_error()) {
-                co_return record_schema_resolver::errc::bad_input;
+                co_return type_resolver::errc::bad_input;
             }
             offsets = std::move(offsets_res.value());
             // TODO: maybe there's another caching opportunity here.
             auto d_res = descriptor(pb_def, offsets.protobuf_offsets);
             if (d_res.has_error()) {
-                co_return record_schema_resolver::errc::bad_input;
+                co_return type_resolver::errc::bad_input;
             }
             d = &d_res.value().get();
         } catch (...) {
@@ -84,7 +84,7 @@ struct schema_translating_visitor {
               datalake_log.error,
               "Error getting protobuf offsets from buffer: {}",
               std::current_exception());
-            co_return record_schema_resolver::errc::bad_input;
+            co_return type_resolver::errc::bad_input;
         }
         try {
             auto type = type_to_iceberg(*d).value();
@@ -102,16 +102,27 @@ struct schema_translating_visitor {
               datalake_log.error,
               "Protobuf schema translation failed: {}",
               std::current_exception());
-            co_return record_schema_resolver::errc::translation_error;
+            co_return type_resolver::errc::translation_error;
         }
     }
-    ss::future<checked<type_and_buf, record_schema_resolver::errc>>
+    ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(const ppsr::json_schema_definition&) {
         co_return type_and_buf::make_raw_binary(std::move(buf_no_id));
     }
 };
 
 } // namespace
+
+std::ostream& operator<<(std::ostream& o, const type_resolver::errc& e) {
+    switch (e) {
+    case type_resolver::errc::registry_error:
+        return o << "type_resolver::errc::registry_error";
+    case type_resolver::errc::translation_error:
+        return o << "type_resolver::errc::translation_error";
+    case type_resolver::errc::bad_input:
+        return o << "type_resolver::errc::bad_input";
+    }
+}
 
 type_and_buf type_and_buf::make_raw_binary(iobuf b) {
     return type_and_buf{
@@ -120,7 +131,12 @@ type_and_buf type_and_buf::make_raw_binary(iobuf b) {
     };
 }
 
-ss::future<checked<type_and_buf, record_schema_resolver::errc>>
+ss::future<checked<type_and_buf, type_resolver::errc>>
+binary_type_resolver::resolve_buf_type(iobuf b) const {
+    co_return type_and_buf::make_raw_binary(std::move(b));
+}
+
+ss::future<checked<type_and_buf, type_resolver::errc>>
 record_schema_resolver::resolve_buf_type(iobuf b) const {
     schema_message_data schema_id_res;
     try {

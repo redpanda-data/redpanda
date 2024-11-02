@@ -19,19 +19,19 @@
 namespace datalake {
 
 namespace {
-catalog_schema_manager::errc log_and_convert_catalog_err(
+schema_manager::errc log_and_convert_catalog_err(
   iceberg::catalog::errc e, std::string_view log_msg) {
     switch (e) {
     case iceberg::catalog::errc::shutting_down:
         vlog(datalake_log.debug, "{}: {}", log_msg, e);
-        return catalog_schema_manager::errc::shutting_down;
+        return schema_manager::errc::shutting_down;
     case iceberg::catalog::errc::timedout:
     case iceberg::catalog::errc::not_found:
     case iceberg::catalog::errc::io_error:
     case iceberg::catalog::errc::unexpected_state:
     case iceberg::catalog::errc::already_exists:
         vlog(datalake_log.warn, "{}: {}", log_msg, e);
-        return catalog_schema_manager::errc::failed;
+        return schema_manager::errc::failed;
     }
 }
 enum class fill_errc {
@@ -79,7 +79,30 @@ fill_field_ids(iceberg::struct_type& dest, const iceberg::struct_type& source) {
 }
 } // namespace
 
-ss::future<checked<std::nullopt_t, catalog_schema_manager::errc>>
+std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
+    switch (e) {
+    case schema_manager::errc::not_supported:
+        return o << "schema_manager::errc::not_supported";
+    case schema_manager::errc::failed:
+        return o << "schema_manager::errc::failed";
+    case schema_manager::errc::shutting_down:
+        return o << "schema_manager::errc::shutting_down";
+    }
+}
+ss::future<checked<std::nullopt_t, schema_manager::errc>>
+simple_schema_manager::get_registered_ids(
+  const model::topic&, iceberg::struct_type& desired_type) {
+    iceberg::schema s{
+      .schema_struct = std::move(desired_type),
+      .schema_id = {},
+      .identifier_field_ids = {},
+    };
+    s.assign_fresh_ids();
+    desired_type = std::move(s.schema_struct);
+    co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, schema_manager::errc>>
 catalog_schema_manager::get_registered_ids(
   const model::topic& topic, iceberg::struct_type& dest_type) {
     auto table_id = table_id_for_topic(topic);
@@ -150,7 +173,7 @@ catalog_schema_manager::get_registered_ids(
     co_return std::nullopt;
 }
 
-checked<bool, catalog_schema_manager::errc>
+checked<bool, schema_manager::errc>
 catalog_schema_manager::get_ids_from_table_meta(
   const iceberg::table_identifier& table_id,
   const iceberg::table_metadata& table_meta,

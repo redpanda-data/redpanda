@@ -9,8 +9,10 @@
  */
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "datalake/data_writer_interface.h"
-#include "datalake/schemaless_translator.h"
+#include "datalake/partitioning_writer.h"
+#include "datalake/schema_identifier.h"
 #include "model/record.h"
 
 #include <seastar/core/future.hh>
@@ -18,25 +20,12 @@
 #include <memory>
 
 namespace datalake {
+class schema_manager;
+class type_resolver;
 
-/*
-Consumes logs and sends records to the appropriate translator
-based on the schema ID. This is meant to be called with a
-read_committed_reader created from a kafka::partition_proxy.
-
-This is a skeleton class. Currently it only uses the trivial
-schemaless_translator.
-
-pseudocode:
-for each record {
-    t = get_translator(record.schema_id);
-    d = t.translate(record);
-    w = get_data_writer(record.schema_id);
-    w.record(d);
-}
-*/
-// TODO: add cleanup of files that were already written while translation
-// failed.
+// Consumes logs and sends records to the appropriate translator
+// based on the schema ID. This is meant to be called with a
+// read_committed_reader created from a kafka::partition_proxy.
 class record_multiplexer {
 public:
     struct write_result {
@@ -48,22 +37,24 @@ public:
         // translation.
         chunked_vector<local_file_metadata> data_files;
     };
-    explicit record_multiplexer(std::unique_ptr<data_writer_factory> writer);
+    explicit record_multiplexer(
+      const model::ntp& ntp,
+      std::unique_ptr<data_writer_factory> writer,
+      schema_manager& schema_mgr,
+      type_resolver& type_resolver);
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
     ss::future<result<write_result, data_writer_error>> end_of_stream();
 
 private:
-    schemaless_translator& get_translator();
-    ss::future<result<std::reference_wrapper<data_writer>, data_writer_error>>
-    get_writer();
-
-    // TODO: in a future PR this will be a map of translators keyed by schema_id
-    schemaless_translator _translator;
+    const model::ntp& _ntp;
     std::unique_ptr<data_writer_factory> _writer_factory;
-
-    // TODO: similarly this will be a map keyed by schema_id
-    std::unique_ptr<data_writer> _writer;
+    schema_manager& _schema_mgr;
+    type_resolver& _type_resolver;
+    chunked_hash_map<
+      record_schema_components,
+      std::unique_ptr<partitioning_writer>>
+      _writers;
 
     std::optional<data_writer_error> _error;
     std::optional<write_result> _result;

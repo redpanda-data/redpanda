@@ -59,17 +59,34 @@ struct type_and_buf {
     static type_and_buf make_raw_binary(iobuf buf);
 };
 
-class record_schema_resolver {
+class type_resolver {
 public:
     enum class errc {
         registry_error,
         translation_error,
         bad_input,
     };
+    friend std::ostream& operator<<(std::ostream&, const errc&);
+    virtual ss::future<checked<type_and_buf, errc>>
+    resolve_buf_type(iobuf b) const = 0;
+    virtual ~type_resolver() = default;
+};
+
+class binary_type_resolver : public type_resolver {
+public:
+    ss::future<checked<type_and_buf, type_resolver::errc>>
+    resolve_buf_type(iobuf b) const override;
+    ~binary_type_resolver() override = default;
+};
+
+class record_schema_resolver : public type_resolver {
+public:
     explicit record_schema_resolver(schema::registry& sr)
       : sr_(sr) {}
 
-    ss::future<checked<type_and_buf, errc>> resolve_buf_type(iobuf b) const;
+    ss::future<checked<type_and_buf, type_resolver::errc>>
+    resolve_buf_type(iobuf b) const override;
+    ~record_schema_resolver() override = default;
 
 private:
     schema::registry& sr_;

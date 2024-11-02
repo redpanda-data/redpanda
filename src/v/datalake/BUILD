@@ -13,6 +13,7 @@ redpanda_cc_library(
         ":table_definition",
         "//src/v/base",
         "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/iceberg:schema",
         "//src/v/iceberg:transaction",
     ],
     include_prefix = "datalake",
@@ -299,6 +300,35 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "record_multiplexer",
+    srcs = [
+        "record_multiplexer.cc",
+    ],
+    hdrs = [
+        "record_multiplexer.h",
+    ],
+    implementation_deps = [
+        ":catalog_schema_manager",
+        ":conversion_outcome",
+        ":logger",
+        ":record_schema_resolver",
+        ":record_translator",
+        "//src/v/base",
+        "//src/v/storage:parser_utils",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":partitioning_writer",
+        ":schema_identifier",
+        ":writer",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "record_schema_resolver",
     srcs = [
         "record_schema_resolver.cc",
@@ -325,6 +355,38 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "record_translator",
+    srcs = [
+        "record_translator.cc",
+    ],
+    hdrs = [
+        "record_translator.h",
+    ],
+    implementation_deps = [
+        ":conversion_outcome",
+        ":logger",
+        ":schema_registry",
+        ":table_definition",
+        ":values_protobuf",
+        "//src/v/iceberg:avro_utils",
+        "//src/v/iceberg:values",
+        "//src/v/iceberg:values_avro",
+        "@avro",
+        "@protobuf",
+        "@seastar",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":record_schema_resolver",
+        ":schema_identifier",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/model",
     ],
 )
 
