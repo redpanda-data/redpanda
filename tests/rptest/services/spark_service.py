@@ -32,7 +32,8 @@ class SparkService(Service, QueryEngineBase):
         --conf spark.sql.catalog.redpanda-iceberg-catalog.type=rest \
         --conf spark.sql.catalog.redpanda-iceberg-catalog.uri={catalog} \
         --conf spark.sql.catalog.redpanda-iceberg-catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO \
-        --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={s3}
+        --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={s3} \
+        --conf spark.sql.catalog.redpanda-iceberg-catalog.cache-enabled=false
     """
 
     def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
