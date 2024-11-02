@@ -14,6 +14,7 @@
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
 #include "model/record.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/future.hh>
 
@@ -47,6 +48,7 @@ public:
     ss::future<result<write_result, data_writer_error>> end_of_stream();
 
 private:
+    prefix_logger _log;
     const model::ntp& _ntp;
     std::unique_ptr<data_writer_factory> _writer_factory;
     schema_manager& _schema_mgr;

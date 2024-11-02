@@ -28,7 +28,8 @@ record_multiplexer::record_multiplexer(
   std::unique_ptr<data_writer_factory> writer_factory,
   schema_manager& schema_mgr,
   type_resolver& type_resolver)
-  : _ntp(ntp)
+  : _log(datalake_log, fmt::format("{}", ntp))
+  , _ntp(ntp)
   , _writer_factory{std::move(writer_factory)}
   , _schema_mgr(schema_mgr)
   , _type_resolver(type_resolver) {}
@@ -104,9 +105,8 @@ record_multiplexer::operator()(model::record_batch batch) {
                 case schema_manager::errc::failed:
                 case schema_manager::errc::shutting_down:
                     vlog(
-                      datalake_log.warn,
-                      "[{}] Error getting field IDs for record {}: {}",
-                      _ntp,
+                      _log.warn,
+                      "Error getting field IDs for record {}: {}",
                       offset,
                       get_ids_res.error());
                     _error = data_writer_error::parquet_conversion_error;
@@ -136,9 +136,8 @@ record_multiplexer::operator()(model::record_batch batch) {
 
         if (write_result != data_writer_error::ok) {
             vlog(
-              datalake_log.warn,
-              "[{}] Error adding data to writer for record {}: {}",
-              _ntp,
+              _log.warn,
+              "Error adding data to writer for record {}: {}",
               offset,
               write_result);
             _error = write_result;
