@@ -242,7 +242,7 @@ RUN /polaris && rm /polaris
 #################################
 
 FROM base as iceberg-rest
-COPY --chown=0:0 tests/java/iceberg-rest /opt/iceberg-rest-catalog
+COPY --chown=0:0 tests/java/iceberg-rest-catalog /opt/redpanda-tests/java/iceberg-rest-catalog
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/iceberg-rest-catalog /
 RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
 

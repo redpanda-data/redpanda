@@ -26,7 +26,7 @@ class IcebergRESTCatalog(Service):
 
     PERSISTENT_ROOT = "/var/lib/iceberg_rest/"
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "iceberg_rest_server.log")
-    JAR = "iceberg-rest-image-all.jar"
+    JAR = "iceberg-rest-catalog-all.jar"
     JAR_PATH = f"/opt/iceberg-rest-catalog/build/libs/{JAR}"
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
 
