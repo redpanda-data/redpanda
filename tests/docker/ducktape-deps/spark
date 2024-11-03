@@ -16,7 +16,7 @@ rm ${SPARK_FILE}
 # The versions are carefully checked for compatibility, think twice before changing
 # them :-)
 
-mvn -f /opt/spark-iceberg-dependencies/pom.xml -DoutputDirectory=/opt/spark/jars dependency:copy-dependencies
+mvn -f /opt/redpanda-tests/java/spark-iceberg-dependencies -DoutputDirectory=/opt/spark/jars dependency:copy-dependencies
 
 HADOOP_DEPS=(
     https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar
