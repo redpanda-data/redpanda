@@ -255,7 +255,7 @@ RUN /trino && rm /trino
 #################################
 
 FROM base as spark 
-COPY --chown=0:0 tests/java/spark-iceberg-dependencies /opt/spark-iceberg-dependencies
+COPY --chown=0:0 tests/java/spark-iceberg-dependencies /opt/redpanda-tests/java/spark-iceberg-dependencies
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/spark /
 RUN /spark && rm /spark
 
