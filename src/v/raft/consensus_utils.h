@@ -168,7 +168,7 @@ auto for_each_ref_extract_configuration(
 
         ReferenceConsumer wrapped;
         model::offset next_offset;
-        std::vector<offset_configuration> configurations;
+        chunked_vector<offset_configuration> configurations;
     };
 
     return std::move(rdr).for_each_ref(

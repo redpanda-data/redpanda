@@ -169,8 +169,8 @@ void configuration_manager::add_configuration(
     }
 }
 
-ss::future<>
-configuration_manager::add(std::vector<offset_configuration> configurations) {
+ss::future<> configuration_manager::add(
+  chunked_vector<offset_configuration> configurations) {
     return _lock.with([this,
                        configurations = std::move(configurations)]() mutable {
         for (auto& co : configurations) {

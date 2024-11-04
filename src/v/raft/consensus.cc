@@ -2835,7 +2835,7 @@ ss::future<storage::append_result> consensus::disk_append(
              consumer(_log->make_appender(cfg)),
              cfg.timeout)
       .then([this, should_update_last_quorum_idx](
-              std::tuple<ret_t, std::vector<offset_configuration>> t) {
+              std::tuple<ret_t, chunked_vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
           _pending_flush_bytes += ret.byte_size;
           if (should_update_last_quorum_idx) {
