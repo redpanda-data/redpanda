@@ -7,13 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from typing import Any, Optional
+from typing import Any
 from rptest.clients.rpk import RpkTool, TopicSpec
-from rptest.services.spark_service import SparkService
-from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from ducktape.utils.util import wait_until
+from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
 
 class DatalakeServicesBase(IcebergRESTCatalogTest):
@@ -23,6 +23,9 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
     def __init__(self,
                  test_ctx,
                  filesystem_catalog_mode=True,
+                 include_query_engines: list[QueryEngineType] = [
+                     QueryEngineType.SPARK, QueryEngineType.TRINO
+                 ],
                  *args,
                  **kwargs):
         super(DatalakeServicesBase,
@@ -34,29 +37,33 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
                              *args,
                              **kwargs)
         self.test_ctx = test_ctx
-        self.filesystem_catalog_mode = filesystem_catalog_mode
-        self.spark: Optional[SparkService] = None
-        self.trino: Optional[TrinoService] = None
+        self.catalog_service.set_filesystem_wrapper_mode(
+            filesystem_catalog_mode)
+        self.included_query_engines = include_query_engines
+        # To be populated later once we have the URI of the catalog
+        # available
+        self.query_engines = []
 
     def setUp(self):
-        self.catalog_service.set_filesystem_wrapper_mode(
-            self.filesystem_catalog_mode)
         super().setUp()
-        self.spark = SparkService(self.test_ctx,
-                                  str(self.catalog_service.catalog_url),
-                                  self.redpanda.si_settings)
-        self.spark.start()
-        self.trino = TrinoService(self.test_ctx,
-                                  str(self.catalog_service.catalog_url),
-                                  self.redpanda.si_settings)
-        self.trino.start()
+        for engine in self.included_query_engines:
+            svc_cls = get_query_engine_by_type(engine)
+            svc = svc_cls(self.test_ctx, str(self.catalog_service.catalog_url),
+                          self.redpanda.si_settings)
+            svc.start()
+            self.query_engines.append(svc)
 
     def tearDown(self):
-        if self.spark:
-            self.spark.stop()
-        if self.trino:
-            self.trino.stop()
+        for engine in self.query_engines:
+            engine.stop()
         return super().tearDown()
+
+    def __enter__(self):
+        self.setUp()
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.tearDown()
 
     def create_iceberg_enabled_topic(self,
                                      name,
@@ -99,11 +106,10 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
         table_name = f"redpanda.{topic}"
 
         def translation_done():
-            assert self.spark
-            assert self.trino
-            return self.spark.count_table(
-                table_name) >= msg_count and self.trino.count_table(
-                    table_name) >= msg_count
+            return all([
+                engine.count_table(table_name) == msg_count
+                for engine in self.query_engines
+            ])
 
         wait_until(
             translation_done,
