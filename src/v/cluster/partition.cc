@@ -13,6 +13,8 @@
 #include "cloud_storage/partition_manifest_downloader.h"
 #include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote_partition.h"
+#include "cloud_topics/dl_stm/dl_stm.h"
+#include "cloud_topics/dl_stm/dl_stm_api.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/archival/upload_housekeeping_service.h"
@@ -363,6 +365,10 @@ ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
     return _rm_stm;
 }
 
+ss::shared_ptr<experimental::cloud_topics::dl_stm_api> partition::dl_stm_api() {
+    return _dl_stm_api;
+}
+
 namespace {
 template<class Units, class StagesFutureFunc>
 ss::future<result<kafka_result>> stages_with_units_helper(
@@ -530,6 +536,13 @@ ss::future<> partition::start(
         if (_archiver) {
             co_await _archiver->start();
         }
+    }
+
+    auto dl_stm
+      = _raft->stm_manager()->get<experimental::cloud_topics::dl_stm>();
+    if (dl_stm) {
+        _dl_stm_api = ss::make_shared<experimental::cloud_topics::dl_stm_api>(
+          clusterlog, std::move(dl_stm));
     }
 }
 

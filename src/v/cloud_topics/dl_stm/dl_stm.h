@@ -9,11 +9,18 @@
 
 #pragma once
 
+#include "cloud_topics/dl_stm/dl_stm_state.h"
 #include "raft/persisted_stm.h"
 
 namespace experimental::cloud_topics {
 
+// Avoid leaking the api class details to the header.
+class dl_stm_api;
+
 class dl_stm final : public raft::persisted_stm<> {
+    // Allow the api class to access the private state of the stm.
+    friend class dl_stm_api;
+
 public:
     static constexpr const char* name = "dl_stm";
 
@@ -29,6 +36,9 @@ private:
 
     ss::future<> apply_raft_snapshot(const iobuf&) override;
     ss::future<iobuf> take_snapshot(model::offset) override;
+
+private:
+    dl_stm_state _state;
 };
 
 } // namespace experimental::cloud_topics

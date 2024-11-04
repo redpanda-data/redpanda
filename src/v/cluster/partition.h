@@ -29,6 +29,10 @@
 
 #include <seastar/core/shared_ptr.hh>
 
+namespace experimental::cloud_topics {
+class dl_stm_api;
+};
+
 namespace cluster {
 class partition_manager;
 
@@ -200,6 +204,8 @@ public:
     get_offset_translator_state() const;
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();
+
+    ss::shared_ptr<experimental::cloud_topics::dl_stm_api> dl_stm_api();
 
     size_t size_bytes() const;
 
@@ -378,6 +384,7 @@ private:
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<archival_metadata_stm> _archival_meta_stm;
     ss::shared_ptr<partition_properties_stm> _partition_properties_stm;
+    ss::shared_ptr<experimental::cloud_topics::dl_stm_api> _dl_stm_api;
     ss::abort_source _as;
     partition_probe _probe;
     ss::sharded<features::feature_table>& _feature_table;
