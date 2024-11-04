@@ -262,7 +262,7 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
      */
     if (migrations_table::is_empty_migration(migration)) {
         vlog(dm_log.warn, "data migration can not be empty.");
-        co_return make_error_code(errc::data_migration_invalid_resources);
+        co_return make_error_code(errc::data_migration_invalid_definition);
     }
 
     auto v_err = _table.local().validate_migrated_resources(migration);
@@ -273,7 +273,7 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
           "data migration {} validation error - {}",
           migration,
           v_err.value());
-        co_return make_error_code(errc::data_migration_invalid_resources);
+        co_return v_err->ec();
     }
 
     auto id = _table.local().get_next_id();

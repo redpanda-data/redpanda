@@ -18,11 +18,31 @@
 #include "cluster/topic_table.h"
 #include "container/fragmented_vector.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/util/variant_utils.hh>
 
+#include <optional>
 #include <ranges>
 
+fmt::appender
+fmt::formatter<cluster::data_migrations::migrations_table::validation_error>::
+  format(
+    const cluster::data_migrations::migrations_table::validation_error& e,
+    fmt::format_context& ctx) const {
+    auto str = fmt::format("{{}}", e._message);
+    return fmt::formatter<std::string_view>::format(str, ctx);
+};
+
 namespace cluster::data_migrations {
+
+migrations_table::validation_error::validation_error(
+  errc ec, ss::sstring details)
+  : _ec(ec)
+  , _message(std::move(details)) {};
+
+std::error_code migrations_table::validation_error::ec() const {
+    return make_error_code(_ec);
+}
 
 migrations_table::migrations_table(
   ss::sharded<migrated_resources>& resources,
@@ -172,13 +192,13 @@ migrations_table::apply(create_data_migration_cmd cmd) {
      * We do not allow to create empty data migrations
      */
     if (is_empty_migration(migration)) {
-        co_return errc::data_migration_invalid_resources;
+        co_return errc::data_migration_invalid_definition;
     }
 
     auto err = validate_migrated_resources(migration);
     if (err) {
         vlog(dm_log.info, "migration validation error: {}", err.value());
-        co_return errc::data_migration_invalid_resources;
+        co_return err->ec();
     }
 
     auto [it, success] = _migrations.try_emplace(
@@ -208,7 +228,7 @@ migrations_table::validate_migrated_resources(
   const data_migration& migration) const {
     // cloud_storage_api is checked on startup
     if (!_enabled) {
-        return validation_error{"cloud storage disabled"};
+        return {{errc::data_migrations_disabled, "cloud storage disabled"}};
     }
 
     return ss::visit(migration, [this](const auto& migration) {
@@ -221,22 +241,29 @@ migrations_table::validate_migrated_resources(
   const inbound_migration& idm) const {
     for (const auto& t : idm.topics) {
         if (_topics.local().contains(t.effective_topic_name())) {
-            return validation_error{ssx::sformat(
-              "topic with name {} already exists in this cluster",
-              t.effective_topic_name())};
+            return {
+              {errc::topic_already_exists,
+               ssx::sformat(
+                 "topic with name {} already exists in this cluster",
+                 t.effective_topic_name())}};
         }
 
         if (_resources.local().is_already_migrated(t.effective_topic_name())) {
-            return validation_error{ssx::sformat(
-              "topic with name {} is already part of active migration",
-              t.effective_topic_name())};
+            return {
+              {errc::resource_is_being_migrated,
+               ssx::sformat(
+                 "topic with name {} is already part of active migration",
+                 t.effective_topic_name())}};
         }
     }
 
     for (const auto& group : idm.groups) {
         if (_resources.local().is_already_migrated(group)) {
-            return validation_error{ssx::sformat(
-              "group with name {} is already part of active migration", group)};
+            return {
+              {errc::resource_is_being_migrated,
+               ssx::sformat(
+                 "group with name {} is already part of active migration",
+                 group)}};
         }
     }
 
@@ -248,35 +275,46 @@ migrations_table::validate_migrated_resources(
   const outbound_migration& odm) const {
     for (const auto& t : odm.topics) {
         if (t.ns != model::kafka_namespace) {
-            return validation_error{ssx::sformat(
-              "topic with name {} is not in default namespace, so probably it "
-              "has archiver disabled",
-              t)};
+            return {
+              {errc::data_migration_invalid_resources,
+               ssx::sformat(
+                 "topic with name {} is not in default namespace, so probably "
+                 "it has archiver disabled",
+                 t)}};
         }
 
         auto maybe_topic_cfg = _topics.local().get_topic_cfg(t);
         if (!maybe_topic_cfg) {
-            return validation_error{ssx::sformat(
-              "topic with name {} does not exists in current cluster", t)};
+            return {
+              {errc::topic_not_exists,
+               ssx::sformat(
+                 "topic with name {} does not exists in current cluster", t)}};
         }
 
         if (!model::is_archival_enabled(
               maybe_topic_cfg->properties.shadow_indexing.value_or(
                 model::shadow_indexing_mode::disabled))) {
-            return validation_error{ssx::sformat(
-              "topic with name {} does not have archiving enabled", t)};
+            return {
+              {errc::data_migration_invalid_resources,
+               ssx::sformat(
+                 "topic with name {} does not have archiving enabled", t)}};
         }
 
         if (_resources.local().is_already_migrated(t)) {
-            return validation_error{ssx::sformat(
-              "topic with name {} is already part of active migration", t)};
+            return {
+              {errc::resource_is_being_migrated,
+               ssx::sformat(
+                 "topic with name {} is already part of active migration", t)}};
         }
     }
 
     for (const auto& group : odm.groups) {
         if (_resources.local().is_already_migrated(group)) {
-            return validation_error{ssx::sformat(
-              "group with name {} is already part of active migration", group)};
+            return {
+              {errc::resource_is_being_migrated,
+               ssx::sformat(
+                 "group with name {} is already part of active migration",
+                 group)}};
         }
     }
 
