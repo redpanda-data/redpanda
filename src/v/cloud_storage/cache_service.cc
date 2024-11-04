@@ -1233,6 +1233,7 @@ ss::future<> cache::put(
       ss::this_shard_id(),
       (++_cnt),
       cache_tmp_file_extension));
+    auto tmp_filepath = dir_path / tmp_filename;
 
     ss::file tmp_cache_file;
     while (true) {
@@ -1247,14 +1248,14 @@ ss::future<> cache::put(
                          | ss::open_flags::exclusive;
 
             tmp_cache_file = co_await ss::open_file_dma(
-              (dir_path / tmp_filename).native(), flags);
+              tmp_filepath.native(), flags);
             break;
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
                 vlog(
                   cst_log.debug,
                   "Couldn't open {}, gonna retry",
-                  (dir_path / tmp_filename).native());
+                  tmp_filepath.native());
             } else {
                 throw;
             }
@@ -1297,12 +1298,10 @@ ss::future<> cache::put(
     }
 
     // commit write transaction
-    auto src = (dir_path / tmp_filename).native();
+    auto put_size = co_await ss::file_size(tmp_filepath.native());
+
     auto dest = (dir_path / filename).native();
-
-    auto put_size = co_await ss::file_size(src);
-
-    co_await ss::rename_file(src, dest);
+    co_await ss::rename_file(tmp_filepath.native(), dest);
 
     // We will now update
     reservation.wrote_data(put_size, 1);
