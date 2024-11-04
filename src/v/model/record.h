@@ -25,6 +25,7 @@
 #include "serde/rw/iobuf.h"
 #include "serde/rw/rw.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>
 
@@ -36,6 +37,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <variant>
 #include <vector>
@@ -899,6 +901,13 @@ public:
                       header, std::move(records), tag_ctor_ng()};
                 });
           });
+    }
+
+    static model::record_batch make_foreign(record_batch&& r) {
+        auto r_records = iobuf_make_foreign(
+          ss::make_foreign(std::make_unique<iobuf>(std::move(r._records))));
+
+        return {r._header, std::move(r_records), r._compressed};
     }
 
 private:

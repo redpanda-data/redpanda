@@ -164,7 +164,7 @@ replicate_batcher::do_cache_with_backpressure(
         if (b.header().ctx.owner_shard == ss::this_shard_id()) {
             data.push_back(std::move(b));
         } else {
-            data.push_back(b.copy());
+            data.push_back(model::record_batch::make_foreign(std::move(b)));
         }
     }
     auto i = ss::make_lw_shared<item>(

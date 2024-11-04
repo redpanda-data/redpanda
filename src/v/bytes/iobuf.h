@@ -22,6 +22,7 @@
 #include "container/intrusive_list_helpers.h"
 
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/core/sharded.hh>
 
 #include <cstddef>
 #include <iosfwd>
@@ -463,3 +464,4 @@ inline void iobuf::trim_back(size_t n) {
 }
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
+iobuf iobuf_make_foreign(ss::foreign_ptr<std::unique_ptr<iobuf>> orig);

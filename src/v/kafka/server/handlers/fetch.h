@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "bytes/iobuf.h"
 #include "cluster/rm_stm.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
@@ -312,11 +313,7 @@ struct read_result {
         return ss::visit(
           data,
           [](data_t& d) { return std::move(*d); },
-          [](foreign_data_t& d) {
-              auto ret = d->copy();
-              d.reset();
-              return ret;
-          });
+          [](foreign_data_t& d) { return iobuf_make_foreign(std::move(d)); });
     }
 
     variant_t data;

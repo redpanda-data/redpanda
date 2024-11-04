@@ -11,8 +11,10 @@
 
 #include "base/vassert.h"
 #include "bytes/details/io_allocation_size.h"
+#include "bytes/details/io_fragment.h"
 
 #include <seastar/core/bitops.hh>
+#include <seastar/core/deleter.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
@@ -20,6 +22,7 @@
 #include <cstddef>
 #include <iostream>
 #include <limits>
+#include <memory>
 
 std::ostream& operator<<(std::ostream& o, const iobuf& io) {
     return o << "{bytes=" << io.size_bytes()
@@ -29,6 +32,20 @@ std::ostream& operator<<(std::ostream& o, const iobuf& io) {
 iobuf iobuf::copy() const {
     auto in = iobuf::iterator_consumer(cbegin(), cend());
     return iobuf_copy(in, _size);
+}
+
+iobuf iobuf_make_foreign(ss::foreign_ptr<std::unique_ptr<iobuf>> orig) {
+    iobuf ret{};
+    auto& frags = *orig;
+    auto d = ss::make_deleter([fb = std::move(orig)]() {});
+
+    for (auto& frag : frags) {
+        ret.append(
+          std::make_unique<details::io_fragment>(ss::temporary_buffer<char>(
+            frag.get_write(), frag.size(), d.share())));
+    }
+
+    return ret;
 }
 
 iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
