@@ -1,6 +1,6 @@
 ---
 Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,hicpp-*,modernize-*,performance-*,misc-*,bugprone-*,-modernize-use-trailing-return-type,-modernize-use-nodiscard,-hicpp-named-parameter,-misc-include-cleaner,-clang-analyzer-optin.core.EnumCastOutOfRange'
-WarningsAsErrors: ''
+WarningsAsErrors: 'cppcoreguidelines-avoid-capturing-lambda-coroutines,bugprone-use-after-move,bugprone-assert-side-effect,bugprone-assignment-in-if-condition,bugprone-dangling-handle,bugprone-sizeof-container,bugprone-stringview-nullptr,bugprone-unused-return-value,bugprone-suspicious-string-compare,misc-unused-using-decls,misc-unused-alias-decls,modernize-redundant-void-arg,performance-implicit-conversion-in-loop,performance-trivially-destructible,performance-no-automatic-move'
 HeaderFilterRegex: '^(?!external/.*).*'
 FormatStyle:    file
 CheckOptions:
