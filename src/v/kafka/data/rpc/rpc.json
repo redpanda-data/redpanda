@@ -1,0 +1,14 @@
+{
+    "namespace": "kafka::data::rpc::impl",
+    "service_name": "kafka_data_rpc",
+    "includes": [
+        "kafka/data/rpc/serde.h"
+    ],
+    "methods": [
+        {
+            "name": "produce",
+            "input_type": "produce_request",
+            "output_type": "produce_reply"
+        }
+    ]
+}
