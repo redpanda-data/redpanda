@@ -390,6 +390,7 @@ redpanda_cc_btest(
         "//src/v/bytes:random",
         "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:iostream",
         "//src/v/utils:stream_utils",
         "@boost//:test",
         "@seastar",
