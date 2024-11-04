@@ -1289,33 +1289,36 @@ ss::future<> cache::put(
     options.io_priority_class = io_priority;
     auto out = co_await ss::make_file_output_stream(tmp_cache_file, options);
 
-    std::exception_ptr disk_full_error;
+    std::exception_ptr eptr;
+    bool no_space_on_device = false;
     try {
         co_await ss::copy(data, out)
           .then([&out]() { return out.flush(); })
           .finally([&out]() { return out.close(); });
     } catch (const std::filesystem::filesystem_error& e) {
         // For ENOSPC errors, delay handling so that we can do a trim
-        if (e.code() == std::errc::no_space_on_device) {
-            disk_full_error = std::current_exception();
-        } else {
-            throw;
-        }
+        no_space_on_device = e.code() == std::errc::no_space_on_device;
+        eptr = std::current_exception();
+    } catch (...) {
+        // For other errors, delay handling so that we can clean up the tmp file
+        eptr = std::current_exception();
     }
 
-    if (disk_full_error) {
-        vlog(cst_log.error, "Out of space while writing to cache");
+    if (eptr) {
+        if (no_space_on_device) {
+            vlog(cst_log.error, "Out of space while writing to cache");
 
-        // Block further puts from being attempted until notify_disk_status
-        // reports that there is space available.
-        set_block_puts(true);
+            // Block further puts from being attempted until notify_disk_status
+            // reports that there is space available.
+            set_block_puts(true);
 
-        // Trim proactively: if many fibers hit this concurrently,
-        // they'll contend for cleanup_sm and the losers will skip
-        // trim due to throttling.
-        co_await trim_throttled();
+            // Trim proactively: if many fibers hit this concurrently,
+            // they'll contend for cleanup_sm and the losers will skip
+            // trim due to throttling.
+            co_await trim_throttled();
+        }
 
-        std::rethrow_exception(disk_full_error);
+        std::rethrow_exception(eptr);
     }
 
     // commit write transaction
