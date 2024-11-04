@@ -17,6 +17,7 @@ if(REDPANDA_RUN_CLANG_TIDY)
     endif()
     set(clang_tidy_checks
         -*
+        cppcoreguidelines-avoid-capturing-lambda-coroutines
         bugprone-use-after-move
         bugprone-assert-side-effect
         bugprone-assignment-in-if-condition
