@@ -197,6 +197,7 @@ rp_test(
     v::gtest_main
     v::datalake_writer
     v::iceberg_test_utils
+    v::avro_test_utils
   LABELS datalake
   ARGS "-- -c 1"
 )
