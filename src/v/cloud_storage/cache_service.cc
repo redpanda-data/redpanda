@@ -27,6 +27,7 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <cloud_storage/cache_service.h>
@@ -1304,7 +1305,23 @@ ss::future<> cache::put(
         eptr = std::current_exception();
     }
 
+    // If we failed to write to the tmp file, we should delete it, maybe do an
+    // eager trim, and rethrow the exception.
     if (eptr) {
+        if (!_gate.is_closed()) {
+            auto delete_tmp_fut = co_await ss::coroutine::as_future(
+              delete_file_and_empty_parents(tmp_filepath.native()));
+            if (
+              delete_tmp_fut.failed()
+              && !ssx::is_shutdown_exception(delete_tmp_fut.get_exception())) {
+                vlog(
+                  cst_log.error,
+                  "Failed to delete tmp file {}: {}",
+                  tmp_filepath.native(),
+                  delete_tmp_fut.get_exception());
+            }
+        }
+
         if (no_space_on_device) {
             vlog(cst_log.error, "Out of space while writing to cache");
 

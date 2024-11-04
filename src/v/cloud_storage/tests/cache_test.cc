@@ -496,10 +496,8 @@ FIXTURE_TEST(test_clean_up_on_stream_exception, cache_test_fixture) {
     BOOST_CHECK_EQUAL(sharded_cache.local().get_usage_bytes(), 0);
     BOOST_CHECK_EQUAL(sharded_cache.local().get_usage_objects(), 0);
 
-    // TODO: This is not expected behavior. The temporary file should be cleaned
-    // up on exception.
     vlog(test_log.info, "Counting files in cache directory");
-    BOOST_CHECK_EQUAL(count_files(CACHE_DIR.native()).get(), 1);
+    BOOST_CHECK_EQUAL(count_files(CACHE_DIR.native()).get(), 0);
 
     vlog(test_log.info, "Test passed");
 }
