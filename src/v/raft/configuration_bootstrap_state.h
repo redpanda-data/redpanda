@@ -35,10 +35,10 @@ public:
     model::term_id term() const { return _term; }
     model::offset prev_log_index() const { return _prev_log_index; }
     model::term_id prev_log_term() const { return _prev_log_term; }
-    const std::vector<raft::offset_configuration>& configurations() const {
+    const chunked_vector<raft::offset_configuration>& configurations() const {
         return _configurations;
     }
-    std::vector<raft::offset_configuration> release_configurations() && {
+    chunked_vector<raft::offset_configuration> release_configurations() && {
         return std::move(_configurations);
     }
     void set_term(model::term_id t) { _term = t; }
@@ -76,7 +76,7 @@ private:
     model::term_id _term{0};
     model::offset _prev_log_index{0};
     model::term_id _prev_log_term{0};
-    std::vector<raft::offset_configuration> _configurations;
+    chunked_vector<raft::offset_configuration> _configurations;
 
     // we need to keep track of what we have processed in case we re-reprocess a
     // multiple segments
