@@ -42,22 +42,13 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
         self.catalog_service.set_filesystem_wrapper_mode(
             self.filesystem_catalog_mode)
         super().setUp()
-        si = self.redpanda.si_settings
-        self.spark = SparkService(
-            self.test_ctx,
-            iceberg_catalog_rest_uri=str(self.catalog_service.catalog_url),
-            cloud_storage_access_key=str(si.cloud_storage_access_key),
-            cloud_storage_secret_key=str(si.cloud_storage_secret_key),
-            cloud_storage_region=si.cloud_storage_region,
-            cloud_storage_api_endpoint=str(si.endpoint_url))
+        self.spark = SparkService(self.test_ctx,
+                                  str(self.catalog_service.catalog_url),
+                                  self.redpanda.si_settings)
         self.spark.start()
-        self.trino = TrinoService(
-            self.test_ctx,
-            iceberg_catalog_rest_uri=str(self.catalog_service.catalog_url),
-            cloud_storage_access_key=str(si.cloud_storage_access_key),
-            cloud_storage_secret_key=str(si.cloud_storage_secret_key),
-            cloud_storage_region=si.cloud_storage_region,
-            cloud_storage_api_endpoint=str(si.endpoint_url))
+        self.trino = TrinoService(self.test_ctx,
+                                  str(self.catalog_service.catalog_url),
+                                  self.redpanda.si_settings)
         self.trino.start()
 
     def tearDown(self):
@@ -106,33 +97,19 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
                              backoff_sec=5):
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
         table_name = f"redpanda.{topic}"
-        query = f"select count(*) from {table_name}"
-        assert self.spark
-        assert self.trino
-        spark_client = self.spark.make_client()
-        trino_client = self.trino.make_client()
-
-        def event_count(connection):
-            cursor = connection.cursor()
-            try:
-                cursor.execute(query)
-                return cursor.fetchone()[0]
-            finally:
-                cursor.close()
 
         def translation_done():
-            return event_count(spark_client) >= msg_count and event_count(
-                trino_client) >= msg_count
+            assert self.spark
+            assert self.trino
+            return self.spark.count_table(
+                table_name) >= msg_count and self.trino.count_table(
+                    table_name) >= msg_count
 
-        try:
-            wait_until(
-                translation_done,
-                timeout_sec=timeout,
-                backoff_sec=backoff_sec,
-                err_msg=f"Timed out waiting for events to appear in datalake")
-        finally:
-            spark_client.close()
-            trino_client.close()
+        wait_until(
+            translation_done,
+            timeout_sec=timeout,
+            backoff_sec=backoff_sec,
+            err_msg=f"Timed out waiting for events to appear in datalake")
 
     def produce_to_topic(self,
                          topic,

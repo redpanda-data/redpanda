@@ -14,9 +14,12 @@ from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyhive import trino
+from rptest.services.redpanda import SISettings
+from rptest.services.spark_service import QueryEngineBase
+from rptest.tests.datalake.query_engine_base import QueryEngineType
 
 
-class TrinoService(Service):
+class TrinoService(Service, QueryEngineBase):
     """Trino service for querying data generated in datalake."""
 
     TRINO_HOME = "/opt/trino"
@@ -39,20 +42,13 @@ s3.aws-secret-key={s3_secret_key}"""
     TRINO_LOGGING_CONF = "io.trino=INFO\n"
     TRINO_LOGGING_CONF_FILE = "/opt/trino/etc/log.properties"
 
-    def __init__(self,
-                 ctx,
-                 iceberg_catalog_rest_uri: str,
-                 cloud_storage_access_key: str = 'panda-user',
-                 cloud_storage_secret_key: str = 'panda-secret',
-                 cloud_storage_region: str = 'panda-region',
-                 cloud_storage_api_endpoint: str = "http://minio-s3:9000",
-                 node: ClusterNode | None = None):
+    def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
         super(TrinoService, self).__init__(ctx, num_nodes=1)
         self.iceberg_catalog_rest_uri = iceberg_catalog_rest_uri
-        self.cloud_storage_access_key = cloud_storage_access_key
-        self.cloud_storage_secret_key = cloud_storage_secret_key
-        self.cloud_storage_region = cloud_storage_region
-        self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+        self.cloud_storage_access_key = si.cloud_storage_access_key
+        self.cloud_storage_secret_key = si.cloud_storage_secret_key
+        self.cloud_storage_region = si.cloud_storage_region
+        self.cloud_storage_api_endpoint = si.endpoint_url
         self.trino_host: Optional[str] = None
         self.trino_port = 8083
 
@@ -80,19 +76,11 @@ s3.aws-secret-key={s3_secret_key}"""
 
     def wait_node(self, node, timeout_sec=None):
         def _ready():
-            client = self.make_client()
             try:
-                cursor = client.cursor()
-                try:
-                    cursor.execute("show catalogs")
-                    cursor.fetchall()
-                    return True
-                finally:
-                    cursor.close()
+                self.run_query_fetch_all("show catalogs")
+                return True
             except Exception:
                 self.logger.debug(f"Exception querying catalog", exc_info=True)
-            finally:
-                client.close()
             return False
 
         wait_until(_ready,
@@ -109,6 +97,10 @@ s3.aws-secret-key={s3_secret_key}"""
     def clean_node(self, node, **_):
         self.stop_node(node, allow_fail=True)
         node.account.remove(TrinoService.PERSISTENT_ROOT, allow_fail=True)
+
+    @staticmethod
+    def engine_name():
+        return QueryEngineType.TRINO
 
     def make_client(self):
         assert self.trino_host
