@@ -24,6 +24,7 @@ redpanda_test_cc_library(
     include_prefix = "serde/avro/tests",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/v/utils:uuid",
         "@avro",
     ],
 )
