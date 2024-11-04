@@ -524,3 +524,56 @@ class LeadershipPinningTest(RedpandaTest):
         },
                             check_balance=False,
                             timeout_sec=90)
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_leadership_pinning_reporting(self):
+        for ix, node in enumerate(self.redpanda.nodes):
+            self.redpanda.set_extra_node_conf(node, {
+                'rack': self.RACK_LAYOUT[ix],
+            })
+
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda)
+
+        def get_leadership_pinning_status():
+            features = admin.get_enterprise_features().json()['features']
+            for f in features:
+                if f['name'] == "leadership_pinning":
+                    return f['enabled']
+
+        # no default leaders preference and no topic leaders preference
+        self.redpanda.start()
+        rpk.create_topic("foo", partitions=60, replicas=3)
+
+        assert not get_leadership_pinning_status(), \
+                "Leadership pinning reported enabled while is it disabled"
+
+        # no default leaders preference and no topic leaders preference
+        # but topic leaders preference is defined
+        self.redpanda.start()
+        rpk.create_topic("foo",
+                         partitions=60,
+                         replicas=3,
+                         config={"redpanda.leaders.preference": "none"})
+
+        assert not get_leadership_pinning_status(), \
+                "Leadership pinning reported enabled while is it disabled"
+
+        # topic leaders preference defined
+        self.redpanda.start()
+        rpk.create_topic("foo",
+                         partitions=60,
+                         replicas=3,
+                         config={"redpanda.leaders.preference": "racks: C"})
+
+        assert get_leadership_pinning_status(), \
+                "Leadership pinning reported disabled while is it enabled"
+
+        # default leaders preference defined
+        self.redpanda.start()
+        self.redpanda.set_cluster_config(
+            {'default_leaders_preference': "racks: A"})
+        rpk.create_topic("foo", partitions=60, replicas=3)
+
+        assert get_leadership_pinning_status(), \
+                "Leadership pinning reported disabled while is it enabled"

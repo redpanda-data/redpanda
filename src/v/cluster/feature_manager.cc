@@ -228,12 +228,16 @@ feature_manager::report_enterprise_features() const {
       = n_roles >= 2
         || (n_roles == 1 && !_role_store.local().contains(security::default_role));
     auto leadership_pinning_enabled = [&cfg, this]() {
-        if (cfg.default_leaders_preference() != config::leaders_preference{}) {
+        const config::leaders_preference no_leaders_preference{};
+        if (cfg.default_leaders_preference() != no_leaders_preference) {
             return true;
         }
         for (const auto& topic : _topic_table.local().topics_map()) {
-            if (topic.second.get_configuration()
-                  .properties.leaders_preference) {
+            const auto leaders_preference
+              = topic.second.get_configuration().properties.leaders_preference;
+            if (
+              leaders_preference.has_value()
+              && leaders_preference.value() != no_leaders_preference) {
                 return true;
             }
         }
