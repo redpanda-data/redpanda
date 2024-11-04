@@ -296,7 +296,7 @@ TEST(AvroSchema, TestRecordType) {
       iceberg::list_type::create(
         14, iceberg::field_required::yes, iceberg::double_type{})));
     ASSERT_TRUE(
-      field_matches(struct_t.fields[5], 16, "myenum", iceberg::int_type{}));
+      field_matches(struct_t.fields[5], 16, "myenum", iceberg::long_type{}));
 
     iceberg::struct_type union_struct;
     // starts from union_1 as the union_0 is null type which is not represented
