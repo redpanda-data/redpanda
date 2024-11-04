@@ -378,13 +378,29 @@ class DataMigrationsApiTest(RedpandaTest):
     def assure_exactly_one_message(self,
                                    topic_name,
                                    predicate=lambda msg: True):
+        def format_message(msg):
+            if msg is None:
+                return None
+            if msg.error() is not None:
+                return f"{{{msg.error()=}}}"
+            return f"{{{msg.key()=}, {msg.value()=}}}"
+
+        def poll_hard(consumer, timeout):
+            deadline = time.time() + timeout
+            while time.time() <= deadline:
+                msg = consumer.poll(timeout)
+                if msg is not None and msg.error() is None:
+                    break
+                self.logger.warn(f"error polling: {format_message(msg)}")
+            return msg
+
         with self.ck_consumer() as consumer:
             consumer.subscribe([topic_name])
-            msg = consumer.poll(20)
-            self.logger.debug(f"first msg={msg}")
+            msg = poll_hard(consumer, 20)
+            self.logger.debug(f"first msg={format_message(msg)}")
             assert msg.error() is None and predicate(msg)
-            msg = consumer.poll(10)
-            self.logger.debug(f"second msg={msg}")
+            msg = poll_hard(consumer, 10)
+            self.logger.debug(f"second msg={format_message(msg)}")
             assert msg is None
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
