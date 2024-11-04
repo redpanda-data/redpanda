@@ -10,3 +10,4 @@
 chaos:
   included:
       - chaos_tests/
+      - utils/empty_test.py
