@@ -29,8 +29,7 @@ class PartitionMovementMixin():
         return topic.name, partition.id
 
     @staticmethod
-    def _choose_replacement(admin, assignments, allow_no_ops,
-                            node_local_core_assignment):
+    def _choose_replacement(admin, assignments, allow_no_ops):
         """
         Does not produce assignments that contain duplicate nodes. This is a
         limitation in redpanda raft implementation.
@@ -59,7 +58,7 @@ class PartitionMovementMixin():
             if node_id in node_ids(assignments):
                 continue
             replacement = dict(node_id=node_id)
-            if (node_id in orig_node_ids) or (not node_local_core_assignment):
+            if node_id in orig_node_ids:
                 replacement["core"] = \
                     random.randint(0, broker["num_cores"] - 1)
             if not allow_no_ops and replacement in selected:
@@ -70,7 +69,7 @@ class PartitionMovementMixin():
         return selected, replacements
 
     @staticmethod
-    def _get_assignments(admin, topic, partition, with_cores=True):
+    def _get_node_assignments(admin, topic, partition):
         def try_get_partitions():
             try:
                 res = admin.get_partitions(topic, partition)
@@ -84,13 +83,7 @@ class PartitionMovementMixin():
                                 timeout_sec=30,
                                 backoff_sec=1)
 
-        def normalize(a):
-            ret = dict(node_id=a["node_id"])
-            if with_cores:
-                ret["core"] = a["core"]
-            return ret
-
-        return [normalize(a) for a in res["replicas"]]
+        return [dict(node_id=a["node_id"]) for a in res["replicas"]]
 
     @staticmethod
     def _equal_assignments(r0, r1):
@@ -196,21 +189,15 @@ class PartitionMovementMixin():
 
         assert movement_cancelled or movement_finished
 
-    def _do_move_and_verify(self,
-                            topic,
-                            partition,
-                            timeout_sec,
-                            node_local_core_assignment=False):
+    def _do_move_and_verify(self, topic, partition, timeout_sec):
         _, new_assignment = self._dispatch_random_partition_move(
-            topic=topic,
-            partition=partition,
-            node_local_core_assignment=node_local_core_assignment)
+            topic=topic, partition=partition)
 
         self._wait_post_move(topic, partition, new_assignment, timeout_sec)
 
         return (topic, partition, new_assignment)
 
-    def _move_and_verify(self, node_local_core_assignment):
+    def _move_and_verify(self):
         # choose a random topic-partition
         metadata = self.client().describe_topics()
         topic, partition = self._random_partition(metadata)
@@ -221,14 +208,9 @@ class PartitionMovementMixin():
 
         self.logger.info(f"selected topic-partition: {topic}/{partition}")
 
-        self._do_move_and_verify(
-            topic,
-            partition,
-            timeout_sec,
-            node_local_core_assignment=node_local_core_assignment)
+        self._do_move_and_verify(topic, partition, timeout_sec)
 
-    def _replace_replica_set(self, assignments, allow_no_ops, x_core_only,
-                             node_local_core_assignment):
+    def _replace_replica_set(self, assignments, allow_no_ops, x_core_only):
         """
          replaces random number of replicas in `assignments` list of replicas
         
@@ -250,10 +232,7 @@ class PartitionMovementMixin():
             return selected, assignments
 
         selected, replacements = self._choose_replacement(
-            admin,
-            assignments,
-            allow_no_ops=allow_no_ops,
-            node_local_core_assignment=node_local_core_assignment)
+            admin, assignments, allow_no_ops=allow_no_ops)
 
         return selected, replacements
 
@@ -261,35 +240,30 @@ class PartitionMovementMixin():
                                    topic,
                                    partition,
                                    assignments,
-                                   admin=None,
-                                   node_local_core_assignment=False):
+                                   admin=None):
         self.logger.info(
             f"setting assignments for {topic}/{partition}: {assignments}")
 
         if admin is None:
             admin = Admin(self.redpanda)
 
-        if not node_local_core_assignment:
-            admin.set_partition_replicas(topic, partition, assignments)
-        else:
-            admin.set_partition_replicas(topic, partition,
-                                         [{
-                                             "node_id": a["node_id"],
-                                             "core": self.INVALID_CORE,
-                                         } for a in assignments])
+        admin.set_partition_replicas(topic, partition,
+                                     [{
+                                         "node_id": a["node_id"],
+                                         "core": self.INVALID_CORE,
+                                     } for a in assignments])
 
-            for assignment in assignments:
-                if "core" in assignment:
-                    admin.set_partition_replica_core(topic, partition,
-                                                     assignment["node_id"],
-                                                     assignment["core"])
+        for assignment in assignments:
+            if "core" in assignment:
+                admin.set_partition_replica_core(topic, partition,
+                                                 assignment["node_id"],
+                                                 assignment["core"])
 
     def _dispatch_random_partition_move(self,
                                         topic,
                                         partition,
                                         x_core_only=False,
-                                        allow_no_op=True,
-                                        node_local_core_assignment=False):
+                                        allow_no_op=True):
         """
         Request partition replicas to be randomly moved
 
@@ -297,8 +271,7 @@ class PartitionMovementMixin():
         :param x_core_only: when true assignment nodes will not be changed, only cores
         """
         admin = Admin(self.redpanda)
-        assignments = self._get_assignments(
-            admin, topic, partition, with_cores=not node_local_core_assignment)
+        assignments = self._get_node_assignments(admin, topic, partition)
         prev_assignments = assignments.copy()
 
         self.logger.info(
@@ -306,21 +279,16 @@ class PartitionMovementMixin():
 
         # build new replica set by replacing a random assignment, do not allow no ops as we want to have operation to cancel
         selected, replacements = self._replace_replica_set(
-            assignments,
-            x_core_only=x_core_only,
-            allow_no_ops=allow_no_op,
-            node_local_core_assignment=node_local_core_assignment)
+            assignments, x_core_only=x_core_only, allow_no_ops=allow_no_op)
 
         self.logger.info(
             f"chose {len(selected)} replacements for {topic}/{partition}: {selected} -> {replacements}"
         )
 
-        self._set_partition_assignments(
-            topic,
-            partition,
-            assignments,
-            admin=admin,
-            node_local_core_assignment=node_local_core_assignment)
+        self._set_partition_assignments(topic,
+                                        partition,
+                                        assignments,
+                                        admin=admin)
 
         return prev_assignments, assignments
 
