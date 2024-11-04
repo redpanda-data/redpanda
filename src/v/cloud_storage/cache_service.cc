@@ -1314,7 +1314,7 @@ ss::future<> cache::put(
         // trim due to throttling.
         co_await trim_throttled();
 
-        throw disk_full_error;
+        std::rethrow_exception(disk_full_error);
     }
 
     // commit write transaction
