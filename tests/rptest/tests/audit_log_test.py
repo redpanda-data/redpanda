@@ -2211,3 +2211,65 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             lambda record: self.match_api_record(record, "mode", StatusID.
                                                  FAILURE),
             lambda aggregate_count: aggregate_count >= 1, 'API call')
+
+
+class AuditLogTestSanctionMode(AuditLogTestBase):
+    """Validates the behaviour of audit logging under sanctioning mode
+    """
+    def __init__(self, test_context):
+
+        super(AuditLogTestSanctionMode,
+              self).__init__(test_context=test_context,
+                             audit_log_config=AuditLogConfig(num_partitions=1,
+                                                             event_types=[]),
+                             log_config=LoggingConfig('info',
+                                                      logger_levels={
+                                                          'auditing':
+                                                          'trace',
+                                                          'kafka':
+                                                          'trace',
+                                                          'admin_api_server':
+                                                          'trace',
+                                                      }))
+
+        # Disable the built in trial license to trigger "sanctioning mode"
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+
+    @skip_fips_mode
+    @cluster(num_nodes=5)
+    def test_sanctioning_mode(self):
+        self.redpanda.logger.debug(
+            "Verify that auditing continues to work in sanctioning mode")
+        self.modify_audit_event_types(['management'])
+        created_topic = "created_topic"
+        self.super_rpk.create_topic(topic=created_topic)
+
+        self.redpanda.logger.debug(
+            "Verify that consuming the audit log topic is not allowed")
+        with expect_exception(RpkException,
+                              lambda e: 'UNKNOWN_SERVER_ERROR' in e.stderr):
+            self.super_rpk.consume(self.audit_log)
+
+        self.redpanda.search_log_any(
+            "An enterprise license is required to consume the audit log topic")
+
+        self.redpanda.logger.debug(
+            "Install a license to get out of sanctioning mode")
+        self.redpanda.install_license()
+
+        self.redpanda.logger.debug(
+            "Verify that audit log events recorded during sanctioning mode are consumable after a valid license is installed"
+        )
+
+        def matches_topic_creation(record):
+            return record['class_uid'] == 6003 \
+                and record['api']['service']['name'] == self.kafka_rpc_service_name \
+                and {'name': created_topic, 'type': 'topic'} in record['resources']
+
+        records = self.find_matching_record(
+            matches_topic_creation, lambda record_count: record_count >= 1,
+            "Expected to observe a management API event for the topic creation"
+        )
+        assert len(records) > 0, \
+            f'Did not receive any audit records for topic {created_topic}'
