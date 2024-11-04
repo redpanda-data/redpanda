@@ -1102,6 +1102,8 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::invalid_data_migration_state:
         case cluster::errc::data_migration_already_exists:
         case cluster::errc::data_migration_invalid_resources:
+        case cluster::errc::data_migration_invalid_definition:
+        case cluster::errc::data_migrations_disabled:
             throw ss::httpd::bad_request_exception(
               fmt::format("{}", ec.message()));
         case cluster::errc::data_migration_not_exists:
