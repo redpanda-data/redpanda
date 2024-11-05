@@ -30,10 +30,12 @@ public:
     void clear_metrics();
 
 public:
+    void set_log_count(uint32_t log_count) { _log_count = log_count; }
     void housekeeping_log_processed() { ++_housekeeping_log_processed; }
     void urgent_gc_run() { ++_urgent_gc_runs; }
 
 private:
+    uint32_t _log_count = 0;
     uint64_t _urgent_gc_runs = 0;
     uint64_t _housekeeping_log_processed = 0;
 
