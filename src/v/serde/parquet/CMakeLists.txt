@@ -8,6 +8,7 @@ v_cc_library(
     value.cc
     schema.cc
     shredder.cc
+    column_writer.cc
   DEPS
     Seastar::seastar
     v::bytes
