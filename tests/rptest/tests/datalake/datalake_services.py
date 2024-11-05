@@ -9,43 +9,43 @@
 
 from typing import Any
 from rptest.clients.rpk import RpkTool, TopicSpec
-from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
+from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from ducktape.utils.util import wait_until
+from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
 
-class DatalakeServicesBase(IcebergRESTCatalogTest):
-    """All inclusive base class for implementing datalake tests. Includes the
-    boiler plate to enable datalake and bring up related services.
-    """
+class DatalakeServices():
+    """Utility class for implementing datalake tests. Includes the
+    boiler plate to manage dependent services."""
     def __init__(self,
                  test_ctx,
+                 redpanda: RedpandaService,
                  filesystem_catalog_mode=True,
                  include_query_engines: list[QueryEngineType] = [
                      QueryEngineType.SPARK, QueryEngineType.TRINO
-                 ],
-                 *args,
-                 **kwargs):
-        super(DatalakeServicesBase,
-              self).__init__(test_ctx,
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             *args,
-                             **kwargs)
+                 ]):
         self.test_ctx = test_ctx
-        self.catalog_service.set_filesystem_wrapper_mode(
-            filesystem_catalog_mode)
+        self.redpanda = redpanda
+        si_settings = self.redpanda.si_settings
+        assert si_settings
+        self.catalog_service = IcebergRESTCatalog(
+            test_ctx,
+            cloud_storage_bucket=si_settings.cloud_storage_bucket,
+            cloud_storage_access_key=str(si_settings.cloud_storage_access_key),
+            cloud_storage_secret_key=str(si_settings.cloud_storage_secret_key),
+            cloud_storage_region=si_settings.cloud_storage_region,
+            cloud_storage_api_endpoint=str(si_settings.endpoint_url),
+            filesystem_wrapper_mode=filesystem_catalog_mode)
         self.included_query_engines = include_query_engines
         # To be populated later once we have the URI of the catalog
         # available
         self.query_engines = []
 
     def setUp(self):
-        super().setUp()
+        self.catalog_service.start()
         for engine in self.included_query_engines:
             svc_cls = get_query_engine_by_type(engine)
             svc = svc_cls(self.test_ctx, str(self.catalog_service.catalog_url),
@@ -56,7 +56,7 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
     def tearDown(self):
         for engine in self.query_engines:
             engine.stop()
-        return super().tearDown()
+        self.catalog_service.stop()
 
     def __enter__(self):
         self.setUp()
@@ -85,7 +85,7 @@ class DatalakeServicesBase(IcebergRESTCatalogTest):
 
         def table_created():
             namespaces = client.list_namespaces()
-            self.logger.debug(f"namespaces: {namespaces}")
+            self.redpanda.logger.debug(f"namespaces: {namespaces}")
             return (namespace, ) in namespaces and (
                 namespace, table) in client.list_tables(namespace)
 
