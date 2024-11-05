@@ -27,6 +27,7 @@
 #include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log.h"
+#include "storage/log_manager_probe.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
@@ -143,13 +144,16 @@ log_manager::log_manager(
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _trigger_gc_jitter(0s, 5s)
-  , _batch_cache(_config.reclaim_opts) {
+  , _batch_cache(_config.reclaim_opts)
+  , _probe(std::make_unique<log_manager_probe>()) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
         _housekeeping_sem.signal();
     });
 }
+
+log_manager::~log_manager() = default;
 
 ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
     auto clean_segment = co_await log->close();
@@ -171,6 +175,7 @@ ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
 }
 
 ss::future<> log_manager::start() {
+    _probe->setup_metrics();
     if (unlikely(config::shard_local_cfg()
                    .log_disable_housekeeping_for_tests.value())) {
         co_return;
@@ -195,6 +200,8 @@ ss::future<> log_manager::stop() {
         co_await _compaction_hash_key_map->initialize(0);
         _compaction_hash_key_map.reset();
     }
+
+    _probe->clear_metrics();
 }
 
 /**
