@@ -15,6 +15,8 @@
 
 #include <seastar/core/future.hh>
 
+#include <absl/functional/function_ref.h>
+
 namespace serde::parquet {
 
 // A shredded value that has an assigned repetition level

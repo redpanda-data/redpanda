@@ -18,7 +18,6 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
-        "//src/v/utils:uuid",
         "@seastar",
     ],
 )
@@ -38,7 +37,6 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
         "//src/v/serde/thrift:compact",
-        "//src/v/utils:uuid",
         "//src/v/utils:vint",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@seastar",
@@ -58,9 +56,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
-        "//src/v/utils:base64",
-        "//src/v/utils:uuid",
-        "@abseil-cpp//absl/numeric:int128",
+        "@abseil-cpp//absl/strings",
         "@seastar",
     ],
 )
@@ -97,6 +93,7 @@ redpanda_cc_library(
         ":value",
         "//src/v/base",
         "@boost//:range",
+        "@abseil-cpp//absl/functional:function_ref",
         "@seastar",
     ],
 )
