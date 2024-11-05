@@ -25,6 +25,9 @@ class IcebergCatalogMode(str, Enum):
     # Redpanda writes using filesystem_catalog_impl
     FILESYSTEM = 'filesystem'
 
+    def __repr__(self):
+        return self.value
+
 
 class IcebergRESTCatalog(Service):
     """A Iceberg REST service compatible with minio. This service is a thin REST wrapper over 
