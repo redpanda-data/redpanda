@@ -1099,3 +1099,19 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "avro_decimal",
+    srcs = [
+    ],
+    hdrs = [
+        "avro_decimal.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "@abseil-cpp//absl/numeric:int128",
+    ],
+)

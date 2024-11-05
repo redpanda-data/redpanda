@@ -469,9 +469,11 @@ redpanda_cc_gtest(
     deps = [
         ":test_schemas",
         ":value_generator",
+        "//src/v/iceberg:avro_decimal",
         "//src/v/iceberg:schema_avro",
         "//src/v/iceberg:values",
         "//src/v/iceberg:values_avro",
+        "//src/v/random:generators",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],
