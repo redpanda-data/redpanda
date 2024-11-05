@@ -86,8 +86,8 @@ struct value_collector {
 };
 
 MATCHER_P3(IsVal, val, r, d, "") {
-    return fmt::format("{}", arg.val) == val && r == arg.rep_level
-           && d == arg.def_level;
+    return fmt::format("{}", arg.val) == val && r == arg.rep_level()
+           && d == arg.def_level();
 }
 
 } // namespace

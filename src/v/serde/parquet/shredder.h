@@ -25,8 +25,8 @@ namespace serde::parquet {
 struct shredded_value {
     int32_t schema_element_position;
     value val;
-    uint8_t rep_level;
-    uint8_t def_level;
+    rep_level rep_level;
+    def_level def_level;
 };
 
 // Preform the dremel record shredding algoritm on this struct,

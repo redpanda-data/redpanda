@@ -46,7 +46,7 @@ public:
     // nodes.
     //
     // Use `shred_record` to get the value and levels from an arbitrary value.
-    void add(value val, uint8_t rep_level, uint8_t def_level);
+    void add(value, rep_level, def_level);
 
     // Flush the currently buffered values to a page.
     //

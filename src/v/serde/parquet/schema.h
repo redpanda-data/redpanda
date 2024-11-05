@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "container/fragmented_vector.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -21,6 +22,9 @@
 #include <variant>
 
 namespace serde::parquet {
+
+using def_level = named_type<int16_t, struct def_level_tag>;
+using rep_level = named_type<int16_t, struct rep_level_tag>;
 
 struct bool_type {
     bool operator==(const bool_type&) const = default;
@@ -283,7 +287,7 @@ struct schema_element {
      * heirarchy of schema nodes. See shredder.h for more on definition level
      * and how it's computed.
      */
-    int16_t max_definition_level = -1;
+    def_level max_definition_level = def_level(-1);
 
     /**
      * The maximum repetition level for this node.
@@ -292,7 +296,7 @@ struct schema_element {
      * value heirarchy of (possibility repeated) schema nodes. See shredder.h
      * for more on repetition level and how it's computed.
      */
-    int16_t max_repetition_level = -1;
+    rep_level max_repetition_level = rep_level(-1);
 
     /**
      * A simple depth first traversal of the schema.

@@ -62,8 +62,8 @@ schema_element indexed_group_node(
       .repetition_type = rep_type,
       .name = std::move(name),
       .children = std::move(children),
-      .max_definition_level = info.def_level,
-      .max_repetition_level = info.rep_level,
+      .max_definition_level = def_level(info.def_level),
+      .max_repetition_level = rep_level(info.rep_level),
     };
 }
 
@@ -79,8 +79,8 @@ schema_element indexed_leaf_node(
       .repetition_type = rep_type,
       .name = std::move(name),
       .logical_type = ltype,
-      .max_definition_level = info.def_level,
-      .max_repetition_level = info.rep_level,
+      .max_definition_level = def_level(info.def_level),
+      .max_repetition_level = rep_level(info.rep_level),
     };
 }
 } // namespace

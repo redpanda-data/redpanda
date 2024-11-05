@@ -186,9 +186,11 @@ class LevelEncoding
 
 TEST_P(LevelEncoding, CanEncode) {
     auto testcase = GetParam();
-    chunked_vector<uint8_t> levels(
-      testcase.levels.begin(), testcase.levels.end());
-    uint8_t max_value = 0;
+    chunked_vector<rep_level> levels;
+    for (uint8_t l : testcase.levels) {
+        levels.emplace_back(static_cast<int16_t>(l));
+    }
+    rep_level max_value = rep_level(0);
     if (!levels.empty()) {
         max_value = *std::ranges::max_element(levels);
     }

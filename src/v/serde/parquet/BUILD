@@ -18,6 +18,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
+        "//src/v/utils:named_type",
         "@seastar",
     ],
 )
@@ -71,6 +72,7 @@ redpanda_cc_library(
     ],
     include_prefix = "serde/parquet",
     deps = [
+        ":schema",
         ":value",
         "//src/v/base",
         "//src/v/bytes:iobuf",

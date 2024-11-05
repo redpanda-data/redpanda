@@ -93,13 +93,29 @@ iobuf encode_plain(chunked_vector<fixed_byte_array_value> vals) {
     return buf;
 }
 
-iobuf encode_levels(uint8_t max_value, const chunked_vector<uint8_t>& levels) {
-    size_t bit_width = std::bit_width(max_value);
+namespace {
+
+template<typename level_type>
+void write_level_value(iobuf& buf, size_t max_bit_width, level_type val) {
+    if (max_bit_width > CHAR_WIDTH) {
+        auto v = ss::cpu_to_le(val());
+        // NOLINTNEXTLINE(*reinterpret-cast*)
+        buf.append(reinterpret_cast<uint8_t*>(&v), 2);
+    } else {
+        auto v = static_cast<uint8_t>(val());
+        buf.append(&v, 1);
+    }
+}
+
+template<typename level_type>
+iobuf encode_levels_impl(
+  level_type max_value, const chunked_vector<level_type>& levels) {
+    size_t bit_width = std::bit_width(static_cast<uint16_t>(max_value()));
     iobuf buf;
     if (bit_width == 0) {
         bytes len = unsigned_vint::to_bytes(levels.size() << 1U);
         buf.append(len.data(), len.size());
-        buf.append(&max_value, sizeof(uint8_t));
+        write_level_value(buf, bit_width, max_value);
         return buf;
     }
     auto it = levels.begin();
@@ -108,15 +124,15 @@ iobuf encode_levels(uint8_t max_value, const chunked_vector<uint8_t>& levels) {
     // encoding can be found in parquet-go, which alternates between bitpacking
     // and run length encoding depending on which encodes better. This tradeoff
     // is also what duckdb does FWIW.
-    uint8_t current_value = *it;
+    level_type current_value = *it;
     uint32_t current_run = 1;
     auto flush = [&]() {
         bytes rl = unsigned_vint::to_bytes(current_run << 1U);
         buf.append(rl.data(), rl.size());
-        buf.append(&current_value, sizeof(uint8_t));
+        write_level_value(buf, bit_width, current_value);
     };
     for (++it; it != levels.end(); ++it) {
-        uint8_t v = *it;
+        level_type v = *it;
         if (v == current_value) {
             ++current_run;
         } else {
@@ -127,6 +143,17 @@ iobuf encode_levels(uint8_t max_value, const chunked_vector<uint8_t>& levels) {
     }
     flush();
     return buf;
+}
+} // namespace
+
+iobuf encode_levels(
+  rep_level max_value, const chunked_vector<rep_level>& levels) {
+    return encode_levels_impl(max_value, levels);
+}
+
+iobuf encode_levels(
+  def_level max_value, const chunked_vector<def_level>& levels) {
+    return encode_levels_impl(max_value, levels);
 }
 
 } // namespace serde::parquet

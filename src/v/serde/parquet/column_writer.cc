@@ -32,7 +32,7 @@ public:
     impl& operator=(impl&&) = default;
     virtual ~impl() = default;
 
-    virtual void add(value val, uint8_t rep_level, uint8_t def_level) = 0;
+    virtual void add(value, rep_level, def_level) = 0;
     virtual data_page flush_page() = 0;
 };
 
@@ -55,15 +55,15 @@ absl::crc32c_t compute_crc32(Args&&... args) {
 template<typename value_type>
 class buffered_column_writer final : public column_writer::impl {
 public:
-    buffered_column_writer(int16_t max_def_level, int16_t max_rep_level)
+    buffered_column_writer(def_level max_def_level, rep_level max_rep_level)
       : _max_rep_level(max_rep_level)
       , _max_def_level(max_def_level) {}
 
-    void add(value val, uint8_t rep_level, uint8_t def_level) override {
+    void add(value val, rep_level rl, def_level dl) override {
         ++_num_values;
         // A repetition level of zero means that it's the start of a new row and
         // not a repeated value within the same row.
-        if (rep_level == 0) {
+        if (rl == rep_level(0)) {
             ++_num_rows;
         }
         ss::visit(
@@ -78,8 +78,8 @@ public:
               throw std::runtime_error(fmt::format(
                 "invalid value for column: {:32}", value(std::move(v))));
           });
-        _rep_levels.push_back(rep_level);
-        _def_levels.push_back(def_level);
+        _rep_levels.push_back(rl);
+        _def_levels.push_back(dl);
     }
 
     data_page flush_page() override {
@@ -128,13 +128,13 @@ public:
 private:
     // TODO: add compression and detailed stats
     chunked_vector<value_type> _value_buffer;
-    chunked_vector<uint8_t> _def_levels;
-    chunked_vector<uint8_t> _rep_levels;
+    chunked_vector<def_level> _def_levels;
+    chunked_vector<rep_level> _rep_levels;
     int32_t _num_rows = 0;
     int32_t _num_nulls = 0;
     int32_t _num_values = 0;
-    int16_t _max_rep_level;
-    int16_t _max_def_level;
+    rep_level _max_rep_level;
+    def_level _max_def_level;
 };
 
 template class buffered_column_writer<boolean_value>;
@@ -192,7 +192,7 @@ column_writer::column_writer(const schema_element& col)
 
 column_writer::~column_writer() = default;
 
-void column_writer::add(value val, uint8_t rep_level, uint8_t def_level) {
+void column_writer::add(value val, rep_level rep_level, def_level def_level) {
     return _impl->add(std::move(val), rep_level, def_level);
 }
 
