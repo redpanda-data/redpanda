@@ -100,7 +100,7 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> || 
+        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> ||
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode> ||
         std::is_same_v<T, config::leaders_preference>;
@@ -310,6 +310,20 @@ override_if_not_default(const std::optional<T>& override, const T& def) {
     } else {
         return std::nullopt;
     }
+}
+
+// This function hides the presence of an override for a `tristate` topic
+// property when its value is {disabled} and the cluster default does not have a
+// value ({std::nullopt}). This helps to ensure the property source is
+// `DEFAULT_CONFIG` for this state, as some `tristate` properties may want their
+// "default" state to be {disabled}.
+template<typename T>
+tristate<T> hide_disabled_tristate(
+  const tristate<T>& topic_override, const std::optional<T>& cluster_default) {
+    if (topic_override.is_disabled() && !cluster_default.has_value()) {
+        return tristate<T>{std::nullopt};
+    }
+    return topic_override;
 }
 
 template<typename T, typename Func>
@@ -793,6 +807,20 @@ config_response_container_t make_topic_configs(
               [](const bool& b) { return b ? "true" : "false"; });
         }
     }
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      topic_property_delete_retention_ms,
+      metadata_cache.get_default_delete_retention_ms(),
+      topic_property_delete_retention_ms,
+      hide_disabled_tristate(
+        topic_properties.delete_retention_ms,
+        metadata_cache.get_default_delete_retention_ms()),
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        config::shard_local_cfg().tombstone_retention_ms.desc()));
 
     constexpr std::string_view key_validation
       = "Enable validation of the schema id for keys on a record";

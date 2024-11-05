@@ -63,6 +63,9 @@ inline constexpr std::string_view topic_property_write_caching
 inline constexpr std::string_view topic_property_flush_ms = "flush.ms";
 inline constexpr std::string_view topic_property_flush_bytes = "flush.bytes";
 
+inline constexpr std::string_view topic_property_delete_retention_ms
+  = "delete.retention.ms";
+
 // Server side schema id validation
 inline constexpr std::string_view topic_property_record_key_schema_id_validation
   = "redpanda.key.schema.id.validation";
@@ -125,7 +128,6 @@ inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
   "follower.replication.throttled.replicas",
   "flush.messages",
   "file.delete.delay.ms",
-  "delete.retention.ms",
   "preallocate",
 };
 
@@ -155,5 +157,43 @@ to_cluster_type(const creatable_topic& t);
 std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);
+
+// Either parse configuration or return nullopt
+template<typename T>
+std::optional<T>
+get_config_value(const config_map_t& config, std::string_view key) {
+    if (auto it = config.find(key); it != config.end()) {
+        return boost::lexical_cast<T>(it->second);
+    }
+    return std::nullopt;
+}
+
+// Special case for options where Kafka allows -1
+// In redpanda the mapping is following
+//
+// -1 (feature disabled)   =>  tristate.is_disabled() == true;
+// no value                =>  tristate.has_value() == false;
+// value present           =>  tristate.has_value() == true;
+
+template<typename T>
+tristate<T>
+get_tristate_value(const config_map_t& config, std::string_view key) {
+    auto v = get_config_value<int64_t>(config, key);
+    // no value set
+    if (!v) {
+        return tristate<T>(std::nullopt);
+    }
+    // disabled case
+    if (v <= 0) {
+        return tristate<T>(disable_tristate);
+    }
+    return tristate<T>(std::make_optional<T>(*v));
+}
+
+std::optional<bool>
+get_bool_value(const config_map_t& config, std::string_view key);
+
+model::shadow_indexing_mode
+get_shadow_indexing_mode(const config_map_t& config);
 
 } // namespace kafka

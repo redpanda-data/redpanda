@@ -14,6 +14,7 @@
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/handlers/topics/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 
@@ -408,6 +409,41 @@ struct write_caching_configs_validator {
     static bool is_valid(const creatable_topic& c) {
         return validate_write_caching(c) && validate_flush_ms(c)
                && validate_flush_bytes(c);
+    }
+};
+
+struct delete_retention_ms_validator {
+    static constexpr const char* error_message
+      = "Unsupported delete.retention.ms configuration, cannot be enabled "
+        "at the same time as redpanda.remote.read or redpanda.remote.write.";
+    static constexpr const auto config_name
+      = topic_property_delete_retention_ms;
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        const auto config_entries = config_map(c.configs);
+        try {
+            auto delete_retention_ms
+              = get_tristate_value<std::chrono::milliseconds>(
+                config_entries, topic_property_delete_retention_ms);
+
+            auto shadow_indexing_mode = get_shadow_indexing_mode(
+              config_entries);
+            // Cannot set delete_retention_ms at the same time as any tiered
+            // storage properties.
+            if (
+              delete_retention_ms.has_optional_value()
+              && shadow_indexing_mode
+                   != model::shadow_indexing_mode::disabled) {
+                return false;
+            }
+        } catch (const boost::bad_lexical_cast&) {
+            // Caught a bad configuration exception.
+            // Return true for now- this will error out in a later stage.
+            return true;
+        }
+
+        return true;
     }
 };
 

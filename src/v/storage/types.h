@@ -495,7 +495,7 @@ struct compaction_config {
     // which is a segment's clean_compact_timestamp + tombstone_retention_ms.
     // This means tombstones take at least two rounds of compaction to remove a
     // tombstone: at least one pass to make a segment clean, and another pass
-    // some time after tombstone.retention.ms to remove tombstones.
+    // some time after tombstone_retention_ms to remove tombstones.
     //
     // Tombstone removal is only supported for topics with remote writes
     // disabled. As a result, this field will only have a value for compaction

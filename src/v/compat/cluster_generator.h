@@ -16,6 +16,7 @@
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
+#include "utils/tristate.h"
 
 namespace compat {
 
@@ -653,7 +654,8 @@ struct instance_generator<cluster::topic_properties> {
           false,
           std::nullopt,
           false,
-          std::nullopt};
+          std::nullopt,
+          tristate<std::chrono::milliseconds>{disable_tristate}};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

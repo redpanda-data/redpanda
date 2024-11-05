@@ -630,6 +630,7 @@ inline void rjson_serialize(
       w,
       "iceberg_translation_interval_ms",
       tps.iceberg_translation_interval_ms);
+    write_member(w, "delete_retention_ms", tps.delete_retention_ms);
     w.EndObject();
 }
 
@@ -705,6 +706,7 @@ inline void read_value(const json::Value& rd, cluster::topic_properties& obj) {
       rd,
       "iceberg_translation_interval_ms",
       obj.iceberg_translation_interval_ms);
+    read_member(rd, "delete_retention_ms", obj.delete_retention_ms);
 }
 
 inline void rjson_serialize(

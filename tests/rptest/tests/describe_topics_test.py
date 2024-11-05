@@ -295,6 +295,13 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Controls how often iceberg translation is attempted on the topic partitions."
             ),
+            "delete.retention.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                doc_string=
+                "The retention time for tombstone records in a compacted topic. Cannot be enabled at the same time as any of `cloud_storage_enabled`, `cloud_storage_enable_remote_read`, or `cloud_storage_enable_remote_write`."
+            )
         }
 
         tp_spec = TopicSpec()

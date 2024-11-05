@@ -40,8 +40,9 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "flush_ms: {}, "
       "flush_bytes: {}, "
       "remote_label: {}, iceberg_enabled: {}, "
-      "leaders_preference: {} ",
-      "iceberg_translation_interval_ms: {} ",
+      "leaders_preference: {}, "
+      "iceberg_translation_interval_ms: {}, "
+      "delete_retention_ms: {}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -77,7 +78,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.remote_label,
       properties.iceberg_enabled,
       properties.leaders_preference,
-      properties.iceberg_translation_interval_ms);
+      properties.iceberg_translation_interval_ms,
+      properties.delete_retention_ms);
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         fmt::print(
@@ -123,7 +125,8 @@ bool topic_properties::has_overrides() const {
         || flush_bytes.has_value() || remote_label.has_value()
         || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled)
         || leaders_preference.has_value()
-        || iceberg_translation_interval_ms.has_value();
+        || iceberg_translation_interval_ms.has_value()
+        || delete_retention_ms.is_engaged();
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         return overrides
@@ -166,6 +169,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.iceberg_enabled = iceberg_enabled;
     ret.cloud_topic_enabled = cloud_topic_enabled;
     ret.iceberg_translation_interval_ms = iceberg_translation_interval_ms;
+    ret.tombstone_retention_ms = delete_retention_ms;
     return ret;
 }
 
@@ -257,7 +261,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       false,
       std::nullopt,
       false,
-      std::nullopt};
+      std::nullopt,
+      tristate<std::chrono::milliseconds>{disable_tristate},
+    };
 }
 
 } // namespace reflection

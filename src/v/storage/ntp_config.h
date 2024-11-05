@@ -83,6 +83,10 @@ public:
         std::optional<std::chrono::milliseconds>
           iceberg_translation_interval_ms{std::nullopt};
 
+        // Should not be enabled at the same time as any other tiered storage
+        // properties.
+        tristate<std::chrono::milliseconds> tombstone_retention_ms;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -292,6 +296,40 @@ public:
           std::numeric_limits<size_t>::max());
         return _overrides ? _overrides->flush_bytes.value_or(cluster_default)
                           : cluster_default;
+    }
+
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
+        if (is_read_replica_mode_enabled()) {
+            // RRR sanity check.
+            return std::nullopt;
+        }
+        auto& cluster_default
+          = config::shard_local_cfg().tombstone_retention_ms();
+        if (_overrides) {
+            // Tombstone deletion should not be enabled at the same time as
+            // tiered storage.
+            if (
+              _overrides->shadow_indexing_mode.has_value()
+              && _overrides->shadow_indexing_mode.value()
+                   != model::shadow_indexing_mode::disabled) {
+                return std::nullopt;
+            }
+            // If the tristate is disabled, return nullopt.
+            if (_overrides->tombstone_retention_ms.is_disabled()) {
+                return std::nullopt;
+            }
+            // If the tristate has a value, use it.
+            if (_overrides->tombstone_retention_ms.has_optional_value()) {
+                return _overrides->tombstone_retention_ms.value();
+            }
+
+            // If the tristate holds an empty optional, fall back to cluster
+            // default.
+            return cluster_default;
+        }
+        // Fall back to cluster default, since _overrides being nullptr signals
+        // that remote.read and remote.write is disabled for this topic.
+        return cluster_default;
     }
 
     std::optional<model::cleanup_policy_bitflags>

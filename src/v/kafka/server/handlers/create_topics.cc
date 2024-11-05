@@ -41,6 +41,7 @@
 namespace kafka {
 
 namespace {
+
 bool is_supported(std::string_view name) {
     static constexpr auto supported_configs = std::to_array(
       {topic_property_compression,
@@ -74,7 +75,8 @@ bool is_supported(std::string_view name) {
        topic_property_flush_bytes,
        topic_property_iceberg_enabled,
        topic_property_leaders_preference,
-       topic_property_iceberg_translation_interval_ms});
+       topic_property_iceberg_translation_interval_ms,
+       topic_property_delete_retention_ms});
 
     if (std::any_of(
           supported_configs.begin(),
@@ -116,7 +118,8 @@ using validators = make_validator_types<
   vcluster_id_validator,
   write_caching_configs_validator,
   iceberg_config_validator,
-  cloud_topic_config_validator>;
+  cloud_topic_config_validator,
+  delete_retention_ms_validator>;
 
 static void
 append_topic_configs(request_context& ctx, create_topics_response& response) {

@@ -1726,6 +1726,23 @@ void config_multi_property_validation(
         auto name = ss::sstring(updated_config.cloud_storage_cache_size.name());
         errors[name] = invalid_cache.value();
     }
+
+    // For simplicity's sake, cloud storage read/write permissions cannot be
+    // enabled at the same time as tombstone_retention_ms at the cluster level,
+    // to avoid the case in which topics are created with TS read/write
+    // permissions and bugs are encountered later with tombstone removal.
+    if (updated_config.tombstone_retention_ms().has_value() &&
+	(updated_config.cloud_storage_enabled()
+	 || updated_config.cloud_storage_enable_remote_read()
+	 || updated_config.cloud_storage_enable_remote_write())) {
+        errors["cloud_storage_enabled"] = ssx::sformat(
+          "cannot set {} if any of ({}, {}, {}) are enabled at the cluster "
+          "level",
+          updated_config.tombstone_retention_ms.name(),
+          updated_config.cloud_storage_enabled.name(),
+          updated_config.cloud_storage_enable_remote_read.name(),
+          updated_config.cloud_storage_enable_remote_write.name());
+    }
 }
 } // namespace
 
