@@ -9,6 +9,10 @@
 
 #pragma once
 
+#include "metrics/metrics.h"
+
+#include <cstdint>
+
 namespace storage {
 
 /// Log manager per-shard storage probe.
@@ -24,6 +28,16 @@ public:
 public:
     void setup_metrics();
     void clear_metrics();
+
+public:
+    void housekeeping_log_processed() { ++_housekeeping_log_processed; }
+    void urgent_gc_run() { ++_urgent_gc_runs; }
+
+private:
+    uint64_t _urgent_gc_runs = 0;
+    uint64_t _housekeeping_log_processed = 0;
+
+    metrics::internal_metric_groups _metrics;
 };
 
 }; // namespace storage

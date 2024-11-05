@@ -288,6 +288,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           _abort_source,
           std::move(ntp_sanitizer_cfg),
           _compaction_hash_key_map.get()));
+        _probe->housekeeping_log_processed();
 
         // bail out of compaction early in order to get back to gc
         if (_gc_triggered) {
@@ -367,6 +368,7 @@ ss::future<> log_manager::housekeeping_loop() {
             // it is expected that callers set the flag whenever they want the
             // next round of housekeeping to priortize gc.
             _gc_triggered = false;
+            _probe->urgent_gc_run();
 
             /*
              * build a schedule of partitions to gc ordered by amount of
