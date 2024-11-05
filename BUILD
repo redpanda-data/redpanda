@@ -1,3 +1,5 @@
+# Increment to trigger bazel build in CI: 0
+
 load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
 
 # gazelle:prefix github.com/redpanda-data/redpanda

@@ -15,4 +15,5 @@
 
 namespace seastar {} // namespace seastar
 
+// NOLINTNEXTLINE(misc-unused-alias-decls)
 namespace ss = seastar;

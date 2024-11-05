@@ -15,8 +15,10 @@ if(REDPANDA_RUN_CLANG_TIDY)
     if(NOT CLANG_TIDY_COMMAND)
         message(FATAL_ERROR "Could not find clang-tidy program")
     endif()
+    # IMPORTANT: Sync these with `WarningsAsErrors` field in `.clang-tidy`!
     set(clang_tidy_checks
         -*
+        cppcoreguidelines-avoid-capturing-lambda-coroutines
         bugprone-use-after-move
         bugprone-assert-side-effect
         bugprone-assignment-in-if-condition
