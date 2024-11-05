@@ -11,7 +11,7 @@ import concurrent.futures
 import numpy
 import time
 
-from ducktape.mark import parametrize
+from ducktape.mark import ignore, parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
