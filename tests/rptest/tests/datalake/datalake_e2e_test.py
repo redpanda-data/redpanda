@@ -15,18 +15,9 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from ducktape.mark import matrix
 
 
-class DatalakeE2ETests(RedpandaTest):
+class DatalakeE2ETests(DatalakeServices):
     def __init__(self, test_ctx, *args, **kwargs):
-        super(DatalakeE2ETests,
-              self).__init__(test_ctx,
-                             num_brokers=1,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf={
-                                 "iceberg_enabled": "true",
-                                 "iceberg_catalog_commit_interval_ms": 5000
-                             },
-                             *args,
-                             **kwargs)
+        super(DatalakeE2ETests, self).__init__(test_ctx, *args, **kwargs)
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
@@ -38,11 +29,9 @@ class DatalakeE2ETests(RedpandaTest):
         # Create a topic
         # Produce some events
         # Ensure they end up in datalake
+        self.start_services(catalog_mode=catalog_mode,
+                            include_query_engines=[query_engine])
         count = 100
-        with DatalakeServices(self.test_ctx,
-                              redpanda=self.redpanda,
-                              catalog_mode=catalog_mode,
-                              include_query_engines=[query_engine]) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name)
-            dl.produce_to_topic(self.topic_name, 1024, count)
-            dl.wait_for_translation(self.topic_name, msg_count=count)
+        self.create_iceberg_enabled_topic(self.topic_name)
+        self.produce_to_topic(self.topic_name, 1024, count)
+        self.wait_for_translation(self.topic_name, msg_count=count)
