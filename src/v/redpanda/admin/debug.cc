@@ -31,6 +31,7 @@
 #include "serde/rw/rw.h"
 #include "storage/kvstore.h"
 
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/json/json_elements.hh>
@@ -494,6 +495,14 @@ void admin_server::register_debug_routes() {
 
 using admin::apply_validator;
 
+void check_shard_id(seastar::shard_id id) {
+    auto max_shard_id = ss::smp::count - 1;
+    if (id > max_shard_id) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Shard id too high, max shard id is {}", max_shard_id));
+    }
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
     vlog(adminlog.info, "Request to sampled cpu profile");
@@ -509,12 +518,7 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     if (shard_id.has_value()) {
-        auto all_cpus = ss::smp::all_cpus();
-        auto max_shard_id = std::max_element(all_cpus.begin(), all_cpus.end());
-        if (*shard_id > *max_shard_id) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "Shard id too high, max shard id is {}", *max_shard_id));
-        }
+        check_shard_id(*shard_id);
     }
 
     std::optional<std::chrono::milliseconds> wait_ms;
@@ -694,11 +698,7 @@ admin_server::sampled_memory_profile_handler(
     }
 
     if (shard_id.has_value()) {
-        auto max_shard_id = ss::smp::count;
-        if (*shard_id > max_shard_id) {
-            throw ss::httpd::bad_param_exception(fmt::format(
-              "Shard id too high, max shard id is {}", max_shard_id));
-        }
+        check_shard_id(*shard_id);
     }
 
     auto profiles = co_await _memory_sampling_service.local()

@@ -11,6 +11,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
+from requests.exceptions import HTTPError
 
 BOOTSTRAP_CONFIG = {
     'memory_enable_memory_sampling': True,
@@ -65,3 +66,14 @@ class MemorySamplingTestTest(RedpandaTest):
         assert 'size' in profile[0]['allocation_sites'][0]
         assert 'count' in profile[0]['allocation_sites'][0]
         assert 'backtrace' in profile[0]['allocation_sites'][0]
+
+        # test out of bounds shard
+        failed = False
+        try:
+            max_shard_id_plus_one = self.redpanda.shards()[1] + 1
+            admin.get_sampled_memory_profile(shard=max_shard_id_plus_one)
+        except HTTPError as e:
+            if 'shard id too high' in e.response.text.lower():
+                failed = True
+
+        assert failed, "Asking for too high shard id didn't fail"
