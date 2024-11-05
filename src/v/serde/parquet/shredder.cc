@@ -85,6 +85,15 @@ private:
                 element->name)));
           },
           [this, element, levels](null_value& v) {
+              // If this is the level in the tree that is turning NULL that is
+              // invalid, this is a required node, however parent nodes could be
+              // propagating a null value, which is valid.
+              if (
+                element->repetition_type == field_repetition_type::required
+                && element->max_definition_level == levels.definition_level) {
+                  return ss::make_exception_future(std::runtime_error(
+                    "detected null value for required leaf node"));
+              }
               return _callback({
                 .schema_element_position = element->position,
                 .val = v,
@@ -155,12 +164,13 @@ private:
                 element, levels, std::move(groups));
           },
           [this, element, levels](null_value&) -> ss::future<> {
-              // We need to handle a required node who's parent is optional and
-              // `null`, so we can't raise an error here.
-              // TODO: We should have validation that this value isn't directly
-              // `null` - we should be able to do this with the level
-              // information if we track each node's expected max
-              // definition level for this node in the tree.
+              // If this is the level in the tree that is turning NULL that is
+              // invalid, this is a required node, however parent nodes could be
+              // propagating a null value, which is valid.
+              if (element->max_definition_level == levels.definition_level) {
+                  return ss::make_exception_future(std::runtime_error(
+                    "detected null value for required group node"));
+              }
               return process_optional_null_group(element, levels);
           },
           [element](repeated_value&) -> ss::future<> {
@@ -272,12 +282,13 @@ private:
       traversal_levels levels,
       group_value group) {
         if (group.size() != element->children.size()) {
-            throw std::runtime_error(fmt::format(
-              "schema/struct mismatch, schema had {} children, struct had {} "
-              "fields. At column {}",
-              element->children.size(),
-              group.size(),
-              element->position));
+            co_return co_await ss::make_exception_future(
+              std::runtime_error(fmt::format(
+                "schema/struct mismatch, schema had {} children, struct had {} "
+                "fields. At column {}",
+                element->children.size(),
+                group.size(),
+                element->position)));
         }
         // Levels don't change for require elements because they always have
         // to be there so no additional bits need to be tracked (they'd be

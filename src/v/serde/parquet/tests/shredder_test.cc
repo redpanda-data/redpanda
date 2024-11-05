@@ -436,4 +436,23 @@ TEST(RecordShredding, RequiredGroupWrappedInOptionalGroup) {
       ElementsAre(ElementsAre(IsVal("NULL", 0, 0), IsVal("42", 0, 1))));
 }
 
+TEST(RecordShredding, RequiredValuesNotNullValidation) {
+    schema_element schema = group_node(
+      "Root",
+      field_repetition_type::required,
+      group_node(
+        "optional",
+        field_repetition_type::optional,
+        group_node(
+          "required",
+          field_repetition_type::required,
+          leaf_node("leaf", field_repetition_type::required, i32_type()))));
+    group_value r1 = record(record(null_value()));
+    group_value r2 = record(record(record(null_value())));
+    index_schema(schema);
+    value_collector collector(schema);
+    EXPECT_ANY_THROW(shred_record(schema, std::move(r1), collector).get());
+    EXPECT_ANY_THROW(shred_record(schema, std::move(r2), collector).get());
+}
+
 // NOLINTEND(*magic-number*)
