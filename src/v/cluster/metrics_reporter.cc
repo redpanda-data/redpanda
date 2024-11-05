@@ -275,6 +275,8 @@ metrics_reporter::build_metrics_snapshot() {
                                  && !license.value().is_expired();
     snapshot.has_enterprise_features = feature_report.any();
 
+    snapshot.enterprise_features.emplace(std::move(feature_report));
+
     co_return snapshot;
 }
 
@@ -554,6 +556,15 @@ void rjson_serialize(
 
     w.Key("has_enterprise_features");
     w.Bool(snapshot.has_enterprise_features);
+
+    if (snapshot.enterprise_features.has_value()) {
+        w.Key("enterprise_features");
+        w.StartArray();
+        for (const auto& f : snapshot.enterprise_features.value().enabled()) {
+            w.String(fmt::format("{}", f));
+        }
+        w.EndArray();
+    }
 
     w.EndObject();
 }

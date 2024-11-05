@@ -137,6 +137,7 @@ class MetricsReporterTest(RedpandaTest):
         # license violation status should not change across requests
         assert_fields_are_the_same(metadata, 'has_valid_license')
         assert_fields_are_the_same(metadata, 'has_enterprise_features')
+        assert_fields_are_the_same(metadata, 'enterprise_features')
         # get the last report
         last = metadata.pop()
         assert last['topic_count'] == total_topics
@@ -151,6 +152,8 @@ class MetricsReporterTest(RedpandaTest):
         # NOTE: value will vary depending on FIPS mode. we're confident that
         # the source of the value is sound, so assert on presence instead.
         assert 'has_enterprise_features' in last
+        assert 'enterprise_features' in last
+        assert type(last['enterprise_features']) == list
         nodes_meta = last['nodes']
 
         assert len(last['nodes']) == len(self.redpanda.nodes)
