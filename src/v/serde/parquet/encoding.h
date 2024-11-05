@@ -12,7 +12,6 @@
 #pragma once
 
 #include "serde/parquet/value.h"
-#include "src/v/serde/parquet/value.h"
 
 namespace serde::parquet {
 
