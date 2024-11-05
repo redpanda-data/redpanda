@@ -242,5 +242,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     deps = [
         "//src/v/config",
+        "//src/v/metrics",
+        "@seastar",
     ],
 )
