@@ -510,7 +510,7 @@ TEST_F_CORO(data_migration_table_fixture, test_resource_validation) {
      */
     auto r = co_await try_create_migration(odm.copy());
     EXPECT_TRUE(r.has_error());
-    EXPECT_EQ(r.error(), cluster::errc::data_migration_invalid_resources);
+    EXPECT_EQ(r.error(), cluster::errc::topic_not_exists);
 
     // create topics, retry migration creation
     co_await populate_topic_table_with_topics(odm.topics);
@@ -536,7 +536,7 @@ TEST_F_CORO(data_migration_table_fixture, test_resource_validation) {
      */
     r = co_await try_create_migration(invalid_idm.copy());
     EXPECT_TRUE(r.has_error());
-    EXPECT_EQ(r.error(), cluster::errc::data_migration_invalid_resources);
+    EXPECT_EQ(r.error(), cluster::errc::topic_already_exists);
     // valid idm should be created
     r = co_await try_create_migration(idm_with_alias.copy());
     EXPECT_TRUE(r.has_value());

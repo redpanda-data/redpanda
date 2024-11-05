@@ -94,6 +94,8 @@ enum class errc : int16_t {
     data_migration_not_exists,
     data_migration_already_exists,
     data_migration_invalid_resources,
+    data_migration_invalid_definition,
+    data_migrations_disabled,
     resource_is_being_migrated,
     invalid_target_node_id,
 };
@@ -278,8 +280,11 @@ struct errc_category final : public std::error_category {
         case errc::data_migration_already_exists:
             return "Data migration with requested id already exists";
         case errc::data_migration_invalid_resources:
-            return "Data migration contains resources that does not exists or "
-                   "are already being migrated";
+            return "Data migration contains resources that are not eligible";
+        case errc::data_migration_invalid_definition:
+            return "Data migration definition contains errors";
+        case errc::data_migrations_disabled:
+            return "Data migrations are disabled for this cluster";
         case errc::resource_is_being_migrated:
             return "Requested operation can not be executed as the resource is "
                    "undergoing data migration";

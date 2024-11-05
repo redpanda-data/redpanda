@@ -306,14 +306,15 @@ class DataMigrationsApiTest(RedpandaTest):
         self.wait_migration_appear(migration_id)
         return migration_id
 
-    def assure_not_migratable(self, topic: TopicSpec):
+    def assure_not_migratable(self, topic: TopicSpec, expected_response=None):
         out_migration = OutboundDataMigration(
             [make_namespaced_topic(topic.name)], consumer_groups=[])
         try:
             self.create_and_wait(out_migration)
             assert False
         except requests.exceptions.HTTPError as e:
-            pass
+            if expected_response is not None:
+                assert e.response.json() == expected_response
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_listing_inexistent_migration(self):
@@ -325,6 +326,53 @@ class DataMigrationsApiTest(RedpandaTest):
             raise
 
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_outbound_missing_topic(self):
+        topic = TopicSpec(partition_count=3)
+        self.assure_not_migratable(topic, {
+            "message": "Topic does not exists",
+            "code": 400
+        })
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            "Requested operation can not be executed as the resource is undergoing data migration"
+        ])
+    def test_conflicting_migrations(self):
+        topic = TopicSpec(partition_count=3)
+        self.client().create_topic(topic)
+        self.wait_partitions_appear([topic])
+        out1 = OutboundDataMigration([make_namespaced_topic(topic.name)],
+                                     consumer_groups=[])
+        self.create_and_wait(out1)
+        self.assure_not_migratable(
+            topic, {
+                "message":
+                "Unexpected cluster error: Requested operation can not be executed as the resource is undergoing data migration",
+                "code": 500
+            })
+
+    @cluster(num_nodes=3,
+             log_allow_list=MIGRATION_LOG_ALLOW_LIST +
+             ["The topic has already been created"])
+    def test_inbound_existing_topic(self):
+        topic = TopicSpec(partition_count=3)
+        self.client().create_topic(topic)
+        self.wait_partitions_appear([topic])
+        in_migration = InboundDataMigration(
+            [InboundTopic(make_namespaced_topic(topic.name))],
+            consumer_groups=[])
+        try:
+            self.create_and_wait(in_migration)
+            assert False
+        except requests.exceptions.HTTPError as e:
+            assert e.response.json() == {
+                "message":
+                "Unexpected cluster error: The topic has already been created",
+                "code": 500
+            }
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_with_topic_no_remote_writes(self):
         self.redpanda.set_cluster_config(
             {"cloud_storage_enable_remote_write": False}, expect_restart=True)
@@ -333,7 +381,29 @@ class DataMigrationsApiTest(RedpandaTest):
         self.wait_partitions_appear([topic])
         self.redpanda.set_cluster_config(
             {"cloud_storage_enable_remote_write": True}, expect_restart=True)
-        self.assure_not_migratable(topic)
+        self.assure_not_migratable(
+            topic, {
+                "message":
+                "Data migration contains resources that are not eligible",
+                "code": 400
+            })
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    def test_creating_with_topic_wrong_namespace(self):
+        topic = TopicSpec(partition_count=3)
+        self.client().create_topic(topic)
+        self.wait_partitions_appear([topic])
+        out_migration = OutboundDataMigration(
+            [NamespacedTopic(topic.name, "bad_namespace")], consumer_groups=[])
+        try:
+            self.create_and_wait(out_migration)
+            assert False
+        except requests.exceptions.HTTPError as e:
+            assert e.response.json() == {
+                "message":
+                "Data migration contains resources that are not eligible",
+                "code": 400
+            }
 
     @cluster(
         num_nodes=3,
@@ -341,7 +411,12 @@ class DataMigrationsApiTest(RedpandaTest):
             r'/v1/migrations.*Requested feature is disabled',  # cloud storage disabled
         ])
     def test_creating_when_cluster_misconfigured1(self):
-        self.creating_when_cluster_misconfigured("cloud_storage_enabled")
+        self.creating_when_cluster_misconfigured(
+            "cloud_storage_enabled", {
+                "message":
+                "Unexpected cluster error: Requested feature is disabled",
+                "code": 500
+            })
 
     @cluster(
         num_nodes=3,
@@ -351,14 +426,18 @@ class DataMigrationsApiTest(RedpandaTest):
         ])
     def test_creating_when_cluster_misconfigured2(self):
         self.creating_when_cluster_misconfigured(
-            "cloud_storage_disable_archiver_manager")
+            "cloud_storage_disable_archiver_manager", {
+                "message": "Data migrations are disabled for this cluster",
+                "code": 400
+            })
 
-    def creating_when_cluster_misconfigured(self, param_to_disable):
+    def creating_when_cluster_misconfigured(self, param_to_disable,
+                                            expected_error):
         self.redpanda.set_cluster_config({param_to_disable: False},
                                          expect_restart=True)
         topic = TopicSpec(partition_count=3)
         self.client().create_topic(topic)
-        self.assure_not_migratable(topic)
+        self.assure_not_migratable(topic, expected_error)
         # for scrubbing to complete
         self.redpanda.set_cluster_config({param_to_disable: True},
                                          expect_restart=True)
