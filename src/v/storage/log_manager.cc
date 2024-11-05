@@ -584,7 +584,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
     auto [it, success] = _logs.emplace(
       l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
-    _resources.update_partition_count(_logs.size());
+    update_log_count();
     vassert(success, "Could not keep track of:{} - concurrency issue", l);
     co_return l;
 }
@@ -604,7 +604,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     auto g = _gate.hold();
     auto handle = _logs.extract(ntp);
-    _resources.update_partition_count(_logs.size());
+    update_log_count();
     if (handle.empty()) {
         co_return;
     }
@@ -885,6 +885,13 @@ gc_config log_manager::default_gc_config() const {
           model::timestamp::now().value() - _config.log_retention()->count());
     }
     return {collection_threshold, _config.retention_bytes()};
+}
+
+void log_manager::update_log_count() {
+    auto count = _logs.size();
+
+    _resources.update_partition_count(count);
+    _probe->set_log_count(count);
 }
 
 } // namespace storage
