@@ -909,6 +909,9 @@ rpk:
     admin_api:
         addresses:
             - 0.0.0.3:9644
+    schema_registry:
+        addresses:
+            - 0.0.0.2:8081
     overprovisioned: true
     coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}

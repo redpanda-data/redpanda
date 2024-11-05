@@ -259,6 +259,7 @@ func CreateFlow(
 		p = &config.RpkProfile{
 			KafkaAPI: nodeCfg.KafkaAPI,
 			AdminAPI: nodeCfg.AdminAPI,
+			SR:       nodeCfg.SR,
 		}
 	}
 	if err := doSet(p, set); err != nil {

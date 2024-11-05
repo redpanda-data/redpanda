@@ -1389,6 +1389,9 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	if !reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
 		dst.AdminAPI = p.AdminAPI
 	}
+	if !reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
+		dst.SR = p.SR
+	}
 }
 
 // This function ensures a current profile exists in the Virtual rpk.yaml.
@@ -1472,6 +1475,9 @@ func (c *Config) mergeRedpandaIntoRpk() {
 	}
 	if reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
 		p.AdminAPI = src.AdminAPI
+	}
+	if reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
+		p.SR = src.SR
 	}
 }
 

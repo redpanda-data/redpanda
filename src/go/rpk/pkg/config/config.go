@@ -247,6 +247,7 @@ func (y *RedpandaYaml) setDevMode() {
 	y.Rpk = RpkNodeConfig{
 		KafkaAPI:             y.Rpk.KafkaAPI,
 		AdminAPI:             y.Rpk.AdminAPI,
+		SR:                   y.Rpk.SR,
 		AdditionalStartFlags: y.Rpk.AdditionalStartFlags,
 		SMP:                  DevDefault().Rpk.SMP,
 		Overprovisioned:      true,
