@@ -103,7 +103,7 @@ public:
 private:
     uint64_t _space_allowance_free{0};
 
-    size_t _partition_count{9};
+    size_t _partition_count{0};
     config::binding<size_t> _segment_fallocation_step;
     config::binding<uint64_t> _global_target_replay_bytes;
     config::binding<uint64_t> _max_concurrent_replay;
