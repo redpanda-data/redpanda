@@ -372,13 +372,6 @@ TEST(AvroSchema, TestRecursiveType) {
     ASSERT_TRUE(iceberg_struct_res.has_error());
 }
 
-// R"({"type":"int","logicalType":"time-millis"})",
-// R"({"type":"long","logicalType":"time-micros"})",
-// R"({"type":"long","logicalType":"timestamp-millis"})",
-// R"({"type":"long","logicalType":"timestamp-micros"})",
-// R"({"type":"fixed","name":"test","size":12,"logicalType":"duration"})",
-// R"({"type":"string","logicalType":"uuid"})",
-
 constexpr auto logical_types = R"J(
 {
     "name": "LogicalTypesRecord",
