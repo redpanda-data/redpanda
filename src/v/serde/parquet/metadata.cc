@@ -825,7 +825,10 @@ iobuf encode(const page_header& header) {
       thrift::field_type::i32,
       vint::to_bytes(header.compressed_page_size));
     encoder.write_field(
-      crc_field_id, thrift::field_type::i32, vint::to_bytes(header.crc));
+      crc_field_id,
+      thrift::field_type::i32,
+      // sign extend the crc so that it's zig-zag encoded correctly.
+      vint::to_bytes(static_cast<int32_t>(static_cast<uint32_t>(header.crc))));
     ss::visit(
       header.type,
       [&](const index_page_header&) {

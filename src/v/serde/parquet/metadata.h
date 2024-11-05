@@ -33,7 +33,7 @@
 
 #include <seastar/core/sstring.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/crc/crc32c.h>
 
 #include <cmath>
 #include <cstdint>
@@ -224,7 +224,7 @@ struct page_header {
      * If enabled, this allows for disabling checksumming in HDFS if only a few
      * pages need to be read.
      */
-    int32_t crc;
+    absl::crc32c_t crc;
 
     // Headers for page specific data.  One only will be set.
     std::variant<index_page_header, dictionary_page_header, data_page_header>

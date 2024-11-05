@@ -38,7 +38,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/serde/thrift:compact",
         "//src/v/utils:vint",
-        "@abseil-cpp//absl/container:flat_hash_map",
+        "@abseil-cpp//absl/crc:crc32c",
         "@seastar",
     ],
 )
