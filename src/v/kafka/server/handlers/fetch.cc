@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/fetch.h"
 
 #include "base/likely.h"
+#include "cloud_storage/download_exception.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -42,6 +43,7 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
@@ -109,6 +111,7 @@ static ss::future<read_result> read_from_partition(
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
+    bool known_exception = false;
     std::exception_ptr e;
     std::unique_ptr<iobuf> data;
     std::vector<cluster::tx::tx_range> aborted_transactions;
@@ -155,12 +158,27 @@ static ss::future<read_result> read_from_partition(
                   part.high_watermark());
             }
         }
-
+    } catch (const cloud_storage::download_exception&) {
+        e = std::current_exception();
+        known_exception = true;
+    } catch (const ss::gate_closed_exception&) {
+        e = std::current_exception();
+        known_exception = true;
     } catch (...) {
         e = std::current_exception();
+        known_exception = false;
     }
 
     co_await std::move(rdr.reader).release()->finally();
+
+    if (e && known_exception) {
+        vlog(
+          klog.info,
+          "exception while reading topic_partition: {} exception: {}",
+          part.ntp().tp,
+          e);
+        co_return read_result(error_code::kafka_storage_error, start_o, hw);
+    }
 
     if (e) {
         std::rethrow_exception(e);
