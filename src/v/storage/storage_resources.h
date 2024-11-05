@@ -53,8 +53,6 @@ public:
      */
     void update_partition_count(size_t partition_count);
 
-    uint64_t get_space_allowance() { return _space_allowance; }
-
     size_t get_falloc_step(std::optional<uint64_t>);
     size_t calc_falloc_step();
 
@@ -103,7 +101,6 @@ public:
     void update_min_checkpoint_bytes();
 
 private:
-    uint64_t _space_allowance{9};
     uint64_t _space_allowance_free{0};
 
     size_t _partition_count{9};
