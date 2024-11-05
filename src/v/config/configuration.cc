@@ -1900,7 +1900,7 @@ configuration::configuration()
       "assigned. - GCP: Uses `storage.googleapis.com`.",
       {.visibility = visibility::user},
       std::nullopt,
-      &validate_cloud_storage_api_endpoint)
+      &validate_api_endpoint)
   , cloud_storage_url_style(
       *this,
       "cloud_storage_url_style",
@@ -3767,6 +3767,58 @@ configuration::configuration()
       "Iceberg is enabled, do not change this value.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       "redpanda-iceberg-catalog")
+  , iceberg_catalog_type(
+      *this,
+      "iceberg_catalog_type",
+      "Iceberg catalog type that Redpanda will use to commit table "
+      "metadata updates. Supported types: 'rest', 'filesystem'",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      datalake_catalog_type::filesystem,
+      {datalake_catalog_type::rest, datalake_catalog_type::filesystem})
+  , iceberg_rest_catalog_endpoint(
+      *this,
+      "iceberg_rest_catalog_endpoint",
+      "URL of Iceberg REST catalog endpoint",
+      {
+        .needs_restart = needs_restart::yes,
+        .example = "http://hostname:8181",
+        .visibility = visibility::user,
+      },
+      std::nullopt)
+  , iceberg_rest_catalog_user_id(
+      *this,
+      "iceberg_rest_catalog_user_id",
+      "Iceberg REST catalog user ID. This ID is used to query "
+      "the catalog API for the OAuth token. Required if catalog type is set to "
+      "`rest`",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
+  , iceberg_rest_catalog_secret(
+      *this,
+      "iceberg_rest_catalog_secret",
+      "Secret to authenticate against Iceberg REST catalog. Required if "
+      "catalog type is set to `rest`",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt)
+  , iceberg_rest_catalog_token(
+      *this,
+      "iceberg_rest_catalog_token",
+      "Token used to access the REST Iceberg catalog. If the token is present, "
+      "Redpanda ignores credentials stored in the properties "
+      "iceberg_rest_catalog_user_id and iceberg_rest_catalog_secret",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
+      std::nullopt)
+  , iceberg_rest_catalog_request_timeout_ms(
+      *this,
+      "iceberg_rest_catalog_request_timeout_ms",
+      "Maximum length of time that Redpanda waits for a response from the REST "
+      "catalog before aborting the request",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",

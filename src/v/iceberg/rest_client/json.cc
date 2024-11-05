@@ -12,6 +12,8 @@
 
 #include "iceberg/json_utils.h"
 
+#include <absl/strings/ascii.h>
+
 namespace iceberg::rest_client {
 oauth_token parse_oauth_token(const json::Document& doc) {
     oauth_token ret;
@@ -25,9 +27,11 @@ oauth_token parse_oauth_token(const json::Document& doc) {
     }
     // token type is defined as enum with the following possible values:
     // "bearer", "mac", "N_A"
-    auto token_type = parse_required_str(doc, "token_type");
+    auto token_type = absl::AsciiStrToLower(
+      parse_required_str(doc, "token_type"));
+
     if (!(token_type == "bearer" || token_type == "mac"
-          || token_type == "N_A")) {
+          || token_type == "n_a")) {
         throw std::invalid_argument(fmt::format(
           "Unexpected oauth_token.token_type value {}. It must be one of the "
           "bearer, mac or N_A",

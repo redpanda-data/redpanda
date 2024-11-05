@@ -71,6 +71,33 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "catalog_factory",
+    srcs = [
+        "catalog_factory.cc",
+    ],
+    hdrs = [
+        "catalog_factory.h",
+    ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/datalake:logger",
+        "//src/v/iceberg:catalog",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/iceberg:rest_catalog",
+        "//src/v/iceberg/rest_client:client",
+        "//src/v/thirdparty/ada",
+        "@abseil-cpp//absl/strings",
+    ],
+    include_prefix = "datalake/coordinator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_io:remote",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "data_file",
     srcs = [
         "data_file.cc",

@@ -233,7 +233,7 @@ validate_audit_excluded_topics(const std::vector<ss::sstring>& vs) {
 }
 
 std::optional<ss::sstring>
-validate_cloud_storage_api_endpoint(const std::optional<ss::sstring>& os) {
+validate_api_endpoint(const std::optional<ss::sstring>& os) {
     if (auto non_empty_string_opt = validate_non_empty_string_opt(os);
         non_empty_string_opt.has_value()) {
         return non_empty_string_opt;

@@ -35,6 +35,7 @@ redpanda_cc_library(
         "//src/v/iceberg:json_utils",
         "//src/v/json",
         "//src/v/utils:named_type",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
@@ -103,6 +104,7 @@ redpanda_cc_library(
         "catalog_client.h",
     ],
     include_prefix = "iceberg/rest_client",
+    visibility = ["//visibility:public"],
     deps = [
         ":credentials",
         ":entities",

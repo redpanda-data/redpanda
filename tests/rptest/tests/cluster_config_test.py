@@ -39,8 +39,12 @@ BOOTSTRAP_CONFIG = {
     'enable_idempotence': False,
 }
 
-SECRET_CONFIG_NAMES = frozenset(
-    ["cloud_storage_secret_key", "cloud_storage_azure_shared_key"])
+SECRET_CONFIG_NAMES = frozenset([
+    "cloud_storage_secret_key",
+    "cloud_storage_azure_shared_key",
+    "iceberg_rest_catalog_secret",
+    "iceberg_rest_catalog_token",
+])
 
 
 def check_restart_clears(admin, redpanda, nodes=None):
@@ -693,6 +697,10 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                     [e for e in p['enum_values'] if e != initial_value])
 
             if name == "tls_min_version":
+                valid_value = random.choice(
+                    [e for e in p['enum_values'] if e != initial_value])
+
+            if name == "iceberg_catalog_type":
                 valid_value = random.choice(
                     [e for e in p['enum_values'] if e != initial_value])
 

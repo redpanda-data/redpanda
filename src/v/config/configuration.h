@@ -705,6 +705,14 @@ struct configuration final : public config_store {
       iceberg_catalog_commit_interval_ms;
     property<ss::sstring> iceberg_catalog_base_location;
 
+    // datalake catalog configuration
+    enum_property<datalake_catalog_type> iceberg_catalog_type;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_endpoint;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_user_id;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_secret;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_token;
+    property<std::chrono::milliseconds> iceberg_rest_catalog_request_timeout_ms;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
