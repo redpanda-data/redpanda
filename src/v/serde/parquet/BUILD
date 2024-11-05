@@ -92,8 +92,27 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
-        "@boost//:range",
         "@abseil-cpp//absl/functional:function_ref",
+        "@boost//:range",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "column_writer",
+    srcs = [
+        "column_writer.cc",
+    ],
+    hdrs = [
+        "column_writer.h",
+    ],
+    include_prefix = "serde/parquet",
+    deps = [
+        ":encoding",
+        ":metadata",
+        ":value",
+        "//src/v/base",
+        "@abseil-cpp//absl/crc:crc32c",
         "@seastar",
     ],
 )
