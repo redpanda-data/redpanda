@@ -9,7 +9,7 @@
 
 from typing import Any
 from rptest.clients.rpk import RpkTool, TopicSpec
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.apache_iceberg_catalog import IcebergCatalogMode, IcebergRESTCatalog
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
@@ -23,7 +23,7 @@ class DatalakeServices():
     def __init__(self,
                  test_ctx,
                  redpanda: RedpandaService,
-                 filesystem_catalog_mode=True,
+                 catalog_mode=IcebergCatalogMode.REST,
                  include_query_engines: list[QueryEngineType] = [
                      QueryEngineType.SPARK, QueryEngineType.TRINO
                  ]):
@@ -38,7 +38,7 @@ class DatalakeServices():
             cloud_storage_secret_key=str(si_settings.cloud_storage_secret_key),
             cloud_storage_region=si_settings.cloud_storage_region,
             cloud_storage_api_endpoint=str(si_settings.endpoint_url),
-            filesystem_wrapper_mode=filesystem_catalog_mode)
+            mode=catalog_mode)
         self.included_query_engines = include_query_engines
         # To be populated later once we have the URI of the catalog
         # available
@@ -52,8 +52,7 @@ class DatalakeServices():
                           self.redpanda.si_settings)
             svc.start()
             self.query_engines.append(svc)
-        rest_mode = not self.catalog_service.filesystem_wrapper_mode
-        if rest_mode:
+        if self.catalog_service.catalog_mode == IcebergCatalogMode.REST:
             # Apply REST end point configurations in Redpanda
             # and restart brokers
             self.redpanda.set_cluster_config(

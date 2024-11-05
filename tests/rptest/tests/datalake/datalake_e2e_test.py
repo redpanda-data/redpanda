@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from rptest.services.apache_iceberg_catalog import IcebergCatalogMode
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings
 from rptest.tests.redpanda_test import RedpandaTest
@@ -30,16 +31,17 @@ class DatalakeE2ETests(RedpandaTest):
         self.topic_name = "test"
 
     @cluster(num_nodes=4)
-    @matrix(query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            filesystem_catalog_mode=[True, False])
-    def test_e2e_basic(self, query_engine, filesystem_catalog_mode):
+    @matrix(
+        query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+        catalog_mode=[IcebergCatalogMode.REST, IcebergCatalogMode.FILESYSTEM])
+    def test_e2e_basic(self, query_engine, catalog_mode):
         # Create a topic
         # Produce some events
         # Ensure they end up in datalake
         count = 100
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
-                              filesystem_catalog_mode=filesystem_catalog_mode,
+                              catalog_mode=catalog_mode,
                               include_query_engines=[query_engine]) as dl:
             dl.create_iceberg_enabled_topic(self.topic_name)
             dl.produce_to_topic(self.topic_name, 1024, count)

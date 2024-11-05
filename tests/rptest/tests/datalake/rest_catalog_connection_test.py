@@ -1,6 +1,6 @@
 from rptest.archival.s3_client import S3Client
 from rptest.clients.default import TopicSpec
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.apache_iceberg_catalog import IcebergCatalogMode, IcebergRESTCatalog
 from rptest.services.cluster import cluster
 
 from rptest.services.redpanda import SISettings
@@ -28,7 +28,8 @@ class RestCatalogConnectionTest(RedpandaTest):
             })
         self.catalog_service = IcebergRESTCatalog(
             test_context,
-            cloud_storage_bucket=self.si_settings.cloud_storage_bucket)
+            cloud_storage_bucket=self.si_settings.cloud_storage_bucket,
+            mode=IcebergCatalogMode.REST)
 
     def setUp(self):
         self.catalog_service.start()

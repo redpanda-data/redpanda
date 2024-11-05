@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import uuid
-from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog, IcebergCatalogMode
 from rptest.services.redpanda import SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -28,7 +28,7 @@ class IcebergRESTCatalogTest(RedpandaTest):
             cloud_storage_secret_key=str(si_settings.cloud_storage_secret_key),
             cloud_storage_region=si_settings.cloud_storage_region,
             cloud_storage_api_endpoint=str(si_settings.endpoint_url),
-            filesystem_wrapper_mode=False)
+            mode=IcebergCatalogMode.REST)
 
     def setUp(self):
         super().setUp()

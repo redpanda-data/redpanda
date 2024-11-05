@@ -13,8 +13,17 @@ from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyiceberg.catalog import load_catalog
+from enum import Enum
 
 import uuid
+
+
+class IcebergCatalogMode(str, Enum):
+    # Full fledged REST server
+    REST = 'rest'
+    # A REST server that wraps a filesystem Catalog to which
+    # Redpanda writes using filesystem_catalog_impl
+    FILESYSTEM = 'filesystem'
 
 
 class IcebergRESTCatalog(Service):
@@ -82,7 +91,7 @@ class IcebergRESTCatalog(Service):
             cloud_storage_secret_key: str = 'panda-secret',
             cloud_storage_region: str = 'panda-region',
             cloud_storage_api_endpoint: str = "http://minio-s3:9000",
-            filesystem_wrapper_mode: bool = False,
+            mode: IcebergCatalogMode = IcebergCatalogMode.REST,
             node: ClusterNode | None = None):
         super(IcebergRESTCatalog, self).__init__(ctx,
                                                  num_nodes=0 if node else 1)
@@ -92,14 +101,20 @@ class IcebergRESTCatalog(Service):
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
         self.cloud_storage_bucket = cloud_storage_bucket
         self.cloud_storage_catalog_prefix = cloud_storage_catalog_prefix
-        self.set_filesystem_wrapper_mode(filesystem_wrapper_mode)
-        # This REST server can operate in two modes.
-        # 1. filesystem wrapper mode
-        # 2. database mode
+        self.set_catalog_mode(mode)
+        # This catalog server can operate in two modes.
+        # 1. filesystem mode
+        # 2. REST mode
+        #
         # In filesystem_wrapper_mode, it just wraps a HadoopCatalog implementation
         # that coordinates iceberg metadata updates via S3 in a format equivalent to
-        # filesystem catalog mode in Redpanda). In db mode the metadata is stored partly
-        # in a self contained sqlite db and doesn't need S3 access and partially on S3.
+        # filesystem catalog mode in Redpanda. In this case the catalog pretty much
+        # operates in a read only mode as the writes to it are done directly by
+        # Redpanda brokers but the query engines should still be able to read the table
+        # metadata and parse it.
+        #
+        # In REST mode the metadata is stored partly in a self contained sqlite db and
+        # rest in S3. Redpanda brokers use the REST API to make changes to Iceberg metadata.
         #
         # The former is useful to validate the correctness of the metadata format written
         # by Redpanda catalog in filesystem mode while still enabling query engines like
@@ -111,13 +126,13 @@ class IcebergRESTCatalog(Service):
 
     def compute_warehouse_path(self):
         s3_prefix = "s3"
-        if self.filesystem_wrapper_mode:
+        if self.catalog_mode == IcebergCatalogMode.FILESYSTEM:
             # For hadoop catalog compatibility
             s3_prefix = "s3a"
         self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
 
-    def set_filesystem_wrapper_mode(self, mode: bool):
-        self.filesystem_wrapper_mode = mode
+    def set_catalog_mode(self, mode: IcebergCatalogMode):
+        self.catalog_mode = mode
         self.compute_warehouse_path()
 
     def _make_env(self):
@@ -129,15 +144,17 @@ class IcebergRESTCatalog(Service):
         env["AWS_REGION"] = self.cloud_storage_region
         env["CATALOG_S3_ENDPOINT"] = self.cloud_storage_api_endpoint
         env["CATALOG_WAREHOUSE"] = self.cloud_storage_warehouse
-        if self.filesystem_wrapper_mode:
+        if self.catalog_mode == IcebergCatalogMode.FILESYSTEM:
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.FS_CATALOG_IMPL
             env["HADOOP_CONF_FILE_PATH"] = IcebergRESTCatalog.FS_CATALOG_CONF_PATH
-        else:
+        elif self.catalog_mode == IcebergCatalogMode.REST:
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.DB_CATALOG_IMPL
             env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI
             env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DB_CATALOG_DB_USER
             env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DB_CATALOG_DB_PASS
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
+        else:
+            assert False, f"Unknown catalog mode: {self.catalog_mode}"
         return env
 
     def _cmd(self):
