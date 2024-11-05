@@ -6,8 +6,13 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from typing import Optional
+from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
+
+from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
+from rptest.services.serde_client import SerdeClient
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
@@ -24,10 +29,38 @@ class DatalakeE2ETests(RedpandaTest):
                                  "iceberg_enabled": "true",
                                  "iceberg_catalog_commit_interval_ms": 5000
                              },
+                             schema_registry_config=SchemaRegistryConfig(),
+                             pandaproxy_config=PandaproxyConfig(),
                              *args,
                              **kwargs)
         self.test_ctx = test_ctx
         self.topic_name = "test"
+
+    def _get_serde_client(
+            self,
+            schema_type: SchemaType,
+            client_type: SerdeClientType,
+            topic: str,
+            count: int,
+            skip_known_types: Optional[bool] = None,
+            subject_name_strategy: Optional[str] = None,
+            payload_class: Optional[str] = None,
+            compression_type: Optional[TopicSpec.CompressionTypes] = None):
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        sec_cfg = self.redpanda.kafka_client_security().to_dict()
+
+        return SerdeClient(self.test_context,
+                           self.redpanda.brokers(),
+                           schema_reg,
+                           schema_type,
+                           client_type,
+                           count,
+                           topic=topic,
+                           security_config=sec_cfg if sec_cfg else None,
+                           skip_known_types=skip_known_types,
+                           subject_name_strategy=subject_name_strategy,
+                           payload_class=payload_class,
+                           compression_type=compression_type)
 
     @cluster(num_nodes=4)
     @matrix(query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
@@ -44,3 +77,49 @@ class DatalakeE2ETests(RedpandaTest):
             dl.create_iceberg_enabled_topic(self.topic_name)
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
+
+    @cluster(num_nodes=4)
+    @matrix(query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO])
+    def test_avro_schema(self, query_engine):
+        count = 100
+        table_name = f"redpanda.{self.topic_name}"
+
+        with DatalakeServices(self.test_ctx,
+                              redpanda=self.redpanda,
+                              filesystem_catalog_mode=True,
+                              include_query_engines=[query_engine]) as dl:
+            dl.create_iceberg_enabled_topic(self.topic_name)
+            avro_serde_client = self._get_serde_client(SchemaType.AVRO,
+                                                       SerdeClientType.Golang,
+                                                       self.topic_name, count)
+            avro_serde_client.start()
+            avro_serde_client.wait()
+            dl.wait_for_translation(self.topic_name, msg_count=count)
+
+            if query_engine == QueryEngineType.TRINO:
+                trino = dl.trino()
+                trino_expected_out = [('redpanda_offset', 'bigint', '', ''),
+                                      ('redpanda_timestamp', 'timestamp(6)',
+                                       '', ''),
+                                      ('redpanda_key', 'varbinary', '', ''),
+                                      ('redpanda_value', 'varbinary', '', ''),
+                                      ('payload', 'row(val bigint)', '', '')]
+                trino_describe_out = trino.run_query_fetch_all(
+                    f"describe {table_name}")
+                assert trino_describe_out == trino_expected_out, str(
+                    trino_describe_out)
+            else:
+                spark = dl.spark()
+                spark_expected_out = [
+                    ('redpanda_offset', 'bigint', None),
+                    ('redpanda_timestamp', 'timestamp_ntz', None),
+                    ('redpanda_key', 'binary', None),
+                    ('redpanda_value', 'binary', None),
+                    ('payload', 'struct<val:bigint>', None), ('', '', ''),
+                    ('# Partitioning', '', ''),
+                    ('Part 0', 'hours(redpanda_timestamp)', '')
+                ]
+                spark_describe_out = spark.run_query_fetch_all(
+                    f"describe {table_name}")
+                assert spark_describe_out == spark_expected_out, str(
+                    spark_describe_out)
