@@ -13,10 +13,13 @@
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/cloud_data_io.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/logger.h"
+#include "datalake/record_schema_resolver.h"
 #include "raft/group_manager.h"
+#include "schema/registry.h"
 
 #include <memory>
 
@@ -33,6 +36,8 @@ datalake_manager::datalake_manager(
   ss::sharded<features::feature_table>* features,
   ss::sharded<coordinator::frontend>* frontend,
   ss::sharded<cloud_io::remote>* cloud_io,
+  std::unique_ptr<iceberg::catalog> catalog,
+  pandaproxy::schema_registry::api* sr_api,
   ss::sharded<ss::abort_source>* as,
   cloud_storage_clients::bucket_name bucket_name,
   ss::scheduling_group sg,
@@ -48,6 +53,10 @@ datalake_manager::datalake_manager(
   , _coordinator_frontend(frontend)
   , _cloud_data_io(std::make_unique<cloud_data_io>(
       cloud_io->local(), std::move(bucket_name)))
+  , _schema_registry(schema::registry::make_default(sr_api))
+  , _catalog(std::move(catalog))
+  , _schema_mgr(std::make_unique<catalog_schema_manager>(*_catalog))
+  , _type_resolver(std::make_unique<record_schema_resolver>(*_schema_registry))
   , _as(as)
   , _sg(sg)
   , _effective_max_translator_buffered_data(
@@ -58,6 +67,7 @@ datalake_manager::datalake_manager(
       "datalake_parallel_translations"))
   , _translation_ms_conf(config::shard_local_cfg()
                            .iceberg_translation_interval_ms_default.bind()) {}
+datalake_manager::~datalake_manager() = default;
 
 ss::future<> datalake_manager::start() {
     // partition managed notification, this is particularly
@@ -188,6 +198,8 @@ void datalake_manager::start_translator(
       _coordinator_frontend,
       _features,
       &_cloud_data_io,
+      _schema_mgr.get(),
+      _type_resolver.get(),
       partition->get_ntp_config().iceberg_translation_interval_ms(),
       _sg,
       _effective_max_translator_buffered_data,

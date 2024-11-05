@@ -23,6 +23,7 @@ v_cc_library(
     v::cluster
     v::raft
     v::storage
+    v::schema
     Seastar::seastar
 )
 
@@ -54,6 +55,7 @@ v_cc_library(
     v::pandaproxy_schema_registry
     v::schema
     v::storage
+    v::schema
     Seastar::seastar
     Arrow::arrow_shared
     Parquet::parquet_shared

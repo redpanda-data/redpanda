@@ -1329,7 +1329,8 @@ make_upload_controller_config(ss::scheduling_group sg) {
 // add additional services in here
 void application::wire_up_runtime_services(
   model::node_id node_id, ::stop_signal& app_signal) {
-    wire_up_redpanda_services(node_id, app_signal);
+    std::optional<cloud_storage_clients::bucket_name> bucket;
+    wire_up_redpanda_services(node_id, app_signal, bucket);
     if (_proxy_config) {
         construct_single_service(
           _proxy,
@@ -1421,6 +1422,70 @@ void application::wire_up_runtime_services(
           .get();
     }
 
+#ifndef BAZEL_DISABLE_DATALAKE_FEATURE
+    if (datalake_enabled()) {
+        vassert(
+          bucket.has_value(),
+          "Bucket should have been set when configuring cloud IO");
+        // Construct datalake subsystems, now that dependencies are
+        // already constructed.
+        syschecks::systemd_message("Starting datalake services").get();
+        construct_service(
+          _datalake_coordinator_mgr,
+          node_id,
+          std::ref(raft_group_manager),
+          std::ref(partition_manager),
+          ss::sharded_parameter(
+            [bucket](
+              cloud_io::remote& remote) -> std::unique_ptr<iceberg::catalog> {
+                return datalake::coordinator::create_catalog(
+                  remote, *bucket, config::shard_local_cfg());
+            },
+            std::ref(cloud_io)),
+          std::ref(cloud_io),
+          std::ref(*bucket))
+          .get();
+        construct_service(
+          _datalake_coordinator_fe,
+          node_id,
+          &_datalake_coordinator_mgr,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_frontend(),
+          &metadata_cache,
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table(),
+          &_connection_cache)
+          .get();
+
+        construct_service(
+          _datalake_manager,
+          node_id,
+          &raft_group_manager,
+          &partition_manager,
+          &controller->get_topics_state(),
+          &controller->get_topics_frontend(),
+          &controller->get_partition_leaders(),
+          &controller->get_shard_table(),
+          &feature_table,
+          &_datalake_coordinator_fe,
+          &cloud_io,
+          ss::sharded_parameter(
+            [bucket](cloud_io::remote& remote) {
+                return datalake::coordinator::create_catalog(
+                  remote, *bucket, config::shard_local_cfg());
+            },
+            std::ref(cloud_io)),
+          _schema_registry.get(),
+          &_as,
+          *bucket,
+          sched_groups.datalake_sg(),
+          memory_groups().datalake_max_memory())
+          .get();
+        _datalake_manager.invoke_on_all(&datalake::datalake_manager::start)
+          .get();
+    }
+#endif
     construct_single_service(_monitor_unsafe, std::ref(feature_table));
 
     construct_service(_debug_bundle_service, &storage.local().kvs()).get();
@@ -1429,7 +1494,9 @@ void application::wire_up_runtime_services(
 }
 
 void application::wire_up_redpanda_services(
-  model::node_id node_id, ::stop_signal& app_signal) {
+  model::node_id node_id,
+  ::stop_signal& app_signal,
+  std::optional<cloud_storage_clients::bucket_name>& bucket_name) {
     ss::smp::invoke_on_all([] {
         resources::available_memory::local().register_metrics();
     }).get();
@@ -1565,6 +1632,7 @@ void application::wire_up_redpanda_services(
           }))
           .get();
         cloud_io.invoke_on_all(&cloud_io::remote::start).get();
+        bucket_name = cloud_configs.local().bucket_name;
     }
 
     if (archival_storage_enabled()) {
@@ -1989,62 +2057,6 @@ void application::wire_up_redpanda_services(
           "cloud topics currently requires archival storage to be enabled");
         construct_service(_reconciler, &partition_manager, &cloud_io).get();
     }
-#ifndef BAZEL_DISABLE_DATALAKE_FEATURE
-    if (datalake_enabled()) {
-        // Construct datalake subsystems, now that dependencies are
-        // already constructed.
-        syschecks::systemd_message("Starting datalake services").get();
-        construct_service(
-          _datalake_coordinator_mgr,
-          node_id,
-          std::ref(raft_group_manager),
-          std::ref(partition_manager),
-          ss::sharded_parameter(
-            [](
-              cloud_io::remote& remote,
-              cloud_storage::configuration& cloud_config) {
-                return datalake::coordinator::create_catalog(
-                  remote, cloud_config.bucket_name, config::shard_local_cfg());
-            },
-            std::ref(cloud_io),
-            std::ref(cloud_configs)),
-          std::ref(cloud_io),
-          cloud_configs.local().bucket_name)
-          .get();
-        construct_service(
-          _datalake_coordinator_fe,
-          node_id,
-          &_datalake_coordinator_mgr,
-          &raft_group_manager,
-          &partition_manager,
-          &controller->get_topics_frontend(),
-          &metadata_cache,
-          &controller->get_partition_leaders(),
-          &controller->get_shard_table(),
-          &_connection_cache)
-          .get();
-
-        construct_service(
-          _datalake_manager,
-          node_id,
-          &raft_group_manager,
-          &partition_manager,
-          &controller->get_topics_state(),
-          &controller->get_topics_frontend(),
-          &controller->get_partition_leaders(),
-          &controller->get_shard_table(),
-          &feature_table,
-          &_datalake_coordinator_fe,
-          &cloud_io,
-          &_as,
-          cloud_configs.local().bucket_name,
-          sched_groups.datalake_sg(),
-          memory_groups().datalake_max_memory())
-          .get();
-        _datalake_manager.invoke_on_all(&datalake::datalake_manager::start)
-          .get();
-    }
-#endif
 
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();

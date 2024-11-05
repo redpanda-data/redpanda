@@ -69,6 +69,8 @@ public:
       ss::sharded<coordinator::frontend>* frontend,
       ss::sharded<features::feature_table>* features,
       std::unique_ptr<datalake::cloud_data_io>* cloud_io,
+      schema_manager* schema_mgr,
+      type_resolver* type_resolver,
       std::chrono::milliseconds translation_interval,
       ss::scheduling_group sg,
       size_t reader_max_bytes,
@@ -109,6 +111,8 @@ private:
     ss::sharded<coordinator::frontend>* _frontend;
     ss::sharded<features::feature_table>* _features;
     std::unique_ptr<datalake::cloud_data_io>* _cloud_io;
+    schema_manager* _schema_mgr;
+    type_resolver* _type_resolver;
     std::unique_ptr<kafka::partition_proxy> _partition_proxy;
     using jitter_t
       = simple_time_jitter<ss::lowres_clock, std::chrono::milliseconds>;

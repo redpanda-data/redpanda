@@ -235,7 +235,10 @@ private:
     void
     wire_up_runtime_services(model::node_id node_id, ::stop_signal& app_signal);
     void configure_admin_server();
-    void wire_up_redpanda_services(model::node_id, ::stop_signal& app_signal);
+    void wire_up_redpanda_services(
+      model::node_id,
+      ::stop_signal& app_signal,
+      std::optional<cloud_storage_clients::bucket_name>& bucket_name);
 
     void load_feature_table_snapshot();
 
