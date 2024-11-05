@@ -26,13 +26,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
     def setUp(self):
         super().setUp()
         si = self.redpanda.si_settings
-        self.trino = TrinoService(
-            self.test_ctx,
-            iceberg_catalog_rest_uri=str(self.catalog_service.catalog_url),
-            cloud_storage_access_key=str(si.cloud_storage_access_key),
-            cloud_storage_secret_key=str(si.cloud_storage_secret_key),
-            cloud_storage_region=si.cloud_storage_region,
-            cloud_storage_api_endpoint=str(si.endpoint_url))
+        self.trino = TrinoService(self.test_ctx,
+                                  self.catalog_service.catalog_url, si)
         self.trino.start()
 
     def tearDown(self):

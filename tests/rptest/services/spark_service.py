@@ -13,9 +13,11 @@ from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyhive import hive
+from rptest.services.redpanda import SISettings
+from rptest.tests.datalake.query_engine_base import QueryEngineType, QueryEngineBase
 
 
-class SparkService(Service):
+class SparkService(Service, QueryEngineBase):
     """Spark service for querying data generated in datalake."""
 
     SPARK_HOME = "/opt/spark"
@@ -33,19 +35,13 @@ class SparkService(Service):
         --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={s3}
     """
 
-    def __init__(self,
-                 ctx,
-                 iceberg_catalog_rest_uri: str,
-                 cloud_storage_access_key: str = 'panda-user',
-                 cloud_storage_secret_key: str = 'panda-secret',
-                 cloud_storage_region: str = 'panda-region',
-                 cloud_storage_api_endpoint: str = "http://minio-s3:9000"):
+    def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
         super(SparkService, self).__init__(ctx, num_nodes=1)
         self.iceberg_catalog_rest_uri = iceberg_catalog_rest_uri
-        self.cloud_storage_access_key = cloud_storage_access_key
-        self.cloud_storage_secret_key = cloud_storage_secret_key
-        self.cloud_storage_region = cloud_storage_region
-        self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+        self.cloud_storage_access_key = si.cloud_storage_access_key
+        self.cloud_storage_secret_key = si.cloud_storage_secret_key
+        self.cloud_storage_region = si.cloud_storage_region
+        self.cloud_storage_api_endpoint = si.endpoint_url
         self.spark_host: Optional[SparkService] = None
         self.spark_port = 10000
 
@@ -64,20 +60,12 @@ class SparkService(Service):
 
     def wait_node(self, node, timeout_sec=None):
         def _ready():
-            client = self.make_client()
             try:
-                cursor = client.cursor()
-                try:
-                    cursor.execute("show databases")
-                    cursor.fetchall()
-                    return True
-                finally:
-                    cursor.close()
+                self.run_query_fetch_all("show databases")
+                return True
             except Exception as e:
                 self.logger.debug(f"Exception querying spark server",
                                   exc_info=True)
-            finally:
-                client.close()
             return False
 
         wait_until(_ready,
@@ -95,6 +83,10 @@ class SparkService(Service):
     def clean_node(self, node, **_):
         self.stop_node(node, allow_fail=True)
         node.account.remove(SparkService.LOGS_DIR, allow_fail=True)
+
+    @staticmethod
+    def engine_name():
+        return QueryEngineType.SPARK
 
     def make_client(self):
         assert self.spark_host
