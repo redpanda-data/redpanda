@@ -7,6 +7,8 @@ package(default_visibility = [
     "//src/v/cloud_topics/dl_stm/tests:__pkg__",
     "//src/v/cloud_topics/reader:__pkg__",
     "//src/v/cloud_topics/reader/tests:__pkg__",
+    "//src/v/cloud_topics/recovery:__pkg__",
+    "//src/v/cloud_topics/recovery/tests:__pkg__",
     "//src/v/cloud_topics/tests:__pkg__",
 ])
 
@@ -42,13 +44,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "dl_version",
-    hdrs = ["dl_version.h"],
-    include_prefix = "cloud_topics",
-    deps = ["//src/v/utils:named_type"],
-)
-
-redpanda_cc_library(
     name = "dl_overlay",
     srcs = [
         "dl_overlay.cc",
@@ -79,6 +74,26 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "dl_version",
+    hdrs = ["dl_version.h"],
+    include_prefix = "cloud_topics",
+    deps = ["//src/v/utils:named_type"],
+)
+
+redpanda_cc_library(
+    name = "dl_snapshot",
+    hdrs = [
+        "dl_snapshot.h",
+    ],
+    include_prefix = "cloud_topics",
+    deps = [
+        ":dl_overlay",
+        ":dl_version",
+        "//src/v/serde",
     ],
 )
 

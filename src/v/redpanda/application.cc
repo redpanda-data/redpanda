@@ -1987,7 +1987,17 @@ void application::wire_up_redpanda_services(
           archival_storage_enabled(),
           "cloud topics currently requires archival storage to be enabled");
         construct_service(_reconciler, &partition_manager, &cloud_io).get();
+
+        construct_service(
+          _ct_snapshot_manager,
+          ss::sharded_parameter([this] { return &partition_manager.local(); }),
+          ss::sharded_parameter([this] { return &raft_group_manager.local(); }),
+          ss::sharded_parameter([this] { return &cloud_io.local(); }),
+          cloud_storage_clients::bucket_name(
+            config::shard_local_cfg().cloud_storage_bucket().value()))
+          .get();
     }
+
 #ifndef BAZEL_DISABLE_DATALAKE_FEATURE
     if (datalake_enabled()) {
         // Construct datalake subsystems, now that dependencies are
@@ -3218,6 +3228,10 @@ void application::start_runtime_services(
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         _reconciler.invoke_on_all([](auto& app) { return app.start(); }).get();
+        _ct_snapshot_manager
+          .invoke_on_all(
+            &experimental::cloud_topics::recovery::snapshot_manager::start)
+          .get();
     }
 }
 

@@ -4739,10 +4739,15 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.warn(f"{self.COV_KEY} should be one of 'ON', or 'OFF'")
         return False
 
-    def count_log_node(self, node: ClusterNode, pattern: str):
+    def count_log_node(self,
+                       node: ClusterNode,
+                       pattern: str,
+                       *,
+                       extended_pattern=False):
         accum = 0
+        flags = "-E" if extended_pattern else ""
         for line in node.account.ssh_capture(
-                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                f"grep {flags} \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                 timeout_sec=60):
             # We got a match
             self.logger.debug(f"Found {pattern} on node {node.name}: {line}")

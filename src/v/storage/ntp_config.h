@@ -54,6 +54,9 @@ public:
         with_cache cache_enabled = with_cache::yes;
         // if set the value will be used during partition recovery
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
+
+        bool cloud_recovery_enabled = false;
+
         // if set the value will control how data is uploaded and retrieved
         // to/from S3
         std::optional<model::shadow_indexing_mode> shadow_indexing_mode;

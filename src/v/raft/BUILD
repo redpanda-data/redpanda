@@ -29,11 +29,18 @@ redpanda_cc_library(
         "broker_compat.h",
     ],
     include_prefix = "raft",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/model",
         "//src/v/reflection:adl",
         "//src/v/utils:unresolved_address",
     ],
+)
+
+redpanda_cc_library(
+    name = "fwd",
+    hdrs = ["fwd.h"],
+    visibility = ["//visibility:public"],
 )
 
 redpanda_cc_library(

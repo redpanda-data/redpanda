@@ -254,6 +254,24 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
                 co_return res.ec;
             }
         }
+
+        // TODO(nv): Creating cloud topics within same stage—OK?
+        topic_configuration_vector cloud_topics;
+        for (auto& cloud_topic : actions.cloud_topics) {
+            cloud_topics.emplace_back(std::move(cloud_topic));
+            vlog(
+              clusterlog.debug,
+              "Creating cloud topic {}: {}",
+              cloud_topics.back().tp_ns,
+              cloud_topics.back());
+        }
+        auto cloud_results = co_await _topics_frontend.autocreate_topics(
+          std::move(cloud_topics), topics_retry.get_timeout());
+        for (const auto& res : cloud_results) {
+            if (res.ec != make_error_code(errc::success)) {
+                co_return res.ec;
+            }
+        }
         break;
     }
     case recovery_stage::recovered_topic_data: {
@@ -318,6 +336,10 @@ ss::future<cluster::errc> cluster_recovery_backend::do_action(
                 topics_to_wait.erase(tp_ns);
             }
         }
+
+        // TODO(nv): Wait for cloud topics to be fully recovered. Otherwise,
+        // consumer offsets recovery may act on incomplete data. We will have to
+        // delay cloud topics data GC until all topics are recovered as well.
     };
     co_return cluster::errc::success;
 }

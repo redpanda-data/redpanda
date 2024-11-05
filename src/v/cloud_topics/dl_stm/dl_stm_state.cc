@@ -10,6 +10,7 @@
 #include "cloud_topics/dl_stm/dl_stm_state.h"
 
 #include "cloud_topics/dl_overlay.h"
+#include "cloud_topics/dl_snapshot.h"
 #include "model/fundamental.h"
 
 #include <algorithm>
@@ -69,6 +70,53 @@ dl_stm_state::lower_bound(kafka::offset offset) const {
     }
 
     return best_match;
+}
+
+dl_snapshot_id dl_stm_state::start_snapshot(dl_version version) noexcept {
+    _version_invariant.set_last_snapshot_version(version);
+
+    auto id = dl_snapshot_id(version);
+    _snapshots.push_back(id);
+
+    return id;
+}
+
+bool dl_stm_state::snapshot_exists(dl_snapshot_id id) const noexcept {
+    return std::binary_search(
+      _snapshots.begin(),
+      _snapshots.end(),
+      id,
+      [](const dl_snapshot_id& a, const dl_snapshot_id& b) {
+          return a.version < b.version;
+      });
+}
+
+std::optional<dl_snapshot_payload>
+dl_stm_state::read_snapshot(dl_snapshot_id id) const {
+    auto it = std::find_if(
+      _snapshots.begin(), _snapshots.end(), [&id](const dl_snapshot_id& s) {
+          return s.version == id.version;
+      });
+
+    // Snapshot not found.
+    if (it == _snapshots.end()) {
+        return std::nullopt;
+    }
+
+    // Collect overlays that are visible at the snapshot version.
+    fragmented_vector<dl_overlay> overlays;
+    for (const auto& entry : _overlays) {
+        if (
+          entry.added_at <= id.version
+          && (entry.removed_at == dl_version{} || entry.removed_at > id.version)) {
+            overlays.push_back(entry.overlay);
+        }
+    }
+
+    return dl_snapshot_payload{
+      .id = *it,
+      .overlays = std::move(overlays),
+    };
 }
 
 } // namespace experimental::cloud_topics
