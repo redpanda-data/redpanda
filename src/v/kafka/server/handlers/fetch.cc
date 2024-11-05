@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/fetch.h"
 
 #include "base/likely.h"
+#include "base/vlog.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -1346,6 +1347,28 @@ class simple_fetch_planner final : public fetch_planner::impl {
                   resp_it->set(make_partition_response_error(
                     fp.topic_partition.get_partition(),
                     error_code::topic_authorization_failed));
+                  ++resp_it;
+                  return;
+              }
+
+              /**
+               * in sanction mode (without an enterprise license), the audit log
+               * topic is not consumable
+               */
+              if (unlikely(
+                    octx.rctx.feature_table().local().should_sanction()
+                    && fp.topic_partition.get_topic()
+                         == model::kafka_audit_logging_topic)) {
+                  thread_local static ss::logger::rate_limit rate(1s);
+                  vloglr(
+                    klog,
+                    ss::log_level::warn,
+                    rate,
+                    "An enterprise license is required to consume the "
+                    "audit log topic");
+                  resp_it->set(make_partition_response_error(
+                    fp.topic_partition.get_partition(),
+                    error_code::unknown_server_error));
                   ++resp_it;
                   return;
               }

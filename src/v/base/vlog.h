@@ -25,3 +25,11 @@
 // NOLINTNEXTLINE
 #define vlogl(logger, level, fmt, args...)                                     \
     fmt_with_ctx_level(logger, level, fmt, ##args)
+
+// NOLINTNEXTLINE
+#define fmt_with_ctx_level_and_rate(logger, level, rate, fmt, args...)         \
+    logger.log(level, rate, "{} - " fmt, vlog::file_line::current(), ##args)
+
+// NOLINTNEXTLINE
+#define vloglr(logger, level, rate, fmt, args...)                              \
+    fmt_with_ctx_level_and_rate(logger, level, rate, fmt, ##args)
