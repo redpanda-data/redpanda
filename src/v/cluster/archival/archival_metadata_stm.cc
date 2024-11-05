@@ -663,7 +663,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
 
     storage::simple_snapshot_manager tmp_snapshot_mgr(
       std::filesystem::path(ntp_cfg.work_directory()),
-      "archival_metadata.snapshot",
+      archival_stm_snapshot,
       raft_priority());
 
     co_await raft::file_backed_stm_snapshot::persist_local_snapshot(
