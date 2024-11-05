@@ -52,6 +52,31 @@ class DatalakeServices():
                           self.redpanda.si_settings)
             svc.start()
             self.query_engines.append(svc)
+        rest_mode = not self.catalog_service.filesystem_wrapper_mode
+        if rest_mode:
+            # Apply REST end point configurations in Redpanda
+            # and restart brokers
+            self.redpanda.set_cluster_config(
+                {
+                    "iceberg_catalog_type": "rest",
+                    "iceberg_rest_catalog_endpoint":
+                    self.catalog_service.catalog_url,
+                    "iceberg_rest_catalog_user_id": "panda-user",
+                    "iceberg_rest_catalog_secret": "panda-secret"
+                },
+                expect_restart=True)
+            self.redpanda.logger.debug(
+                "Restarting Redpanda for Catalog REST server configuration to take effect."
+            )
+            brokers = self.redpanda.nodes
+            self.redpanda.restart_nodes(brokers)
+            self.redpanda._admin.await_stable_leader(
+                topic="controller",
+                partition=0,
+                namespace="redpanda",
+                hosts=[n.account.hostname for n in brokers],
+                timeout_s=30,
+                backoff_s=1)
 
     def tearDown(self):
         for engine in self.query_engines:

@@ -31,7 +31,7 @@ class DatalakeE2ETests(RedpandaTest):
 
     @cluster(num_nodes=4)
     @matrix(query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            filesystem_catalog_mode=[True])
+            filesystem_catalog_mode=[True, False])
     def test_e2e_basic(self, query_engine, filesystem_catalog_mode):
         # Create a topic
         # Produce some events
