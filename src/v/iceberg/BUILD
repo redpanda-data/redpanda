@@ -978,6 +978,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
+        ":avro_decimal",
         ":datatypes",
         ":values",
         "@avro",
