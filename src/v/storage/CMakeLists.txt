@@ -5,6 +5,7 @@ v_cc_library(
     segment_reader.cc
     segment_deduplication_utils.cc
     log_manager.cc
+    log_manager_probe.cc
     disk_log_impl.cc
     disk_log_appender.cc
     parser.cc

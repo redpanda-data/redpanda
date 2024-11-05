@@ -356,6 +356,7 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":log_manager_probe",
         ":logger",
         "//src/v/syschecks",
     ],
@@ -440,4 +441,18 @@ redpanda_cc_library(
         "@roaring",
         "@seastar",
     ],
+)
+
+redpanda_cc_library(
+    name = "log_manager_probe",
+    srcs = [
+        "log_manager_probe.cc",
+    ],
+    hdrs = [
+        "log_manager_probe.h",
+    ],
+    implementation_deps = [
+        "//src/v/config",
+    ],
+    include_prefix = "storage",
 )
