@@ -28,6 +28,10 @@ void log_manager_probe::setup_metrics() {
     _metrics.add_group(
       group_name,
       {
+        sm::make_gauge(
+          "logs",
+          [this] { return _log_count; },
+          sm::description("Number of logs managed")),
         sm::make_counter(
           "urgent_gc_runs",
           [this] { return _urgent_gc_runs; },

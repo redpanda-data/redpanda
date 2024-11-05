@@ -278,6 +278,8 @@ private:
 
     ss::future<> housekeeping_scan(model::timestamp);
 
+    void update_log_count();
+
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
