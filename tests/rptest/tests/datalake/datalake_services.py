@@ -125,10 +125,11 @@ class DatalakeServices():
         table_name = f"redpanda.{topic}"
 
         def translation_done():
-            return all([
-                engine.count_table(table_name) == msg_count
-                for engine in self.query_engines
-            ])
+            counts = dict(
+                map(lambda e: (e.engine_name(), e.count_table(table_name)),
+                    self.query_engines))
+            self.redpanda.logger.debug(f"Current counts: {counts}")
+            return all([c == msg_count for _, c in counts.items()])
 
         wait_until(
             translation_done,
