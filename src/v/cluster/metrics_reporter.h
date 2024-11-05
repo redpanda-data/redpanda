@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/plugin_table.h"
 #include "cluster/types.h"
+#include "features/enterprise_features.h"
 #include "features/fwd.h"
 #include "http/client.h"
 #include "model/metadata.h"
@@ -82,6 +83,8 @@ public:
 
         bool has_enterprise_features{false};
         bool has_valid_license{false};
+
+        std::optional<features::enterprise_feature_report> enterprise_features;
     };
     static constexpr ss::shard_id shard = 0;
 
