@@ -92,7 +92,7 @@ public:
     /**
      * Add all configurations
      */
-    ss::future<> add(std::vector<offset_configuration>);
+    ss::future<> add(chunked_vector<offset_configuration>);
 
     /**
      * Get the configuration that is valid for given offset. This method return
