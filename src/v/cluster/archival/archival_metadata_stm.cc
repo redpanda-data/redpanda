@@ -670,6 +670,16 @@ ss::future<> archival_metadata_stm::make_snapshot(
       tmp_snapshot_mgr, std::move(snapshot));
 }
 
+ss::future<bool>
+archival_metadata_stm::has_snapshot(const storage::ntp_config& ntp_cfg) {
+    storage::simple_snapshot_manager tmp_snapshot_mgr(
+      std::filesystem::path(ntp_cfg.work_directory()),
+      archival_stm_snapshot,
+      raft_priority());
+    co_return co_await ss::file_exists(
+      tmp_snapshot_mgr.snapshot_path().string());
+}
+
 archival_metadata_stm::archival_metadata_stm(
   raft::consensus* raft,
   cloud_storage::remote& remote,
