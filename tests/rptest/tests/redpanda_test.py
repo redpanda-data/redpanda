@@ -151,13 +151,12 @@ class RedpandaTest(RedpandaTestBase):
         return versions
 
     def upgrade_through_versions(
-            self,
-            versions_in: list[RedpandaVersion],
-            already_running: bool = False,
-            auto_assign_node_id: bool = False,
-            mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
-                                        None] = lambda x: None,
-            license_required: bool = False):
+        self,
+        versions_in: list[RedpandaVersion],
+        already_running: bool = False,
+        auto_assign_node_id: bool = False,
+        mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
+                                    None] = lambda x: None):
         """
         Step the cluster through all the versions in `versions`, at each stage
         yielding the version of the cluster.
@@ -252,10 +251,6 @@ class RedpandaTest(RedpandaTestBase):
                 self.logger.info(
                     f"Upgrading to {current_version}, skipping maintenance mode"
                 )
-
-            # Installing a license is required for version upgrades with enterprise features
-            if license_required:
-                self.redpanda.install_license()
 
             # restarts the nodes in two batches, to run mid_upgrade_check with a mixed-version cluster
             rp_nodes: list[Any] = self.redpanda.nodes
