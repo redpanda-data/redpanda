@@ -121,11 +121,10 @@ TEST(AggregatorTest, SingleRequestDtorWithLostRequestStaged) {
     // Checks situation when the aggregator is destroyed with staging write
     // requests but one write request is destroyed before the aggregator.
     constexpr static auto timeout = 10s;
-    auto chunk = get_random_serialized_chunk(10, 10);
     cloud_topics::details::write_request<ss::manual_clock> request(
       model::controller_ntp,
       cloud_topics::details::batcher_req_index(0),
-      std::move(chunk),
+      get_random_serialized_chunk(10, 10),
       timeout);
     auto fut = request.response.get_future();
 
@@ -133,7 +132,7 @@ TEST(AggregatorTest, SingleRequestDtorWithLostRequestStaged) {
         cloud_topics::details::write_request<ss::manual_clock> tmp_request(
           model::controller_ntp,
           cloud_topics::details::batcher_req_index(1),
-          std::move(chunk),
+          get_random_serialized_chunk(10, 10),
           timeout);
         cloud_topics::details::aggregator<ss::manual_clock> aggregator;
         aggregator.add(request);
