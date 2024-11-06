@@ -30,6 +30,8 @@ from polaris.management.models.principal_role import PrincipalRole
 from polaris.management.models.catalog_privilege import CatalogPrivilege
 from polaris.management.models.principal import Principal
 from pyiceberg.catalog import load_catalog
+from rptest.tests.datalake.utils import supported_storage_types
+from ducktape.mark import matrix
 
 
 class PolarisCatalogSmokeTest(PolarisCatalogTest):
@@ -45,7 +47,8 @@ class PolarisCatalogSmokeTest(PolarisCatalogTest):
     """
 
     @cluster(num_nodes=2)
-    def test_creating_catalog(self):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_creating_catalog(self, cloud_storage_type):
         """The very basic test checking interaction with polaris catalog
         """
         polaris_api = PolarisDefaultApi(self.polaris.management_client())

@@ -13,6 +13,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
+from rptest.tests.datalake.utils import supported_storage_types
 
 
 class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
@@ -28,8 +29,9 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
         pass
 
     @cluster(num_nodes=2)
-    @matrix(filesystem_catalog_mode=[True, False])
-    def test_basic(self, filesystem_catalog_mode):
+    @matrix(cloud_storage_type=supported_storage_types(),
+            filesystem_catalog_mode=[True, False])
+    def test_basic(self, cloud_storage_type, filesystem_catalog_mode):
 
         self.catalog_service.set_filesystem_wrapper_mode(
             filesystem_catalog_mode)

@@ -11,6 +11,8 @@ from typing import Optional
 from rptest.services.cluster import cluster
 from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
+from rptest.tests.datalake.utils import supported_storage_types
+from ducktape.mark import matrix
 
 
 class TrinoSmokeTest(IcebergRESTCatalogTest):
@@ -40,7 +42,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
         return self.trino.execute(query=query_str)
 
     @cluster(num_nodes=3)
-    def test_trino_smoke(self):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_trino_smoke(self, cloud_storage_type):
         assert self.trino
         client = self.trino.make_client()
         try:
