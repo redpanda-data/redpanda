@@ -27,6 +27,7 @@
 #include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
 #include "storage/log.h"
+#include "storage/log_manager_probe.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
@@ -143,13 +144,16 @@ log_manager::log_manager(
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _trigger_gc_jitter(0s, 5s)
-  , _batch_cache(_config.reclaim_opts) {
+  , _batch_cache(_config.reclaim_opts)
+  , _probe(std::make_unique<log_manager_probe>()) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
         _housekeeping_sem.signal();
     });
 }
+
+log_manager::~log_manager() = default;
 
 ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
     auto clean_segment = co_await log->close();
@@ -171,6 +175,7 @@ ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
 }
 
 ss::future<> log_manager::start() {
+    _probe->setup_metrics();
     if (unlikely(config::shard_local_cfg()
                    .log_disable_housekeeping_for_tests.value())) {
         co_return;
@@ -195,6 +200,8 @@ ss::future<> log_manager::stop() {
         co_await _compaction_hash_key_map->initialize(0);
         _compaction_hash_key_map.reset();
     }
+
+    _probe->clear_metrics();
 }
 
 /**
@@ -280,6 +287,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
           _abort_source,
           std::move(ntp_sanitizer_cfg),
           _compaction_hash_key_map.get()));
+        _probe->housekeeping_log_processed();
 
         // bail out of compaction early in order to get back to gc
         if (_gc_triggered) {
@@ -359,6 +367,7 @@ ss::future<> log_manager::housekeeping_loop() {
             // it is expected that callers set the flag whenever they want the
             // next round of housekeeping to priortize gc.
             _gc_triggered = false;
+            _probe->urgent_gc_run();
 
             /*
              * build a schedule of partitions to gc ordered by amount of
@@ -576,7 +585,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(
     auto [it, success] = _logs.emplace(
       l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
-    _resources.update_partition_count(_logs.size());
+    update_log_count();
     vassert(success, "Could not keep track of:{} - concurrency issue", l);
     co_return l;
 }
@@ -596,7 +605,7 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     auto g = _gate.hold();
     auto handle = _logs.extract(ntp);
-    _resources.update_partition_count(_logs.size());
+    update_log_count();
     if (handle.empty()) {
         co_return;
     }
@@ -877,6 +886,13 @@ gc_config log_manager::default_gc_config() const {
           model::timestamp::now().value() - _config.log_retention()->count());
     }
     return {collection_threshold, _config.retention_bytes()};
+}
+
+void log_manager::update_log_count() {
+    auto count = _logs.size();
+
+    _resources.update_partition_count(count);
+    _probe->set_log_count(count);
 }
 
 } // namespace storage
