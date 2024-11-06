@@ -12,11 +12,13 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
+#include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/core/serializer.h"
 #include "cloud_topics/errc.h"
 #include "model/record.h"
 
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/weak_ptr.hh>
 
 namespace experimental::cloud_topics::core {
@@ -35,10 +37,12 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// At this point in time we need to reply to the client
     /// with timeout error
     timestamp_t expiration_time;
+    /// Current pipeline stage
+    pipeline_stage stage;
     /// List of all write requests
     intrusive_list_hook _hook;
 
-    using response_t = result<ss::circular_buffer<model::record_batch>>;
+    using response_t = checked<ss::circular_buffer<model::record_batch>, errc>;
     /// The promise is used to signal to the caller
     /// after the upload is completed
     ss::promise<response_t> response;
@@ -54,7 +58,8 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     write_request(
       model::ntp ntp,
       serialized_chunk chunk,
-      std::chrono::milliseconds timeout);
+      std::chrono::milliseconds timeout,
+      pipeline_stage stage = unassigned_pipeline_stage);
 
     size_t size_bytes() const noexcept;
 

@@ -10,6 +10,7 @@
 
 #include "cloud_topics/core/write_request.h"
 
+#include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/core/serializer.h"
 #include "cloud_topics/logger.h"
 
@@ -17,11 +18,15 @@ namespace experimental::cloud_topics::core {
 
 template<class Clock>
 write_request<Clock>::write_request(
-  model::ntp ntp, serialized_chunk chunk, std::chrono::milliseconds timeout)
+  model::ntp ntp,
+  serialized_chunk chunk,
+  std::chrono::milliseconds timeout,
+  pipeline_stage stage)
   : ntp(std::move(ntp))
   , data_chunk(std::move(chunk))
   , ingestion_time(Clock::now())
-  , expiration_time(Clock::now() + timeout) {}
+  , expiration_time(Clock::now() + timeout)
+  , stage(stage) {}
 
 template<class Clock>
 void write_request<Clock>::set_value(errc e) noexcept {
