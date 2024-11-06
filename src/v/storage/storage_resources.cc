@@ -98,7 +98,6 @@ void storage_resources::update_allowance(uint64_t total, uint64_t free) {
         total -= config::shard_local_cfg().cloud_storage_cache_size();
     }
 
-    _space_allowance = total;
     _space_allowance_free = std::min(free, total);
 
     _falloc_step = calc_falloc_step();
@@ -135,10 +134,6 @@ size_t storage_resources::calc_falloc_step() {
         // full falloc step.
         return step;
     }
-
-    // Initial disk stats read happens very early in startup, we should
-    // never be called before that.
-    vassert(_space_allowance > 0, "Called before disk stats init");
 
     // Pessimistic assumption that each shard may use _at most_ the
     // disk space divided by the shard count.  If allocation of partitions
