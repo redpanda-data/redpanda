@@ -4294,3 +4294,76 @@ class SchemaRegistryCompatibilityModes(SchemaRegistryEndpoints):
 
             self.logger.debug(f"register schema={s} with {mode} compatibility")
             self._register_schema(schema=s, type=schema_type, mode=mode)
+
+
+class SchemaRegistrySanctionsTest(SchemaRegistryEndpoints):
+    def __init__(self, context, **kwargs):
+        super(SchemaRegistrySanctionsTest, self).__init__(
+            context,
+            num_brokers=1,
+            **kwargs,
+        )
+
+    @skip_fips_mode
+    @cluster(num_nodes=1)
+    @matrix(
+        validation_mode=[
+            SchemaIdValidationMode.NONE,
+            # NOTE(oren): only use compat mode to keep the test body simple
+            # SchemaIdValidationMode.REDPANDA,
+            SchemaIdValidationMode.COMPAT,
+        ],
+        disable_trial=[
+            False,
+            True,
+        ],
+        prop=[
+            None,
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION,
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT,
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION,
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT,
+        ],
+    )
+    def test_sanction_schema_id_validation_create_topic(
+            self, validation_mode, disable_trial, prop):
+        self.redpanda.set_cluster_config(
+            dict(enable_schema_id_validation=validation_mode))
+
+        if disable_trial:
+            self.redpanda.set_environment(
+                dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1'))
+
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+
+        # Regardless of license status or other configs, specifying a
+        # strategy is not sanctioned. Only turning on validation for the
+        # topic is against the rules.
+        config = {
+            TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY:
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME,
+            TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY:
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME,
+            TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT:
+            TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME,
+            TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
+            TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME,
+        }
+        if prop is not None:
+            config.update({prop: 'true'})
+
+        def should_sanction():
+            return disable_trial and \
+                validation_mode != SchemaIdValidationMode.NONE and \
+                    prop is not None
+
+        do_it = lambda: self._create_topic(topic='foo', config=config)
+
+        if should_sanction():
+            with expect_exception(
+                    RpkException,
+                    lambda e: "Requested feature is disabled" in e.msg):
+                do_it()
+        else:
+            do_it()

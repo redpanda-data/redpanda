@@ -474,6 +474,34 @@ ss::future<topic_result> topics_frontend::do_create_topic(
         co_return topic_result(assignable_config.cfg.tp_ns, validation_err);
     }
 
+    // Some schema ID validation configs are restricted:
+    //   - [x] record_key_schema_id_validation
+    //   - [x] record_key_schema_id_validation_compat
+    //   - [x] record_value_schema_id_validation
+    //   - [x] record_value_schema_id_validation_compat
+    //   - [SKIP] record_key_subject_name_strategy
+    //   - [SKIP] record_key_subject_name_strategy_compat
+    //   - [SKIP] record_value_subject_name_strategy
+    //   - [SKIP] record_value_subject_name_strategy_compat
+    //
+    // SKIP the 'strategy' ones those because they don't mean much unless
+    // validation is ON for the topic.
+    auto id_validation_enabled = [&assignable_config]() -> bool {
+        const auto& props = assignable_config.cfg.properties;
+        return std::ranges::any_of(
+          std::to_array({
+            props.record_key_schema_id_validation,
+            props.record_key_schema_id_validation_compat,
+            props.record_value_schema_id_validation,
+            props.record_value_schema_id_validation_compat,
+          }),
+          [](const auto& p) { return p.value_or(false); });
+    };
+    if (_features.local().should_sanction() && id_validation_enabled()) {
+        co_return make_error_result(
+          assignable_config.cfg.tp_ns, errc::feature_disabled);
+    }
+
     if (assignable_config.is_read_replica()) {
         if (!assignable_config.cfg.properties.read_replica_bucket) {
             co_return make_error_result(
