@@ -3,4 +3,6 @@ It includes the following components:
 - `read_request`
 - `write_request`
 - `serializer`
+- `write_pipeline`
+- `read_pipeline`
 - etc
