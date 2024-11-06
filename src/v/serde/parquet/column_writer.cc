@@ -76,7 +76,7 @@ public:
           },
           [](auto& v) {
               throw std::runtime_error(fmt::format(
-                "invalid value for column: {:32}", value(std::move(v))));
+                "invalid value for column: {:.32}", value(std::move(v))));
           });
         _rep_levels.push_back(rl);
         _def_levels.push_back(dl);
