@@ -1135,12 +1135,18 @@ offset_delta_time should_apply_delta_time_offset(
       && feature_table.local().is_active(features::feature::node_isolation)};
 }
 
-void mark_segment_as_finished_window_compaction(
+ss::future<> mark_segment_as_finished_window_compaction(
   ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp) {
     seg->mark_as_finished_windowed_compaction();
     if (set_clean_compact_timestamp) {
-        seg->index().maybe_set_clean_compact_timestamp(model::timestamp::now());
+        bool did_set = seg->index().maybe_set_clean_compact_timestamp(
+          model::timestamp::now());
+        if (did_set) {
+            return seg->index().flush();
+        }
     }
+
+    return ss::now();
 }
 
 bool is_past_tombstone_delete_horizon(

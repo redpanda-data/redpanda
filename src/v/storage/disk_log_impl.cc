@@ -615,7 +615,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // For all intents and purposes, these segments are already cleanly
         // compacted.
         auto seg = segs.front();
-        internal::mark_segment_as_finished_window_compaction(seg, true);
+        co_await internal::mark_segment_as_finished_window_compaction(
+          seg, true);
         segs.pop_front();
     }
     if (segs.empty()) {
@@ -705,8 +706,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             // higher than those indexed, it may be because the segment is
             // entirely comprised of non-data batches. Mark it as compacted so
             // we can progress through compactions.
-            internal::mark_segment_as_finished_window_compaction(
+            co_await internal::mark_segment_as_finished_window_compaction(
               seg, is_clean_compacted);
+
             vlog(
               gclog.debug,
               "[{}] treating segment as compacted, offsets fall above highest "
@@ -718,13 +720,9 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         }
         if (!seg->may_have_compactible_records()) {
             // All data records are already compacted away. Skip to avoid a
-            // needless rewrite. But, still flush index in case we are clean
-            // compacted to persist clean_compact_timestamp
-            internal::mark_segment_as_finished_window_compaction(
+            // needless rewrite.
+            co_await internal::mark_segment_as_finished_window_compaction(
               seg, is_clean_compacted);
-            if (is_clean_compacted) {
-                co_await seg->index().flush();
-            }
 
             vlog(
               gclog.trace,
@@ -823,7 +821,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
         // Mark the segment as completed window compaction, and possibly set the
         // clean_compact_timestamp in it's index.
-        internal::mark_segment_as_finished_window_compaction(
+        co_await internal::mark_segment_as_finished_window_compaction(
           seg, is_clean_compacted);
 
         co_await seg->index().flush();
