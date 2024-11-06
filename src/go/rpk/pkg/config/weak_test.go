@@ -973,6 +973,13 @@ rpk:
     tls:
       cert_file: ~/certs/admin-cert.pem
       truststore_file: ~/certs/admin-ca.pem
+  schema_registry:
+    addresses:
+    - 192.168.72.34:8081
+    - 192.168.72.35:8081
+    tls:
+      cert_file: ~/certs/admin-cert.pem
+      truststore_file: ~/certs/admin-ca.pem
   tune_network: false
   tune_disk_scheduler: false
   tune_cpu: true
@@ -1069,6 +1076,10 @@ rpk:
 					},
 					AdminAPI: RpkAdminAPI{
 						Addresses: []string{"192.168.72.34:9644", "192.168.72.35:9644"},
+						TLS:       &TLS{CertFile: "~/certs/admin-cert.pem", TruststoreFile: "~/certs/admin-ca.pem"},
+					},
+					SR: RpkSchemaRegistryAPI{
+						Addresses: []string{"192.168.72.34:8081", "192.168.72.35:8081"},
 						TLS:       &TLS{CertFile: "~/certs/admin-cert.pem", TruststoreFile: "~/certs/admin-ca.pem"},
 					},
 					Tuners: RpkNodeTuners{
@@ -1293,6 +1304,13 @@ rpk:
     tls:
       cert_file: ~/certs/admin-cert.pem
       truststore_file: ~/certs/admin-ca.pem
+  schema_registry:
+    addresses:
+    - 192.168.72.34:8081
+    - 192.168.72.35:8081
+    tls:
+      cert_file: ~/certs/admin-cert.pem
+      truststore_file: ~/certs/admin-ca.pem
   tune_network: false
   tune_disk_scheduler: false
   tune_cpu: 1
@@ -1388,6 +1406,10 @@ rpk:
 					},
 					AdminAPI: RpkAdminAPI{
 						Addresses: []string{"192.168.72.34:9644", "192.168.72.35:9644"},
+						TLS:       &TLS{CertFile: "~/certs/admin-cert.pem", TruststoreFile: "~/certs/admin-ca.pem"},
+					},
+					SR: RpkSchemaRegistryAPI{
+						Addresses: []string{"192.168.72.34:8081", "192.168.72.35:8081"},
 						TLS:       &TLS{CertFile: "~/certs/admin-cert.pem", TruststoreFile: "~/certs/admin-ca.pem"},
 					},
 					Tuners: RpkNodeTuners{
