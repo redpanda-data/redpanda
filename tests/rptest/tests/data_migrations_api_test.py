@@ -482,6 +482,15 @@ class DataMigrationsApiTest(RedpandaTest):
             self.logger.debug(f"second msg={format_message(msg)}")
             assert msg is None
 
+    def log_topics(self, topic_names):
+        for t in topic_names:
+            try:
+                topic_desc = self.client().describe_topic(t)
+            except ck.KafkaException as e:
+                self.logger.warn(f"failed to describe topic {t}: {e}")
+            else:
+                self.logger.info(f"topic {t} is {topic_desc}")
+
     def check_migrations(self, migration_id, exp_topics_cnt,
                          exp_migrations_cnt):
         """ make sure that, when the migration appears,
@@ -588,10 +597,8 @@ class DataMigrationsApiTest(RedpandaTest):
             in_migration_id = self.create_and_wait(in_migration)
             self.check_migrations(in_migration_id, len(inbound_topics), 2)
 
-            for t in inbound_topics:
-                self.logger.info(
-                    f"inbound topic: {self.client().describe_topic(t.source_topic_reference.topic)}"
-                )
+            self.log_topics(t.source_topic_reference.topic
+                            for t in inbound_topics)
 
             self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.prepare)
@@ -609,10 +616,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                            ['cut_over', 'finished'])
             self.wait_for_migration_states(in_migration_id, ['finished'])
 
-            for t in topics:
-                self.logger.info(
-                    f'topic {t.name} is {self.client().describe_topic(t.name)}'
-                )
+            self.log_topics(t.name for t in topics)
 
         # todo: fix rp_storage_tool to use overridden topic names
         self.redpanda.si_settings.set_expected_damage(
@@ -711,10 +715,7 @@ class DataMigrationsApiTest(RedpandaTest):
             self.wait_partitions_appear(inbound_topics_spec)
             self.logger.info('waiting for migration to be deleted')
             self.wait_migration_disappear(in_migration_id)
-            for t in topics:
-                self.logger.info(
-                    f'topic {t.name} is {self.client().describe_topic(t.name)}'
-                )
+            self.log_topics(t.name for t in topics)
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
 
