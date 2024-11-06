@@ -41,6 +41,6 @@ class DatalakeE2ETests(RedpandaTest):
                               redpanda=self.redpanda,
                               filesystem_catalog_mode=filesystem_catalog_mode,
                               include_query_engines=[query_engine]) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name)
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=10)
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)

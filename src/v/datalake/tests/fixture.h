@@ -87,9 +87,10 @@ public:
     translated_files_for_partition(const model::ntp& ntp) {
         chunked_vector<datalake::coordinator::translated_offset_range> result;
         auto& fe = coordinator_frontend(model::node_id{0});
-        auto coordinator_partition = fe.local().coordinator_partition(ntp.tp);
+        auto coordinator_partition = fe.local().coordinator_partition(
+          ntp.tp.topic);
         if (!coordinator_partition) {
-            co_return datalake::coordinator::errc::not_leader;
+            co_return datalake::coordinator::errc::coordinator_topic_not_exists;
         }
         auto c_ntp = model::ntp{
           model::datalake_coordinator_nt.ns,
