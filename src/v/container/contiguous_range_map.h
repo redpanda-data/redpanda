@@ -13,6 +13,8 @@
 
 #include "container/fragmented_vector.h"
 
+#include <stdexcept>
+
 /**
  * Contiguous range map is an associative sorted container backed by
  * chunked_vector designed to efficiently store objects indexed with contiguous
@@ -153,6 +155,33 @@ public:
      * given key is not present the default element will be constructed.
      */
     mapped_type& operator[](KeyT key) { return emplace(key).first->second; }
+
+    /**
+     * Returns an element comparing equal to the given key. If an element is
+     * not present, than an out_of_range exception will be thrown.
+     */
+    mapped_type& at(KeyT key) {
+        auto it = find(key);
+        if (it == end()) [[unlikely]] {
+            throw std::out_of_range(
+              fmt::format("Invalid key {}, value is missing", key));
+        }
+        return it->second;
+    }
+
+    /**
+     * Returns an element comparing equal to the given key. If an element is
+     * not present, than an out_of_range exception will be thrown.
+     */
+    const mapped_type& at(KeyT key) const {
+        auto it = find(key);
+        if (it == end()) [[unlikely]] {
+            throw std::out_of_range(
+              fmt::format("Invalid key {}, value is missing", key));
+        }
+        return it->second;
+    }
+
     /**
      * Constructs element for given key in place.
      *
