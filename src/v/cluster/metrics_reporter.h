@@ -18,6 +18,7 @@
 #include "features/fwd.h"
 #include "http/client.h"
 #include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "security/fwd.h"
 #include "utils/prefix_logger.h"
 
@@ -58,6 +59,7 @@ public:
         cluster_version logical_version{invalid_version};
         std::vector<node_disk_space> disks;
         uint64_t uptime_ms{0};
+        std::vector<net::unresolved_address> advertised_listeners;
     };
 
     struct metrics_snapshot {
