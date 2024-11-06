@@ -245,6 +245,8 @@ struct schema_element {
      * The overall index of the schema element within the schema.
      *
      * This is effectively an ID for the schema_element.
+     *
+     * This is filled out during schema indexing.
      */
     int32_t position = -1;
 
@@ -263,6 +265,17 @@ struct schema_element {
 
     /** Name of the field in the schema. */
     ss::sstring name;
+
+    /**
+     * The full path of the node within the schema.
+     *
+     * The last index is always `name`, except if this is the root.
+     * The root node's path is always empty and is not included in
+     * as a common prefix.
+     *
+     * This is filled out during schema indexing.
+     */
+    chunked_vector<ss::sstring> path;
 
     /**
      * Nested fields.
@@ -286,6 +299,8 @@ struct schema_element {
      * The definition level is used to determine where the `null` value is in a
      * heirarchy of schema nodes. See shredder.h for more on definition level
      * and how it's computed.
+     *
+     * This is filled out during schema indexing.
      */
     def_level max_definition_level = def_level(-1);
 
@@ -295,6 +310,8 @@ struct schema_element {
      * The repetition level is used to determine the list index in a repeated
      * value heirarchy of (possibility repeated) schema nodes. See shredder.h
      * for more on repetition level and how it's computed.
+     *
+     * This is filled out during schema indexing.
      */
     rep_level max_repetition_level = rep_level(-1);
 

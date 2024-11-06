@@ -25,19 +25,22 @@ bool schema_element::is_leaf() const {
 void index_schema(schema_element& root) {
     int32_t position = 0;
     struct entry {
+        chunked_vector<ss::sstring> path;
         rep_level rep_level;
         def_level def_level;
         schema_element* element;
     };
     chunked_vector<entry> to_visit;
     to_visit.push_back({
+      .path = {},
       .rep_level = rep_level(0),
       .def_level = def_level(0),
       .element = &root,
     });
     while (!to_visit.empty()) {
-        auto [rep_level, def_level, element] = to_visit.back();
+        auto [path, rep_level, def_level, element] = std::move(to_visit.back());
         to_visit.pop_back();
+        element->path = path.copy();
         element->position = position++;
         if (element->repetition_type != field_repetition_type::required) {
             ++def_level;
@@ -48,7 +51,10 @@ void index_schema(schema_element& root) {
         element->max_definition_level = def_level;
         element->max_repetition_level = rep_level;
         for (auto& child : reverse_view(element->children)) {
+            auto child_path = path.copy();
+            child_path.push_back(child.name);
             to_visit.push_back({
+              .path = std::move(child_path),
               .rep_level = rep_level,
               .def_level = def_level,
               .element = &child,
@@ -64,15 +70,16 @@ auto fmt::formatter<serde::parquet::schema_element>::format(
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{position: {}, type: {}, repetition_type: {}, max_def_level: {}, "
-      "max_rep_level: {}, name: {}, logical_type: "
-      "{}, field_id: {}, children: [{}]}}",
+      "{{ position: {}, type: {}, repetition_type: {}, max_def_level: {}, "
+      "max_rep_level: {}, name: {}, path: {}, logical_type: {}, field_id: {}, "
+      "children: [{}]}}",
       e.position,
       e.type.index(),
       static_cast<uint8_t>(e.repetition_type),
       e.max_definition_level(),
       e.max_repetition_level(),
       e.name,
+      fmt::join(e.path, "/"),
       e.logical_type.index(),
       e.field_id.value_or(-1),
       fmt::join(e.children, ", "));
