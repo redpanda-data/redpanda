@@ -452,6 +452,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":partition",
+        "//src/v/container:fragmented_vector",
         "//src/v/json",
     ],
 )

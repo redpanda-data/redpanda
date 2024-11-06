@@ -32,14 +32,19 @@ partition_field parse_partition_field(const json::Value& v) {
     };
 }
 
-partition_spec parse_partition_spec(const json::Value& v) {
-    auto spec_id = parse_required_i32(v, "spec-id");
-    auto fields_array = parse_required_array(v, "fields");
+chunked_vector<partition_field>
+parse_partition_fields(const json::Value::ConstArray& fields_array) {
     chunked_vector<partition_field> fs;
     fs.reserve(fields_array.Size());
     for (const auto& f : fields_array) {
         fs.emplace_back(parse_partition_field(f));
     }
+    return fs;
+}
+partition_spec parse_partition_spec(const json::Value& v) {
+    auto spec_id = parse_required_i32(v, "spec-id");
+    auto fields_array = parse_required_array(v, "fields");
+    auto fs = parse_partition_fields(fields_array);
     return partition_spec{
       .spec_id = partition_spec::id_t{spec_id},
       .fields = std::move(fs),
@@ -65,16 +70,22 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
+  iceberg::json_writer& w,
+  const chunked_vector<iceberg::partition_field>& fields) {
+    w.StartArray();
+    for (const auto& f : fields) {
+        rjson_serialize(w, f);
+    }
+    w.EndArray();
+}
+
+void rjson_serialize(
   iceberg::json_writer& w, const iceberg::partition_spec& m) {
     w.StartObject();
     w.Key("spec-id");
     w.Int(m.spec_id());
     w.Key("fields");
-    w.StartArray();
-    for (const auto& f : m.fields) {
-        rjson_serialize(w, f);
-    }
-    w.EndArray();
+    rjson_serialize(w, m.fields);
     w.EndObject();
 }
 

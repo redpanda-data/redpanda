@@ -79,16 +79,19 @@ struct partition_spec_strs {
 };
 partition_spec partition_spec_from_str(const partition_spec_strs& strs) {
     auto spec_id = std::stoi(strs.spec_id_str);
-    json::Document parsed_spec_json;
-    parsed_spec_json.Parse(strs.fields_json_str);
-    auto parsed_spec = parse_partition_spec(parsed_spec_json);
-    if (parsed_spec.spec_id() != spec_id) {
+    json::Document fields_json;
+    fields_json.Parse(strs.fields_json_str);
+    if (!fields_json.IsArray()) {
         throw std::invalid_argument(fmt::format(
-          "Mismatched partition spec id {} vs {}",
-          spec_id,
-          parsed_spec.spec_id()));
+          "Expected 'partition_spec' to be array of fields: {}",
+          fields_json.GetType()));
     }
-    return parsed_spec;
+    const auto& const_json = fields_json;
+    auto fields = parse_partition_fields(const_json.GetArray());
+    return partition_spec{
+      .spec_id = partition_spec::id_t{spec_id},
+      .fields = std::move(fields),
+    };
 }
 
 std::map<std::string, std::string>
@@ -96,7 +99,7 @@ metadata_to_map(const manifest_metadata& meta) {
     return {
       {"schema", to_json_str(meta.schema)},
       {"content", std::string{content_type_to_str(meta.manifest_content_type)}},
-      {"partition-spec", to_json_str(meta.partition_spec)},
+      {"partition-spec", to_json_str(meta.partition_spec.fields)},
       {"partition-spec-id", fmt::to_string(meta.partition_spec.spec_id())},
       {"format-version", std::string{format_to_str(meta.format_version)}}};
 }

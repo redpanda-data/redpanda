@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "container/fragmented_vector.h"
 #include "iceberg/json_writer.h"
 #include "iceberg/partition.h"
 #include "json/document.h"
@@ -15,6 +16,8 @@
 namespace iceberg {
 
 partition_field parse_partition_field(const json::Value&);
+chunked_vector<partition_field>
+parse_partition_fields(const json::Value::ConstArray&);
 partition_spec parse_partition_spec(const json::Value&);
 
 } // namespace iceberg
@@ -23,6 +26,9 @@ namespace json {
 
 void rjson_serialize(
   iceberg::json_writer& w, const iceberg::partition_field& m);
+void rjson_serialize(
+  iceberg::json_writer& w,
+  const chunked_vector<iceberg::partition_field>& fields);
 void rjson_serialize(iceberg::json_writer& w, const iceberg::partition_spec& m);
 
 } // namespace json
