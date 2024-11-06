@@ -248,6 +248,14 @@ metrics_reporter::build_metrics_snapshot() {
         }
 
         metrics.uptime_ms = report->local_state.uptime / 1ms;
+        auto& advertised_listeners
+          = nm->get().broker.kafka_advertised_listeners();
+        metrics.advertised_listeners.reserve(advertised_listeners.size());
+        std::transform(
+          advertised_listeners.begin(),
+          advertised_listeners.end(),
+          std::back_inserter(metrics.advertised_listeners),
+          [](const model::broker_endpoint& ep) { return ep.address; });
     }
     auto& topics = _topics.local().topics_map();
     snapshot.topic_count = 0;
@@ -641,6 +649,8 @@ void rjson_serialize(
         rjson_serialize(w, d);
     }
     w.EndArray();
+    w.Key("kafka_advertised_listeners");
+    rjson_serialize(w, nm.advertised_listeners);
 
     w.EndObject();
 }

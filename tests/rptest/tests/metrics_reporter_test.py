@@ -171,6 +171,7 @@ class MetricsReporterTest(RedpandaTest):
         assert all('uptime_ms' in n for n in nodes_meta)
         assert all('is_alive' in n for n in nodes_meta)
         assert all('disks' in n for n in nodes_meta)
+        assert all('kafka_advertised_listeners' in n for n in nodes_meta)
 
         # Check cluster UUID and creation time survive a restart
         for n in self.redpanda.nodes:
