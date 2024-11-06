@@ -19,8 +19,10 @@ public:
     ss::future<add_translated_data_files_reply> add_translated_data_files(
       add_translated_data_files_request, ::rpc::streaming_context&) override;
 
-    ss::future<fetch_latest_data_file_reply> fetch_latest_data_file(
-      fetch_latest_data_file_request, ::rpc::streaming_context&) override;
+    ss::future<fetch_latest_translated_offset_reply>
+    fetch_latest_translated_offset(
+      fetch_latest_translated_offset_request,
+      ::rpc::streaming_context&) override;
 
 private:
     ss::sharded<frontend>* _frontend;

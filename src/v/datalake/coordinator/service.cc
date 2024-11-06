@@ -27,9 +27,10 @@ ss::future<add_translated_data_files_reply> service::add_translated_data_files(
       std::move(request), frontend::local_only::yes);
 }
 
-ss::future<fetch_latest_data_file_reply> service::fetch_latest_data_file(
-  fetch_latest_data_file_request request, ::rpc::streaming_context&) {
-    return _frontend->local().fetch_latest_data_file(
+ss::future<fetch_latest_translated_offset_reply>
+service::fetch_latest_translated_offset(
+  fetch_latest_translated_offset_request request, ::rpc::streaming_context&) {
+    return _frontend->local().fetch_latest_translated_offset(
       std::move(request), frontend::local_only::yes);
 }
 

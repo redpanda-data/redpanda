@@ -59,14 +59,14 @@ operator<<(std::ostream& o, const add_translated_data_files_request& request) {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const fetch_latest_data_file_reply& reply) {
+operator<<(std::ostream& o, const fetch_latest_translated_offset_reply& reply) {
     fmt::print(
       o, "{{errc: {}, offset: {}}}", reply.errc, reply.last_added_offset);
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const fetch_latest_data_file_request& request) {
+std::ostream& operator<<(
+  std::ostream& o, const fetch_latest_translated_offset_request& request) {
     fmt::print(o, "{{partition: {}}}", request.tp);
     return o;
 }

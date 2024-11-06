@@ -129,12 +129,13 @@ public:
         auto max_offset = kafka::prev_offset(model::offset_cast(
           ot->from_log_offset(partition->last_stable_offset())));
         auto& fe = coordinator_frontend(fixture->app.controller->self());
-        coordinator::fetch_latest_data_file_request request;
+        coordinator::fetch_latest_translated_offset_request request;
         request.tp = ntp.tp;
         vlog(logger.info, "Waiting for last added offet: {}", max_offset);
         co_await ::tests::cooperative_spin_wait_with_timeout(20s, [&] {
-            return fe.local().fetch_latest_data_file(request).then(
-              [max_offset](coordinator::fetch_latest_data_file_reply resp) {
+            return fe.local().fetch_latest_translated_offset(request).then(
+              [max_offset](
+                coordinator::fetch_latest_translated_offset_reply resp) {
                   vlog(
                     logger.trace,
                     "Waiting for last added offet: {}, current: {}",
