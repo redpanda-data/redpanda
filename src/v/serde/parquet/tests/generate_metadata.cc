@@ -103,7 +103,7 @@ iobuf serialize_testcase(size_t test_case) {
           .num_rows = std::numeric_limits<int64_t>::max(),
           .row_groups = list(
              row_group{
-                .columns = {
+                .columns = list(
                   column_chunk{
                     .meta_data = {
                       .type = bool_type{},
@@ -118,8 +118,8 @@ iobuf serialize_testcase(size_t test_case) {
                       .index_page_offset = 5,
                       .dictionary_page_offset = 9,
                     },
-                  },
-                },
+                  }
+                ),
                 .total_byte_size = 321,
                 .num_rows = 1,
                 .file_offset = 1234,

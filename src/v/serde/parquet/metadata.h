@@ -249,7 +249,7 @@ struct column_meta_data {
     std::vector<encoding> encodings;
 
     /** Path in schema **/
-    std::vector<ss::sstring> path_in_schema;
+    chunked_vector<ss::sstring> path_in_schema;
 
     /** Compression codec **/
     compression_codec codec;
@@ -266,7 +266,7 @@ struct column_meta_data {
     int64_t total_compressed_size;
 
     /** Optional key/value metadata **/
-    std::vector<std::pair<ss::sstring, ss::sstring>> key_value_metadata;
+    chunked_vector<std::pair<ss::sstring, ss::sstring>> key_value_metadata;
 
     /** Byte offset from beginning of file to first data page **/
     int64_t data_page_offset;
@@ -325,7 +325,7 @@ struct row_group {
     /** If set, specifies a sort ordering of the rows in this RowGroup.
      * The sorting columns can be a subset of all the columns.
      */
-    std::vector<sorting_column> sorting_columns;
+    chunked_vector<sorting_column> sorting_columns;
 
     /** Byte offset from beginning of file to first page (data or dictionary)
      * in this row group **/
@@ -350,7 +350,7 @@ struct file_metadata {
     chunked_vector<row_group> row_groups;
 
     /** Optional key/value metadata **/
-    std::vector<std::pair<ss::sstring, ss::sstring>> key_value_metadata;
+    chunked_vector<std::pair<ss::sstring, ss::sstring>> key_value_metadata;
 
     /** String for application that wrote this file.  This should be in the
      * format <Application> version <App Version> (build <App Build Hash>). e.g.
