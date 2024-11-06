@@ -11,9 +11,9 @@
 
 #include "serde/parquet/value.h"
 
-#include "utils/base64.h"
-
 #include <seastar/util/variant_utils.hh>
+
+#include <absl/strings/escaping.h>
 
 auto fmt::formatter<serde::parquet::value>::format(
   const serde::parquet::value& val,
@@ -37,33 +37,21 @@ auto fmt::formatter<serde::parquet::value>::format(
       [&ctx](const float64_value& v) {
           return fmt::format_to(ctx.out(), "{}", v.val);
       },
-      [&ctx](const decimal_value& v) {
-          return fmt::format_to(ctx.out(), "{}", v.val);
-      },
-      [&ctx](const date_value& v) {
-          return fmt::format_to(ctx.out(), "{}", v.val);
-      },
-      [&ctx](const time_value& v) {
-          return fmt::format_to(ctx.out(), "{}", v.val);
-      },
-      [&ctx](const timestamp_value& v) {
-          return fmt::format_to(ctx.out(), "{}", v.val);
-      },
-      [&ctx](const string_value& v) {
-          ss::sstring raw;
-          for (const auto& e : v.val) {
-              raw.append(e.get(), e.size());
-          }
-          return fmt::format_to(ctx.out(), "{}", raw);
-      },
-      [&ctx](const uuid_value& v) {
-          return fmt::format_to(ctx.out(), "{}", v.val);
-      },
       [&ctx](const byte_array_value& v) {
-          return fmt::format_to(ctx.out(), "{}", iobuf_to_base64(v.val));
+          auto out = ctx.out();
+          for (const auto& e : v.val) {
+              std::string_view s{e.get(), e.size()};
+              out = fmt::format_to(out, "{}", absl::CEscape(s));
+          }
+          return out;
       },
       [&ctx](const fixed_byte_array_value& v) {
-          return fmt::format_to(ctx.out(), "{}", iobuf_to_base64(v.val));
+          auto out = ctx.out();
+          for (const auto& e : v.val) {
+              std::string_view s{e.get(), e.size()};
+              out = fmt::format_to(out, "{}", absl::CEscape(s));
+          }
+          return out;
       },
       [&ctx](const group_value& v) {
           return fmt::format_to(ctx.out(), "({})", fmt::join(v, ", "));

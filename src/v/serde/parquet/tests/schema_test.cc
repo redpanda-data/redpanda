@@ -42,35 +42,45 @@ schema_element leaf_node(
     };
 }
 
+struct indexed_info {
+    int32_t index;
+    int16_t def_level;
+    int16_t rep_level;
+};
+
 template<typename... Args>
 schema_element indexed_group_node(
-  int32_t index,
+  indexed_info info,
   ss::sstring name,
   field_repetition_type rep_type,
   Args... args) {
     chunked_vector<schema_element> children;
     (children.push_back(std::move(args)), ...);
     return {
-      .position = index,
+      .position = info.index,
       .type = std::monostate{},
       .repetition_type = rep_type,
       .name = std::move(name),
       .children = std::move(children),
+      .max_definition_level = def_level(info.def_level),
+      .max_repetition_level = rep_level(info.rep_level),
     };
 }
 
 schema_element indexed_leaf_node(
-  int32_t index,
+  indexed_info info,
   ss::sstring name,
   field_repetition_type rep_type,
   physical_type ptype,
   logical_type ltype = logical_type{}) {
     return {
-      .position = index,
+      .position = info.index,
       .type = ptype,
       .repetition_type = rep_type,
       .name = std::move(name),
       .logical_type = ltype,
+      .max_definition_level = def_level(info.def_level),
+      .max_repetition_level = rep_level(info.rep_level),
     };
 }
 } // namespace
@@ -106,40 +116,64 @@ TEST(Schema, CanBeIndexed) {
               leaf_node("type", optional, byte_array_type(), enum_type()))))));
     index_schema(root);
     auto expected = indexed_group_node(
-      0,
+      {.index = 0, .def_level = 0, .rep_level = 0},
       "schema",
       required,
       indexed_group_node(
-        1,
+        {.index = 1, .def_level = 1, .rep_level = 0},
         "persons",
         optional,
         indexed_group_node(
-          2,
+          {.index = 2, .def_level = 2, .rep_level = 1},
           "persons_tuple",
           repeated,
           indexed_group_node(
-            3,
+            {.index = 3, .def_level = 2, .rep_level = 1},
             "name",
             required,
             indexed_leaf_node(
-              4, "first_name", optional, byte_array_type(), string_type()),
+              {.index = 4, .def_level = 3, .rep_level = 1},
+              "first_name",
+              optional,
+              byte_array_type(),
+              string_type()),
             indexed_leaf_node(
-              5, "last_name", required, byte_array_type(), string_type())),
-          indexed_leaf_node(6, "id", optional, i32_type()),
+              {.index = 5, .def_level = 2, .rep_level = 1},
+              "last_name",
+              required,
+              byte_array_type(),
+              string_type())),
           indexed_leaf_node(
-            7, "email", required, byte_array_type(), string_type()),
+            {.index = 6, .def_level = 3, .rep_level = 1},
+            "id",
+            optional,
+            i32_type()),
+          indexed_leaf_node(
+            {.index = 7, .def_level = 2, .rep_level = 1},
+            "email",
+            required,
+            byte_array_type(),
+            string_type()),
           indexed_group_node(
-            8,
+            {.index = 8, .def_level = 3, .rep_level = 2},
             "phones",
             repeated,
             indexed_group_node(
-              9,
+              {.index = 9, .def_level = 4, .rep_level = 3},
               "phones_tuple",
               repeated,
               indexed_leaf_node(
-                10, "number", optional, byte_array_type(), string_type()),
+                {.index = 10, .def_level = 5, .rep_level = 3},
+                "number",
+                optional,
+                byte_array_type(),
+                string_type()),
               indexed_leaf_node(
-                11, "type", optional, byte_array_type(), enum_type()))))));
+                {.index = 11, .def_level = 5, .rep_level = 3},
+                "type",
+                optional,
+                byte_array_type(),
+                enum_type()))))));
     EXPECT_EQ(root, expected)
       << fmt::format("root={}\nexpected={}", root, expected);
 }

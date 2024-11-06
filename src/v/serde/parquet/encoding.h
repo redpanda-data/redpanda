@@ -11,8 +11,8 @@
 
 #pragma once
 
+#include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
-#include "src/v/serde/parquet/value.h"
 
 namespace serde::parquet {
 
@@ -45,6 +45,9 @@ iobuf encode_plain(chunked_vector<fixed_byte_array_value> vals);
 // https://parquet.apache.org/docs/file-format/data-pages/encodings/#run-length-encoding--bit-packing-hybrid-rle--3
 //
 // If `levels` is empty `max_value` should be `0`.
-iobuf encode_levels(uint8_t max_value, const chunked_vector<uint8_t>& levels);
+iobuf encode_levels(
+  rep_level max_value, const chunked_vector<rep_level>& levels);
+iobuf encode_levels(
+  def_level max_value, const chunked_vector<def_level>& levels);
 
 } // namespace serde::parquet

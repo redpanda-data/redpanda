@@ -32,16 +32,8 @@ namespace {
 // A struct to track all the level related information we need during the tree
 // shredding traversal.
 struct traversal_levels {
-    uint8_t repetition_level = 0;
-    uint8_t definition_level = 0;
-    // repetition_depth is the current number of ancestor schema nodes in the
-    // schema tree that are set to be repeated. We track this seperately because
-    // repeated is only set for the additional values in the repeated node, so
-    // the first time we repeat we need to use the current repetition_level so
-    // that assembly knows at which level the repetition is starting at, but
-    // additional repetitions need to use the current repetition_depth as the
-    // repetition_level.
-    uint8_t repetition_depth = 0;
+    rep_level repetition_level = rep_level(0);
+    def_level definition_level = def_level(0);
 };
 
 class record_shredder {
@@ -85,6 +77,15 @@ private:
                 element->name)));
           },
           [this, element, levels](null_value& v) {
+              // If this is the level in the tree that is turning NULL that is
+              // invalid, this is a required node, however parent nodes could be
+              // propagating a null value, which is valid.
+              if (
+                element->repetition_type == field_repetition_type::required
+                && element->max_definition_level == levels.definition_level) {
+                  return ss::make_exception_future(std::runtime_error(
+                    "detected null value for required leaf node"));
+              }
               return _callback({
                 .schema_element_position = element->position,
                 .val = v,
@@ -120,14 +121,12 @@ private:
             });
         }
         traversal_levels child_levels = levels;
-        // We are marking that there is a higher depth here we
-        // need to record, but the repetition_level is only set
-        // *when* we are repeating (so not for the first element).
-        ++child_levels.repetition_depth;
         auto it = list.begin();
         co_await process_leaf_value(
           element, child_levels, std::move(it->element));
-        child_levels.repetition_level = child_levels.repetition_depth;
+        // Repeated elements use this node's repetition level, as to signal
+        // at which level in the tree the repetition is happening at.
+        child_levels.repetition_level = element->max_repetition_level;
         for (++it; it != list.end(); ++it) {
             co_await process_leaf_value(
               element, child_levels, std::move(it->element));
@@ -155,12 +154,13 @@ private:
                 element, levels, std::move(groups));
           },
           [this, element, levels](null_value&) -> ss::future<> {
-              // We need to handle a required node who's parent is optional and
-              // `null`, so we can't raise an error here.
-              // TODO: We should have validation that this value isn't directly
-              // `null` - we should be able to do this with the level
-              // information if we track each node's expected max
-              // definition level for this node in the tree.
+              // If this is the level in the tree that is turning NULL that is
+              // invalid, this is a required node, however parent nodes could be
+              // propagating a null value, which is valid.
+              if (element->max_definition_level == levels.definition_level) {
+                  return ss::make_exception_future(std::runtime_error(
+                    "detected null value for required group node"));
+              }
               return process_optional_null_group(element, levels);
           },
           [element](repeated_value&) -> ss::future<> {
@@ -232,15 +232,15 @@ private:
             co_return co_await process_optional_null_group(element, levels);
         }
         traversal_levels child_levels = levels;
-        // We are marking that there is a higher depth here we
-        // need to record, but the repetition_level is only set
-        // *when* we are repeating (so not for the first element).
-        ++child_levels.repetition_depth;
-        child_levels.repetition_level = child_levels.repetition_depth;
+        // Since these elements are repeated, we need to mark that they are
+        // repeated at this level within the tree.
+        child_levels.repetition_level = element->max_repetition_level;
         for (size_t i = list.size() - 1; i > 0; --i) {
             co_await process_optional_group_node(
               element, child_levels, std::move(list[i].element));
         }
+        // However the first node uses the parent repetition_level
+        // as to mark the start of a new list.
         child_levels.repetition_level = levels.repetition_level;
         co_await process_optional_group_node(
           element, child_levels, std::move(list.front().element));
@@ -272,12 +272,13 @@ private:
       traversal_levels levels,
       group_value group) {
         if (group.size() != element->children.size()) {
-            throw std::runtime_error(fmt::format(
-              "schema/struct mismatch, schema had {} children, struct had {} "
-              "fields. At column {}",
-              element->children.size(),
-              group.size(),
-              element->position));
+            co_return co_await ss::make_exception_future(
+              std::runtime_error(fmt::format(
+                "schema/struct mismatch, schema had {} children, struct had {} "
+                "fields. At column {}",
+                element->children.size(),
+                group.size(),
+                element->position)));
         }
         // Levels don't change for require elements because they always have
         // to be there so no additional bits need to be tracked (they'd be

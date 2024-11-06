@@ -86,8 +86,8 @@ struct value_collector {
 };
 
 MATCHER_P3(IsVal, val, r, d, "") {
-    return fmt::format("{}", arg.val) == val && r == arg.rep_level
-           && d == arg.def_level;
+    return fmt::format("{}", arg.val) == val && r == arg.rep_level()
+           && d == arg.def_level();
 }
 
 } // namespace
@@ -161,27 +161,27 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
             /*Language*/
             record(
               /*Code*/
-              string_value(iobuf::from("en-us")),
+              byte_array_value(iobuf::from("en-us")),
               /*Country*/
-              string_value(iobuf::from("us"))),
+              byte_array_value(iobuf::from("us"))),
             /*Language*/
-            record(string_value(iobuf::from("en")), null_value())),
+            record(byte_array_value(iobuf::from("en")), null_value())),
           /*Url*/
-          string_value(iobuf::from("http://A"))),
+          byte_array_value(iobuf::from("http://A"))),
         /*Name*/
         record(
           list(),
           /*Url*/
-          string_value(iobuf::from("http://B"))),
+          byte_array_value(iobuf::from("http://B"))),
         /*Name*/
         record(
           list(
             /*Language*/
             record(
               /*Code*/
-              string_value(iobuf::from("en-gb")),
+              byte_array_value(iobuf::from("en-gb")),
               /*Country*/
-              string_value(iobuf::from("gb")))),
+              byte_array_value(iobuf::from("gb")))),
           /*Url*/
           null_value())));
     group_value r2 = record(
@@ -195,7 +195,7 @@ TEST(RecordShredding, ExampleFromDremelPaper) {
         /*Language*/
         repeated_value(),
         /*Url*/
-        string_value(iobuf::from("http://C")))));
+        byte_array_value(iobuf::from("http://C")))));
     index_schema(document_schema);
     value_collector collector(document_schema);
     shred_record(document_schema, std::move(r1), collector).get();
@@ -241,9 +241,9 @@ TEST(RecordShredding, ListOfStrings) {
       field_repetition_type::required,
       leaf_node("list", field_repetition_type::repeated, byte_array_type{}));
     group_value r = record(list(
-      string_value(iobuf::from("a")),
-      string_value(iobuf::from("b")),
-      string_value(iobuf::from("c"))));
+      byte_array_value(iobuf::from("a")),
+      byte_array_value(iobuf::from("b")),
+      byte_array_value(iobuf::from("c"))));
     index_schema(schema);
     value_collector collector(schema);
     shred_record(schema, std::move(r), collector).get();
@@ -265,9 +265,11 @@ TEST(RecordShredding, LogicalMap) {
           "value", field_repetition_type::optional, byte_array_type())));
     group_value r = record(list(
       record(
-        string_value(iobuf::from("AL")), string_value(iobuf::from("Alabama"))),
+        byte_array_value(iobuf::from("AL")),
+        byte_array_value(iobuf::from("Alabama"))),
       record(
-        string_value(iobuf::from("AK")), string_value(iobuf::from("Alaska")))));
+        byte_array_value(iobuf::from("AK")),
+        byte_array_value(iobuf::from("Alaska")))));
     index_schema(schema);
     value_collector collector(schema);
     shred_record(schema, std::move(r), collector).get();
@@ -319,18 +321,19 @@ TEST(RecordShredding, RepetitionLevels) {
           "level2", field_repetition_type::repeated, byte_array_type())));
     group_value r1 = record(list(
       record(list(
-        string_value(iobuf::from("a")),
-        string_value(iobuf::from("b")),
-        string_value(iobuf::from("c")))),
+        byte_array_value(iobuf::from("a")),
+        byte_array_value(iobuf::from("b")),
+        byte_array_value(iobuf::from("c")))),
       record(list(
-        string_value(iobuf::from("d")),
-        string_value(iobuf::from("e")),
-        string_value(iobuf::from("f")),
-        string_value(iobuf::from("g"))))));
+        byte_array_value(iobuf::from("d")),
+        byte_array_value(iobuf::from("e")),
+        byte_array_value(iobuf::from("f")),
+        byte_array_value(iobuf::from("g"))))));
     group_value r2 = record(list(
-      record(list(string_value(iobuf::from("h")))),
-      record(
-        list(string_value(iobuf::from("i")), string_value(iobuf::from("j"))))));
+      record(list(byte_array_value(iobuf::from("h")))),
+      record(list(
+        byte_array_value(iobuf::from("i")),
+        byte_array_value(iobuf::from("j"))))));
     index_schema(schema);
     value_collector collector(schema);
     shred_record(schema, std::move(r1), collector).get();
@@ -378,17 +381,17 @@ TEST(RecordShredding, AddressBookExample) {
           byte_array_type(),
           string_type())));
     group_value r1 = record(
-      string_value(iobuf::from("Julien Le Dem")),
+      byte_array_value(iobuf::from("Julien Le Dem")),
       list(
-        string_value(iobuf::from("555 123 4567")),
-        string_value(iobuf::from("555 666 1337"))),
+        byte_array_value(iobuf::from("555 123 4567")),
+        byte_array_value(iobuf::from("555 666 1337"))),
       list(
         record(
-          string_value(iobuf::from("Dmitriy Ryaboy")),
-          string_value(iobuf::from("555 987 6543"))),
-        record(string_value(iobuf::from("Chris Anizczyk")), null_value())));
+          byte_array_value(iobuf::from("Dmitriy Ryaboy")),
+          byte_array_value(iobuf::from("555 987 6543"))),
+        record(byte_array_value(iobuf::from("Chris Anizczyk")), null_value())));
     group_value r2 = record(
-      string_value(iobuf::from("A. Nonymous")), list(), list());
+      byte_array_value(iobuf::from("A. Nonymous")), list(), list());
     index_schema(schema);
     value_collector collector(schema);
     shred_record(schema, std::move(r1), collector).get();
@@ -431,6 +434,25 @@ TEST(RecordShredding, RequiredGroupWrappedInOptionalGroup) {
     EXPECT_THAT(
       collector.columns,
       ElementsAre(ElementsAre(IsVal("NULL", 0, 0), IsVal("42", 0, 1))));
+}
+
+TEST(RecordShredding, RequiredValuesNotNullValidation) {
+    schema_element schema = group_node(
+      "Root",
+      field_repetition_type::required,
+      group_node(
+        "optional",
+        field_repetition_type::optional,
+        group_node(
+          "required",
+          field_repetition_type::required,
+          leaf_node("leaf", field_repetition_type::required, i32_type()))));
+    group_value r1 = record(record(null_value()));
+    group_value r2 = record(record(record(null_value())));
+    index_schema(schema);
+    value_collector collector(schema);
+    EXPECT_ANY_THROW(shred_record(schema, std::move(r1), collector).get());
+    EXPECT_ANY_THROW(shred_record(schema, std::move(r2), collector).get());
 }
 
 // NOLINTEND(*magic-number*)

@@ -13,6 +13,7 @@
 
 #include "base/seastarx.h"
 #include "container/fragmented_vector.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -21,6 +22,9 @@
 #include <variant>
 
 namespace serde::parquet {
+
+using def_level = named_type<int16_t, struct def_level_tag>;
+using rep_level = named_type<int16_t, struct rep_level_tag>;
 
 struct bool_type {
     bool operator==(const bool_type&) const = default;
@@ -277,6 +281,24 @@ struct schema_element {
     logical_type logical_type;
 
     /**
+     * The maximum definition level for this node.
+     *
+     * The definition level is used to determine where the `null` value is in a
+     * heirarchy of schema nodes. See shredder.h for more on definition level
+     * and how it's computed.
+     */
+    def_level max_definition_level = def_level(-1);
+
+    /**
+     * The maximum repetition level for this node.
+     *
+     * The repetition level is used to determine the list index in a repeated
+     * value heirarchy of (possibility repeated) schema nodes. See shredder.h
+     * for more on repetition level and how it's computed.
+     */
+    rep_level max_repetition_level = rep_level(-1);
+
+    /**
      * A simple depth first traversal of the schema.
      *
      * This is the required order of the flattened schema in
@@ -301,7 +323,8 @@ struct schema_element {
 };
 
 /**
- * Index the schema such that the position is known for each element.
+ * Index the schema such that the position, and max level information is known
+ * for each element.
  */
 void index_schema(schema_element& root);
 
