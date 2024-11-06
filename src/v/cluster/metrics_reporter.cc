@@ -43,7 +43,9 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/net/dns.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/algorithm/container.h>
 #include <absl/container/node_hash_map.h>
@@ -53,8 +55,37 @@
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <fmt/core.h>
+#include <sys/socket.h>
 
+#include <climits>
+#include <netdb.h>
 #include <stdexcept>
+
+namespace {
+ss::sstring get_hostname() {
+    std::array<char, HOST_NAME_MAX> hostname{};
+    if (::gethostname(hostname.data(), hostname.size()) != 0) {
+        return {};
+    }
+
+    return hostname.data();
+}
+
+ss::sstring get_domainname() {
+    std::array<char, HOST_NAME_MAX> domainname{};
+    if (::getdomainname(domainname.data(), domainname.size()) != 0) {
+        return {};
+    }
+
+    return domainname.data();
+}
+
+ss::future<std::vector<ss::sstring>> get_fqdns(std::string_view hostname) {
+    ss::net::dns_resolver resolver;
+    auto hostent = co_await resolver.get_host_by_name(hostname.data());
+    co_return hostent.names;
+}
+} // namespace
 
 namespace cluster {
 
@@ -275,6 +306,10 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.has_enterprise_features = feature_report.any();
 
     snapshot.enterprise_features.emplace(std::move(feature_report));
+
+    snapshot.host_name = get_hostname();
+    snapshot.domain_name = get_domainname();
+    snapshot.fqdns = co_await get_fqdns(snapshot.host_name);
 
     co_return snapshot;
 }
@@ -558,6 +593,15 @@ void rjson_serialize(
         }
         w.EndArray();
     }
+
+    w.Key("hostname");
+    w.String(snapshot.host_name);
+
+    w.Key("domainname");
+    w.String(snapshot.domain_name);
+
+    w.Key("fqdns");
+    rjson_serialize(w, snapshot.fqdns);
 
     w.EndObject();
 }

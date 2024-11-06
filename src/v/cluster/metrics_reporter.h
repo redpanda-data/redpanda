@@ -85,6 +85,10 @@ public:
         bool has_valid_license{false};
 
         std::optional<features::enterprise_feature_report> enterprise_features;
+
+        ss::sstring host_name;
+        ss::sstring domain_name;
+        std::vector<ss::sstring> fqdns;
     };
     static constexpr ss::shard_id shard = 0;
 
