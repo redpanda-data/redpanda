@@ -1,3 +1,4 @@
+from rptest.services.apache_iceberg_catalog import IcebergCatalogMode
 from rptest.services.cluster import cluster
 
 from ducktape.mark import matrix
@@ -28,11 +29,11 @@ class IcebergRESTCatalogSmokeTest(IcebergRESTCatalogTest):
         pass
 
     @cluster(num_nodes=2)
-    @matrix(filesystem_catalog_mode=[True, False])
-    def test_basic(self, filesystem_catalog_mode):
+    @matrix(
+        catalog_mode=[IcebergCatalogMode.FILESYSTEM, IcebergCatalogMode.REST])
+    def test_basic(self, catalog_mode):
 
-        self.catalog_service.set_filesystem_wrapper_mode(
-            filesystem_catalog_mode)
+        self.catalog_service.set_catalog_mode(catalog_mode)
         super().setUp()
 
         warehouse = self.catalog_service.cloud_storage_warehouse

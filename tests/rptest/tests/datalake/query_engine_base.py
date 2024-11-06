@@ -16,6 +16,9 @@ class QueryEngineType(str, Enum):
     SPARK = 'spark'
     TRINO = 'trino'
 
+    def __repr__(self):
+        return self.value
+
 
 class QueryEngineBase(ABC):
     """Captures all the common operations across registered query engines"""
