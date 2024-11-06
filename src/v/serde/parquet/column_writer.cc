@@ -28,9 +28,9 @@ public:
     impl() = default;
     impl(const impl&) = delete;
     impl& operator=(const impl&) = delete;
-    impl(impl&&) = default;
-    impl& operator=(impl&&) = default;
-    virtual ~impl() = default;
+    impl(impl&&) noexcept = default;
+    impl& operator=(impl&&) noexcept = default;
+    virtual ~impl() noexcept = default;
 
     virtual void add(value, rep_level, def_level) = 0;
     virtual data_page flush_page() = 0;
@@ -190,7 +190,9 @@ make_impl(const schema_element& e, byte_array_type t) {
 column_writer::column_writer(const schema_element& col)
   : _impl(std::visit([&col](auto x) { return make_impl(col, x); }, col.type)) {}
 
-column_writer::~column_writer() = default;
+column_writer::column_writer(column_writer&&) noexcept = default;
+column_writer& column_writer::operator=(column_writer&&) noexcept = default;
+column_writer::~column_writer() noexcept = default;
 
 void column_writer::add(value val, rep_level rep_level, def_level def_level) {
     return _impl->add(std::move(val), rep_level, def_level);

@@ -34,9 +34,9 @@ public:
     explicit column_writer(const schema_element&);
     column_writer(const column_writer&) = delete;
     column_writer& operator=(const column_writer&) = delete;
-    column_writer(column_writer&&) = default;
-    column_writer& operator=(column_writer&&) = default;
-    ~column_writer();
+    column_writer(column_writer&&) noexcept;
+    column_writer& operator=(column_writer&&) noexcept;
+    ~column_writer() noexcept;
 
     // Add a value to this column along with it's repetition level and
     // definition level.
