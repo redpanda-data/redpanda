@@ -2,6 +2,18 @@
 # This build is a translation of the libpciaccess meson build:
 # https://gitlab.freedesktop.org/xorg/lib/libpciaccess/-/blob/2ec2576cabefef1eaa5dd9307c97de2e887fc347/meson.build
 #
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+# Selects with AND'd conditions require a standalone helper.
+# https://bazel.build/docs/configurable-attributes#and-chaining
+selects.config_setting_group(
+    name = "linux_x86_64",
+    match_all = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_library(
     name = "libpciaccess",
     srcs = [
@@ -68,13 +80,17 @@ cc_library(
     local_defines = [
         'PCIIDS_PATH=\\"/usr/share/hwdata\\"',
         "HAVE_ZLIB=1",
-        "HAVE_MTRR=1",
         "HAVE_ERR_H=1",
         "HAVE_INTTYPES_H=1",
         "HAVE_STDINT_H=1",
         "HAVE_STRINGS_H=1",
         "HAVE_STRING_H=1",
-    ],
+    ] + select({
+        # MTRR is only available on x86 linux builds.
+        # https://github.com/projectceladon/libpciaccess/blob/35150df565cc7d60037a0da18cc63702327811bd/src/linux_sysfs.c#L52
+        ":linux_x86_64": ["HAVE_MTRR=1"],
+        "//conditions:default": [],
+    }),
     strip_include_prefix = "include",
     visibility = [
         "//visibility:public",
