@@ -152,7 +152,8 @@ def redpanda_cc_gtest(
         env = {},
         cpu = None,
         memory = None,
-        data = []):
+        data = [],
+        tags = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = False,
         name = name,
@@ -165,6 +166,7 @@ def redpanda_cc_gtest(
         env = env,
         data = data,
         local_defines = ["IS_GTEST"],
+        tags = tags,
     )
 
 def redpanda_cc_btest(
@@ -177,7 +179,8 @@ def redpanda_cc_btest(
         cpu = None,
         memory = None,
         target_compatible_with = [],
-        data = []):
+        data = [],
+        tags = []):
     _redpanda_cc_unit_test(
         dash_dash_protocol = True,
         name = name,
@@ -190,6 +193,7 @@ def redpanda_cc_btest(
         env = env,
         target_compatible_with = target_compatible_with,
         data = data,
+        tags = tags,
     )
 
 def redpanda_cc_bench(
