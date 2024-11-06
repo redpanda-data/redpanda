@@ -14,6 +14,7 @@
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
 #include "model/record.h"
+#include "utils/prefix_logger.h"
 
 #include <seastar/core/future.hh>
 
@@ -47,6 +48,14 @@ public:
     ss::future<result<write_result, data_writer_error>> end_of_stream();
 
 private:
+    // Handles the given record components of a record that is invalid for the
+    // target table.
+    // TODO: this just writes to the existing table, populating internal
+    // columns. Consider a separate table entirely.
+    ss::future<result<std::nullopt_t, data_writer_error>>
+      handle_invalid_record(kafka::offset, iobuf, iobuf, model::timestamp);
+
+    prefix_logger _log;
     const model::ntp& _ntp;
     std::unique_ptr<data_writer_factory> _writer_factory;
     schema_manager& _schema_mgr;

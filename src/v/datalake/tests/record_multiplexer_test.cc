@@ -72,34 +72,34 @@ struct records_param {
     size_t records_per_hr() const { return records_per_batch * batches_per_hr; }
 };
 
-class RecordMultiplexerTest
-  : public datalake::tests::catalog_and_registry_fixture
-  , public ::testing::TestWithParam<records_param> {
+class RecordMultiplexerTestBase
+  : public datalake::tests::catalog_and_registry_fixture {
 public:
-    RecordMultiplexerTest()
+    RecordMultiplexerTestBase()
       : schema_mgr(catalog)
       , type_resolver(registry) {}
 
     // Runs the multiplexer on records generated with cb() based on the test
     // parameters.
     std::optional<record_multiplexer::write_result> mux(
+      const records_param& param,
       model::offset o,
       const std::function<void(storage::record_batch_builder&)>& cb) {
         auto start_offset = o;
         ss::circular_buffer<model::record_batch> batches;
         const auto start_ts = model::timestamp::now();
         constexpr auto ms_per_hr = 1000 * 3600;
-        for (size_t h = 0; h < GetParam().hrs; ++h) {
+        for (size_t h = 0; h < param.hrs; ++h) {
             // Split batches across the hours.
             auto h_ts = model::timestamp{
               start_ts.value() + ms_per_hr * static_cast<long>(h)};
-            for (size_t b = 0; b < GetParam().batches_per_hr; ++b) {
+            for (size_t b = 0; b < param.batches_per_hr; ++b) {
                 storage::record_batch_builder batch_builder(
                   model::record_batch_type::raft_data, model::offset{o});
                 batch_builder.set_timestamp(h_ts);
 
                 // Add some records per batch.
-                for (size_t r = 0; r < GetParam().records_per_batch; ++r) {
+                for (size_t r = 0; r < param.records_per_batch; ++r) {
                     cb(batch_builder);
                     ++o;
                 }
@@ -120,8 +120,7 @@ public:
         }
         EXPECT_EQ(res.value().start_offset(), start_offset());
         EXPECT_EQ(
-          res.value().last_offset(),
-          start_offset() + GetParam().num_records() - 1);
+          res.value().last_offset(), start_offset() + param.num_records() - 1);
         return std::move(res.value());
     }
 
@@ -146,9 +145,26 @@ public:
 
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
+
+    static constexpr records_param default_param = {
+      .records_per_batch = 1,
+      .batches_per_hr = 1,
+      .hrs = 1,
+    };
 };
 
-TEST_P(RecordMultiplexerTest, TestNoSchema) {
+class RecordMultiplexerParamTest
+  : public RecordMultiplexerTestBase
+  , public ::testing::TestWithParam<records_param> {
+public:
+    std::optional<record_multiplexer::write_result> mux(
+      model::offset o,
+      const std::function<void(storage::record_batch_builder&)>& cb) {
+        return RecordMultiplexerTestBase::mux(GetParam(), o, cb);
+    }
+};
+
+TEST_P(RecordMultiplexerParamTest, TestNoSchema) {
     auto start_offset = model::offset{0};
     auto res = mux(start_offset, [](storage::record_batch_builder& b) {
         b.add_raw_kv(std::nullopt, iobuf::from("foobar"));
@@ -168,7 +184,7 @@ TEST_P(RecordMultiplexerTest, TestNoSchema) {
     EXPECT_EQ(schema->schema_struct, schemaless_struct_type());
 }
 
-TEST_P(RecordMultiplexerTest, TestSimpleAvroRecords) {
+TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
     tests::record_generator gen(&registry);
     auto reg_res
       = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
@@ -196,7 +212,7 @@ TEST_P(RecordMultiplexerTest, TestSimpleAvroRecords) {
     EXPECT_EQ(schema->highest_field_id(), 6);
 }
 
-TEST_P(RecordMultiplexerTest, TestAvroRecordsMultipleSchemas) {
+TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
     tests::record_generator gen(&registry);
     auto reg_res
       = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
@@ -234,7 +250,7 @@ TEST_P(RecordMultiplexerTest, TestAvroRecordsMultipleSchemas) {
 
 INSTANTIATE_TEST_SUITE_P(
   RecordsArgs,
-  RecordMultiplexerTest,
+  RecordMultiplexerParamTest,
   ::testing::Values(
     records_param{
       .records_per_batch = 10,
@@ -251,3 +267,100 @@ INSTANTIATE_TEST_SUITE_P(
       return fmt::format(
         "rpb{}_bph{}_h{}", p.records_per_batch, p.batches_per_hr, p.hrs);
   });
+
+class RecordMultiplexerInvalidAppendTest
+  : public RecordMultiplexerTestBase
+  , public ::testing::Test {};
+
+TEST_F(RecordMultiplexerInvalidAppendTest, TestMissingSchema) {
+    auto start_offset = model::offset{0};
+    auto res = mux(
+      default_param, start_offset, [](storage::record_batch_builder& b) {
+          iobuf buf;
+          // Append data with a magic 0 byte that doesn't actually correspond to
+          // anything.
+          buf.append("\0\0\0\0\0\0\0", 7);
+          b.add_raw_kv(std::nullopt, std::move(buf));
+      });
+    ASSERT_TRUE(res.has_value());
+    const auto& write_res = res.value();
+    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+
+    auto schema = get_current_schema();
+    EXPECT_EQ(schema->highest_field_id(), 4);
+}
+
+TEST_F(RecordMultiplexerInvalidAppendTest, TestBadData) {
+    tests::record_generator gen(&registry);
+    auto reg_res
+      = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
+    EXPECT_FALSE(reg_res.has_error()) << reg_res.error();
+
+    auto start_offset = model::offset{0};
+    auto res = mux(
+      default_param, start_offset, [](storage::record_batch_builder& b) {
+          iobuf buf;
+          // Append data with a magic bytes that corresponds to the actual
+          // schema.
+          buf.append("\0\0\0\0\0\1\0", 7);
+          b.add_raw_kv(std::nullopt, std::move(buf));
+      });
+    ASSERT_TRUE(res.has_value());
+    const auto& write_res = res.value();
+    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+
+    // When we go to translate the data, the translation should fail and we
+    // shouldn't register the Avro schema -- instead we should see the default
+    // schema.
+    auto schema = get_current_schema();
+    EXPECT_EQ(schema->highest_field_id(), 4);
+}
+
+TEST_F(RecordMultiplexerInvalidAppendTest, TestBadSchemaChange) {
+    constexpr std::string_view avro_incompat_schema_str = R"({
+        "type": "record",
+        "name": "RootRecord",
+        "fields": [
+            { "name": "wrongname", "doc": "mylong field doc.", "type": "long" },
+            { "name": "wrongname2", "doc": "mylong field doc.", "type": "long" }
+        ]
+    })";
+    tests::record_generator gen(&registry);
+    auto reg_res
+      = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
+    EXPECT_FALSE(reg_res.has_error()) << reg_res.error();
+    reg_res
+      = gen.register_avro_schema("incompat", avro_incompat_schema_str).get();
+    EXPECT_FALSE(reg_res.has_error()) << reg_res.error();
+
+    // Write with a valid schema.
+    auto start_offset = model::offset{0};
+    auto res = mux(
+      default_param, start_offset++, [&gen](storage::record_batch_builder& b) {
+          auto res
+            = gen.add_random_avro_record(b, "avro_v1", std::nullopt).get();
+          ASSERT_FALSE(res.has_error());
+      });
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res.value().data_files.size(), default_param.hrs);
+
+    // This should have registered the valid schema.
+    auto schema = get_current_schema();
+    EXPECT_EQ(schema->highest_field_id(), 6);
+
+    // Now try writing with an incompatible schema.
+    res = mux(
+      default_param, start_offset, [&gen](storage::record_batch_builder& b) {
+          auto res
+            = gen.add_random_avro_record(b, "incompat", std::nullopt).get();
+          ASSERT_FALSE(res.has_error());
+      });
+
+    // This should successfully write the binary records but not update the
+    // schema.
+    ASSERT_TRUE(res.has_value());
+    const auto& write_res = res.value();
+    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+    schema = get_current_schema();
+    EXPECT_EQ(schema->highest_field_id(), 6);
+}

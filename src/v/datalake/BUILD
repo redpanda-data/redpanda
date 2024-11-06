@@ -315,6 +315,7 @@ redpanda_cc_library(
         ":record_translator",
         "//src/v/base",
         "//src/v/storage:parser_utils",
+        "//src/v/utils:prefix_logger",
     ],
     include_prefix = "datalake",
     visibility = [":__subpackages__"],
