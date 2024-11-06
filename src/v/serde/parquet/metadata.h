@@ -123,14 +123,14 @@ enum class encoding : uint8_t {
  * See Compression.md for a detailed specification of these algorithms.
  */
 enum class compression_codec : uint8_t {
-    UNCOMPRESSED = 0,
-    SNAPPY = 1,
-    GZIP = 2,
-    LZO = 3,
-    BROTLI = 4,  // Added in 2.4
-    LZ4 = 5,     // DEPRECATED (Added in 2.4)
-    ZSTD = 6,    // Added in 2.4
-    LZ4_RAW = 7, // Added in 2.9
+    uncompressed = 0,
+    snappy = 1,
+    gzip = 2,
+    lzo = 3,
+    brotli = 4,  // added in 2.4
+    lz4 = 5,     // deprecated (added in 2.4)
+    zstd = 6,    // added in 2.4
+    lz4_raw = 7, // added in 2.9
 };
 
 /**
@@ -272,11 +272,11 @@ struct column_meta_data {
     int64_t data_page_offset;
 
     /** Byte offset from beginning of file to root index page **/
-    int64_t index_page_offset;
+    std::optional<int64_t> index_page_offset;
 
     /** Byte offset from the beginning of file to first (only) dictionary
        page **/
-    int64_t dictionary_page_offset;
+    std::optional<int64_t> dictionary_page_offset;
 };
 
 struct column_chunk {
@@ -291,18 +291,6 @@ struct column_chunk {
      *implementations. As such, writers MUST populate this field.
      **/
     column_meta_data meta_data;
-
-    /** File offset of ColumnChunk's OffsetIndex **/
-    int64_t offset_index_offset = 0;
-
-    /** Size of ColumnChunk's OffsetIndex, in bytes **/
-    int32_t offset_index_length = 0;
-
-    /** File offset of ColumnChunk's ColumnIndex **/
-    int64_t column_index_offset = 0;
-
-    /** Size of ColumnChunk's ColumnIndex, in bytes **/
-    int32_t column_index_length = 0;
 };
 
 /**

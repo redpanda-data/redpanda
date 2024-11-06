@@ -547,14 +547,18 @@ iobuf encode(const column_meta_data& metadata) {
       data_page_offset_field_id,
       thrift::field_type::i64,
       vint::to_bytes(metadata.data_page_offset));
-    encoder.write_field(
-      index_page_offset_field_id,
-      thrift::field_type::i64,
-      vint::to_bytes(metadata.index_page_offset));
-    encoder.write_field(
-      dictionary_page_offset_field_id,
-      thrift::field_type::i64,
-      vint::to_bytes(metadata.dictionary_page_offset));
+    if (metadata.index_page_offset) {
+        encoder.write_field(
+          index_page_offset_field_id,
+          thrift::field_type::i64,
+          vint::to_bytes(*metadata.index_page_offset));
+    }
+    if (metadata.dictionary_page_offset) {
+        encoder.write_field(
+          dictionary_page_offset_field_id,
+          thrift::field_type::i64,
+          vint::to_bytes(*metadata.dictionary_page_offset));
+    }
     return std::move(encoder).write_stop();
 }
 
@@ -562,10 +566,6 @@ iobuf encode(const column_chunk& chunk) {
     constexpr int16_t file_path_field_id = 1;
     constexpr int16_t file_offset_field_id = 2;
     constexpr int16_t meta_data_field_id = 3;
-    constexpr int16_t offset_index_offset_field_id = 4;
-    constexpr int16_t offset_index_length_field_id = 5;
-    constexpr int16_t column_index_offset_field_id = 6;
-    constexpr int16_t column_index_length_field_id = 7;
     thrift::struct_encoder encoder;
     if (chunk.file_path) {
         encoder.write_field(
@@ -580,22 +580,6 @@ iobuf encode(const column_chunk& chunk) {
       meta_data_field_id,
       thrift::field_type::structure,
       encode(chunk.meta_data));
-    encoder.write_field(
-      offset_index_offset_field_id,
-      thrift::field_type::i64,
-      vint::to_bytes(chunk.offset_index_offset));
-    encoder.write_field(
-      offset_index_length_field_id,
-      thrift::field_type::i32,
-      vint::to_bytes(chunk.offset_index_length));
-    encoder.write_field(
-      column_index_offset_field_id,
-      thrift::field_type::i64,
-      vint::to_bytes(chunk.column_index_offset));
-    encoder.write_field(
-      column_index_length_field_id,
-      thrift::field_type::i32,
-      vint::to_bytes(chunk.column_index_length));
 
     return std::move(encoder).write_stop();
 }
