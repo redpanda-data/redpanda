@@ -505,7 +505,9 @@ class DataMigrationsApiTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg=f"Failed waiting for migration")
 
-    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3,
+             log_allow_list=MIGRATION_LOG_ALLOW_LIST +
+             ["Labeled topic manifest download resulted in listing error"])
     def test_mount_inexistent(self):
         topic = TopicSpec(partition_count=3)
 
