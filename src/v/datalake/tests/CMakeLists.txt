@@ -17,7 +17,7 @@ v_cc_library(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   BINARY_NAME gtest_record_multiplexer
   SOURCES gtest_record_multiplexer_test.cc
@@ -51,7 +51,7 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   BINARY_NAME datalake
   SOURCES
@@ -70,7 +70,7 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   BINARY_NAME datalake_cloud
   SOURCES
@@ -88,7 +88,7 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   BINARY_NAME catalog_schema_manager
   SOURCES catalog_schema_manager_test.cc

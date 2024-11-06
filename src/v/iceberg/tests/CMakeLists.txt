@@ -15,7 +15,7 @@ v_cc_library(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   USE_CWD
   BINARY_NAME iceberg

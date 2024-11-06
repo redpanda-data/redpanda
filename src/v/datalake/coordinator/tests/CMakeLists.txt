@@ -25,7 +25,7 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   GTEST
   BINARY_NAME coordinator_iceberg
   SOURCES
