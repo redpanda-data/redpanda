@@ -8,11 +8,14 @@
 # by the Apache License, Version 2.0
 
 from typing import Any
+from ducktape.services.service import Service
+from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, TopicSpec
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
+from rptest.services.spark_service import SparkService
+from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
@@ -42,7 +45,7 @@ class DatalakeServices():
         self.included_query_engines = include_query_engines
         # To be populated later once we have the URI of the catalog
         # available
-        self.query_engines = []
+        self.query_engines: list[Service] = []
 
     def setUp(self):
         self.catalog_service.start()
@@ -64,6 +67,22 @@ class DatalakeServices():
 
     def __exit__(self, *args, **kwargs):
         self.tearDown()
+
+    def trino(self) -> TrinoService:
+        trino = self.service(QueryEngineType.TRINO)
+        assert trino, "Missing Trino service"
+        return trino
+
+    def spark(self) -> SparkService:
+        spark = self.service(QueryEngineType.SPARK)
+        assert spark, "Missing Spark service"
+        return spark
+
+    def service(self, engine_type: QueryEngineType):
+        for e in self.query_engines:
+            if e.engine_name() == engine_type:
+                return e
+        return None
 
     def create_iceberg_enabled_topic(self,
                                      name,
@@ -106,10 +125,11 @@ class DatalakeServices():
         table_name = f"redpanda.{topic}"
 
         def translation_done():
-            return all([
-                engine.count_table(table_name) == msg_count
-                for engine in self.query_engines
-            ])
+            counts = dict(
+                map(lambda e: (e.engine_name(), e.count_table(table_name)),
+                    self.query_engines))
+            self.redpanda.logger.debug(f"Current counts: {counts}")
+            return all([c == msg_count for _, c in counts.items()])
 
         wait_until(
             translation_done,

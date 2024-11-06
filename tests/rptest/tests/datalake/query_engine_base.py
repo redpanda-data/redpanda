@@ -44,7 +44,7 @@ class QueryEngineBase(ABC):
 
     def run_query_fetch_all(self, query):
         with self.run_query(query) as cursor:
-            cursor.fetchall()
+            return cursor.fetchall()
 
     def count_table(self, table) -> int:
         query = f"select count(*) from {table}"

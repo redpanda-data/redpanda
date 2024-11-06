@@ -13,13 +13,11 @@
 #include "cluster/archival/types.h"
 #include "cluster/partition.h"
 #include "datalake/batching_parquet_writer.h"
-#include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/data_writer_interface.h"
 #include "datalake/logger.h"
 #include "datalake/record_multiplexer.h"
-#include "datalake/record_schema_resolver.h"
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
@@ -32,11 +30,6 @@
 namespace datalake::translation {
 
 namespace {
-
-// TODO: configure these with topic configs, maybe make them be owned by the
-// datalake manager
-auto schema_mgr = std::make_unique<simple_schema_manager>();
-auto schema_resolver = std::make_unique<binary_type_resolver>();
 
 // A simple utility to conditionally retry with backoff on failures.
 static constexpr std::chrono::milliseconds initial_backoff{300};
@@ -93,6 +86,8 @@ partition_translator::partition_translator(
   ss::sharded<coordinator::frontend>* frontend,
   ss::sharded<features::feature_table>* features,
   std::unique_ptr<cloud_data_io>* cloud_io,
+  schema_manager* schema_mgr,
+  type_resolver* type_resolver,
   std::chrono::milliseconds translation_interval,
   ss::scheduling_group sg,
   size_t reader_max_bytes,
@@ -105,6 +100,8 @@ partition_translator::partition_translator(
   , _frontend(frontend)
   , _features(features)
   , _cloud_io(cloud_io)
+  , _schema_mgr(schema_mgr)
+  , _type_resolver(type_resolver)
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}
@@ -184,7 +181,7 @@ partition_translator::do_translation_for_range(
       "", // todo(iceberg): generate a prefix with offset information
       max_rows_per_row_group,
       max_bytes_per_row_group);
-    auto task = translation_task{**_cloud_io, *schema_mgr, *schema_resolver};
+    auto task = translation_task{**_cloud_io, *_schema_mgr, *_type_resolver};
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_file_path_prefix, ntp.path(), _term)};

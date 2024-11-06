@@ -18,6 +18,7 @@
 #include "datalake/fwd.h"
 #include "datalake/translation/partition_translator.h"
 #include "features/fwd.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "ssx/semaphore.h"
@@ -29,7 +30,13 @@
 
 namespace cloud_io {
 class remote;
-}
+} // namespace cloud_io
+namespace iceberg {
+class catalog;
+} // namespace iceberg
+namespace schema {
+class registry;
+} // namespace schema
 
 namespace datalake {
 
@@ -50,10 +57,13 @@ public:
       ss::sharded<features::feature_table>*,
       ss::sharded<coordinator::frontend>*,
       ss::sharded<cloud_io::remote>*,
+      std::unique_ptr<iceberg::catalog>,
+      pandaproxy::schema_registry::api* schema_registry,
       ss::sharded<ss::abort_source>*,
       cloud_storage_clients::bucket_name,
       ss::scheduling_group sg,
       size_t memory_limit);
+    ~datalake_manager();
 
     ss::future<> start();
     ss::future<> stop();
@@ -76,6 +86,10 @@ private:
     ss::sharded<features::feature_table>* _features;
     ss::sharded<coordinator::frontend>* _coordinator_frontend;
     std::unique_ptr<datalake::cloud_data_io> _cloud_data_io;
+    std::unique_ptr<schema::registry> _schema_registry;
+    std::unique_ptr<iceberg::catalog> _catalog;
+    std::unique_ptr<datalake::schema_manager> _schema_mgr;
+    std::unique_ptr<datalake::type_resolver> _type_resolver;
     ss::sharded<ss::abort_source>* _as;
     ss::scheduling_group _sg;
     ss::gate _gate;
