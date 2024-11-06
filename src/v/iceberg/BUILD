@@ -978,6 +978,7 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     visibility = ["//visibility:public"],
     deps = [
+        ":avro_decimal",
         ":datatypes",
         ":values",
         "@avro",
@@ -1098,5 +1099,21 @@ redpanda_cc_library(
         "//src/v/ssx:sformat",
         "//src/v/utils:named_type",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "avro_decimal",
+    srcs = [
+    ],
+    hdrs = [
+        "avro_decimal.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "@abseil-cpp//absl/numeric:int128",
     ],
 )

@@ -43,6 +43,7 @@ v_cc_library(
     schema_protobuf.cc
     partitioning_writer.cc
     protobuf_utils.cc
+    values_avro.cc
     values_protobuf.cc
     base_types.cc
     cloud_data_io.cc
@@ -59,6 +60,7 @@ v_cc_library(
     protobuf::libprotobuf
     v::iceberg
     v::serde_protobuf
+    v::serde_avro
 )
 
 add_subdirectory(tests)

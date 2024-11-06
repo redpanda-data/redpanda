@@ -9,6 +9,7 @@
 #include "iceberg/values_avro.h"
 
 #include "bytes/iobuf_parser.h"
+#include "iceberg/avro_decimal.h"
 #include "iceberg/values.h"
 
 #include <avro/Generic.hh>
@@ -129,16 +130,11 @@ struct primitive_value_avro_visitor {
         return {data};
     }
     avro::GenericDatum operator()(const decimal_value& v) {
-        std::vector<uint8_t> bytes(16);
-        auto low = absl::Int128Low64(v.val);
-        auto high = absl::Int128High64(v.val);
-        // Store in big-endian order (most significant byte at index 0)
-        for (size_t i = 0; i < 8; ++i) {
-            bytes[i + 8] = static_cast<uint8_t>(low >> ((7 - i) * 8));
-            bytes[i] = static_cast<uint8_t>(high >> ((7 - i) * 8));
-        }
+        auto bytes = encode_avro_decimal(v.val);
 
-        return {avro_schema_, avro::GenericFixed(avro_schema_, bytes)};
+        return {
+          avro_schema_,
+          avro::GenericFixed(avro_schema_, {bytes.begin(), bytes.end()})};
     }
     avro::GenericDatum operator()(const fixed_value& fixed) {
         std::vector<uint8_t> bytes(fixed.val.size_bytes());
@@ -370,16 +366,11 @@ struct primitive_value_parsing_visitor {
               "value size: {}",
               v.size()));
         }
-        int64_t high_half{0};
-        uint64_t low_half{0};
-        for (size_t i = 0; i < std::min<size_t>(v.size(), 8); ++i) {
-            high_half |= int64_t(v[i]) << (7 - i) * 8;
-        };
-        for (size_t i = 8; i < std::min<size_t>(v.size(), 16); ++i) {
-            low_half |= uint64_t(v[i]) << (15 - i) * 8;
-        };
+        bytes decimal_bytes(bytes::initialized_zero{}, 16);
 
-        return decimal_value{.val = absl::MakeInt128(high_half, low_half)};
+        std::copy(v.begin(), v.end(), decimal_bytes.begin());
+
+        return decimal_value{.val = decode_avro_decimal(decimal_bytes)};
     }
 };
 

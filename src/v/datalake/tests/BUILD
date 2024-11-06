@@ -258,9 +258,12 @@ redpanda_cc_gtest(
         "datalake_avro_tests.cc",
     ],
     deps = [
+        "//src/v/bytes:iobuf_parser",
         "//src/v/datalake:schema_avro",
-        "//src/v/datalake:values_protobuf",
+        "//src/v/datalake:values_avro",
+        "//src/v/iceberg:avro_decimal",
         "//src/v/iceberg:datatypes",
+        "//src/v/serde/avro/tests:data_generator",
         "//src/v/test_utils:gtest",
         "@avro",
         "@fmt",

@@ -409,3 +409,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "values_avro",
+    srcs = ["values_avro.cc"],
+    hdrs = ["values_avro.h"],
+    implementation_deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/iceberg:avro_decimal",
+        "//src/v/serde/avro",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        "@avro",
+        "@seastar",
+    ],
+)

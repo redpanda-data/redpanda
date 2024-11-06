@@ -7,11 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "iceberg/avro_decimal.h"
 #include "iceberg/schema_avro.h"
 #include "iceberg/tests/test_schemas.h"
 #include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"
 #include "iceberg/values_avro.h"
+#include "random/generators.h"
 
 #include <gtest/gtest.h>
 
@@ -87,4 +89,27 @@ TEST(ValuesAvroTest, TestDecimal) {
           std::move(*roundtrip_val));
         ASSERT_EQ(*roundtrip_struct, v);
     }
+}
+
+TEST(ValuesAvroTest, TestDecimalConversions) {
+    for (int i = 0; i < 10000; ++i) {
+        auto high_half = random_generators::get_int<int64_t>();
+        auto low_half = random_generators::get_int<uint64_t>();
+
+        auto decimal = absl::MakeInt128(high_half, low_half);
+
+        ASSERT_EQ(decimal, decode_avro_decimal(encode_avro_decimal(decimal)));
+        ASSERT_EQ(
+          decimal, iobuf_to_avro_decimal(avro_decimal_to_iobuf(decimal, 16)));
+    }
+}
+
+TEST(ValuesAvroTest, TestDecimalConversionsLimitedSize) {
+    auto high_half = 0;
+    auto low_half = random_generators::get_int<uint64_t>();
+
+    auto decimal = absl::MakeInt128(high_half, low_half);
+
+    ASSERT_EQ(
+      decimal, iobuf_to_avro_decimal(avro_decimal_to_iobuf(decimal, 8)));
 }
