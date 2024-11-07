@@ -24,8 +24,9 @@ namespace cloud_storage_clients::util {
 /// cloud provider (e.g. connection error).
 /// \param current_exception is the current exception thrown by the client
 /// \param logger is the logger to use
+template<typename Logger>
 error_outcome handle_client_transport_error(
-  std::exception_ptr current_exception, ss::logger& logger);
+  std::exception_ptr current_exception, Logger& logger);
 
 /// \brief: Drain the reponse stream pointed to by the 'resp' handle into an
 /// iobuf
