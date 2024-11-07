@@ -32,8 +32,12 @@ public:
             if (!element.is_leaf()) {
                 return;
             }
-            _column_writers.emplace(element.position, element);
-            _schema_leaves.emplace(element.position, &element);
+            _columns.emplace(
+              element.position,
+              column{
+                .leaf = &element,
+                .writer = column_writer(element),
+              });
         });
         // write the leading magic bytes
         co_await write_iobuf(iobuf::from("PAR1"));
@@ -82,17 +86,16 @@ private:
     }
 
     ss::future<> write_value(shredded_value sv) {
-        auto& col = _column_writers.at(sv.schema_element_position);
-        col.add(std::move(sv.val), sv.rep_level, sv.def_level);
+        auto& col = _columns.at(sv.schema_element_position);
+        col.writer.add(std::move(sv.val), sv.rep_level, sv.def_level);
         return ss::now();
     }
 
     ss::future<row_group> flush_row_group() {
         row_group rg{};
         rg.file_offset = static_cast<int64_t>(_offset);
-        for (auto& [pos, col] : _column_writers) {
-            const schema_element* leaf = _schema_leaves.at(pos);
-            auto page = col.flush_page();
+        for (auto& [pos, col] : _columns) {
+            auto page = col.writer.flush_page();
             const auto& data_header = std::get<data_page_header>(
               page.header.type);
             rg.num_rows = data_header.num_rows;
@@ -100,9 +103,9 @@ private:
             rg.total_byte_size += page_size;
             rg.columns.push_back(column_chunk{
               .meta_data = column_meta_data{
-                .type = leaf->type,
+                .type = col.leaf->type,
                 .encodings = {data_header.data_encoding},
-                .path_in_schema = leaf->path.copy(),
+                .path_in_schema = col.leaf->path.copy(),
                 .codec = compression_codec::uncompressed,
                 .num_values = data_header.num_values,
                 .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
@@ -121,11 +124,15 @@ private:
         co_await write_iobuf_to_output_stream(std::move(b), _output);
     }
 
+    struct column {
+        const schema_element* leaf;
+        column_writer writer;
+    };
+
     options _opts;
     ss::output_stream<char> _output;
-    size_t _offset = 0;
-    contiguous_range_map<int32_t, schema_element*> _schema_leaves;
-    contiguous_range_map<int32_t, column_writer> _column_writers;
+    size_t _offset = 0; // offset written to the stream
+    contiguous_range_map<int32_t, column> _columns;
 };
 
 writer::writer(options opts, ss::output_stream<char> output)
