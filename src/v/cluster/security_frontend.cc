@@ -39,6 +39,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <regex>
 
 namespace cluster {
@@ -217,18 +218,35 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
   std::vector<security::acl_binding> bindings,
   model::timeout_clock::duration timeout) {
     const auto num_bindings = bindings.size();
-    create_acls_cmd_data data;
-    data.bindings = std::move(bindings);
-    create_acls_cmd cmd(std::move(data), 0 /* unused */);
+
+    auto should_sanction
+      = _features.local().should_sanction()
+        && std::ranges::any_of(bindings, [](const security::acl_binding& b) {
+               auto res = b.entry().principal().type()
+                          == security::principal_type::role;
+               if (res) {
+                   vlog(clusterlog.debug, "Role-ACL binding: {}", b);
+               }
+               return res;
+           });
 
     errc err;
-    try {
-        auto ec = co_await replicate_and_wait(
-          _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
-        err = map_errc(ec);
-    } catch (const std::exception& e) {
-        vlog(clusterlog.warn, "Unable to create ACLs: {}", e);
-        err = errc::replication_error;
+    if (should_sanction) {
+        err = errc::feature_disabled;
+        vlog(
+          clusterlog.warn, "Found Role-ACL bindings in request, ignoring...");
+    } else {
+        try {
+            create_acls_cmd_data data;
+            data.bindings = std::move(bindings);
+            create_acls_cmd cmd(std::move(data), 0 /* unused */);
+            auto ec = co_await replicate_and_wait(
+              _stm, _as, std::move(cmd), model::timeout_clock::now() + timeout);
+            err = map_errc(ec);
+        } catch (const std::exception& e) {
+            vlog(clusterlog.warn, "Unable to create ACLs: {}", e);
+            err = errc::replication_error;
+        }
     }
 
     std::vector<errc> result;

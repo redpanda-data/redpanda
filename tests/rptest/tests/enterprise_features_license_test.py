@@ -224,14 +224,12 @@ class EnterpriseFeaturesTest(EnterpriseFeaturesTestBase):
 
         has_license = not disable_trial or install_license
 
-        # RBAC isn't controlled by cluster config and so is not subject to
-        # sanction/restriction pending CORE-8029
-        expect_rejected = not has_license and not (feature == Feature.rbac)
+        expect_rejected = not has_license
 
         if expect_rejected:
             with expect_exception(
-                    requests.exceptions.HTTPError,
-                    lambda e: FEATURE_DEPENDENT_CONFIG[
+                    requests.exceptions.HTTPError, \
+                    lambda e: e.response.status_code == 403 or FEATURE_DEPENDENT_CONFIG[
                         feature] in e.response.json().keys()):
                 self.try_enable_feature(feature)
         else:

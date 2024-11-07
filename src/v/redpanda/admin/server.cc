@@ -1746,6 +1746,14 @@ void config_multi_property_validation(
 }
 } // namespace
 
+void admin_server::check_license() const {
+    if (_controller->get_feature_table().local().should_sanction()) {
+        throw ss::httpd::base_exception(
+          "Enterprise License Required",
+          ss::http::reply::status_type::forbidden);
+    }
+}
+
 void admin_server::register_cluster_config_routes() {
     register_route<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config_status,
