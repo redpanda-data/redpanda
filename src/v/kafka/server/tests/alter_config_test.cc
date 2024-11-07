@@ -1246,3 +1246,152 @@ FIXTURE_TEST(
     assert_property_value(
       test_tp, "redpanda.remote.read", "true", describe_resp);
 }
+
+FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
+    using props_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
+    using alter_props_t = absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
+    std::vector<
+      std::tuple<ss::sstring, props_t, alter_props_t, kafka::error_code>>
+      test_cases;
+
+    constexpr auto success = kafka::error_code::none;
+    constexpr auto failure = kafka::error_code::invalid_config;
+
+    constexpr auto with =
+      [](std::string_view prop, auto val) -> props_t::value_type {
+        return {ss::sstring{prop}, ssx::sformat("{}", val)};
+    };
+
+    constexpr auto set =
+      [](std::string_view prop, auto val) -> alter_props_t::value_type {
+        return {
+          ss::sstring{prop},
+          {ssx::sformat("{}", val), kafka::config_resource_operation::set}};
+    };
+
+    constexpr auto remove =
+      [](std::string_view prop) -> alter_props_t::value_type {
+        return {
+          ss::sstring{prop},
+          {std::nullopt, kafka::config_resource_operation::remove}};
+    };
+
+    const auto enterprise_props = {
+      kafka::topic_property_remote_read,
+      kafka::topic_property_remote_write,
+    };
+
+    const auto non_enterprise_prop = props_t::value_type{
+      kafka::topic_property_max_message_bytes, "4096"};
+
+    for (const auto& p : enterprise_props) {
+        // A topic without an enterprise property set, and then enable it
+        test_cases.emplace_back(
+          ssx::sformat("enable_{}", p),
+          props_t{},
+          alter_props_t{{set(p, true)}},
+          failure);
+        // A topic with an enterprise property set, and then set it to false
+        test_cases.emplace_back(
+          ssx::sformat("set_false_{}", p),
+          props_t{with(p, true)},
+          alter_props_t{{set(p, false)}},
+          success);
+        // A topic with an enterprise property set, and then remove it
+        test_cases.emplace_back(
+          ssx::sformat("remove_{}", p),
+          props_t{with(p, true)},
+          alter_props_t{{remove(p)}},
+          success);
+        // A topic with an enterprise property set, and then change
+        // non-enterprise property
+        test_cases.emplace_back(
+          ssx::sformat("set_other_{}", p),
+          props_t{with(p, true)},
+          alter_props_t{{std::apply(set, non_enterprise_prop)}},
+          success);
+        // A topic with an enterprise property set, and then remove
+        // non-enterprise property
+        test_cases.emplace_back(
+          ssx::sformat("remove_other_{}", p),
+          props_t{with(p, true), non_enterprise_prop},
+          alter_props_t{{remove(non_enterprise_prop.first)}},
+          success);
+    }
+
+    // Specific tests for tiered storage
+    {
+        const auto full_si = props_t{
+          with(kafka::topic_property_remote_read, true),
+          with(kafka::topic_property_remote_write, true),
+          with(kafka::topic_property_remote_delete, true)};
+        test_cases.emplace_back(
+          "remove_remote.read_from_full",
+          full_si,
+          alter_props_t{{remove(kafka::topic_property_remote_read)}},
+          success);
+        test_cases.emplace_back(
+          "remove_remote.write_from_full",
+          full_si,
+          alter_props_t{{remove(kafka::topic_property_remote_write)}},
+          success);
+        test_cases.emplace_back(
+          "remove_remote.delete_from_full",
+          full_si,
+          alter_props_t{{remove(kafka::topic_property_remote_delete)}},
+          success);
+        test_cases.emplace_back(
+          "enable_remote.delete",
+          props_t{with(kafka::topic_property_remote_delete, false)},
+          alter_props_t{{set(kafka::topic_property_remote_delete, true)}},
+          failure);
+    }
+
+    // Create the topics for the tests
+    constexpr auto inc_alter_topic = [](std::string_view tp_raw) {
+        return model::topic{ssx::sformat("incremental_alter_{}", tp_raw)};
+    };
+    constexpr auto alter_topic = [](std::string_view tp_raw) {
+        return model::topic{ssx::sformat("alter_{}", tp_raw)};
+    };
+    for (const auto& t : test_cases) {
+        create_topic(inc_alter_topic(std::get<0>(t)), std::get<1>(t), 3);
+        create_topic(alter_topic(std::get<0>(t)), std::get<1>(t), 3);
+    }
+
+    revoke_license();
+
+    for (const auto& [tp_raw, props, alteration, expected] : test_cases) {
+        // Test incremental alter config
+        auto tp = inc_alter_topic(tp_raw);
+        BOOST_TEST_CONTEXT(tp) {
+            auto resp = incremental_alter_configs(
+              make_incremental_alter_topic_config_resource_cv(tp, alteration));
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_CHECK_EQUAL(resp.data.responses[0].error_code, expected);
+        }
+
+        // Test alter config
+        tp = alter_topic(tp_raw);
+        BOOST_TEST_CONTEXT(tp) {
+            auto properties = props;
+            for (const auto& a : alteration) {
+                if (
+                  a.second.second == kafka::config_resource_operation::remove) {
+                    properties.erase(a.first);
+                } else if (
+                  a.second.second == kafka::config_resource_operation::set) {
+                    properties.insert_or_assign(
+                      a.first, a.second.first.value());
+                };
+            }
+
+            auto resp = alter_configs(
+              make_alter_topic_config_resource_cv(tp, properties));
+            BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+            BOOST_CHECK_EQUAL(resp.data.responses[0].error_code, expected);
+        }
+    }
+}
