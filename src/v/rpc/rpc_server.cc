@@ -167,7 +167,7 @@ ss::future<> rpc_server::dispatch_method_once(
               if (unlikely(it == _services.end())) {
                   ss::sstring msg_suffix;
                   rpc::status s = rpc::status::method_not_found;
-                  if (!_all_services_added && _service_unavailable_allowed) {
+                  if (!_all_services_added) {
                       msg_suffix = " during startup. Ignoring...";
                       s = rpc::status::service_unavailable;
                   }

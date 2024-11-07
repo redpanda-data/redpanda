@@ -2919,20 +2919,6 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
 
 void application::start_runtime_services(
   cluster::cluster_discovery& cd, ::stop_signal& app_signal) {
-    ssx::background = feature_table.invoke_on_all(
-      [this](features::feature_table& ft) {
-          return ft.await_feature_then(
-            features::feature::rpc_transport_unknown_errc, [this] {
-                if (ss::this_shard_id() == 0) {
-                    vlog(
-                      _log.debug, "All nodes support unknown RPC error codes");
-                }
-                // Redpanda versions <= v22.3.x don't properly parse error
-                // codes they don't know about.
-                _rpc.local().set_use_service_unavailable();
-            });
-      });
-
     // single instance
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)
       .get();
