@@ -334,6 +334,25 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
           std::move(update.tp_ns), errc::resource_is_being_migrated};
     }
 
+    auto id_validation_enabled = [&update]() -> bool {
+        const auto& props = update.properties;
+        return std::ranges::any_of(
+          std::to_array({
+            props.record_key_schema_id_validation,
+            props.record_key_schema_id_validation_compat,
+            props.record_value_schema_id_validation,
+            props.record_value_schema_id_validation_compat,
+          }),
+          [](const auto& p) {
+              return p.op == incremental_update_operation::set
+                     && p.value.value_or(false);
+          });
+    };
+
+    if (_features.local().should_sanction() && id_validation_enabled()) {
+        co_return topic_result{std::move(update.tp_ns), errc::feature_disabled};
+    }
+
     update_topic_properties_cmd cmd(update.tp_ns, update.properties);
     try {
         auto update_rf_res = co_await do_update_replication_factor(

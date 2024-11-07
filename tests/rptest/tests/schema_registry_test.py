@@ -4367,3 +4367,57 @@ class SchemaRegistrySanctionsTest(SchemaRegistryEndpoints):
                 do_it()
         else:
             do_it()
+
+    @skip_fips_mode
+    @cluster(num_nodes=1)
+    @matrix(
+        disable_trial=[
+            False,
+            True,
+        ],
+        prop=[
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION,
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT,
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION,
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT,
+        ],
+        setting=[
+            'true',
+            'false',
+        ],
+    )
+    def test_sanction_schema_id_validation_set_config(self, disable_trial,
+                                                      prop, setting):
+        rpk = self._get_rpk_tools()
+
+        self.redpanda.set_cluster_config(
+            dict(enable_schema_id_validation=SchemaIdValidationMode.COMPAT))
+
+        self._create_topic(topic='foo')
+
+        rpk.alter_topic_config(topic='foo', set_key=prop, set_value=setting)
+
+        if disable_trial:
+            self.redpanda.set_environment(
+                dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1'))
+
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+        self.logger.debug(
+            "Check that we can _remove_ validation settings regardless of license status"
+        )
+        rpk.delete_topic_config('foo', prop)
+
+        def should_sanction():
+            return disable_trial and \
+                     setting == 'true'
+
+        do_it = lambda: rpk.alter_topic_config(
+            topic='foo', set_key=prop, set_value=setting)
+
+        if should_sanction():
+            with expect_exception(RpkException,
+                                  lambda e: "UNKNOWN_SERVER_ERROR" in e.msg):
+                do_it()
+        else:
+            do_it()
