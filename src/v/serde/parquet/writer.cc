@@ -96,7 +96,8 @@ private:
             const auto& data_header = std::get<data_page_header>(
               page.header.type);
             rg.num_rows = data_header.num_rows;
-            rg.total_byte_size += page.header.uncompressed_page_size;
+            auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
+            rg.total_byte_size += page_size;
             rg.columns.push_back(column_chunk{
               .meta_data = column_meta_data{
                 .type = leaf->type,
@@ -104,14 +105,13 @@ private:
                 .path_in_schema = leaf->path.copy(),
                 .codec = compression_codec::uncompressed,
                 .num_values = data_header.num_values,
-                .total_uncompressed_size = page.header.uncompressed_page_size,
-                .total_compressed_size = page.header.compressed_page_size,
+                .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
+                .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,
                 .key_value_metadata = {},
                 .data_page_offset = static_cast<int64_t>(_offset),
               },
             });
-            co_await write_iobuf_to_output_stream(
-              std::move(page.serialized), _output);
+            co_await write_iobuf(std::move(page.serialized));
         }
         co_return rg;
     }

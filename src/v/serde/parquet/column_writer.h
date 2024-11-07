@@ -21,6 +21,8 @@ namespace serde::parquet {
 struct data_page {
     // The unencoded header for this page.
     page_header header;
+    // The size of the encoded header.
+    int64_t serialized_header_size;
     // This serialized data already includes the header encoded in
     // Apache Thrift format.
     iobuf serialized;

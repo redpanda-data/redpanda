@@ -124,11 +124,13 @@ public:
           },
         };
         iobuf full_page_data = encode(header);
+        auto header_size = static_cast<int64_t>(full_page_data.size_bytes());
         full_page_data.append(std::move(encoded_rep_levels));
         full_page_data.append(std::move(encoded_def_levels));
         full_page_data.append(std::move(encoded_data));
         return {
           .header = header,
+          .serialized_header_size = header_size,
           .serialized = std::move(full_page_data),
         };
     }
