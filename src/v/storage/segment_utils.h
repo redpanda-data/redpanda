@@ -281,7 +281,9 @@ bool may_have_removable_tombstones(
 
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).
-void mark_segment_as_finished_window_compaction(
+// Also potentially issues a call to seg->index()->flush(), if the
+// `clean_compact_timestamp` was set in the index.
+ss::future<> mark_segment_as_finished_window_compaction(
   ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp);
 
 template<typename Func>

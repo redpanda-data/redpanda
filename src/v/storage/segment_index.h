@@ -199,11 +199,15 @@ public:
     }
 
     // Set the compacted timestamp, if it doesn't already have a value.
-    void maybe_set_clean_compact_timestamp(model::timestamp t) {
+    // Returns a boolean indicating whether the clean compact timestamp was set
+    // or not.
+    bool maybe_set_clean_compact_timestamp(model::timestamp t) {
         if (!_state.clean_compact_timestamp.has_value()) {
             _state.clean_compact_timestamp = t;
             _needs_persistence = true;
+            return true;
         }
+        return false;
     }
 
     // Get the compacted timestamp.
