@@ -83,9 +83,19 @@ Replace `24.2.7` with the version you want to download. See [Release Notes](http
 
 ## Build Manually
 
-Redpanda Data uses [Bazel](https://bazel.build/) as the build system. Bazel automatically manages most of the toolchains and third-party dependencies,
-but there are a few system libraries and preinstalled tools our build assumes are available locally. You can bootstrap and build Redpanda
-along with all its tests using:
+Redpanda Data uses [Bazel](https://bazel.build/) as the build system. Bazel automatically manages most of the toolchains and third-party dependencies.
+
+We rely on [bazelisk](https://github.com/bazelbuild/bazelisk) to get the right
+version of bazel needed for the build. You can for example install it as follows
+and add it to your $PATH (or use one of the other suggested ways from their
+repo).
+
+```
+wget -O ~/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 && chmod +x ~/bin/bazel
+```
+
+There are a few system libraries and preinstalled tools our build assumes are
+available locally. To bootstrap and build redpanda along with all its tests.
 
 ```bash
 sudo ./bazel/install-deps.sh
