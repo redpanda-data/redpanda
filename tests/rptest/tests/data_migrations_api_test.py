@@ -661,13 +661,12 @@ class DataMigrationsApiTest(RedpandaTest):
         producer.begin_transaction()
         producer.produce(topics[0].name, key="key2", value="value2")
 
+        # out
+        outbound_topics = [make_namespaced_topic(t.name) for t in topics]
+        reply = self.admin.unmount_topics(outbound_topics).json()
+        self.logger.info(f"create migration reply: {reply}")
+        out_migration_id = reply["id"]
         with self.finj_thread():
-            # out
-            outbound_topics = [make_namespaced_topic(t.name) for t in topics]
-            reply = self.admin.unmount_topics(outbound_topics).json()
-            self.logger.info(f"create migration reply: {reply}")
-            out_migration_id = reply["id"]
-
             self.logger.info('waiting for partitions be deleted')
             self.wait_partitions_disappear(topics)
             self.logger.info('waiting for migration to be deleted')
@@ -676,22 +675,22 @@ class DataMigrationsApiTest(RedpandaTest):
             migrations_map = self.get_migrations_map()
             self.logger.info(f"migrations: {migrations_map}")
 
-            # in
-            inbound_topics = [
-                InboundTopic(make_namespaced_topic(t.name),
-                             alias=\
-                                None if i == 0
-                                else make_namespaced_topic(f"{t.name}-alias"))
-                for i, t in enumerate(topics[:3])
-            ]
-            inbound_topics_spec = [
-                TopicSpec(name=(it.alias or it.source_topic_reference).topic,
-                          partition_count=3) for it in inbound_topics
-            ]
-            reply = self.admin.mount_topics(inbound_topics).json()
-            self.logger.info(f"create migration reply: {reply}")
-            in_migration_id = reply["id"]
-
+        # in
+        inbound_topics = [
+            InboundTopic(make_namespaced_topic(t.name),
+                            alias=\
+                            None if i == 0
+                            else make_namespaced_topic(f"{t.name}-alias"))
+            for i, t in enumerate(topics[:3])
+        ]
+        inbound_topics_spec = [
+            TopicSpec(name=(it.alias or it.source_topic_reference).topic,
+                      partition_count=3) for it in inbound_topics
+        ]
+        reply = self.admin.mount_topics(inbound_topics).json()
+        self.logger.info(f"create migration reply: {reply}")
+        in_migration_id = reply["id"]
+        with self.finj_thread():
             self.logger.info('waiting for partitions to come back')
             self.wait_partitions_appear(inbound_topics_spec)
             self.logger.info('waiting for migration to be deleted')
