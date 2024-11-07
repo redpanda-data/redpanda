@@ -2740,7 +2740,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     model::node_id node_id;
     if (config::node().node_id().has_value() && ever_ran_controller) {
         vlog(
-          _log.debug,
+          _log.info,
           "Running with already-established node ID {}",
           config::node().node_id());
         node_id = config::node().node_id().value();
