@@ -73,6 +73,7 @@ redpanda_cc_binary(
         "//src/v/bytes:iostream",
         "//src/v/container:zip",
         "//src/v/json",
+        "//src/v/random:generators",
         "//src/v/serde/parquet:schema",
         "//src/v/serde/parquet:value",
         "//src/v/serde/parquet:writer",
@@ -150,7 +151,7 @@ write_file(
             ],
         ),
     )
-    for test_case in range(1)
+    for test_case in range(64)
 ]
 
 redpanda_cc_gtest(

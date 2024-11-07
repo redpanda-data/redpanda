@@ -14,6 +14,7 @@
 #include "container/zip.h"
 #include "json/chunked_buffer.h"
 #include "json/iobuf_writer.h"
+#include "random/generators.h"
 #include "serde/parquet/schema.h"
 #include "serde/parquet/value.h"
 #include "serde/parquet/writer.h"
@@ -38,8 +39,16 @@ void json(json_writer& w, const schema_element& schema, const value& v) {
       [&w](const boolean_value& v) { w.Bool(v.val); },
       [&w](const int32_value& v) { w.Int(v.val); },
       [&w](const int64_value& v) { w.Int64(v.val); },
-      [&w](const float32_value& v) { w.Double(v.val); },
-      [&w](const float64_value& v) { w.Double(v.val); },
+      [&w](const float32_value& v) {
+          // Use a fixed precision between the verifier and generator
+          auto str = fmt::format("{:.8f}", v.val);
+          w.RawValue(str.data(), str.size(), rapidjson::kNumberType);
+      },
+      [&w](const float64_value& v) {
+          // Use a fixed precision between the verifier and generator
+          auto str = fmt::format("{:.8f}", v.val);
+          w.RawValue(str.data(), str.size(), rapidjson::kNumberType);
+      },
       [&w](const byte_array_value& v) { w.String(iobuf_to_base64(v.val)); },
       [&w](const fixed_byte_array_value& v) {
           w.String(iobuf_to_base64(v.val));
@@ -214,7 +223,6 @@ std::vector<value> dremel_paper_values() {
     return values;
 }
 
-[[maybe_unused]]
 schema_element all_types_schema() {
     schema_element document_schema = group_node(
       "Root",
@@ -222,9 +230,9 @@ schema_element all_types_schema() {
       leaf_node("A", field_repetition_type::required, bool_type{}),
       leaf_node("B", field_repetition_type::required, i32_type{}),
       leaf_node("C", field_repetition_type::required, i64_type{}),
-      leaf_node("D", field_repetition_type::required, f32_type{}),
-      leaf_node("E", field_repetition_type::required, f64_type{}),
-      leaf_node("F", field_repetition_type::required, byte_array_type{}),
+      leaf_node("D", field_repetition_type::optional, f32_type{}),
+      leaf_node("E", field_repetition_type::optional, f64_type{}),
+      leaf_node("F", field_repetition_type::optional, byte_array_type{}),
       leaf_node(
         "G",
         field_repetition_type::required,
@@ -233,19 +241,87 @@ schema_element all_types_schema() {
         "Nested",
         field_repetition_type::repeated,
         leaf_node("A", field_repetition_type::required, bool_type{}),
-        leaf_node("B", field_repetition_type::required, i32_type{}),
+        leaf_node("B", field_repetition_type::optional, i32_type{}),
         leaf_node("C", field_repetition_type::required, i64_type{}),
         leaf_node("D", field_repetition_type::required, f32_type{}),
         leaf_node("E", field_repetition_type::required, f64_type{}),
-        leaf_node("F", field_repetition_type::required, byte_array_type{})),
-      group_node("Logical", field_repetition_type::optional));
+        leaf_node("F", field_repetition_type::required, byte_array_type{})));
+    // TODO: also add logical types
     index_schema(document_schema);
     return document_schema;
 }
 
+value generate_value(const schema_element& root);
+
+value generate_group(const schema_element& root) {
+    group_value g;
+    g.reserve(root.children.size());
+    for (const auto& child : root.children) {
+        g.emplace_back(generate_value(child));
+    }
+    return g;
+}
+
+value generate_required(const schema_element& root) {
+    return ss::visit(
+      root.type,
+      [&root](const std::monostate&) { return generate_group(root); },
+      [](const bool_type&) -> value {
+          return boolean_value{random_generators::get_real<float>() < 0.5};
+      },
+      [](const i32_type&) -> value {
+          return int32_value{random_generators::get_int<int32_t>()};
+      },
+      [](const i64_type&) -> value {
+          return int64_value{random_generators::get_int<int64_t>()};
+      },
+      [](const f32_type) -> value {
+          return float32_value{random_generators::get_real<float>()};
+      },
+      [](const f64_type&) -> value {
+          return float64_value{random_generators::get_real<double>()};
+      },
+      [](const byte_array_type& t) -> value {
+          if (t.fixed_length) {
+              return fixed_byte_array_value{iobuf::from(
+                random_generators::gen_alphanum_string(*t.fixed_length))};
+          }
+          auto size = random_generators::get_int<size_t>(64);
+          return byte_array_value{
+            iobuf::from(random_generators::gen_alphanum_string(size))};
+      });
+}
+
+value generate_optional(const schema_element& root) {
+    if (random_generators::get_real<float>() > 0.82) {
+        return null_value();
+    }
+    return generate_required(root);
+}
+
+value generate_repeated(const schema_element& root) {
+    repeated_value r;
+    auto n = random_generators::get_int<size_t>(64);
+    r.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        r.emplace_back(generate_required(root));
+    }
+    return r;
+}
+
+value generate_value(const schema_element& root) {
+    switch (root.repetition_type) {
+    case field_repetition_type::required:
+        return generate_required(root);
+    case field_repetition_type::optional:
+        return generate_optional(root);
+    case field_repetition_type::repeated:
+        return generate_repeated(root);
+    }
+}
+
 ss::future<iobuf> serialize_testcase(size_t test_case) {
-    switch (test_case) {
-    case 0: {
+    if (test_case == 0) {
         iobuf file;
         writer w(
           {
@@ -263,13 +339,27 @@ ss::future<iobuf> serialize_testcase(size_t test_case) {
           .parquet_file = std::move(file),
         });
     }
-    case 1:
-        // TODO
-        co_return iobuf();
-    default:
-        throw std::runtime_error(
-          fmt::format("unsupported test case: {}", test_case));
+    iobuf file;
+    writer w(
+      {
+        .schema = all_types_schema(),
+        .metadata = {{"foo", "bar"}},
+      },
+      make_iobuf_ref_output_stream(file));
+    co_await w.init();
+    auto schema = all_types_schema();
+    std::vector<value> rows;
+    for (size_t i = 0; i < test_case; ++i) {
+        auto v = generate_value(schema);
+        rows.push_back(copy(v));
+        co_await w.write_row(std::get<group_value>(std::move(v)));
     }
+    co_await w.close();
+    co_return json(testcase{
+      .schema = all_types_schema(),
+      .rows = std::move(rows),
+      .parquet_file = std::move(file),
+    });
 }
 // NOLINTEND(*magic-number*)
 

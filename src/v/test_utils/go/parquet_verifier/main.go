@@ -100,9 +100,11 @@ func normalize(val any) any {
 	case int:
 		return json.Number(strconv.Itoa(int(v)))
 	case float32:
-		return json.Number(strconv.FormatFloat(float64(v), 'f', -1, 32))
+		// Use a fixed precision between the verifier and generator
+		return json.Number(strconv.FormatFloat(float64(v), 'f', 8, 32))
 	case float64:
-		return json.Number(strconv.FormatFloat(v, 'f', -1, 64))
+		// Use a fixed precision between the verifier and generator
+		return json.Number(strconv.FormatFloat(v, 'f', 8, 64))
 	default:
 		return v
 	}
