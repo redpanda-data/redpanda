@@ -161,11 +161,7 @@ replicate_batcher::do_cache_with_backpressure(
     data.reserve(batches.size());
     for (auto& b : batches) {
         record_count += b.record_count();
-        if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-            data.push_back(std::move(b));
-        } else {
-            data.push_back(b.copy());
-        }
+        data.push_back(std::move(b));
     }
     auto i = ss::make_lw_shared<item>(
       record_count, std::move(data), std::move(u), expected_term, opts);
