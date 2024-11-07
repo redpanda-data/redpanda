@@ -38,23 +38,9 @@ struct feature_table_snapshot;
 /// only used at runtime.  Therefore it is safe to re-use an integer that
 /// has been made available by another feature being retired.
 enum class feature : std::uint64_t {
-    serde_raft_0 = 1ULL << 5U,
-    license = 1ULL << 6U,
-    raft_improved_configuration = 1ULL << 7U,
-    transaction_ga = 1ULL << 8U,
-    raftless_node_status = 1ULL << 9U,
-    rpc_v2_by_default = 1ULL << 10U,
     cloud_retention = 1ULL << 11U,
-    node_id_assignment = 1ULL << 12U,
-    replication_factor_change = 1ULL << 13U,
-    ephemeral_secrets = 1ULL << 14U,
-    seeds_driven_bootstrap_capable = 1ULL << 15U,
-    tm_stm_cache = 1ULL << 16U,
-    kafka_gssapi = 1ULL << 17U,
-    partition_move_revert_cancel = 1ULL << 18U,
     node_isolation = 1ULL << 19U,
     group_offset_retention = 1ULL << 20U,
-    rpc_transport_unknown_errc = 1ULL << 21U,
     membership_change_controller_cmds = 1ULL << 22U,
     controller_snapshots = 1ULL << 23U,
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
@@ -109,6 +95,19 @@ inline const std::unordered_set<std::string_view> retired_features = {
   "idempotency_v2",
   "transaction_partitioning",
   "lightweight_heartbeats",
+  "serde_raft_0",
+  "license",
+  "raft_improved_configuration",
+  "raftless_node_status",
+  "rpc_v2_by_default",
+  "node_id_assignment",
+  "replication_factor_change",
+  "ephemeral_secrets",
+  "seeds_driven_bootstrap_capable",
+  "tm_stm_cache",
+  "kafka_gssapi",
+  "partition_move_revert_cancel",
+  "rpc_transport_unknown_errc",
 };
 
 // The latest_version associated with past releases. Increment this
@@ -221,89 +220,11 @@ struct feature_spec {
 
 inline constexpr std::array feature_schema{
   feature_spec{
-    release_version::v22_2_1,
-    "serde_raft_0",
-    feature::serde_raft_0,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_2_1,
-    "license",
-    feature::license,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_2_1,
-    "raft_improved_configuration",
-    feature::raft_improved_configuration,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_2_6,
-    "transaction_ga",
-    feature::transaction_ga,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_1,
-    "raftless_node_status",
-    feature::raftless_node_status,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_1,
-    "rpc_v2_by_default",
-    feature::rpc_v2_by_default,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
     release_version::v22_3_1,
     "cloud_retention",
     feature::cloud_retention,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::requires_migration},
-  feature_spec{
-    release_version::v22_3_1,
-    "node_id_assignment",
-    feature::node_id_assignment,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_1,
-    "replication_factor_change",
-    feature::replication_factor_change,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_1,
-    "ephemeral_secrets",
-    feature::ephemeral_secrets,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_1,
-    "seeds_driven_bootstrap_capable",
-    feature::seeds_driven_bootstrap_capable,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v22_3_6,
-    "tm_stm_cache",
-    feature::tm_stm_cache,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v23_1_1,
-    "kafka_gssapi",
-    feature::kafka_gssapi,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v23_1_1,
-    "partition_move_revert_cancel",
-    feature::partition_move_revert_cancel,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
   feature_spec{
     release_version::v23_1_1,
     "node_isolation",
@@ -314,12 +235,6 @@ inline constexpr std::array feature_schema{
     release_version::v23_1_1,
     "group_offset_retention",
     feature::group_offset_retention,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    release_version::v23_1_1,
-    "rpc_transport_unknown_errc",
-    feature::rpc_transport_unknown_errc,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
