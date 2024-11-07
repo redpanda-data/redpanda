@@ -27,6 +27,7 @@
 #include <seastar/core/shard_id.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
 #include <cloud_storage/cache_service.h>
@@ -1254,6 +1255,7 @@ ss::future<> cache::put(
       ss::this_shard_id(),
       (++_cnt),
       cache_tmp_file_extension));
+    auto tmp_filepath = dir_path / tmp_filename;
 
     ss::file tmp_cache_file;
     while (true) {
@@ -1268,14 +1270,14 @@ ss::future<> cache::put(
                          | ss::open_flags::exclusive;
 
             tmp_cache_file = co_await ss::open_file_dma(
-              (dir_path / tmp_filename).native(), flags);
+              tmp_filepath.native(), flags);
             break;
         } catch (const std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::no_such_file_or_directory) {
                 vlog(
                   cst_log.debug,
                   "Couldn't open {}, gonna retry",
-                  (dir_path / tmp_filename).native());
+                  tmp_filepath.native());
             } else {
                 throw;
             }
@@ -1288,42 +1290,59 @@ ss::future<> cache::put(
     options.io_priority_class = io_priority;
     auto out = co_await ss::make_file_output_stream(tmp_cache_file, options);
 
-    std::exception_ptr disk_full_error;
+    std::exception_ptr eptr;
+    bool no_space_on_device = false;
     try {
         co_await ss::copy(data, out)
           .then([&out]() { return out.flush(); })
           .finally([&out]() { return out.close(); });
     } catch (const std::filesystem::filesystem_error& e) {
         // For ENOSPC errors, delay handling so that we can do a trim
-        if (e.code() == std::errc::no_space_on_device) {
-            disk_full_error = std::current_exception();
-        } else {
-            throw;
-        }
+        no_space_on_device = e.code() == std::errc::no_space_on_device;
+        eptr = std::current_exception();
+    } catch (...) {
+        // For other errors, delay handling so that we can clean up the tmp file
+        eptr = std::current_exception();
     }
 
-    if (disk_full_error) {
-        vlog(cst_log.error, "Out of space while writing to cache");
+    // If we failed to write to the tmp file, we should delete it, maybe do an
+    // eager trim, and rethrow the exception.
+    if (eptr) {
+        if (!_gate.is_closed()) {
+            auto delete_tmp_fut = co_await ss::coroutine::as_future(
+              delete_file_and_empty_parents(tmp_filepath.native()));
+            if (
+              delete_tmp_fut.failed()
+              && !ssx::is_shutdown_exception(delete_tmp_fut.get_exception())) {
+                vlog(
+                  cst_log.error,
+                  "Failed to delete tmp file {}: {}",
+                  tmp_filepath.native(),
+                  delete_tmp_fut.get_exception());
+            }
+        }
 
-        // Block further puts from being attempted until notify_disk_status
-        // reports that there is space available.
-        set_block_puts(true);
+        if (no_space_on_device) {
+            vlog(cst_log.error, "Out of space while writing to cache");
 
-        // Trim proactively: if many fibers hit this concurrently,
-        // they'll contend for cleanup_sm and the losers will skip
-        // trim due to throttling.
-        co_await trim_throttled();
+            // Block further puts from being attempted until notify_disk_status
+            // reports that there is space available.
+            set_block_puts(true);
 
-        throw disk_full_error;
+            // Trim proactively: if many fibers hit this concurrently,
+            // they'll contend for cleanup_sm and the losers will skip
+            // trim due to throttling.
+            co_await trim_throttled();
+        }
+
+        std::rethrow_exception(eptr);
     }
 
     // commit write transaction
-    auto src = (dir_path / tmp_filename).native();
+    auto put_size = co_await ss::file_size(tmp_filepath.native());
+
     auto dest = (dir_path / filename).native();
-
-    auto put_size = co_await ss::file_size(src);
-
-    co_await ss::rename_file(src, dest);
+    co_await ss::rename_file(tmp_filepath.native(), dest);
 
     // We will now update
     reservation.wrote_data(put_size, 1);

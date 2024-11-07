@@ -16,7 +16,9 @@
 #include "cloud_storage/cache_service.h"
 #include "random/generators.h"
 #include "test_utils/fixture.h"
+#include "test_utils/iostream.h"
 #include "test_utils/scoped_config.h"
+#include "utils/directory_walker.h"
 #include "utils/file_io.h"
 #include "utils/human.h"
 
@@ -463,6 +465,41 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_read_skipped_on_old_version) {
     in.add("key", make_ts(0), 0);
     auto out = serde_roundtrip(in, tracker_version::v1);
     BOOST_REQUIRE_EQUAL(out.size(), 0);
+}
+
+ss::future<size_t> count_files(ss::sstring dirname) {
+    directory_walker walker;
+    size_t count = 0;
+    co_await walker.walk(
+      dirname,
+      [dirname, &count](const ss::directory_entry& entry) -> ss::future<> {
+          if (entry.type == ss::directory_entry_type::directory) {
+              return count_files(fmt::format("{}/{}", dirname, entry.name))
+                .then([&count](size_t sub_count) { count += sub_count; });
+          } else {
+              ++count;
+              return ss::now();
+          }
+      });
+
+    co_return count;
+}
+
+FIXTURE_TEST(test_clean_up_on_stream_exception, cache_test_fixture) {
+    auto s = tests::make_throwing_stream(ss::abort_requested_exception());
+    auto reservation = sharded_cache.local().reserve_space(1, 1).get();
+    BOOST_CHECK_THROW(
+      sharded_cache.local().put(KEY, s, reservation).get(),
+      ss::abort_requested_exception);
+    vlog(test_log.info, "Put failed as expected");
+
+    BOOST_CHECK_EQUAL(sharded_cache.local().get_usage_bytes(), 0);
+    BOOST_CHECK_EQUAL(sharded_cache.local().get_usage_objects(), 0);
+
+    vlog(test_log.info, "Counting files in cache directory");
+    BOOST_CHECK_EQUAL(count_files(CACHE_DIR.native()).get(), 0);
+
+    vlog(test_log.info, "Test passed");
 }
 
 /**
