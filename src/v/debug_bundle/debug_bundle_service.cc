@@ -284,7 +284,8 @@ service::service(storage::kvstore* kvstore)
   , _rpk_path_binding(config::shard_local_cfg().rpk_path.bind())
   , _debug_bundle_cleanup_binding(
       config::shard_local_cfg().debug_bundle_auto_removal_seconds.bind())
-  , _process_control_mutex("debug_bundle_service::process_control") {
+  , _process_control_mutex("debug_bundle_service::process_control")
+  , _in_developer_mode(config::node().developer_mode) {
     _debug_bundle_storage_dir_binding.watch([this] {
         _debug_bundle_dir = form_debug_bundle_storage_directory();
         lg.debug("Changed debug bundle directory to {}", _debug_bundle_dir);
@@ -323,7 +324,11 @@ ss::future<> service::start() {
 
     maybe_rearm_timer();
 
-    lg.debug("Service started");
+    if (_in_developer_mode) {
+        lg.warn("Developer mode enabled, debug bundle service is unavailable");
+    } else {
+        lg.debug("Service started");
+    }
 }
 
 ss::future<> service::stop() {
@@ -359,6 +364,13 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
           });
     }
     auto units = co_await _process_control_mutex.get_units();
+
+    if (_in_developer_mode) {
+        co_return error_info(
+          error_code::debug_bundle_service_unavailable_in_developer_mode,
+          "Developer mode enabled, debug bundle service is unavailable");
+    }
+
     if (!co_await ss::file_exists(_rpk_path_binding().native())) {
         co_return error_info(
           error_code::rpk_binary_not_present,
@@ -457,6 +469,11 @@ ss::future<result<void>> service::cancel_rpk_debug_bundle(job_id_t job_id) {
           [job_id](service& s) { return s.cancel_rpk_debug_bundle(job_id); });
     }
     auto units = co_await _process_control_mutex.get_units();
+    if (_in_developer_mode) {
+        co_return error_info(
+          error_code::debug_bundle_service_unavailable_in_developer_mode,
+          "Developer mode enabled, debug bundle service is unavailable");
+    }
     auto status = process_status();
     if (!status.has_value()) {
         co_return error_info(error_code::debug_bundle_process_never_started);
@@ -494,6 +511,11 @@ service::rpk_debug_bundle_status() {
         co_return co_await container().invoke_on(service_shard, [](service& s) {
             return s.rpk_debug_bundle_status();
         });
+    }
+    if (_in_developer_mode) {
+        co_return error_info(
+          error_code::debug_bundle_service_unavailable_in_developer_mode,
+          "Developer mode enabled, debug bundle service is unavailable");
     }
     auto status = process_status();
     if (!status.has_value()) {
@@ -538,6 +560,11 @@ service::rpk_debug_bundle_path(job_id_t job_id) {
           [job_id](service& s) { return s.rpk_debug_bundle_path(job_id); });
     }
     auto units = co_await _process_control_mutex.get_units();
+    if (_in_developer_mode) {
+        co_return error_info(
+          error_code::debug_bundle_service_unavailable_in_developer_mode,
+          "Developer mode enabled, debug bundle service is unavailable");
+    }
     auto status = process_status();
     if (!status.has_value()) {
         co_return error_info(error_code::debug_bundle_process_never_started);
@@ -572,6 +599,11 @@ ss::future<result<void>> service::delete_rpk_debug_bundle(job_id_t job_id) {
           [job_id](service& s) { return s.delete_rpk_debug_bundle(job_id); });
     }
     auto units = co_await _process_control_mutex.get_units();
+    if (_in_developer_mode) {
+        co_return error_info(
+          error_code::debug_bundle_service_unavailable_in_developer_mode,
+          "Developer mode enabled, debug bundle service is unavailable");
+    }
     auto status = process_status();
     if (!status.has_value()) {
         co_return error_info(error_code::debug_bundle_process_never_started);

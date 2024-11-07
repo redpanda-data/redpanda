@@ -55,6 +55,7 @@ struct debug_bundle_service_fixture : public seastar_test {
           co_await ss::recursive_touch_directory(_data_dir.native()))
           << "Failed to create " << _data_dir;
 
+        config::node().developer_mode.set_value(in_developer_mode());
         config::node().data_directory.set_value(_data_dir);
         config::shard_local_cfg().rpk_path.set_value(_rpk_shim_path);
 
@@ -144,6 +145,8 @@ struct debug_bundle_service_fixture : public seastar_test {
         return _data_dir / debug_bundle::service::debug_bundle_dir_name
                / fmt::format("{}.out", job_id);
     }
+
+    virtual bool in_developer_mode() const { return false; }
 
     std::filesystem::path _rpk_shim_path;
     std::filesystem::path _data_dir;
@@ -1084,4 +1087,61 @@ TEST_F_CORO(
           storage::kvstore::key_space::debug_bundle,
           bytes::from_string(debug_bundle::service::debug_bundle_metadata_key))
         .has_value());
+}
+
+struct debug_bundle_service_started_developer_mode_fixture
+  : public debug_bundle_service_started_fixture {
+    bool in_developer_mode() const final { return true; }
+};
+
+TEST_F_CORO(
+  debug_bundle_service_started_developer_mode_fixture, test_in_developer_mode) {
+    debug_bundle::job_id_t job_id(uuid_t::create());
+
+    {
+        auto res
+          = co_await _service.local().initiate_rpk_debug_bundle_collection(
+            job_id, {});
+        ASSERT_FALSE_CORO(res.has_value());
+        EXPECT_EQ(
+          res.assume_error().code(),
+          debug_bundle::error_code::
+            debug_bundle_service_unavailable_in_developer_mode);
+    }
+
+    {
+        auto res = co_await _service.local().cancel_rpk_debug_bundle(job_id);
+        ASSERT_FALSE_CORO(res.has_value());
+        EXPECT_EQ(
+          res.assume_error().code(),
+          debug_bundle::error_code::
+            debug_bundle_service_unavailable_in_developer_mode);
+    }
+
+    {
+        auto res = co_await _service.local().rpk_debug_bundle_status();
+        ASSERT_FALSE_CORO(res.has_value());
+        EXPECT_EQ(
+          res.assume_error().code(),
+          debug_bundle::error_code::
+            debug_bundle_service_unavailable_in_developer_mode);
+    }
+
+    {
+        auto res = co_await _service.local().rpk_debug_bundle_path(job_id);
+        ASSERT_FALSE_CORO(res.has_value());
+        EXPECT_EQ(
+          res.assume_error().code(),
+          debug_bundle::error_code::
+            debug_bundle_service_unavailable_in_developer_mode);
+    }
+
+    {
+        auto res = co_await _service.local().delete_rpk_debug_bundle(job_id);
+        ASSERT_FALSE_CORO(res.has_value());
+        EXPECT_EQ(
+          res.assume_error().code(),
+          debug_bundle::error_code::
+            debug_bundle_service_unavailable_in_developer_mode);
+    }
 }

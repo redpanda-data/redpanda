@@ -228,5 +228,7 @@ private:
     /// Mutex to guard control over the rpk debug bundle process
     mutex _process_control_mutex;
     ss::gate _gate;
+    /// Flag that indicates if the node is in developer mode
+    bool _in_developer_mode;
 };
 } // namespace debug_bundle
