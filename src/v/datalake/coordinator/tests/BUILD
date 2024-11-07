@@ -51,6 +51,7 @@ redpanda_cc_gtest(
         "iceberg_file_committer_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":state_test_utils",
         "//src/v/cloud_io:remote",

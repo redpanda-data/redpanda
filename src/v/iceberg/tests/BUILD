@@ -82,6 +82,7 @@ redpanda_cc_gtest(
         "filesystem_catalog_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/base",
@@ -140,6 +141,7 @@ redpanda_cc_gtest(
         "manifest_io_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/bytes:iobuf",
@@ -196,6 +198,7 @@ redpanda_cc_gtest(
         "merge_append_action_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/cloud_io:remote",
@@ -367,6 +370,7 @@ redpanda_cc_gtest(
         "table_io_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_table_metadata",
         "//src/v/bytes:iobuf",
@@ -452,6 +456,7 @@ redpanda_cc_gtest(
         "update_schema_action_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/iceberg:transaction",
@@ -519,6 +524,7 @@ redpanda_cc_gtest(
         "metadata_query_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/cloud_io:remote",
@@ -567,6 +573,7 @@ redpanda_cc_gtest(
         "rest_catalog_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":test_schemas",
         "//src/v/bytes:iobuf_parser",
