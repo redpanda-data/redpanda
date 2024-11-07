@@ -148,7 +148,6 @@ redpanda_cc_library(
     ],
     hdrs = [
         "data_writer_interface.h",
-        "schemaless_translator.h",
     ],
     implementation_deps = [
         "@fmt",
@@ -157,12 +156,9 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":base_types",
-        ":table_definition",
         "//src/v/base",
-        "//src/v/datalake/coordinator:data_file",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
-        "//src/v/serde",
     ],
 )
 
