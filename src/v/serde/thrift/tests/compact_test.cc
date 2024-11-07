@@ -15,12 +15,11 @@
 
 #include <gtest/gtest.h>
 
-#include <initializer_list>
-#include <limits>
 #include <utility>
 
 // NOLINTNEXTLINE(*internal-linkage*)
 void PrintTo(const iobuf& b, std::ostream* os) {
+    *os << "iobuf size: " << b.size_bytes();
     *os << b.hexdump(b.size_bytes());
 }
 
@@ -58,7 +57,7 @@ TEST(StructEncoding, LongFormStart) {
     encoder.write_field(large_field_id, field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(
       std::move(encoder).write_stop(),
-      buf_from(0b00000101, unsigned_vint::to_bytes(large_field_id), 2, 0));
+      buf_from(0b00000101, vint::to_bytes(large_field_id), 2, 0));
 }
 
 TEST(StructEncoding, SmallFieldDelta) {
@@ -82,7 +81,7 @@ TEST(StructEncoding, LargeFieldDelta) {
         0b00010101,
         vint::to_bytes(1),
         0b00000101,
-        unsigned_vint::to_bytes(large_field_id),
+        vint::to_bytes(large_field_id),
         vint::to_bytes(1),
         0));
 }
@@ -96,10 +95,10 @@ TEST(StructEncoding, NegativeFieldDelta) {
       std::move(encoder).write_stop(),
       buf_from(
         0b00000101,
-        unsigned_vint::to_bytes(large_field_id),
+        vint::to_bytes(large_field_id),
         vint::to_bytes(1),
         0b00000101,
-        unsigned_vint::to_bytes(1),
+        vint::to_bytes(1),
         vint::to_bytes(1),
         0));
 }
