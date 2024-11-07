@@ -78,6 +78,9 @@ std::vector<std::string_view> get_enterprise_features(
     if (cfg.is_read_replica()) {
         features.emplace_back("remote read replicas");
     }
+    if (cfg.is_schema_id_validation_enabled()) {
+        features.emplace_back("schema ID validation");
+    }
     return features;
 }
 

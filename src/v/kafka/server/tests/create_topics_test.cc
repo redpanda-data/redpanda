@@ -440,12 +440,23 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
 }
 
 FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
+    // NOTE(oren): w/o schema validation enabled at the cluster level, related
+    // properties will be ignored on the topic create path. stick to COMPAT here
+    // because it's a superset of REDPANDA.
+    lconf().enable_schema_id_validation.set_value(
+      pandaproxy::schema_registry::schema_id_validation_mode::compat);
+
     revoke_license();
     auto si_props = {
       ss::sstring{kafka::topic_property_remote_read},
       ss::sstring{kafka::topic_property_remote_write},
       ss::sstring{kafka::topic_property_recovery},
       ss::sstring{kafka::topic_property_read_replica},
+      ss::sstring{kafka::topic_property_record_key_schema_id_validation},
+      ss::sstring{kafka::topic_property_record_key_schema_id_validation_compat},
+      ss::sstring{kafka::topic_property_record_value_schema_id_validation},
+      ss::sstring{
+        kafka::topic_property_record_value_schema_id_validation_compat},
     };
 
     auto client = make_kafka_client().get();
