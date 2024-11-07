@@ -102,7 +102,7 @@ def make_manifest_entries(num_entries: int) -> list[ManifestEntry]:
         )
         manifest_entry = ManifestEntry(status=0,
                                        snapshot_id=i,
-                                       data_sequence_number=i,
+                                       sequence_number=i,
                                        file_sequence_number=i,
                                        data_file=data_file)
         manifest_entries.append(manifest_entry)
