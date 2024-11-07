@@ -767,7 +767,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
           });
     } catch (const ss::broken_condition_variable& e) {
         co_return ret_t(make_error_code(errc::shutting_down));
-    } catch (const ss::timed_out_error& e) {
+    } catch (const ss::condition_variable_timed_out& e) {
         co_return errc::timeout;
     }
     // grab an oplock to serialize state updates i.e. wait for all updates in
