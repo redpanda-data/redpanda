@@ -282,8 +282,7 @@ class SelfTestTest(EndToEndTest):
         self.start_redpanda(
             num_nodes=num_nodes,
             si_settings=SISettings(test_context=self.test_context),
-            install_opts=install_opts,
-            license_required=True)
+            install_opts=install_opts)
 
         # Attempt to run with a possibly unknown "cloud" test.
         # The controller, which is of a lower version than the other nodes in the cluster,

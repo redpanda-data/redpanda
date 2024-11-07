@@ -27,7 +27,7 @@ from rptest.util import (
     produce_until_segments,
     wait_until_segments,
 )
-from rptest.utils.mode_checks import skip_fips_mode, in_fips_environment
+from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.si_utils import BucketView
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
@@ -145,7 +145,6 @@ class UpgradeBackToBackTest(PreallocNodesTest):
     topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
     oldest_version = (21, 11)
-    fips_oldest_version = (22, 2)
 
     def __init__(self, test_context):
         if self.debug_mode:
@@ -198,11 +197,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             return
 
         else:
-            # For FIPS, start with a version that supports installing an enterprise license.
-            # This is to allow upgrading to 24.3.x and beyond which has enterprise license enforcement on upgrade.
-            oldest_v = self.oldest_version if not in_fips_environment() \
-                else self.fips_oldest_version
-            self.versions = self.load_version_range(oldest_v)
+            self.versions = self.load_version_range(self.oldest_version)
 
     def install_next(self):
         v = self.versions.pop(0)
@@ -413,7 +408,6 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         This ensures that rollbacks remain possible.
         """
         self.install_and_start()
-        self.redpanda.install_license()
 
         initial_version = Version(
             self.redpanda.get_version(self.redpanda.nodes[0]))

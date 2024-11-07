@@ -1017,9 +1017,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
             install_previous_version=test_mixed_versions)
-        self.start_redpanda(num_nodes=3,
-                            install_opts=install_opts,
-                            license_required=True)
+        self.start_redpanda(num_nodes=3, install_opts=install_opts)
 
         spec = TopicSpec(name="topic",
                          partition_count=partitions,
@@ -1067,9 +1065,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
             install_previous_version=test_mixed_versions)
-        self.start_redpanda(num_nodes=3,
-                            install_opts=install_opts,
-                            license_required=True)
+        self.start_redpanda(num_nodes=3, install_opts=install_opts)
 
         spec = TopicSpec(name="topic",
                          partition_count=partitions,

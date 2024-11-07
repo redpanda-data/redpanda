@@ -24,8 +24,6 @@ from ducktape.mark import parametrize
 
 from rptest.services.utils import LogSearchLocal
 from rptest.util import wait_until_result, wait_until
-from rptest.utils.mode_checks import skip_fips_mode, in_fips_environment
-from rptest.utils.rpenv import sample_license
 
 
 class TestMode(IntEnum):
@@ -190,23 +188,6 @@ class AdminUUIDOperationsTest(RedpandaTest):
     @parametrize(mode=TestMode.NO_OVERRIDE)
     @parametrize(mode=TestMode.CLI_OVERRIDE)
     def test_force_uuid_override(self, mode):
-        if in_fips_environment():
-            # We need to use the license upgrade escape hatch for 24.3.x+ enterprise (eg. fips) clusters when using
-            # the node UUID override feature because of how using an enterprise feature, using the UUID override
-            # functionality and the license enforcement (upgrade blocking) interacts. Speficially, when we restart a
-            # node with an overwritten UUID and a cleaned data directory:
-            # 1. we start with the logical version set to the initial version
-            # 2. we don't register with another node in the host (since that would fail in leaderless cluster)
-            # 3. therefore we do not receive a controller snapshot to start with
-            # 4. which means that we won't have a license installed until later during startup when the controller log
-            #    is caught up
-            # 5. which means that license verification fails on startup because we mistake this for an upgrade scenario
-            #    (feature version is < latest_version), an enterprise feature is enabled (eg. fips), and there is no
-            #    license installed.
-            license = sample_license(assert_exists=True)
-            self.redpanda.set_environment(
-                {'REDPANDA_FALLBACK_ENTERPRISE_LICENSE': license})
-
         to_stop = self.redpanda.nodes[0]
         initial_to_stop_id = self.redpanda.node_id(to_stop)
 
@@ -326,7 +307,6 @@ class AdminUUIDOperationsTest(RedpandaTest):
                    backoff_sec=1,
                    retry_on_exc=True)
 
-    @skip_fips_mode
     @cluster(num_nodes=3)
     @parametrize(mode=TestMode.CFG_OVERRIDE)
     @parametrize(mode=TestMode.CLI_OVERRIDE)
