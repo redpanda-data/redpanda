@@ -312,11 +312,7 @@ struct read_result {
         return ss::visit(
           data,
           [](data_t& d) { return std::move(*d); },
-          [](foreign_data_t& d) {
-              auto ret = d->copy();
-              d.reset();
-              return ret;
-          });
+          [](foreign_data_t& d) { return std::move(*d); });
     }
 
     variant_t data;
