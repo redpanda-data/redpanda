@@ -33,13 +33,13 @@ void write_svint(iobuf& buf, IntType v) {
 
 } // namespace
 
-void struct_encoder::write_field(int16_t field_id, field_type type, iobuf val) {
-    write_field_header(field_id, type);
+void struct_encoder::write_field(field_id id, field_type type, iobuf val) {
+    write_field_header(id, type);
     _buf.append(std::move(val));
 }
 
-void struct_encoder::write_field(int16_t field_id, field_type type, bytes val) {
-    write_field_header(field_id, type);
+void struct_encoder::write_field(field_id id, field_type type, bytes val) {
+    write_field_header(id, type);
     _buf.append(val.data(), val.size());
 }
 
@@ -48,17 +48,15 @@ iobuf struct_encoder::write_stop() && {
     return std::move(_buf);
 }
 
-void struct_encoder::write_field_header(int16_t field_id, field_type type) {
+void struct_encoder::write_field_header(field_id id, field_type type) {
     constexpr int16_t max_short_form_delta = 16;
-    if (
-      field_id > _last_field_id
-      && field_id - _last_field_id < max_short_form_delta) {
-        auto delta = field_id - _last_field_id;
+    if (id > _last_field_id && id - _last_field_id < max_short_form_delta) {
+        auto delta = id - _last_field_id;
         write_short_form_field_header(static_cast<uint8_t>(delta), type);
     } else {
-        write_long_form_field_header(type, field_id);
+        write_long_form_field_header(type, id);
     }
-    _last_field_id = field_id;
+    _last_field_id = id;
 }
 
 void struct_encoder::write_short_form_field_header(
@@ -69,9 +67,9 @@ void struct_encoder::write_short_form_field_header(
 }
 
 void struct_encoder::write_long_form_field_header(
-  field_type type, int16_t field_id) {
+  field_type type, field_id id) {
     write_byte(_buf, static_cast<uint8_t>(type));
-    write_svint<int16_t>(_buf, field_id);
+    write_svint<int16_t>(_buf, id());
 }
 
 bytes encode_string(std::string_view str) {

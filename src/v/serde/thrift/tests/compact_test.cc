@@ -47,13 +47,13 @@ TEST(StructEncoding, Empty) {
 
 TEST(StructEncoding, ShortFormStart) {
     struct_encoder encoder;
-    encoder.write_field(1, field_type::i32, vint::to_bytes(1));
+    encoder.write_field(field_id(1), field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(std::move(encoder).write_stop(), buf_from(0b00010101, 2, 0));
 }
 
 TEST(StructEncoding, LongFormStart) {
     struct_encoder encoder;
-    constexpr int16_t large_field_id = 25;
+    constexpr field_id large_field_id = field_id(25);
     encoder.write_field(large_field_id, field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(
       std::move(encoder).write_stop(),
@@ -62,8 +62,8 @@ TEST(StructEncoding, LongFormStart) {
 
 TEST(StructEncoding, SmallFieldDelta) {
     struct_encoder encoder;
-    encoder.write_field(1, field_type::i32, vint::to_bytes(1));
-    encoder.write_field(2, field_type::i32, vint::to_bytes(1));
+    encoder.write_field(field_id(1), field_type::i32, vint::to_bytes(1));
+    encoder.write_field(field_id(2), field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(
       std::move(encoder).write_stop(),
       buf_from(
@@ -72,8 +72,8 @@ TEST(StructEncoding, SmallFieldDelta) {
 
 TEST(StructEncoding, LargeFieldDelta) {
     struct_encoder encoder;
-    encoder.write_field(1, field_type::i32, vint::to_bytes(1));
-    constexpr int16_t large_field_id = 25;
+    encoder.write_field(field_id(1), field_type::i32, vint::to_bytes(1));
+    constexpr auto large_field_id = field_id(25);
     encoder.write_field(large_field_id, field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(
       std::move(encoder).write_stop(),
@@ -88,9 +88,9 @@ TEST(StructEncoding, LargeFieldDelta) {
 
 TEST(StructEncoding, NegativeFieldDelta) {
     struct_encoder encoder;
-    constexpr int16_t large_field_id = 25;
+    constexpr auto large_field_id = field_id(25);
     encoder.write_field(large_field_id, field_type::i32, vint::to_bytes(1));
-    encoder.write_field(1, field_type::i32, vint::to_bytes(1));
+    encoder.write_field(field_id(1), field_type::i32, vint::to_bytes(1));
     EXPECT_EQ(
       std::move(encoder).write_stop(),
       buf_from(
