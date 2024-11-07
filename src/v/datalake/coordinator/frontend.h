@@ -77,8 +77,12 @@ private:
 
     ss::future<bool> ensure_topic_exists();
 
+    /**
+     * Returns the partition of datalake coordinator topic that
+     * coordinates datalake tasks for this topic partitions.
+     */
     std::optional<model::partition_id>
-    coordinator_partition(const model::topic_partition&) const;
+    coordinator_partition(const model::topic&) const;
 
     ss::future<add_translated_data_files_reply>
     add_translated_data_files_locally(

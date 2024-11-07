@@ -110,7 +110,11 @@ auto frontend::process(req_t req, bool local_only) {
             return ss::make_ready_future<resp_t>(
               resp_t{errc::coordinator_topic_not_exists});
         }
-        auto cp = coordinator_partition(req.topic_partition());
+        auto cp = coordinator_partition(req.topic_partition().topic);
+        if (!cp) {
+            return ss::make_ready_future<resp_t>(
+              resp_t{errc::coordinator_topic_not_exists});
+        }
         model::ntp c_ntp{
           model::datalake_coordinator_nt.ns,
           model::datalake_coordinator_nt.tp,
@@ -173,14 +177,14 @@ frontend::frontend(
 ss::future<> frontend::stop() { return _gate.close(); }
 
 std::optional<model::partition_id>
-frontend::coordinator_partition(const model::topic_partition& tp) const {
+frontend::coordinator_partition(const model::topic& topic) const {
     const auto md = _metadata->local().get_topic_metadata_ref(
       model::datalake_coordinator_nt);
     if (!md) {
         return std::nullopt;
     }
     iobuf temp;
-    write(temp, tp);
+    write(temp, topic);
     auto bytes = iobuf_to_bytes(temp);
     auto partition = murmur2(bytes.data(), bytes.size())
                      % md->get().get_configuration().partition_count;
