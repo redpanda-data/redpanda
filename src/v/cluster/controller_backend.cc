@@ -529,30 +529,6 @@ ss::future<std::error_code> do_update_replica_set(
     co_return co_await p->update_replica_set(std::move(brokers), cmd_revision);
 }
 
-ss::future<std::error_code> revert_configuration_update(
-  ss::lw_shared_ptr<partition> p,
-  const replicas_t& replicas,
-  const replicas_revision_map& replica_revisions,
-  model::revision_id cmd_revision,
-  members_table& members,
-  bool command_based_members_update) {
-    vlog(
-      clusterlog.debug,
-      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
-      "set: {}",
-      p->ntp(),
-      cmd_revision,
-      replicas);
-    return do_update_replica_set(
-      std::move(p),
-      replicas,
-      replica_revisions,
-      cmd_revision,
-      members,
-      command_based_members_update,
-      std::nullopt);
-}
-
 /**
  * Retrieve topic property based on the following logic
  *
@@ -1270,7 +1246,6 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           replicas_view.last_cmd_revision(), op_type, replicas_view.assignment);
 
         co_return co_await reconcile_partition_reconfiguration(
-          rs,
           std::move(partition),
           *replicas_view.update,
           replicas_view.revisions());
@@ -1281,7 +1256,6 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
 
 ss::future<result<ss::stop_iteration>>
 controller_backend::reconcile_partition_reconfiguration(
-  ntp_reconciliation_state& rs,
   ss::lw_shared_ptr<partition> partition,
   const topic_table::in_progress_update& update,
   const replicas_revision_map& replicas_revisions) {
@@ -1305,19 +1279,14 @@ controller_backend::reconcile_partition_reconfiguration(
       _self, partition, update.get_resulting_replicas(), cmd_revision);
     if (!update_ec) {
         auto leader = partition->get_leader_id();
-        size_t retries = (rs.cur_operation ? rs.cur_operation->retries : 0);
         vlog(
           clusterlog.trace,
           "[{}] update complete, checking if our node can finish it "
-          "(leader: {}, retry: {})",
+          "(leader: {})",
           partition->ntp(),
-          leader,
-          retries);
+          leader);
         if (can_finish_update(
-              leader,
-              retries,
-              update.get_state(),
-              update.get_resulting_replicas())) {
+              leader, update.get_state(), update.get_resulting_replicas())) {
             auto ec = co_await dispatch_update_finished(
               partition->ntp(), update.get_resulting_replicas());
             if (ec) {
@@ -1372,7 +1341,6 @@ controller_backend::reconcile_partition_reconfiguration(
 
 bool controller_backend::can_finish_update(
   std::optional<model::node_id> current_leader,
-  uint64_t current_retry,
   reconfiguration_state state,
   const replicas_t& current_replicas) {
     if (
@@ -1382,23 +1350,9 @@ bool controller_backend::can_finish_update(
         return current_leader == _self;
     }
     /**
-     * If the revert feature is active we use current leader to dispatch
-     * partition move
+     * Use current leader to dispatch partition move
      */
-    if (_features.local().is_active(
-          features::feature::partition_move_revert_cancel)) {
-        return current_leader == _self
-               && contains_node(current_replicas, _self);
-    }
-    /**
-     * Use retry count to determine which node is eligible to dispatch update
-     * finished. Using modulo division allow us to round robin between
-     * candidates
-     */
-    const model::broker_shard& candidate
-      = current_replicas[current_retry % current_replicas.size()];
-
-    return candidate.node_id == _self;
+    return current_leader == _self && contains_node(current_replicas, _self);
 }
 
 ss::future<std::error_code> controller_backend::create_partition(
@@ -1613,28 +1567,14 @@ controller_backend::cancel_replica_set_update(
                         return result<ss::stop_iteration>{ec};
                     });
               } else if (already_moved) {
-                  if (likely(_features.local().is_active(
-                        features::feature::partition_move_revert_cancel))) {
-                      return dispatch_revert_cancel_move(p->ntp()).then(
-                        [](std::error_code ec) -> result<ss::stop_iteration> {
-                            if (ec) {
-                                return ec;
-                            }
-                            // revert_cancel is dispatched, nothing else to do,
-                            // but wait for the topic table update.
-                            return ss::stop_iteration::yes;
-                        });
-                  }
-
-                  return revert_configuration_update(
-                           std::move(p),
-                           replicas,
-                           replicas_revisions,
-                           cmd_revision,
-                           _members_table.local(),
-                           command_based_membership_active())
-                    .then([](std::error_code ec) {
-                        return result<ss::stop_iteration>{ec};
+                  return dispatch_revert_cancel_move(p->ntp()).then(
+                    [](std::error_code ec) -> result<ss::stop_iteration> {
+                        if (ec) {
+                            return ec;
+                        }
+                        // revert_cancel is dispatched, nothing else to do,
+                        // but wait for the topic table update.
+                        return ss::stop_iteration::yes;
                     });
               }
               return ss::make_ready_future<result<ss::stop_iteration>>(
@@ -1704,29 +1644,12 @@ controller_backend::force_abort_replica_set_update(
               cmd_revision,
               reconfiguration_policy::full_local_retention);
         } else if (already_moved) {
-            if (likely(_features.local().is_active(
-                  features::feature::partition_move_revert_cancel))) {
-                std::error_code ec = co_await dispatch_revert_cancel_move(
-                  partition->ntp());
-                if (ec) {
-                    co_return ec;
-                }
-                co_return ss::stop_iteration::yes;
+            std::error_code ec = co_await dispatch_revert_cancel_move(
+              partition->ntp());
+            if (ec) {
+                co_return ec;
             }
-
-            co_return co_await apply_configuration_change_on_leader(
-              std::move(partition),
-              replicas,
-              cmd_revision,
-              [&](ss::lw_shared_ptr<cluster::partition> p) {
-                  return revert_configuration_update(
-                    std::move(p),
-                    replicas,
-                    replicas_revisions,
-                    cmd_revision,
-                    _members_table.local(),
-                    command_based_membership_active());
-              });
+            co_return ss::stop_iteration::yes;
         }
         co_return errc::waiting_for_recovery;
     } else {

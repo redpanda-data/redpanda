@@ -305,11 +305,10 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
             vlog(
               clusterlog.warn,
               "A Redpanda Enterprise Edition license is required to use "
-              "enterprise features: ([{}]). Enter an active license key "
-              "(for example, rpk cluster license set <key>). To request a "
-              "license, see https://redpanda.com/license-request. For more "
-              "information, see "
-              "https://docs.redpanda.com/current/get-started/licenses.",
+              "enterprise features: ([{}]). Enter an active license key (for "
+              "example, rpk cluster license set <key>). To request a license, "
+              "see https://redpanda.com/license-request. For more information, "
+              "see https://docs.redpanda.com/current/get-started/licenses.",
               fmt::join(enterprise_features.enabled(), ", "));
         }
     }
