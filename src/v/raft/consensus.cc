@@ -2659,9 +2659,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
 
 void consensus::maybe_upgrade_configuration_to_v4(group_configuration& cfg) {
     if (unlikely(cfg.version() < group_configuration::v_4)) {
-        if (
-          _features.is_active(features::feature::raft_improved_configuration)
-          && cfg.get_state() == configuration_state::simple) {
+        if (cfg.get_state() == configuration_state::simple) {
             vlog(_ctxlog.debug, "Upgrading configuration version");
             cfg.set_version(raft::group_configuration::v_4);
         }
