@@ -719,9 +719,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
         }
     }
 
-    const bool has_kafka_gssapi = ctx.feature_table().local().is_active(
-      features::feature::kafka_gssapi);
-    if (has_kafka_gssapi && supports("GSSAPI")) {
+    if (supports("GSSAPI")) {
         supported_sasl_mechanisms.emplace_back(
           security::gssapi_authenticator::name);
 
