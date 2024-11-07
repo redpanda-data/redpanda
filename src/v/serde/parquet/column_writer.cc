@@ -83,9 +83,17 @@ public:
     }
 
     data_page flush_page() override {
-        auto encoded_def_levels = encode_levels(_max_def_level, _def_levels);
+        iobuf encoded_def_levels;
+        // If the max level is 0 then we don't write levels at all.
+        if (_max_def_level > def_level(0)) {
+            encoded_def_levels = encode_levels(_max_def_level, _def_levels);
+        }
         _def_levels.clear();
-        auto encoded_rep_levels = encode_levels(_max_rep_level, _rep_levels);
+        iobuf encoded_rep_levels;
+        // If the max level is 0 then we don't write levels at all.
+        if (_max_rep_level > rep_level(0)) {
+            encoded_rep_levels = encode_levels(_max_rep_level, _rep_levels);
+        }
         _rep_levels.clear();
         iobuf encoded_data;
         if constexpr (std::is_trivially_copyable_v<value_type>) {
