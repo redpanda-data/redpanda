@@ -725,8 +725,6 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
     // Generate a tombstone record for "key0".
     generate_tombstones(1, 1, 1).get();
 
-    auto tombstone_retention_ms = 1000ms;
-
     auto num_tombstone_segments = 1;
     auto total_segments = num_segments + num_tombstone_segments;
 
@@ -739,7 +737,7 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
     // Perform first round of sliding window compaction.
     bool did_compact = do_sliding_window_compact(
                          log->segments().back()->offsets().get_base_offset(),
-                         tombstone_retention_ms)
+                         std::nullopt)
                          .get();
 
     ASSERT_TRUE(did_compact);
@@ -775,7 +773,7 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
     auto segments_compacted = log->get_probe().get_segments_compacted();
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
-                    tombstone_retention_ms)
+                    std::nullopt)
                     .get();
 
     ASSERT_FALSE(did_compact);
@@ -811,9 +809,11 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
     }
     ASSERT_EQ(num_clean_after, num_clean_before);
 
-    // Sleep for tombstone.retention.ms time, so that the next time we attempt
+    auto tombstone_retention_ms = 1ms;
+
+    // Sleep for a short amount of time, so that the next time we attempt
     // to compact the tombstone record will be eligible for deletion.
-    ss::sleep(tombstone_retention_ms).get();
+    ss::sleep(100ms).get();
 
     did_compact = do_sliding_window_compact(
                     log->segments().back()->offsets().get_base_offset(),
@@ -1028,13 +1028,13 @@ TEST_P(
     }
 
     std::optional<std::chrono::milliseconds> tombstone_retention_ms
-      = wait_for_retention_ms ? 1000ms
+      = wait_for_retention_ms ? 1ms
                               : std::optional<std::chrono::milliseconds>{};
 
-    // Maybe sleep for tombstone.retention.ms time, so that the next time we
+    // Maybe sleep for a short amount of time time, so that the next time we
     // attempt to compact the tombstone records will be eligible for deletion.
     if (wait_for_retention_ms) {
-        ss::sleep(tombstone_retention_ms.value()).get();
+        ss::sleep(100ms).get();
     }
 
     did_compact = do_sliding_window_compact(
@@ -1182,13 +1182,13 @@ TEST_P(
     }
 
     std::optional<std::chrono::milliseconds> tombstone_retention_ms
-      = wait_for_retention_ms ? 1000ms
+      = wait_for_retention_ms ? 1ms
                               : std::optional<std::chrono::milliseconds>{};
 
-    // Maybe sleep for tombstone.retention.ms time, so that the next time we
+    // Maybe sleep for a short amount of time, so that the next time we
     // attempt to compact the tombstone records will be eligible for deletion.
     if (wait_for_retention_ms) {
-        ss::sleep(tombstone_retention_ms.value()).get();
+        ss::sleep(100ms).get();
     }
 
     did_compact = do_sliding_window_compact(
