@@ -19,7 +19,6 @@
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
-#include "kafka/server/handlers/details/isolated_node_utils.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -39,6 +38,10 @@
 #include <iterator>
 #include <type_traits>
 
+namespace {
+using is_node_isolated_or_decommissioned
+  = ss::bool_class<struct is_node_isolated_or_decommissioned_tag>;
+}
 namespace kafka {
 
 static constexpr model::node_id no_leader(-1);
@@ -509,7 +512,8 @@ static ss::future<metadata_response> fill_info_about_brokers_and_controller_id(
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    auto isolated_or_decommissioned = node_isolated_or_decommissioned(ctx);
+    is_node_isolated_or_decommissioned isolated_or_decommissioned{
+      ctx.metadata_cache().is_node_isolated()};
 
     auto reply = co_await fill_info_about_brokers_and_controller_id(
       ctx, isolated_or_decommissioned);
