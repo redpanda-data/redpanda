@@ -160,6 +160,7 @@ redpanda_cc_library(
     include_prefix = "storage",
     visibility = ["//visibility:public"],
     deps = [
+        ":log_manager_probe",
         ":parser_utils",
         ":record_batch_builder",
         "//src/v/base",
@@ -226,6 +227,22 @@ redpanda_cc_library(
         "@boost//:range",
         "@fmt",
         "@roaring",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "log_manager_probe",
+    srcs = [
+        "log_manager_probe.cc",
+    ],
+    hdrs = [
+        "log_manager_probe.h",
+    ],
+    include_prefix = "storage",
+    deps = [
+        "//src/v/config",
+        "//src/v/metrics",
         "@seastar",
     ],
 )

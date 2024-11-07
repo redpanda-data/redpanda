@@ -24,7 +24,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
-from rptest.services.redpanda import LoggingConfig, RedpandaService, SISettings
+from rptest.services.redpanda import LoggingConfig, MetricsEndpoint, RedpandaService, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import produce_total_bytes, search_logs_with_timeout
@@ -315,6 +315,17 @@ class FullDiskReclaimTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=2)
 
+        assert self.redpanda.metric_sum(
+            metric_name=
+            "vectorized_storage_manager_housekeeping_log_processed_total",
+            metrics_endpoint=MetricsEndpoint.METRICS
+        ) == 0, "Housekeeping should not have run yet"
+
+        assert self.redpanda.metric_sum(
+            metric_name="vectorized_storage_manager_urgent_gc_runs_total",
+            metrics_endpoint=MetricsEndpoint.METRICS
+        ) == 0, "GC should not have run yet"
+
         # now trigger the disk space alert on the same node. unlike the 30
         # second delay above, we should almost immediately observe the data
         # be reclaimed from disk.
@@ -330,6 +341,16 @@ class FullDiskReclaimTest(RedpandaTest):
             lambda: observed_data_size(lambda s: s < expected_size_after_gc),
             timeout_sec=10,
             backoff_sec=2)
+
+        assert self.redpanda.metric_sum(
+            metric_name=
+            "vectorized_storage_manager_housekeeping_log_processed_total",
+            metrics_endpoint=MetricsEndpoint.METRICS
+        ) > 0, "Housekeeping should have run"
+
+        assert self.redpanda.metric_sum(
+            metric_name="vectorized_storage_manager_urgent_gc_runs_total",
+            metrics_endpoint=MetricsEndpoint.METRICS) > 0, "GC should have run"
 
 
 class LocalDiskReportTimeTest(RedpandaTest):

@@ -47,6 +47,8 @@
 
 namespace storage {
 
+class log_manager_probe;
+
 namespace testing_details {
 class log_manager_accessor;
 };
@@ -170,6 +172,7 @@ public:
       kvstore& kvstore,
       storage_resources&,
       ss::sharded<features::feature_table>&) noexcept;
+    ~log_manager();
 
     ss::future<ss::shared_ptr<log>> manage(
       ntp_config,
@@ -280,6 +283,8 @@ private:
 
     ss::future<> housekeeping_scan(model::timestamp);
 
+    void update_log_count();
+
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
@@ -293,6 +298,10 @@ private:
     // Hash key-map to use across multiple compactions to reuse reserved memory
     // rather than reallocating repeatedly.
     std::unique_ptr<hash_key_offset_map> _compaction_hash_key_map;
+
+    // Metrics.
+    std::unique_ptr<log_manager_probe> _probe;
+
     ss::gate _gate;
     ss::abort_source _abort_source;
 
