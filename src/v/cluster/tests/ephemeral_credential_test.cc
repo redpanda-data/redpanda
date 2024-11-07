@@ -41,11 +41,6 @@ FIXTURE_TEST(test_ephemeral_credential_frontend, cluster_test_fixture) {
 
     wait_for_all_members(3s).get();
 
-    tests::cooperative_spin_wait_with_timeout(10s, [&apps] {
-        return apps.front()->controller->get_feature_table().local().is_active(
-          features::feature::ephemeral_secrets);
-    }).get();
-
     auto& fe_0
       = apps[0]->controller->get_ephemeral_credential_frontend().local();
     auto& fe_1
