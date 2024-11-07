@@ -11,10 +11,10 @@
 
 #include "base/vlog.h"
 #include "datalake/logger.h"
+#include "datalake/schema_avro.h"
 #include "datalake/schema_identifier.h"
 #include "datalake/schema_protobuf.h"
 #include "datalake/schema_registry.h"
-#include "iceberg/schema_avro.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/registry.h"
@@ -42,19 +42,25 @@ struct schema_translating_visitor {
     operator()(const ppsr::avro_schema_definition& avro_def) {
         const auto& avro_schema = avro_def();
         try {
-            // TODO: we should use Avro value conversion instead of this
-            // Iceberg-specific code.
-            auto type = iceberg::type_from_avro(
-              avro_schema.root(), iceberg::with_field_ids::no);
+            auto result = datalake::type_to_iceberg(avro_schema.root());
+            if (result.has_error()) {
+                vlog(
+                  datalake_log.error,
+                  "Avro schema translation failed: {}",
+                  result.error());
+                co_return type_resolver::errc::translation_error;
+            }
+
             co_return type_and_buf{
               .type = resolved_type{
                 .schema = avro_schema,
                 .id = { .schema_id = id, .protobuf_offsets = std::nullopt, },
-                .type = std::move(type),
+                .type = std::move(result.value()),
                 .type_name = avro_schema.root()->name().fullname(),
               },
               .parsable_buf = std::move(buf_no_id),
-            };
+                };
+
         } catch (...) {
             vlog(
               datalake_log.error,

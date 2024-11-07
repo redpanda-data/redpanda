@@ -13,11 +13,11 @@
 #include "datalake/conversion_outcome.h"
 #include "datalake/logger.h"
 #include "datalake/table_definition.h"
+#include "datalake/values_avro.h"
 #include "datalake/values_protobuf.h"
 #include "iceberg/avro_utils.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
-#include "iceberg/values_avro.h"
 
 #include <avro/Generic.hh>
 #include <avro/GenericDatum.hh>
@@ -36,18 +36,11 @@ struct value_translating_visitor {
         return deserialize_protobuf(std::move(parsable_buf), d);
     }
     ss::future<optional_value_outcome> operator()(const avro::ValidSchema& s) {
-        avro::GenericDatum d(s);
-        try {
-            auto in = std::make_unique<iceberg::avro_iobuf_istream>(
-              std::move(parsable_buf));
-            auto decoder = avro::validatingDecoder(s, avro::binaryDecoder());
-            decoder->init(*in);
-            avro::decode(*decoder, d);
-        } catch (...) {
-            co_return value_conversion_exception(fmt::format(
-              "Error reading Avro buffer: {}", std::current_exception()));
+        auto value = co_await deserialize_avro(std::move(parsable_buf), s);
+        if (value.has_error()) {
+            co_return optional_value_outcome(value.error());
         }
-        co_return iceberg::val_from_avro(d, type, iceberg::field_required::yes);
+        co_return std::move(value.value());
     }
 };
 

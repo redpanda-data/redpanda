@@ -85,6 +85,7 @@ record_generator::add_random_avro_record(
     avro::EncoderPtr e = avro::binaryEncoder();
     e->init(*out);
     avro::encode(*e, datum);
+    e->flush();
     auto snap = avro::snapshot(*out);
     iobuf data_buf;
     data_buf.append(snap->data(), snap->size());

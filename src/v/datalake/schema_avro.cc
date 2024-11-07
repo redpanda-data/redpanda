@@ -16,11 +16,15 @@ namespace datalake {
 
 namespace {
 static constexpr size_t max_schema_depth = 100;
+/**
+ * When converting schema from Avro to Iceberg, we do not need to keep track of
+ * fields id. A placeholder id is used instead. When the schema is used in a
+ * catalog either to create a table or update the table schema field ids will be
+ * assigned.
+ */
+static constexpr iceberg::nested_field::id_t placeholder_field_id{0};
 struct state {
     chunked_vector<avro::NodePtr> type_hierarchy;
-    iceberg::nested_field::id_t last_field_id{0};
-
-    iceberg::nested_field::id_t next_field_id() { return last_field_id++; }
 };
 
 conversion_outcome<std::optional<iceberg::field_type>>
@@ -41,7 +45,7 @@ struct_from_avro_record(const avro::NodePtr& node, state& state) {
         auto field = std::move(result.value());
         if (field.has_value()) {
             ret.fields.push_back(iceberg::nested_field::create(
-              state.next_field_id(),
+              placeholder_field_id,
               node->nameAt(i),
               iceberg::field_required::yes,
               std::move(field.value())));
@@ -139,7 +143,6 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
               "only 1 leaf",
               node->leaves()));
         }
-        auto array_id = state.next_field_id();
         auto element_type = node->leafAt(0);
         auto field_res = field_type_from_avro(element_type, state);
         if (field_res.has_error()) {
@@ -150,7 +153,7 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
               fmt::format("Unsupported type of AVRO_NULL as an array element"));
         }
         return iceberg::list_type::create(
-          array_id,
+          placeholder_field_id,
           iceberg::field_required::yes,
           std::move(*field_res.value()));
     }
@@ -177,9 +180,9 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
         }
 
         return iceberg::map_type::create(
-          state.next_field_id(),
+          placeholder_field_id,
           iceberg::string_type{},
-          state.next_field_id(),
+          placeholder_field_id,
           iceberg::field_required::yes,
           std::move(*value_t_result.value()));
     }
@@ -197,7 +200,7 @@ inner_field_type_from_avro(const avro::NodePtr& node, state& state) {
             auto field = std::move(result.value());
             if (field.has_value()) {
                 ret.fields.push_back(iceberg::nested_field::create(
-                  state.next_field_id(),
+                  placeholder_field_id,
                   // union struct fields name are represented as
                   // <union_name>_<leaf_idx>
                   fmt::format("union_opt_{}", i),
@@ -273,7 +276,6 @@ type_to_iceberg(const avro::NodePtr& node) {
 
     // schema root is not a record
     if (node->type() != avro::AVRO_RECORD) {
-        auto id = s.next_field_id();
         iceberg::struct_type ret;
         auto result = field_type_from_avro(node, s);
         if (result.has_error()) {
@@ -286,7 +288,7 @@ type_to_iceberg(const avro::NodePtr& node) {
         }
 
         ret.fields.push_back(iceberg::nested_field::create(
-          id,
+          placeholder_field_id,
           node->hasName() ? node->name().fullname() : "root",
           iceberg::field_required::yes,
           std::move(field.value())));
