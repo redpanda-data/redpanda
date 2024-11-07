@@ -943,24 +943,9 @@ void incremental_update(
     }
 }
 
-ss::future<std::error_code>
-topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
-    _last_applied_revision_id = model::revision_id(o);
-    auto tp = _topics.find(cmd.key);
-    if (tp == _topics.end()) {
-        co_return make_error_code(errc::topic_not_exists);
-    }
-    const auto migration_state = _migrated_resources.get_topic_state(cmd.key);
-    if (
-      migration_state
-      != data_migrations::migrated_resource_state::non_restricted) {
-        co_return errc::resource_is_being_migrated;
-    }
-    auto updated_properties = tp->second.get_configuration().properties;
+topic_properties topic_table::update_topic_properties(
+  topic_properties updated_properties, update_topic_properties_cmd cmd) {
     auto& overrides = cmd.value;
-    /**
-     * Update topic properties
-     */
     incremental_update(
       updated_properties.cleanup_policy_bitflags,
       overrides.cleanup_policy_bitflags);
@@ -1051,6 +1036,26 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       overrides.iceberg_translation_interval_ms);
     incremental_update(
       updated_properties.delete_retention_ms, overrides.delete_retention_ms);
+    return updated_properties;
+}
+
+ss::future<std::error_code>
+topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
+    _last_applied_revision_id = model::revision_id(o);
+    auto key = cmd.key;
+    auto tp = _topics.find(key);
+    if (tp == _topics.end()) {
+        co_return make_error_code(errc::topic_not_exists);
+    }
+    const auto migration_state = _migrated_resources.get_topic_state(key);
+    if (
+      migration_state
+      != data_migrations::migrated_resource_state::non_restricted) {
+        co_return errc::resource_is_being_migrated;
+    }
+
+    auto updated_properties = update_topic_properties(
+      tp->second.get_configuration().properties, std::move(cmd));
 
     auto& properties = tp->second.get_configuration().properties;
     // no configuration change, no need to generate delta
@@ -1073,14 +1078,14 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     _pending_topic_deltas.emplace_back(
       tp->second.get_revision(),
-      cmd.key,
+      key,
       model::revision_id{o},
       topic_table_topic_delta_type::properties_updated);
 
     const auto& assignments = tp->second.get_assignments();
     for (auto& [_, p_as] : assignments) {
         _pending_ntp_deltas.emplace_back(
-          model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
+          model::ntp(key.ns, key.tp, p_as.id),
           p_as.group,
           model::revision_id(o),
           topic_table_ntp_delta_type::properties_updated);

@@ -644,6 +644,12 @@ public:
           _partitions_to_force_reconfigure.end());
     }
 
+    /**
+     * Return the result of applying the update to the topic properties.
+     */
+    static topic_properties update_topic_properties(
+      topic_properties updated_properties, update_topic_properties_cmd cmd);
+
 private:
     friend topic_table_probe;
 
