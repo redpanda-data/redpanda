@@ -49,6 +49,8 @@ build:sanitizer --linkopt -fsanitize-link-c++-runtime
 build:sanitizer --copt -O1
 # seastar has to be run with system allocator when using sanitizers
 build:sanitizer --@seastar//:system_allocator=True
+# krb5 is a foreign cc build and needs explicit list of sanitizers to build the shared library
+build:sanitizer --@krb5//:sanitizers=address,undefined,vptr,function
 
 # =================================
 # clang-tidy
