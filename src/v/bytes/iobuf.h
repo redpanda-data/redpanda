@@ -90,11 +90,7 @@ public:
     ~iobuf() noexcept;
     iobuf(iobuf&& x) noexcept
       : _frags(std::move(x._frags))
-      , _size(x._size)
-#ifndef NDEBUG
-      , _verify_shard(x._verify_shard)
-#endif
-    {
+      , _size(x._size) {
         x._frags = container{};
         x._size = 0;
     }
@@ -260,7 +256,6 @@ private:
 
     container _frags;
     size_t _size{0};
-    expression_in_debug_mode(oncore _verify_shard);
     friend std::ostream& operator<<(std::ostream&, const iobuf&);
 };
 
@@ -286,7 +281,6 @@ inline bool iobuf::empty() const { return _size == 0; }
 inline size_t iobuf::size_bytes() const { return _size; }
 
 inline size_t iobuf::available_bytes() const {
-    oncore_debug_verify(_verify_shard);
     if (_frags.empty()) {
         return 0;
     }
@@ -311,7 +305,6 @@ inline void iobuf::prepend(std::unique_ptr<fragment> f) {
 }
 
 inline void iobuf::create_new_fragment(size_t sz) {
-    oncore_debug_verify(_verify_shard);
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
     append(std::make_unique<fragment>(asz));
@@ -319,7 +312,6 @@ inline void iobuf::create_new_fragment(size_t sz) {
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
 inline void iobuf::reserve_memory(size_t reservation) {
-    oncore_debug_verify(_verify_shard);
     if (auto b = available_bytes(); b < reservation) {
         if (b > 0) {
             _frags.back().trim();
@@ -336,7 +328,6 @@ iobuf::prepend(ss::temporary_buffer<char> b) {
     prepend(std::make_unique<fragment>(std::move(b)));
 }
 [[gnu::always_inline]] inline void iobuf::prepend(iobuf b) {
-    oncore_debug_verify(_verify_shard);
     while (!b._frags.empty()) {
         b._frags.pop_back_and_dispose([this](fragment* f) {
             prepend(f->share());
@@ -352,7 +343,6 @@ iobuf::append(const uint8_t* src, size_t len) {
 }
 
 [[gnu::always_inline]] inline void iobuf::append(const char* ptr, size_t size) {
-    oncore_debug_verify(_verify_shard);
     if (unlikely(size == 0)) {
         return;
     }
@@ -378,7 +368,6 @@ iobuf::append(const uint8_t* src, size_t len) {
     if (unlikely(!b.size())) {
         return;
     }
-    oncore_debug_verify(_verify_shard);
     const size_t last_asz = last_allocation_size();
     // The following is a heuristic to decide between copying and zero-copy
     // append of the source buffer. The rule we apply is if the buffer we are
@@ -406,7 +395,6 @@ iobuf::append(const uint8_t* src, size_t len) {
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
-    oncore_debug_verify(_verify_shard);
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(f->share());
@@ -416,7 +404,6 @@ inline void iobuf::append(iobuf o) {
 }
 
 inline void iobuf::append_fragments(iobuf o) {
-    oncore_debug_verify(_verify_shard);
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(std::make_unique<fragment>(f->share()));
@@ -426,17 +413,14 @@ inline void iobuf::append_fragments(iobuf o) {
 }
 /// used for iostreams
 inline void iobuf::pop_front() {
-    oncore_debug_verify(_verify_shard);
     _size -= _frags.front().size();
     _frags.pop_front_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::pop_back() {
-    oncore_debug_verify(_verify_shard);
     _size -= _frags.back().size();
     _frags.pop_back_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::trim_front(size_t n) {
-    oncore_debug_verify(_verify_shard);
     while (!_frags.empty()) {
         auto& f = _frags.front();
         if (f.size() > n) {
@@ -449,7 +433,6 @@ inline void iobuf::trim_front(size_t n) {
     }
 }
 inline void iobuf::trim_back(size_t n) {
-    oncore_debug_verify(_verify_shard);
     while (!_frags.empty()) {
         auto& f = _frags.back();
         if (f.size() > n) {

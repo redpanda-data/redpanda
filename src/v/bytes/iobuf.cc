@@ -227,7 +227,6 @@ void details::io_fragment::trim_front(size_t pos) {
 }
 
 iobuf::placeholder iobuf::reserve(size_t sz) {
-    oncore_debug_verify(_verify_shard);
     vassert(sz, "zero length reservations are unsupported");
     reserve_memory(sz);
     _size += sz;
