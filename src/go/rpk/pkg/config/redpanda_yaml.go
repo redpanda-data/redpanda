@@ -141,8 +141,9 @@ type (
 	}
 
 	RpkNodeConfig struct {
-		KafkaAPI RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
-		AdminAPI RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
+		KafkaAPI RpkKafkaAPI          `yaml:"kafka_api,omitempty" json:"kafka_api"`
+		AdminAPI RpkAdminAPI          `yaml:"admin_api,omitempty" json:"admin_api"`
+		SR       RpkSchemaRegistryAPI `yaml:"schema_registry,omitempty" json:"schema_registry"`
 
 		// The following four configs are passed to redpanda on `rpk
 		// redpanda start`. They are not tuner configs. They live here

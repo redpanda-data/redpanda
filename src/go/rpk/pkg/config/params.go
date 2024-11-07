@@ -1389,6 +1389,9 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	if !reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
 		dst.AdminAPI = p.AdminAPI
 	}
+	if !reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
+		dst.SR = p.SR
+	}
 }
 
 // This function ensures a current profile exists in the Virtual rpk.yaml.
@@ -1438,6 +1441,9 @@ func (c *Config) ensureBrokerAddrs() {
 		if len(dst.Rpk.AdminAPI.Addresses) == 0 {
 			dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
 		}
+		if len(dst.Rpk.SR.Addresses) == 0 {
+			dst.Rpk.SR.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultSchemaRegPort))}
+		}
 	}
 	{
 		dst := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile) // must exist by this function
@@ -1447,11 +1453,6 @@ func (c *Config) ensureBrokerAddrs() {
 		if len(dst.AdminAPI.Addresses) == 0 {
 			dst.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
 		}
-	}
-	{
-		dst := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
-		// Schema Registry is only supported in profiles. Not in old rpk section
-		// of our redpanda.yaml
 		if len(dst.SR.Addresses) == 0 {
 			dst.SR.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultSchemaRegPort))}
 		}
@@ -1472,6 +1473,9 @@ func (c *Config) mergeRedpandaIntoRpk() {
 	}
 	if reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
 		p.AdminAPI = src.AdminAPI
+	}
+	if reflect.DeepEqual(p.SR, RpkSchemaRegistryAPI{}) {
+		p.SR = src.SR
 	}
 }
 

@@ -41,6 +41,9 @@ rpk:
     admin_api:
         addresses:
             - 127.0.0.1:9644
+    schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 `,
 		},
 		{
@@ -100,6 +103,9 @@ rpk:
             - 127.0.0.1:4444
             - 10.0.0.1:4444
             - 122.65.33.12:4444
+    schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 `,
 		},
 		{
@@ -117,6 +123,9 @@ rpk:
     kafka_api:
          brokers:
              - 127.0.0.1:9092
+    schema_registry:
+         addresses:
+             - 127.0.0.1:8081
 `,
 			exp: `redpanda:
     seed_servers: []
@@ -131,6 +140,9 @@ rpk:
     kafka_api:
          brokers:
              - 127.0.0.1:9092
+    schema_registry:
+         addresses:
+             - 127.0.0.1:8081
 `,
 		},
 		{
@@ -151,6 +163,9 @@ rpk:
     kafka_api:
          brokers:
              - 127.0.0.1:9092
+    schema_registry:
+         addresses:
+             - 127.0.0.1:8081
 `,
 			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
@@ -168,6 +183,9 @@ rpk:
     admin_api:
         addresses:
             - 127.0.0.1:9644
+    schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 `,
 		},
 	}
@@ -718,6 +736,9 @@ rpk:
     admin_api:
         addresses:
             - 127.0.0.1:9644
+    schema_registry:
+        addresses:
+            - 127.0.0.1:8081
     overprovisioned: true
     coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
@@ -781,6 +802,9 @@ cloud_auth:
         - address: 0.0.0.3
           port: 9092
 rpk:
+    schema_registry:
+        addresses:
+            - 127.0.0.1:3232
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -808,6 +832,9 @@ rpk:
     admin_api:
         addresses:
             - 0.0.0.3:9644
+    schema_registry:
+        addresses:
+            - 127.0.0.1:3232
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -841,7 +868,7 @@ profiles:
             - 0.0.0.3:9644
       schema_registry:
         addresses:
-            - 127.0.0.1:8081
+            - 127.0.0.1:3232
 cloud_auth:
     - name: default
       organization: Default organization
@@ -909,6 +936,9 @@ rpk:
     admin_api:
         addresses:
             - 0.0.0.3:9644
+    schema_registry:
+        addresses:
+            - 0.0.0.2:8081
     overprovisioned: true
     coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
@@ -968,6 +998,9 @@ cloud_auth:
         - address: admin.com
           port: 4444
 rpk:
+    schema_registry:
+        addresses:
+            - 127.0.0.1:8081
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -997,7 +1030,9 @@ profiles:
         brokers:
             - 128.0.0.4
       admin_api: {}
-      schema_registry: {}
+      schema_registry:
+        addresses:
+            - 127.0.0.1:3232
 cloud_auth: []
 `,
 
@@ -1017,6 +1052,9 @@ rpk:
     admin_api:
         addresses:
             - 128.0.0.4:9644
+    schema_registry:
+        addresses:
+            - 127.0.0.1:3232
     enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
@@ -1051,7 +1089,7 @@ profiles:
             - 128.0.0.4:9644
       schema_registry:
         addresses:
-            - 127.0.0.1:8081
+            - 127.0.0.1:3232
 cloud_auth:
     - name: default
       organization: Default organization

@@ -411,29 +411,30 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		// Deprecated 2021-07-1
 		SASL *SASL `yaml:"sasl"`
 
-		KafkaAPI                 RpkKafkaAPI     `yaml:"kafka_api"`
-		AdminAPI                 RpkAdminAPI     `yaml:"admin_api"`
-		AdditionalStartFlags     weakStringArray `yaml:"additional_start_flags"`
-		TuneNetwork              weakBool        `yaml:"tune_network"`
-		TuneDiskScheduler        weakBool        `yaml:"tune_disk_scheduler"`
-		TuneNomerges             weakBool        `yaml:"tune_disk_nomerges"`
-		TuneDiskWriteCache       weakBool        `yaml:"tune_disk_write_cache"`
-		TuneDiskIrq              weakBool        `yaml:"tune_disk_irq"`
-		TuneFstrim               weakBool        `yaml:"tune_fstrim"`
-		TuneCPU                  weakBool        `yaml:"tune_cpu"`
-		TuneAioEvents            weakBool        `yaml:"tune_aio_events"`
-		TuneClocksource          weakBool        `yaml:"tune_clocksource"`
-		TuneSwappiness           weakBool        `yaml:"tune_swappiness"`
-		TuneTransparentHugePages weakBool        `yaml:"tune_transparent_hugepages"`
-		EnableMemoryLocking      weakBool        `yaml:"enable_memory_locking"`
-		TuneCoredump             weakBool        `yaml:"tune_coredump"`
-		CoredumpDir              weakString      `yaml:"coredump_dir"`
-		TuneBallastFile          weakBool        `yaml:"tune_ballast_file"`
-		BallastFilePath          weakString      `yaml:"ballast_file_path"`
-		BallastFileSize          weakString      `yaml:"ballast_file_size"`
-		WellKnownIo              weakString      `yaml:"well_known_io"`
-		Overprovisioned          weakBool        `yaml:"overprovisioned"`
-		SMP                      *weakInt        `yaml:"smp"`
+		KafkaAPI                 RpkKafkaAPI          `yaml:"kafka_api"`
+		AdminAPI                 RpkAdminAPI          `yaml:"admin_api"`
+		SR                       RpkSchemaRegistryAPI `yaml:"schema_registry"`
+		AdditionalStartFlags     weakStringArray      `yaml:"additional_start_flags"`
+		TuneNetwork              weakBool             `yaml:"tune_network"`
+		TuneDiskScheduler        weakBool             `yaml:"tune_disk_scheduler"`
+		TuneNomerges             weakBool             `yaml:"tune_disk_nomerges"`
+		TuneDiskWriteCache       weakBool             `yaml:"tune_disk_write_cache"`
+		TuneDiskIrq              weakBool             `yaml:"tune_disk_irq"`
+		TuneFstrim               weakBool             `yaml:"tune_fstrim"`
+		TuneCPU                  weakBool             `yaml:"tune_cpu"`
+		TuneAioEvents            weakBool             `yaml:"tune_aio_events"`
+		TuneClocksource          weakBool             `yaml:"tune_clocksource"`
+		TuneSwappiness           weakBool             `yaml:"tune_swappiness"`
+		TuneTransparentHugePages weakBool             `yaml:"tune_transparent_hugepages"`
+		EnableMemoryLocking      weakBool             `yaml:"enable_memory_locking"`
+		TuneCoredump             weakBool             `yaml:"tune_coredump"`
+		CoredumpDir              weakString           `yaml:"coredump_dir"`
+		TuneBallastFile          weakBool             `yaml:"tune_ballast_file"`
+		BallastFilePath          weakString           `yaml:"ballast_file_path"`
+		BallastFileSize          weakString           `yaml:"ballast_file_size"`
+		WellKnownIo              weakString           `yaml:"well_known_io"`
+		Overprovisioned          weakBool             `yaml:"overprovisioned"`
+		SMP                      *weakInt             `yaml:"smp"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -442,6 +443,7 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	// backcompat, immediately convert to new tls
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
+	rpkc.SR = internal.SR
 	if rpkc.KafkaAPI.TLS == nil {
 		rpkc.KafkaAPI.TLS = internal.TLS
 	}
@@ -450,6 +452,9 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	}
 	if rpkc.AdminAPI.TLS == nil {
 		rpkc.AdminAPI.TLS = internal.TLS
+	}
+	if rpkc.SR.TLS == nil {
+		rpkc.SR.TLS = internal.TLS
 	}
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
 	rpkc.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
@@ -491,6 +496,19 @@ func (r *RpkKafkaAPI) UnmarshalYAML(n *yaml.Node) error {
 }
 
 func (r *RpkAdminAPI) UnmarshalYAML(n *yaml.Node) error {
+	var internal struct {
+		Addresses weakStringArray `yaml:"addresses"`
+		TLS       *TLS            `yaml:"tls"`
+	}
+	if err := n.Decode(&internal); err != nil {
+		return err
+	}
+	r.Addresses = internal.Addresses
+	r.TLS = internal.TLS
+	return nil
+}
+
+func (r *RpkSchemaRegistryAPI) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Addresses weakStringArray `yaml:"addresses"`
 		TLS       *TLS            `yaml:"tls"`
