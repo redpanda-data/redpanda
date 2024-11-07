@@ -91,10 +91,6 @@ rm_stm::rm_stm(
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _producer_state_manager(producer_state_manager)
   , _vcluster_id(vcluster_id) {
-    vassert(
-      _feature_table.local().is_active(features::feature::transaction_ga),
-      "unexpected state for transactions support. skipped a few "
-      "versions during upgrade?");
     setup_metrics();
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
