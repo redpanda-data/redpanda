@@ -308,11 +308,12 @@ partition_translator::checkpoint_translated_data(
 
 ss::future<std::optional<kafka::offset>>
 partition_translator::reconcile_with_coordinator() {
-    auto request = coordinator::fetch_latest_data_file_request{};
+    auto request = coordinator::fetch_latest_translated_offset_request{};
     request.tp = _partition->ntp().tp;
-    vlog(_logger.trace, "fetch_latest_data_file, request: {}", request);
-    auto resp = co_await _frontend->local().fetch_latest_data_file(request);
-    vlog(_logger.trace, "fetch_latest_data_file, response: {}", resp);
+    vlog(_logger.trace, "fetch_latest_translated_offset, request: {}", request);
+    auto resp = co_await _frontend->local().fetch_latest_translated_offset(
+      request);
+    vlog(_logger.trace, "fetch_latest_translated_offset, response: {}", resp);
     if (resp.errc != coordinator::errc::ok) {
         vlog(_logger.warn, "reconciliation failed, response: {}", resp);
         co_return std::nullopt;

@@ -11,9 +11,9 @@
             "output_type": "add_translated_data_files_reply"
         },
         {
-            "name": "fetch_latest_data_file",
-            "input_type": "fetch_latest_data_file_request",
-            "output_type": "fetch_latest_data_file_reply"
+            "name": "fetch_latest_translated_offset",
+            "input_type": "fetch_latest_translated_offset_request",
+            "output_type": "fetch_latest_translated_offset_reply"
         }
     ]
 }

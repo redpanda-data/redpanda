@@ -88,17 +88,18 @@ struct add_translated_data_files_request
     auto serde_fields() { return std::tie(tp, ranges, translator_term); }
 };
 
-struct fetch_latest_data_file_reply
+struct fetch_latest_translated_offset_reply
   : serde::envelope<
-      fetch_latest_data_file_reply,
+      fetch_latest_translated_offset_reply,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    fetch_latest_data_file_reply() = default;
-    explicit fetch_latest_data_file_reply(errc err)
+    fetch_latest_translated_offset_reply() = default;
+    explicit fetch_latest_translated_offset_reply(errc err)
       : errc(err) {}
-    explicit fetch_latest_data_file_reply(std::optional<kafka::offset> o)
+    explicit fetch_latest_translated_offset_reply(
+      std::optional<kafka::offset> o)
       : last_added_offset(o)
       , errc(errc::ok) {}
 
@@ -109,27 +110,29 @@ struct fetch_latest_data_file_reply
     errc errc;
 
     friend std::ostream&
-    operator<<(std::ostream&, const fetch_latest_data_file_reply&);
+    operator<<(std::ostream&, const fetch_latest_translated_offset_reply&);
 
     auto serde_fields() { return std::tie(last_added_offset, errc); }
 };
 
-struct fetch_latest_data_file_request
+// For a given topic/partition fetches the latest translated offset from
+// the coordinator.
+struct fetch_latest_translated_offset_request
   : serde::envelope<
-      fetch_latest_data_file_request,
+      fetch_latest_translated_offset_request,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    using resp_t = fetch_latest_data_file_reply;
+    using resp_t = fetch_latest_translated_offset_reply;
 
-    fetch_latest_data_file_request() = default;
+    fetch_latest_translated_offset_request() = default;
 
     model::topic_partition tp;
 
     const model::topic_partition& topic_partition() const { return tp; }
 
     friend std::ostream&
-    operator<<(std::ostream&, const fetch_latest_data_file_request&);
+    operator<<(std::ostream&, const fetch_latest_translated_offset_request&);
 
     auto serde_fields() { return std::tie(tp); }
 };

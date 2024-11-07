@@ -50,19 +50,19 @@ ss::future<add_translated_data_files_reply> add_files(
     }
     co_return add_translated_data_files_reply{errc::ok};
 }
-ss::future<fetch_latest_data_file_reply> fetch_latest_offset(
+ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
   coordinator_manager& mgr,
   model::ntp coordinator_ntp,
-  fetch_latest_data_file_request req) {
+  fetch_latest_translated_offset_request req) {
     auto crd = mgr.get(coordinator_ntp);
     if (!crd) {
-        co_return fetch_latest_data_file_reply{errc::not_leader};
+        co_return fetch_latest_translated_offset_reply{errc::not_leader};
     }
     auto ret = co_await crd->sync_get_last_added_offset(req.tp);
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
-    co_return fetch_latest_data_file_reply{ret.value()};
+    co_return fetch_latest_translated_offset_reply{ret.value()};
 }
 } // namespace
 
@@ -144,13 +144,13 @@ template auto frontend::process<
   add_translated_data_files_request, bool);
 
 template auto
-  frontend::remote_dispatch<&frontend::client::fetch_latest_data_file>(
-    fetch_latest_data_file_request, model::node_id);
+  frontend::remote_dispatch<&frontend::client::fetch_latest_translated_offset>(
+    fetch_latest_translated_offset_request, model::node_id);
 
 template auto frontend::process<
-  &frontend::fetch_latest_data_file_locally,
-  &frontend::client::fetch_latest_data_file>(
-  fetch_latest_data_file_request, bool);
+  &frontend::fetch_latest_translated_offset_locally,
+  &frontend::client::fetch_latest_translated_offset>(
+  fetch_latest_translated_offset_request, bool);
 
 // -- explicit instantiations ---
 
@@ -274,9 +274,9 @@ ss::future<add_translated_data_files_reply> frontend::add_translated_data_files(
       std::move(request), bool(local_only_exec));
 }
 
-ss::future<fetch_latest_data_file_reply>
-frontend::fetch_latest_data_file_locally(
-  fetch_latest_data_file_request request,
+ss::future<fetch_latest_translated_offset_reply>
+frontend::fetch_latest_translated_offset_locally(
+  fetch_latest_translated_offset_request request,
   const model::ntp& coordinator_partition,
   ss::shard_id shard) {
     co_return co_await _coordinator_mgr->invoke_on(
@@ -285,19 +285,21 @@ frontend::fetch_latest_data_file_locally(
        req = std::move(request)](coordinator_manager& mgr) mutable {
           auto partition = mgr.get(coordinator_partition);
           if (!partition) {
-              return ssx::now(fetch_latest_data_file_reply{errc::not_leader});
+              return ssx::now(
+                fetch_latest_translated_offset_reply{errc::not_leader});
           }
           return fetch_latest_offset(
             mgr, coordinator_partition, std::move(req));
       });
 }
 
-ss::future<fetch_latest_data_file_reply> frontend::fetch_latest_data_file(
-  fetch_latest_data_file_request request, local_only local_only_exec) {
+ss::future<fetch_latest_translated_offset_reply>
+frontend::fetch_latest_translated_offset(
+  fetch_latest_translated_offset_request request, local_only local_only_exec) {
     auto holder = _gate.hold();
     co_return co_await process<
-      &frontend::fetch_latest_data_file_locally,
-      &client::fetch_latest_data_file>(
+      &frontend::fetch_latest_translated_offset_locally,
+      &client::fetch_latest_translated_offset>(
       std::move(request), bool(local_only_exec));
 }
 
