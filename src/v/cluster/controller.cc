@@ -1036,15 +1036,10 @@ ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
     // upgraded from a version before 22.3. Replicate just a cluster UUID so we
     // can advertise that a cluster has already been bootstrapped to nodes
     // trying to discover existing clusters.
+    bootstrap_cluster_cmd_data cmd_data;
+    cmd_data.uuid = model::cluster_uuid(uuid_t::create());
     ssx::background
-      = _feature_table.local()
-          .await_feature(
-            features::feature::seeds_driven_bootstrap_capable, _as.local())
-          .then([this] {
-              bootstrap_cluster_cmd_data cmd_data;
-              cmd_data.uuid = model::cluster_uuid(uuid_t::create());
-              return create_cluster(std::move(cmd_data));
-          })
+      = create_cluster(std::move(cmd_data))
           .handle_exception([](const std::exception_ptr e) {
               vlog(clusterlog.warn, "Error creating cluster UUID. {}", e);
           });
