@@ -79,15 +79,6 @@ ephemeral_credential_frontend::get(const security::acl_principal& principal) {
     auto guard = _gate.hold();
     get_return res;
 
-    if (!_feature_table.local().is_active(
-          features::feature::ephemeral_secrets)) {
-        vlog(
-          clusterlog.info,
-          "Ephemeral credentials feature is not active (upgrade in progress?)");
-        res.err = errc::invalid_node_operation;
-        co_return res;
-    }
-
     if (auto it = _e_store.local().find(principal); !_e_store.local().has(it)) {
         res.credential = make_ephemeral_credential(principal);
         co_await put(res.credential);
