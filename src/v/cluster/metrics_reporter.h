@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "security/fwd.h"
 #include "utils/prefix_logger.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -58,6 +59,7 @@ public:
         cluster_version logical_version{invalid_version};
         std::vector<node_disk_space> disks;
         uint64_t uptime_ms{0};
+        std::vector<net::unresolved_address> advertised_listeners;
     };
 
     struct metrics_snapshot {
@@ -85,6 +87,10 @@ public:
         bool has_valid_license{false};
 
         std::optional<features::enterprise_feature_report> enterprise_features;
+
+        ss::sstring host_name;
+        ss::sstring domain_name;
+        std::vector<ss::sstring> fqdns;
     };
     static constexpr ss::shard_id shard = 0;
 
