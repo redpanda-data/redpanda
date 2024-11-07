@@ -98,6 +98,10 @@ std::unique_ptr<ss::http::reply> make_error_body(
     case debug_bundle::error_code::debug_bundle_expired:
         status = ss::http::reply::status_type::gone;
         break;
+    case debug_bundle::error_code::
+      debug_bundle_service_unavailable_in_developer_mode:
+        status = ss::http::reply::status_type::service_unavailable;
+        break;
     }
     return make_json_body(status, res, std::move(rep));
 }

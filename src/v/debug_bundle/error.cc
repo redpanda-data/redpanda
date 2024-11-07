@@ -40,6 +40,8 @@ struct error_category final : std::error_category {
             return "rpk binary not present";
         case error_code::debug_bundle_expired:
             return "debug bundle expired and was removed";
+        case error_code::debug_bundle_service_unavailable_in_developer_mode:
+            return "debug_bundle_service_unavailable_in_developer_mode";
         }
 
         return "(unknown error code)";
