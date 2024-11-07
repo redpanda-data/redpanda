@@ -10,20 +10,17 @@
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/types.h"
-#include "redpanda/tests/fixture.h"
-#include "resource_mgmt/io_priority.h"
+#include "kafka/server/tests/topic_properties_helpers.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 
 #include <algorithm>
-#include <limits>
 
 // rougly equivalent to the test harness:
 //   https://github.com/apache/kafka/blob/8e16158/core/src/test/scala/unit/kafka/server/AbstractCreateTopicsRequestTest.scala
-class create_topic_fixture : public redpanda_thread_fixture {
+class create_topic_fixture : public topic_properties_test_fixture {
 public:
     kafka::create_topics_request make_req(
       chunked_vector<kafka::creatable_topic> topics,
@@ -251,8 +248,6 @@ public:
 // This is rougly equivalent to
 //   https://github.com/apache/kafka/blob/8e16158/core/src/test/scala/unit/kafka/server/CreateTopicsRequestTest.scala#L27
 FIXTURE_TEST(create_topics, create_topic_fixture) {
-    wait_for_controller_leadership().get();
-
     test_create_topic(make_req({make_topic("topic1")}));
 
     // FIXME: these all crash with undefined behavior
@@ -306,17 +301,15 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(2)).get();
 
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(
-      resp.data.topics[0].error_message
-      == "remote read and write are not supported for read replicas");
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[0].error_message,
+      "remote read and write are not supported for read replicas");
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic1");
 }
 
 FIXTURE_TEST(test_v5_validate_configs_resp, create_topic_fixture) {
-    wait_for_controller_leadership().get();
-
     /// Test conditions in create_topic_fixture::verify_metadata will run
     test_create_topic(
       make_req({make_topic("topicA"), make_topic("topicB")}, true),
@@ -356,14 +349,14 @@ FIXTURE_TEST(create_multiple_topics_mixed_invalid, create_topic_fixture) {
                   .dispatch(make_req({topic_a, topic_b}), kafka::api_version(5))
                   .get();
 
-    BOOST_CHECK(resp.data.topics.size() == 2);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 2);
 
-    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
-    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
+    BOOST_CHECK_EQUAL(resp.data.topics[0].error_code, kafka::error_code::none);
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic_a");
 
-    BOOST_CHECK(
-      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[1].error_code, kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(resp.data.topics[1].name, "topic_b");
 }
 
 FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
@@ -395,19 +388,19 @@ FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
                     kafka::api_version(5))
                   .get();
 
-    BOOST_CHECK(resp.data.topics.size() == 3);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 3);
 
-    BOOST_CHECK(resp.data.topics[0].name == "topic_a");
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic_a");
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::invalid_config);
 
-    BOOST_CHECK(resp.data.topics[1].name == "topic_b");
-    BOOST_CHECK(
-      resp.data.topics[1].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(resp.data.topics[1].name, "topic_b");
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[1].error_code, kafka::error_code::invalid_config);
 
-    BOOST_CHECK(resp.data.topics[2].name == "topic_c");
-    BOOST_CHECK(
-      resp.data.topics[2].error_code == kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(resp.data.topics[2].name, "topic_c");
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[2].error_code, kafka::error_code::invalid_config);
 }
 
 FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
@@ -422,11 +415,12 @@ FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
 
-    BOOST_CHECK(
-      resp.data.topics[0].error_code == kafka::error_code::invalid_config);
-    BOOST_CHECK(
-      resp.data.topics[0].error_message == "Configuration is invalid");
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+    BOOST_CHECK_EQUAL(
+      resp.data.topics[0].error_message, "Configuration is invalid");
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic1");
 }
 
 FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
@@ -441,6 +435,56 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
 
-    BOOST_CHECK(resp.data.topics[0].error_code == kafka::error_code::none);
-    BOOST_CHECK(resp.data.topics[0].name == "topic1");
+    BOOST_CHECK_EQUAL(resp.data.topics[0].error_code, kafka::error_code::none);
+    BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic1");
+}
+
+FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
+    revoke_license();
+    auto si_props = {
+      ss::sstring{kafka::topic_property_remote_read},
+      ss::sstring{kafka::topic_property_remote_write},
+      ss::sstring{kafka::topic_property_recovery},
+      ss::sstring{kafka::topic_property_read_replica},
+    };
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    for (const auto& prop : si_props) {
+        auto topic = make_topic(
+          ssx::sformat("topic_{}", prop),
+          std::nullopt,
+          std::nullopt,
+          std::map<ss::sstring, ss::sstring>{{prop, "true"}});
+
+        auto resp
+          = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+        BOOST_CHECK_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+    }
+}
+
+FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
+    revoke_license();
+
+    const std::initializer_list<std::string_view> si_configs{
+      lconf().cloud_storage_enable_remote_read.name(),
+      lconf().cloud_storage_enable_remote_write.name()};
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    for (const auto& config : si_configs) {
+        update_cluster_config(config, "true");
+        auto topic = make_topic(ssx::sformat("topic_{}", config));
+
+        auto resp
+          = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+        BOOST_CHECK_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+        update_cluster_config(config, "false");
+    }
 }
