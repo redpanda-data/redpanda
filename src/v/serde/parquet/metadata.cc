@@ -17,6 +17,7 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <climits>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -509,7 +510,7 @@ iobuf encode(const column_meta_data& metadata) {
       std::move(encodings_encoder).finish());
 
     thrift::list_encoder path_in_schema_encoder(
-      metadata.encodings.size(), thrift::field_type::binary);
+      metadata.path_in_schema.size(), thrift::field_type::binary);
     for (const auto& segment : metadata.path_in_schema) {
         path_in_schema_encoder.write_element(thrift::encode_string(segment));
     }
