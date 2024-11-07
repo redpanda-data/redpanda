@@ -20,6 +20,9 @@ public:
     crc32()
       : _crc(::crc32(0L, Z_NULL, 0)) {}
 
+    explicit crc32(uint32_t init)
+      : _crc(init) {}
+
     void extend(const uint8_t* data, size_t size) {
         _crc = ::crc32(_crc, data, size);
     }

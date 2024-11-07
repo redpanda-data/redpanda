@@ -40,7 +40,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/serde/thrift:compact",
         "//src/v/utils:vint",
-        "@abseil-cpp//absl/crc:crc32c",
+        "//src/v/hashing:crc32",
         "@seastar",
     ],
 )
@@ -119,7 +119,7 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
-        "@abseil-cpp//absl/crc:crc32c",
+        "//src/v/hashing:crc32",
         "@seastar",
     ],
 )

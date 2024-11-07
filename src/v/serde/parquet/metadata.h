@@ -28,12 +28,11 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "container/fragmented_vector.h"
+#include "hashing/crc32.h"
 #include "serde/parquet/flattened_schema.h"
 #include "serde/parquet/schema.h"
 
 #include <seastar/core/sstring.hh>
-
-#include <absl/crc/crc32c.h>
 
 #include <cmath>
 #include <cstdint>
@@ -224,7 +223,7 @@ struct page_header {
      * If enabled, this allows for disabling checksumming in HDFS if only a few
      * pages need to be read.
      */
-    absl::crc32c_t crc;
+    crc::crc32 crc;
 
     // Headers for page specific data.  One only will be set.
     std::variant<index_page_header, dictionary_page_header, data_page_header>

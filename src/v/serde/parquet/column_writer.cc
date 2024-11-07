@@ -11,11 +11,10 @@
 
 #include "serde/parquet/column_writer.h"
 
+#include "hashing/crc32.h"
 #include "serde/parquet/encoding.h"
 
 #include <seastar/util/variant_utils.hh>
-
-#include <absl/crc/crc32c.h>
 
 #include <limits>
 #include <stdexcept>
@@ -38,17 +37,16 @@ public:
 
 namespace {
 
-absl::crc32c_t extend_crc32(absl::crc32c_t crc, const iobuf& buf) {
+void extend_crc32(crc::crc32& crc, const iobuf& buf) {
     for (const auto& frag : buf) {
-        crc = absl::ExtendCrc32c(crc, {frag.get(), frag.size()});
+        crc.extend(frag.get(), frag.size());
     }
-    return crc;
 }
 
 template<typename... Args>
-absl::crc32c_t compute_crc32(Args&&... args) {
-    absl::crc32c_t crc{};
-    ((crc = extend_crc32(crc, std::forward<Args>(args))), ...);
+crc::crc32 compute_crc32(Args&&... args) {
+    crc::crc32 crc;
+    (extend_crc32(crc, std::forward<Args>(args)), ...);
     return crc;
 }
 

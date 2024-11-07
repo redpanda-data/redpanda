@@ -40,14 +40,14 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(page_header{
           .uncompressed_page_size = 42,
           .compressed_page_size = 22,
-          .crc = absl::crc32c_t(0xBEEF),
+          .crc = crc::crc32(0xBEEF),
           .type = index_page_header{},
         });
     case 1:
         return encode(page_header{
           .uncompressed_page_size = 2,
           .compressed_page_size = 1,
-          .crc = absl::crc32c_t(0xDEAD),
+          .crc = crc::crc32(0xDEAD),
           .type = data_page_header{
             .num_values = 22,
             .num_nulls = 0,
@@ -62,7 +62,7 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(page_header{
           .uncompressed_page_size = 99999,
           .compressed_page_size = 0,
-          .crc = absl::crc32c_t(0xEEEE),
+          .crc = crc::crc32(0xEEEE),
           .type = dictionary_page_header{
             .num_values = 44,
             .data_encoding = encoding::rle,
