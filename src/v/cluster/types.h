@@ -790,6 +790,9 @@ struct custom_assignable_topic_configuration {
     bool has_custom_assignment() const { return !custom_assignments.empty(); }
     bool is_read_replica() const { return cfg.is_read_replica(); }
     bool is_recovery_enabled() const { return cfg.is_recovery_enabled(); }
+    bool is_schema_id_validation_enabled() const {
+        return cfg.is_schema_id_validation_enabled();
+    }
 
     friend std::ostream&
     operator<<(std::ostream&, const custom_assignable_topic_configuration&);
