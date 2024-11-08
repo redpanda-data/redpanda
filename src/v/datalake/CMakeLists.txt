@@ -39,7 +39,6 @@ v_cc_library(
     record_schema_resolver.cc
     record_translator.cc
     schema_registry.cc
-    schemaless_translator.cc
     schema_avro.cc
     schema_protobuf.cc
     partitioning_writer.cc
