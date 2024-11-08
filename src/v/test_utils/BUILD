@@ -44,3 +44,16 @@ redpanda_cc_library(
         "@seastar//:testing",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "iostream",
+    hdrs = [
+        "iostream.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
