@@ -773,10 +773,51 @@ controller_backend::force_replica_set_update(
         // will be cleaned up as a part of update_finished command.
         co_return ss::stop_iteration::yes;
     }
+    if (partition->cloud_data_available()) {
+        auto last_cloud_offset
+          = co_await partition->fetch_latest_cloud_offset_from_manifest(
+            model::timeout_clock::now()
+            + config::shard_local_cfg()
+                .cloud_storage_manifest_upload_timeout_ms());
+        if (last_cloud_offset.has_error()) {
+            vlog(
+              clusterlog.warn,
+              "[{}] force-update replica set - error getting latest cloud "
+              "offset: {}",
+              partition->ntp(),
+              last_cloud_offset.error());
+            co_return last_cloud_offset.error();
+        }
+        if (last_cloud_offset.value() > partition->dirty_offset()) {
+            vlog(
+              clusterlog.info,
+              "[{}] force-update replica set - last cloud offset {} is greater "
+              "than dirty offset: {}, removing local replica to force recovery",
+              partition->ntp(),
+              last_cloud_offset.value(),
+              partition->dirty_offset());
+
+            co_await remove_from_shard_table(
+              partition->ntp(),
+              partition->group(),
+              partition->get_log_revision_id());
+            co_await _partition_manager.local().remove(
+              partition->ntp(), partition_removal_mode::local_only);
+
+            // do not stop iteration as partition replica must be created again
+            // with recovered state
+            co_return ss::stop_iteration::no;
+        }
+    }
 
     auto [voters, learners] = split_voters_learners_for_force_reconfiguration(
       previous_replicas, new_replicas, initial_replicas_revisions, cmd_rev);
-
+    vlog(
+      clusterlog.debug,
+      "[{}] force updating replica set with: [voters: {}, learners: {}]",
+      partition->ntp(),
+      voters,
+      learners);
     // Force raft configuration update locally.
     co_return co_await partition->force_update_replica_set(
       std::move(voters), std::move(learners), cmd_rev);
