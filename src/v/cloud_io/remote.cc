@@ -428,12 +428,18 @@ remote::download_object(download_request download_request) {
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            auto buffer
-              = co_await cloud_storage_clients::util::drain_response_stream(
-                resp.value());
-            download_request.payload.append_fragments(std::move(buffer));
-            transfer_details.on_success();
-            co_return download_result::success;
+            try {
+                auto buffer
+                  = co_await cloud_storage_clients::util::drain_response_stream(
+                    resp.value());
+                download_request.payload.append_fragments(std::move(buffer));
+                transfer_details.on_success();
+                co_return download_result::success;
+            } catch (...) {
+                resp
+                  = cloud_storage_clients::util::handle_client_transport_error(
+                    std::current_exception(), ctxlog);
+            }
         }
 
         lease.client->shutdown();
