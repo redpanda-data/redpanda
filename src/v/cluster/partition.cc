@@ -1285,6 +1285,56 @@ partition::unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
     // Rethrow the exception if we failed to reset
     future_result.get();
 }
+ss::future<result<model::offset>>
+partition::fetch_latest_cloud_offset_from_manifest(
+  model::timeout_clock::time_point deadline) {
+    if (!cloud_data_available()) {
+        co_return errc::invalid_partition_operation;
+    }
+
+    const auto initial_rev = _raft->log_config().get_initial_revision();
+    const auto bucket = [this]() {
+        if (is_read_replica_mode_enabled()) {
+            return get_read_replica_bucket();
+        }
+
+        const auto& bucket_config
+          = cloud_storage::configuration::get_bucket_config();
+        vassert(
+          bucket_config.value(),
+          "configuration property {} must be set",
+          bucket_config.name());
+
+        return cloud_storage_clients::bucket_name{
+          bucket_config.value().value()};
+    }();
+
+    cloud_storage::partition_manifest new_manifest{ntp(), initial_rev};
+
+    auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
+
+    retry_chain_node rtc(_as, deadline, backoff);
+    cloud_storage::partition_manifest_downloader dl(
+      bucket,
+      _archival_meta_stm->path_provider(),
+      ntp(),
+      initial_rev,
+      _cloud_storage_api.local());
+
+    auto res = co_await dl.download_manifest(rtc, &new_manifest);
+    if (res.has_error()) {
+        co_return res.error();
+    }
+    if (
+      res.value()
+      == cloud_storage::find_partition_manifest_outcome::no_matching_manifest) {
+        vlog(
+          clusterlog.warn, "No matching manifest for {} ", ntp(), initial_rev);
+        co_return errc::invalid_partition_operation;
+    }
+
+    co_return new_manifest.get_last_offset();
+}
 
 ss::future<>
 partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {

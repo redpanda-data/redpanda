@@ -281,6 +281,16 @@ public:
     ss::future<std::error_code>
     force_abort_replica_set_update(model::revision_id rev);
 
+    /**
+     * Downloads partition manifest to query for latest offset available in
+     * object store.
+     *
+     * IMPORTANT: this may not be the last offset of last segment uploaded to
+     * the cloud as partition manifest is eventually consistent.
+     */
+    ss::future<result<model::offset>> fetch_latest_cloud_offset_from_manifest(
+      model::timeout_clock::time_point deadline);
+
     consensus_ptr raft() const;
 
     std::optional<std::reference_wrapper<archival::ntp_archiver>> archiver() {
