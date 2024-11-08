@@ -18,7 +18,7 @@ ss::future<ss::connected_socket> connect_with_timeout(
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
       .handle_exception([socket, address, log](const std::exception_ptr& e) {
-          log->trace("error connecting to {} - {}", address, e);
+          vlog(log->trace, "error connecting to {} - {}", address, e);
           socket->shutdown();
           return ss::make_exception_future<ss::connected_socket>(e);
       });
@@ -73,7 +73,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         if (auto* p = _probe.value_or(nullptr); p != nullptr) {
             p->connection_error();
         }
-        _log->trace("Connection error: {}", e);
+        vlog(_log->trace, "Connection error: {}", e);
         std::rethrow_exception(e);
     }
 
