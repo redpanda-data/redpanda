@@ -466,6 +466,29 @@ class DataMigrationsApiTest(RedpandaTest):
             self.logger.debug(f"second msg={msg}")
             assert msg is None
 
+    def check_migrations(self, migration_id, exp_topics_cnt,
+                         exp_migrations_cnt):
+        """ make sure that, when the migration appears,
+            - it its state is planned,
+            - it contains this many topics,
+            - and also there are that many migrations in total """
+        def check():
+            migrations_map = self.get_migrations_map()
+            self.logger.info(f"migrations: {migrations_map}")
+            if migration_id not in migrations_map:
+                return False  # finj may make things lag ...
+            migration = migrations_map[migration_id]
+            # ... but not lie
+            assert migration['state'] == 'planned'
+            assert len(migration['migration']['topics']) == exp_topics_cnt
+            assert len(migrations_map) == exp_migrations_cnt
+            return True
+
+        wait_until(check,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg=f"Failed waiting for migration")
+
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_mount_inexistent(self):
         topic = TopicSpec(partition_count=3)
@@ -475,14 +498,7 @@ class DataMigrationsApiTest(RedpandaTest):
                 topics=[InboundTopic(make_namespaced_topic(topic.name))],
                 consumer_groups=[])
             in_migration_id = self.create_and_wait(in_migration)
-
-            migrations_map = self.get_migrations_map()
-            self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 1, "There should be one data migration"
-
-            assert len(migrations_map[in_migration_id]['migration']
-                       ['topics']) == 1, "migration should contain one topic"
+            self.check_migrations(in_migration_id, 1, 1)
 
             self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.prepare)
@@ -512,7 +528,6 @@ class DataMigrationsApiTest(RedpandaTest):
             self.client().create_topic(t)
 
         migrations_map = self.get_migrations_map()
-
         assert len(migrations_map) == 0, "There should be no data migrations"
 
         with self.finj_thread():
@@ -522,16 +537,7 @@ class DataMigrationsApiTest(RedpandaTest):
                                                   consumer_groups=[])
 
             out_migration_id = self.create_and_wait(out_migration)
-
-            migrations_map = self.get_migrations_map()
-            self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 1, "There should be one data migration"
-
-            assert migrations_map[out_migration_id]['state'] == 'planned'
-
-            assert len(migrations_map[out_migration_id]['migration']['topics']
-                       ) == len(topics), "migration should contain all topics"
+            self.check_migrations(out_migration_id, len(topics), 1)
 
             self.execute_data_migration_action_flaky(out_migration_id,
                                                      MigrationAction.prepare)
@@ -562,15 +568,7 @@ class DataMigrationsApiTest(RedpandaTest):
             in_migration = InboundDataMigration(topics=inbound_topics,
                                                 consumer_groups=["g-1", "g-2"])
             in_migration_id = self.create_and_wait(in_migration)
-
-            migrations_map = self.get_migrations_map()
-            self.logger.info(f"migrations: {migrations_map}")
-            assert len(
-                migrations_map) == 2, "There should be two data migrations"
-
-            assert len(
-                migrations_map[in_migration_id]['migration']['topics']) == len(
-                    inbound_topics), "migration should contain all topics"
+            self.check_migrations(in_migration_id, len(inbound_topics), 2)
 
             for t in inbound_topics:
                 self.logger.info(
