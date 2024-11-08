@@ -5,5 +5,5 @@ pushd /opt/redpanda-tests/java/iceberg-rest-catalog
 ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
 chmod +x ./gradlew
 JAVA_HOME="/usr/lib/jvm/java-17-openjdk-${ARCH}" GRADLE_OPTS="-Dorg.gradle.project.buildDir=/opt/iceberg-rest-catalog/build" \
-    ./gradlew --no-daemon --info shadowJar
+  ./gradlew --no-daemon --info shadowJar
 popd

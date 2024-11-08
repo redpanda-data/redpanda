@@ -13,10 +13,13 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "utils/named_type.h"
 
 #include <cstdint>
 
 namespace serde::thrift {
+
+using field_id = named_type<int16_t, struct field_id_tag>;
 
 /**
  * The field type is the encoded value for a field that is written into a
@@ -63,27 +66,20 @@ class struct_encoder {
 public:
     static inline const bytes empty_struct = {0}; // NOLINT
 
-    template<typename T>
-    void write_field(int16_t field_id, field_type type, T val) {
-        write_field_header(field_id, type);
-        if constexpr (std::is_same_v<T, iobuf>) {
-            _buf.append(std::move(val));
-        } else {
-            _buf.append(val.data(), val.size());
-        }
-    }
+    void write_field(field_id id, field_type type, iobuf val);
+    void write_field(field_id id, field_type type, bytes val);
 
     iobuf write_stop() &&;
 
 private:
-    void write_field_header(int16_t field_id, field_type type);
+    void write_field_header(field_id id, field_type type);
 
     void write_short_form_field_header(uint8_t delta, field_type type);
 
-    void write_long_form_field_header(field_type type, int16_t field_id);
+    void write_long_form_field_header(field_type type, field_id field_id);
 
     iobuf _buf;
-    int16_t _current_field_id = 0;
+    field_id _last_field_id = field_id(0);
 };
 
 // List and sets are encoded the same: a header indicating the size and the
@@ -102,21 +98,15 @@ class list_encoder {
 public:
     explicit list_encoder(size_t size, field_type type);
 
-    template<typename T>
-    void write_element(T val) {
-        if constexpr (std::is_same_v<T, iobuf>) {
-            _buf.append(std::move(val));
-        } else {
-            _buf.append(val.data(), val.size());
-        }
-    }
+    void write_element(iobuf val);
+    void write_element(bytes val);
 
     iobuf finish() &&;
 
 private:
     void write_short_form_field_header(uint8_t size, field_type type);
 
-    void write_long_form_field_header(field_type type, size_t field_id);
+    void write_long_form_field_header(field_type type, size_t size);
 
     iobuf _buf;
 };

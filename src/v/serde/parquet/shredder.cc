@@ -74,7 +74,7 @@ private:
           [element](group_value&) {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected struct value for leaf schema element {}",
-                element->name)));
+                element->name())));
           },
           [this, element, levels](null_value& v) {
               // If this is the level in the tree that is turning NULL that is
@@ -166,12 +166,12 @@ private:
           [element](repeated_value&) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected list value for non-repeated schema element {}",
-                element->name)));
+                element->name())));
           },
           [element](auto& v) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected leaf value for required schema element {}: {}",
-                element->name,
+                element->name(),
                 value(std::move(v)))));
           });
     }
@@ -189,12 +189,12 @@ private:
           [element](group_value&) {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected struct value for repeated schema element {}",
-                element->name)));
+                element->name())));
           },
           [element](auto& v) {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected leaf value for repeated schema element {}: {}",
-                element->name,
+                element->name(),
                 value(std::move(v)))));
           });
     }
@@ -213,12 +213,12 @@ private:
           [element](repeated_value&) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected list value for non-repeated schema element {}",
-                element->name)));
+                element->name())));
           },
           [element](auto& v) -> ss::future<> {
               return ss::make_exception_future(std::runtime_error(fmt::format(
                 "unexpected leaf value for optional schema element {}: {}",
-                element->name,
+                element->name(),
                 value(std::move(v)))));
           });
     }

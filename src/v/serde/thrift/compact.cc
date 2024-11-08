@@ -17,12 +17,7 @@ namespace serde::thrift {
 
 namespace {
 
-template<typename IntType>
-void write_be(iobuf& buf, IntType v) {
-    IntType be_form = ss::cpu_to_be(v);
-    // NOLINTNEXTLINE(*reinterpret-cast*)
-    buf.append(reinterpret_cast<const char*>(&be_form), sizeof(v));
-}
+void write_byte(iobuf& buf, uint8_t v) { buf.append(&v, 1); }
 
 template<typename IntType>
 void write_uvint(iobuf& buf, IntType v) {
@@ -30,35 +25,51 @@ void write_uvint(iobuf& buf, IntType v) {
     buf.append(b.data(), b.size());
 }
 
+template<typename IntType>
+void write_svint(iobuf& buf, IntType v) {
+    bytes b = vint::to_bytes(v);
+    buf.append(b.data(), b.size());
+}
+
 } // namespace
 
+void struct_encoder::write_field(field_id id, field_type type, iobuf val) {
+    write_field_header(id, type);
+    _buf.append(std::move(val));
+}
+
+void struct_encoder::write_field(field_id id, field_type type, bytes val) {
+    write_field_header(id, type);
+    _buf.append(val.data(), val.size());
+}
+
 iobuf struct_encoder::write_stop() && {
-    write_be<uint8_t>(_buf, 0);
+    write_byte(_buf, 0);
     return std::move(_buf);
 }
 
-void struct_encoder::write_field_header(int16_t field_id, field_type type) {
-    auto delta = field_id - _current_field_id;
+void struct_encoder::write_field_header(field_id id, field_type type) {
     constexpr int16_t max_short_form_delta = 16;
-    if (delta > 0 && delta < max_short_form_delta) {
+    if (id > _last_field_id && id - _last_field_id < max_short_form_delta) {
+        auto delta = id - _last_field_id;
         write_short_form_field_header(static_cast<uint8_t>(delta), type);
     } else {
-        write_long_form_field_header(type, field_id);
+        write_long_form_field_header(type, id);
     }
-    _current_field_id = field_id;
+    _last_field_id = id;
 }
 
 void struct_encoder::write_short_form_field_header(
   uint8_t delta, field_type type) {
     auto header_byte = static_cast<uint8_t>(type);
     header_byte |= static_cast<uint8_t>(delta << 4U);
-    write_be<uint8_t>(_buf, header_byte);
+    write_byte(_buf, header_byte);
 }
 
 void struct_encoder::write_long_form_field_header(
-  field_type type, int16_t field_id) {
-    write_be<uint8_t>(_buf, static_cast<uint8_t>(type));
-    write_uvint<int16_t>(_buf, field_id);
+  field_type type, field_id id) {
+    write_byte(_buf, static_cast<uint8_t>(type));
+    write_svint<int16_t>(_buf, id());
 }
 
 bytes encode_string(std::string_view str) {
@@ -79,19 +90,25 @@ list_encoder::list_encoder(size_t size, field_type type) {
     }
 }
 
+void list_encoder::write_element(iobuf val) { _buf.append(std::move(val)); }
+
+void list_encoder::write_element(bytes val) {
+    _buf.append(val.data(), val.size());
+}
+
 iobuf list_encoder::finish() && { return std::move(_buf); }
 
 void list_encoder::write_short_form_field_header(
   uint8_t size, field_type type) {
     auto header_byte = static_cast<uint8_t>(type);
     header_byte |= static_cast<uint8_t>(size << 4U);
-    write_be<uint8_t>(_buf, header_byte);
+    write_byte(_buf, header_byte);
 }
 
 void list_encoder::write_long_form_field_header(
   field_type type, size_t field_id) {
     constexpr uint8_t long_form_marker = 0b11110000U;
-    write_be<uint8_t>(_buf, static_cast<uint8_t>(type) | long_form_marker);
+    write_byte(_buf, static_cast<uint8_t>(type) | long_form_marker);
     write_uvint<int32_t>(_buf, static_cast<int32_t>(field_id));
 }
 

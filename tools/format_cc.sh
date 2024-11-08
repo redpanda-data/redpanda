@@ -5,6 +5,6 @@ clang_format=$(readlink -f $1)
 root_dir=$BUILD_WORKSPACE_DIRECTORY
 working_dir=$BUILD_WORKING_DIRECTORY
 
-pushd "$working_dir"
+pushd "$root_dir"
 git ls-files --full-name "*.cc" "*.java" "*.h" "*.proto" | xargs -n1 "$clang_format" -i -style=file -fallback-style=none
 popd

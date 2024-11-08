@@ -21,6 +21,8 @@ namespace serde::parquet {
 struct data_page {
     // The unencoded header for this page.
     page_header header;
+    // The size of the encoded header.
+    int64_t serialized_header_size;
     // This serialized data already includes the header encoded in
     // Apache Thrift format.
     iobuf serialized;
@@ -34,9 +36,9 @@ public:
     explicit column_writer(const schema_element&);
     column_writer(const column_writer&) = delete;
     column_writer& operator=(const column_writer&) = delete;
-    column_writer(column_writer&&) = default;
-    column_writer& operator=(column_writer&&) = default;
-    ~column_writer();
+    column_writer(column_writer&&) noexcept;
+    column_writer& operator=(column_writer&&) noexcept;
+    ~column_writer() noexcept;
 
     // Add a value to this column along with it's repetition level and
     // definition level.

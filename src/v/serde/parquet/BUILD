@@ -15,6 +15,7 @@ redpanda_cc_library(
         "schema.h",
     ],
     include_prefix = "serde/parquet",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
@@ -37,9 +38,9 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
+        "//src/v/hashing:crc32",
         "//src/v/serde/thrift:compact",
         "//src/v/utils:vint",
-        "@abseil-cpp//absl/crc:crc32c",
         "@seastar",
     ],
 )
@@ -52,13 +53,16 @@ redpanda_cc_library(
     hdrs = [
         "value.h",
     ],
+    implementation_deps = [
+        "@abseil-cpp//absl/strings",
+        "@seastar",
+    ],
     include_prefix = "serde/parquet",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
-        "@abseil-cpp//absl/strings",
-        "@seastar",
     ],
 )
 
@@ -112,9 +116,37 @@ redpanda_cc_library(
     deps = [
         ":encoding",
         ":metadata",
+        ":schema",
         ":value",
         "//src/v/base",
-        "@abseil-cpp//absl/crc:crc32c",
+        "//src/v/hashing:crc32",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "writer",
+    srcs = [
+        "writer.cc",
+    ],
+    hdrs = [
+        "writer.h",
+    ],
+    implementation_deps = [
+        ":column_writer",
+        ":metadata",
+        ":shredder",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/container:contiguous_range_map",
+    ],
+    include_prefix = "serde/parquet",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":schema",
+        ":value",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
         "@seastar",
     ],
 )

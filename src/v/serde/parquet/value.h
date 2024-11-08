@@ -81,6 +81,8 @@ struct repeated_element {
     value element;
 };
 
+value copy(const value&);
+
 } // namespace serde::parquet
 
 template<>

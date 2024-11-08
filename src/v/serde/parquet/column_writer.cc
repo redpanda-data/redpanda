@@ -11,11 +11,10 @@
 
 #include "serde/parquet/column_writer.h"
 
+#include "hashing/crc32.h"
 #include "serde/parquet/encoding.h"
 
 #include <seastar/util/variant_utils.hh>
-
-#include <absl/crc/crc32c.h>
 
 #include <limits>
 #include <stdexcept>
@@ -28,9 +27,9 @@ public:
     impl() = default;
     impl(const impl&) = delete;
     impl& operator=(const impl&) = delete;
-    impl(impl&&) = default;
-    impl& operator=(impl&&) = default;
-    virtual ~impl() = default;
+    impl(impl&&) noexcept = default;
+    impl& operator=(impl&&) noexcept = default;
+    virtual ~impl() noexcept = default;
 
     virtual void add(value, rep_level, def_level) = 0;
     virtual data_page flush_page() = 0;
@@ -38,17 +37,16 @@ public:
 
 namespace {
 
-absl::crc32c_t extend_crc32(absl::crc32c_t crc, const iobuf& buf) {
+void extend_crc32(crc::crc32& crc, const iobuf& buf) {
     for (const auto& frag : buf) {
-        crc = absl::ExtendCrc32c(crc, {frag.get(), frag.size()});
+        crc.extend(frag.get(), frag.size());
     }
-    return crc;
 }
 
 template<typename... Args>
-absl::crc32c_t compute_crc32(Args&&... args) {
-    absl::crc32c_t crc{};
-    ((crc = extend_crc32(crc, std::forward<Args>(args))), ...);
+crc::crc32 compute_crc32(Args&&... args) {
+    crc::crc32 crc;
+    (extend_crc32(crc, std::forward<Args>(args)), ...);
     return crc;
 }
 
@@ -76,16 +74,24 @@ public:
           },
           [](auto& v) {
               throw std::runtime_error(fmt::format(
-                "invalid value for column: {:32}", value(std::move(v))));
+                "invalid value for column: {:.32}", value(std::move(v))));
           });
         _rep_levels.push_back(rl);
         _def_levels.push_back(dl);
     }
 
     data_page flush_page() override {
-        auto encoded_def_levels = encode_levels(_max_def_level, _def_levels);
+        iobuf encoded_def_levels;
+        // If the max level is 0 then we don't write levels at all.
+        if (_max_def_level > def_level(0)) {
+            encoded_def_levels = encode_levels(_max_def_level, _def_levels);
+        }
         _def_levels.clear();
-        auto encoded_rep_levels = encode_levels(_max_rep_level, _rep_levels);
+        iobuf encoded_rep_levels;
+        // If the max level is 0 then we don't write levels at all.
+        if (_max_rep_level > rep_level(0)) {
+            encoded_rep_levels = encode_levels(_max_rep_level, _rep_levels);
+        }
         _rep_levels.clear();
         iobuf encoded_data;
         if constexpr (std::is_trivially_copyable_v<value_type>) {
@@ -116,11 +122,13 @@ public:
           },
         };
         iobuf full_page_data = encode(header);
+        auto header_size = static_cast<int64_t>(full_page_data.size_bytes());
         full_page_data.append(std::move(encoded_rep_levels));
         full_page_data.append(std::move(encoded_def_levels));
         full_page_data.append(std::move(encoded_data));
         return {
           .header = header,
+          .serialized_header_size = header_size,
           .serialized = std::move(full_page_data),
         };
     }
@@ -190,7 +198,9 @@ make_impl(const schema_element& e, byte_array_type t) {
 column_writer::column_writer(const schema_element& col)
   : _impl(std::visit([&col](auto x) { return make_impl(col, x); }, col.type)) {}
 
-column_writer::~column_writer() = default;
+column_writer::column_writer(column_writer&&) noexcept = default;
+column_writer& column_writer::operator=(column_writer&&) noexcept = default;
+column_writer::~column_writer() noexcept = default;
 
 void column_writer::add(value val, rep_level rep_level, def_level def_level) {
     return _impl->add(std::move(val), rep_level, def_level);

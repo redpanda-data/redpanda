@@ -65,6 +65,23 @@ redpanda_cc_binary(
     ],
 )
 
+redpanda_cc_binary(
+    name = "generate_file_binary",
+    srcs = ["generate_file.cc"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iostream",
+        "//src/v/container:zip",
+        "//src/v/json",
+        "//src/v/random:generators",
+        "//src/v/serde/parquet:schema",
+        "//src/v/serde/parquet:value",
+        "//src/v/serde/parquet:writer",
+        "//src/v/utils:base64",
+        "@seastar",
+    ],
+)
+
 write_file(
     name = "test_tool_wrapper",
     out = "test_tool_wrapper.sh",
@@ -73,8 +90,6 @@ write_file(
         "exec $@",
     ],
 )
-
-TEST_CASES = range(4)
 
 [
     (
@@ -105,7 +120,38 @@ TEST_CASES = range(4)
             ],
         ),
     )
-    for test_case in TEST_CASES
+    for test_case in range(4)
+]
+
+[
+    (
+        run_binary(
+            name = "generated_file_{}".format(test_case),
+            outs = ["parquet_test_case_{}_output.json".format(test_case)],
+            args = [
+                "--output",
+                "$(execpath :parquet_test_case_{}_output.json)".format(test_case),
+                "--test-case",
+                "{}".format(test_case),
+            ],
+            tool = ":generate_file_binary",
+        ),
+        sh_test(
+            name = "verify_file_{}".format(test_case),
+            size = "small",
+            timeout = "short",
+            srcs = [":test_tool_wrapper"],
+            args = [
+                "$(rootpath //src/v/test_utils/go/parquet_verifier)",
+                "-input-file=$(rootpath :generated_file_{})".format(test_case),
+            ],
+            data = [
+                ":generated_file_{}".format(test_case),
+                "//src/v/test_utils/go/parquet_verifier",
+            ],
+        ),
+    )
+    for test_case in range(64)
 ]
 
 redpanda_cc_gtest(

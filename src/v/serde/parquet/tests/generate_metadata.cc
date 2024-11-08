@@ -40,14 +40,14 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(page_header{
           .uncompressed_page_size = 42,
           .compressed_page_size = 22,
-          .crc = absl::crc32c_t(0xBEEF),
+          .crc = crc::crc32(0xBEEF),
           .type = index_page_header{},
         });
     case 1:
         return encode(page_header{
           .uncompressed_page_size = 2,
           .compressed_page_size = 1,
-          .crc = absl::crc32c_t(0xDEAD),
+          .crc = crc::crc32(0xDEAD),
           .type = data_page_header{
             .num_values = 22,
             .num_nulls = 0,
@@ -62,7 +62,7 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(page_header{
           .uncompressed_page_size = 99999,
           .compressed_page_size = 0,
-          .crc = absl::crc32c_t(0xEEEE),
+          .crc = crc::crc32(0xEEEE),
           .type = dictionary_page_header{
             .num_values = 44,
             .data_encoding = encoding::rle,
@@ -73,12 +73,12 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(file_metadata{
           .version = 2,
           .schema = flatten(schema_element{
-            .name = "root",
+            .path = {"root"},
             .children = list(
               schema_element{
                 .type = i32_type{},
                 .repetition_type = field_repetition_type::optional,
-                .name = "foo",
+                .path = {"foo"},
                 .field_id = 1,
                 .logical_type = time_type{
                   .is_adjusted_to_utc = true,
@@ -88,14 +88,14 @@ iobuf serialize_testcase(size_t test_case) {
               schema_element{
                 .type = byte_array_type{.fixed_length = 16},
                 .repetition_type = field_repetition_type::required,
-                .name = "bar",
+                .path = {"bar"},
                 .field_id = 2,
                 .logical_type = uuid_type{},
               },
               schema_element{
                 .type = bool_type{},
                 .repetition_type = field_repetition_type::repeated,
-                .name = "baz",
+                .path = {"baz"},
                 .field_id = 3,
               }
             ),
@@ -103,13 +103,13 @@ iobuf serialize_testcase(size_t test_case) {
           .num_rows = std::numeric_limits<int64_t>::max(),
           .row_groups = list(
              row_group{
-                .columns = {
+                .columns = list(
                   column_chunk{
                     .meta_data = {
                       .type = bool_type{},
                       .encodings = {encoding::plain, encoding::rle},
                       .path_in_schema = {"foo", "baz"},
-                      .codec = compression_codec::UNCOMPRESSED,
+                      .codec = compression_codec::uncompressed,
                       .num_values = 888,
                       .total_uncompressed_size = 9999,
                       .total_compressed_size = 9,
@@ -118,12 +118,8 @@ iobuf serialize_testcase(size_t test_case) {
                       .index_page_offset = 5,
                       .dictionary_page_offset = 9,
                     },
-                    .offset_index_offset = 23,
-                    .offset_index_length = 43,
-                    .column_index_offset = 999,
-                    .column_index_length = 876,
-                  },
-                },
+                  }
+                ),
                 .total_byte_size = 321,
                 .num_rows = 1,
                 .file_offset = 1234,

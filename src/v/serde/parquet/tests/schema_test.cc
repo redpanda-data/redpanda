@@ -13,6 +13,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <iterator>
+
 using namespace serde::parquet;
 
 namespace {
@@ -24,7 +27,7 @@ group_node(ss::sstring name, field_repetition_type rep_type, Args... args) {
     return {
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .children = std::move(children),
     };
 }
@@ -37,7 +40,7 @@ schema_element leaf_node(
     return {
       .type = ptype,
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .logical_type = ltype,
     };
 }
@@ -46,21 +49,22 @@ struct indexed_info {
     int32_t index;
     int16_t def_level;
     int16_t rep_level;
+    chunked_vector<ss::sstring> path;
 };
 
 template<typename... Args>
 schema_element indexed_group_node(
-  indexed_info info,
-  ss::sstring name,
-  field_repetition_type rep_type,
-  Args... args) {
+  const indexed_info& info, field_repetition_type rep_type, Args... args) {
     chunked_vector<schema_element> children;
     (children.push_back(std::move(args)), ...);
+    chunked_vector<ss::sstring> path;
+    path.push_back("schema");
+    std::ranges::copy(info.path, std::back_inserter(path));
     return {
       .position = info.index,
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = std::move(path),
       .children = std::move(children),
       .max_definition_level = def_level(info.def_level),
       .max_repetition_level = rep_level(info.rep_level),
@@ -68,16 +72,18 @@ schema_element indexed_group_node(
 }
 
 schema_element indexed_leaf_node(
-  indexed_info info,
-  ss::sstring name,
+  const indexed_info& info,
   field_repetition_type rep_type,
   physical_type ptype,
   logical_type ltype = logical_type{}) {
+    chunked_vector<ss::sstring> path;
+    path.push_back("schema");
+    std::ranges::copy(info.path, std::back_inserter(path));
     return {
       .position = info.index,
       .type = ptype,
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = std::move(path),
       .logical_type = ltype,
       .max_definition_level = def_level(info.def_level),
       .max_repetition_level = rep_level(info.rep_level),
@@ -102,8 +108,8 @@ TEST(Schema, CanBeIndexed) {
           group_node(
             "name",
             required,
-            leaf_node("first_name", optional, byte_array_type(), string_type()),
-            leaf_node("last_name", required, byte_array_type(), string_type())),
+            leaf_node("first", optional, byte_array_type(), string_type()),
+            leaf_node("last", required, byte_array_type(), string_type())),
           leaf_node("id", optional, i32_type()),
           leaf_node("email", required, byte_array_type(), string_type()),
           group_node(
@@ -116,61 +122,108 @@ TEST(Schema, CanBeIndexed) {
               leaf_node("type", optional, byte_array_type(), enum_type()))))));
     index_schema(root);
     auto expected = indexed_group_node(
-      {.index = 0, .def_level = 0, .rep_level = 0},
-      "schema",
+      {.index = 0, .def_level = 0, .rep_level = 0, .path = {}},
       required,
       indexed_group_node(
-        {.index = 1, .def_level = 1, .rep_level = 0},
-        "persons",
+        {
+          .index = 1,
+          .def_level = 1,
+          .rep_level = 0,
+          .path = {"persons"},
+        },
         optional,
         indexed_group_node(
-          {.index = 2, .def_level = 2, .rep_level = 1},
-          "persons_tuple",
+          {
+            .index = 2,
+            .def_level = 2,
+            .rep_level = 1,
+            .path = {"persons", "persons_tuple"},
+          },
           repeated,
           indexed_group_node(
-            {.index = 3, .def_level = 2, .rep_level = 1},
-            "name",
+            {
+              .index = 3,
+              .def_level = 2,
+              .rep_level = 1,
+              .path = {"persons", "persons_tuple", "name"},
+            },
             required,
             indexed_leaf_node(
-              {.index = 4, .def_level = 3, .rep_level = 1},
-              "first_name",
+              {
+                .index = 4,
+                .def_level = 3,
+                .rep_level = 1,
+                .path = {"persons", "persons_tuple", "name", "first"},
+              },
               optional,
               byte_array_type(),
               string_type()),
             indexed_leaf_node(
-              {.index = 5, .def_level = 2, .rep_level = 1},
-              "last_name",
+              {
+                .index = 5,
+                .def_level = 2,
+                .rep_level = 1,
+                .path = {"persons", "persons_tuple", "name", "last"},
+              },
               required,
               byte_array_type(),
               string_type())),
           indexed_leaf_node(
-            {.index = 6, .def_level = 3, .rep_level = 1},
-            "id",
+            {
+              .index = 6,
+              .def_level = 3,
+              .rep_level = 1,
+              .path = {"persons", "persons_tuple", "id"},
+            },
             optional,
             i32_type()),
           indexed_leaf_node(
-            {.index = 7, .def_level = 2, .rep_level = 1},
-            "email",
+            {
+              .index = 7,
+              .def_level = 2,
+              .rep_level = 1,
+              .path = {"persons", "persons_tuple", "email"},
+            },
             required,
             byte_array_type(),
             string_type()),
           indexed_group_node(
-            {.index = 8, .def_level = 3, .rep_level = 2},
-            "phones",
+            {
+              .index = 8,
+              .def_level = 3,
+              .rep_level = 2,
+              .path = {"persons", "persons_tuple", "phones"},
+            },
             repeated,
             indexed_group_node(
-              {.index = 9, .def_level = 4, .rep_level = 3},
-              "phones_tuple",
+              {
+                .index = 9,
+                .def_level = 4,
+                .rep_level = 3,
+                .path = {"persons", "persons_tuple", "phones", "phones_tuple"},
+              },
               repeated,
               indexed_leaf_node(
-                {.index = 10, .def_level = 5, .rep_level = 3},
-                "number",
+                {
+                  .index = 10,
+                  .def_level = 5,
+                  .rep_level = 3,
+                  // clang-format off
+                  .path = {"persons","persons_tuple",  "phones", "phones_tuple", "number"},
+                  // clang-format on
+                },
                 optional,
                 byte_array_type(),
                 string_type()),
               indexed_leaf_node(
-                {.index = 11, .def_level = 5, .rep_level = 3},
-                "type",
+                {
+                  .index = 11,
+                  .def_level = 5,
+                  .rep_level = 3,
+                  // clang-format off
+                  .path = {"persons", "persons_tuple", "phones", "phones_tuple", "type"},
+                  // clang-format on
+                },
                 optional,
                 byte_array_type(),
                 enum_type()))))));
