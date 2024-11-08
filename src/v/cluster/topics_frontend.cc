@@ -158,6 +158,15 @@ std::vector<std::string_view> get_enterprise_features(
         features.emplace_back("schema id validation");
     }
 
+    if (const auto& updated_pref = updated_properties.leaders_preference;
+        updated_pref != properties.leaders_preference
+        && updated_pref.has_value()
+        && config::shard_local_cfg()
+             .default_leaders_preference.check_restricted(
+               updated_pref.value())) {
+        features.emplace_back("leadership pinning");
+    }
+
     return features;
 }
 
