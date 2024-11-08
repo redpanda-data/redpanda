@@ -13,7 +13,20 @@
 #include "json/chunked_buffer.h"
 
 namespace iceberg {
-
+namespace {
+std::string_view scheme_for(model::cloud_storage_backend backend) {
+    switch (backend) {
+    case model::cloud_storage_backend::aws:
+    case model::cloud_storage_backend::google_s3_compat:
+    case model::cloud_storage_backend::minio:
+    case model::cloud_storage_backend::oracle_s3_compat:
+    case model::cloud_storage_backend::unknown:
+        return s3_scheme;
+    case model::cloud_storage_backend::azure:
+        return abs_scheme;
+    }
+}
+} // namespace
 ss::future<checked<table_metadata, metadata_io::errc>>
 table_io::download_table_meta(const table_metadata_path& path) {
     return download_object<table_metadata>(
@@ -60,7 +73,8 @@ table_io::version_hint_exists(const version_hint_path& path) {
 }
 
 uri table_io::to_uri(const ss::sstring& path) const {
-    return make_uri(bucket_(), std::filesystem::path(path));
+    return make_uri(
+      bucket_(), std::filesystem::path(path), scheme_for(io_.backend()));
 }
 
 } // namespace iceberg
