@@ -156,6 +156,15 @@ ss::future<cluster::errc> client::produce(
       [this, &req]() { return do_produce_once(req.share()); });
 }
 
+ss::future<cluster::errc>
+client::produce(model::topic_partition tp, model::record_batch batch) {
+    produce_request req;
+    req.topic_data.emplace_back(std::move(tp), std::move(batch));
+    req.timeout = timeout;
+    co_return co_await retry(
+      [this, &req]() { return do_produce_once(req.share()); });
+}
+
 ss::future<cluster::errc> client::do_produce_once(produce_request req) {
     vassert(
       req.topic_data.size() == 1,
