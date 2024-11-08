@@ -139,10 +139,19 @@ class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
             self.local_retention)
 
     def get_topic_info(self, topic_name):
-        topics_info = list(self.rpk.describe_topic(topic_name))
-        self.logger.info(topics_info)
-        assert len(topics_info) == 1
-        return topics_info[0]
+        def describe_topic():
+            topics_info = list(self.rpk.describe_topic(topic_name))
+            if len(topics_info) > 0:
+                self.logger.info(topics_info)
+                return True, topics_info[0]
+            else:
+                return False
+
+        topic_info = wait_until_result(describe_topic,
+                                       timeout_sec=15,
+                                       backoff_sec=1,
+                                       err_msg="Couldn't get topic info")
+        return topic_info
 
     def wait_until_records(self,
                            topic_name,
