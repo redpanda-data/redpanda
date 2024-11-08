@@ -12,11 +12,17 @@
 #include "serde/parquet/schema.h"
 
 #include <ranges>
+#include <stdexcept>
 #include <variant>
 
 using std::ranges::reverse_view;
 
 namespace serde::parquet {
+
+const ss::sstring& schema_element::name() const {
+    vassert(!path.empty(), "the schema's path cannot be empty");
+    return path.back();
+}
 
 bool schema_element::is_leaf() const {
     return !std::holds_alternative<std::monostate>(type);
@@ -40,7 +46,15 @@ void index_schema(schema_element& root) {
     while (!to_visit.empty()) {
         auto [path, rep_level, def_level, element] = std::move(to_visit.back());
         to_visit.pop_back();
-        element->path = path.copy();
+        if (element->path.size() != 1) {
+            throw std::invalid_argument(fmt::format(
+              "unindexed schemas should only have a single path "
+              "element, which is that node's name. Indexing will "
+              "populate the full path, got element with path: {}",
+              fmt::join(element->path, "/")));
+        }
+        std::ranges::move(element->path, std::back_inserter(path));
+        element->path = std::move(path);
         element->position = position++;
         if (element->repetition_type != field_repetition_type::required) {
             ++def_level;
@@ -51,10 +65,8 @@ void index_schema(schema_element& root) {
         element->max_definition_level = def_level;
         element->max_repetition_level = rep_level;
         for (auto& child : reverse_view(element->children)) {
-            auto child_path = path.copy();
-            child_path.push_back(child.name);
             to_visit.push_back({
-              .path = std::move(child_path),
+              .path = element->path.copy(),
               .rep_level = rep_level,
               .def_level = def_level,
               .element = &child,
@@ -71,14 +83,13 @@ auto fmt::formatter<serde::parquet::schema_element>::format(
     return fmt::format_to(
       ctx.out(),
       "{{ position: {}, type: {}, repetition_type: {}, max_def_level: {}, "
-      "max_rep_level: {}, name: {}, path: {}, logical_type: {}, field_id: {}, "
+      "max_rep_level: {}, path: {}, logical_type: {}, field_id: {}, "
       "children: [{}]}}",
       e.position,
       e.type.index(),
       static_cast<uint8_t>(e.repetition_type),
       e.max_definition_level(),
       e.max_repetition_level(),
-      e.name,
       fmt::join(e.path, "/"),
       e.logical_type.index(),
       e.field_id.value_or(-1),

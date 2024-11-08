@@ -28,7 +28,7 @@ group_node(ss::sstring name, field_repetition_type rep_type, Args... args) {
     return {
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .children = std::move(children),
     };
 }
@@ -41,7 +41,7 @@ schema_element leaf_node(
     return {
       .type = ptype,
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .logical_type = ltype,
     };
 }

@@ -13,6 +13,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <iterator>
+
 using namespace serde::parquet;
 
 namespace {
@@ -24,7 +27,7 @@ group_node(ss::sstring name, field_repetition_type rep_type, Args... args) {
     return {
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .children = std::move(children),
     };
 }
@@ -37,7 +40,7 @@ schema_element leaf_node(
     return {
       .type = ptype,
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .logical_type = ltype,
     };
 }
@@ -54,12 +57,14 @@ schema_element indexed_group_node(
   const indexed_info& info, field_repetition_type rep_type, Args... args) {
     chunked_vector<schema_element> children;
     (children.push_back(std::move(args)), ...);
+    chunked_vector<ss::sstring> path;
+    path.push_back("schema");
+    std::ranges::copy(info.path, std::back_inserter(path));
     return {
       .position = info.index,
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = info.path.empty() ? "schema" : info.path.back(),
-      .path = info.path.copy(),
+      .path = std::move(path),
       .children = std::move(children),
       .max_definition_level = def_level(info.def_level),
       .max_repetition_level = rep_level(info.rep_level),
@@ -71,12 +76,14 @@ schema_element indexed_leaf_node(
   field_repetition_type rep_type,
   physical_type ptype,
   logical_type ltype = logical_type{}) {
+    chunked_vector<ss::sstring> path;
+    path.push_back("schema");
+    std::ranges::copy(info.path, std::back_inserter(path));
     return {
       .position = info.index,
       .type = ptype,
       .repetition_type = rep_type,
-      .name = info.path.back(),
-      .path = info.path.copy(),
+      .path = std::move(path),
       .logical_type = ltype,
       .max_definition_level = def_level(info.def_level),
       .max_repetition_level = rep_level(info.rep_level),

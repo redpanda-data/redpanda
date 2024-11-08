@@ -57,7 +57,7 @@ void json(json_writer& w, const schema_element& schema, const value& v) {
           w.StartObject();
           using container::zip;
           for (const auto& [child, member] : zip(schema.children, v)) {
-              w.Key(child.name);
+              w.Key(child.name());
               json(w, child, member.field);
           }
           w.EndObject();
@@ -101,7 +101,7 @@ group_node(ss::sstring name, field_repetition_type rep_type, Args... args) {
     return {
       .type = std::monostate{},
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .children = std::move(children),
     };
 }
@@ -114,7 +114,7 @@ schema_element leaf_node(
     return {
       .type = ptype,
       .repetition_type = rep_type,
-      .name = std::move(name),
+      .path = {std::move(name)},
       .logical_type = ltype,
     };
 }
@@ -136,7 +136,7 @@ repeated_value list(Args... field) {
 // NOLINTBEGIN(*magic-number*)
 
 schema_element dremel_paper_schema() {
-    schema_element document_schema = group_node(
+    return group_node(
       "Document",
       field_repetition_type::required,
       leaf_node("DocId", field_repetition_type::required, i64_type{}),
@@ -166,8 +166,6 @@ schema_element dremel_paper_schema() {
           field_repetition_type::optional,
           byte_array_type{},
           string_type{})));
-    index_schema(document_schema);
-    return document_schema;
 }
 
 std::vector<value> dremel_paper_values() {
@@ -224,7 +222,7 @@ std::vector<value> dremel_paper_values() {
 }
 
 schema_element all_types_schema() {
-    schema_element document_schema = group_node(
+    return group_node(
       "Root",
       field_repetition_type::required,
       leaf_node("A", field_repetition_type::required, bool_type{}),
@@ -247,8 +245,6 @@ schema_element all_types_schema() {
         leaf_node("E", field_repetition_type::required, f64_type{}),
         leaf_node("F", field_repetition_type::required, byte_array_type{})));
     // TODO: also add logical types
-    index_schema(document_schema);
-    return document_schema;
 }
 
 value generate_value(const schema_element& root);

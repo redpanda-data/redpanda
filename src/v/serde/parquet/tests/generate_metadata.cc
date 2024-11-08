@@ -73,12 +73,12 @@ iobuf serialize_testcase(size_t test_case) {
         return encode(file_metadata{
           .version = 2,
           .schema = flatten(schema_element{
-            .name = "root",
+            .path = {"root"},
             .children = list(
               schema_element{
                 .type = i32_type{},
                 .repetition_type = field_repetition_type::optional,
-                .name = "foo",
+                .path = {"foo"},
                 .field_id = 1,
                 .logical_type = time_type{
                   .is_adjusted_to_utc = true,
@@ -88,14 +88,14 @@ iobuf serialize_testcase(size_t test_case) {
               schema_element{
                 .type = byte_array_type{.fixed_length = 16},
                 .repetition_type = field_repetition_type::required,
-                .name = "bar",
+                .path = {"bar"},
                 .field_id = 2,
                 .logical_type = uuid_type{},
               },
               schema_element{
                 .type = bool_type{},
                 .repetition_type = field_repetition_type::repeated,
-                .name = "baz",
+                .path = {"baz"},
                 .field_id = 3,
               }
             ),

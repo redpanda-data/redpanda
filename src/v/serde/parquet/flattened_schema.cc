@@ -19,7 +19,7 @@ chunked_vector<flattened_schema> flatten(const schema_element& root) {
         flattened.emplace_back(
           elem.type,
           elem.repetition_type,
-          elem.name,
+          elem.name(),
           elem.children.size(),
           elem.field_id,
           elem.logical_type);

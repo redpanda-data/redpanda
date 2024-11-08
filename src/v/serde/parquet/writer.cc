@@ -20,6 +20,21 @@
 
 namespace serde::parquet {
 
+namespace {
+
+// The path within the schema starts at the root, so we can drop the root's
+// name.
+chunked_vector<ss::sstring> path_in_schema(const schema_element& element) {
+    chunked_vector<ss::sstring> path;
+    auto it = element.path.begin();
+    for (++it; it != element.path.end(); ++it) {
+        path.push_back(*it);
+    }
+    return path;
+}
+
+} // namespace
+
 class writer::impl {
 public:
     impl(options opts, ss::output_stream<char> output)
@@ -105,7 +120,7 @@ private:
               .meta_data = column_meta_data{
                 .type = col.leaf->type,
                 .encodings = {data_header.data_encoding},
-                .path_in_schema = col.leaf->path.copy(),
+                .path_in_schema = path_in_schema(*col.leaf),
                 .codec = compression_codec::uncompressed,
                 .num_values = data_header.num_values,
                 .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,

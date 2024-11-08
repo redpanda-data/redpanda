@@ -263,19 +263,20 @@ struct schema_element {
      */
     field_repetition_type repetition_type;
 
-    /** Name of the field in the schema. */
-    ss::sstring name;
-
     /**
      * The full path of the node within the schema.
      *
-     * The last index is always `name`, except if this is the root.
-     * The root node's path is always empty and is not included in
-     * as a common prefix.
+     * During initial construction of the schema tree, only the name should be
+     * placed here (IE the last segment of the path). During schema indexing
+     * the ancestor path segments will be prepended to this path.
      *
-     * This is filled out during schema indexing.
+     * This is never empty, the root element has only a single segment - the
+     * name of the schema.
      */
     chunked_vector<ss::sstring> path;
+
+    /** Name of the field in the schema. */
+    const ss::sstring& name() const;
 
     /**
      * Nested fields.
