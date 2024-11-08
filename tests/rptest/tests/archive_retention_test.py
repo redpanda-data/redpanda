@@ -182,13 +182,13 @@ class CloudArchiveRetentionTest(RedpandaTest):
         # will be deleted (in case of retention.ms)
         time.sleep(2)
 
-        retention_value = 1000  # 1KiB or 1s
-        self.logger.debug(f"Setting {retention_type} to {retention_value}")
-
         for part_id in range(0, topic.partition_count):
             ntp = NTP(ns='kafka', topic=topic.name, partition=part_id)
             summaries = view.segment_summaries(ntp)
             if retention_type == 'retention.bytes':
+                retention_value = max(
+                    min(summaries, key=lambda s: s.size_bytes).size_bytes - 1,
+                    0)
                 segments_to_delete = len(summaries)
             else:
                 retention_value = 1000  # 1s
@@ -197,6 +197,8 @@ class CloudArchiveRetentionTest(RedpandaTest):
                     s for s in summaries
                     if s.base_timestamp < (current_time - retention_value)
                 ])
+
+        self.logger.debug(f"Setting {retention_type} to {retention_value}")
 
         # Note: altering the topic config will re-init the archiver and
         # reset the metric tracking segment deletion. This is why we assign
