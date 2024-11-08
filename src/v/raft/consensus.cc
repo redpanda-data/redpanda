@@ -742,7 +742,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
 
     u.return_all();
 
-    // wait for responsens in background
+    // wait for responses in background
     ssx::spawn_with_gate(_bg, [futures = std::move(send_futures)]() mutable {
         return ss::when_all_succeed(futures.begin(), futures.end());
     });
@@ -1468,7 +1468,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
          */
         _flushed_offset = lstats.dirty_offset;
         /**
-         * The configuration manager state may be divereged from the log
+         * The configuration manager state may be diverged from the log
          * state, as log is flushed lazily, we have to make sure that
          * the log and configuration manager has exactly the same
          * offsets range
@@ -1774,7 +1774,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     /// Stable leadership optimization
     ///
     /// When current node is a leader (we set _hbeat to max after
-    /// successfull election) or already processed request from active
+    /// successful election) or already processed request from active
     /// leader  do not grant a vote to follower. This will prevent restarted
     /// nodes to disturb all groups leadership
     // Check if we updated the heartbeat timepoint in the last election
@@ -2061,7 +2061,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // as timeouts are asynchronous to append calls and can have stall data
     if (r.batches().is_end_of_stream()) {
         if (adjusted_prev_log_index < last_log_offset) {
-            // do not tuncate on heartbeat just response with false
+            // do not truncate on heartbeat just response with false
             reply.result = reply_result::failure;
             co_return reply;
         }
