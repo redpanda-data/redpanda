@@ -67,10 +67,12 @@ ss::future<transaction::txn_outcome> transaction::set_schema(schema s) {
     co_return co_await apply(std::move(a));
 }
 
-ss::future<transaction::txn_outcome>
-transaction::merge_append(manifest_io& io, chunked_vector<data_file> files) {
+ss::future<transaction::txn_outcome> transaction::merge_append(
+  manifest_io& io,
+  chunked_vector<data_file> files,
+  chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props) {
     auto a = std::make_unique<merge_append_action>(
-      io, table_, std::move(files));
+      io, table_, std::move(files), std::move(snapshot_props));
     co_return co_await apply(std::move(a));
 }
 
