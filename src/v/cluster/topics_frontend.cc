@@ -31,6 +31,7 @@
 #include "cluster/topic_recovery_validator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/leaders_preference.h"
 #include "data_migration_types.h"
 #include "features/feature_table.h"
 #include "fwd.h"
@@ -80,6 +81,13 @@ std::vector<std::string_view> get_enterprise_features(
     }
     if (cfg.is_schema_id_validation_enabled()) {
         features.emplace_back("schema ID validation");
+    }
+    if (const auto& leaders_pref = cfg.cfg.properties.leaders_preference;
+        leaders_pref.has_value()
+        && config::shard_local_cfg()
+             .default_leaders_preference.check_restricted(
+               leaders_pref.value())) {
+        features.emplace_back("leadership pinning");
     }
     return features;
 }

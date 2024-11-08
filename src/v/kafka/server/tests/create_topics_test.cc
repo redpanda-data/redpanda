@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
@@ -463,7 +464,13 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
       with(kafka::topic_property_record_key_schema_id_validation_compat, true),
       with(kafka::topic_property_record_value_schema_id_validation, true),
       with(
-        kafka::topic_property_record_value_schema_id_validation_compat, true)};
+        kafka::topic_property_record_value_schema_id_validation_compat, true),
+      // pin_leadership_props
+      with(
+        kafka::topic_property_leaders_preference,
+        config::leaders_preference{
+          .type = config::leaders_preference::type_t::racks,
+          .racks = {model::rack_id{"A"}}})};
 
     auto client = make_kafka_client().get();
     client.connect().get();
