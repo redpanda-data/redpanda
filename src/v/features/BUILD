@@ -50,6 +50,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/config",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@boost//:range",
     ],

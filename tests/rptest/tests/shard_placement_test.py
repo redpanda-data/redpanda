@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
 from ducktape.utils.util import wait_until
 
 from rptest.services.cluster import cluster
@@ -17,6 +18,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.util import wait_until_result
+from ducktape.mark import matrix
 
 
 class ShardPlacementTest(PreallocNodesTest):
@@ -543,10 +545,17 @@ class ShardPlacementTest(PreallocNodesTest):
         self.stop_client_load()
 
     @cluster(num_nodes=6)
-    def test_node_join(self):
+    @matrix(disable_license=[True, False])
+    def test_node_join(self, disable_license):
         self.redpanda.add_extra_rp_conf({
             "core_balancing_continuous": True,
         })
+        if disable_license:
+            environment = dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1')
+        else:
+            environment = dict()
+        self.redpanda.set_environment(environment)
+
         seed_nodes = self.redpanda.nodes[0:3]
         joiner_nodes = self.redpanda.nodes[3:]
         self.redpanda.start(nodes=seed_nodes)
@@ -579,7 +588,7 @@ class ShardPlacementTest(PreallocNodesTest):
 
             for topic in topics:
                 total_count = sum(
-                    len(replicas) for p, replicas in shard_map[topic].items())
+                    len(replicas) for _, replicas in shard_map[topic].items())
                 if total_count != n_partitions * 3:
                     return False
 
@@ -594,11 +603,16 @@ class ShardPlacementTest(PreallocNodesTest):
 
             return (True, shard_map)
 
-        shard_map_after_balance = wait_until_result(shard_rebalance_finished,
-                                                    timeout_sec=60,
-                                                    backoff_sec=2)
-        self.logger.info("shard rebalance finished")
-        self.print_shard_stats(shard_map_after_balance)
+        if disable_license:
+            time.sleep(60)
+            rebalanced = shard_rebalance_finished()
+            assert not rebalanced, f"continuous core balancing should not be active. Received {rebalanced}"
+        else:
+            shard_map_after_balance = wait_until_result(
+                shard_rebalance_finished, timeout_sec=60, backoff_sec=2)
+            self.logger.info("shard rebalance finished")
+            self.print_shard_stats(shard_map_after_balance)
+
         self.wait_shard_map_consistent_with_cluster_partitions(
             user_topics=topics, admin=admin)
 

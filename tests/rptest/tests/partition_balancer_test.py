@@ -1206,3 +1206,59 @@ class PartitionBalancerTest(PartitionBalancerService):
             "partition counts not balanced"
 
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
+
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @matrix(disable_license=[True, False])
+    def test_partition_autobalancer_sanction(self, disable_license):
+        def partitions_in_node(node_id):
+            return self.node2partition_count().get(node_id, 0)
+
+        if disable_license:
+            environment = dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1')
+        else:
+            environment = dict()
+
+        self.start_redpanda(num_nodes=5, environment=environment)
+
+        self.topic = TopicSpec(partition_count=20)
+        self.client().create_topic(self.topic)
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        with self.NodeStopper(self) as ns:
+            to_kill = random.choice(self.redpanda.nodes)
+
+            kill_id = int(self.redpanda.node_id(to_kill))
+            partitions_in_node_before = partitions_in_node(kill_id)
+            assert partitions_in_node_before != 0, f"Invalid Setup: Initial node partitions is \"{partitions_in_node_before}\""
+
+            ns.make_unavailable(to_kill,
+                                failure_types=[FailureSpec.FAILURE_KILL])
+
+            time.sleep(30)
+
+            admin = Admin(self.redpanda,
+                          retry_codes=[503, 504],
+                          retries_amount=10)
+            status = admin.get_partition_balancer_status(timeout=10)
+
+            partitions_in_node_after = partitions_in_node(kill_id)
+
+            s = status['status']
+            assert s == 'ready', f"Expected status == 'ready' but got '{s}' instead"
+
+            unavailable = status['violations'].get('unavailable_nodes', [])
+            if disable_license:
+                assert len( unavailable) == 0, \
+                    f"Expected no nodes in unavailable. unavailable: {unavailable}"
+                assert partitions_in_node_after == partitions_in_node_before
+            else:
+                assert kill_id in unavailable, f"Expected node with id \"{kill_id}\" in unavailable. unavailable: {unavailable}"
+                assert partitions_in_node_after == 0
+
+            # Restore the system to a fully healthy state before validation:
+            # not strictly necessary but simplifies debugging.
+            ns.make_available()
+            self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
