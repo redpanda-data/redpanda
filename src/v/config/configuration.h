@@ -708,8 +708,8 @@ struct configuration final : public config_store {
     // datalake catalog configuration
     enum_property<datalake_catalog_type> iceberg_catalog_type;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_endpoint;
-    property<std::optional<ss::sstring>> iceberg_rest_catalog_user_id;
-    property<std::optional<ss::sstring>> iceberg_rest_catalog_secret;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_client_id;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_client_secret;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_token;
     property<std::chrono::milliseconds> iceberg_rest_catalog_request_timeout_ms;
 

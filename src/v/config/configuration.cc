@@ -3785,17 +3785,17 @@ configuration::configuration()
         .visibility = visibility::user,
       },
       std::nullopt)
-  , iceberg_rest_catalog_user_id(
+  , iceberg_rest_catalog_client_id(
       *this,
-      "iceberg_rest_catalog_user_id",
+      "iceberg_rest_catalog_client_id",
       "Iceberg REST catalog user ID. This ID is used to query "
       "the catalog API for the OAuth token. Required if catalog type is set to "
       "`rest`",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt)
-  , iceberg_rest_catalog_secret(
+  , iceberg_rest_catalog_client_secret(
       *this,
-      "iceberg_rest_catalog_secret",
+      "iceberg_rest_catalog_client_secret",
       "Secret to authenticate against Iceberg REST catalog. Required if "
       "catalog type is set to `rest`",
       {.needs_restart = needs_restart::yes,
@@ -3807,7 +3807,7 @@ configuration::configuration()
       "iceberg_rest_catalog_token",
       "Token used to access the REST Iceberg catalog. If the token is present, "
       "Redpanda ignores credentials stored in the properties "
-      "iceberg_rest_catalog_user_id and iceberg_rest_catalog_secret",
+      "iceberg_rest_catalog_client_id and iceberg_rest_catalog_client_secret",
       {.needs_restart = needs_restart::yes,
        .visibility = visibility::user,
        .secret = is_secret::yes},
