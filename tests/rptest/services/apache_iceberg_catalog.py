@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import tempfile
 
 from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
@@ -31,7 +32,7 @@ class IcebergRESTCatalog(Service):
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
 
     DB_CATALOG_IMPL = "org.apache.iceberg.jdbc.JdbcCatalog"
-    DB_CATALOG_JDBC_URI = f"jdbc:sqlite:file:/tmp/{uuid.uuid1()}_iceberg_rest_mode=memory"
+    DB_CATALOG_JDBC_URI_PREFIX = f"jdbc:sqlite:file:"
     DB_CATALOG_DB_USER = "user"
     DB_CATALOG_DB_PASS = "password"
 
@@ -108,6 +109,7 @@ class IcebergRESTCatalog(Service):
         # Trino <-> REST server (HadoopCatalog) <-> S3
         # Trino <-> REST server (JDBC Catalog) <-> local sqllite DB.
         self.catalog_url = None
+        self.db_file = None
 
     def compute_warehouse_path(self):
         s3_prefix = "s3"
@@ -133,8 +135,9 @@ class IcebergRESTCatalog(Service):
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.FS_CATALOG_IMPL
             env["HADOOP_CONF_FILE_PATH"] = IcebergRESTCatalog.FS_CATALOG_CONF_PATH
         else:
+            self.db_file = tempfile.NamedTemporaryFile()
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.DB_CATALOG_IMPL
-            env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI
+            env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI_PREFIX + self.db_file.name
             env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DB_CATALOG_DB_USER
             env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DB_CATALOG_DB_PASS
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
