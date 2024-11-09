@@ -85,10 +85,13 @@ std::vector<std::string_view> get_enterprise_features(
 std::vector<std::string_view> get_enterprise_features(
   const cluster::metadata_cache& metadata,
   const cluster::topic_properties_update& update) {
-    const auto& properties = metadata.get_topic_metadata_ref(update.tp_ns)
-                               ->get()
-                               .get_configuration()
-                               .properties;
+    auto tp_metadata = metadata.get_topic_metadata_ref(update.tp_ns);
+    if (!tp_metadata.has_value()) {
+        // Topic does not exist, nothing to validate
+        return {};
+    }
+
+    const auto& properties = tp_metadata->get().get_configuration().properties;
     auto updated_properties = cluster::topic_table::update_topic_properties(
       properties, {update.tp_ns, update.properties});
 

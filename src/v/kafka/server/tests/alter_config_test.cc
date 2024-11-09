@@ -1325,6 +1325,15 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
           props_t{with(p, true), non_enterprise_prop},
           alter_props_t{{remove(non_enterprise_prop.first)}},
           success);
+
+        // Skip creating topic. Expect no sanctions.
+        // Alter operations should fail downstream.
+        test_cases.emplace_back(
+          ssx::sformat("skip_create_{}", p),
+          props_t{},
+          alter_props_t{{set(p, true)}},
+          kafka::error_code::unknown_topic_or_partition,
+          skip_create::yes);
     }
 
     // Specific tests for tiered storage
