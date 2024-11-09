@@ -9,6 +9,8 @@ from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsum
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until
 import time
+from rptest.tests.datalake.utils import supported_storage_types
+from ducktape.mark import matrix
 
 
 class RestCatalogConnectionTest(RedpandaTest):
@@ -81,7 +83,8 @@ class RestCatalogConnectionTest(RedpandaTest):
         return producer
 
     @cluster(num_nodes=5)
-    def test_redpanda_connection_to_rest_catalog(self):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_redpanda_connection_to_rest_catalog(self, cloud_storage_type):
 
         catalog = self.catalog_service.client()
         namespace = "redpanda"

@@ -11,6 +11,8 @@ from typing import Optional
 from rptest.services.cluster import cluster
 from rptest.services.spark_service import SparkService
 from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
+from rptest.tests.datalake.utils import supported_storage_types
+from ducktape.mark import matrix
 
 
 class SparkSmokeTest(IcebergRESTCatalogTest):
@@ -40,7 +42,8 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
         return self.spark.execute(query=query_str)
 
     @cluster(num_nodes=3)
-    def test_spark_smoke(self):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_spark_smoke(self, cloud_storage_type):
         assert self.spark
         client = self.spark.make_client()
         try:
