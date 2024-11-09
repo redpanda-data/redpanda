@@ -12,6 +12,7 @@
 
 #include "bytes/streambuf.h"
 #include "net/connection.h"
+#include "utils/retry_chain_node.h"
 
 #include <boost/property_tree/xml_parser.hpp>
 
@@ -38,8 +39,9 @@ bool has_abort_or_gate_close_exception(const ss::nested_exception& ex) {
            || is_abort_or_gate_close_exception(ex.outer);
 }
 
+template<typename Logger>
 error_outcome handle_client_transport_error(
-  std::exception_ptr current_exception, ss::logger& logger) {
+  std::exception_ptr current_exception, Logger& logger) {
     auto outcome = error_outcome::retry;
 
     try {
@@ -111,6 +113,11 @@ error_outcome handle_client_transport_error(
 
     return outcome;
 }
+
+template error_outcome
+handle_client_transport_error<ss::logger>(std::exception_ptr, ss::logger&);
+template error_outcome handle_client_transport_error<retry_chain_logger>(
+  std::exception_ptr, retry_chain_logger&);
 
 ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
