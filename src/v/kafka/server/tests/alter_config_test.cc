@@ -1252,9 +1252,15 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
     using alter_props_t = absl::flat_hash_map<
       ss::sstring,
       std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>;
-    std::vector<
-      std::tuple<ss::sstring, props_t, alter_props_t, kafka::error_code>>
-      test_cases;
+    using skip_create = ss::bool_class<struct skip_create_tag>;
+    struct test_case {
+        ss::sstring tp_raw;
+        props_t props;
+        alter_props_t alteration;
+        kafka::error_code expected;
+        skip_create skip{skip_create::no};
+    };
+    std::vector<test_case> test_cases;
 
     constexpr auto success = kafka::error_code::none;
     constexpr auto failure = kafka::error_code::invalid_config;
@@ -1356,14 +1362,20 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
     constexpr auto alter_topic = [](std::string_view tp_raw) {
         return model::topic{ssx::sformat("alter_{}", tp_raw)};
     };
-    for (const auto& t : test_cases) {
-        create_topic(inc_alter_topic(std::get<0>(t)), std::get<1>(t), 3);
-        create_topic(alter_topic(std::get<0>(t)), std::get<1>(t), 3);
-    }
 
-    revoke_license();
+    for (const auto& [tp_raw, props, alteration, expected, skip] : test_cases) {
+        BOOST_TEST_CONTEXT(fmt::format("topic: {}", tp_raw)) {
+            BOOST_REQUIRE(
+              skip
+              || !create_topic(inc_alter_topic(tp_raw), props, 3)
+                    .data.errored());
+            BOOST_REQUIRE(
+              skip
+              || !create_topic(alter_topic(tp_raw), props, 3).data.errored());
+        }
 
-    for (const auto& [tp_raw, props, alteration, expected] : test_cases) {
+        revoke_license();
+
         // Test incremental alter config
         auto tp = inc_alter_topic(tp_raw);
         BOOST_TEST_CONTEXT(tp) {
@@ -1372,6 +1384,10 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
             BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
             BOOST_CHECK_EQUAL(resp.data.responses[0].error_code, expected);
         }
+
+        delete_topic(
+          model::topic_namespace{model::kafka_namespace, std::move(tp)})
+          .get();
 
         // Test alter config
         tp = alter_topic(tp_raw);
@@ -1393,5 +1409,10 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
             BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
             BOOST_CHECK_EQUAL(resp.data.responses[0].error_code, expected);
         }
+        delete_topic(
+          model::topic_namespace{model::kafka_namespace, std::move(tp)})
+          .get();
+
+        reinstall_license();
     }
 }
