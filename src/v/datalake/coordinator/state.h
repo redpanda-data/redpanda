@@ -58,7 +58,7 @@ struct partition_state
     //
     // It is expected that files are only added to this list if they form a
     // contiguous offset range.
-    std::deque<translated_offset_range> pending_entries;
+    std::deque<pending_entry> pending_entries;
 
     // The last (inclusive) Kafka offset confirmed to be sent to the Iceberg
     // catalog for a given partition.

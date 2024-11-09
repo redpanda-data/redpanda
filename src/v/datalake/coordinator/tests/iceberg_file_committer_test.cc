@@ -30,7 +30,8 @@ topic_state make_topic_state(std::vector<pairs_t> offset_bounds_by_pid) {
         auto pid = static_cast<model::partition_id>(i);
         partition_state p_state;
         for (auto& f : make_pending_files(offset_bounds_by_pid[i])) {
-            p_state.pending_entries.emplace_back(std::move(f));
+            p_state.pending_entries.emplace_back(pending_entry{
+              .data = std::move(f), .added_pending_at = model::offset{}});
         }
         state.pid_to_pending_files[pid] = std::move(p_state);
     }
@@ -150,7 +151,7 @@ TEST_F(FileCommitterTest, TestFilesGetPartitionKey) {
         });
         for (auto& e : t_state.pid_to_pending_files[model::partition_id{0}]
                          .pending_entries) {
-            e.files.emplace_back(datalake::coordinator::data_file{
+            e.data.files.emplace_back(datalake::coordinator::data_file{
               .row_count = 100,
               .file_size_bytes = 1024,
               .hour = hour,

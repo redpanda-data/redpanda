@@ -70,8 +70,8 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     const auto& tp_state = tp_it->second;
     for (const auto& [pid, p_state] : tp_state.pid_to_pending_files) {
         for (const auto& e : p_state.pending_entries) {
-            pending_commits[pid] = e.last_offset;
-            for (const auto& f : e.files) {
+            pending_commits[pid] = e.data.last_offset;
+            for (const auto& f : e.data.files) {
                 auto pk = std::make_unique<iceberg::struct_value>();
                 pk->fields.emplace_back(iceberg::int_value{f.hour});
                 icb_files.emplace_back(iceberg::data_file{

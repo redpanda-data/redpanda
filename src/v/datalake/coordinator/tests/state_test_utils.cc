@@ -44,8 +44,10 @@ void check_partition(
     for (size_t i = 0; i < offset_bounds.size(); ++i) {
         auto expected_begin = offset_bounds[i].first;
         auto expected_end = offset_bounds[i].second;
-        EXPECT_EQ(prt_state.pending_entries.at(i).start_offset, expected_begin);
-        EXPECT_EQ(prt_state.pending_entries.at(i).last_offset, expected_end);
+        EXPECT_EQ(
+          prt_state.pending_entries.at(i).data.start_offset, expected_begin);
+        EXPECT_EQ(
+          prt_state.pending_entries.at(i).data.last_offset, expected_end);
     }
 }
 

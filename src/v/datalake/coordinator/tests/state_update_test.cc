@@ -38,7 +38,7 @@ void check_add_doesnt_apply(
     // Also explicitly build the bad update and make sure it doesn't apply.
     auto res
       = add_files_update{.tp = tp, .entries = make_pending_files(offset_bounds)}
-          .apply(state);
+          .apply(state, model::offset{});
     EXPECT_TRUE(res.has_error());
 }
 
@@ -70,7 +70,7 @@ TEST(StateUpdateTest, TestAddFile) {
     EXPECT_FALSE(state.partition_state(tp).has_value());
 
     // Now apply the update and check that we have the expected tracked file.
-    auto res = update.value().apply(state);
+    auto res = update.value().apply(state, model::offset{});
     ASSERT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(
       check_partition(state, tp, std::nullopt, {{0, 100}}));
@@ -88,7 +88,7 @@ TEST(StateUpdateTest, TestAddFile) {
     update = add_files_update::build(
       state, tp, make_pending_files({{101, 200}}));
     ASSERT_FALSE(update.has_error());
-    res = update.value().apply(state);
+    res = update.value().apply(state, model::offset{});
     ASSERT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(
       check_partition(state, tp, std::nullopt, {{0, 100}, {101, 200}}));
@@ -112,7 +112,7 @@ TEST(StateUpdateTest, TestAddFileWithCommittedOffset) {
     auto update = add_files_update::build(
       state, tp, make_pending_files({{101, 101}, {102, 200}}));
     ASSERT_FALSE(update.has_error());
-    auto res = update.value().apply(state);
+    auto res = update.value().apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(
       check_partition(state, tp, 100, {{101, 101}, {102, 200}}));
@@ -129,7 +129,7 @@ TEST(StateUpdateTest, TestAddFileWithCommittedOffset) {
     update = add_files_update::build(
       state, tp, make_pending_files({{201, 201}}));
     ASSERT_FALSE(update.has_error());
-    res = update.value().apply(state);
+    res = update.value().apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(
       check_partition(state, tp, 100, {{101, 101}, {102, 200}, {201, 201}}));
@@ -156,7 +156,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
     auto res = add_files_update::build(
                  state, tp, make_pending_files({{101, 200}}))
                  .value()
-                 .apply(state);
+                 .apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 100, {{101, 200}}));
 
@@ -178,7 +178,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
     res = add_files_update::build(
             state, tp, make_pending_files({{201, 205}, {206, 210}, {211, 220}}))
             .value()
-            .apply(state);
+            .apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(
       check_partition(state, tp, 200, {{201, 205}, {206, 210}, {211, 220}}));
