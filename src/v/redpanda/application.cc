@@ -1400,6 +1400,7 @@ void application::wire_up_runtime_services(
           }),
           &_connection_cache,
           &_transform_rpc_service,
+          &_kafka_data_rpc_client,
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
                 .data_transforms_binary_max_size.bind();

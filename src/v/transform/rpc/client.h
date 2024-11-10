@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "kafka/data/rpc/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -50,6 +51,7 @@ public:
       std::unique_ptr<cluster_members_cache>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*,
+      ss::sharded<kafka::data::rpc::client>*,
       config::binding<size_t>);
     client(client&&) = delete;
     client& operator=(client&&) = delete;
@@ -159,11 +161,6 @@ private:
     ss::future<result<model::cluster_transform_report, cluster::errc>>
       generate_remote_report(model::node_id);
 
-    ss::future<cluster::errc> do_produce_once(produce_request);
-    ss::future<produce_reply> do_local_produce(produce_request);
-    ss::future<produce_reply>
-      do_remote_produce(model::node_id, produce_request);
-
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     do_store_wasm_binary_once(
       model::wasm_binary_iobuf, model::timeout_clock::duration timeout);
@@ -261,6 +258,7 @@ private:
     std::unique_ptr<topic_creator> _topic_creator;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
+    ss::sharded<kafka::data::rpc::client>* _kafka_client;
     ss::abort_source _as;
     ss::gate _gate;
     mutex _wasm_binary_max_size_updater_mu{

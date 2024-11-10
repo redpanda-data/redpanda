@@ -34,10 +34,6 @@ public:
       std::unique_ptr<partition_manager> partition_manager,
       std::unique_ptr<reporter>);
 
-    ss::future<ss::chunked_fifo<transformed_topic_data_result>> produce(
-      ss::chunked_fifo<transformed_topic_data> topic_data,
-      model::timeout_clock::duration timeout);
-
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     store_wasm_binary(
       model::wasm_binary_iobuf, model::timeout_clock::duration timeout);
@@ -90,9 +86,6 @@ public:
       ss::sharded<local_service>* service)
       : impl::transform_rpc_service{sc, ssg}
       , _service(service) {}
-
-    ss::future<produce_reply>
-    produce(produce_request, ::rpc::streaming_context&) override;
 
     ss::future<store_wasm_binary_reply> store_wasm_binary(
       store_wasm_binary_request, ::rpc::streaming_context&) override;

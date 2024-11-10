@@ -22,6 +22,7 @@ v_cc_library(
     v::rpc
     v::kafka_partition_proxy
     v::transform_stm
+    v::kd_rpc
     Seastar::seastar
 )
 

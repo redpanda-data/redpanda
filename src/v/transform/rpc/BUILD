@@ -32,6 +32,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/kafka/data:partition_proxy",
+        "//src/v/kafka/data/rpc",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/resource_mgmt:io_priority",

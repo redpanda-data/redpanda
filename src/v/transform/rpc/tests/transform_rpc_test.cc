@@ -16,6 +16,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/rpc/test/deps.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
@@ -70,6 +71,8 @@
 namespace transform::rpc {
 
 namespace {
+
+namespace kdrt = kafka::data::rpc::test;
 
 // A small helper struct to allow copies for easier to read tests and
 // integration with gmock matchers.
@@ -699,6 +702,10 @@ public:
     void SetUp() override {
         _as.start().get();
 
+        _kd = std::make_unique<kdrt::kafka_data_test_fixture>(
+          self_node, &_conn_cache, other_node);
+        _kd->wire_up_and_start();
+
         // remote node start
         _remote_services
           .start_single(
@@ -732,6 +739,7 @@ public:
           ss::default_scheduling_group(),
           ss::default_smp_service_group(),
           &_remote_services));
+        _kd->register_services(rpc_services);
         _server->add_services(std::move(rpc_services));
         _server->start();
 
@@ -789,6 +797,7 @@ public:
           std::make_unique<fake_cluster_members_cache>(),
           &_conn_cache,
           &_local_services,
+          &_kd->client(),
           _max_wasm_binary_size.bind());
         _client->start().get();
     }
@@ -808,6 +817,7 @@ public:
         _remote_fpm = nullptr;
         _remote_fr = nullptr;
         _fplc = nullptr;
+        _kd->reset();
     }
 
     void
@@ -915,6 +925,9 @@ private:
     ss::sharded<rpc::local_service> _remote_services;
     ss::sharded<::rpc::connection_cache> _conn_cache;
     std::unique_ptr<rpc::client> _client;
+
+    std::unique_ptr<kdrt::kafka_data_test_fixture> _kd;
+
     ss::sharded<ss::abort_source> _as;
     config::mock_property<size_t> _max_wasm_binary_size = 1_MiB;
 };
@@ -943,19 +956,6 @@ using ::testing::Field;
 using ::testing::IsEmpty;
 using ::testing::Optional;
 using ::testing::SizeIs;
-
-TEST_P(TransformRpcTest, ClientCanProduce) {
-    auto ntp = make_ntp("foo");
-    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
-    elect_leader(ntp, leader_node());
-    auto batches = record_batches::make();
-    set_errors_to_inject(2);
-    cluster::errc ec = produce(ntp, batches);
-    EXPECT_EQ(ec, cluster::errc::success)
-      << cluster::error_category().message(int(ec));
-    EXPECT_THAT(non_leader_batches(ntp), IsEmpty());
-    EXPECT_EQ(leader_batches(ntp), batches);
-}
 
 auto MaxBatchSizeIs(size_t size) {
     return Field(
