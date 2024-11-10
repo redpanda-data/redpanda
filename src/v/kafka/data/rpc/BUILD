@@ -20,6 +20,7 @@ redpanda_cc_library(
     hdrs = [
         "client.h",
         "deps.h",
+        "fwd.h",
         "serde.h",
         "service.h",
     ],
