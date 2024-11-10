@@ -16,6 +16,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/data/rpc/client.h"
+#include "kafka/data/rpc/deps.h"
 #include "logger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -182,9 +183,9 @@ std::ostream& operator<<(std::ostream& os, T result) {
 
 client::client(
   model::node_id self,
-  std::unique_ptr<partition_leader_cache> l,
-  std::unique_ptr<topic_metadata_cache> md_cache,
-  std::unique_ptr<topic_creator> t,
+  std::unique_ptr<kafka::data::rpc::partition_leader_cache> l,
+  std::unique_ptr<kafka::data::rpc::topic_metadata_cache> md_cache,
+  std::unique_ptr<kafka::data::rpc::topic_creator> t,
   std::unique_ptr<cluster_members_cache> m,
   ss::sharded<::rpc::connection_cache>* c,
   ss::sharded<local_service>* s,

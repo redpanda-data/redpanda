@@ -92,7 +92,7 @@ model::record_header make_header(ss::sstring k, ss::sstring v) {
 } // namespace
 
 local_service::local_service(
-  std::unique_ptr<topic_metadata_cache> metadata_cache,
+  std::unique_ptr<kafka::data::rpc::topic_metadata_cache> metadata_cache,
   std::unique_ptr<partition_manager> partition_manager,
   std::unique_ptr<reporter> reporter)
   : _metadata_cache(std::move(metadata_cache))

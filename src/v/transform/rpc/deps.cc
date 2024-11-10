@@ -39,38 +39,6 @@ namespace transform::rpc {
 
 namespace {
 
-class partition_leader_cache_impl final : public partition_leader_cache {
-public:
-    explicit partition_leader_cache_impl(
-      ss::sharded<cluster::partition_leaders_table>* table)
-      : _table(table) {}
-
-    std::optional<model::node_id> get_leader_node(
-      model::topic_namespace_view tp_ns, model::partition_id p) const final {
-        return _table->local().get_leader(tp_ns, p);
-    }
-
-private:
-    ss::sharded<cluster::partition_leaders_table>* _table;
-};
-class topic_metadata_cache_impl final : public topic_metadata_cache {
-public:
-    explicit topic_metadata_cache_impl(
-      ss::sharded<cluster::metadata_cache>* cache)
-      : _cache(cache) {}
-
-    std::optional<cluster::topic_configuration>
-    find_topic_cfg(model::topic_namespace_view tp_ns) const final {
-        return _cache->local().get_topic_cfg(tp_ns);
-    }
-
-    uint32_t get_default_batch_max_bytes() const final {
-        return _cache->local().get_default_batch_max_bytes();
-    };
-
-private:
-    ss::sharded<cluster::metadata_cache>* _cache;
-};
 class partition_manager_impl final : public partition_manager {
 public:
     partition_manager_impl(
@@ -312,58 +280,6 @@ private:
     ss::smp_service_group _smp_group;
 };
 
-class topic_creator_impl : public topic_creator {
-public:
-    explicit topic_creator_impl(cluster::controller* controller)
-      : _controller(controller) {}
-
-    ss::future<cluster::errc> create_topic(
-      model::topic_namespace_view tp_ns,
-      int32_t partition_count,
-      cluster::topic_properties properties) final {
-        cluster::topic_configuration topic_cfg(
-          tp_ns.ns,
-          tp_ns.tp,
-          partition_count,
-          _controller->internal_topic_replication());
-        topic_cfg.properties = properties;
-
-        try {
-            auto res = co_await _controller->get_topics_frontend()
-                         .local()
-                         .autocreate_topics(
-                           {std::move(topic_cfg)},
-                           config::shard_local_cfg().create_topic_timeout_ms());
-            vassert(res.size() == 1, "expected a single result");
-            co_return res[0].ec;
-        } catch (const std::exception& ex) {
-            vlog(log.warn, "unable to create topic {}: {}", tp_ns, ex);
-            co_return cluster::errc::topic_operation_error;
-        }
-    }
-
-    ss::future<cluster::errc>
-    update_topic(cluster::topic_properties_update update) final {
-        try {
-            auto res
-              = co_await _controller->get_topics_frontend()
-                  .local()
-                  .update_topic_properties(
-                    {update},
-                    ss::lowres_clock::now()
-                      + config::shard_local_cfg().alter_topic_cfg_timeout_ms());
-            vassert(res.size() == 1, "expected a single result");
-            co_return res[0].ec;
-        } catch (const std::exception& ex) {
-            vlog(log.warn, "unable to update topic {}: {}", update.tp_ns, ex);
-            co_return cluster::errc::topic_operation_error;
-        }
-    }
-
-private:
-    cluster::controller* _controller;
-};
-
 class cluster_members_cache_impl : public cluster_members_cache {
 public:
     explicit cluster_members_cache_impl(
@@ -380,23 +296,6 @@ private:
 
 } // namespace
 
-std::unique_ptr<partition_leader_cache>
-transform::rpc::partition_leader_cache::make_default(
-  ss::sharded<cluster::partition_leaders_table>* table) {
-    return std::make_unique<partition_leader_cache_impl>(table);
-}
-
-std::optional<model::node_id>
-partition_leader_cache::get_leader_node(const model::ntp& ntp) const {
-    return get_leader_node(model::topic_namespace_view(ntp), ntp.tp.partition);
-}
-
-std::unique_ptr<topic_metadata_cache>
-transform::rpc::topic_metadata_cache::make_default(
-  ss::sharded<cluster::metadata_cache>* cache) {
-    return std::make_unique<topic_metadata_cache_impl>(cache);
-}
-
 std::unique_ptr<partition_manager>
 transform::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
@@ -408,11 +307,6 @@ transform::rpc::partition_manager::make_default(
 std::optional<ss::shard_id>
 partition_manager::shard_owner(const model::ktp& ktp) {
     return shard_owner(ktp.to_ntp());
-}
-
-std::unique_ptr<topic_creator>
-topic_creator::make_default(cluster::controller* controller) {
-    return std::make_unique<topic_creator_impl>(controller);
 }
 
 std::unique_ptr<cluster_members_cache>

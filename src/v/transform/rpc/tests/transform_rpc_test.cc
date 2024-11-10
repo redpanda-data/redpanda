@@ -16,6 +16,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/rpc/client.h"
+#include "kafka/data/rpc/service.h"
 #include "kafka/data/rpc/test/deps.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -74,204 +76,13 @@ namespace {
 
 namespace kdrt = kafka::data::rpc::test;
 
-// A small helper struct to allow copies for easier to read tests and
-// integration with gmock matchers.
-struct record_batches {
-    static record_batches make() {
-        record_batches batches;
-        batches.underlying.emplace_back(
-          model::test::make_random_batch({.count = 1}));
-        return batches;
-    }
-
-    record_batches() = default;
-    explicit record_batches(ss::chunked_fifo<model::record_batch> underlying)
-      : underlying(std::move(underlying)) {}
-    record_batches(record_batches&&) = default;
-    record_batches& operator=(record_batches&&) = default;
-    record_batches(const record_batches& b)
-      : underlying(copy(b.underlying)) {}
-    record_batches& operator=(const record_batches& b) {
-        if (this != &b) {
-            underlying = copy(b.underlying);
-        }
-        return *this;
-    }
-    ~record_batches() = default;
-
-    bool operator==(const record_batches& other) const {
-        return std::equal(
-          underlying.begin(),
-          underlying.end(),
-          other.underlying.begin(),
-          other.underlying.end());
-    }
-
-    friend std::ostream& operator<<(std::ostream& os, const record_batches& b) {
-        return os << ss::format("{}", b.underlying);
-    }
-
-    bool empty() const { return underlying.empty(); }
-    size_t size() const { return underlying.size(); }
-    auto begin() const { return underlying.begin(); }
-    auto end() const { return underlying.end(); }
-
-    ss::chunked_fifo<model::record_batch> underlying;
-
-private:
-    ss::chunked_fifo<model::record_batch>
-    copy(const ss::chunked_fifo<model::record_batch>& batches) {
-        ss::chunked_fifo<model::record_batch> copied;
-        for (const auto& b : batches) {
-            copied.push_back(b.copy());
-        }
-        return copied;
-    }
-};
-
-class fake_partition_leader_cache : public partition_leader_cache {
-public:
-    std::optional<model::node_id> get_leader_node(
-      model::topic_namespace_view tp_ns, model::partition_id p) const final {
-        auto ntp = model::ntp(tp_ns.ns, tp_ns.tp, p);
-        auto it = _leader_map.find(ntp);
-        if (it == _leader_map.end()) {
-            return std::nullopt;
-        }
-        return it->second;
-    }
-
-    void set_leader_node(const model::ntp& ntp, model::node_id nid) {
-        _leader_map.insert_or_assign(ntp, nid);
-        vassert(_leader_map.find(ntp) != _leader_map.end(), "what??");
-    }
-
-private:
-    absl::flat_hash_map<model::ntp, model::node_id> _leader_map;
-};
-
-class fake_topic_metadata_cache : public topic_metadata_cache {
-public:
-    std::optional<cluster::topic_configuration>
-    find_topic_cfg(model::topic_namespace_view tp_ns) const final {
-        auto it = _topic_cfgs.find(model::topic_namespace(tp_ns));
-        if (it == _topic_cfgs.end()) {
-            return std::nullopt;
-        }
-        return it->second;
-    }
-
-    void set_topic_cfg(cluster::topic_configuration cfg) {
-        auto tp_ns = cfg.tp_ns;
-        _topic_cfgs.insert_or_assign(tp_ns, std::move(cfg));
-    }
-
-    void update_topic_cfg(const cluster::topic_properties_update& update) {
-        auto it = _topic_cfgs.find(update.tp_ns);
-        if (it == _topic_cfgs.end()) {
-            throw std::runtime_error(
-              ss::format("unknown topic: {}", update.tp_ns));
-        }
-        auto& config = it->second;
-        // NOTE: We just support batch_max_bytes because that's all we use in
-        // tests.
-        const auto& prop_update = update.properties.batch_max_bytes;
-        switch (prop_update.op) {
-        case cluster::none:
-            return;
-        case cluster::set:
-            config.properties.batch_max_bytes
-              = update.properties.batch_max_bytes.value;
-            break;
-        case cluster::remove:
-            config.properties.batch_max_bytes.reset();
-            break;
-        }
-    }
-
-    uint32_t get_default_batch_max_bytes() const final { return 1_MiB; };
-
-private:
-    absl::flat_hash_map<model::topic_namespace, cluster::topic_configuration>
-      _topic_cfgs;
-};
-
-class delegating_fake_topic_metadata_cache : public topic_metadata_cache {
-public:
-    explicit delegating_fake_topic_metadata_cache(
-      fake_topic_metadata_cache* cache)
-      : _delegator(cache) {}
-
-    std::optional<cluster::topic_configuration>
-    find_topic_cfg(model::topic_namespace_view tp_ns) const final {
-        return _delegator->find_topic_cfg(tp_ns);
-    }
-
-    uint32_t get_default_batch_max_bytes() const final {
-        return _delegator->get_default_batch_max_bytes();
-    };
-
-private:
-    fake_topic_metadata_cache* _delegator;
-};
-
-struct produced_batch {
-    model::ntp ntp;
-    model::record_batch batch;
-};
-
-class fake_topic_creator : public topic_creator {
-public:
-    fake_topic_creator(
-      ss::noncopyable_function<void(const cluster::topic_configuration&)>
-        new_topic_cb,
-      ss::noncopyable_function<void(const cluster::topic_properties_update&)>
-        update_topic_cb,
-      ss::noncopyable_function<void(const model::ntp&, model::node_id)>
-        new_ntp_cb)
-      : _new_topic_cb(std::move(new_topic_cb))
-      , _update_topic_cb(std::move(update_topic_cb))
-      , _new_ntp_cb(std::move(new_ntp_cb)) {}
-
-    ss::future<cluster::errc> create_topic(
-      model::topic_namespace_view tp_ns,
-      int32_t partition_count,
-      cluster::topic_properties properties) final {
-        cluster::topic_configuration tcfg{
-          tp_ns.ns,
-          tp_ns.tp,
-          partition_count,
-          /*replication_factor=*/1,
-        };
-        tcfg.properties = properties;
-        _new_topic_cb(tcfg);
-        for (int32_t i = 0; i < partition_count; ++i) {
-            _new_ntp_cb(
-              model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id(i)),
-              _default_new_topic_leader);
-        }
-        co_return cluster::errc::success;
-    }
-
-    ss::future<cluster::errc>
-    update_topic(cluster::topic_properties_update update) override {
-        _update_topic_cb(update);
-        co_return cluster::errc::success;
-    }
-
-    void set_default_new_topic_leader(model::node_id node_id) {
-        _default_new_topic_leader = node_id;
-    }
-
-private:
-    model::node_id _default_new_topic_leader;
-    ss::noncopyable_function<void(const cluster::topic_configuration&)>
-      _new_topic_cb;
-    ss::noncopyable_function<void(const cluster::topic_properties_update&)>
-      _update_topic_cb;
-    ss::noncopyable_function<void(const model::ntp&, model::node_id)>
-      _new_ntp_cb;
-};
+using fake_partition_leader_cache = kdrt::fake_partition_leader_cache;
+using fake_topic_metadata_cache = kdrt::fake_topic_metadata_cache;
+using delegating_fake_topic_metadata_cache
+  = kdrt::delegating_fake_topic_metadata_cache;
+using fake_topic_creator = kdrt::fake_topic_creator;
+using record_batches = kdrt::record_batches;
+using produced_batch = kdrt::produced_batch;
 
 class fake_reporter : public reporter {
 public:

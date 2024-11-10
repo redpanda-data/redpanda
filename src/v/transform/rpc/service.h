@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include "kafka/data/rpc/deps.h"
+#include "kafka/data/rpc/fwd.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/transform.h"
@@ -30,7 +32,7 @@ namespace transform::rpc {
 class local_service {
 public:
     local_service(
-      std::unique_ptr<topic_metadata_cache> metadata_cache,
+      std::unique_ptr<kafka::data::rpc::topic_metadata_cache> metadata_cache,
       std::unique_ptr<partition_manager> partition_manager,
       std::unique_ptr<reporter>);
 
@@ -70,7 +72,7 @@ private:
       consume_wasm_binary_reader(
         model::record_batch_reader, model::timeout_clock::duration);
 
-    std::unique_ptr<topic_metadata_cache> _metadata_cache;
+    std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;
     std::unique_ptr<reporter> _reporter;
 };
