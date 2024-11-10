@@ -16,6 +16,7 @@
 namespace iceberg {
 
 static constexpr auto s3_scheme = "s3";
+static constexpr auto abs_scheme = "abs";
 
 /**
  * Type representing a canonical object store URI. This is an absolute path to
