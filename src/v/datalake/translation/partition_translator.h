@@ -95,7 +95,9 @@ private:
     ss::future<model::record_batch_reader> make_reader();
     ss::future<std::optional<coordinator::translated_offset_range>>
     do_translation_for_range(
-      retry_chain_node& parent, model::record_batch_reader);
+      retry_chain_node& parent,
+      model::record_batch_reader,
+      kafka::offset begin_offset);
 
     using checkpoint_result = ss::bool_class<struct checkpoint_result>;
     ss::future<checkpoint_result> checkpoint_translated_data(
