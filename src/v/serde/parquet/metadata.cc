@@ -175,7 +175,8 @@ iobuf encode(const flattened_schema& schema, bool is_root) {
         decimal = 5,
         date = 6,
         time = 7,
-        timestamp = 9,
+        timestamp = 8,
+        // nine is reserved for interval
         integer = 10,
         null = 11,
         json = 12,
