@@ -53,6 +53,7 @@ redpanda_cc_library(
         "//src/v/utils:functional",
         "//src/v/utils:log_hist",
         "//src/v/utils:named_type",
+        "//src/v/utils:retry_chain_node",
         "//src/v/utils:stop_signal",
         "@boost//:beast",
         "@boost//:lexical_cast",
