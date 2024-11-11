@@ -6,6 +6,8 @@ package(default_visibility = [
     "//src/v/cloud_topics/core/tests:__pkg__",
     "//src/v/cloud_topics/evictor:__pkg__",
     "//src/v/cloud_topics/evictor/tests:__pkg__",
+    "//src/v/cloud_topics/request_balancer:__pkg__",
+    "//src/v/cloud_topics/request_balancer/tests:__pkg__",
     "//src/v/cloud_topics/throttler:__pkg__",
     "//src/v/cloud_topics/throttler/tests:__pkg__",
 ])
