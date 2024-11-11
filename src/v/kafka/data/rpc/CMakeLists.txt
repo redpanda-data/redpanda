@@ -25,4 +25,4 @@ v_cc_library(
 )
 
 # TODO(oren):
-# add_subdirectory(tests)
+add_subdirectory(test)
