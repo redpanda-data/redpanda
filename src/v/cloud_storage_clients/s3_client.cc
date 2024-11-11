@@ -472,11 +472,12 @@ ss::future<ResultT> parse_head_error_response(
             msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         }
         boost::string_view rid;
-        if (hdr.find(aws_header_names::x_amz_request_id) != hdr.end()) {
-            rid = hdr.at(aws_header_names::x_amz_request_id);
-        } else if (
-          hdr.find(aws_header_names::x_guploader_uploadid) != hdr.end()) {
-            rid = hdr.at(aws_header_names::x_guploader_uploadid);
+        if (auto it = hdr.find(aws_header_names::x_amz_request_id);
+            it != hdr.end()) {
+            rid = it->value();
+        } else if (auto it = hdr.find(aws_header_names::x_guploader_uploadid);
+                   it != hdr.end()) {
+            rid = it->value();
         }
         rest_error_response err(
           code, msg, ss::sstring(rid.data(), rid.size()), key().native());
