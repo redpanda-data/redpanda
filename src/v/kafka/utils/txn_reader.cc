@@ -195,6 +195,10 @@ bool read_committed_reader::is_end_of_stream() const {
     return _underlying->is_end_of_stream();
 }
 
+ss::future<> read_committed_reader::finally() noexcept {
+    return _underlying->finally();
+}
+
 ss::future<model::record_batch_reader::storage_t>
 read_committed_reader::do_load_slice(
   model::timeout_clock::time_point deadline) {

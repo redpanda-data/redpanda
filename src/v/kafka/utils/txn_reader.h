@@ -73,6 +73,8 @@ public:
 
     void print(std::ostream& os) override;
 
+    ss::future<> finally() noexcept final;
+
 private:
     std::unique_ptr<aborted_transaction_tracker> _tracker;
     std::unique_ptr<model::record_batch_reader::impl> _underlying;
