@@ -210,6 +210,7 @@ use_repo(
     "com_github_santhosh_tekuri_jsonschema_v6",
     "com_github_schollz_progressbar_v3",
     "com_github_segmentio_encoding",
+    "com_github_sergi_go_diff",
     "com_github_spf13_afero",
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",

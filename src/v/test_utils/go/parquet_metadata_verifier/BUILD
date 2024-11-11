@@ -16,5 +16,6 @@ go_library(
         "@com_github_parquet_go_parquet_go//deprecated",
         "@com_github_parquet_go_parquet_go//format",
         "@com_github_segmentio_encoding//thrift",
+        "@com_github_sergi_go_diff//diffmatchpatch",
     ],
 )
