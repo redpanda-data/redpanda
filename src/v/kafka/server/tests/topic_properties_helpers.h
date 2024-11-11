@@ -20,6 +20,14 @@ public:
           .get();
     }
 
+    void reinstall_license() {
+        app.controller->get_feature_table()
+          .invoke_on_all([](auto& ft) {
+              return ft.set_builtin_trial_license(model::timestamp::now());
+          })
+          .get();
+    }
+
     void update_cluster_config(std::string_view k, std::string_view v) {
         app.controller->get_config_frontend()
           .local()

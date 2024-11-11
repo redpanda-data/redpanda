@@ -47,6 +47,7 @@
 #include "rpc/types.h"
 #include "ssx/future-util.h"
 #include "topic_configuration.h"
+#include "topic_properties.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -81,6 +82,31 @@ std::vector<std::string_view> get_enterprise_features(
     if (cfg.is_schema_id_validation_enabled()) {
         features.emplace_back("schema ID validation");
     }
+    return features;
+}
+
+std::vector<std::string_view> get_enterprise_features(
+  const cluster::metadata_cache& metadata,
+  const cluster::topic_properties_update& update) {
+    auto tp_metadata = metadata.get_topic_metadata_ref(update.tp_ns);
+    if (!tp_metadata.has_value()) {
+        // Topic does not exist, nothing to validate
+        return {};
+    }
+
+    const auto& properties = tp_metadata->get().get_configuration().properties;
+    auto updated_properties = cluster::topic_table::update_topic_properties(
+      properties, {update.tp_ns, update.properties});
+
+    std::vector<std::string_view> features;
+    const auto si_disabled = model::shadow_indexing_mode::disabled;
+    if (
+      (properties.shadow_indexing.value_or(si_disabled)
+       < updated_properties.shadow_indexing.value_or(si_disabled))
+      || (properties.remote_delete < updated_properties.remote_delete)) {
+        features.emplace_back("tiered storage");
+    }
+
     return features;
 }
 
@@ -273,6 +299,19 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
 
         auto results = co_await ssx::parallel_transform(
           std::move(updates), [this, timeout](topic_properties_update update) {
+              if (
+                _features.local().should_sanction()
+                && is_user_topic(update.tp_ns)) {
+                  if (auto f = get_enterprise_features(_metadata_cache, update);
+                      !f.empty()) {
+                      vlog(
+                        clusterlog.warn,
+                        "An enterprise license is required to enable {}.",
+                        f);
+                      return ss::make_ready_future<topic_result>(
+                        topic_result(update.tp_ns, errc::topic_invalid_config));
+                  }
+              }
               return do_update_topic_properties(std::move(update), timeout);
           });
 
