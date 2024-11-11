@@ -1585,8 +1585,8 @@ ss::future<response_ptr> create_acls_handler::handle(
                 creatable_acl_result{.error_code = ec});
               if (results[i] == cluster::errc::feature_disabled) {
                   response.data.results.back().error_message.emplace(
-                    "An enterprise license is required to create "
-                    "Role-bound ACLs");
+                    "An enterprise license is required to create an ACL with a "
+                    "role binding");
               }
           },
           [&response](creatable_acl_result r) {
