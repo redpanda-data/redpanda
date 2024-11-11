@@ -676,8 +676,7 @@ archival_metadata_stm::has_snapshot(const storage::ntp_config& ntp_cfg) {
       std::filesystem::path(ntp_cfg.work_directory()),
       archival_stm_snapshot,
       raft_priority());
-    co_return co_await ss::file_exists(
-      tmp_snapshot_mgr.snapshot_path().string());
+    co_return co_await tmp_snapshot_mgr.snapshot_exists();
 }
 
 archival_metadata_stm::archival_metadata_stm(
