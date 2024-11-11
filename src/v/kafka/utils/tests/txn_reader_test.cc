@@ -20,6 +20,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
+#include "test_utils/test.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -365,6 +366,60 @@ TEST_F(TransactionReaderTest, OutsideRange) {
             std::move(tracker), make_reader({data, abort})));
         EXPECT_THAT(actual, ElementsAre(data));
     }
+}
+
+TEST_F_CORO(seastar_test, UncleanDestroy) {
+    // A simple reader that ensures resources are cleaned up before
+    // destroying
+    class asserting_reader final : public model::record_batch_reader::impl {
+    public:
+        asserting_reader()
+          : _resources_initalized(true) {}
+
+        ~asserting_reader() {
+            vassert(
+              !_resources_initalized,
+              "Closing reader while resources are still initialized");
+        }
+
+        bool is_end_of_stream() const final { return false; };
+
+        ss::future<model::record_batch_reader::storage_t>
+        do_load_slice(model::timeout_clock::time_point) final {
+            auto result = model::record_batch_reader::data_t{};
+            result.push_back(
+              model::test::make_random_batch(model::test::record_batch_spec{}));
+            return ss::make_ready_future<model::record_batch_reader::storage_t>(
+              std::move(result));
+        }
+
+        void print(std::ostream&) final {}
+
+        ss::future<> finally() noexcept final {
+            _resources_initalized = false;
+            return ss::now();
+        }
+
+    private:
+        bool _resources_initalized = false;
+    };
+
+    struct throwing_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch) {
+            return ss::make_exception_future<ss::stop_iteration>(
+              std::runtime_error("Injected failure"));
+        }
+        void end_of_stream() {}
+    };
+
+    auto reader = model::make_record_batch_reader<read_committed_reader>(
+      nullptr,
+      model::record_batch_reader(std::make_unique<asserting_reader>()));
+    using namespace std::chrono_literals;
+    EXPECT_THROW(
+      co_await std::move(reader).consume(
+        throwing_consumer(), model::timeout_clock::now() + 5s),
+      std::runtime_error);
 }
 
 class RandomizedTransactionReaderTest
