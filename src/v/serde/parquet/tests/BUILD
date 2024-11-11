@@ -101,6 +101,8 @@ write_file(
                 "$(execpath :metadata_test_case_{}_output.thrift)".format(test_case),
                 "--test-case",
                 "{}".format(test_case),
+                # Remove warnings about cgroups when running in Bazel sandbox
+                "--logger-log-level=seastar=error",
             ],
             tool = ":generate_metadata_binary",
         ),
@@ -133,6 +135,8 @@ write_file(
                 "$(execpath :parquet_test_case_{}_output.json)".format(test_case),
                 "--test-case",
                 "{}".format(test_case),
+                # Remove warnings about cgroups when running in Bazel sandbox
+                "--logger-log-level=seastar=error",
             ],
             tool = ":generate_file_binary",
         ),
