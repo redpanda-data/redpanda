@@ -234,7 +234,9 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
     if (should_sanction) {
         err = errc::feature_disabled;
         vlog(
-          clusterlog.warn, "Found Role-ACL bindings in request, ignoring...");
+          clusterlog.warn,
+          "An enterprise license is required to create an ACL with a role "
+          "binding");
     } else {
         try {
             create_acls_cmd_data data;
