@@ -268,7 +268,7 @@ private:
 using status_map = absl::flat_hash_map<std::string, lifecycle_status>;
 
 template<typename... Rest>
-void make_status_map(status_map& output)
+void make_status_map(status_map&)
 requires(sizeof...(Rest) == 0)
 {}
 
