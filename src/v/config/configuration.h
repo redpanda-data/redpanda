@@ -717,6 +717,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> iceberg_rest_catalog_crl_file;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_prefix;
 
+    property<bool> iceberg_delete;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
