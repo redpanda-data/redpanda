@@ -272,3 +272,21 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "datalake_parquet_tests",
+    timeout = "short",
+    srcs = [
+        "datalake_parquet_tests.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/datalake:schema_parquet",
+        "//src/v/iceberg:datatypes",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:random",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
