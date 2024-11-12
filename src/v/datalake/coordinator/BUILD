@@ -160,6 +160,7 @@ redpanda_cc_library(
         "iceberg_file_committer.h",
     ],
     implementation_deps = [
+        ":commit_offset_metadata",
         ":state",
         "//src/v/base",
         "//src/v/datalake:logger",
