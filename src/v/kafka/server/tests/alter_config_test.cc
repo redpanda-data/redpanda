@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/config_frontend.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/alter_configs.h"
@@ -20,6 +19,7 @@
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
+#include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/tests/topic_properties_helpers.h"
 #include "model/fundamental.h"
@@ -1287,6 +1287,10 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
     const auto enterprise_props = {
       kafka::topic_property_remote_read,
       kafka::topic_property_remote_write,
+      kafka::topic_property_record_key_schema_id_validation,
+      kafka::topic_property_record_key_schema_id_validation_compat,
+      kafka::topic_property_record_value_schema_id_validation,
+      kafka::topic_property_record_value_schema_id_validation_compat,
     };
 
     const auto non_enterprise_prop = props_t::value_type{
@@ -1363,6 +1367,81 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
           alter_props_t{{set(kafka::topic_property_remote_delete, true)}},
           failure);
     }
+
+    // Specific tests for schema id validation subject name strategy
+    {
+        using sns = pandaproxy::schema_registry::subject_name_strategy;
+
+        const auto full_validation = props_t{
+          with(kafka::topic_property_record_key_schema_id_validation, true),
+          with(kafka::topic_property_record_value_schema_id_validation, true),
+        };
+        test_cases.emplace_back(
+          "set_key_sns",
+          full_validation,
+          alter_props_t{
+            {set(
+              kafka::topic_property_record_key_subject_name_strategy,
+              sns::topic_name)},
+          },
+          failure);
+        test_cases.emplace_back(
+          "set_value_sns",
+          full_validation,
+          alter_props_t{
+            {set(
+              kafka::topic_property_record_value_subject_name_strategy,
+              sns::topic_name)},
+          },
+          failure);
+
+        const auto validation_with_strat = props_t{
+          with(kafka::topic_property_record_key_schema_id_validation, true),
+          with(kafka::topic_property_record_value_schema_id_validation, true),
+          with(
+            kafka::topic_property_record_key_subject_name_strategy,
+            sns::topic_name),
+          with(
+            kafka::topic_property_record_value_subject_name_strategy,
+            sns::topic_name),
+        };
+        test_cases.emplace_back(
+          "change_key_sns",
+          validation_with_strat,
+          alter_props_t{
+            {set(
+              kafka::topic_property_record_key_subject_name_strategy,
+              sns::record_name)},
+          },
+          failure);
+        test_cases.emplace_back(
+          "change_value_sns",
+          validation_with_strat,
+          alter_props_t{
+            {set(
+              kafka::topic_property_record_value_subject_name_strategy,
+              sns::record_name)},
+          },
+          failure);
+        test_cases.emplace_back(
+          "remove_key_sns",
+          validation_with_strat,
+          alter_props_t{
+            {remove(kafka::topic_property_record_key_subject_name_strategy)}},
+          success);
+
+        test_cases.emplace_back(
+          "remove_value_sns",
+          validation_with_strat,
+          alter_props_t{
+            {remove(kafka::topic_property_record_value_subject_name_strategy)}},
+          success);
+    }
+
+    // NOTE(oren): w/o schema validation enabled at the cluster level, related
+    // properties will be ignored on the topic create path. stick to COMPAT here
+    // because it's a superset of REDPANDA.
+    update_cluster_config("enable_schema_id_validation", "compat");
 
     // Create the topics for the tests
     constexpr auto inc_alter_topic = [](std::string_view tp_raw) {

@@ -9,6 +9,7 @@
 
 #include "cluster/topics_frontend.h"
 
+#include "base/type_traits.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
@@ -105,6 +106,48 @@ std::vector<std::string_view> get_enterprise_features(
        < updated_properties.shadow_indexing.value_or(si_disabled))
       || (properties.remote_delete < updated_properties.remote_delete)) {
         features.emplace_back("tiered storage");
+    }
+
+    constexpr auto schema_id_validation_enabled =
+      [](const cluster::topic_properties& pp) -> bool {
+        return pp.record_key_schema_id_validation.value_or(false)
+               || pp.record_key_schema_id_validation_compat.value_or(false)
+               || pp.record_value_schema_id_validation.value_or(false)
+               || pp.record_value_schema_id_validation_compat.value_or(false);
+    };
+
+    constexpr auto unset_or_unchanged =
+      [](
+        const reflection::is_std_optional auto& curr,
+        const reflection::is_std_optional auto& nxt) -> bool {
+        // allow anything -> null
+        // allow non-null -> same non-null
+        return !nxt.has_value() || curr == nxt;
+    };
+
+    auto sns_modified = [&unset_or_unchanged,
+                         &pp = properties,
+                         &up = updated_properties]() -> bool {
+        return !(
+          unset_or_unchanged(
+            pp.record_key_subject_name_strategy,
+            up.record_key_subject_name_strategy)
+          && unset_or_unchanged(
+            pp.record_key_subject_name_strategy_compat,
+            up.record_key_subject_name_strategy_compat)
+          && unset_or_unchanged(
+            pp.record_value_subject_name_strategy,
+            up.record_value_subject_name_strategy)
+          && unset_or_unchanged(
+            pp.record_value_subject_name_strategy_compat,
+            up.record_value_subject_name_strategy_compat));
+    };
+
+    if (
+      (schema_id_validation_enabled(properties)
+       < schema_id_validation_enabled(updated_properties))
+      || (schema_id_validation_enabled(updated_properties) && sns_modified())) {
+        features.emplace_back("schema id validation");
     }
 
     return features;
