@@ -1600,6 +1600,17 @@ ss::future<topic_result> topics_frontend::do_create_partition(
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
     }
 
+    if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
+        if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
+            vlog(
+              clusterlog.warn,
+              "An enterprise license is required to create partitions with {}.",
+              f);
+            co_return make_error_result(
+              p_cfg.tp_ns, errc::topic_invalid_config);
+        }
+    }
+
     std::optional<node2count_t> existing_replica_counts;
     if (_partition_autobalancing_topic_aware()) {
         auto md_ref = _topics.local().get_topic_metadata_ref(p_cfg.tp_ns);

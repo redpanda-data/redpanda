@@ -9,6 +9,7 @@
 
 #include "config_frontend.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/create_partitions.h"
 #include "kafka/protocol/create_topics.h"
 #include "redpanda/tests/fixture.h"
 
@@ -85,6 +86,30 @@ public:
                    return client.dispatch(
                      std::move(req), kafka::api_version(0));
                })
+          .get();
+    }
+
+    kafka::create_partitions_response
+    create_partitions(const model::topic& tp, int32_t count) {
+        return do_with_client(
+                 [tp, count](kafka::client::transport& client) mutable {
+                     chunked_vector<kafka::create_partitions_topic> topics;
+                     topics.emplace_back(kafka::create_partitions_topic{
+                       .name = tp,
+                       .count = count,
+                       .assignments = std::nullopt,
+                       .unknown_tags = {}});
+                     return client.dispatch(
+                       kafka::create_partitions_request{
+                         .data{
+                           .topics = std::move(topics),
+                           .timeout_ms = 10s,
+                           .validate_only = false,
+                           .unknown_tags = {}},
+
+                       },
+                       kafka::api_version{3});
+                 })
           .get();
     }
 };

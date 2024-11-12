@@ -64,6 +64,7 @@ set(srcs
   topic_recreate_test.cc
   fetch_session_test.cc
   alter_config_test.cc
+  create_partition_test.cc
   produce_consume_test.cc
   group_metadata_serialization_test.cc
   partition_reassignments_test.cc
