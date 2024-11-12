@@ -739,6 +739,10 @@ audit_log_manager::audit_log_manager(
   , _controller(controller)
   , _config(client_config)
   , _metadata_cache(metadata_cache) {
+    _probe.setup_metrics([this] {
+        return 1.0
+               - (static_cast<double>(_queue_bytes_sem.available_units()) / static_cast<double>(_max_queue_size_bytes));
+    });
     if (ss::this_shard_id() == client_shard_id) {
         _sink = std::make_unique<audit_sink>(this, controller, client_config);
     }
@@ -808,11 +812,6 @@ ss::future<> audit_log_manager::start() {
           "Redpanda is operating in recovery mode.  Auditing is disabled!");
         co_return;
     }
-    _probe = std::make_unique<audit_probe>();
-    _probe->setup_metrics([this] {
-        return 1.0
-               - (static_cast<double>(_queue_bytes_sem.available_units()) / static_cast<double>(_max_queue_size_bytes));
-    });
     if (ss::this_shard_id() != client_shard_id) {
         co_return;
     }
@@ -846,7 +845,6 @@ ss::future<> audit_log_manager::stop() {
         /// Gate may already be closed if ::pause() had been called
         co_await _gate.close();
     }
-    _probe.reset(nullptr);
     if (_queue.size() > 0) {
         vlog(
           adtlog.debug,
@@ -1006,7 +1004,7 @@ audit_log_manager::should_enqueue_audit_event() const {
           adtlog.warn,
           "Audit message passthrough active until cluster has been fully "
           "upgraded to the min supported version for audit_logging");
-        _probe->audit_error();
+        _probe.audit_error();
         return std::make_optional(audit_event_passthrough::yes);
     }
     if (_auth_misconfigured) {
