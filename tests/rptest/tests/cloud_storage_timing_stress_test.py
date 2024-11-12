@@ -42,48 +42,21 @@ class CloudStorageCheck:
         return self._name
 
 
-def cloud_storage_usage_check(test):
-    # The usage inferred from the uploaded manifest
-    # lags behind the actual reported usage. For this reason,
-    # we maintain a sliding window of reported usages and check whether
-    # the manifest inferred usage can be found in it. A deque size of 10
-    # gives us a look-behind window of roughly 2 seconds (10 * 0.2).
-    # This should be fine since the manifest after every batch of segment uploads
-    # and on prior to each GC operation (housekeeping happens every 1 second).
-    reported_usage_sliding_window = deque(maxlen=10)
+def assert_cloud_storage_usage(test):
+    bucket_view = BucketView(test.redpanda)
+    manifest_usage = bucket_view.cloud_log_size_for_ntp(test.topic, 0)
+    test.logger.debug(
+        f"Cloud log usage inferred from manifests: {manifest_usage}")
 
-    def check():
-        try:
-            bucket_view = BucketView(test.redpanda)
-            manifest_usage = bucket_view.cloud_log_size_for_ntp(test.topic, 0)
-            test.logger.debug(
-                f"Cloud log usage inferred from manifests: {manifest_usage}")
+    reported_usage = test.admin.cloud_storage_usage()
 
-            reported_usage = test.admin.cloud_storage_usage()
-            reported_usage_sliding_window.append(reported_usage)
+    test.logger.info(
+        f"Expected {manifest_usage.total()} bytes of cloud storage usage based on manifest"
+    )
+    test.logger.info(f"Reported usage: {reported_usage}")
 
-            test.logger.info(
-                f"Expected {manifest_usage.total()} bytes of cloud storage usage"
-            )
-            test.logger.info(
-                f"Reported usages in sliding window: {reported_usage_sliding_window}"
-            )
-            return manifest_usage.total() in reported_usage_sliding_window
-        except Exception as e:
-            test.logger.info(f"usage check exception: {e}")
-            raise e
-
-    # Manifests are not immediately uploaded after they are mutated locally.
-    # For example, during cloud storage housekeeping, the manifest is not uploaded
-    # after the 'start_offset' advances, but after the segments are deleted as well.
-    # If a request lands mid-housekeeping, the results will not be consistent with
-    # what's in the uploaded manifest. For this reason, we wait until the two match.
-    wait_until(
-        check,
-        timeout_sec=test.check_timeout,
-        backoff_sec=0.2,
-        err_msg="Reported cloud storage usage did not match the actual usage",
-        retry_on_exc=True)
+    assert manifest_usage.total() == reported_usage, \
+        f"Expected {manifest_usage.total()} bytes of cloud storage usage based on manifest, but reported {reported_usage}"
 
 
 class PartitionStatusValidator:
@@ -411,7 +384,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         # after the partition moves.
         self._initial_revision = self._get_initial_revision()
 
-        self.register_check("cloud_storage_usage", cloud_storage_usage_check)
         self.register_check("cloud_storage_status_endpoint",
                             cloud_storage_status_endpoint_check)
 
@@ -450,6 +422,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             assert self.redpanda.metric_sum(
                 "redpanda_cloud_storage_jobs_local_segment_reuploads",
                 metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
+
+        assert_cloud_storage_usage(self)
 
     def register_check(self, name, check_fn):
         self.checks.append(CloudStorageCheck(name, check_fn))
