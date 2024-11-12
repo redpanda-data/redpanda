@@ -173,14 +173,16 @@ partition_translator::max_offset_for_translation() const {
 
 ss::future<std::optional<coordinator::translated_offset_range>>
 partition_translator::do_translation_for_range(
-  retry_chain_node& parent, model::record_batch_reader rdr) {
+  retry_chain_node& parent,
+  model::record_batch_reader rdr,
+  kafka::offset begin_offset) {
     // This configuration only writes a single row group per file but we limit
     // the bytes via the reader max_bytes.
     auto writer_factory = std::make_unique<batching_parquet_writer_factory>(
-      local_path{_writer_scratch_space},
-      "", // todo(iceberg): generate a prefix with offset information
-      max_rows_per_row_group,
-      max_bytes_per_row_group);
+      local_path{_writer_scratch_space}, // storage temp files are written to
+      fmt::format("{}", begin_offset),   // file prefix
+      max_rows_per_row_group,   // max entries per single parquet row group
+      max_bytes_per_row_group); // max bytes per single parquet row group
     auto task = translation_task{**_cloud_io, *_schema_mgr, *_type_resolver};
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
@@ -266,7 +268,7 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
       = model::make_record_batch_reader<kafka::read_committed_reader>(
         std::move(tracker), std::move(log_reader.reader));
     auto translation_result = co_await do_translation_for_range(
-      parent_rcn, std::move(kafka_reader));
+      parent_rcn, std::move(kafka_reader), read_begin_offset);
     units.return_all();
     vlog(_logger.debug, "translation result: {}", translation_result);
     units.return_all();
