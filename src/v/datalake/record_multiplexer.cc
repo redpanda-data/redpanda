@@ -166,6 +166,10 @@ record_multiplexer::end_of_stream() {
     if (_error) {
         co_return *_error;
     }
+    if (!_result) {
+        // no batches were processed.
+        co_return data_writer_error::no_data;
+    }
     auto writers = std::move(_writers);
     for (auto& [id, writer] : writers) {
         auto res = co_await std::move(*writer).finish();
