@@ -101,3 +101,13 @@ jobs:
         working-directory: src/transform-sdk/js/module
         env:
           NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
+      - name: Publish SR
+        run: |
+          VERSION=$(python -c "print('${{github.ref_name}}'.removeprefix('transform-sdk/v'), end='')")
+          sed -i "s/0.1.0/${VERSION}/g" package.json
+          sed -i "s/0.1.0/${VERSION}/g" package-lock.json
+          npm ci
+          npm publish
+        working-directory: src/transform-sdk/js/sr-module
+        env:
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
