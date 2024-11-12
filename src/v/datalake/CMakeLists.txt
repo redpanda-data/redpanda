@@ -48,6 +48,7 @@ v_cc_library(
     base_types.cc
     cloud_data_io.cc
     translation_task.cc
+    schema_parquet.cc
   DEPS
     v::cloud_io
     v::datalake_common
@@ -62,6 +63,7 @@ v_cc_library(
     v::iceberg
     v::serde_protobuf
     v::serde_avro
+    v::serde_parquet
 )
 
 add_subdirectory(tests)
