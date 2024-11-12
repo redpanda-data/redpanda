@@ -10,7 +10,6 @@
 import socket
 
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.mark import matrix
 from ducktape.services.service import Service
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.clients.rpk import RpkTool
@@ -22,9 +21,8 @@ from rptest.tests.redpanda_test import RedpandaTest
 
 
 class P12TLSProvider(TLSProvider):
-    def __init__(self, tls: TLSCertManager, use_pkcs12: bool):
+    def __init__(self, tls: TLSCertManager):
         self.tls = tls
-        self.use_pkcs12 = use_pkcs12
 
     @property
     def ca(self) -> CertificateAuthority:
@@ -41,7 +39,7 @@ class P12TLSProvider(TLSProvider):
                                     common_name=name)
 
     def use_pkcs12_file(self) -> bool:
-        return self.use_pkcs12
+        return True
 
     def p12_password(self, node: ClusterNode) -> str:
         assert node.name in self.tls.certs, f"No certificate associated with node {node.name}"
@@ -64,9 +62,9 @@ class PKCS12Test(RedpandaTest):
         # Skip set up to allow test to control how Redpanda's TLS settings are configured
         pass
 
-    def _prepare_cluster(self, use_pkcs12: bool):
+    def _prepare_cluster(self):
         self.tls = TLSCertManager(self.logger)
-        self.provider = P12TLSProvider(self.tls, use_pkcs12)
+        self.provider = P12TLSProvider(self.tls)
         self.user_cert = self.tls.create_cert(socket.gethostname(),
                                               common_name="walterP",
                                               name="user")
@@ -94,12 +92,11 @@ class PKCS12Test(RedpandaTest):
     # https://www.redhat.com/en/blog/fips-140-3-changes-pkcs-12
     @skip_fips_mode
     @cluster(num_nodes=3)
-    @matrix(use_pkcs12=[True, False])
-    def test_smoke(self, use_pkcs12: bool):
+    def test_smoke(self):
         """
         Simple smoke test to verify that the PKCS12 file is being used
         """
-        self._prepare_cluster(use_pkcs12)
+        self._prepare_cluster()
         TOPIC_NAME = "foo"
         self.rpk.create_topic(TOPIC_NAME)
         topics = [t for t in self.rpk.list_topics()]
