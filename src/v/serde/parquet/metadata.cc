@@ -175,7 +175,8 @@ iobuf encode(const flattened_schema& schema, bool is_root) {
         decimal = 5,
         date = 6,
         time = 7,
-        timestamp = 9,
+        timestamp = 8,
+        // nine is reserved for interval
         integer = 10,
         null = 11,
         json = 12,
@@ -379,10 +380,11 @@ iobuf encode(const flattened_schema& schema, bool is_root) {
           constexpr auto bit_width_field_id = thrift::field_id(1);
           constexpr auto is_signed_field_id = thrift::field_id(2);
           thrift::struct_encoder int_struct;
+          iobuf byte;
+          auto bit_width = static_cast<uint8_t>(t.bit_width);
+          byte.append(&bit_width, 1);
           int_struct.write_field(
-            bit_width_field_id,
-            thrift::field_type::i8,
-            vint::to_bytes(t.bit_width));
+            bit_width_field_id, thrift::field_type::i8, std::move(byte));
           int_struct.write_field(
             is_signed_field_id,
             t.is_signed ? thrift::field_type::boolean_true
