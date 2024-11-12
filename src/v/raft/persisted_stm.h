@@ -53,7 +53,7 @@ struct stm_snapshot {
     }
 };
 
-// stm_snapshots powered by a seperate file on disk.
+// stm_snapshots powered by a separate file on disk.
 //
 // This is the default backend for stm_snapshots and works well when
 // there are very few partitions (ie for internal topics).

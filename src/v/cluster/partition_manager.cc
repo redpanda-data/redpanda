@@ -199,8 +199,7 @@ ss::future<consensus_ptr> partition_manager::manage(
                   ntp_cfg, manifest, max_offset);
             }
         } else {
-            // Manifest is not empty since we were able to recovery
-            // some data.
+            // Manifest is not empty since we were able to recover some data.
             auto last_segment = manifest.last_segment();
             vassert(last_segment.has_value(), "Manifest is empty");
             auto last_included_term = last_segment->archiver_term;
@@ -313,20 +312,29 @@ partition_manager::maybe_download_log(
   storage::ntp_config& ntp_cfg,
   std::optional<remote_topic_properties> rtp,
   cloud_storage::remote_path_provider& path_provider) {
-    if (rtp.has_value() && _partition_recovery_mgr.local_is_initialized()) {
-        auto res = co_await _partition_recovery_mgr.local().download_log(
-          ntp_cfg,
-          rtp->remote_revision,
-          rtp->remote_partition_count,
-          path_provider);
-        co_return res;
+    if (!rtp.has_value() || !_partition_recovery_mgr.local_is_initialized()) {
+        vlog(
+          clusterlog.debug,
+          "Logs can't be downloaded because cloud storage is not configured. "
+          "Continue creating {} without downloading the logs.",
+          ntp_cfg);
+        co_return cloud_storage::log_recovery_result{};
     }
-    vlog(
-      clusterlog.debug,
-      "Logs can't be downloaded because cloud storage is not configured. "
-      "Continue creating {} without downloading the logs.",
-      ntp_cfg);
-    co_return cloud_storage::log_recovery_result{};
+
+    if (co_await archival_metadata_stm::has_snapshot(ntp_cfg)) {
+        vlog(
+          clusterlog.debug,
+          "Skip logs download for {}, as archival_metadata_stm snapshot "
+          "already exists",
+          ntp_cfg.ntp());
+        co_return cloud_storage::log_recovery_result{};
+    }
+
+    co_return co_await _partition_recovery_mgr.local().download_log(
+      ntp_cfg,
+      rtp->remote_revision,
+      rtp->remote_partition_count,
+      path_provider);
 }
 
 ss::future<> partition_manager::stop_partitions() {

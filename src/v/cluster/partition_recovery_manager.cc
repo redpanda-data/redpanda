@@ -182,11 +182,6 @@ ss::future<log_recovery_result> partition_downloader::maybe_download_log() {
         vlog(_ctxlog.debug, "No overrides for {} found, skipping", _ntpc.ntp());
         co_return log_recovery_result{};
     }
-    // TODO (evgeny): maybe check the condition differently
-    bool exists = co_await ss::file_exists(_ntpc.work_directory());
-    if (exists) {
-        co_return log_recovery_result{};
-    }
     auto enabled = _ntpc.get_overrides().recovery_enabled;
     if (!enabled) {
         vlog(

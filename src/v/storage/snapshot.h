@@ -119,6 +119,8 @@ public:
         return _dir / filename.c_str();
     }
 
+    ss::future<bool> snapshot_exists(ss::sstring filename) const;
+
     ss::future<> remove_partial_snapshots();
 
     ss::future<> remove_snapshot(ss::sstring);
@@ -304,6 +306,10 @@ public:
 
     std::filesystem::path snapshot_path() const {
         return _snapshot.snapshot_path(_filename);
+    }
+
+    ss::future<bool> snapshot_exists() const {
+        return _snapshot.snapshot_exists(_filename);
     }
 
     ss::future<> remove_partial_snapshots() {

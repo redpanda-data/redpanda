@@ -247,12 +247,18 @@ private:
         intrusive_list_hook hook;
     };
 
-    /// Download log if partition_recovery_manager is initialized.
+    /// Download log if partition_recovery_manager is initialized
+    /// and there is no archival_metadata_stm snapshot.
     ///
-    /// It might not be initialized if cloud storage is disable.
-    /// In this case this method always returns false.
+    /// Partition recovery manager might not be initialized if cloud storage is
+    /// disabled. Archival metadata stm snapshot presence acts as recovery
+    /// process completion marker: if it is there we don't need to re-download.
+    /// If we do not attempt to download logs because of one of the conditions
+    /// above not met, method returns false.
+    ///
     /// \param ntp_cfg is an ntp_config instance to recover
-    /// \return true if the recovery was invoked, false otherwise
+    /// \return .logs_recovered=true if the recovery was invoked, false
+    /// otherwise
     ss::future<cloud_storage::log_recovery_result> maybe_download_log(
       storage::ntp_config& ntp_cfg,
       std::optional<remote_topic_properties> rtp,

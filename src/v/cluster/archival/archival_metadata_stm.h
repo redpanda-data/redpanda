@@ -221,6 +221,8 @@ public:
       const cloud_storage::partition_manifest& m,
       model::offset insync_offset);
 
+    static ss::future<bool> has_snapshot(const storage::ntp_config& ntp_cfg);
+
     static ss::circular_buffer<model::record_batch>
     serialize_manifest_as_batches(
       model::offset base_offset, const cloud_storage::partition_manifest& m);

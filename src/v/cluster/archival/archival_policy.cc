@@ -301,7 +301,7 @@ ss::future<std::optional<std::error_code>> get_file_range(
       !end_inclusive
       && segment->offsets().get_base_offset() == begin_inclusive) {
         // Fast path, the upload is started at the begining of the segment
-        // and not truncted at the end.
+        // and not truncated at the end.
         vlog(
           archival_log.debug,
           "Full segment upload {}, file size: {}",
