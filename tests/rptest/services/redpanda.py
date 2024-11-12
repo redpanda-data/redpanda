@@ -1296,7 +1296,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
     TEMP_OSSL_CONFIG_FILE = "/etc/openssl.cnf"
-    DEFAULT_NODE_READY_TIMEOUT_SEC = 30
+    DEFAULT_NODE_READY_TIMEOUT_SEC = 40
     NODE_READY_TIMEOUT_MIN_SEC_KEY = "node_ready_timeout_min_sec"
     DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
     DEDICATED_NODE_KEY = "dedicated_nodes"
