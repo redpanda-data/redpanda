@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "config_frontend.h"
+#include "kafka/client/transport.h"
+#include "kafka/protocol/create_topics.h"
 #include "redpanda/tests/fixture.h"
 
 class topic_properties_test_fixture : public redpanda_thread_fixture {
@@ -36,6 +38,53 @@ public:
               .upsert{{ss::sstring{k}, ss::sstring{v}}},
             },
             model::timeout_clock::now() + 5s)
+          .get();
+    }
+
+    template<typename Func>
+    auto do_with_client(Func&& f) {
+        return make_kafka_client().then(
+          [f = std::forward<Func>(f)](kafka::client::transport client) mutable {
+              return ss::do_with(
+                std::move(client),
+                [f = std::forward<Func>(f)](
+                  kafka::client::transport& client) mutable {
+                    return client.connect().then(
+                      [&client, f = std::forward<Func>(f)]() mutable {
+                          return f(client);
+                      });
+                });
+          });
+    }
+
+    kafka::create_topics_response create_topic(
+      const model::topic& tp,
+      const absl::flat_hash_map<ss::sstring, ss::sstring>& properties,
+      int num_partitions = 1,
+      int16_t replication_factor = 1) {
+        kafka::creatable_topic topic{
+          .name = model::topic(tp),
+          .num_partitions = num_partitions,
+          .replication_factor = replication_factor,
+        };
+        for (auto& [k, v] : properties) {
+            kafka::createable_topic_config config;
+            config.name = k;
+            config.value = v;
+            topic.configs.push_back(std::move(config));
+        }
+
+        auto req = kafka::create_topics_request{.data{
+          .topics = {topic},
+          .timeout_ms = 10s,
+          .validate_only = false,
+        }};
+
+        return do_with_client([req = std::move(req)](
+                                kafka::client::transport& client) mutable {
+                   return client.dispatch(
+                     std::move(req), kafka::api_version(0));
+               })
           .get();
     }
 };
