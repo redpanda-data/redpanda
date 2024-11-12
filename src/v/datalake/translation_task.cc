@@ -54,7 +54,7 @@ translation_task::translate(
     record_multiplexer mux(
       ntp, std::move(writer_factory), *_schema_mgr, *_type_resolver);
     // Write local files
-    auto mux_result = co_await reader.consume(
+    auto mux_result = co_await std::move(reader).consume(
       std::move(mux), _read_timeout + model::timeout_clock::now());
 
     if (mux_result.has_error()) {
@@ -64,7 +64,7 @@ translation_task::translate(
           mux_result.error());
         co_return errc::file_io_error;
     }
-    auto write_result = std::move(mux_result.value());
+    auto write_result = std::move(mux_result).value();
     vlog(
       datalake_log.trace,
       "translation result base offset: {}, last offset: {}, data files: {}",
@@ -73,8 +73,8 @@ translation_task::translate(
       fmt::join(write_result.data_files, ", "));
 
     coordinator::translated_offset_range ret{
-      .start_offset = mux_result.value().start_offset,
-      .last_offset = mux_result.value().last_offset,
+      .start_offset = write_result.start_offset,
+      .last_offset = write_result.last_offset,
     };
     ret.files.reserve(write_result.data_files.size());
     std::optional<errc> upload_error;
