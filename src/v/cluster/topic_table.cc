@@ -1026,16 +1026,15 @@ topic_properties topic_table::update_topic_properties(
     incremental_update(updated_properties.flush_ms, overrides.flush_ms);
     incremental_update(updated_properties.flush_bytes, overrides.flush_bytes);
     incremental_update(
-      updated_properties.iceberg_enabled,
-      overrides.iceberg_enabled,
-      storage::ntp_config::default_iceberg_enabled);
+      updated_properties.iceberg_mode,
+      overrides.iceberg_mode,
+      storage::ntp_config::default_iceberg_mode);
     incremental_update(
       updated_properties.leaders_preference, overrides.leaders_preference);
     incremental_update(
-      updated_properties.iceberg_translation_interval_ms,
-      overrides.iceberg_translation_interval_ms);
-    incremental_update(
       updated_properties.delete_retention_ms, overrides.delete_retention_ms);
+    incremental_update(
+      updated_properties.iceberg_delete, overrides.iceberg_delete);
     return updated_properties;
 }
 

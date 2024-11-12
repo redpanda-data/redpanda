@@ -335,13 +335,12 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
-            if (cfg.name == topic_property_iceberg_enabled) {
-                parse_and_set_bool(
+            if (cfg.name == topic_property_iceberg_mode) {
+                parse_and_set_property(
                   tp_ns,
-                  update.properties.iceberg_enabled,
+                  update.properties.iceberg_mode,
                   cfg.value,
                   op,
-                  storage::ntp_config::default_iceberg_enabled,
                   iceberg_config_validator{});
                 continue;
             }
@@ -362,19 +361,17 @@ create_topic_properties_update(
                 }
                 throw validation_error("Cloud topics is not enabled");
             }
-            if (cfg.name == topic_property_iceberg_translation_interval_ms) {
-                parse_and_set_optional_duration(
-                  update.properties.iceberg_translation_interval_ms,
-                  cfg.value,
-                  op);
-                continue;
-            }
             if (cfg.name == topic_property_delete_retention_ms) {
                 parse_and_set_tristate(
                   update.properties.delete_retention_ms,
                   cfg.value,
                   op,
                   delete_retention_ms_validator{});
+                continue;
+            }
+            if (cfg.name == topic_property_iceberg_delete) {
+                parse_and_set_optional_bool_alpha(
+                  update.properties.iceberg_delete, cfg.value, op);
                 continue;
             }
 

@@ -582,6 +582,32 @@ std::istream& operator>>(std::istream& is, recovery_validation_mode& vm) {
     return is;
 }
 
+std::ostream& operator<<(std::ostream& os, const iceberg_mode& mode) {
+    switch (mode) {
+    case iceberg_mode::disabled:
+        return os << "disabled";
+    case iceberg_mode::key_value:
+        return os << "key_value";
+    case iceberg_mode::value_schema_id_prefix:
+        return os << "value_schema_id_prefix";
+    }
+}
+
+std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
+    using enum iceberg_mode;
+    ss::sstring s;
+    is >> s;
+    try {
+        mode = string_switch<iceberg_mode>(s)
+                 .match("disabled", disabled)
+                 .match("key_value", key_value)
+                 .match("value_schema_id_prefix", value_schema_id_prefix);
+    } catch (const std::runtime_error&) {
+        is.setstate(std::ios::failbit);
+    }
+    return is;
+}
+
 std::ostream& operator<<(std::ostream& os, const fips_mode_flag& f) {
     return os << to_string_view(f);
 }

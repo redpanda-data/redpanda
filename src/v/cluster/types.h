@@ -629,14 +629,13 @@ struct incremental_topic_updates
     property_update<std::optional<model::write_caching_mode>> write_caching;
     property_update<std::optional<std::chrono::milliseconds>> flush_ms;
     property_update<std::optional<size_t>> flush_bytes;
-    property_update<bool> iceberg_enabled{
-      storage::ntp_config::default_iceberg_enabled,
+    property_update<model::iceberg_mode> iceberg_mode{
+      storage::ntp_config::default_iceberg_mode,
       incremental_update_operation::none};
     property_update<std::optional<config::leaders_preference>>
       leaders_preference;
-    property_update<std::optional<std::chrono::milliseconds>>
-      iceberg_translation_interval_ms;
     property_update<tristate<std::chrono::milliseconds>> delete_retention_ms;
+    property_update<std::optional<bool>> iceberg_delete;
 
     // To allow us to better control use of the deprecated shadow_indexing
     // field, use getters and setters instead.
@@ -671,12 +670,12 @@ struct incremental_topic_updates
           write_caching,
           flush_ms,
           flush_bytes,
-          iceberg_enabled,
+          iceberg_mode,
           leaders_preference,
           remote_read,
           remote_write,
-          iceberg_translation_interval_ms,
-          delete_retention_ms);
+          delete_retention_ms,
+          iceberg_delete);
     }
 
     friend std::ostream&
@@ -2875,7 +2874,7 @@ struct partition_state
     bool is_remote_fetch_enabled;
     bool is_cloud_data_available;
     ss::sstring read_replica_bucket;
-    bool iceberg_enabled;
+    ss::sstring iceberg_mode;
     partition_raft_state raft_state;
 
     auto serde_fields() {
@@ -2896,7 +2895,7 @@ struct partition_state
           is_cloud_data_available,
           read_replica_bucket,
           raft_state,
-          iceberg_enabled);
+          iceberg_mode);
     }
 
     friend bool operator==(const partition_state&, const partition_state&)

@@ -114,8 +114,7 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       "remote_delete: {}, segment_ms: {}, "
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
-      "flush_bytes: {} iceberg_enabled: {}, iceberg_translation_interval_ms: "
-      "{}}}",
+      "flush_bytes: {} iceberg_mode: {} }}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
@@ -131,8 +130,7 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
       v.write_caching,
       v.flush_ms,
       v.flush_bytes,
-      v.iceberg_enabled,
-      v.iceberg_translation_interval_ms);
+      v.iceberg_mode);
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         fmt::print(o, ", cloud_topic_enabled: {}", v.cloud_topic_enabled);
