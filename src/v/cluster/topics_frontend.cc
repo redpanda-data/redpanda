@@ -108,12 +108,22 @@ std::vector<std::string_view> get_enterprise_features(
         features.emplace_back("tiered storage");
     }
 
-    constexpr auto schema_id_validation_enabled =
+    static constexpr auto key_schema_id_validation_enabled =
       [](const cluster::topic_properties& pp) -> bool {
         return pp.record_key_schema_id_validation.value_or(false)
-               || pp.record_key_schema_id_validation_compat.value_or(false)
-               || pp.record_value_schema_id_validation.value_or(false)
+               || pp.record_key_schema_id_validation_compat.value_or(false);
+    };
+
+    static constexpr auto value_schema_id_validation_enabled =
+      [](const cluster::topic_properties& pp) -> bool {
+        return pp.record_value_schema_id_validation.value_or(false)
                || pp.record_value_schema_id_validation_compat.value_or(false);
+    };
+
+    static constexpr auto schema_id_validation_enabled =
+      [](const cluster::topic_properties& pp) -> bool {
+        return key_schema_id_validation_enabled(pp)
+               || value_schema_id_validation_enabled(pp);
     };
 
     constexpr auto unset_or_unchanged =
@@ -144,8 +154,9 @@ std::vector<std::string_view> get_enterprise_features(
     };
 
     if (
-      (schema_id_validation_enabled(properties)
-       < schema_id_validation_enabled(updated_properties))
+      ((key_schema_id_validation_enabled(properties)
+        < key_schema_id_validation_enabled(updated_properties))
+       || (value_schema_id_validation_enabled(properties) < value_schema_id_validation_enabled(updated_properties)))
       || (schema_id_validation_enabled(updated_properties) && sns_modified())) {
         features.emplace_back("schema id validation");
     }
