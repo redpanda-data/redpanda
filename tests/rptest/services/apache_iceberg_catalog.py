@@ -9,13 +9,13 @@
 
 import os
 import tempfile
+from typing import Optional
 
 from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyiceberg.catalog import load_catalog
-
-import uuid
+import jinja2
 
 
 class IcebergRESTCatalog(Service):
@@ -39,50 +39,60 @@ class IcebergRESTCatalog(Service):
     FS_CATALOG_IMPL = "org.apache.iceberg.hadoop.HadoopCatalog"
     FS_CATALOG_CONF_PATH = "/opt/iceberg-rest-catalog/core-site.xml"
 
-    HADOOP_CONF_TMPL = """<?xml version="1.0"?>
+    HADOOP_CONF_TMPL = jinja2.Template("""<?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 
 <configuration>
 
 <property>
     <name>fs.s3a.aws.credentials.provider</name>
+{%- if fs_dedicated_nodes %}
+    <value>org.apache.hadoop.fs.s3a.auth.IAMInstanceCredentialsProvider</value>
+{% else -%}
     <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+{% endif %}
 </property>
+{%- if fs_endpoint %}
 <property>
     <name>fs.s3a.endpoint</name>
-    <value>{fs_endpoint}</value>
+    <value>{{ fs_endpoint }}</value>
 </property>
+{%- endif %}
 <property>
     <name>fs.s3a.path.style.access</name>
     <value>true</value>
 </property>
 <property>
     <name>fs.s3a.endpoint.region</name>
-    <value>{fs_region}</value>
+    <value>{{ fs_region }}</value>
 </property>
+{%- if fs_access_key %}
 <property>
     <name>fs.s3a.access.key</name>
-    <value>{fs_access_key}</value>
+    <value>{{ fs_access_key }}</value>
 </property>
+{%- endif %}
+{%- if fs_secret_key %}
 <property>
     <name>fs.s3a.secret.key</name>
-    <value>{fs_secret_key}</value>
+    <value>{{ fs_secret_key }}</value>
 </property>
+{%- endif %}
 <property>
     <name>fs.s3a.connection.ssl.enabled</name>
-    <value>false</value>
+    <value>{{ fs_dedicated_nodes }}</value>
 </property>
-</configuration>"""
+</configuration>""")
 
     def __init__(
             self,
             ctx,
             cloud_storage_bucket: str,
             cloud_storage_catalog_prefix: str = 'redpanda-iceberg-catalog',
-            cloud_storage_access_key: str = 'panda-user',
-            cloud_storage_secret_key: str = 'panda-secret',
-            cloud_storage_region: str = 'panda-region',
-            cloud_storage_api_endpoint: str = "http://minio-s3:9000",
+            cloud_storage_access_key: Optional[str] = 'panda-user',
+            cloud_storage_secret_key: Optional[str] = 'panda-secret',
+            cloud_storage_region: Optional[str] = 'panda-region',
+            cloud_storage_api_endpoint: Optional[str] = "http://minio-s3:9000",
             filesystem_wrapper_mode: bool = False,
             node: ClusterNode | None = None):
         super(IcebergRESTCatalog, self).__init__(ctx,
@@ -93,6 +103,7 @@ class IcebergRESTCatalog(Service):
         self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
         self.cloud_storage_bucket = cloud_storage_bucket
         self.cloud_storage_catalog_prefix = cloud_storage_catalog_prefix
+        self.dedicated_nodes = ctx.globals.get("dedicated_nodes", False)
         self.set_filesystem_wrapper_mode(filesystem_wrapper_mode)
         # This REST server can operate in two modes.
         # 1. filesystem wrapper mode
@@ -126,10 +137,14 @@ class IcebergRESTCatalog(Service):
         env = dict()
 
         # Common envs
-        env["AWS_ACCESS_KEY_ID"] = self.cloud_storage_access_key
-        env["AWS_SECRET_ACCESS_KEY"] = self.cloud_storage_secret_key
-        env["AWS_REGION"] = self.cloud_storage_region
-        env["CATALOG_S3_ENDPOINT"] = self.cloud_storage_api_endpoint
+        if self.cloud_storage_region:
+            env["AWS_REGION"] = self.cloud_storage_region
+        if self.cloud_storage_access_key:
+            env["AWS_ACCESS_KEY_ID"] = self.cloud_storage_access_key
+        if self.cloud_storage_secret_key:
+            env["AWS_SECRET_ACCESS_KEY"] = self.cloud_storage_secret_key
+        if self.cloud_storage_api_endpoint:
+            env["CATALOG_S3_ENDPOINT"] = self.cloud_storage_api_endpoint
         env["CATALOG_WAREHOUSE"] = self.cloud_storage_warehouse
         if self.filesystem_wrapper_mode:
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.FS_CATALOG_IMPL
@@ -152,25 +167,29 @@ class IcebergRESTCatalog(Service):
 
     def client(self, catalog_name="default"):
         assert self.catalog_url
-        return load_catalog(
-            catalog_name, **{
-                "uri": self.catalog_url,
-                "s3.endpoint": self.cloud_storage_api_endpoint,
-                "s3.access-key-id": self.cloud_storage_access_key,
-                "s3.secret-access-key": self.cloud_storage_secret_key,
-                "s3.region": self.cloud_storage_region,
-            })
+        conf = dict()
+        conf["uri"] = self.catalog_url
+        if self.cloud_storage_api_endpoint:
+            conf["s3.endpoint"] = self.cloud_storage_api_endpoint
+        if self.cloud_storage_access_key:
+            conf["s3.access-key-id"] = self.cloud_storage_access_key
+        if self.cloud_storage_secret_key:
+            conf["s3.secret-access-key"] = self.cloud_storage_secret_key
+        if self.cloud_storage_region:
+            conf["s3.region"] = self.cloud_storage_region
+        return load_catalog(catalog_name, **conf)
 
     def start_node(self, node, timeout_sec=60, **kwargs):
         node.account.ssh("mkdir -p %s" % IcebergRESTCatalog.PERSISTENT_ROOT,
                          allow_fail=False)
         # Delete any existing hadoop config and repopulate
         node.account.ssh(f"rm -f {IcebergRESTCatalog.FS_CATALOG_CONF_PATH}")
-        config_tmpl = IcebergRESTCatalog.HADOOP_CONF_TMPL.format(
+        config_tmpl = IcebergRESTCatalog.HADOOP_CONF_TMPL.render(
             fs_endpoint=self.cloud_storage_api_endpoint,
             fs_region=self.cloud_storage_region,
             fs_access_key=self.cloud_storage_access_key,
-            fs_secret_key=self.cloud_storage_secret_key)
+            fs_secret_key=self.cloud_storage_secret_key,
+            fs_dedicated_nodes=self.dedicated_nodes)
         self.logger.debug(f"Using hadoop config: {config_tmpl}")
         node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH,
                                  config_tmpl)

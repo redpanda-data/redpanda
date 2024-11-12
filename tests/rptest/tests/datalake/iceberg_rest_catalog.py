@@ -24,10 +24,10 @@ class IcebergRESTCatalogTest(RedpandaTest):
         self.catalog_service = IcebergRESTCatalog(
             test_ctx,
             cloud_storage_bucket=si_settings.cloud_storage_bucket,
-            cloud_storage_access_key=str(si_settings.cloud_storage_access_key),
-            cloud_storage_secret_key=str(si_settings.cloud_storage_secret_key),
+            cloud_storage_access_key=si_settings.cloud_storage_access_key,
+            cloud_storage_secret_key=si_settings.cloud_storage_secret_key,
             cloud_storage_region=si_settings.cloud_storage_region,
-            cloud_storage_api_endpoint=str(si_settings.endpoint_url),
+            cloud_storage_api_endpoint=si_settings.endpoint_url,
             filesystem_wrapper_mode=False)
 
     def setUp(self):
