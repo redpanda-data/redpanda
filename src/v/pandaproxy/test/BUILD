@@ -1,4 +1,18 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+
+redpanda_test_cc_library(
+    name = "utils",
+    hdrs = [
+        "utils.h",
+    ],
+    implementation_deps = [
+    ],
+    include_prefix = "pandaproxy/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/pandaproxy",
+    ],
+)
 
 redpanda_cc_btest(
     name = "errors_test",
