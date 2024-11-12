@@ -79,6 +79,10 @@ func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) err
 					zap.L().Sugar().Warn("rpk is using a self-managed version of Redpanda Connect. If you want rpk to manage connect, use rpk connect uninstall && rpk connect install. To continue managing Connect manually, use our redpanda-connect package.")
 				}
 			}
+			if cmd.Flags().Changed("help") {
+				cmd.Help()
+				return
+			}
 			zap.L().Debug("executing connect plugin", zap.String("path", pluginPath), zap.Strings("args", pluginArgs))
 			err = execFn(pluginPath, pluginArgs)
 			out.MaybeDie(err, "unable to execute redpanda connect plugin: %v", err)
