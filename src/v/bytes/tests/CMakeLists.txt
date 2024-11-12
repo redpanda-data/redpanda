@@ -6,6 +6,16 @@ rp_test(
   LABELS bytes
 )
 
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME test_bytes_multi_thread
+  SOURCES iobuf_tests_mt.cc
+  LIBRARIES v::random v::bytes v::gtest_main
+  ARGS "-- -c 8"
+  LABELS bytes
+)
+
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
   add_executable(iobuf_fuzz_rpfixture iobuf_fuzz.cc)

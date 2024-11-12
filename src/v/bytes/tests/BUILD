@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "iobuf_test",
@@ -19,6 +19,25 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@boost//:range",
         "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "iobuf_mt_test",
+    timeout = "short",
+    srcs = [
+        "iobuf_tests_mt.cc",
+    ],
+    cpu = 8,
+    deps = [
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@boost//:range",
         "@fmt",
         "@seastar",
         "@seastar//:testing",
