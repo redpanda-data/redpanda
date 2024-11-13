@@ -179,14 +179,10 @@ ss::future<> state_machine::apply() {
             _raft->ntp());
       })
       .handle_exception([this](const std::exception_ptr& e) {
-          // do not log shutdown exceptions not to pollute logs with irrelevant
-          // errors
-          if (ssx::is_shutdown_exception(e)) {
-              return;
-          }
-
-          vlog(
-            _log.error,
+          vlogl(
+            _log,
+            ssx::is_shutdown_exception(e) ? ss::log_level::trace
+                                          : ss::log_level::error,
             "State machine for ntp={} caught exception {}",
             _raft->ntp(),
             e);
