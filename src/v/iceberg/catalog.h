@@ -64,6 +64,11 @@ public:
       const struct_type& type,
       const partition_spec& spec);
 
+    // Drops the table from the catalog. If `purge` is true, will also delete
+    // associated data and metadata from cloud storage.
+    virtual ss::future<checked<void, errc>>
+    drop_table(const table_identifier& table_ident, bool purge) = 0;
+
     // Commits the given transaction to the catalog.
     //
     // Note that regardless of whether this succeeds or fails, the resulting
