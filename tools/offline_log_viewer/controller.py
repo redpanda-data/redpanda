@@ -143,7 +143,8 @@ def read_topic_properties_serde(rdr: Reader, version):
             'cloud_topic_enabled': rdr.read_bool(),
             'iceberg_translation_interval_ms':
             rdr.read_optional(Reader.read_int64),
-            'delete_retention_ms': rdr.read_tristate(Reader.read_int64)
+            'delete_retention_ms': rdr.read_tristate(Reader.read_int64),
+            'iceberg_delete': rdr.read_optional(Reader.read_bool),
         }
 
     return topic_properties
