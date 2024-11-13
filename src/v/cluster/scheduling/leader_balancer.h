@@ -17,6 +17,8 @@
 #include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/types.h"
+#include "config/property.h"
+#include "features/enterprise_features.h"
 #include "raft/notification.h"
 
 #include <seastar/core/gate.hh>
@@ -90,7 +92,6 @@ public:
       config::binding<std::chrono::milliseconds>&&,
       config::binding<size_t>&&,
       config::binding<bool> enable_rack_awareness,
-      config::binding<config::leaders_preference>,
       std::chrono::milliseconds metadata_dissemination_interval,
       consensus_ptr);
 
@@ -199,7 +200,8 @@ private:
     config::binding<size_t> _transfer_limit_per_shard;
 
     config::binding<bool> _enable_rack_awareness;
-    config::binding<config::leaders_preference> _default_preference;
+    features::sanctioning_binding<config::property<config::leaders_preference>>
+      _default_preference;
 
     std::chrono::milliseconds _metadata_dissemination_interval;
 

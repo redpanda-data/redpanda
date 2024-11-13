@@ -22,7 +22,9 @@
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
+#include "config/configuration.h"
 #include "config/node_config.h"
+#include "container/fragmented_vector.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/rpc_client_protocol.h"
@@ -62,7 +64,6 @@ leader_balancer::leader_balancer(
   config::binding<std::chrono::milliseconds>&& node_mute_timeout,
   config::binding<size_t>&& transfer_limit_per_shard,
   config::binding<bool> enable_rack_awareness,
-  config::binding<config::leaders_preference> default_preference,
   std::chrono::milliseconds metadata_dissemination_interval,
   consensus_ptr raft0)
   : _enabled(std::move(enabled))
@@ -71,7 +72,9 @@ leader_balancer::leader_balancer(
   , _node_mute_timeout(std::move(node_mute_timeout))
   , _transfer_limit_per_shard(std::move(transfer_limit_per_shard))
   , _enable_rack_awareness(std::move(enable_rack_awareness))
-  , _default_preference(std::move(default_preference))
+  , _default_preference(
+      features::make_sanctioning_binding<
+        features::license_required_feature::leadership_pinning>())
   , _metadata_dissemination_interval(metadata_dissemination_interval)
   , _topics(topics)
   , _leaders(leaders)
@@ -290,7 +293,8 @@ ss::future<> leader_balancer::start() {
     }
 
     _enabled.watch([this]() { on_enable_changed(); });
-    _default_preference.watch([this]() { on_default_preference_changed(); });
+    _default_preference.binding().watch(
+      [this]() { on_default_preference_changed(); });
 
     co_return;
 }
@@ -442,6 +446,35 @@ bool leader_balancer::should_stop_balance() const {
 }
 
 bool leader_balancer::leadership_pinning_enabled() const {
+    const auto should_print_warning = [this]() {
+        const auto& [_, is_sanctioned] = _default_preference(true);
+        return is_sanctioned
+               || std::ranges::any_of(
+                 _topics.topics_map(), [](const auto& topic) {
+                     const auto& preference = topic.second.get_configuration()
+                                                .properties.leaders_preference;
+                     return preference.has_value()
+                            && config::shard_local_cfg()
+                                 .default_leaders_preference.check_restricted(
+                                   preference.value());
+                 });
+    };
+
+    if (_feature_table.should_sanction()) {
+        if (should_print_warning()) {
+            vlog(
+              clusterlog.warn,
+              "{}",
+              "A Redpanda Enterprise Edition license is required to use the "
+              "enterprise feature \"leadership pinning\". This feature is "
+              "disabled. The values of the cluster property \"{}\" and the "
+              "topic property \"redpanda.leaders.preference\" are being "
+              "ignored.",
+              config::shard_local_cfg().default_leaders_preference.name());
+        }
+        return false;
+    }
+
     return _enable_rack_awareness();
 }
 
@@ -821,8 +854,13 @@ leader_balancer_types::preference_index
 leader_balancer::build_preference_index() {
     leader_balancer_types::preference_index ret;
 
+    vassert(
+      !_feature_table.should_sanction(),
+      "this path should be unreachable on sanctioned execution");
+    // we can bypass the sanctioning binding as this should never
+    // be reachable in a sanctioned execution
     ret.default_preference = leader_balancer_types::leaders_preference{
-      _default_preference()};
+      _default_preference.binding()()};
 
     if (_last_seen_preferences) {
         _last_seen_preferences->clear();
