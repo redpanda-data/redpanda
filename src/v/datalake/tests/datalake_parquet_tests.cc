@@ -8,8 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iobuf_parser.h"
 #include "datalake/schema_parquet.h"
+#include "datalake/values_parquet.h"
 #include "gtest/gtest.h"
+#include "iceberg/tests/value_generator.h"
 #include "test_utils/randoms.h"
 using namespace testing;
 namespace {
@@ -531,4 +534,374 @@ TEST(DatalakeParquetSchema, NestedStruct) {
     ASSERT_EQ(parquet_schema.children[0].name(), "nested_struct");
     ASSERT_TRUE(
       primitive_schema_matches(parquet_schema.children[0], primitive_types()));
+}
+
+/**
+ * Helper to determine parquet physical type value for an iceberg value
+ */
+template<typename ParquetT>
+struct type_wrapper {
+    using type = ParquetT;
+};
+
+template<typename T>
+static constexpr auto parquet_type(const T&) {
+    if constexpr (std::is_same_v<T, iceberg::boolean_value>) {
+        return type_wrapper<serde::parquet::boolean_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::int_value>) {
+        return type_wrapper<serde::parquet::int32_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::long_value>) {
+        return type_wrapper<serde::parquet::int64_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::float_value>) {
+        return type_wrapper<serde::parquet::float32_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::double_value>) {
+        return type_wrapper<serde::parquet::float64_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::decimal_value>) {
+        return type_wrapper<serde::parquet::fixed_byte_array_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::date_value>) {
+        return type_wrapper<serde::parquet::int32_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::time_value>) {
+        return type_wrapper<serde::parquet::int64_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::timestamp_value>) {
+        return type_wrapper<serde::parquet::int64_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::timestamptz_value>) {
+        return type_wrapper<serde::parquet::int64_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::string_value>) {
+        return type_wrapper<serde::parquet::byte_array_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::uuid_value>) {
+        return type_wrapper<serde::parquet::fixed_byte_array_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::fixed_value>) {
+        return type_wrapper<serde::parquet::fixed_byte_array_value>{};
+    }
+    if constexpr (std::is_same_v<T, iceberg::binary_value>) {
+        return type_wrapper<serde::parquet::byte_array_value>{};
+    }
+    __builtin_unreachable();
+}
+const auto values_equal = [](const auto& expected, const auto& current) {
+    return expected.val == current.val;
+};
+
+template<typename IcebergPrimitive, typename Predicate>
+AssertionResult validate_parquet_primitive_value(
+  const iceberg::value& expected_value,
+  const serde::parquet::value& current_value,
+  const Predicate& value_matches = values_equal) {
+    using ParquetPrimitive = decltype(parquet_type(IcebergPrimitive{}))::type;
+
+    auto& expected_primitive = std::get<IcebergPrimitive>(
+      std::get<iceberg::primitive_value>(expected_value));
+    if (!std::holds_alternative<ParquetPrimitive>(current_value)) {
+        return AssertionFailure() << fmt::format(
+                 "Error validating {} Expected parquet primitive value of type "
+                 "{}, got {}",
+                 typeid(IcebergPrimitive).name(),
+                 typeid(ParquetPrimitive).name(),
+                 current_value.index());
+    }
+    auto& parquet_primitive = std::get<ParquetPrimitive>(current_value);
+    if (!value_matches(expected_primitive, parquet_primitive)) {
+        return AssertionFailure() << fmt::format(
+                 "Error validating {} expected primitive value {}, got {}",
+                 typeid(IcebergPrimitive).name(),
+                 expected_primitive.val,
+                 parquet_primitive.val);
+    }
+    return AssertionSuccess();
+}
+
+template<typename IcebergPrimitive, typename Predicate>
+AssertionResult validate_parquet_optional_primitive_value(
+  const std::optional<iceberg::value>& expected_value,
+  const serde::parquet::value& current_value,
+  const Predicate& value_matches) {
+    if (!expected_value.has_value()) {
+        if (!std::holds_alternative<serde::parquet::null_value>(
+              current_value)) {
+            return AssertionFailure()
+                   << "Empty optional must be mapped to parquet null";
+        }
+        return AssertionSuccess();
+    }
+
+    return validate_parquet_primitive_value<IcebergPrimitive>(
+      expected_value.value(), current_value, value_matches);
+}
+
+bool decimals_equal(
+  const iceberg::decimal_value& expected,
+  const serde::parquet::fixed_byte_array_value& current) {
+    iobuf_parser parser(current.val.copy());
+    auto high_part = ss::be_to_cpu(parser.consume_type<int64_t>());
+    auto low_part = ss::be_to_cpu(parser.consume_type<uint64_t>());
+    return expected.val == absl::MakeInt128(high_part, low_part);
+}
+
+bool uuids_equal(
+  const iceberg::uuid_value& expected,
+  const serde::parquet::fixed_byte_array_value& current_bytes) {
+    iobuf_parser parser(current_bytes.val.copy());
+    auto bytes = parser.read_bytes(16);
+    std::vector<uint8_t> uuid_bytes(bytes.begin(), bytes.end());
+    uuid_t current_uuid(uuid_bytes);
+    return expected.val == current_uuid;
+}
+
+struct primitive_validating_visitor {
+    template<typename T>
+    AssertionResult operator()(T expected) {
+        return validate_parquet_primitive_value<decltype(expected)>(
+          iceberg::primitive_value{std::move(expected)}, current, values_equal);
+    }
+
+    AssertionResult operator()(iceberg::decimal_value expected) {
+        return validate_parquet_primitive_value<iceberg::decimal_value>(
+          iceberg::primitive_value{std::move(expected)},
+          current,
+          decimals_equal);
+    }
+    AssertionResult operator()(iceberg::uuid_value expected) {
+        return validate_parquet_primitive_value<iceberg::uuid_value>(
+          iceberg::primitive_value{std::move(expected)}, current, uuids_equal);
+    }
+
+    const serde::parquet::value& current;
+};
+
+AssertionResult validate_optional_value(
+  const std::optional<iceberg::value>& optional_value,
+  const serde::parquet::value& current);
+AssertionResult validate_value(
+  const iceberg::value& optional_value, const serde::parquet::value& current);
+AssertionResult validate_list_element(
+  const std::optional<iceberg::value>& optional_value,
+  const serde::parquet::value& current);
+struct value_validating_visitor {
+    AssertionResult operator()(const iceberg::primitive_value& expected) {
+        return std::visit(
+          primitive_validating_visitor{current}, iceberg::make_copy(expected));
+    }
+
+    AssertionResult
+    operator()(const std::unique_ptr<iceberg::struct_value>& s_value) {
+        if (!std::holds_alternative<serde::parquet::group_value>(current)) {
+            return AssertionFailure()
+                   << "Struct must be represented as group, got "
+                   << current.index();
+        }
+        auto& group_value = std::get<serde::parquet::group_value>(current);
+        auto idx = 0;
+        for (auto& field : s_value->fields) {
+            auto res = validate_optional_value(field, group_value[idx++].field);
+            if (!res) {
+                return res;
+            }
+        }
+        return AssertionSuccess();
+    }
+
+    AssertionResult
+    operator()(const std::unique_ptr<iceberg::list_value>& expected_list) {
+        if (!std::holds_alternative<serde::parquet::group_value>(current)) {
+            return AssertionFailure()
+                   << "List must be wrapped with a group value, got "
+                   << current.index();
+        }
+        auto& wrapper = std::get<serde::parquet::group_value>(current);
+        if (!std::holds_alternative<serde::parquet::repeated_value>(
+              wrapper[0].field)) {
+            return AssertionFailure()
+                   << "List must be represented as repeated_value, got "
+                   << current.index();
+        }
+
+        auto& repeated = std::get<serde::parquet::repeated_value>(
+          wrapper[0].field);
+
+        if (repeated.size() != expected_list->elements.size()) {
+            return AssertionFailure() << fmt::format(
+                     "Expected {} elements, got {}",
+                     expected_list->elements.size(),
+                     repeated.size());
+        }
+        for (size_t i = 0; i < repeated.size(); i++) {
+            auto res = validate_list_element(
+              expected_list->elements[i], repeated[i].element);
+            if (!res) {
+                return AssertionFailure() << res.failure_message();
+            }
+        }
+        return AssertionSuccess();
+    }
+
+    AssertionResult
+    operator()(const std::unique_ptr<iceberg::map_value>& expected_map) {
+        if (!std::holds_alternative<serde::parquet::group_value>(current)) {
+            return AssertionFailure()
+                   << "Map must be wrapped with a group value, got "
+                   << current.index();
+        }
+        auto& wrapper = std::get<serde::parquet::group_value>(current);
+        if (!std::holds_alternative<serde::parquet::repeated_value>(
+              wrapper[0].field)) {
+            return AssertionFailure()
+                   << "Map must be represented as repeated_value, got "
+                   << current.index();
+        }
+        auto& repeated = std::get<serde::parquet::repeated_value>(
+          wrapper[0].field);
+
+        if (repeated.size() != expected_map->kvs.size()) {
+            return AssertionFailure() << fmt::format(
+                     "Expected {} elements, got {}",
+                     expected_map->kvs.size(),
+                     repeated.size());
+        }
+        for (size_t i = 0; i < repeated.size(); i++) {
+            if (!std::holds_alternative<serde::parquet::group_value>(
+                  repeated[i].element)) {
+                return AssertionFailure()
+                       << "Map element must be represented as group, got "
+                       << current.index();
+            }
+            auto& kv_group = std::get<serde::parquet::group_value>(
+              repeated[i].element);
+            auto res = validate_value(
+              expected_map->kvs[i].key, kv_group[0].field);
+            if (!res) {
+                return AssertionFailure()
+                       << "Map key validation error" << res.failure_message();
+            }
+            res = validate_optional_value(
+              expected_map->kvs[i].val, kv_group[1].field);
+            if (!res) {
+                return AssertionFailure()
+                       << "Map value validation error" << res.failure_message();
+            }
+        }
+        return AssertionSuccess();
+    }
+
+    const serde::parquet::value& current;
+};
+
+AssertionResult validate_list_element(
+  const std::optional<iceberg::value>& optional_value,
+  const serde::parquet::value& current) {
+    if (!std::holds_alternative<serde::parquet::group_value>(current)) {
+        return AssertionFailure()
+               << "List element must be wrapped with a group value, got "
+               << current.index();
+    }
+
+    auto& wrapper_group = std::get<serde::parquet::group_value>(current);
+    if (wrapper_group.size() != 1) {
+        return AssertionFailure()
+               << "List element must have exactly 1 child, got "
+               << wrapper_group.size();
+    }
+
+    return validate_optional_value(optional_value, wrapper_group[0].field);
+}
+
+AssertionResult validate_value(
+  const iceberg::value& value, const serde::parquet::value& current) {
+    return std::visit(
+      value_validating_visitor{current}, iceberg::make_copy(value));
+}
+
+AssertionResult validate_optional_value(
+  const std::optional<iceberg::value>& optional_value,
+  const serde::parquet::value& current) {
+    if (!optional_value.has_value()) {
+        if (!std::holds_alternative<serde::parquet::null_value>(current)) {
+            return AssertionFailure()
+                   << "Empty field must be represented as parquet null, got "
+                   << current.index();
+        }
+        return AssertionSuccess();
+    }
+    return validate_value(optional_value.value(), current);
+}
+
+auto prepare_test_data(iceberg::field_type schema) {
+    auto schema_field = iceberg::field_type{std::move(schema)};
+    auto test_value = iceberg::tests::make_value(
+      iceberg::tests::value_spec{}, iceberg::make_copy(schema_field));
+    return std::make_tuple(
+      datalake::to_parquet_value(iceberg::make_copy(test_value)).get(),
+      std::move(test_value));
+}
+
+TEST(DataParquetValues, TestPrimitiveValues) {
+    auto schema = primitive_types();
+    for (auto& f : schema.fields) {
+        if (tests::random_bool()) {
+            f->required = iceberg::field_required::no;
+        }
+    }
+    auto schema_field = iceberg::field_type{std::move(schema)};
+    auto [result, test_value] = prepare_test_data(
+      iceberg::make_copy(schema_field));
+    ASSERT_FALSE(result.has_error());
+
+    auto& parquet_value = result.value();
+
+    ASSERT_TRUE(std::visit(
+      value_validating_visitor{parquet_value}, std::move(test_value)));
+}
+
+TEST(DataParquetValues, TestLists) {
+    auto schema = list_types();
+    auto schema_field = iceberg::field_type{std::move(schema)};
+    auto [result, test_value] = prepare_test_data(
+      iceberg::make_copy(schema_field));
+    ASSERT_FALSE(result.has_error());
+
+    ASSERT_TRUE(validate_value(test_value, result.value()));
+}
+
+TEST(DataParquetValues, TestMaps) {
+    auto schema = map_types();
+    auto schema_field = iceberg::field_type{std::move(schema)};
+    auto [result, test_value] = prepare_test_data(
+      iceberg::make_copy(schema_field));
+    ASSERT_FALSE(result.has_error());
+    ASSERT_TRUE(validate_value(test_value, result.value()));
+}
+
+TEST(DataParquetValues, TestNestedStruct) {
+    iceberg::struct_type schema;
+    schema.fields.push_back(iceberg::nested_field::create(
+      0,
+      "nested_struct",
+      iceberg::field_required(tests::random_bool()),
+      primitive_types()));
+    schema.fields.push_back(iceberg::nested_field::create(
+      1,
+      "nested_lists",
+      iceberg::field_required(tests::random_bool()),
+      list_types()));
+    schema.fields.push_back(iceberg::nested_field::create(
+      2,
+      "nested_maps",
+      iceberg::field_required(tests::random_bool()),
+      map_types()));
+    auto schema_field = iceberg::field_type{std::move(schema)};
+    auto [result, test_value] = prepare_test_data(
+      iceberg::make_copy(schema_field));
+    ASSERT_FALSE(result.has_error());
+    ASSERT_TRUE(validate_value(test_value, result.value()));
 }
