@@ -1533,6 +1533,9 @@ ss::future<> topic_table::apply_snapshot(
     reset_partitions_to_force_reconfigure(
       controller_snap.topics.partitions_to_force_recover);
 
+    _iceberg_tombstones.replace(
+      controller_snap.topics.iceberg_tombstones.values().copy());
+
     // 2. re-calculate derived state
 
     _partition_count = 0;
