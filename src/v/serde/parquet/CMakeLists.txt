@@ -14,4 +14,5 @@ v_cc_library(
     v::bytes
     v::container
     v::utils
+    v::serde_thrift
   )
