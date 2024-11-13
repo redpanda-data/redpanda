@@ -931,6 +931,24 @@ struct nt_lifecycle_marker
     auto serde_fields() { return std::tie(config, initial_revision_id); }
 };
 
+// A record in the topic table for a deleted topic that is pending iceberg table
+// deletion.
+struct nt_iceberg_tombstone
+  : serde::envelope<
+      nt_iceberg_tombstone,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // The topic revision of a last deleted topic for which the corresponding
+    // iceberg table has to be deleted. It is used to avoid deleting iceberg
+    // data from a topic with the same name that was created later. If several
+    // iceberg-enabled topics with the same name are created and deleted in a
+    // rapid succession, we just update this revision (the corresponding table
+    // only has to be deleted once).
+    model::revision_id last_deleted_revision;
+
+    auto serde_fields() { return std::tie(last_deleted_revision); }
+};
+
 struct topic_lifecycle_transition
   : serde::envelope<
       topic_lifecycle_transition,
