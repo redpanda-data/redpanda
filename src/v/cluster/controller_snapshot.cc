@@ -134,6 +134,7 @@ ss::future<> topics_t::serde_async_write(iobuf& out) {
     serde::write(out, highest_group_id);
     co_await write_map_async(out, std::move(lifecycle_markers));
     co_await write_map_async(out, partitions_to_force_recover);
+    co_await write_map_async(out, std::move(iceberg_tombstones));
 }
 
 ss::future<>
@@ -149,6 +150,12 @@ topics_t::serde_async_read(iobuf_parser& in, const serde::header h) {
     if (h._version >= 1) {
         partitions_to_force_recover
           = co_await read_map_async_nested<force_recoverable_partitions_t>(
+            in, h._bytes_left_limit);
+    }
+
+    if (h._version >= 2) {
+        iceberg_tombstones
+          = co_await read_map_async_nested<decltype(iceberg_tombstones)>(
             in, h._bytes_left_limit);
     }
 
