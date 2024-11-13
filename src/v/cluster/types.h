@@ -637,6 +637,7 @@ struct incremental_topic_updates
     property_update<std::optional<std::chrono::milliseconds>>
       iceberg_translation_interval_ms;
     property_update<tristate<std::chrono::milliseconds>> delete_retention_ms;
+    property_update<std::optional<bool>> iceberg_delete;
 
     // To allow us to better control use of the deprecated shadow_indexing
     // field, use getters and setters instead.
@@ -676,7 +677,8 @@ struct incremental_topic_updates
           remote_read,
           remote_write,
           iceberg_translation_interval_ms,
-          delete_retention_ms);
+          delete_retention_ms,
+          iceberg_delete);
     }
 
     friend std::ostream&
