@@ -301,7 +301,14 @@ class DescribeTopicsTest(RedpandaTest):
                 value="-1",
                 doc_string=
                 "The retention time for tombstone records in a compacted topic. Cannot be enabled at the same time as any of `cloud_storage_enabled`, `cloud_storage_enable_remote_read`, or `cloud_storage_enable_remote_write`."
-            )
+            ),
+            "redpanda.iceberg.delete":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="true",
+                doc_string=
+                "If true, delete the corresponding Iceberg table when deleting the topic."
+            ),
         }
 
         tp_spec = TopicSpec()
