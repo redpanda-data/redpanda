@@ -172,25 +172,53 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
 
     switch (soft_del.mode) {
     case topic_lifecycle_transition_mode::pending_gc: {
-        // Create a lifecycle marker
         auto tp = _topics.find(soft_del.topic.nt);
         if (tp == _topics.end()) {
             return ss::make_ready_future<std::error_code>(
               errc::topic_not_exists);
         }
 
-        auto tombstone = nt_lifecycle_marker{
-          .config = tp->second.get_configuration(),
-          .initial_revision_id = tp->second.get_remote_revision().value_or(
-            model::initial_revision_id(tp->second.get_revision())),
-          .timestamp = ss::lowres_system_clock::now()};
+        // Create lifecycle markers
 
-        _lifecycle_markers.emplace(soft_del.topic, tombstone);
-        vlog(
-          clusterlog.debug,
-          "Created lifecycle marker for topic {} {}",
-          soft_del.topic.nt,
-          soft_del.topic.initial_revision_id);
+        const auto& topic_properties
+          = tp->second.get_configuration().properties;
+
+        if (topic_properties.requires_remote_erase()) {
+            auto tombstone = nt_lifecycle_marker{
+              .config = tp->second.get_configuration(),
+              .initial_revision_id = tp->second.get_remote_revision().value_or(
+                model::initial_revision_id(tp->second.get_revision())),
+              .timestamp = ss::lowres_system_clock::now()};
+
+            _lifecycle_markers.emplace(soft_del.topic, tombstone);
+            vlog(
+              clusterlog.debug,
+              "Created lifecycle marker for topic {} {}",
+              soft_del.topic.nt,
+              soft_del.topic.initial_revision_id);
+        }
+
+        if (
+          topic_properties.iceberg_mode != model::iceberg_mode::disabled
+          && topic_properties.iceberg_delete.value_or(
+            config::shard_local_cfg().iceberg_delete())) {
+            // Note that for iceberg tombstones we use topic.get_revision()
+            // (i.e. revision that got assigned to the topic at creation time)
+            // and not topic.get_remote_revision() (which may be an earlier
+            // revision if the topic was recovered from cloud storage).
+            auto tombstone = nt_iceberg_tombstone{
+              .last_deleted_revision = tp->second.get_revision()};
+            auto it = _iceberg_tombstones.emplace(tp->first, tombstone).first;
+            it->second.last_deleted_revision = std::max(
+              it->second.last_deleted_revision, tp->second.get_revision());
+
+            vlog(
+              clusterlog.debug,
+              "created iceberg tombstone for topic {} (revision: {})",
+              it->first,
+              it->second.last_deleted_revision);
+        }
+
         [[fallthrough]]; // proceed to local deletion
     }
     case topic_lifecycle_transition_mode::oneshot_delete:

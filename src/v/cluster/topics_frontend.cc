@@ -1007,12 +1007,8 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
     if (migrated_away) {
         mode = topic_lifecycle_transition_mode::delete_migrated;
         vlog(clusterlog.info, "Deleting migrated topic {}", tp_ns);
-    } else if (topic_meta.get_configuration()
-                 .properties.requires_remote_erase()) {
-        mode = topic_lifecycle_transition_mode::pending_gc;
-        vlog(clusterlog.info, "Created deletion marker for topic {}", tp_ns);
     } else {
-        mode = topic_lifecycle_transition_mode::oneshot_delete;
+        mode = topic_lifecycle_transition_mode::pending_gc;
         vlog(clusterlog.info, "Deleting topic {}", tp_ns);
     }
 
