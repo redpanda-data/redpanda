@@ -140,6 +140,18 @@ std::ostream& operator<<(std::ostream& o, const topic_properties_update& tpu) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const topic_purge_domain& d) {
+    switch (d) {
+    case topic_purge_domain::cloud_storage:
+        return o << "cloud_storage";
+    case topic_purge_domain::iceberg:
+        return o << "iceberg";
+    default:
+        fmt::print(o, "unknown({})", static_cast<int>(d));
+        return o;
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_result& r) {
     fmt::print(o, "topic: {}, result: {}", r.tp_ns, r.ec);
     return o;
