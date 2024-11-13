@@ -423,3 +423,19 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "schema_parquet",
+    srcs = [
+        "schema_parquet.cc",
+    ],
+    hdrs = [
+        "schema_parquet.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/iceberg:datatypes",
+        "//src/v/serde/parquet:schema",
+    ],
+)

@@ -12,3 +12,5 @@ v_cc_library(
 add_subdirectory(protobuf)
 add_subdirectory(avro)
 add_subdirectory(test)
+add_subdirectory(parquet)
+add_subdirectory(thrift)
