@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/alter_configs.h"
 #include "kafka/protocol/create_topics.h"
@@ -1442,6 +1443,47 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
     // properties will be ignored on the topic create path. stick to COMPAT here
     // because it's a superset of REDPANDA.
     update_cluster_config("enable_schema_id_validation", "compat");
+
+    // Specific tests for leadership pinning
+    {
+        const config::leaders_preference no_preference{};
+        const config::leaders_preference pref_a{
+          .type = config::leaders_preference::type_t::racks,
+          .racks = {model::rack_id{"A"}}};
+        const config::leaders_preference pref_b{
+          .type = config::leaders_preference::type_t::racks,
+          .racks = {model::rack_id{"A"}, model::rack_id{"B"}}};
+
+        test_cases.emplace_back(
+          "leaders_preference.enable",
+          props_t{},
+          alter_props_t{
+            {set(kafka::topic_property_leaders_preference, pref_a)}},
+          failure);
+        test_cases.emplace_back(
+          "leaders_preference.change",
+          props_t{with(kafka::topic_property_leaders_preference, pref_a)},
+          alter_props_t{
+            {set(kafka::topic_property_leaders_preference, pref_b)}},
+          failure);
+        test_cases.emplace_back(
+          "leaders_preference.no_change",
+          props_t{with(kafka::topic_property_leaders_preference, pref_a)},
+          alter_props_t{
+            {set(kafka::topic_property_leaders_preference, pref_a)}},
+          success);
+        test_cases.emplace_back(
+          "leaders_preference.unset",
+          props_t{with(kafka::topic_property_leaders_preference, pref_a)},
+          alter_props_t{{remove(kafka::topic_property_leaders_preference)}},
+          success);
+        test_cases.emplace_back(
+          "leaders_preference.disable",
+          props_t{with(kafka::topic_property_leaders_preference, pref_a)},
+          alter_props_t{
+            {set(kafka::topic_property_leaders_preference, no_preference)}},
+          success);
+    }
 
     // Create the topics for the tests
     constexpr auto inc_alter_topic = [](std::string_view tp_raw) {
