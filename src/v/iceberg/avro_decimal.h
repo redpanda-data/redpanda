@@ -16,20 +16,20 @@
 #include <array>
 namespace iceberg {
 /**
- * Converts a decimal into an array of bytes (big endian)
+ * Converts a decimal into an array of bytes (big endian), this works the same
+ * way as the Java's BigInteger.toByteArray() method.
  */
-
 inline bytes encode_avro_decimal(absl::int128 decimal) {
-    auto high_half = absl::Uint128High64(decimal);
-    auto low_half = absl::Uint128Low64(decimal);
+    auto high_half = ss::cpu_to_be(absl::Uint128High64(decimal));
+    auto low_half = ss::cpu_to_be(absl::Uint128Low64(decimal));
 
     bytes decimal_bytes(bytes::initialized_zero{}, 16);
 
     for (int i = 0; i < 8; i++) {
         // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        decimal_bytes[i] = (low_half >> (i * 8)) & 0xFF;
+        decimal_bytes[i] = (high_half >> (i * 8)) & 0xFF;
         // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        decimal_bytes[i + 8] = (high_half >> (i * 8)) & 0xFF;
+        decimal_bytes[i + 8] = (low_half >> (i * 8)) & 0xFF;
     }
 
     return decimal_bytes;
@@ -41,12 +41,12 @@ inline absl::int128 decode_avro_decimal(bytes bytes) {
     int64_t high_half = 0;
     uint64_t low_half = 0;
     for (size_t i = 0; i < 8; i++) {
-        low_half |= static_cast<uint64_t>(bytes[i]) << i * 8;
         // NOLINTNEXTLINE(hicpp-signed-bitwise)
-        high_half |= static_cast<int64_t>(bytes[8 + i]) << i * 8;
+        high_half |= static_cast<int64_t>(bytes[i]) << i * 8;
+        low_half |= static_cast<uint64_t>(bytes[i + 8]) << i * 8;
     }
 
-    return absl::MakeInt128(high_half, low_half);
+    return absl::MakeInt128(ss::be_to_cpu(high_half), ss::be_to_cpu(low_half));
 }
 
 inline iobuf avro_decimal_to_iobuf(absl::int128 decimal, size_t max_size) {

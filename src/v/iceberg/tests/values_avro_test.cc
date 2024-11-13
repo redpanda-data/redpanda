@@ -113,3 +113,35 @@ TEST(ValuesAvroTest, TestDecimalConversionsLimitedSize) {
     ASSERT_EQ(
       decimal, iobuf_to_avro_decimal(avro_decimal_to_iobuf(decimal, 8)));
 }
+
+TEST(ValuesAvroTest, TestDecimalConversionAgainstJavaBigInteger) {
+    // value of 65536
+    ASSERT_EQ(
+      encode_avro_decimal(absl::MakeInt128(0, 65536)),
+      bytes({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0}));
+    // value of 35209893291843950283695459221
+    ASSERT_EQ(
+      encode_avro_decimal(absl::MakeInt128(1908732140, 89247320981)),
+      bytes({0, 0, 0, 0, 113, 196, 240, 236, 0, 0, 0, 20, 199, 142, 11, 149}));
+
+    // value of -18218949492341193300753118315
+    ASSERT_EQ(
+      encode_avro_decimal(absl::MakeInt128(-987651231, 89247320981)),
+      bytes(
+        {255,
+         255,
+         255,
+         255,
+         197,
+         33,
+         163,
+         97,
+         0,
+         0,
+         0,
+         20,
+         199,
+         142,
+         11,
+         149}));
+}
