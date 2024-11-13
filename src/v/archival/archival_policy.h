@@ -136,4 +136,15 @@ private:
     ss::io_priority_class _io_priority;
 };
 
+/// This function computes offsets for the upload (inc. file offets)
+/// If the full segment is uploaded the segment is not scanned.
+/// If the upload is partial, the partial scan will be performed if
+/// the segment has the index and full scan otherwise.
+ss::future<std::optional<std::error_code>> get_file_range(
+  model::offset begin_inclusive,
+  std::optional<model::offset> end_inclusive,
+  ss::lw_shared_ptr<storage::segment> segment,
+  ss::lw_shared_ptr<upload_candidate> upl,
+  ss::io_priority_class io_priority);
+
 } // namespace archival
