@@ -108,6 +108,12 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
       });
 }
 
+ss::future<checked<void, catalog::errc>>
+rest_catalog::drop_table(const table_identifier&, bool /*purge*/) {
+    // TODO: implement
+    co_return outcome::success();
+}
+
 ss::future<checked<std::nullopt_t, errc>>
 rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
     auto rtc = create_rtc();
