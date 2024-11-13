@@ -1036,6 +1036,8 @@ topic_properties topic_table::update_topic_properties(
       overrides.iceberg_translation_interval_ms);
     incremental_update(
       updated_properties.delete_retention_ms, overrides.delete_retention_ms);
+    incremental_update(
+      updated_properties.iceberg_delete, overrides.iceberg_delete);
     return updated_properties;
 }
 
