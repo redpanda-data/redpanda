@@ -1049,7 +1049,9 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
 }
 
 ss::future<topic_result> topics_frontend::purged_topic(
-  nt_revision topic, model::timeout_clock::duration timeout) {
+  nt_revision topic,
+  topic_purge_domain domain,
+  model::timeout_clock::duration timeout) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
@@ -1060,26 +1062,43 @@ ss::future<topic_result> topics_frontend::purged_topic(
     // current node is a leader controller
     if (leader == _self) {
         return do_purged_topic(
-          std::move(topic), model::timeout_clock::now() + timeout);
+          std::move(topic), domain, model::timeout_clock::now() + timeout);
     } else {
         return dispatch_purged_topic_to_leader(
-          leader.value(), std::move(topic), timeout);
+          leader.value(), std::move(topic), domain, timeout);
     }
 }
 
 ss::future<topic_result> topics_frontend::do_purged_topic(
-  nt_revision topic, model::timeout_clock::time_point deadline) {
+  nt_revision topic,
+  topic_purge_domain domain,
+  model::timeout_clock::time_point deadline) {
     topic_lifecycle_transition_cmd cmd(
       topic.nt,
       topic_lifecycle_transition{
-        .topic = topic, .mode = topic_lifecycle_transition_mode::drop});
+        .topic = topic,
+        .mode = topic_lifecycle_transition_mode::purged,
+        .domain = domain});
 
-    if (!_topics.local().get_lifecycle_markers().contains(topic)) {
+    bool marker_exists = false;
+    switch (domain) {
+    case topic_purge_domain::cloud_storage:
+        marker_exists = _topics.local().get_lifecycle_markers().contains(topic);
+        break;
+    case topic_purge_domain::iceberg:
+        marker_exists = _topics.local().get_iceberg_tombstones().contains(
+          topic.nt);
+        break;
+    }
+
+    if (!marker_exists) {
         // Do not write to log if the marker is already gone
         vlog(
           clusterlog.info,
-          "Dropping duplicate purge request for lifecycle marker {}",
-          topic.nt);
+          "Dropping duplicate purge request for lifecycle marker {} in domain "
+          "{}",
+          topic.nt,
+          domain);
         co_return topic_result(std::move(topic.nt), errc::success);
     }
 
@@ -1155,6 +1174,7 @@ topics_frontend::dispatch_create_to_leader(
 ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
   model::node_id leader,
   nt_revision topic,
+  topic_purge_domain domain,
   model::timeout_clock::duration timeout) {
     vlog(
       clusterlog.trace,
@@ -1168,10 +1188,13 @@ ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
                  ss::this_shard_id(),
                  leader,
                  timeout,
-                 [topic, timeout](controller_client_protocol cp) mutable {
+                 [topic, timeout, domain](
+                   controller_client_protocol cp) mutable {
                      return cp.purged_topic(
                        purged_topic_request{
-                         .topic = std::move(topic), .timeout = timeout},
+                         .topic = std::move(topic),
+                         .timeout = timeout,
+                         .domain = domain},
                        rpc::client_opts(model::timeout_clock::now() + timeout));
                  })
                .then(&rpc::get_ctx_data<purged_topic_reply>);

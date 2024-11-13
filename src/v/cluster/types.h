@@ -889,6 +889,15 @@ struct configuration_with_assignment
 using create_partitions_configuration_assignment
   = configuration_with_assignment<create_partitions_configuration>;
 
+// GC process consists of deleting topic data in several places, and these
+// deletions have to be tracked separately.
+enum class topic_purge_domain {
+    cloud_storage = 0,
+    iceberg = 1,
+};
+
+std::ostream& operator<<(std::ostream&, const topic_purge_domain&);
+
 /**
  * Soft-deleting a topic may put it into different modes: initially this is
  * just a two stage thing: create a marker that acts as a tombstone, later
@@ -899,9 +908,8 @@ using create_partitions_configuration_assignment
  * no intention of deletion.
  */
 enum class topic_lifecycle_transition_mode : uint8_t {
-    // Drop the lifecycle marker: we do this after we're done with any
-    // garbage collection.
-    drop = 0,
+    // Purging of topic-related data in some topic_purge_domain is complete.
+    purged = 0,
 
     // Enter garbage collection phase: the topic appears deleted externally,
     // while internally we are garbage collecting any data that belonged
@@ -952,13 +960,18 @@ struct nt_iceberg_tombstone
 struct topic_lifecycle_transition
   : serde::envelope<
       topic_lifecycle_transition,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     nt_revision topic;
 
     topic_lifecycle_transition_mode mode;
 
-    auto serde_fields() { return std::tie(topic, mode); }
+    // Used together with mode=purged. Default is cloud_storage for
+    // backwards compat (legacy lifecycle transitions were always cloud-storage
+    // related).
+    topic_purge_domain domain = topic_purge_domain::cloud_storage;
+
+    auto serde_fields() { return std::tie(topic, mode, domain); }
 };
 
 using topic_configuration_assignment
@@ -1046,12 +1059,13 @@ struct create_topics_reply
 struct purged_topic_request
   : serde::envelope<
       purged_topic_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     nt_revision topic;
     model::timeout_clock::duration timeout;
+    topic_purge_domain domain = topic_purge_domain::cloud_storage;
 
     friend bool
     operator==(const purged_topic_request&, const purged_topic_request&)
@@ -1059,7 +1073,7 @@ struct purged_topic_request
 
     friend std::ostream& operator<<(std::ostream&, const purged_topic_request&);
 
-    auto serde_fields() { return std::tie(topic, timeout); }
+    auto serde_fields() { return std::tie(topic, timeout, domain); }
 };
 
 struct purged_topic_reply

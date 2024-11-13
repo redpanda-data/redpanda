@@ -170,7 +170,8 @@ ss::future<std::error_code>
 topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
 
-    if (soft_del.mode == topic_lifecycle_transition_mode::pending_gc) {
+    switch (soft_del.mode) {
+    case topic_lifecycle_transition_mode::pending_gc: {
         // Create a lifecycle marker
         auto tp = _topics.find(soft_del.topic.nt);
         if (tp == _topics.end()) {
@@ -190,35 +191,72 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
           "Created lifecycle marker for topic {} {}",
           soft_del.topic.nt,
           soft_del.topic.initial_revision_id);
-    } else if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
-        if (_lifecycle_markers.contains(soft_del.topic)) {
+        [[fallthrough]]; // proceed to local deletion
+    }
+    case topic_lifecycle_transition_mode::oneshot_delete:
+    case topic_lifecycle_transition_mode::delete_migrated:
+        return ssx::now(do_local_delete(
+          soft_del.topic.nt,
+          offset,
+          soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
+    case topic_lifecycle_transition_mode::purged:
+        switch (soft_del.domain) {
+        case topic_purge_domain::cloud_storage: {
+            if (_lifecycle_markers.contains(soft_del.topic)) {
+                vlog(
+                  clusterlog.debug,
+                  "Purged cloud storage lifecycle marker for {} {}",
+                  soft_del.topic.nt,
+                  soft_del.topic.initial_revision_id);
+                _lifecycle_markers.erase(soft_del.topic);
+                return ss::make_ready_future<std::error_code>(errc::success);
+            } else {
+                vlog(
+                  clusterlog.info,
+                  "Unexpected record at offset {} to drop non-existent "
+                  "lifecycle marker {} {}",
+                  offset,
+                  soft_del.topic.nt,
+                  soft_del.topic.initial_revision_id);
+                return ss::make_ready_future<std::error_code>(
+                  errc::topic_not_exists);
+            }
+        }
+        case topic_purge_domain::iceberg: {
+            auto tombstone_it = _iceberg_tombstones.find(soft_del.topic.nt);
+            if (tombstone_it == _iceberg_tombstones.end()) {
+                return ss::make_ready_future<std::error_code>(
+                  errc::topic_not_exists);
+            }
+
+            model::revision_id purged_revision{
+              soft_del.topic.initial_revision_id};
+            if (tombstone_it->second.last_deleted_revision > purged_revision) {
+                return ss::make_ready_future<std::error_code>(
+                  errc::concurrent_modification_error);
+            }
+
             vlog(
               clusterlog.debug,
-              "Purged lifecycle marker for {} {}",
-              soft_del.topic.nt,
-              soft_del.topic.initial_revision_id);
-            _lifecycle_markers.erase(soft_del.topic);
+              "Purged iceberg tombstone for {} {}",
+              tombstone_it->first,
+              tombstone_it->second.last_deleted_revision);
+
+            _iceberg_tombstones.erase(tombstone_it);
             return ss::make_ready_future<std::error_code>(errc::success);
-        } else {
+        }
+        default:
             vlog(
-              clusterlog.info,
-              "Unexpected record at offset {} to drop non-existent lifecycle "
-              "marker {} {}",
-              offset,
+              clusterlog.error,
+              "Unknown purge domain {} for topic {} (initial rev: {}). "
+              "This is a bug.",
+              static_cast<int>(soft_del.domain),
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
             return ss::make_ready_future<std::error_code>(
-              errc::topic_not_exists);
+              errc::invalid_request);
         }
     }
-
-    if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
-        return ssx::now<std::error_code>(errc::success);
-    }
-    return ssx::now(do_local_delete(
-      soft_del.topic.nt,
-      offset,
-      soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
 }
 
 ss::future<std::error_code>
