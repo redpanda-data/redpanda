@@ -655,7 +655,8 @@ struct instance_generator<cluster::topic_properties> {
           std::nullopt,
           false,
           std::nullopt,
-          tristate<std::chrono::milliseconds>{disable_tristate}};
+          tristate<std::chrono::milliseconds>{disable_tristate},
+          std::nullopt};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }
