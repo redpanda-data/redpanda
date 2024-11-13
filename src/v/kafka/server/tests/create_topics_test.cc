@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
@@ -447,27 +448,36 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
       pandaproxy::schema_registry::schema_id_validation_mode::compat);
 
     revoke_license();
-    auto si_props = {
-      ss::sstring{kafka::topic_property_remote_read},
-      ss::sstring{kafka::topic_property_remote_write},
-      ss::sstring{kafka::topic_property_recovery},
-      ss::sstring{kafka::topic_property_read_replica},
-      ss::sstring{kafka::topic_property_record_key_schema_id_validation},
-      ss::sstring{kafka::topic_property_record_key_schema_id_validation_compat},
-      ss::sstring{kafka::topic_property_record_value_schema_id_validation},
-      ss::sstring{
-        kafka::topic_property_record_value_schema_id_validation_compat},
+    using prop_t = std::map<ss::sstring, ss::sstring>;
+    const auto with = [](const std::string_view prop, const auto value) {
+        return std::make_pair(
+          prop, prop_t{{ss::sstring{prop}, ssx::sformat("{}", value)}});
     };
+    std::vector<std::pair<std::string_view, prop_t>> enterprise_props{
+      // si_props
+      with(kafka::topic_property_remote_read, true),
+      with(kafka::topic_property_remote_write, true),
+      with(kafka::topic_property_recovery, true),
+      with(kafka::topic_property_read_replica, true),
+      // schema id validation
+      with(kafka::topic_property_record_key_schema_id_validation, true),
+      with(kafka::topic_property_record_key_schema_id_validation_compat, true),
+      with(kafka::topic_property_record_value_schema_id_validation, true),
+      with(
+        kafka::topic_property_record_value_schema_id_validation_compat, true),
+      // pin_leadership_props
+      with(
+        kafka::topic_property_leaders_preference,
+        config::leaders_preference{
+          .type = config::leaders_preference::type_t::racks,
+          .racks = {model::rack_id{"A"}}})};
 
     auto client = make_kafka_client().get();
     client.connect().get();
 
-    for (const auto& prop : si_props) {
+    for (const auto& [name, props] : enterprise_props) {
         auto topic = make_topic(
-          ssx::sformat("topic_{}", prop),
-          std::nullopt,
-          std::nullopt,
-          std::map<ss::sstring, ss::sstring>{{prop, "true"}});
+          ssx::sformat("topic_{}", name), std::nullopt, std::nullopt, props);
 
         auto resp
           = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
