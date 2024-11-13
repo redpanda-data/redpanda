@@ -74,6 +74,7 @@ redpanda_cc_library(
         "//src/v/strings:utf8",
         "//src/v/syschecks",
         "//src/v/transform",
+        "//src/v/transform:fwd",
         "//src/v/transform/rpc",
         "//src/v/transform/stm",
         "//src/v/utils:file_io",

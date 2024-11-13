@@ -13,12 +13,12 @@
 
 #include "base/seastarx.h"
 #include "io.h"
-#include "memory_limiter.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/transform.h"
-#include "probe.h"
-#include "transfer_queue.h"
+#include "transform/memory_limiter.h"
+#include "transform/probe.h"
+#include "transform/transfer_queue.h"
 #include "utils/prefix_logger.h"
 #include "wasm/fwd.h"
 

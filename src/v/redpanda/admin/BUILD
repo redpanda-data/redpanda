@@ -243,6 +243,7 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
         "//src/v/transform",
+        "//src/v/transform:fwd",
         "//src/v/utils:functional",
         "//src/v/utils:unresolved_address",
         "//src/v/wasm:api",

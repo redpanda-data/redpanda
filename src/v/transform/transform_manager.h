@@ -10,12 +10,12 @@
  */
 #pragma once
 
-#include "memory_limiter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/transform.h"
 #include "ssx/work_queue.h"
 #include "transform/fwd.h"
+#include "transform/memory_limiter.h"
 #include "transform_processor.h"
 
 #include <seastar/core/lowres_clock.hh>
