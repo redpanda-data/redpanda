@@ -68,6 +68,10 @@ struct offset_to_file_pos_result {
 using should_fail_on_missing_offset
   = ss::bool_class<struct should_fail_on_missing_offset_tag>;
 
+// Returns the highest batch start offset that is <= the target offset.
+// The batch corresponding to this start offset may not actually exist, e.g. if
+// it was compacted away. This method may return a lower offset than the target
+// offset.
 ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   model::offset begin_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
@@ -76,6 +80,7 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   should_fail_on_missing_offset fail_on_missing_offset
   = should_fail_on_missing_offset::yes);
 
+// Returns the highest batch end offset that is <= the target offset.
 ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
