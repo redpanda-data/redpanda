@@ -42,7 +42,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "remote_label: {}, iceberg_enabled: {}, "
       "leaders_preference: {}, "
       "iceberg_translation_interval_ms: {}, "
-      "delete_retention_ms: {}",
+      "delete_retention_ms: {}, "
+      "iceberg_delete: {}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -79,7 +80,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.iceberg_enabled,
       properties.leaders_preference,
       properties.iceberg_translation_interval_ms,
-      properties.delete_retention_ms);
+      properties.delete_retention_ms,
+      properties.iceberg_delete);
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         fmt::print(
@@ -126,7 +128,7 @@ bool topic_properties::has_overrides() const {
         || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled)
         || leaders_preference.has_value()
         || iceberg_translation_interval_ms.has_value()
-        || delete_retention_ms.is_engaged();
+        || delete_retention_ms.is_engaged() || iceberg_delete.has_value();
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         return overrides
@@ -263,6 +265,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       false,
       std::nullopt,
       tristate<std::chrono::milliseconds>{disable_tristate},
+      std::nullopt,
     };
 }
 
