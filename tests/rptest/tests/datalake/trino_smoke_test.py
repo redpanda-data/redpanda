@@ -42,8 +42,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
         return self.trino.execute(query=query_str)
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_trino_smoke(self, cloud_storage_type):
+    @matrix(storage_type=supported_storage_types())
+    def test_trino_smoke(self, storage_type):
         assert self.trino
         client = self.trino.make_client()
         try:

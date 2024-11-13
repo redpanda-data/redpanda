@@ -42,8 +42,8 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
         return self.spark.execute(query=query_str)
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_spark_smoke(self, cloud_storage_type):
+    @matrix(storage_type=supported_storage_types())
+    def test_spark_smoke(self, storage_type):
         assert self.spark
         client = self.spark.make_client()
         try:

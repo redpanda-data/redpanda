@@ -47,8 +47,8 @@ class PolarisCatalogSmokeTest(PolarisCatalogTest):
     """
 
     @cluster(num_nodes=2)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_creating_catalog(self, cloud_storage_type):
+    @matrix(storage_type=supported_storage_types())
+    def test_creating_catalog(self, storage_type):
         """The very basic test checking interaction with polaris catalog
         """
         polaris_api = PolarisDefaultApi(self.polaris.management_client())
