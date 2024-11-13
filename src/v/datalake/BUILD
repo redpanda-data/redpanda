@@ -439,3 +439,20 @@ redpanda_cc_library(
         "//src/v/serde/parquet:schema",
     ],
 )
+
+redpanda_cc_library(
+    name = "values_parquet",
+    srcs = [
+        "values_parquet.cc",
+    ],
+    hdrs = [
+        "values_parquet.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":conversion_outcome",
+        "//src/v/iceberg:values",
+        "//src/v/serde/parquet:value",
+    ],
+)
