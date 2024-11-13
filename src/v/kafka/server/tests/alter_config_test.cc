@@ -383,6 +383,7 @@ FIXTURE_TEST(
       "redpanda.leaders.preference",
       "redpanda.iceberg.translation.interval.ms",
       "delete.retention.ms",
+      "redpanda.iceberg.delete",
     };
 
     // All properties_request

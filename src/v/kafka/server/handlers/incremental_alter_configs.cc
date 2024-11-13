@@ -377,6 +377,11 @@ create_topic_properties_update(
                   delete_retention_ms_validator{});
                 continue;
             }
+            if (cfg.name == topic_property_iceberg_delete) {
+                parse_and_set_optional_bool_alpha(
+                  update.properties.iceberg_delete, cfg.value, op);
+                continue;
+            }
 
         } catch (const validation_error& e) {
             vlog(

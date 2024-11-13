@@ -308,6 +308,7 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 'iceberg_enabled': rdr.read_bool(),
                 'leaders_preference':
                 rdr.read_optional(read_leaders_preference),
+                'iceberg_delete': rdr.read_optional(Reader.read_bool),
             }
 
         return incr_obj
