@@ -218,6 +218,32 @@ ss::future<expected<load_table_result>> catalog_client::load_table(
       .and_then(parse_as_expected("load_table", parse_load_table_result));
 }
 
+ss::future<expected<std::monostate>> catalog_client::drop_table(
+  const chunked_vector<ss::sstring>& ns,
+  const ss::sstring& table_name,
+  std::optional<bool> purge_requested,
+  retry_chain_node& rtc) {
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return tl::unexpected(token.error());
+    }
+
+    http::rest_client::rest_entity::optional_query_params params;
+    if (purge_requested.has_value()) {
+        params.emplace();
+        params.value()["purgeRequested"] = purge_requested ? "true" : "false";
+    }
+
+    auto http_request = table(root_path(), ns)
+                          .delete_(table_name, std::nullopt, std::move(params))
+                          .with_bearer_auth(token.value());
+
+    co_return (co_await perform_request(rtc, http_request)).map([](iobuf&&) {
+        // we expect empty response, discard it
+        return std::monostate{};
+    });
+}
+
 ss::future<expected<commit_table_response>> catalog_client::commit_table_update(
   commit_table_request commit_request, retry_chain_node& rtc) {
     auto token = co_await ensure_token(rtc);

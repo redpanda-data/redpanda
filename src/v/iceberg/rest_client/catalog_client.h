@@ -119,6 +119,21 @@ public:
       retry_chain_node&);
 
     /**
+     * Drop Table API
+     *
+     * DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}
+     *
+     * NOTE: using std::monostate instead of void, because
+     * ss::future<expected<void>> is not no-throw move constructible
+     */
+
+    ss::future<expected<std::monostate>> drop_table(
+      const chunked_vector<ss::sstring>& ns,
+      const ss::sstring& table,
+      std::optional<bool> purge_requested,
+      retry_chain_node&);
+
+    /**
      * Commit Table Updates API
      *
      * POST /v1/{prefix}/namespaces/{namespace}/tables/{table}
