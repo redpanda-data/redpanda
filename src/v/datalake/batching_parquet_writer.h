@@ -11,8 +11,8 @@
 #pragma once
 #include "base/outcome.h"
 #include "datalake/arrow_translator.h"
+#include "datalake/arrow_writer.h"
 #include "datalake/data_writer_interface.h"
-#include "datalake/parquet_writer.h"
 #include "iceberg/datatypes.h"
 
 #include <seastar/core/file.hh>
