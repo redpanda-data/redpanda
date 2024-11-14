@@ -737,7 +737,16 @@ void feature_table::revoke_license() {
 }
 
 const std::optional<security::license>& feature_table::get_license() const {
-    return _license ? _license : _builtin_trial_license;
+    static const std::optional<security::license> no_license = std::nullopt;
+    if (_license) {
+        return _license;
+    } else if (
+      _builtin_trial_license && !_builtin_trial_license->is_expired()) {
+        // Don't not show the evaluation period license after it expired
+        return _builtin_trial_license;
+    } else {
+        return no_license;
+    }
 }
 
 const std::optional<security::license>&
