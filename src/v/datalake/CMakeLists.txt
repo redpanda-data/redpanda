@@ -50,6 +50,7 @@ v_cc_library(
     translation_task.cc
     schema_parquet.cc
     values_parquet.cc
+    local_parquet_file_writer.cc
   DEPS
     v::cloud_io
     v::datalake_common

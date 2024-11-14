@@ -26,7 +26,7 @@ const auto default_accessors = iceberg::struct_accessor::from_struct_type(
   default_schema);
 } // namespace
 
-ss::future<data_writer_error>
+ss::future<writer_error>
 partitioning_writer::add_data(iceberg::struct_value val, int64_t approx_size) {
     iceberg::partition_key pk;
     try {
@@ -38,7 +38,7 @@ partitioning_writer::add_data(iceberg::struct_value val, int64_t approx_size) {
           "Error {} while partitioning value: {}",
           std::current_exception(),
           val);
-        co_return data_writer_error::parquet_conversion_error;
+        co_return writer_error::parquet_conversion_error;
     }
     auto writer_iter = writers_.find(pk);
     if (writer_iter == writers_.end()) {
@@ -57,17 +57,17 @@ partitioning_writer::add_data(iceberg::struct_value val, int64_t approx_size) {
     auto& writer = writer_iter->second;
     auto write_res = co_await writer->add_data_struct(
       std::move(val), approx_size);
-    if (write_res != data_writer_error::ok) {
+    if (write_res != writer_error::ok) {
         vlog(datalake_log.error, "Failed to add data: {}", write_res);
         co_return write_res;
     }
     co_return write_res;
 }
 
-ss::future<result<chunked_vector<local_file_metadata>, data_writer_error>>
+ss::future<result<chunked_vector<local_file_metadata>, writer_error>>
 partitioning_writer::finish() && {
     chunked_vector<local_file_metadata> files;
-    auto first_error = data_writer_error::ok;
+    auto first_error = writer_error::ok;
     // TODO: parallelize me!
     for (auto& [pk, writer] : writers_) {
         int hour = std::get<iceberg::int_value>(
@@ -79,7 +79,7 @@ partitioning_writer::finish() && {
               datalake_log.error,
               "Failed to finish writer: {}",
               file_res.error());
-            if (first_error == data_writer_error::ok) {
+            if (first_error == writer_error::ok) {
                 first_error = file_res.error();
             }
             // Even on error, move on so that we can close all the writers.
@@ -89,7 +89,7 @@ partitioning_writer::finish() && {
         file.hour = hour;
         files.emplace_back(std::move(file));
     }
-    if (first_error != data_writer_error::ok) {
+    if (first_error != writer_error::ok) {
         co_return first_error;
     }
     co_return files;

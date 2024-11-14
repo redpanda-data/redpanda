@@ -14,11 +14,13 @@
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
 
+#include <seastar/core/iostream.hh>
+
 #include <cstddef>
 
 namespace datalake {
 
-enum class data_writer_error {
+enum class writer_error {
     ok = 0,
     parquet_conversion_error,
     file_io_error,
@@ -36,38 +38,80 @@ struct data_writer_error_category : std::error_category {
     }
 };
 
-inline std::error_code make_error_code(data_writer_error e) noexcept {
+inline std::error_code make_error_code(writer_error e) noexcept {
     return {static_cast<int>(e), data_writer_error_category::error_category()};
 }
 
-class data_writer {
+/**
+ * Parquet writer interface. The writer should write parquet serialized data to
+ * the output stream provided during its creation.
+ */
+class parquet_ostream {
 public:
-    data_writer() = default;
-    data_writer(const data_writer&) = delete;
-    data_writer(data_writer&&) = default;
-    data_writer& operator=(const data_writer&) = delete;
-    data_writer& operator=(data_writer&&) = delete;
+    explicit parquet_ostream() = default;
+    parquet_ostream(const parquet_ostream&) = delete;
+    parquet_ostream(parquet_ostream&&) = default;
+    parquet_ostream& operator=(const parquet_ostream&) = delete;
+    parquet_ostream& operator=(parquet_ostream&&) = default;
+    virtual ~parquet_ostream() = default;
 
-    virtual ~data_writer() = default;
+    virtual ss::future<writer_error>
+      add_data_struct(iceberg::struct_value, size_t) = 0;
 
-    virtual ss::future<data_writer_error> add_data_struct(
+    virtual ss::future<writer_error> finish() = 0;
+};
+
+class parquet_ostream_factory {
+public:
+    parquet_ostream_factory() = default;
+    parquet_ostream_factory(const parquet_ostream_factory&) = default;
+    parquet_ostream_factory(parquet_ostream_factory&&) = delete;
+    parquet_ostream_factory& operator=(const parquet_ostream_factory&)
+      = default;
+    parquet_ostream_factory& operator=(parquet_ostream_factory&&) = delete;
+
+    virtual ~parquet_ostream_factory() = default;
+
+    virtual ss::future<std::unique_ptr<parquet_ostream>>
+    create_writer(const iceberg::struct_type&, ss::output_stream<char>) = 0;
+};
+
+/**
+ * Interface of a parquet file writer. The file writer finishes by returning
+ * file metadata. In future we may want to change the return type of this
+ * interface to me more generic and allow to express that writer can return
+ * either a local file path or a remote path.
+ */
+class parquet_file_writer {
+public:
+    parquet_file_writer() = default;
+    parquet_file_writer(const parquet_file_writer&) = delete;
+    parquet_file_writer(parquet_file_writer&&) = default;
+    parquet_file_writer& operator=(const parquet_file_writer&) = delete;
+    parquet_file_writer& operator=(parquet_file_writer&&) = delete;
+
+    virtual ~parquet_file_writer() = default;
+
+    virtual ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual ss::future<result<local_file_metadata, data_writer_error>>
-    finish() = 0;
+    virtual ss::future<result<local_file_metadata, writer_error>> finish() = 0;
 };
 
-class data_writer_factory {
+class parquet_file_writer_factory {
 public:
-    data_writer_factory() = default;
-    data_writer_factory(const data_writer_factory&) = delete;
-    data_writer_factory(data_writer_factory&&) = default;
-    data_writer_factory& operator=(const data_writer_factory&) = delete;
-    data_writer_factory& operator=(data_writer_factory&&) = default;
-    virtual ~data_writer_factory() = default;
+    parquet_file_writer_factory() = default;
+    parquet_file_writer_factory(const parquet_file_writer_factory&) = delete;
+    parquet_file_writer_factory(parquet_file_writer_factory&&) = default;
+    parquet_file_writer_factory& operator=(const parquet_file_writer_factory&)
+      = delete;
+    parquet_file_writer_factory& operator=(parquet_file_writer_factory&&)
+      = default;
+    virtual ~parquet_file_writer_factory() = default;
 
-    virtual ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
+    virtual ss::future<
+      result<std::unique_ptr<parquet_file_writer>, writer_error>>
     create_writer(const iceberg::struct_type& /* schema */) = 0;
 };
 
@@ -75,5 +119,5 @@ public:
 
 namespace std {
 template<>
-struct is_error_code_enum<datalake::data_writer_error> : true_type {};
+struct is_error_code_enum<datalake::writer_error> : true_type {};
 } // namespace std
