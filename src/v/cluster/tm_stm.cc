@@ -197,6 +197,33 @@ tm_stm::update_tx(tx_metadata tx, model::term_id term) {
 
 ss::future<checked<tx_metadata, tm_stm::op_status>>
 tm_stm::do_update_tx(tx_metadata tx, model::term_id term) {
+    auto tx_id = tx.id;
+    auto replicate_result = co_await replicate_tx_update(std::move(tx), term);
+
+    if (replicate_result != tm_stm::op_status::success) {
+        vlog(
+          _ctx_log.warn,
+          "[tx_id={}] error replicating tx update: {}",
+          tx_id,
+          tx);
+
+        co_return replicate_result;
+    }
+
+    auto tx_opt = find_tx(tx_id);
+    if (!tx_opt) {
+        vlog(
+          _ctx_log.warn,
+          "[tx_id={}] can't find an updated transaction in the cache",
+          tx_id);
+
+        co_return tm_stm::op_status::conflict;
+    }
+    co_return tx_opt.value();
+}
+
+ss::future<tm_stm::op_status>
+tm_stm::replicate_tx_update(tx_metadata tx, model::term_id term) {
     vlog(
       _ctx_log.trace,
       "[tx_id={}] updating transaction: {} in term: {}",
@@ -240,26 +267,15 @@ tm_stm::do_update_tx(tx_metadata tx, model::term_id term) {
     if (_raft->term() != term) {
         vlog(
           _ctx_log.info,
-          "[tx_id={}] leadership while waiting until offset {} is applied tx: "
-          "{}",
+          "[tx_id={}] leadership lost while waiting until offset {} is applied "
+          "tx: {}",
           tx.id,
           offset,
           tx);
 
         co_return tm_stm::op_status::unknown;
     }
-
-    auto tx_opt = find_tx(tx.id);
-    if (!tx_opt) {
-        vlog(
-          _ctx_log.warn,
-          "[tx_id={}] can't find an updated tx: {} in the cache",
-          tx.id,
-          tx);
-        // update_tx must return conflict only in this case, see expire_tx
-        co_return tm_stm::op_status::conflict;
-    }
-    co_return tx_opt.value();
+    co_return tm_stm::op_status::success;
 }
 
 ss::future<checked<tx_metadata, tm_stm::op_status>>
@@ -833,22 +849,19 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
     auto etag = tx.etag;
-    auto r0 = co_await update_tx(std::move(tx), etag);
-    if (r0.has_value()) {
+    auto holder = _gate.hold();
+    // we are using replicate_tx_update instead of update_tx as we do not need
+    // the updated transaction metadata.
+    auto replicate_result = co_await replicate_tx_update(std::move(tx), etag);
+    if (replicate_result != tm_stm::op_status::success) {
         vlog(
-          _ctx_log.error,
-          "[tx_id={}] written tombstone should evict transaction from the "
-          "cache",
-          tx_id);
-        co_return tm_stm::op_status::unknown;
+          txlog.warn,
+          "[tx_id={}] Error replicating transaction metadata update to expire "
+          "transaction - {}",
+          tx_id,
+          replicate_result);
     }
-    if (r0.error() == tm_stm::op_status::conflict) {
-        // update_tx returns conflict when it can't find
-        // tx after the successful update; it may happen only
-        // with the tombstone
-        co_return tm_stm::op_status::success;
-    }
-    co_return r0.error();
+    co_return replicate_result;
 }
 
 ss::future<> tm_stm::apply_raft_snapshot(const iobuf&) {
