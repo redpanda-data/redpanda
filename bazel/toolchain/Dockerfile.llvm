@@ -1,8 +1,8 @@
-FROM ubuntu:jammy AS base
+FROM ubuntu:noble AS base
 
 RUN apt update
 RUN apt upgrade -y
-RUN apt install -y git curl python3 cmake ninja-build wget lsb-release software-properties-common gnupg
+RUN apt install -y git curl python3-dev cmake ninja-build wget lsb-release software-properties-common gnupg libedit-dev zlib1g-dev libncurses-dev swig
 ADD --chmod=755 https://apt.llvm.org/llvm.sh /
 ARG SYSTEM_CLANG_VERSION=19
 RUN /llvm.sh ${SYSTEM_CLANG_VERSION}
@@ -43,7 +43,7 @@ cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \\
   -DLLVM_INCLUDE_EXAMPLES=OFF \\
   -DLLVM_INCLUDE_UTILS=OFF \\
   -DLLVM_INCLUDE_DOCS=OFF \\
-  -DLLVM_ENABLE_ZLIB=OFF \\
+  -DLLVM_ENABLE_ZLIB=ON \\
   -DLLVM_ENABLE_ZSTD=OFF \\
   -DLLVM_ENABLE_Z3_SOLVER=OFF \\
   -DLLVM_ENABLE_DIA_SDK=OFF \\
@@ -56,11 +56,12 @@ cmake -G Ninja -DLLVM_TARGETS_TO_BUILD='AArch64;X86' \\
   -DLLVM_USE_LINKER=lld \\
   -DLLVM_BUILD_TOOLS=ON \\
   -DLLVM_ENABLE_PLUGINS=OFF \\
-  -DLLDB_ENABLE_CURSES=OFF \\
+  -DLLDB_ENABLE_CURSES=ON \\
   -DLLDB_ENABLE_LUA=OFF \\
   -DLLDB_ENABLE_LZMA=OFF \\
   -DLLDB_ENABLE_LIBXML2=OFF \\
-  -DLLDB_ENABLE_LIBEDIT=OFF \\
+  -DLLDB_ENABLE_LIBEDIT=ON \\
+  -DLLDB_ENABLE_PYTHON=ON \\
   -DLLVM_BINUTILS_INCDIR=ON \\
   -DLIBCLANG_BUILD_STATIC=ON \\
   -DCLANG_PLUGIN_SUPPORT=OFF \\
