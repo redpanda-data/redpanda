@@ -26,6 +26,7 @@ partition_state partition_state::copy() const {
 
 topic_state topic_state::copy() const {
     topic_state result;
+    result.revision = revision;
     result.pid_to_pending_files.reserve(pid_to_pending_files.size());
     for (const auto& [id, state] : pid_to_pending_files) {
         result.pid_to_pending_files[id] = state.copy();

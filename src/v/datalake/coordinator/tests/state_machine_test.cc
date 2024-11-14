@@ -117,6 +117,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
 
     static constexpr int32_t max_partitions = 5;
     model::topic_partition tp{model::topic{"test"}, model::partition_id{0}};
+    model::revision_id rev{123};
     datalake::coordinator::simple_file_committer file_committer;
     absl::flat_hash_map<raft::vnode, coordinator> coordinators;
 };
@@ -135,7 +136,7 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
         auto add_files_result = co_await retry_with_leader_coordinator(
           [&, this](coordinator& coordinator) mutable {
               auto tp = random_tp();
-              return coordinator->sync_get_last_added_offset(tp).then(
+              return coordinator->sync_get_last_added_offset(tp, rev).then(
                 [&, tp](auto result) {
                     if (!result) {
                         return ss::make_ready_future<bool>(false);
@@ -152,6 +153,7 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
                     return coordinator
                       ->sync_add_files(
                         tp,
+                        rev,
                         datalake::coordinator::make_pending_files(offset_pairs))
                       .then([](auto result) {
                           return ss::make_ready_future<bool>(

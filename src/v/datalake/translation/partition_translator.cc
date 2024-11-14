@@ -311,10 +311,13 @@ partition_translator::checkpoint_translated_data(
         translated_range.start_offset = reader_begin_offset;
     }
     auto last_offset = translated_range.last_offset;
-    coordinator::add_translated_data_files_request request;
-    request.tp = _partition->ntp().tp;
-    request.translator_term = _term;
-    request.ranges.emplace_back(std::move(translated_range));
+    chunked_vector<coordinator::translated_offset_range> ranges;
+    ranges.push_back(std::move(translated_range));
+    coordinator::add_translated_data_files_request request{
+      _partition->ntp().tp,
+      _partition->get_topic_revision_id(),
+      std::move(ranges),
+      _term};
     vlog(_logger.trace, "Adding translated data file, request: {}", request);
     auto result = co_await retry_with_backoff(
       rcn,
@@ -334,6 +337,7 @@ ss::future<std::optional<kafka::offset>>
 partition_translator::reconcile_with_coordinator() {
     auto request = coordinator::fetch_latest_translated_offset_request{};
     request.tp = _partition->ntp().tp;
+    request.topic_revision = _partition->get_topic_revision_id();
     vlog(_logger.trace, "fetch_latest_translated_offset, request: {}", request);
     auto resp = co_await _frontend->local().fetch_latest_translated_offset(
       request);
