@@ -153,15 +153,22 @@ ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(
         leader,
         timeout,
         [ntp, pid, tx_seq, transaction_timeout_ms, timeout, tm](
-          tx_gateway_client_protocol cp) {
+          tx_gateway_client_protocol cp) mutable {
             return cp.begin_tx(
-              begin_tx_request{ntp, pid, tx_seq, transaction_timeout_ms, tm},
+              begin_tx_request{
+                std::move(ntp), pid, tx_seq, transaction_timeout_ms, tm},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<begin_tx_reply>)
-      .then([ntp](result<begin_tx_reply> r) {
+      .then([ntp, leader](result<begin_tx_reply> r) {
           if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote begin tx", r.error());
+              vlog(
+                txlog.warn,
+                "error dispatching begin_tx request for {} against partition "
+                "leader: {} - {}",
+                ntp,
+                leader,
+                r.error().message());
               return begin_tx_reply{ntp, tx::errc::timeout};
           }
 
@@ -318,15 +325,21 @@ ss::future<commit_tx_reply> rm_partition_frontend::dispatch_commit_tx(
         ss::this_shard_id(),
         leader,
         timeout,
-        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
+        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) mutable {
             return cp.commit_tx(
-              commit_tx_request{ntp, pid, tx_seq, timeout},
+              commit_tx_request{std::move(ntp), pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<commit_tx_reply>)
-      .then([](result<commit_tx_reply> r) {
+      .then([ntp, leader](result<commit_tx_reply> r) {
           if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote commit tx", r.error());
+              vlog(
+                txlog.warn,
+                "error dispatching commit_tx request for {} against partition "
+                "leader: {} - {}",
+                ntp,
+                leader,
+                r.error().message());
               return commit_tx_reply{tx::errc::timeout};
           }
 
@@ -461,15 +474,21 @@ ss::future<abort_tx_reply> rm_partition_frontend::dispatch_abort_tx(
         ss::this_shard_id(),
         leader,
         timeout,
-        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) {
+        [ntp, pid, tx_seq, timeout](tx_gateway_client_protocol cp) mutable {
             return cp.abort_tx(
-              abort_tx_request{ntp, pid, tx_seq, timeout},
+              abort_tx_request{std::move(ntp), pid, tx_seq, timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<abort_tx_reply>)
-      .then([](result<abort_tx_reply> r) {
+      .then([ntp, leader](result<abort_tx_reply> r) {
           if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote abort tx", r.error());
+              vlog(
+                txlog.warn,
+                "error dispatching commit_tx request for {} against partition "
+                "leader: {} - {}",
+                ntp,
+                leader,
+                r.error().message());
               return abort_tx_reply{tx::errc::timeout};
           }
 

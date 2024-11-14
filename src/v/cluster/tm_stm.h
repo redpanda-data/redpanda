@@ -376,7 +376,8 @@ private:
       do_sync(model::timeout_clock::duration);
     ss::future<checked<tx_metadata, tm_stm::op_status>>
       do_update_tx(tx_metadata, model::term_id);
-
+    ss::future<tm_stm::op_status>
+      replicate_tx_update(tx_metadata, model::term_id);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
