@@ -40,8 +40,9 @@ struct topic_configuration
     storage::ntp_config make_ntp_config(
       const ss::sstring&,
       model::partition_id,
-      model::revision_id,
-      model::initial_revision_id) const;
+      model::revision_id rev,
+      model::revision_id topic_rev,
+      model::initial_revision_id remote_rev) const;
 
     bool is_internal() const {
         return tp_ns.ns == model::kafka_internal_namespace

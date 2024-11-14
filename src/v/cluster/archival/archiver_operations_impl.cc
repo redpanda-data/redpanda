@@ -1088,7 +1088,7 @@ public:
     }
 
     model::initial_revision_id get_initial_revision() const override {
-        return _part->log()->config().get_initial_revision();
+        return _part->log()->config().get_remote_revision();
     }
 
     // aborted transactions

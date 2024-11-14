@@ -309,7 +309,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
         ASSERT_EQ(req.method, "PUT");
         cloud_storage::partition_manifest spm(
           partition->get_ntp_config().ntp(),
-          partition->get_ntp_config().get_initial_revision());
+          partition->get_ntp_config().get_remote_revision());
         iobuf sbuf;
         sbuf.append(req.content.data(), req.content_length);
         vlog(

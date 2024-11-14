@@ -212,7 +212,7 @@ ntp_archiver::ntp_archiver(
   ss::shared_ptr<archiver_operations_api> ops,
   ss::shared_ptr<archiver_scheduler_api<ss::lowres_clock>> sched)
   : _ntp(ntp.ntp())
-  , _rev(ntp.get_initial_revision())
+  , _rev(ntp.get_remote_revision())
   , _remote(remote)
   , _cache(c)
   , _parent(parent)

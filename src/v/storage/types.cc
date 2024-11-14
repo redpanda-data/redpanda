@@ -146,21 +146,23 @@ std::ostream& operator<<(std::ostream& o, const ntp_config& v) {
         fmt::print(
           o,
           "{{ntp: {}, base_dir: {}, overrides: {}, revision: {}, "
-          "initial_revision: {}}}",
+          "topic_revision: {}, remote_revision: {}}}",
           v.ntp(),
           v.base_directory(),
           v.get_overrides(),
           v.get_revision(),
-          v.get_initial_revision());
+          v.get_topic_revision(),
+          v.get_remote_revision());
     } else {
         fmt::print(
           o,
           "{{ntp: {}, base_dir: {}, overrides: nullptr, revision: {}, "
-          "initial_revision: {}}}",
+          "topic_revision: {}, remote_revision: {}}}",
           v.ntp(),
           v.base_directory(),
           v.get_revision(),
-          v.get_initial_revision());
+          v.get_topic_revision(),
+          v.get_remote_revision());
     }
     return o;
 }

@@ -312,7 +312,7 @@ void check_snapshot_size(
 FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     create_raft();
     auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
     m.add(
       segment_name("0-1-v1.log"),
       segment_meta{
@@ -392,7 +392,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
     create_raft();
     auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
 
     // original segments
     m.add(
@@ -509,7 +509,7 @@ FIXTURE_TEST(
       .committed_offset = model::offset(399),
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
-    partition_manifest pm(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    partition_manifest pm(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
     for (const auto& s : m) {
         auto name = cloud_storage::generate_local_segment_name(
           s.base_offset, model::term_id{1});
@@ -651,7 +651,7 @@ FIXTURE_TEST(
   archival_metadata_stm_base_fixture) {
     create_raft();
     auto& ntp_cfg = _raft->log_config();
-    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_remote_revision());
     m.add(
       segment_name("0-1-v1.log"),
       segment_meta{

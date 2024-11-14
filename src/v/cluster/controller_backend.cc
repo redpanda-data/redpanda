@@ -1368,46 +1368,56 @@ ss::future<std::error_code> controller_backend::create_partition(
       log_revision,
       initial_replicas);
 
-    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
-    if (!cfg) {
-        // partition was already removed, do nothing
-        co_return errc::success;
-    }
-
     auto ec = co_await _shard_placement.prepare_create(ntp, log_revision);
     if (ec) {
         co_return ec;
     }
 
+    topic_configuration cfg;
+    model::revision_id topic_rev;
+    model::initial_revision_id remote_rev;
+    {
+        auto topic_md = _topics.local().get_topic_metadata_ref(
+          model::topic_namespace_view(ntp));
+        if (!topic_md) {
+            // topic was already removed, do nothing
+            co_return errc::success;
+        }
+        cfg = topic_md->get().get_configuration();
+        topic_rev = topic_md->get().get_revision();
+        // Remote revision is used for cloud storage paths. If the topic was
+        // recovered, this is the value from the original manifest, and if topic
+        // is read replica, the value from remote topic manifest is used.
+        remote_rev = topic_md->get().get_remote_revision().value_or(
+          model::initial_revision_id{topic_rev});
+    }
+
     // handle partially created topic
     auto partition = _partition_manager.local().get(ntp);
 
-    // initial revision of the partition on the moment when it was created
-    // the value is used by shadow indexing
-    // if topic is read replica, the value from remote topic manifest is
-    // used
-    auto initial_rev = _topics.local().get_initial_revision(ntp);
-    if (!initial_rev) {
-        co_return errc::topic_not_exists;
-    }
     // no partition exists, create one
     if (likely(!partition)) {
         std::vector<model::broker> initial_brokers = create_brokers_set(
           initial_replicas, _members_table.local());
 
         std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
-        if (cfg->is_read_replica()) {
+        if (cfg.is_read_replica()) {
             read_replica_bucket = cloud_storage_clients::bucket_name(
-              cfg->properties.read_replica_bucket.value());
+              cfg.properties.read_replica_bucket.value());
         }
 
         std::optional<xshard_transfer_state> xst_state;
         if (auto it = _xst_states.find(ntp); it != _xst_states.end()) {
             xst_state = it->second;
         }
-        auto ntp_config = cfg->make_ntp_config(
-          _data_directory, ntp.tp.partition, log_revision, initial_rev.value());
-        auto rtp = cfg->properties.remote_topic_properties;
+
+        auto ntp_config = cfg.make_ntp_config(
+          _data_directory,
+          ntp.tp.partition,
+          log_revision,
+          topic_rev,
+          remote_rev);
+        auto rtp = cfg.properties.remote_topic_properties;
         const bool is_cloud_topic = ntp_config.is_archival_enabled()
                                     || ntp_config.is_remote_fetch_enabled();
         const bool is_internal = ntp.ns == model::kafka_internal_namespace;
@@ -1423,7 +1433,7 @@ ss::future<std::error_code> controller_backend::create_partition(
             // topic being cloud enabled implies existence of overrides
             ntp_config.get_overrides().recovery_enabled
               = storage::topic_recovery_enabled::yes;
-            rtp.emplace(*initial_rev, cfg->partition_count);
+            rtp.emplace(remote_rev, cfg.partition_count);
         }
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
@@ -1437,8 +1447,8 @@ ss::future<std::error_code> controller_backend::create_partition(
               std::move(xst_state),
               rtp,
               read_replica_bucket,
-              cfg->properties.remote_label,
-              cfg->properties.remote_topic_namespace_override);
+              cfg.properties.remote_label,
+              cfg.properties.remote_topic_namespace_override);
 
             _xst_states.erase(ntp);
 
@@ -1464,7 +1474,7 @@ ss::future<std::error_code> controller_backend::create_partition(
         auto partition = _partition_manager.local().get(ntp);
         if (partition) {
             partition->set_topic_config(
-              std::make_unique<topic_configuration>(std::move(*cfg)));
+              std::make_unique<topic_configuration>(std::move(cfg)));
         }
     }
 
