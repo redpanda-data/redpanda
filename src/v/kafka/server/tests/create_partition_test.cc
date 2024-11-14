@@ -38,7 +38,7 @@ FIXTURE_TEST(
 
     std::initializer_list<test_t> enterprise_props{
       // si_props
-      // The following properties are not supported for Create Partition
+      // Exclude these; setting up s3_imposter is too complex for this test
       //  * kafka::topic_property_recovery
       //  * kafka::topic_property_read_replica
       with(kafka::topic_property_remote_read, true),
