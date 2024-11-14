@@ -63,6 +63,7 @@ public:
       manifest_io& io,
       const table_metadata& table,
       chunked_vector<data_file> files,
+      chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
       size_t min_to_merge_new_files = default_min_to_merge_new_files,
       size_t mfile_target_size_bytes = default_target_size_bytes)
       : io_(io)
@@ -70,7 +71,8 @@ public:
       , commit_uuid_(uuid_t::create())
       , min_to_merge_new_files_(min_to_merge_new_files)
       , mfile_target_size_bytes_(mfile_target_size_bytes)
-      , new_data_files_(std::move(files)) {}
+      , new_data_files_(std::move(files))
+      , snapshot_props_(std::move(snapshot_props)) {}
 
 protected:
     ss::future<action_outcome> build_updates() && final;
@@ -147,6 +149,7 @@ private:
 
     size_t next_manifest_num_{0};
     chunked_vector<data_file> new_data_files_;
+    chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props_;
 };
 
 } // namespace iceberg

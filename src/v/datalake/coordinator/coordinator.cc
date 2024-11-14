@@ -260,7 +260,7 @@ coordinator::sync_add_files(
     auto prt_opt = stm_->state().partition_state(tp);
     if (
       !prt_opt.has_value() || prt_opt->get().pending_entries.empty()
-      || prt_opt->get().pending_entries.back().last_offset
+      || prt_opt->get().pending_entries.back().data.last_offset
            != added_last_offset) {
         vlog(
           datalake_log.debug,
@@ -290,7 +290,7 @@ coordinator::sync_get_last_added_offset(model::topic_partition tp) {
     if (prt_state.pending_entries.empty()) {
         co_return prt_state.last_committed;
     }
-    co_return prt_state.pending_entries.back().last_offset;
+    co_return prt_state.pending_entries.back().data.last_offset;
 }
 
 void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {

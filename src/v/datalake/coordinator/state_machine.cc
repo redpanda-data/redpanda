@@ -105,7 +105,7 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
             auto update = co_await serde::read_async<add_files_update>(val_p);
             vlog(
               _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
-            auto res = update.apply(state_);
+            auto res = update.apply(state_, o);
             maybe_log_update_error(_log, key, o, res);
             continue;
         }

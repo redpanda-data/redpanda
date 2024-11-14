@@ -32,7 +32,11 @@ public:
     // are replicated, the coordinator will not know that the files have been
     // added to the table, and it is expected this call may be repeated, e.g.
     // if leadership changes.
-    // XXX: make this method idempotent by deduplicating files!
+    //
+    // Files that are committed to Iceberg but have not yet been marked
+    // replicated in the coordinator's state machine are deduplicated in this
+    // method. This is done by adding metadata to the Iceberg snapshot, so
+    // subsequent calls can detect when we are duplicate files.
     //
     // It is up to callers to avoid calling this concurrently for the same
     // table. While this is expected to be safe, concurrent calls will likely

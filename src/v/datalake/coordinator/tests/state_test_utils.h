@@ -23,8 +23,13 @@ namespace datalake::coordinator {
 // Utility methods for generating and operating on coordinator state.
 
 // Returns file entries corresponding to the given offset ranges.
+//
+// If with_file is true, the range will contain a data file, which may be
+// useful when callers need more than just offset bounds (e.g. to test file
+// deduplication).
 chunked_vector<translated_offset_range> make_pending_files(
-  const std::vector<std::pair<int64_t, int64_t>>& offset_bounds);
+  const std::vector<std::pair<int64_t, int64_t>>& offset_bounds,
+  bool with_file = false);
 
 // Asserts that the given state has the expected partition state.
 void check_partition(

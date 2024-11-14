@@ -21,6 +21,18 @@ namespace datalake::coordinator {
 // Represents the state to be managed by the datalake coordinator's replicated
 // state machine.
 
+struct pending_entry
+  : public serde::
+      envelope<pending_entry, serde::version<0>, serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(data, added_pending_at); }
+
+    translated_offset_range data;
+
+    // Offset of the control topic partition at which this data entry was added
+    // to the state machine as a pending entry.
+    model::offset added_pending_at;
+};
+
 // State tracked per Kafka partition. Groups of files get added added to this
 // state, each group corresponding to an offset range. The ranges added to this
 // state must have no overlaps and no gaps in order to ensure exactly once
@@ -46,7 +58,7 @@ struct partition_state
     //
     // It is expected that files are only added to this list if they form a
     // contiguous offset range.
-    std::deque<translated_offset_range> pending_entries;
+    std::deque<pending_entry> pending_entries;
 
     // The last (inclusive) Kafka offset confirmed to be sent to the Iceberg
     // catalog for a given partition.

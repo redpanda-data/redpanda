@@ -35,8 +35,10 @@ public:
     // schema id if it doesn't exist. Note, the schema id is ignored, and one
     // is assigned based on the state of the table.
     ss::future<txn_outcome> set_schema(schema);
-    ss::future<txn_outcome>
-    merge_append(manifest_io&, chunked_vector<data_file>);
+    ss::future<txn_outcome> merge_append(
+      manifest_io&,
+      chunked_vector<data_file>,
+      chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {});
 
     std::optional<action::errc> error() const { return error_; }
 

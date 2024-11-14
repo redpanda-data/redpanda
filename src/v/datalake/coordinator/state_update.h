@@ -41,7 +41,8 @@ struct add_files_update
     auto serde_fields() { return std::tie(tp, entries); }
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
-    checked<std::nullopt_t, stm_update_error> apply(topics_state&);
+    checked<std::nullopt_t, stm_update_error>
+    apply(topics_state&, model::offset);
 
     model::topic_partition tp;
 
