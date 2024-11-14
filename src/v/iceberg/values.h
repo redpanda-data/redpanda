@@ -140,6 +140,8 @@ bool operator==(
   const std::unique_ptr<map_value>&, const std::unique_ptr<map_value>&);
 bool operator==(const value&, const value&);
 
+value make_copy(const value&);
+
 std::ostream& operator<<(std::ostream&, const boolean_value&);
 std::ostream& operator<<(std::ostream&, const int_value&);
 std::ostream& operator<<(std::ostream&, const long_value&);

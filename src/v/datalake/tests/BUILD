@@ -282,7 +282,9 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/datalake:schema_parquet",
+        "//src/v/datalake:values_parquet",
         "//src/v/iceberg:datatypes",
+        "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
         "@fmt",
