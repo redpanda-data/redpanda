@@ -22,6 +22,7 @@ using namespace datalake::coordinator;
 
 namespace {
 const model::topic topic{"test_topic"};
+const model::revision_id rev{123};
 const model::partition_id pid{0};
 const model::topic_partition tp{topic, pid};
 
@@ -32,12 +33,12 @@ void check_add_doesnt_apply(
   const std::vector<std::pair<int64_t, int64_t>>& offset_bounds) {
     // We should fail to build the update in the first place.
     auto update = add_files_update::build(
-      state, tp, make_pending_files(offset_bounds));
+      state, tp, rev, make_pending_files(offset_bounds));
     EXPECT_TRUE(update.has_error());
 
     // Also explicitly build the bad update and make sure it doesn't apply.
     auto res
-      = add_files_update{.tp = tp, .entries = make_pending_files(offset_bounds)}
+      = add_files_update{.tp = tp, .topic_revision = rev, .entries = make_pending_files(offset_bounds)}
           .apply(state, model::offset{});
     EXPECT_TRUE(res.has_error());
 }
@@ -49,12 +50,12 @@ void check_commit_doesnt_apply(
   int64_t commit_offset) {
     // We should fail to build the update in the first place.
     auto update = mark_files_committed_update::build(
-      state, tp, kafka::offset{commit_offset});
+      state, tp, rev, kafka::offset{commit_offset});
     EXPECT_TRUE(update.has_error());
 
     // Also explicitly build the bad update and make sure it doesn't apply.
     auto res
-      = mark_files_committed_update{.tp = tp, .new_committed = kafka::offset{commit_offset}}
+      = mark_files_committed_update{.tp = tp, .topic_revision = rev, .new_committed = kafka::offset{commit_offset}}
           .apply(state);
     EXPECT_TRUE(res.has_error());
 }
@@ -64,7 +65,7 @@ void check_commit_doesnt_apply(
 TEST(StateUpdateTest, TestAddFile) {
     topics_state state;
     auto update = add_files_update::build(
-      state, tp, make_pending_files({{0, 100}}));
+      state, tp, rev, make_pending_files({{0, 100}}));
     // We can always add files to a topic or partition that isn't yet tracked.
     ASSERT_FALSE(update.has_error());
     EXPECT_FALSE(state.partition_state(tp).has_value());
@@ -86,7 +87,7 @@ TEST(StateUpdateTest, TestAddFile) {
 
     // Now build one that does align properly.
     update = add_files_update::build(
-      state, tp, make_pending_files({{101, 200}}));
+      state, tp, rev, make_pending_files({{101, 200}}));
     ASSERT_FALSE(update.has_error());
     res = update.value().apply(state, model::offset{});
     ASSERT_FALSE(res.has_error());
@@ -98,8 +99,9 @@ TEST(StateUpdateTest, TestAddFileWithCommittedOffset) {
     // First, set up an existing committed offset, e.g. if we've committed all
     // our files up to offset 100.
     topics_state state;
-    state.topic_to_state[topic].pid_to_pending_files[pid].last_committed
-      = kafka::offset{100};
+    auto& t_state = state.topic_to_state[topic];
+    t_state.revision = rev;
+    t_state.pid_to_pending_files[pid].last_committed = kafka::offset{100};
 
     // Try a few adds that don't apply because they don't align with the
     // committed offset.
@@ -110,7 +112,7 @@ TEST(StateUpdateTest, TestAddFileWithCommittedOffset) {
 
     // Now successfully add some.
     auto update = add_files_update::build(
-      state, tp, make_pending_files({{101, 101}, {102, 200}}));
+      state, tp, rev, make_pending_files({{101, 101}, {102, 200}}));
     ASSERT_FALSE(update.has_error());
     auto res = update.value().apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
@@ -127,7 +129,7 @@ TEST(StateUpdateTest, TestAddFileWithCommittedOffset) {
 
     // Now successfully add some, this time with a non-empty pending files.
     update = add_files_update::build(
-      state, tp, make_pending_files({{201, 201}}));
+      state, tp, rev, make_pending_files({{201, 201}}));
     ASSERT_FALSE(update.has_error());
     res = update.value().apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
@@ -145,8 +147,9 @@ TEST(StateUpdateTest, TestMarkCommitted) {
 
     // Even if we explicitly have a committed offset already, we still have no
     // pending files and therefore can't commit.
-    state.topic_to_state[topic].pid_to_pending_files[pid].last_committed
-      = kafka::offset{100};
+    auto& t_state = state.topic_to_state[topic];
+    t_state.revision = rev;
+    t_state.pid_to_pending_files[pid].last_committed = kafka::offset{100};
     ASSERT_NO_FATAL_FAILURE(check_commit_doesnt_apply(state, tp, 0));
     ASSERT_NO_FATAL_FAILURE(check_commit_doesnt_apply(state, tp, 100));
     ASSERT_NO_FATAL_FAILURE(check_commit_doesnt_apply(state, tp, 101));
@@ -154,7 +157,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
 
     // Now add some files.
     auto res = add_files_update::build(
-                 state, tp, make_pending_files({{101, 200}}))
+                 state, tp, rev, make_pending_files({{101, 200}}))
                  .value()
                  .apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
@@ -167,7 +170,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
     ASSERT_NO_FATAL_FAILURE(check_commit_doesnt_apply(state, tp, 201));
     ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 100, {{101, 200}}));
 
-    res = mark_files_committed_update::build(state, tp, kafka::offset{200})
+    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{200})
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());
@@ -176,7 +179,10 @@ TEST(StateUpdateTest, TestMarkCommitted) {
     // Now let's try commit when there are multiple pending files.
     // First, add multiple files.
     res = add_files_update::build(
-            state, tp, make_pending_files({{201, 205}, {206, 210}, {211, 220}}))
+            state,
+            tp,
+            rev,
+            make_pending_files({{201, 205}, {206, 210}, {211, 220}}))
             .value()
             .apply(state, model::offset{});
     EXPECT_FALSE(res.has_error());
@@ -192,7 +198,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
       check_partition(state, tp, 200, {{201, 205}, {206, 210}, {211, 220}}));
 
     // But it should work with one of the inner files.
-    res = mark_files_committed_update::build(state, tp, kafka::offset{205})
+    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{205})
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());
@@ -200,7 +206,7 @@ TEST(StateUpdateTest, TestMarkCommitted) {
       check_partition(state, tp, 205, {{206, 210}, {211, 220}}));
 
     // And it should work with the last file.
-    res = mark_files_committed_update::build(state, tp, kafka::offset{220})
+    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{220})
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());

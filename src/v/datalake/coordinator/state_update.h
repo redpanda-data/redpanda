@@ -37,15 +37,16 @@ struct add_files_update
     static checked<add_files_update, stm_update_error> build(
       const topics_state&,
       const model::topic_partition&,
+      model::revision_id topic_revision,
       chunked_vector<translated_offset_range>);
-    auto serde_fields() { return std::tie(tp, entries); }
+    auto serde_fields() { return std::tie(tp, topic_revision, entries); }
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error>
     apply(topics_state&, model::offset);
 
     model::topic_partition tp;
-
+    model::revision_id topic_revision;
     // Expected to be ordered from lowest offset to highest offset.
     chunked_vector<translated_offset_range> entries;
 };
@@ -57,14 +58,18 @@ struct mark_files_committed_update
       serde::version<0>,
       serde::compat_version<0>> {
     static constexpr auto key{update_key::mark_files_committed};
-    static checked<mark_files_committed_update, stm_update_error>
-    build(const topics_state&, const model::topic_partition&, kafka::offset);
-    auto serde_fields() { return std::tie(tp, new_committed); }
+    static checked<mark_files_committed_update, stm_update_error> build(
+      const topics_state&,
+      const model::topic_partition&,
+      model::revision_id topic_revision,
+      kafka::offset);
+    auto serde_fields() { return std::tie(tp, topic_revision, new_committed); }
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
 
     model::topic_partition tp;
+    model::revision_id topic_revision;
 
     // All pending entries whose offset range falls entirely below this offset
     // (inclusive) should be removed.

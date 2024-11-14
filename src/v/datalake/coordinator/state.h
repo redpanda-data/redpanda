@@ -81,8 +81,10 @@ struct partition_state
 struct topic_state
   : public serde::
       envelope<topic_state, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(pid_to_pending_files); }
+    auto serde_fields() { return std::tie(revision, pid_to_pending_files); }
 
+    // Topic revision
+    model::revision_id revision;
     // Map from Redpanda partition id to the files pending per partition.
     chunked_hash_map<model::partition_id, partition_state> pid_to_pending_files;
 

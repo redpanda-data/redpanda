@@ -27,6 +27,7 @@ enum class errc : int16_t {
     fenced,
     stale,
     concurrent_requests,
+    revision_mismatch,
 };
 
 constexpr bool is_retriable(errc errc) {
@@ -66,19 +67,33 @@ struct add_translated_data_files_request
     add_translated_data_files_request() = default;
 
     model::topic_partition tp;
+    model::revision_id topic_revision;
     // Translated data files, expected to be contiguous, with no gaps or
     // overlaps, ordered in increasing offset order.
     chunked_vector<translated_offset_range> ranges;
     model::term_id translator_term;
 
+    add_translated_data_files_request(
+      model::topic_partition tp,
+      model::revision_id topic_revision,
+      chunked_vector<translated_offset_range> ranges,
+      model::term_id translator_term)
+      : tp(std::move(tp))
+      , topic_revision(topic_revision)
+      , ranges(std::move(ranges))
+      , translator_term(translator_term) {}
+
     add_translated_data_files_request copy() const {
-        add_translated_data_files_request result;
-        result.tp = tp;
+        chunked_vector<translated_offset_range> copied_ranges;
         for (auto& range : ranges) {
-            result.ranges.push_back(range.copy());
+            copied_ranges.push_back(range.copy());
         }
-        result.translator_term = translator_term;
-        return result;
+        return {
+          tp,
+          topic_revision,
+          std::move(copied_ranges),
+          translator_term,
+        };
     }
 
     friend std::ostream&
@@ -86,7 +101,9 @@ struct add_translated_data_files_request
 
     const model::topic_partition& topic_partition() const { return tp; }
 
-    auto serde_fields() { return std::tie(tp, ranges, translator_term); }
+    auto serde_fields() {
+        return std::tie(tp, topic_revision, ranges, translator_term);
+    }
 };
 
 struct fetch_latest_translated_offset_reply
@@ -129,13 +146,14 @@ struct fetch_latest_translated_offset_request
     fetch_latest_translated_offset_request() = default;
 
     model::topic_partition tp;
+    model::revision_id topic_revision;
 
     const model::topic_partition& topic_partition() const { return tp; }
 
     friend std::ostream&
     operator<<(std::ostream&, const fetch_latest_translated_offset_request&);
 
-    auto serde_fields() { return std::tie(tp); }
+    auto serde_fields() { return std::tie(tp, topic_revision); }
 };
 
 struct stm_snapshot

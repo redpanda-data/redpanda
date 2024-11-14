@@ -162,7 +162,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     for (const auto& [pid, committed_offset] : pending_commits) {
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
-          state, tp, committed_offset);
+          state, tp, tp_state.revision, committed_offset);
         if (update_res.has_error()) {
             vlog(
               datalake_log.warn,

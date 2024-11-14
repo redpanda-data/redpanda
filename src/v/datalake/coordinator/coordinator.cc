@@ -49,6 +49,8 @@ std::ostream& operator<<(std::ostream& o, coordinator::errc e) {
         return o << "coordinator::errc::shutting_down";
     case coordinator::errc::stm_apply_error:
         return o << "coordinator::errc::stm_apply_error";
+    case coordinator::errc::revision_mismatch:
+        return o << "coordinator::errc::revision_mismatch";
     case coordinator::errc::timedout:
         return o << "coordinator::errc::timedout";
     }
@@ -209,7 +211,9 @@ checked<ss::gate::holder, coordinator::errc> coordinator::maybe_gate() {
 
 ss::future<checked<std::nullopt_t, coordinator::errc>>
 coordinator::sync_add_files(
-  model::topic_partition tp, chunked_vector<translated_offset_range> entries) {
+  model::topic_partition tp,
+  model::revision_id topic_revision,
+  chunked_vector<translated_offset_range> entries) {
     if (entries.empty()) {
         vlog(datalake_log.debug, "Empty entry requested {}", tp);
         co_return std::nullopt;
@@ -220,8 +224,9 @@ coordinator::sync_add_files(
     }
     vlog(
       datalake_log.debug,
-      "Sync add files requested {}: [{}, {}], {} files",
+      "Sync add files requested {} (topic rev: {}): [{}, {}], {} files",
       tp,
+      topic_revision,
       entries.begin()->start_offset,
       entries.back().last_offset,
       entries.size());
@@ -231,7 +236,7 @@ coordinator::sync_add_files(
     }
     auto added_last_offset = entries.back().last_offset;
     auto update_res = add_files_update::build(
-      stm_->state(), tp, std::move(entries));
+      stm_->state(), tp, topic_revision, std::move(entries));
     if (update_res.has_error()) {
         // NOTE: rejection here is just an optimization -- the operation would
         // fail to be applied to the STM anyway.
@@ -273,7 +278,8 @@ coordinator::sync_add_files(
 }
 
 ss::future<checked<std::optional<kafka::offset>, coordinator::errc>>
-coordinator::sync_get_last_added_offset(model::topic_partition tp) {
+coordinator::sync_get_last_added_offset(
+  model::topic_partition tp, model::revision_id requested_topic_rev) {
     auto gate = maybe_gate();
     if (gate.has_error()) {
         co_return gate.error();
@@ -282,11 +288,30 @@ coordinator::sync_get_last_added_offset(model::topic_partition tp) {
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
-    auto prt_state_opt = stm_->state().partition_state(tp);
-    if (!prt_state_opt.has_value()) {
+    auto topic_it = stm_->state().topic_to_state.find(tp.topic);
+    if (topic_it == stm_->state().topic_to_state.end()) {
         co_return std::nullopt;
     }
-    const auto& prt_state = prt_state_opt->get();
+    const auto& topic = topic_it->second;
+    if (requested_topic_rev < topic.revision) {
+        vlog(
+          datalake_log.debug,
+          "asked offsets for tp {} but rev {} is obsolete, current rev: {}",
+          tp,
+          requested_topic_rev,
+          topic.revision);
+        co_return errc::revision_mismatch;
+    } else if (requested_topic_rev > topic.revision) {
+        // Coordinator is ready to accept files for the new topic revision,
+        // but there is no stm record yet. Reply with "no offset".
+        co_return std::nullopt;
+    }
+
+    auto partition_it = topic.pid_to_pending_files.find(tp.partition);
+    if (partition_it == topic.pid_to_pending_files.end()) {
+        co_return std::nullopt;
+    }
+    const auto& prt_state = partition_it->second;
     if (prt_state.pending_entries.empty()) {
         co_return prt_state.last_committed;
     }

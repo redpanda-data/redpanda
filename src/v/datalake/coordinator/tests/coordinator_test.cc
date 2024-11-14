@@ -72,6 +72,7 @@ using pairs_t = std::vector<std::pair<int64_t, int64_t>>;
 ss::future<> file_adder_loop(
   const pairs_t& files,
   const model::topic_partition& tp,
+  model::revision_id topic_rev,
   coordinator_node& n,
   int fiber_id,
   bool& done) {
@@ -82,7 +83,8 @@ ss::future<> file_adder_loop(
     while (!done) {
         co_await random_sleep_ms(30);
         vlog(datalake::datalake_log.debug, "[{}] getting last added", id);
-        auto last_res = co_await n.crd.sync_get_last_added_offset(tp);
+        auto last_res = co_await n.crd.sync_get_last_added_offset(
+          tp, topic_rev);
         if (last_res.has_error()) {
             continue;
         }
@@ -123,7 +125,7 @@ ss::future<> file_adder_loop(
               files_to_send.size(),
               files_to_send.begin()->first);
             auto add_res = co_await n.crd.sync_add_files(
-              tp, make_pending_files(files_to_send));
+              tp, topic_rev, make_pending_files(files_to_send));
             if (add_res.has_error()) {
                 // Leave this inner loop on error so we can refetch.
                 break;
@@ -284,7 +286,9 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
     const auto tp01 = tp(0, 1);
+    const model::revision_id rev0{1};
     const auto tp10 = tp(1, 0);
+    const model::revision_id rev1{2};
     pairs_t total_expected_00;
     for (const auto& v : {
            pairs_t{{0, 100}},
@@ -293,7 +297,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
            pairs_t{{401, 500}, {501, 600}},
          }) {
         auto add_res
-          = leader.crd.sync_add_files(tp00, make_pending_files(v)).get();
+          = leader.crd.sync_add_files(tp00, rev0, make_pending_files(v)).get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
         wait_for_apply().get();
 
@@ -308,7 +312,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
     pairs_t total_expected_01;
     for (const auto& v : {pairs_t{{0, 100}}, pairs_t{{101, 200}}}) {
         auto add_res
-          = leader.crd.sync_add_files(tp01, make_pending_files(v)).get();
+          = leader.crd.sync_add_files(tp01, rev0, make_pending_files(v)).get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
         wait_for_apply().get();
 
@@ -324,7 +328,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
     pairs_t total_expected_10;
     for (const auto& v : {pairs_t{{100, 200}}, pairs_t{{201, 300}}}) {
         auto add_res
-          = leader.crd.sync_add_files(tp10, make_pending_files(v)).get();
+          = leader.crd.sync_add_files(tp10, rev1, make_pending_files(v)).get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
         wait_for_apply().get();
 
@@ -346,20 +350,21 @@ TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
     const auto tp01 = tp(0, 1);
+    const model::revision_id rev{1};
     pairs_t total_expected_00;
     for (const auto& v :
          {pairs_t{{101, 200}}, pairs_t{{201, 300}, {301, 400}}}) {
         auto add_res
-          = leader.crd.sync_add_files(tp00, make_pending_files(v)).get();
+          = leader.crd.sync_add_files(tp00, rev, make_pending_files(v)).get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
     }
 
-    auto last_res = leader.crd.sync_get_last_added_offset(tp00).get();
+    auto last_res = leader.crd.sync_get_last_added_offset(tp00, rev).get();
     ASSERT_FALSE(last_res.has_error()) << last_res.error();
     ASSERT_TRUE(last_res.value().has_value());
     ASSERT_EQ(400, last_res.value().value()());
 
-    last_res = leader.crd.sync_get_last_added_offset(tp01).get();
+    last_res = leader.crd.sync_get_last_added_offset(tp01, rev).get();
     ASSERT_FALSE(last_res.has_error()) << last_res.error();
     ASSERT_FALSE(last_res.value().has_value());
 }
@@ -377,15 +382,16 @@ TEST_F(CoordinatorTest, TestNotLeader) {
     ASSERT_TRUE(non_leader_opt.has_value());
     auto& non_leader = non_leader_opt->get();
     const auto tp00 = tp(0, 0);
+    const model::revision_id rev{1};
     pairs_t total_expected_00;
 
     auto add_res = non_leader.crd
-                     .sync_add_files(tp00, make_pending_files({{0, 100}}))
+                     .sync_add_files(tp00, rev, make_pending_files({{0, 100}}))
                      .get();
     ASSERT_TRUE(add_res.has_error());
     EXPECT_EQ(coordinator::errc::not_leader, add_res.error());
 
-    auto last_res = non_leader.crd.sync_get_last_added_offset(tp00).get();
+    auto last_res = non_leader.crd.sync_get_last_added_offset(tp00, rev).get();
     ASSERT_TRUE(last_res.has_error()) << last_res.error();
     EXPECT_EQ(coordinator::errc::not_leader, last_res.error());
 }
@@ -403,6 +409,7 @@ TEST_P(CoordinatorTestWithParams, TestConcurrentAddFiles) {
           std::pair<int64_t, int64_t>{cur_start, next_start - 1});
     }
     const auto tp00 = tp(0, 0);
+    const model::revision_id rev0{1};
     bool done = false;
     std::vector<ss::future<>> adders;
     int fiber_id = 0;
@@ -413,7 +420,7 @@ TEST_P(CoordinatorTestWithParams, TestConcurrentAddFiles) {
     for (auto& n : crds) {
         for (size_t i = 0; i < num_adders_per_node; i++) {
             adders.push_back(
-              file_adder_loop(files, tp00, *n, fiber_id++, done));
+              file_adder_loop(files, tp00, rev0, *n, fiber_id++, done));
         }
     }
     std::optional<ss::future<>> chaos;
@@ -510,8 +517,10 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesHappyPath) {
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
-    auto add_res
-      = leader.crd.sync_add_files(tp00, make_pending_files({{0, 100}})).get();
+    const model::revision_id rev0{1};
+    auto add_res = leader.crd
+                     .sync_add_files(tp00, rev0, make_pending_files({{0, 100}}))
+                     .get();
     ASSERT_FALSE(add_res.has_error()) << add_res.error();
     wait_for_apply().get();
     RPTEST_REQUIRE_EVENTUALLY(1s, [&] {
@@ -537,8 +546,10 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
 
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
-    auto add_res
-      = leader.crd.sync_add_files(tp00, make_pending_files({{0, 100}})).get();
+    const model::revision_id rev0{1};
+    auto add_res = leader.crd
+                     .sync_add_files(tp00, rev0, make_pending_files({{0, 100}}))
+                     .get();
     ASSERT_FALSE(add_res.has_error()) << add_res.error();
     wait_for_apply().get();
     ss::sleep(500ms).get();
@@ -565,8 +576,9 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     }
 
     // Newly added files are committed in the background.
-    add_res
-      = leader.crd.sync_add_files(tp00, make_pending_files({{101, 200}})).get();
+    add_res = leader.crd
+                .sync_add_files(tp00, rev0, make_pending_files({{101, 200}}))
+                .get();
     ASSERT_FALSE(add_res.has_error()) << add_res.error();
     wait_for_apply().get();
 
@@ -582,7 +594,7 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     ASSERT_NO_FATAL_FAILURE(wait_for_leader(leader_opt).get());
     auto& new_leader = leader_opt->get();
     add_res = new_leader.crd
-                .sync_add_files(tp00, make_pending_files({{201, 300}}))
+                .sync_add_files(tp00, rev0, make_pending_files({{201, 300}}))
                 .get();
     ASSERT_FALSE(add_res.has_error()) << add_res.error();
     wait_for_apply().get();
@@ -614,8 +626,12 @@ TEST_F(CoordinatorSleepingLoopTest, TestQuickShutdownOnLeadershipChange) {
     auto& leader = leader_opt->get();
     for (int i = 0; i < 100; i++) {
         auto t = tp(i, 0);
-        auto add_res
-          = leader.crd.sync_add_files(t, make_pending_files({{0, 100}})).get();
+        auto add_res = leader.crd
+                         .sync_add_files(
+                           t,
+                           model::revision_id{i},
+                           make_pending_files({{0, 100}}))
+                         .get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
     }
     ASSERT_TRUE(leader.crd.leader_loop_running());

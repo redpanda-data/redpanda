@@ -32,6 +32,8 @@ errc to_rpc_errc(coordinator::errc e) {
         return errc::not_leader;
     case coordinator::errc::stm_apply_error:
         return errc::stale;
+    case coordinator::errc::revision_mismatch:
+        return errc::revision_mismatch;
     case coordinator::errc::timedout:
         return errc::timeout;
     }
@@ -44,7 +46,8 @@ ss::future<add_translated_data_files_reply> add_files(
     if (!crd) {
         co_return add_translated_data_files_reply{errc::not_leader};
     }
-    auto ret = co_await crd->sync_add_files(req.tp, std::move(req.ranges));
+    auto ret = co_await crd->sync_add_files(
+      req.tp, req.topic_revision, std::move(req.ranges));
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
@@ -58,7 +61,8 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     if (!crd) {
         co_return fetch_latest_translated_offset_reply{errc::not_leader};
     }
-    auto ret = co_await crd->sync_get_last_added_offset(req.tp);
+    auto ret = co_await crd->sync_get_last_added_offset(
+      req.tp, req.topic_revision);
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
