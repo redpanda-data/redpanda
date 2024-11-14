@@ -101,7 +101,9 @@ ss::future<> catch_and_log(const client& c, Func&& f) noexcept {
 ss::future<> client::stop() noexcept {
     _as.request_abort();
     co_await catch_and_log(*this, [this]() { return _producer.stop(); });
+    vlog(kclog.debug, "{}post _producer stop", *this);
     co_await _gate.close();
+    vlog(kclog.debug, "{}post _gate closed", *this);
     for (auto& [id, group] : _consumers) {
         while (!group.empty()) {
             auto c = *group.begin();
@@ -113,6 +115,7 @@ ss::future<> client::stop() noexcept {
         }
     }
     co_await catch_and_log(*this, [this]() { return _brokers.stop(); });
+    vlog(kclog.debug, "{}client has stopped", *this);
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {

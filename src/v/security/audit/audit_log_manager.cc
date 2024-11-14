@@ -485,7 +485,9 @@ ss::future<> audit_client::shutdown() {
           client_drain_wait_timeout);
     }
     _send_sem.broken();
+    vlog(adtlog.info, "Waiting on client to stop");
     co_await _client.stop();
+    vlog(adtlog.info, "Waiting on audit_client gate to close");
     co_await _gate.close();
     _probe.reset(nullptr);
     vlog(adtlog.info, "Audit client stopped");
@@ -506,6 +508,11 @@ ss::future<> audit_client::produce(
 
     auto reserved = co_await ss::get_units(_send_sem, total_size);
 
+    vlog(
+      adtlog.trace,
+      "Got semaphore {} units, sending batches...",
+      reserved.count());
+
     absl::c_for_each(records, [&reserved](partition_batch& pb) {
         try {
             pb.send_units.emplace(reserved.split(pb.batch.size_bytes()));
@@ -517,6 +524,8 @@ ss::future<> audit_client::produce(
         }
     });
 
+    vlog(adtlog.trace, "Post split count: {}", reserved.count());
+
     // limit concurrency to the number of max-sized batches that the
     // audit_client could handle. In the common case, the number of batches
     // here should usually be 1-2, since the default per-shard queue limit
@@ -524,6 +533,7 @@ ss::future<> audit_client::produce(
     // TODO(oren): a configurabale ratio might be better
     [[maybe_unused]] auto max_concurrency
       = _max_buffer_size / config::shard_local_cfg().kafka_batch_max_bytes();
+    max_concurrency = std::max<size_t>(1, max_concurrency);
 
     try {
         ssx::spawn_with_gate(
@@ -541,6 +551,7 @@ ss::future<> audit_client::produce(
                       max_concurrency,
                       [this,
                        &probe](partition_batch rec) mutable -> ss::future<> {
+                          vlog(adtlog.trace, "do_produce to {}", rec.pid);
                           return do_produce(
                                    std::move(rec.batch), rec.pid, probe)
                             .finally([units = std::move(rec.send_units)] {});
@@ -562,14 +573,20 @@ ss::future<> audit_client::do_produce(
     // way the kafka client should periodically refresh its internal metadata.
     std::optional<kafka::error_code> ec;
     while (!_as.abort_requested()) {
+        vlog(adtlog.trace, "attempting to produce record to {}", pid);
         auto r = co_await _client.produce_record_batch(
           model::topic_partition{model::kafka_audit_logging_topic, pid},
           batch.copy());
+        vlog(adtlog.trace, "produce_record_batch to {}: {}", pid, r.error_code);
         ec.emplace(r.error_code);
         co_await update_status(ec.value());
         if (ec.value() == kafka::error_code::none) {
             break;
         }
+    }
+
+    if (_as.abort_requested()) [[unlikely]] {
+        vlog(adtlog.info, "post abort source to {}", pid);
     }
 
     // report unknown server error if we aborted before making any attempt
@@ -691,6 +708,7 @@ ss::future<> audit_sink::do_toggle(bool enabled) {
         co_await _audit_mgr->pause();
         vlog(adtlog.info, "Auditing fibers stopped");
         co_await _client->shutdown();
+        vlog(adtlog.info, "Auditing client has shut down");
         _client.reset(nullptr);
     } else {
         vlog(
