@@ -34,7 +34,7 @@ v_cc_library(
     batching_parquet_writer.cc
     catalog_schema_manager.cc
     data_writer_interface.cc
-    parquet_writer.cc
+    arrow_writer.cc
     record_multiplexer.cc
     record_schema_resolver.cc
     record_translator.cc
