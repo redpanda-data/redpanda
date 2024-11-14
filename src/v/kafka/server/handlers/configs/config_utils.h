@@ -253,6 +253,8 @@ ss::future<chunked_vector<R>> do_alter_topics_configuration(
     for (auto& res : update_results) {
         responses.push_back(R{
           .error_code = map_topic_error_code(res.ec),
+          .error_message = res.error_message.value_or(
+            make_error_code(res.ec).message()),
           .resource_type = static_cast<int8_t>(config_resource_type::topic),
           .resource_name = res.tp_ns.tp(),
         });
