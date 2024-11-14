@@ -190,6 +190,7 @@ ss::future<index_state> deduplicate_segment(
     auto copy_reducer = internal::copy_data_segment_reducer(
       [&map,
        &may_have_tombstone_records,
+       &probe,
        segment_last_offset = seg->offsets().get_committed_offset(),
        past_tombstone_delete_horizon,
        compaction_placeholder_enabled](
@@ -213,6 +214,7 @@ ss::future<index_state> deduplicate_segment(
 
           // Deal with tombstone record removal
           if (r.is_tombstone() && past_tombstone_delete_horizon) {
+              probe.add_removed_tombstone();
               return ss::make_ready_future<bool>(false);
           }
 
