@@ -34,6 +34,7 @@ from rptest.services.admin import Admin, RoleMember
 from rptest.services.cluster import cluster
 from rptest.services import redpanda
 from rptest.services.keycloak import DEFAULT_REALM, KeycloakService
+from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.ocsf_server import OcsfServer
 from rptest.services.redpanda import AUDIT_LOG_ALLOW_LIST, LoggingConfig, MetricSamples, MetricsEndpoint, PandaproxyConfig, RedpandaServiceBase, SchemaRegistryConfig, SecurityConfig, TLSProvider
 from rptest.services.rpk_consumer import RpkConsumer

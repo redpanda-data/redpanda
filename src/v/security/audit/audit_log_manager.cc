@@ -499,12 +499,14 @@ ss::future<> audit_client::produce(
       });
 
     vlog(
-      adtlog.trace,
+      adtlog.debug,
       "Producing {} batches, totaling {}B, wait for semaphore units...",
       records.size(),
       total_size);
 
     auto reserved = co_await ss::get_units(_send_sem, total_size);
+
+    vlog(adtlog.debug, "Got units: {}", reserved.count());
 
     absl::c_for_each(records, [&reserved](partition_batch& pb) {
         try {
@@ -524,6 +526,8 @@ ss::future<> audit_client::produce(
     // TODO(oren): a configurabale ratio might be better
     [[maybe_unused]] auto max_concurrency
       = _max_buffer_size / config::shard_local_cfg().kafka_batch_max_bytes();
+
+    max_concurrency = std::max(max_concurrency, 1UL);
 
     try {
         ssx::spawn_with_gate(
@@ -560,8 +564,11 @@ ss::future<> audit_client::do_produce(
     // Effectively retry forever, but start a fresh request from batch data held
     // in memory when each produce_record_batch's retries are exhausted. This
     // way the kafka client should periodically refresh its internal metadata.
+
     std::optional<kafka::error_code> ec;
     while (!_as.abort_requested()) {
+        vlog(
+          adtlog.warn, "Attempt to produce {} records", batch.record_count());
         auto r = co_await _client.produce_record_batch(
           model::topic_partition{model::kafka_audit_logging_topic, pid},
           batch.copy());

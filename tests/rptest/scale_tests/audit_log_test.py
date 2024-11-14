@@ -25,11 +25,12 @@ from ducktape.mark import ignore
 
 # How much memory to assign to redpanda per partition. Redpanda will be started
 # with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
-DEFAULT_MIB_PER_PARTITION = 4
+DEFAULT_MIB_PER_PARTITION = 1
 
 # How many partitions we will create per shard: this is the primary scaling
 # factor that controls how many partitions a given cluster will get.
-PARTITIONS_PER_SHARD = 1000
+# TODO(oren): dial it back for local runs
+PARTITIONS_PER_SHARD = 100
 
 
 class AuditLogTestSecurityConfig(SecurityConfig):
@@ -102,8 +103,11 @@ class AuditLogTest(RedpandaTest):
 
         # We will send huge numbers of messages, so tune down the log verbosity
         # as we will be comparing performance to a known good baseline
-        kwargs['log_config'] = LoggingConfig(
-            'info', logger_levels={'auditing': 'debug'})
+        kwargs['log_config'] = LoggingConfig('info',
+                                             logger_levels={
+                                                 'auditing': 'debug',
+                                                 'kafka/client': 'debug'
+                                             })
 
         kwargs['extra_rp_conf'] = {
             # Authentication is mandatory for auditing
@@ -135,7 +139,7 @@ class AuditLogTest(RedpandaTest):
             # at the kafka client size
             # default: 16MiB
             'audit_client_max_buffer_size':
-            16000000 * 10,
+            1000000,
 
             # This is the frequency at which queues are drained for data to be
             # buffered to the kafka client. Increase this value to buffer more
@@ -143,7 +147,7 @@ class AuditLogTest(RedpandaTest):
             # and reducing the total amount of data sent to the audit topic
             # default: 500ms
             'audit_queue_drain_interval_ms':
-            2000 * 2,
+            2000,
 
             # How large the per shard audit buffers are. The more unique events
             # and the more time the data spends residing in the buffer, the
@@ -152,7 +156,7 @@ class AuditLogTest(RedpandaTest):
             # enqueued
             # default: 1MiB
             'audit_queue_max_buffer_size_per_shard':
-            1000000 * 10,
+            16000000,
         }
 
         super().__init__(test_context=ctx,
@@ -202,6 +206,7 @@ class AuditLogTest(RedpandaTest):
             samples = self.redpanda.metrics_samples(patterns,
                                                     self.redpanda.nodes,
                                                     MetricsEndpoint.METRICS)
+            print(samples.keys())
             success = samples is not None and set(
                 samples.keys()) == set(patterns)
             return success, samples
@@ -236,7 +241,10 @@ class AuditLogTest(RedpandaTest):
     def _disable_auditing(self):
         self._modify_cluster_config({'audit_enabled': False})
 
-    def _run_repeater(self, topics: list[str], scale: ScaleParameters):
+    def _run_repeater(self,
+                      topics: list[str],
+                      scale: ScaleParameters,
+                      cycle: bool = False):
         repeater_kwargs = {'key_count': 2**32}
         repeater_msg_size = 16384
         rate_limit_bps = int(scale.expect_bandwidth)
@@ -257,9 +265,15 @@ class AuditLogTest(RedpandaTest):
 
         def periodically_log_metrics():
             while stop_thread is not True:
-                self.redpanda.logger.info(
+                self.redpanda.logger.warn(
                     f"Aggregated audit metrics: \n{self._get_audit_metrics()}")
                 time.sleep(3)
+
+        def periodically_cycle_audit_logging():
+            while stop_thread is not True:
+                time.sleep(5)
+                self._disable_auditing()
+                self._enable_auditing()
 
         with repeater_traffic(context=self._ctx,
                               redpanda=self.redpanda,
@@ -271,7 +285,7 @@ class AuditLogTest(RedpandaTest):
                               max_buffered_records=max_buffered_records,
                               **repeater_kwargs) as repeater:
             # soak for 5 minutes
-            soak_time_seconds = 60 * 5
+            soak_time_seconds = 60 * 2
             soak_await_bytes = soak_time_seconds * scale.expect_bandwidth
             soak_await_msgs = soak_await_bytes / repeater_msg_size
             # Add some leeway to avoid flakiness
@@ -280,8 +294,12 @@ class AuditLogTest(RedpandaTest):
             repeater.reset()
             metrics_log_thread = threading.Thread(
                 target=periodically_log_metrics, args=())
+            audit_cycle_thread = threading.Thread(
+                target=periodically_cycle_audit_logging, args=())
             try:
                 metrics_log_thread.start()
+                if cycle:
+                    audit_cycle_thread.start()
                 repeater.await_progress(soak_await_msgs, soak_timeout)
             except TimeoutError:
                 # Progress is determined by a certain number of total messages produces and
@@ -302,7 +320,7 @@ class AuditLogTest(RedpandaTest):
             # to me able to assert on other properties of the test run.
             return make_result_set(t1, repeater)
 
-    @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
+    # @ignore  # https://github.com/redpanda-data/redpanda/issues/16199
     @cluster(num_nodes=5)
     def test_audit_log(self):
         """
@@ -331,7 +349,8 @@ class AuditLogTest(RedpandaTest):
         """
 
         # Scale tests are not run on debug builds
-        assert not self.debug_mode
+        # TODO(oren): as a treat
+        # assert not self.debug_mode
 
         # This user will be passed to the kgo-repeater program
         self._create_audit_test_sasl_user()
@@ -383,12 +402,23 @@ class AuditLogTest(RedpandaTest):
         # Then assert that the traffic is within an expected range
         topic_names = [topic.name for topic in topics]
 
-        self._disable_auditing()
+        print("TURN ON AUDITING AND GO")
+        self._enable_auditing()
         audit_disabled_results = self._run_repeater(topic_names, scale)
 
+        print("TURN OFF AUDITING")
+        self._disable_auditing()
+        # audit_disabled_results = self._run_repeater(topic_names, scale)
+        # print(audit_disabled_results)
+
+        print("TURN AUDITING BACK ON AND GO AGAIN")
         # Re-run the test and compare results
         self._enable_auditing()
-        audit_enabled_results = self._run_repeater(topic_names, scale)
+        audit_enabled_results = self._run_repeater(topic_names,
+                                                   scale,
+                                                   cycle=True)
+
+        print(audit_enabled_results)
 
         # Assert that there is no more then a x% difference in observed results
         allowable_threshold = 10.0

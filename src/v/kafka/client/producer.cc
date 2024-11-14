@@ -135,7 +135,10 @@ producer::produce(model::topic_partition tp, model::record_batch&& batch) {
             tp.partition,
             std::make_exception_ptr(ss::abort_requested_exception())));
     }
-    return get_context(std::move(tp))->produce(std::move(batch));
+    return ss::sleep(std::chrono::seconds(60))
+      .then([this, tp = std::move(tp), batch = std::move(batch)]() mutable {
+          return get_context(std::move(tp))->produce(std::move(batch));
+      });
 }
 
 ss::future<produce_response::partition>
