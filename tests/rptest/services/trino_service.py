@@ -61,7 +61,7 @@ s3.aws-secret-key={{ s3_secret_key }}
         self.trino_host: Optional[str] = None
         self.trino_port = 8083
 
-    def start_node(self, node, timeout_sec=60, **kwargs):
+    def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(f"mkdir -p {TrinoService.PERSISTENT_ROOT}")
         node.account.ssh(f"rm -f {TrinoService.TRINO_CONF_PATH}")
         connector_config = dict(catalog_rest_uri=self.iceberg_catalog_rest_uri,
@@ -81,9 +81,9 @@ s3.aws-secret-key={{ s3_secret_key }}
             f"nohup /opt/trino/bin/trino-launcher run 1> {TrinoService.LOG_FILE} 2>&1 &",
             allow_fail=False)
         self.trino_host = node.account.hostname
-        self.wait(timeout_sec=30)
+        self.wait(timeout_sec=timeout_sec)
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec):
         def _ready():
             try:
                 self.run_query_fetch_all("show catalogs")

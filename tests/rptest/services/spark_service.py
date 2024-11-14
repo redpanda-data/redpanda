@@ -64,12 +64,12 @@ class SparkService(Service, QueryEngineBase):
         env = self.make_env()
         return f"{env} {cmd}"
 
-    def start_node(self, node, timeout_sec=30, **kwargs):
+    def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(self.start_cmd(), allow_fail=False)
         self.spark_host = node.account.hostname
         self.wait(timeout_sec=timeout_sec)
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec):
         def _ready():
             try:
                 self.run_query_fetch_all("show databases")
