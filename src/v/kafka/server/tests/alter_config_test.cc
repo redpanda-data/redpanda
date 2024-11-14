@@ -1396,6 +1396,40 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
           },
           failure);
 
+        const auto key_validation = props_t{
+          with(kafka::topic_property_record_key_schema_id_validation, true),
+        };
+        test_cases.emplace_back(
+          "set_value_after_key",
+          key_validation,
+          alter_props_t{{set(
+            kafka::topic_property_record_value_schema_id_validation_compat,
+            true)}},
+          failure);
+        test_cases.emplace_back(
+          "unset_key",
+          key_validation,
+          alter_props_t{{set(
+            kafka::topic_property_record_key_schema_id_validation, false)}},
+          success);
+
+        const auto value_validation = props_t{
+          with(kafka::topic_property_record_value_schema_id_validation, true),
+        };
+        test_cases.emplace_back(
+          "set_key_after_value",
+          value_validation,
+          alter_props_t{{set(
+            kafka::topic_property_record_key_schema_id_validation_compat,
+            true)}},
+          failure);
+        test_cases.emplace_back(
+          "unset_value",
+          value_validation,
+          alter_props_t{{set(
+            kafka::topic_property_record_value_schema_id_validation, false)}},
+          success);
+
         const auto validation_with_strat = props_t{
           with(kafka::topic_property_record_key_schema_id_validation, true),
           with(kafka::topic_property_record_value_schema_id_validation, true),
