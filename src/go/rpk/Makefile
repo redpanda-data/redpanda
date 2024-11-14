@@ -23,6 +23,7 @@ endif
 
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
+GOPATH ?= $(shell go env GOPATH)
 OUTDIR := $(GOOS)-$(GOARCH)
 
 REV := $(shell git rev-parse --short HEAD)
@@ -64,8 +65,7 @@ run_gofumpt:
 	$(GOFUMPT_OS_CMD)
 
 install_golangci_lint:
-	@echo "installing golangci-lint"
-	@$(GOCMD) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@which $(GOLANGCILINTCMD) || (if [ $$? -eq 1 ]; then  echo "golangci-lint not found, installing..."; curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin v1.62.0; fi)
 
 run_linter:
 	$(GOLANGCILINTCMD) run
