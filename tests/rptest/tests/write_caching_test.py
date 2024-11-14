@@ -15,7 +15,7 @@ from rptest.services.rpk_producer import RpkProducer
 from enum import Enum
 from random import randint
 from rptest.services.metrics_check import MetricCheck
-from rptest.util import expect_exception
+from rptest.util import expect_exception, wait_until_result
 
 
 # no StrEnum support in test python version
@@ -62,10 +62,18 @@ class WriteCachingPropertiesTest(RedpandaTest):
         if not properties_check:
             return False
 
-        partition_state = self.admin.get_partition_state(
-            "kafka", self.topic_name, 0)
-        replicas = partition_state["replicas"]
-        assert len(replicas) == 3
+        def get_partition_state_all_replicas():
+            partition_state = self.admin.get_partition_state(
+                "kafka", self.topic_name, 0)
+            replicas = partition_state["replicas"]
+
+            return (len(replicas) == 3, replicas)
+
+        # If we query too soon it might be that only the majority of replicas
+        # have been created. Ensure we have all 3 up.
+        replicas = wait_until_result(get_partition_state_all_replicas,
+                                     timeout_sec=5,
+                                     backoff_sec=1)
 
         def validate_flush_ms(val: int) -> bool:
             # account for jitter
