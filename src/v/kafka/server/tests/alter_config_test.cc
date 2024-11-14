@@ -1501,6 +1501,11 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
               make_incremental_alter_topic_config_resource_cv(tp, alteration));
             BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
             BOOST_CHECK_EQUAL(resp.data.responses[0].error_code, expected);
+            if (expected == failure) {
+                BOOST_CHECK(
+                  resp.data.responses[0].error_message.value_or("").contains(
+                    "An enterprise license is required"));
+            }
         }
 
         delete_topic(

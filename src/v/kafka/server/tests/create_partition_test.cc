@@ -73,6 +73,8 @@ FIXTURE_TEST(
             BOOST_REQUIRE_EQUAL(res.results.size(), 1);
             BOOST_CHECK_EQUAL(
               res.results[0].error_code, kafka::error_code::invalid_config);
+            BOOST_CHECK(res.results[0].error_message.value_or("").contains(
+              "An enterprise license is required"));
 
             delete_topic(
               model::topic_namespace{model::kafka_namespace, std::move(tp)})

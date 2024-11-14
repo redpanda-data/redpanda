@@ -48,6 +48,7 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "topic_configuration.h"
 #include "topic_properties.h"
 
@@ -374,12 +375,13 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
                 && is_user_topic(update.tp_ns)) {
                   if (auto f = get_enterprise_features(_metadata_cache, update);
                       !f.empty()) {
-                      vlog(
-                        clusterlog.warn,
-                        "An enterprise license is required to enable {}.",
-                        f);
-                      return ss::make_ready_future<topic_result>(
-                        topic_result(update.tp_ns, errc::topic_invalid_config));
+                      auto msg = ssx::sformat(
+                        "An enterprise license is required to enable {}.", f);
+                      vlog(clusterlog.warn, "{}", msg);
+                      return ss::make_ready_future<topic_result>(topic_result(
+                        update.tp_ns,
+                        errc::topic_invalid_config,
+                        std::move(msg)));
                   }
               }
               return do_update_topic_properties(std::move(update), timeout);
@@ -564,19 +566,20 @@ topic_result topics_frontend::validate_topic_configuration(
       (assignable_config.is_read_replica()
        || assignable_config.is_recovery_enabled())
       && !_cloud_storage_api.local_is_initialized()) {
-        return make_result(errc::topic_invalid_config);
+        return make_result(
+          errc::topic_invalid_config, "Tiered storage is not enabled");
     }
 
     // the only way that cloud topics can be enabled on a topic is if the cloud
     // topics development feature is also enabled.
     if (!config::shard_local_cfg().development_enable_cloud_topics()) {
         if (assignable_config.cfg.properties.cloud_topic_enabled) {
-            vlog(
-              clusterlog.error,
+            auto msg = ssx::sformat(
               "Cloud topic flag on {} is set but development feature is "
               "disabled",
               assignable_config.cfg.tp_ns);
-            return make_result(errc::topic_invalid_config);
+            vlog(clusterlog.error, "{}", msg);
+            return make_result(errc::topic_invalid_config, std::move(msg));
         }
     }
 
@@ -585,11 +588,10 @@ topic_result topics_frontend::validate_topic_configuration(
       && is_user_topic(assignable_config.cfg.tp_ns)) {
         if (auto f = get_enterprise_features(assignable_config.cfg);
             !f.empty()) {
-            vlog(
-              clusterlog.warn,
-              "An enterprise license is required to enable {}.",
-              f);
-            return make_result(errc::topic_invalid_config);
+            auto msg = ssx::sformat(
+              "An enterprise license is required to enable {}.", f);
+            vlog(clusterlog.warn, "{}", msg);
+            return make_result(errc::topic_invalid_config, std::move(msg));
         }
     }
 
@@ -1623,12 +1625,12 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
         if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
-            vlog(
-              clusterlog.warn,
+            auto msg = ssx::sformat(
               "An enterprise license is required to create partitions with {}.",
               f);
+            vlog(clusterlog.warn, "{}", msg);
             co_return make_error_result(
-              p_cfg.tp_ns, errc::topic_invalid_config);
+              p_cfg.tp_ns, errc::topic_invalid_config, std::move(msg));
         }
     }
 

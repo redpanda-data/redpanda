@@ -484,6 +484,12 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
 
         BOOST_CHECK_EQUAL(
           resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+        auto expected_message = (name == kafka::topic_property_recovery
+                                 || name == kafka::topic_property_read_replica)
+                                  ? "Tiered storage is not enabled"
+                                  : "An enterprise license is required";
+        BOOST_CHECK(resp.data.topics[0].error_message.value_or("").contains(
+          expected_message));
     }
 }
 
@@ -506,6 +512,8 @@ FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
 
         BOOST_CHECK_EQUAL(
           resp.data.topics[0].error_code, kafka::error_code::invalid_config);
+        BOOST_CHECK(resp.data.topics[0].error_message.value_or("").contains(
+          "An enterprise license is required"));
         update_cluster_config(config, "false");
     }
 }
