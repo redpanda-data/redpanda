@@ -3771,10 +3771,10 @@ configuration::configuration()
       *this,
       "iceberg_catalog_type",
       "Iceberg catalog type that Redpanda will use to commit table "
-      "metadata updates. Supported types: 'rest', 'filesystem'",
+      "metadata updates. Supported types: 'rest', 'object_storage'",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      datalake_catalog_type::filesystem,
-      {datalake_catalog_type::rest, datalake_catalog_type::filesystem})
+      datalake_catalog_type::object_storage,
+      {datalake_catalog_type::rest, datalake_catalog_type::object_storage})
   , iceberg_rest_catalog_endpoint(
       *this,
       "iceberg_rest_catalog_endpoint",

@@ -57,7 +57,9 @@ std::unique_ptr<iceberg::catalog> create_catalog(
   cloud_io::remote& io,
   const cloud_storage_clients::bucket_name& bucket,
   config::configuration& cfg) {
-    if (cfg.iceberg_catalog_type == config::datalake_catalog_type::filesystem) {
+    if (
+      cfg.iceberg_catalog_type
+      == config::datalake_catalog_type::object_storage) {
         vlog(
           datalake_log.info,
           "Creating filesystem catalog with bucket: {} and location: {}",

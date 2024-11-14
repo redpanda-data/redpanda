@@ -667,8 +667,8 @@ struct convert<config::datalake_catalog_type> {
                   to_string_view(config::datalake_catalog_type::rest),
                   config::datalake_catalog_type::rest)
                 .match(
-                  to_string_view(config::datalake_catalog_type::filesystem),
-                  config::datalake_catalog_type::filesystem);
+                  to_string_view(config::datalake_catalog_type::object_storage),
+                  config::datalake_catalog_type::object_storage);
 
         return true;
     }
