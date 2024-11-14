@@ -67,12 +67,11 @@
 
 namespace {
 
-std::vector<std::string_view> get_enterprise_features(
-  const cluster::custom_assignable_topic_configuration& cfg) {
+std::vector<std::string_view>
+get_enterprise_features(const cluster::topic_configuration& cfg) {
     std::vector<std::string_view> features;
     const auto si_disabled = model::shadow_indexing_mode::disabled;
-    if (
-      cfg.cfg.properties.shadow_indexing.value_or(si_disabled) != si_disabled) {
+    if (cfg.properties.shadow_indexing.value_or(si_disabled) != si_disabled) {
         features.emplace_back("tiered storage");
     }
     if (cfg.is_recovery_enabled()) {
@@ -84,7 +83,7 @@ std::vector<std::string_view> get_enterprise_features(
     if (cfg.is_schema_id_validation_enabled()) {
         features.emplace_back("schema ID validation");
     }
-    if (const auto& leaders_pref = cfg.cfg.properties.leaders_preference;
+    if (const auto& leaders_pref = cfg.properties.leaders_preference;
         leaders_pref.has_value()
         && config::shard_local_cfg()
              .default_leaders_preference.check_restricted(
@@ -574,7 +573,8 @@ errc topics_frontend::validate_topic_configuration(
     if (
       _features.local().should_sanction()
       && is_user_topic(assignable_config.cfg.tp_ns)) {
-        if (auto f = get_enterprise_features(assignable_config); !f.empty()) {
+        if (auto f = get_enterprise_features(assignable_config.cfg);
+            !f.empty()) {
             vlog(
               clusterlog.warn,
               "An enterprise license is required to enable {}.",
@@ -1609,6 +1609,17 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     }
     if (_topics.local().is_fully_disabled(p_cfg.tp_ns)) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
+    }
+
+    if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
+        if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
+            vlog(
+              clusterlog.warn,
+              "An enterprise license is required to create partitions with {}.",
+              f);
+            co_return make_error_result(
+              p_cfg.tp_ns, errc::topic_invalid_config);
+        }
     }
 
     std::optional<node2count_t> existing_replica_counts;
