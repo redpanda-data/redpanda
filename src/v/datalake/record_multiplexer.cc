@@ -24,7 +24,7 @@ namespace datalake {
 
 record_multiplexer::record_multiplexer(
   const model::ntp& ntp,
-  std::unique_ptr<data_writer_factory> writer_factory,
+  std::unique_ptr<parquet_file_writer_factory> writer_factory,
   schema_manager& schema_mgr,
   type_resolver& type_resolver)
   : _log(datalake_log, fmt::format("{}", ntp))
@@ -121,7 +121,7 @@ record_multiplexer::operator()(model::record_batch batch) {
                       "Error getting field IDs for record {}: {}",
                       offset,
                       get_ids_res.error());
-                    _error = data_writer_error::parquet_conversion_error;
+                    _error = writer_error::parquet_conversion_error;
                 }
                 co_return ss::stop_iteration::yes;
             }
@@ -146,7 +146,7 @@ record_multiplexer::operator()(model::record_batch batch) {
         auto write_result = co_await writer->add_data(
           std::move(record_data_res.value()), estimated_size);
 
-        if (write_result != data_writer_error::ok) {
+        if (write_result != writer_error::ok) {
             vlog(
               _log.warn,
               "Error adding data to writer for record {}: {}",
@@ -161,14 +161,14 @@ record_multiplexer::operator()(model::record_batch batch) {
     co_return ss::stop_iteration::no;
 }
 
-ss::future<result<record_multiplexer::write_result, data_writer_error>>
+ss::future<result<record_multiplexer::write_result, writer_error>>
 record_multiplexer::end_of_stream() {
     if (_error) {
         co_return *_error;
     }
     if (!_result) {
         // no batches were processed.
-        co_return data_writer_error::no_data;
+        co_return writer_error::no_data;
     }
     auto writers = std::move(_writers);
     for (auto& [id, writer] : writers) {
@@ -187,7 +187,7 @@ record_multiplexer::end_of_stream() {
     co_return std::move(*_result);
 }
 
-ss::future<result<std::nullopt_t, data_writer_error>>
+ss::future<result<std::nullopt_t, writer_error>>
 record_multiplexer::handle_invalid_record(
   kafka::offset offset, iobuf key, iobuf val, model::timestamp ts) {
     vlog(_log.debug, "Handling invalid record {}", offset);
@@ -204,7 +204,7 @@ record_multiplexer::handle_invalid_record(
           "Error translating data to binary record {}: {}",
           offset,
           record_data_res.error());
-        co_return data_writer_error::parquet_conversion_error;
+        co_return writer_error::parquet_conversion_error;
     }
     auto record_type = record_translator::build_type(std::nullopt);
 
@@ -221,7 +221,7 @@ record_multiplexer::handle_invalid_record(
               "Error getting field IDs for binary record {}: {}",
               offset,
               get_ids_res.error());
-            co_return data_writer_error::parquet_conversion_error;
+            co_return writer_error::parquet_conversion_error;
         }
         auto [iter, _] = _writers.emplace(
           record_type.comps,
@@ -238,7 +238,7 @@ record_multiplexer::handle_invalid_record(
     auto& writer = writer_iter->second;
     auto write_result = co_await writer->add_data(
       std::move(record_data_res.value()), estimated_size);
-    if (write_result != data_writer_error::ok) {
+    if (write_result != writer_error::ok) {
         vlog(
           _log.error,
           "Error adding data to writer for binary record {}: {}",

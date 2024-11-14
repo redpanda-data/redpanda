@@ -175,14 +175,28 @@ target_include_directories(v_datalake_test_proto_cc_files
 )
 
 rp_test(
+  UNIT_TEST
   GTEST
-  BINARY_NAME batching_parquet_writer_test
+  BINARY_NAME batching_parquet_writer
   SOURCES batching_parquet_writer_test.cc
   LIBRARIES
     v::gtest_main
     v::datalake_writer
     v::iceberg_test_utils
-  LABELS storage
+  LABELS datalake
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME local_parquet_file_writer
+  SOURCES local_parquet_file_writer_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::datalake_writer
+    v::iceberg_test_utils
+  LABELS datalake
   ARGS "-- -c 1"
 )
 

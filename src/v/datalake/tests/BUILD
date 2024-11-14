@@ -65,6 +65,16 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_data",
+    hdrs = ["test_data.h"],
+    include_prefix = "datalake/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/iceberg:datatypes",
+    ],
+)
+
 #TODO: this wrapper can be removed when we completely remove cmake tests support
 redpanda_test_cc_library(
     name = "proto_definitions_wrapper",
@@ -287,6 +297,25 @@ redpanda_cc_gtest(
         "//src/v/iceberg/tests:value_generator",
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "local_parquet_file_writer_test",
+    timeout = "short",
+    srcs = [
+        "local_parquet_file_writer_test.cc",
+    ],
+    deps = [
+        "//src/v/datalake:local_parquet_file_writer",
+        "//src/v/datalake/tests:test_data",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg/tests:value_generator",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:seastar_boost",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
