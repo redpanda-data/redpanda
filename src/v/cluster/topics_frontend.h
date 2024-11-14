@@ -276,7 +276,7 @@ private:
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
 
-    errc
+    topic_result
     validate_topic_configuration(const custom_assignable_topic_configuration&);
 
     ss::future<topic_result> do_create_partition(

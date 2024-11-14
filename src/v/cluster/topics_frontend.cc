@@ -491,13 +491,17 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
     }
 }
 
-topic_result
-make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
-    if (ec.category() == cluster::error_category()) {
-        return topic_result(tp_ns, cluster::errc(ec.value()));
+topic_result make_error_result(
+  const model::topic_namespace& tp_ns,
+  std::error_code ec,
+  std::optional<ss::sstring> msg = std::nullopt) {
+    errc error = ec.category() == cluster::error_category()
+                   ? errc(ec.value())
+                   : errc::topic_operation_error;
+    if (msg.has_value()) {
+        return {tp_ns, error, std::move(msg).value()};
     }
-
-    return topic_result(tp_ns, errc::topic_operation_error);
+    return topic_result{tp_ns, error};
 }
 
 static allocation_request make_allocation_request(
@@ -527,18 +531,24 @@ static allocation_request make_allocation_request(
     return req;
 }
 
-errc topics_frontend::validate_topic_configuration(
+topic_result topics_frontend::validate_topic_configuration(
   const custom_assignable_topic_configuration& assignable_config) {
+    const auto make_result = [&assignable_config](
+                               errc err,
+                               std::optional<ss::sstring> msg = std::nullopt) {
+        return cluster::make_error_result(
+          assignable_config.cfg.tp_ns, err, std::move(msg));
+    };
     if (!validate_topic_name(assignable_config.cfg.tp_ns)) {
-        return errc::invalid_topic_name;
+        return make_result(errc::invalid_topic_name);
     }
 
     if (assignable_config.cfg.partition_count < 1) {
-        return errc::topic_invalid_partitions;
+        return make_result(errc::topic_invalid_partitions);
     }
 
     if (assignable_config.cfg.replication_factor < 1) {
-        return errc::topic_invalid_replication_factor;
+        return make_result(errc::topic_invalid_replication_factor);
     }
 
     if (assignable_config.has_custom_assignment()) {
@@ -546,7 +556,7 @@ errc topics_frontend::validate_topic_configuration(
             if (
               static_cast<int16_t>(custom.replicas.size())
               != assignable_config.cfg.replication_factor) {
-                return errc::topic_invalid_replication_factor;
+                return make_result(errc::topic_invalid_replication_factor);
             }
         }
     }
@@ -554,7 +564,7 @@ errc topics_frontend::validate_topic_configuration(
       (assignable_config.is_read_replica()
        || assignable_config.is_recovery_enabled())
       && !_cloud_storage_api.local_is_initialized()) {
-        return errc::topic_invalid_config;
+        return make_result(errc::topic_invalid_config);
     }
 
     // the only way that cloud topics can be enabled on a topic is if the cloud
@@ -566,7 +576,7 @@ errc topics_frontend::validate_topic_configuration(
               "Cloud topic flag on {} is set but development feature is "
               "disabled",
               assignable_config.cfg.tp_ns);
-            return errc::topic_invalid_config;
+            return make_result(errc::topic_invalid_config);
         }
     }
 
@@ -579,11 +589,11 @@ errc topics_frontend::validate_topic_configuration(
               clusterlog.warn,
               "An enterprise license is required to enable {}.",
               f);
-            return errc::topic_invalid_config;
+            return make_result(errc::topic_invalid_config);
         }
     }
 
-    return errc::success;
+    return make_result(errc::success);
 }
 
 ss::future<topic_result> topics_frontend::do_create_topic(
@@ -614,10 +624,10 @@ ss::future<topic_result> topics_frontend::do_create_topic(
           assignable_config.cfg.tp_ns, errc::resource_is_being_migrated);
     }
 
-    auto validation_err = validate_topic_configuration(assignable_config);
+    auto result = validate_topic_configuration(assignable_config);
 
-    if (validation_err != errc::success) {
-        co_return topic_result(assignable_config.cfg.tp_ns, validation_err);
+    if (result.ec != errc::success) {
+        co_return result;
     }
 
     if (assignable_config.is_read_replica()) {
