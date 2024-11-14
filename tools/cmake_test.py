@@ -152,7 +152,7 @@ class BacktraceCapture(threading.Thread):
             return ci_location
 
         # Workstation: find our build directory by searching back from binary
-        vbuild = find_vbuild_path_from_binary(self.binary, 3)
+        vbuild = find_vbuild_path_from_binary(self.binary, 5)
         if vbuild:
             location = os.path.join(
                 vbuild,
