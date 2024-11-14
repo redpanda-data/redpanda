@@ -118,21 +118,25 @@ public:
       model::ntp n,
       ss::sstring base_dir,
       std::unique_ptr<default_overrides> overrides,
-      model::revision_id id,
-      model::initial_revision_id initial_id) noexcept
+      model::revision_id rev,
+      model::revision_id topic_rev,
+      model::initial_revision_id remote_rev) noexcept
       : _ntp(std::move(n))
       , _base_dir(std::move(base_dir))
       , _overrides(std::move(overrides))
-      , _revision_id(id)
-      , _initial_rev(initial_id) {}
+      , _revision_id(rev)
+      , _topic_rev(topic_rev)
+      , _remote_rev(remote_rev) {}
 
     const model::ntp& ntp() const { return _ntp; }
     model::ntp& ntp() { return _ntp; }
 
     model::revision_id get_revision() const { return _revision_id; }
 
-    model::initial_revision_id get_initial_revision() const {
-        return _initial_rev;
+    model::revision_id get_topic_revision() const { return _topic_rev; }
+
+    model::initial_revision_id get_remote_revision() const {
+        return _remote_rev;
     }
 
     const ss::sstring& base_directory() const { return _base_dir; }
@@ -370,19 +374,18 @@ private:
 
     std::unique_ptr<default_overrides> _overrides;
 
-    /**
-     * A number indicating an id of the NTP in case it was created more
-     * than once (i.e. created, deleted and then created again)
-     */
+    /// Revision of the command that resulted in this partition appearing on
+    /// this node (i.e. it will changed if the partition replica is moved back
+    /// and forth from/to the node, as well as if the topic is re-created). It
+    /// is used in constructing the local directory path.
     model::revision_id _revision_id{0};
 
-    /**
-     * A number indicating an initial revision of the NTP. The revision
-     * of the NTP might change when the partition is moved between the
-     * nodes. The initial revision is the revision_id that was assigned
-     * to the topic when it was created.
-     */
-    model::initial_revision_id _initial_rev{0};
+    /// Revision of the topic creation command.
+    model::revision_id _topic_rev;
+
+    /// This revision is used to construct cloud storage paths. It differs from
+    /// _topic_revision in case of recovered topics or read replicas.
+    model::initial_revision_id _remote_rev{0};
 
     // in storage/types.cc
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);

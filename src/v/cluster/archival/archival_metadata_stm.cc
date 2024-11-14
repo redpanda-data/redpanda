@@ -691,7 +691,7 @@ archival_metadata_stm::archival_metadata_stm(
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _mem_tracker(ss::make_shared<util::mem_tracker>(raft->ntp().path()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
-      raft->ntp(), raft->log_config().get_initial_revision(), _mem_tracker))
+      raft->ntp(), raft->log_config().get_remote_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
   , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
@@ -1272,7 +1272,7 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
 
     *_manifest = cloud_storage::partition_manifest(
       _raft->ntp(),
-      _raft->log_config().get_initial_revision(),
+      _raft->log_config().get_remote_revision(),
       _manifest->mem_tracker(),
       snap.start_offset,
       snap.last_offset,
