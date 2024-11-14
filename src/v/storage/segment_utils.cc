@@ -402,26 +402,27 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->reader().filename(),
       tmpname);
     bool may_have_tombstone_records = false;
-    auto should_keep = [compacted_list = std::move(compacted_offsets),
-                        past_tombstone_delete_horizon,
-                        &may_have_tombstone_records](
-                         const model::record_batch& b,
-                         const model::record& r,
-                         bool) {
-        // Deal with tombstone record removal
-        if (r.is_tombstone() && past_tombstone_delete_horizon) {
-            return ss::make_ready_future<bool>(false);
-        }
+    auto should_keep =
+      [compacted_list = std::move(compacted_offsets),
+       past_tombstone_delete_horizon,
+       &may_have_tombstone_records,
+       &pb](const model::record_batch& b, const model::record& r, bool) {
+          // Deal with tombstone record removal
+          if (r.is_tombstone() && past_tombstone_delete_horizon) {
+              pb.add_removed_tombstone();
+              return ss::make_ready_future<bool>(false);
+          }
 
-        const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
-        const auto keep = compacted_list.contains(o);
+          const auto o = b.base_offset()
+                         + model::offset_delta(r.offset_delta());
+          const auto keep = compacted_list.contains(o);
 
-        if (r.is_tombstone() && keep) {
-            may_have_tombstone_records = true;
-        }
+          if (r.is_tombstone() && keep) {
+              may_have_tombstone_records = true;
+          }
 
-        return ss::make_ready_future<bool>(keep);
-    };
+          return ss::make_ready_future<bool>(keep);
+      };
 
     model::offset segment_last_offset{};
     if (likely(feature_table.local().is_active(
