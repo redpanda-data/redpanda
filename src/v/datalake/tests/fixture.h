@@ -114,12 +114,14 @@ public:
         if (!partition) {
             throw std::runtime_error("leader not found during validation");
         }
+        auto topic_revision = partition->get_topic_revision_id();
         const auto& ot = partition->get_offset_translator_state();
         auto max_offset = kafka::prev_offset(model::offset_cast(
           ot->from_log_offset(partition->last_stable_offset())));
         auto& fe = coordinator_frontend(fixture->app.controller->self());
         coordinator::fetch_latest_translated_offset_request request;
         request.tp = ntp.tp;
+        request.topic_revision = topic_revision;
         vlog(logger.info, "Waiting for last added offet: {}", max_offset);
         co_await ::tests::cooperative_spin_wait_with_timeout(20s, [&] {
             return fe.local().fetch_latest_translated_offset(request).then(

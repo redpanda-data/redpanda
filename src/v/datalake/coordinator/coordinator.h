@@ -27,6 +27,7 @@ public:
     enum class errc {
         not_leader,
         stm_apply_error,
+        revision_mismatch,
         timedout,
         shutting_down,
     };
@@ -40,10 +41,16 @@ public:
 
     void start();
     ss::future<> stop_and_wait();
+
     ss::future<checked<std::nullopt_t, errc>> sync_add_files(
-      model::topic_partition tp, chunked_vector<translated_offset_range>);
+      model::topic_partition tp,
+      model::revision_id topic_revision,
+      chunked_vector<translated_offset_range>);
+
     ss::future<checked<std::optional<kafka::offset>, errc>>
-    sync_get_last_added_offset(model::topic_partition tp);
+    sync_get_last_added_offset(
+      model::topic_partition tp, model::revision_id topic_rev);
+
     void notify_leadership(std::optional<model::node_id>);
 
     bool leader_loop_running() const { return term_as_.has_value(); }
