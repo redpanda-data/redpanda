@@ -42,7 +42,7 @@ BOOTSTRAP_CONFIG = {
 SECRET_CONFIG_NAMES = frozenset([
     "cloud_storage_secret_key",
     "cloud_storage_azure_shared_key",
-    "iceberg_rest_catalog_secret",
+    "iceberg_rest_catalog_client_secret",
     "iceberg_rest_catalog_token",
 ])
 

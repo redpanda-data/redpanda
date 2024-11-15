@@ -45,9 +45,9 @@ class RestCatalogConnectionTest(RedpandaTest):
             "rest",
             "iceberg_rest_catalog_endpoint":
             self.catalog_service.catalog_url,
-            "iceberg_rest_catalog_user_id":
+            "iceberg_rest_catalog_client_id":
             "panda-user",
-            "iceberg_rest_catalog_secret":
+            "iceberg_rest_catalog_client_secret":
             "panda-secret",
         })
         self.redpanda.start()

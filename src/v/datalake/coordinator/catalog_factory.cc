@@ -57,7 +57,9 @@ std::unique_ptr<iceberg::catalog> create_catalog(
   cloud_io::remote& io,
   const cloud_storage_clients::bucket_name& bucket,
   config::configuration& cfg) {
-    if (cfg.iceberg_catalog_type == config::datalake_catalog_type::filesystem) {
+    if (
+      cfg.iceberg_catalog_type
+      == config::datalake_catalog_type::object_storage) {
         vlog(
           datalake_log.info,
           "Creating filesystem catalog with bucket: {} and location: {}",
@@ -68,8 +70,8 @@ std::unique_ptr<iceberg::catalog> create_catalog(
     } else {
         // TODO: add config level validation
         throw_if_not_present(cfg.iceberg_rest_catalog_endpoint);
-        throw_if_not_present(cfg.iceberg_rest_catalog_secret);
-        throw_if_not_present(cfg.iceberg_rest_catalog_user_id);
+        throw_if_not_present(cfg.iceberg_rest_catalog_client_secret);
+        throw_if_not_present(cfg.iceberg_rest_catalog_client_id);
 
         vlog(
           datalake_log.info,
@@ -89,8 +91,8 @@ std::unique_ptr<iceberg::catalog> create_catalog(
           // TODO: make credentials optional, we should provide either
           // credentials or token
           iceberg::rest_client::credentials{
-            .client_id = cfg.iceberg_rest_catalog_user_id().value(),
-            .client_secret = cfg.iceberg_rest_catalog_secret().value()},
+            .client_id = cfg.iceberg_rest_catalog_client_id().value(),
+            .client_secret = cfg.iceberg_rest_catalog_client_secret().value()},
           std::nullopt, // base_path
           std::nullopt, // prefix
           std::nullopt, // api_version
