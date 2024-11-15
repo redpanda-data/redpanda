@@ -28,6 +28,7 @@ enum class errc : int16_t {
     stale,
     concurrent_requests,
     revision_mismatch,
+    failed,
 };
 
 constexpr bool is_retriable(errc errc) {

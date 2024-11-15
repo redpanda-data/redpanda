@@ -36,6 +36,8 @@ errc to_rpc_errc(coordinator::errc e) {
         return errc::revision_mismatch;
     case coordinator::errc::timedout:
         return errc::timeout;
+    case coordinator::errc::failed:
+        return errc::failed;
     }
 }
 ss::future<add_translated_data_files_reply> add_files(

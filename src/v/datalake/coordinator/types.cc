@@ -39,6 +39,10 @@ std::ostream& operator<<(std::ostream& o, const errc& errc) {
         break;
     case errc::revision_mismatch:
         o << "errc::revision_mismatch";
+        break;
+    case errc::failed:
+        o << "errc::failed";
+        break;
     }
     return o;
 }

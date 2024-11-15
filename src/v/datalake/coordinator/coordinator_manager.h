@@ -36,6 +36,7 @@ public:
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<cluster::topic_table>&,
+      ss::sharded<cluster::topics_frontend>&,
       std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
       cloud_storage_clients::bucket_name);
@@ -52,12 +53,15 @@ private:
       raft::group_id group,
       model::term_id term,
       std::optional<model::node_id> leader_id);
+    ss::future<checked<std::nullopt_t, coordinator::errc>>
+    remove_tombstone(const model::topic&, model::revision_id);
 
     ss::gate gate_;
     model::node_id self_;
     raft::group_manager& gm_;
     cluster::partition_manager& pm_;
     cluster::topic_table& topics_;
+    ss::sharded<cluster::topics_frontend>& topics_fe_;
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;

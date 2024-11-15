@@ -38,6 +38,12 @@ public:
       model::topic, const topics_state&) const override {
         co_return chunked_vector<mark_files_committed_update>{};
     }
+
+    ss::future<checked<std::nullopt_t, errc>>
+    drop_table(const model::topic&) const final {
+        co_return std::nullopt;
+    }
+
     ~noop_file_committer() override = default;
 };
 
@@ -56,7 +62,19 @@ struct coordinator_node {
       , commit_interval_ms(commit_interval)
       , topic_table(mr)
       , file_committer(std::move(committer))
-      , crd(stm, topic_table, *file_committer, commit_interval_ms.bind()) {}
+      , crd(
+          stm,
+          topic_table,
+          [this](const model::topic& t, model::revision_id r) {
+              return remove_tombstone(t, r);
+          },
+          *file_committer,
+          commit_interval_ms.bind()) {}
+
+    ss::future<checked<std::nullopt_t, coordinator::errc>>
+    remove_tombstone(const model::topic&, model::revision_id) {
+        co_return std::nullopt;
+    }
 
     coordinator_stm& stm;
     config::mock_property<std::chrono::milliseconds> commit_interval_ms;

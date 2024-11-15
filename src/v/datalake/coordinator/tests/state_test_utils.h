@@ -53,6 +53,12 @@ public:
         }
         co_return ret;
     }
+
+    ss::future<checked<std::nullopt_t, errc>>
+    drop_table(const model::topic&) const final {
+        co_return std::nullopt;
+    }
+
     ~simple_file_committer() override = default;
 };
 
