@@ -107,3 +107,9 @@ class NodeMetricsTest(RedpandaTest):
         self.redpanda.logger.info(
             f"Elapsed: {t1-t0} sec to first metrics, {t2-t1} to consume space metric"
         )
+
+        # Assert cache disk metrics match data disk metrics since it is the same disk in this test setup.
+        assert_lists_equal(self.node_metrics.disk_total_bytes(),
+                           self.node_metrics.cache_disk_total_bytes())
+        assert_lists_equal(self.node_metrics.disk_free_bytes(),
+                           self.node_metrics.cache_disk_free_bytes())
