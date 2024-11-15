@@ -665,7 +665,7 @@ public:
                     auto ctrl_p = p_mgr.get(model::controller_ntp);
                     vassert(ctrl_p, "Controller partition must exists");
                     return ctrl_p->linearizable_barrier().then(
-                      [ctrl_p](result<model::offset> o) {
+                      [ctrl_p](result<model::offset>) {
                           return ctrl_p->committed_offset();
                       });
                 });

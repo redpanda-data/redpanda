@@ -69,7 +69,7 @@ FIXTURE_TEST(test_retry_create_topic, kafka_client_create_topic_fixture) {
     };
 
     size_t num_topics = 20;
-    for (int i = 0; i < num_topics; ++i) {
+    for (size_t i = 0; i < num_topics; ++i) {
         auto creatable_topic = make_topic(fmt::format("topic-{}", i));
         try {
             auto res = client.create_topic(creatable_topic).get();
