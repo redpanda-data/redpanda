@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/timestamp.h"
 #include "redpanda/admin/api-doc/migration.json.hh"
 #include "redpanda/admin/data_migration_utils.h"
 #include "redpanda/admin/server.h"
@@ -58,14 +59,8 @@ ss::httpd::migration_json::namespaced_topic to_admin_type(
     return ret;
 }
 
-ss::httpd::migration_json::inbound_migration_state to_admin_type(
-  cluster::data_migrations::id id,
-  const cluster::data_migrations::inbound_migration& idm,
-  cluster::data_migrations::state state) {
-    ss::httpd::migration_json::inbound_migration_state ret;
-
-    ret.id = id;
-    ret.state = fmt::to_string(state);
+ss::httpd::migration_json::inbound_migration
+to_admin_type(const cluster::data_migrations::inbound_migration& idm) {
     ss::httpd::migration_json::inbound_migration migration;
     using migration_type_enum = ss::httpd::migration_json::inbound_migration::
       inbound_migration_migration_type;
@@ -83,17 +78,11 @@ ss::httpd::migration_json::inbound_migration_state to_admin_type(
         migration.consumer_groups.push(cg);
     }
     migration.auto_advance = idm.auto_advance;
-    ret.migration = migration;
-    return ret;
+    return migration;
 }
 
-ss::httpd::migration_json::outbound_migration_state to_admin_type(
-  cluster::data_migrations::id id,
-  const cluster::data_migrations::outbound_migration& odm,
-  cluster::data_migrations::state state) {
-    ss::httpd::migration_json::outbound_migration_state ret;
-    ret.id = id;
-    ret.state = fmt::to_string(state);
+ss::httpd::migration_json::outbound_migration
+to_admin_type(const cluster::data_migrations::outbound_migration& odm) {
     ss::httpd::migration_json::outbound_migration migration;
     using migration_type_enum = ss::httpd::migration_json::outbound_migration::
       outbound_migration_migration_type;
@@ -105,20 +94,44 @@ ss::httpd::migration_json::outbound_migration_state to_admin_type(
         migration.consumer_groups.push(cg);
     }
     migration.auto_advance = odm.auto_advance;
-    ret.migration = migration;
-    return ret;
+    return migration;
 }
 
+template<class Migration>
+struct StateAdmin;
+
+template<>
+struct StateAdmin<cluster::data_migrations::inbound_migration> {
+    using type = ss::httpd::migration_json::inbound_migration_state;
+};
+
+template<>
+struct StateAdmin<cluster::data_migrations::outbound_migration> {
+    using type = ss::httpd::migration_json::outbound_migration_state;
+};
+
+template<class Migration>
+auto to_admin_type(
+  const Migration& migration,
+  const cluster::data_migrations::migration_metadata& meta) {
+    typename StateAdmin<Migration>::type ret;
+    ret.id = meta.id;
+    ret.state = fmt::to_string(meta.state);
+    ret.migration = to_admin_type(migration);
+    ret.created_timestamp = meta.created_timestamp.value();
+    if (meta.completed_timestamp != model::timestamp::missing()) {
+        ret.completed_timestamp = meta.completed_timestamp.value();
+    }
+    return ret;
+}
 void write_migration_as_json(
   const cluster::data_migrations::migration_metadata& meta,
   json::Writer<json::StringBuffer>& writer) {
-    ss::visit(
-      meta.migration,
-      [&writer, id = meta.id, state = meta.state](auto& migration) {
-          auto json_str = to_admin_type(id, migration, state).to_json();
-          writer.RawValue(
-            json_str.c_str(), json_str.size(), rapidjson::Type::kObjectType);
-      });
+    ss::visit(meta.migration, [&writer, &meta](auto& migration) {
+        auto json_str = to_admin_type(migration, meta).to_json();
+        writer.RawValue(
+          json_str.c_str(), json_str.size(), rapidjson::Type::kObjectType);
+    });
 }
 
 json::validator make_migration_validator() {
