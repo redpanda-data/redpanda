@@ -10,6 +10,7 @@
 #include "datalake/coordinator/coordinator_manager.h"
 
 #include "cluster/partition_manager.h"
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/coordinator.h"
@@ -29,6 +30,7 @@ coordinator_manager::coordinator_manager(
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<cluster::topic_table>& topics,
+  ss::sharded<cluster::topics_frontend>& topics_fe,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
   cloud_storage_clients::bucket_name bucket)
@@ -36,6 +38,7 @@ coordinator_manager::coordinator_manager(
   , gm_(gm.local())
   , pm_(pm.local())
   , topics_(topics.local())
+  , topics_fe_(topics_fe)
   , manifest_io_(io.local(), bucket)
   , catalog_factory_(std::move(catalog_factory)) {}
 
@@ -105,6 +108,9 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     auto crd = ss::make_lw_shared<coordinator>(
       std::move(stm),
       topics_,
+      [this](const model::topic& t, model::revision_id rev) {
+          return remove_tombstone(t, rev);
+      },
       *file_committer_,
       config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind());
     if (p.is_leader()) {
@@ -158,6 +164,34 @@ void coordinator_manager::notify_leadership_change(
         return;
     }
     crd->notify_leadership(leader_id);
+}
+
+ss::future<checked<std::nullopt_t, coordinator::errc>>
+coordinator_manager::remove_tombstone(
+  const model::topic& topic, model::revision_id rev) {
+    auto topic_res = co_await topics_fe_.local().purged_topic(
+      cluster::nt_revision{
+        .nt = model::topic_namespace{model::kafka_namespace, topic},
+        .initial_revision_id = model::initial_revision_id{rev}},
+      cluster::topic_purge_domain::iceberg,
+      5s);
+    switch (topic_res.ec) {
+    case cluster::errc::success:
+    case cluster::errc::topic_not_exists:
+        co_return std::nullopt;
+    case cluster::errc::shutting_down:
+        co_return coordinator::errc::shutting_down;
+    case cluster::errc::timeout:
+        co_return coordinator::errc::timedout;
+    default:
+        vlog(
+          datalake_log.warn,
+          "failed to remove iceberg tombstone, topic {}, rev {}: {}",
+          topic,
+          rev,
+          topic_res.ec);
+        co_return coordinator::errc::failed;
+    }
 }
 
 } // namespace datalake::coordinator
