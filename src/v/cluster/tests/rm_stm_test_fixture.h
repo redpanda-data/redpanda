@@ -15,6 +15,8 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <chrono>
+
 static ss::logger logger{"rm_stm-test"};
 static prefix_logger ctx_logger{logger, ""};
 
@@ -24,7 +26,9 @@ struct rm_stm_test_fixture : simple_raft_fixture {
         producer_state_manager
           .start(
             config::mock_binding(std::numeric_limits<uint64_t>::max()),
-            config::mock_binding(std::chrono::milliseconds::max()),
+            config::mock_binding(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::microseconds::max())),
             config::mock_binding(std::numeric_limits<uint64_t>::max()))
           .get();
         producer_state_manager
