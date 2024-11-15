@@ -28,12 +28,14 @@ coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<cluster::topic_table>& topics,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
   cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
+  , topics_(topics.local())
   , manifest_io_(io.local(), bucket)
   , catalog_factory_(std::move(catalog_factory)) {}
 
@@ -102,6 +104,7 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     }
     auto crd = ss::make_lw_shared<coordinator>(
       std::move(stm),
+      topics_,
       *file_committer_,
       config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind());
     if (p.is_leader()) {

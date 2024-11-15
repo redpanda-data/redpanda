@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "cluster/fwd.h"
 #include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/file_committer.h"
@@ -33,9 +34,11 @@ public:
     };
     coordinator(
       ss::shared_ptr<coordinator_stm> stm,
+      cluster::topic_table& topics,
       file_committer& file_committer,
       config::binding<std::chrono::milliseconds> commit_interval)
       : stm_(std::move(stm))
+      , topic_table_(topics)
       , file_committer_(file_committer)
       , commit_interval_(std::move(commit_interval)) {}
 
@@ -69,7 +72,11 @@ private:
     ss::future<checked<std::nullopt_t, errc>>
       run_until_term_change(model::term_id);
 
+    ss::future<checked<ss::stop_iteration, errc>>
+    update_lifecycle_state(const model::topic&, model::term_id);
+
     ss::shared_ptr<coordinator_stm> stm_;
+    cluster::topic_table& topic_table_;
     file_committer& file_committer_;
     config::binding<std::chrono::milliseconds> commit_interval_;
 

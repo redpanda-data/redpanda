@@ -24,6 +24,7 @@ namespace datalake::coordinator {
 enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
+    topic_lifecycle_update = 2,
 };
 std::ostream& operator<<(std::ostream&, const update_key&);
 
@@ -74,6 +75,25 @@ struct mark_files_committed_update
     // All pending entries whose offset range falls entirely below this offset
     // (inclusive) should be removed.
     kafka::offset new_committed;
+};
+
+// An update to change topic lifecycle state after it has been deleted.
+struct topic_lifecycle_update
+  : public serde::envelope<
+      topic_lifecycle_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr auto key{update_key::topic_lifecycle_update};
+    auto serde_fields() { return std::tie(topic, revision, new_state); }
+
+    checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
+    checked<std::nullopt_t, stm_update_error> apply(topics_state&);
+
+    friend std::ostream& operator<<(std::ostream&, topic_lifecycle_update);
+
+    model::topic topic;
+    model::revision_id revision;
+    topic_state::lifecycle_state_t new_state;
 };
 
 } // namespace datalake::coordinator
