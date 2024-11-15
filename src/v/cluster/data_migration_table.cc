@@ -198,7 +198,11 @@ migrations_table::apply(create_data_migration_cmd cmd) {
     }
 
     auto [it, success] = _migrations.try_emplace(
-      id, migration_metadata{.id = id, .migration = std::move(migration)});
+      id,
+      migration_metadata{
+        .id = id,
+        .migration = std::move(migration),
+        .created_timestamp = cmd.value.op_timestamp});
 
     if (!success) {
         // TODO: consider explaining to the client that we had an internal race
@@ -346,6 +350,11 @@ migrations_table::apply(update_data_migration_state_cmd cmd) {
         co_return errc::invalid_data_migration_state;
     }
     it->second.state = requested_state;
+    if (
+      requested_state == state::finished
+      || requested_state == state::cancelled) {
+        it->second.completed_timestamp = cmd.value.op_timestamp;
+    }
     // notify callbacks after resources, see comment in migrations_table::apply
     co_await _resources.invoke_on_all(
       [&meta = it->second](migrated_resources& resources) {
