@@ -8,14 +8,13 @@
 # by the Apache License, Version 2.0
 
 from time import time
-from rptest.services.cluster import cluster
+
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_metrics import NodeMetrics
 
 

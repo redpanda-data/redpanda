@@ -41,6 +41,7 @@ class NodeMetrics:
     def wait_until_ready(self, timeout_sec=15):
         """ Wait until we have metrics for all nodes. """
         # disk metrics are updated via health monitor's periodic tick().
-        wait_until(lambda: all_greater_than_zero(self.disk_total_bytes()),
+        wait_until(lambda: all_greater_than_zero(self.disk_total_bytes()) and
+                   all_greater_than_zero(self.cache_disk_total_bytes()),
                    timeout_sec=15,
                    err_msg="Disk metrics not populated before timeout.")
