@@ -31,14 +31,20 @@ public:
         revision_mismatch,
         timedout,
         shutting_down,
+        failed,
     };
+    using remove_tombstone_f
+      = ss::noncopyable_function<ss::future<checked<std::nullopt_t, errc>>(
+        const model::topic&, model::revision_id)>;
     coordinator(
       ss::shared_ptr<coordinator_stm> stm,
       cluster::topic_table& topics,
+      remove_tombstone_f remove_tombstone,
       file_committer& file_committer,
       config::binding<std::chrono::milliseconds> commit_interval)
       : stm_(std::move(stm))
       , topic_table_(topics)
+      , remove_tombstone_(std::move(remove_tombstone))
       , file_committer_(file_committer)
       , commit_interval_(std::move(commit_interval)) {}
 
@@ -77,6 +83,7 @@ private:
 
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;
+    remove_tombstone_f remove_tombstone_;
     file_committer& file_committer_;
     config::binding<std::chrono::milliseconds> commit_interval_;
 

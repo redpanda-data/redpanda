@@ -47,6 +47,9 @@ public:
     commit_topic_files_to_catalog(
       model::topic, const topics_state&) const final;
 
+    ss::future<checked<std::nullopt_t, errc>>
+    drop_table(const model::topic&) const final;
+
 private:
     // TODO: pull this out into some helper? Seems useful for other actions.
     iceberg::table_identifier table_id_for_topic(const model::topic& t) const;

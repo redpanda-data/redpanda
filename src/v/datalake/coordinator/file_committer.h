@@ -26,6 +26,10 @@ public:
     virtual ss::future<
       checked<chunked_vector<mark_files_committed_update>, errc>>
     commit_topic_files_to_catalog(model::topic, const topics_state&) const = 0;
+
+    virtual ss::future<checked<std::nullopt_t, errc>>
+    drop_table(const model::topic&) const = 0;
+
     virtual ~file_committer() = default;
 };
 

@@ -208,6 +208,20 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     }
     co_return updates;
 }
+
+ss::future<checked<std::nullopt_t, file_committer::errc>>
+iceberg_file_committer::drop_table(const model::topic& topic) const {
+    auto table_id = table_id_for_topic(topic);
+    auto drop_res = co_await catalog_.drop_table(table_id, true);
+    if (
+      drop_res.has_error()
+      && drop_res.error() != iceberg::catalog::errc::not_found) {
+        co_return log_and_convert_catalog_errc(
+          drop_res.error(), fmt::format("Failed to drop {}", table_id));
+    }
+    co_return std::nullopt;
+}
+
 iceberg::table_identifier
 iceberg_file_committer::table_id_for_topic(const model::topic& t) const {
     return iceberg::table_identifier{
