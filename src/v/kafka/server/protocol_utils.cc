@@ -56,7 +56,7 @@ parse_v1_header(ss::input_stream<char>& src) {
 
     if (unlikely(client_id_size < 0)) {
         // header parsing error, force connection shutdown
-        throw std::runtime_error(
+        throw malformed_header_exception(
           fmt::format("Invalid client_id size {}", client_id_size));
     }
 
