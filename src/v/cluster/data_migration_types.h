@@ -13,6 +13,7 @@
 #include "cluster/errc.h"
 #include "container/fragmented_vector.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/named_type.h"
@@ -295,7 +296,7 @@ std::ostream& operator<<(std::ostream& o, const topic_work& tw);
 struct migration_metadata
   : serde::envelope<
       migration_metadata,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     id id;
     data_migration migration;
@@ -303,13 +304,24 @@ struct migration_metadata
      * Data migration starts in a planned state.
      */
     state state = state::planned;
+    // populated on creation
+    model::timestamp created_timestamp{};
+    // populated once finished or cancelled state is reached
+    model::timestamp completed_timestamp{};
 
     migration_metadata copy() const {
         return migration_metadata{
-          .id = id, .migration = copy_migration(migration), .state = state};
+          .id = id,
+          .migration = copy_migration(migration),
+          .state = state,
+          .created_timestamp = created_timestamp,
+          .completed_timestamp = completed_timestamp};
     }
 
-    auto serde_fields() { return std::tie(id, migration, state); }
+    auto serde_fields() {
+        return std::tie(
+          id, migration, state, created_timestamp, completed_timestamp);
+    }
 
     friend bool operator==(const migration_metadata&, const migration_metadata&)
       = default;
@@ -338,12 +350,13 @@ struct data_migration_ntp_state
 struct create_migration_cmd_data
   : serde::envelope<
       create_migration_cmd_data,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     id id;
     data_migration migration;
+    model::timestamp op_timestamp{};
 
-    auto serde_fields() { return std::tie(id, migration); }
+    auto serde_fields() { return std::tie(id, migration, op_timestamp); }
     friend bool operator==(
       const create_migration_cmd_data&, const create_migration_cmd_data&)
       = default;
@@ -354,12 +367,13 @@ struct create_migration_cmd_data
 struct update_migration_state_cmd_data
   : serde::envelope<
       update_migration_state_cmd_data,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     id id;
     state requested_state;
+    model::timestamp op_timestamp{};
 
-    auto serde_fields() { return std::tie(id, requested_state); }
+    auto serde_fields() { return std::tie(id, requested_state, op_timestamp); }
     friend bool operator==(
       const update_migration_state_cmd_data&,
       const update_migration_state_cmd_data&)
