@@ -66,7 +66,19 @@ services:
     volumes:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     - '${BUILD_ROOT}/redpanda_installs:/opt/redpanda_installs'
+    - 'cloud_storage_cache_100M_test:/var/lib/cloud_storage_cache_100M_test'
     networks:
     - redpanda-test
     dns:
       - 192.168.215.126
+
+volumes:
+  # A volume used in metrics test for cache disk.
+  cloud_storage_cache_100M_test:
+    # For details, see:
+    # https://docs.docker.com/engine/reference/commandline/volume_create/#driver-specific-options
+    driver: local
+    driver_opts:
+      o: "size=100m"
+      device: tmpfs
+      type: tmpfs
