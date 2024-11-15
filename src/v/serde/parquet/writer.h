@@ -31,7 +31,9 @@ public:
         // Information used when filling out the `created_by` metadata.
         ss::sstring version = "latest";
         ss::sstring build = "dev";
-        // TODO(parquet): add settings around buffer settings, compression, etc.
+        // If true, compress the parquet column chunks using zstd compression
+        bool compress = false;
+        // TODO(parquet): add settings around buffer settings, etc.
     };
 
     // Create a new parquet file writer using the given options that
