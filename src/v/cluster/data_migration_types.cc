@@ -165,10 +165,13 @@ std::ostream& operator<<(std::ostream& o, const topic_work& tw) {
 std::ostream& operator<<(std::ostream& o, const migration_metadata& m) {
     fmt::print(
       o,
-      "{{id: {}, migration: {}, state: {}}}",
+      "{{id: {}, migration: {}, state: {}, created_timestamp: {}, "
+      "completed_timestamp: {}}}",
       m.id,
       print_migration(m.migration),
-      m.state);
+      m.state,
+      m.created_timestamp,
+      m.completed_timestamp);
     return o;
 }
 
@@ -184,13 +187,22 @@ std::ostream& operator<<(std::ostream& o, const data_migration_ntp_state& r) {
 
 std::ostream& operator<<(std::ostream& o, const create_migration_cmd_data& d) {
     fmt::print(
-      o, "{{id: {}, migration: {}}}", d.id, print_migration(d.migration));
+      o,
+      "{{id: {}, migration: {}, op_timestamp: {}}}",
+      d.id,
+      print_migration(d.migration),
+      d.op_timestamp);
     return o;
 }
 
 std::ostream&
 operator<<(std::ostream& o, const update_migration_state_cmd_data& d) {
-    fmt::print(o, "{{id: {}, requested_state: {}}}", d.id, d.requested_state);
+    fmt::print(
+      o,
+      "{{id: {}, requested_state: {}, op_timestamp: {}}}",
+      d.id,
+      d.requested_state,
+      d.op_timestamp);
     return o;
 }
 
