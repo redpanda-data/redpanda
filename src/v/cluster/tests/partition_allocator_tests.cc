@@ -90,35 +90,75 @@ FIXTURE_TEST(allocation_over_core_capacity, partition_allocator_fixture) {
     const auto partition_count
       = partition_allocator_fixture::partitions_per_shard + 1;
     register_node(0, 1);
-    auto result
-      = allocator().allocate(make_allocation_request(partition_count, 1)).get();
-    BOOST_REQUIRE(result.has_error());
-    BOOST_REQUIRE_EQUAL(
-      result.assume_error(),
-      cluster::make_error_code(
-        cluster::errc::topic_invalid_partitions_core_limit));
+
+    {
+        auto result = allocator()
+                        .allocate(make_allocation_request(partition_count, 1))
+                        .get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_core_limit));
+    }
+
+    {
+        auto result = allocator()
+                        .allocate(
+                          make_simple_allocation_request(partition_count, 1))
+                        .get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_core_limit));
+    }
 }
 
 FIXTURE_TEST(
   allocation_over_memory_capacity, partition_allocator_memory_limited_fixture) {
     register_node(0, 1);
-    auto result = allocator().allocate(make_allocation_request(1, 1)).get();
-    BOOST_REQUIRE(result.has_error());
-    BOOST_REQUIRE_EQUAL(
-      result.assume_error(),
-      cluster::make_error_code(
-        cluster::errc::topic_invalid_partitions_memory_limit));
+
+    {
+        auto result = allocator().allocate(make_allocation_request(1, 1)).get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_memory_limit));
+    }
+    {
+        auto result
+          = allocator().allocate(make_simple_allocation_request(1, 1)).get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_memory_limit));
+    }
 }
 
 FIXTURE_TEST(
   allocation_over_fds_capacity, partition_allocator_fd_limited_fixture) {
     register_node(0, 1);
-    auto result = allocator().allocate(make_allocation_request(1, 1)).get();
-    BOOST_REQUIRE(result.has_error());
-    BOOST_REQUIRE_EQUAL(
-      result.assume_error(),
-      cluster::make_error_code(
-        cluster::errc::topic_invalid_partitions_fd_limit));
+
+    {
+        auto result = allocator().allocate(make_allocation_request(1, 1)).get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_fd_limit));
+    }
+    {
+        auto result
+          = allocator().allocate(make_simple_allocation_request(1, 1)).get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_fd_limit));
+    }
 }
 
 FIXTURE_TEST(allocation_over_capacity, partition_allocator_fixture) {
@@ -331,6 +371,27 @@ FIXTURE_TEST(allocation_units_test, partition_allocator_fixture) {
     {
         auto allocs
           = allocator().allocate(make_allocation_request(10, 3)).get().value();
+        BOOST_REQUIRE_EQUAL(allocs->get_assignments().size(), 10);
+        BOOST_REQUIRE_EQUAL(
+          allocated_nodes_count(allocs->get_assignments()), 3 * 10);
+    }
+
+    BOOST_REQUIRE(all_nodes_empty());
+
+    // we do not decrement the highest raft group
+    BOOST_REQUIRE_EQUAL(allocator().state().last_group_id()(), 10);
+}
+FIXTURE_TEST(allocation_units_test_raw_req, partition_allocator_fixture) {
+    register_node(1, 10);
+    register_node(2, 11);
+    register_node(3, 12);
+    // just fill up the cluster partially
+
+    {
+        auto allocs = allocator()
+                        .allocate(make_simple_allocation_request(10, 3))
+                        .get()
+                        .value();
         BOOST_REQUIRE_EQUAL(allocs->get_assignments().size(), 10);
         BOOST_REQUIRE_EQUAL(
           allocated_nodes_count(allocs->get_assignments()), 3 * 10);
