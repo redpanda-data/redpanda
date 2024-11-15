@@ -244,4 +244,14 @@ std::ostream& operator<<(std::ostream& o, const allocation_request& req) {
     fmt::print(o, "{{partion_constraints: {}}}", req.partitions);
     return o;
 }
+std::ostream&
+operator<<(std::ostream& o, const simple_allocation_request& req) {
+    fmt::print(
+      o,
+      "{{topic: {}, additional_partitions: {}, replication_factor: {}}}",
+      req.tp_ns,
+      req.additional_partitions,
+      req.replication_factor);
+    return o;
+}
 } // namespace cluster
