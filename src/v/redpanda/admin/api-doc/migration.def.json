@@ -169,6 +169,14 @@
         "migration": {
             "type": "outbound_migration",
             "$ref": "outbound_migration"
+        },
+        "created_timestamp": {
+            "type": "long",
+            "description": "the time of creation in milliseconds since Epoch"
+        },
+        "completed_timestamp": {
+            "type": "long",
+            "description": "time at which a finished or cancelled state is reached, in ms since Epoch; absent if not yet reached"
         }
     }
 },
@@ -186,6 +194,14 @@
         "migration": {
             "type": "inbound_migration",
             "$ref": "inbound_migration"
+        },
+        "created_timestamp": {
+            "type": "long",
+            "description": "the time of creation in milliseconds since Epoch"
+        },
+        "completed_timestamp": {
+            "type": "long",
+            "description": "time at which a finished or cancelled state is reached, in ms since Epoch; absent if not yet reached"
         }
     }
 },
