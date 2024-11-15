@@ -180,11 +180,7 @@ ss::future<std::error_code>
 migrations_table::apply(create_data_migration_cmd cmd) {
     auto migration = std::move(cmd.value.migration);
     const auto id = cmd.value.id;
-    vlog(
-      dm_log.debug,
-      "applying create data migration: {} with id: {}",
-      migration,
-      id);
+    vlog(dm_log.debug, "applying create data migration: {}", cmd.value);
     if (id <= _last_applied) {
         co_return errc::data_migration_already_exists;
     }
@@ -325,11 +321,7 @@ ss::future<std::error_code>
 migrations_table::apply(update_data_migration_state_cmd cmd) {
     const auto id = cmd.value.id;
     const auto requested_state = cmd.value.requested_state;
-    vlog(
-      dm_log.debug,
-      "applying update data migration {} state to {}",
-      id,
-      requested_state);
+    vlog(dm_log.debug, "applying update data migration state {}", cmd.value);
     auto it = _migrations.find(id);
     if (it == _migrations.end()) {
         vlog(
