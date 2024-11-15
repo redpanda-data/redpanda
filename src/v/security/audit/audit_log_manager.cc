@@ -522,8 +522,10 @@ ss::future<> audit_client::produce(
     // here should usually be 1-2, since the default per-shard queue limit
     // is 1MiB, which is also the default for kafka_batch_max_bytes.
     // TODO(oren): a configurabale ratio might be better
-    [[maybe_unused]] auto max_concurrency
-      = _max_buffer_size / config::shard_local_cfg().kafka_batch_max_bytes();
+    auto max_concurrency = std::clamp<size_t>(
+      _max_buffer_size / config::shard_local_cfg().kafka_batch_max_bytes(),
+      1,
+      records.size());
 
     try {
         ssx::spawn_with_gate(
