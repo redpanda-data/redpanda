@@ -42,7 +42,7 @@ void node::set_disk_metrics(disk_type t, disk_space_info info) {
     } else if (t == disk_type::cache) {
         _cache_watchers.notify(info);
     }
-    _probe.set_disk_metrics(info.total, info.free, info.alert);
+    _probe.set_data_disk_metrics(info.total, info.free, info.alert);
 }
 
 node::notification_id
