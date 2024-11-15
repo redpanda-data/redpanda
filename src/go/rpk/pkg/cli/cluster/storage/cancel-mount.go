@@ -65,7 +65,7 @@ Cancel a mount/unmount operation
 				out.MaybeDie(err, "unable to cancel the mount/unmount operation: %v", err)
 			}
 
-			fmt.Printf("Successfully canceled the operation with ID %v", migrationID)
+			fmt.Printf("Successfully canceled the operation with ID %v\n", migrationID)
 		},
 	}
 	return cmd
