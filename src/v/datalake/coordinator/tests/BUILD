@@ -28,6 +28,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":state_test_utils",
+        "//src/v/cluster",
         "//src/v/config",
         "//src/v/datalake:logger",
         "//src/v/datalake/coordinator",
@@ -100,6 +101,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":state_test_utils",
+        "//src/v/cluster",
         "//src/v/datalake/coordinator",
         "//src/v/datalake/coordinator:stm",
         "//src/v/raft/tests:stm_raft_fixture",

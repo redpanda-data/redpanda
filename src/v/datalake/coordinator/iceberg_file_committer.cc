@@ -103,6 +103,11 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     if (tp_it == state.topic_to_state.end()) {
         co_return chunked_vector<mark_files_committed_update>{};
     }
+    if (
+      tp_it->second.lifecycle_state == topic_state::lifecycle_state_t::purged) {
+        co_return chunked_vector<mark_files_committed_update>{};
+    }
+
     auto table_id = table_id_for_topic(topic);
     auto table_res = co_await load_or_create_table(table_id);
     if (table_res.has_error()) {
