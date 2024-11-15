@@ -23,6 +23,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "partition_leaders_table.h"
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
@@ -282,7 +283,10 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
       _as,
       create_data_migration_cmd(
         0,
-        create_migration_cmd_data{.id = id, .migration = std::move(migration)}),
+        create_migration_cmd_data{
+          .id = id,
+          .migration = std::move(migration),
+          .op_timestamp = model::timestamp::now()}),
       _operation_timeout + model::timeout_clock::now());
     if (ec) {
         co_return ec;
@@ -375,7 +379,11 @@ frontend::do_update_migration_state(id id, state state) {
       _controller,
       _as,
       update_data_migration_state_cmd(
-        0, update_migration_state_cmd_data{.id = id, .requested_state = state}),
+        0,
+        update_migration_state_cmd_data{
+          .id = id,
+          .requested_state = state,
+          .op_timestamp = model::timestamp::now()}),
       _operation_timeout + model::timeout_clock::now());
 
     if (ec) {
