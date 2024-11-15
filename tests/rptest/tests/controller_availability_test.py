@@ -94,7 +94,14 @@ class ControllerAvailabilityTest(Test):
             )
             self.redpanda.stop_node(n, forced=True)
 
-        wait_until(lambda: self._controller_stable(), 10, 0.5,
+        # To elect node 3 as a new leader, cluster needs 1 hearbeat timeout
+        # to start an election and 3 raft election timeouts to get node3's
+        # priority down to target: 3/5 is between (4/5)^3 and (4/5)^2.
+        # In the max jitter scenario (x1.5 multiplier) it's
+        # 3s + 3*1.5*1.5s = 9.75s. In reality, other delays occasionally
+        # make 10s insufficient.
+        TIMEOUT_SEC = 15
+        wait_until(lambda: self._controller_stable(), TIMEOUT_SEC, 0.5,
                    "Controller is not available")
         self._check_metrics(cluster_size)
 
