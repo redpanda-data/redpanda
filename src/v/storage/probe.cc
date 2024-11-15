@@ -21,9 +21,9 @@
 
 namespace storage {
 
-void node_probe::set_disk_metrics(
+void node_probe::set_data_disk_metrics(
   uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
-    _disk = {
+    _data_disk = {
       .total_bytes = total_bytes,
       .free_bytes = free_bytes,
       .space_alert = alert};
@@ -40,19 +40,19 @@ void node_probe::setup_node_metrics() {
       {
         sm::make_gauge(
           "total_bytes",
-          [this] { return _disk.total_bytes; },
+          [this] { return _data_disk.total_bytes; },
           sm::description("Total size of attached storage, in bytes."))
           .aggregate({sm::shard_label}),
         sm::make_gauge(
           "free_bytes",
-          [this] { return _disk.free_bytes; },
+          [this] { return _data_disk.free_bytes; },
           sm::description("Disk storage bytes free."))
           .aggregate({sm::shard_label}),
         sm::make_gauge(
           "free_space_alert",
           [this] {
               return static_cast<std::underlying_type_t<disk_space_alert>>(
-                _disk.space_alert);
+                _data_disk.space_alert);
           },
           sm::description(
             "Status of low storage space alert. 0-OK, 1-Low Space 2-Degraded"))
