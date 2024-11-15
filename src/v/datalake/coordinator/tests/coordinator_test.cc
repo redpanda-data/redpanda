@@ -7,6 +7,8 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "cluster/data_migrated_resources.h"
+#include "cluster/topic_table.h"
 #include "config/mock_property.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/file_committer.h"
@@ -52,11 +54,14 @@ struct coordinator_node {
       std::chrono::milliseconds commit_interval)
       : stm(*stm)
       , commit_interval_ms(commit_interval)
+      , topic_table(mr)
       , file_committer(std::move(committer))
-      , crd(stm, *file_committer, commit_interval_ms.bind()) {}
+      , crd(stm, topic_table, *file_committer, commit_interval_ms.bind()) {}
 
     coordinator_stm& stm;
     config::mock_property<std::chrono::milliseconds> commit_interval_ms;
+    cluster::data_migrations::migrated_resources mr;
+    cluster::topic_table topic_table;
     std::unique_ptr<file_committer> file_committer;
     coordinator crd;
 };

@@ -10,6 +10,7 @@
 #include "datalake/coordinator/coordinator.h"
 
 #include "base/vlog.h"
+#include "cluster/topic_table.h"
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
@@ -162,23 +163,34 @@ coordinator::run_until_term_change(model::term_id term) {
             // TODO: apply table retention periodically too.
 
             auto updates = std::move(commit_res.value());
-            if (updates.empty()) {
-                // Nothing to replicate.
-                continue;
+            if (!updates.empty()) {
+                storage::record_batch_builder builder(
+                  model::record_batch_type::datalake_coordinator,
+                  model::offset{0});
+                for (auto& update : updates) {
+                    builder.add_raw_kv(
+                      serde::to_iobuf(mark_files_committed_update::key),
+                      serde::to_iobuf(std::move(update)));
+                }
+                auto repl_res = co_await stm_->replicate_and_wait(
+                  term, std::move(builder).build(), as_);
+                if (repl_res.has_error()) {
+                    auto e = convert_stm_errc(repl_res.error());
+                    vlog(datalake_log.warn, "Replication failed {}", e);
+                    co_return e;
+                }
             }
-            storage::record_batch_builder builder(
-              model::record_batch_type::datalake_coordinator, model::offset{0});
-            for (auto& update : updates) {
-                builder.add_raw_kv(
-                  serde::to_iobuf(mark_files_committed_update::key),
-                  serde::to_iobuf(std::move(update)));
-            }
-            auto repl_res = co_await stm_->replicate_and_wait(
-              term, std::move(builder).build(), as_);
-            if (repl_res.has_error()) {
-                auto e = convert_stm_errc(repl_res.error());
-                vlog(datalake_log.warn, "Replication failed {}", e);
-                co_return e;
+
+            // check if the topic has been deleted and we need to clean up
+            // topic state.
+            while (true) {
+                auto update_res = co_await update_lifecycle_state(t, term);
+                if (update_res.has_error()) {
+                    co_return update_res.error();
+                }
+                if (update_res.value() == ss::stop_iteration::yes) {
+                    break;
+                }
             }
         }
         auto sleep_res = co_await ss::coroutine::as_future(
@@ -302,9 +314,28 @@ coordinator::sync_get_last_added_offset(
           topic.revision);
         co_return errc::revision_mismatch;
     } else if (requested_topic_rev > topic.revision) {
-        // Coordinator is ready to accept files for the new topic revision,
-        // but there is no stm record yet. Reply with "no offset".
-        co_return std::nullopt;
+        if (topic.lifecycle_state == topic_state::lifecycle_state_t::purged) {
+            // Coordinator is ready to accept files for the new topic revision,
+            // but there is no stm record yet. Reply with "no offset".
+            co_return std::nullopt;
+        }
+
+        vlog(
+          datalake_log.debug,
+          "asked offsets for tp {} rev: {}, but rev: {} still not purged",
+          tp,
+          requested_topic_rev,
+          topic.revision);
+        co_return errc::revision_mismatch;
+    }
+
+    if (topic.lifecycle_state != topic_state::lifecycle_state_t::live) {
+        vlog(
+          datalake_log.debug,
+          "asked offsets for tp {} rev: {}, but it is already closed",
+          tp,
+          requested_topic_rev);
+        co_return errc::revision_mismatch;
     }
 
     auto partition_it = topic.pid_to_pending_files.find(tp.partition);
@@ -334,4 +365,79 @@ void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {
         term_as_->get().request_abort();
     }
 }
+
+ss::future<checked<ss::stop_iteration, coordinator::errc>>
+coordinator::update_lifecycle_state(
+  const model::topic& t, model::term_id term) {
+    auto topic_it = stm_->state().topic_to_state.find(t);
+    if (topic_it == stm_->state().topic_to_state.end()) {
+        co_return ss::stop_iteration::yes;
+    }
+    const auto& topic = topic_it->second;
+    auto revision = topic.revision;
+
+    if (revision >= topic_table_.last_applied_revision()) {
+        // topic table not yet up-to-date
+        co_return ss::stop_iteration::yes;
+    }
+
+    topic_state::lifecycle_state_t new_state;
+    switch (topic.lifecycle_state) {
+    case topic_state::lifecycle_state_t::live: {
+        auto topic_md = topic_table_.get_topic_metadata_ref(
+          model::topic_namespace_view{model::kafka_namespace, t});
+        if (topic_md && revision >= topic_md->get().get_revision()) {
+            // topic still exists
+            co_return ss::stop_iteration::yes;
+        }
+
+        new_state = topic_state::lifecycle_state_t::closed;
+        break;
+    }
+    case topic_state::lifecycle_state_t::closed: {
+        for (const auto& [_, partition_state] : topic.pid_to_pending_files) {
+            if (!partition_state.pending_entries.empty()) {
+                // still have entries to commit
+                co_return ss::stop_iteration::yes;
+            }
+        }
+
+        new_state = topic_state::lifecycle_state_t::purged;
+        break;
+    }
+    case topic_state::lifecycle_state_t::purged:
+        co_return ss::stop_iteration::yes;
+    }
+
+    topic_lifecycle_update update{
+      .topic = t,
+      .revision = revision,
+      .new_state = new_state,
+    };
+    auto check_res = update.can_apply(stm_->state());
+    if (check_res.has_error()) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting lifecycle transition request {}: {}",
+          update,
+          check_res.error());
+        co_return errc::stm_apply_error;
+    }
+    storage::record_batch_builder builder(
+      model::record_batch_type::datalake_coordinator, model::offset{0});
+    builder.add_raw_kv(
+      serde::to_iobuf(topic_lifecycle_update::key),
+      serde::to_iobuf(std::move(update)));
+
+    auto repl_res = co_await stm_->replicate_and_wait(
+      term, std::move(builder).build(), as_);
+    if (repl_res.has_error()) {
+        auto e = convert_stm_errc(repl_res.error());
+        vlog(datalake_log.warn, "Replication failed {}", e);
+        co_return e;
+    }
+
+    co_return ss::stop_iteration::no;
+}
+
 } // namespace datalake::coordinator

@@ -48,6 +48,7 @@ redpanda_cc_library(
         ":file_committer",
         ":state_update",
         ":stm",
+        "//src/v/cluster",
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/model",

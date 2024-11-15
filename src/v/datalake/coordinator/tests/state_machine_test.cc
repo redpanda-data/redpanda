@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cluster/data_migrated_resources.h"
+#include "cluster/topic_table.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
@@ -46,7 +48,13 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
             auto stm = get_stm<0>(node);
             coordinators[node.get_vnode()]
               = std::make_unique<datalake::coordinator::coordinator>(
-                get_stm<0>(node), file_committer, commit_interval());
+                get_stm<0>(node),
+                topic_table,
+                [this](const model::topic& t, model::revision_id r) {
+                    return remove_tombstone(t, r);
+                },
+                file_committer,
+                commit_interval());
             coordinators[node.get_vnode()]->start();
             return ss::now();
         });
@@ -115,9 +123,17 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
             random_generators::get_int<int32_t>(0, max_partitions - 1))};
     }
 
+    ss::future<
+      checked<std::nullopt_t, datalake::coordinator::coordinator::errc>>
+    remove_tombstone(const model::topic&, model::revision_id) {
+        co_return std::nullopt;
+    }
+
     static constexpr int32_t max_partitions = 5;
     model::topic_partition tp{model::topic{"test"}, model::partition_id{0}};
     model::revision_id rev{123};
+    cluster::data_migrations::migrated_resources mr;
+    cluster::topic_table topic_table{mr};
     datalake::coordinator::simple_file_committer file_committer;
     absl::flat_hash_map<raft::vnode, coordinator> coordinators;
 };

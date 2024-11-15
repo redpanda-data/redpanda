@@ -35,6 +35,7 @@ public:
       model::node_id self,
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
+      ss::sharded<cluster::topic_table>&,
       std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
       cloud_storage_clients::bucket_name);
@@ -56,6 +57,7 @@ private:
     model::node_id self_;
     raft::group_manager& gm_;
     cluster::partition_manager& pm_;
+    cluster::topic_table& topics_;
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;
