@@ -301,6 +301,9 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
       .manifest_list_path = new_mlist_path,
       .schema_id = schema.schema_id,
     };
+    for (auto& [k, v] : snapshot_props_) {
+        s.summary.other.emplace(k, v);
+    }
     updates_and_reqs ret;
     ret.updates.emplace_back(table_update::add_snapshot{std::move(s)});
     ret.updates.emplace_back(table_update::set_snapshot_ref{

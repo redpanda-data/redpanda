@@ -343,3 +343,34 @@ class RpkClusterTest(RedpandaTest):
                 tf.seek(0)
 
                 self._rpk.license_set(tf.name)
+
+    @cluster(num_nodes=3)
+    def test_expired_evaluation_period(self):
+        """
+        Test that once the eval period license expires, it is not observable
+        """
+        self.logger.debug("Ensure the eval period license is expired")
+        self.redpanda.set_environment(
+            dict(__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE='1'))
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+        self.redpanda.wait_until(
+            self.redpanda.healthy,
+            timeout_sec=15,
+            backoff_sec=1,
+            err_msg="The cluster failed to stabilize after restart")
+
+        wait_until(
+            lambda: self._get_license_expiry() == -1,
+            timeout_sec=10,
+            backoff_sec=1,
+            retry_on_exc=True,
+            err_msg=
+            "After the trial period expired, the license metric should show no license (-1)"
+        )
+
+        resp = self._rpk.license_info()
+        self.logger.debug(f"Response: {resp}")
+        resp_json = json.loads(resp)
+        assert resp_json['license_status'] == 'not_present', \
+                f"Expected: not_present. Got: {resp_json['license_status']}"

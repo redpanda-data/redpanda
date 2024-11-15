@@ -62,7 +62,7 @@ public:
             }
             model::topic_partition tp(t, pid);
             auto build_res = mark_files_committed_update::build(
-              state, tp, files.pending_entries.back().last_offset);
+              state, tp, files.pending_entries.back().data.last_offset);
             EXPECT_FALSE(build_res.has_error());
             ret.emplace_back(std::move(build_res.value()));
         }

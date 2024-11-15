@@ -12,13 +12,22 @@
 namespace datalake::coordinator {
 
 chunked_vector<translated_offset_range> make_pending_files(
-  const std::vector<std::pair<int64_t, int64_t>>& offset_bounds) {
+  const std::vector<std::pair<int64_t, int64_t>>& offset_bounds,
+  bool with_file) {
     chunked_vector<translated_offset_range> files;
     files.reserve(offset_bounds.size());
     for (const auto& [begin, end] : offset_bounds) {
+        chunked_vector<data_file> fs;
+        if (with_file) {
+            fs.emplace_back(data_file{
+              .remote_path = fmt::format("{}-{}", begin, end),
+              .file_size_bytes = 1024,
+            });
+        }
         files.emplace_back(translated_offset_range{
           .start_offset = kafka::offset{begin},
           .last_offset = kafka::offset{end},
+          .files = std::move(fs),
           // Other args irrelevant.
         });
     }
@@ -44,8 +53,10 @@ void check_partition(
     for (size_t i = 0; i < offset_bounds.size(); ++i) {
         auto expected_begin = offset_bounds[i].first;
         auto expected_end = offset_bounds[i].second;
-        EXPECT_EQ(prt_state.pending_entries.at(i).start_offset, expected_begin);
-        EXPECT_EQ(prt_state.pending_entries.at(i).last_offset, expected_end);
+        EXPECT_EQ(
+          prt_state.pending_entries.at(i).data.start_offset, expected_begin);
+        EXPECT_EQ(
+          prt_state.pending_entries.at(i).data.last_offset, expected_end);
     }
 }
 

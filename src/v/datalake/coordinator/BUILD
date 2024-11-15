@@ -10,6 +10,25 @@ redpanda_cc_rpc_library(
 )
 
 redpanda_cc_library(
+    name = "commit_offset_metadata",
+    srcs = [
+        "commit_offset_metadata.cc",
+    ],
+    hdrs = [
+        "commit_offset_metadata.h",
+    ],
+    implementation_deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/json",
+    ],
+    include_prefix = "datalake/coordinator",
+    deps = [
+        "//src/v/base",
+        "//src/v/model",
+    ],
+)
+
+redpanda_cc_library(
     name = "coordinator",
     srcs = [
         "coordinator.cc",
@@ -141,6 +160,7 @@ redpanda_cc_library(
         "iceberg_file_committer.h",
     ],
     implementation_deps = [
+        ":commit_offset_metadata",
         ":state",
         "//src/v/base",
         "//src/v/datalake:logger",

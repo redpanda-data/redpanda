@@ -115,7 +115,7 @@ public:
         }
         for (auto& range : it->second.pid_to_pending_files.at(ntp.tp.partition)
                              .pending_entries) {
-            result.push_back(range.copy());
+            result.push_back(range.data.copy());
         }
         co_return result;
     }

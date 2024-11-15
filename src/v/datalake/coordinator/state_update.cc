@@ -60,7 +60,7 @@ add_files_update::can_apply(const topics_state& state) {
     auto last_added_offset
       = prt_state.pending_entries.empty()
           ? prt_state.last_committed.value()
-          : kafka::offset{prt_state.pending_entries.back().last_offset()};
+          : kafka::offset{prt_state.pending_entries.back().data.last_offset()};
     auto update_range_start_offset = entries.begin()->start_offset;
     if (kafka::next_offset(last_added_offset) == update_range_start_offset) {
         // The last offset for the partition aligns exactly with where we're
@@ -76,7 +76,7 @@ add_files_update::can_apply(const topics_state& state) {
 }
 
 checked<std::nullopt_t, stm_update_error>
-add_files_update::apply(topics_state& state) {
+add_files_update::apply(topics_state& state, model::offset applied_offset) {
     auto allowed = can_apply(state);
     if (allowed.has_error()) {
         return allowed.error();
@@ -85,10 +85,12 @@ add_files_update::apply(topics_state& state) {
     const auto& pid = tp.partition;
     auto& tp_state = state.topic_to_state[topic];
     auto& partition_state = tp_state.pid_to_pending_files[pid];
-    std::move(
-      entries.begin(),
-      entries.end(),
-      std::back_inserter(partition_state.pending_entries));
+    for (auto& e : entries) {
+        partition_state.pending_entries.emplace_back(pending_entry{
+          .data = std::move(e),
+          .added_pending_at = applied_offset,
+        });
+    }
     return std::nullopt;
 }
 
@@ -128,7 +130,7 @@ mark_files_committed_update::can_apply(const topics_state& state) {
     // At this point, the desired offset looks okay. Examine the entries to
     // make sure the new committed offset corresponds to one of them.
     for (const auto& entry_state : prt_state->get().pending_entries) {
-        if (entry_state.last_offset == new_committed) {
+        if (entry_state.data.last_offset == new_committed) {
             return std::nullopt;
         }
     }
@@ -148,7 +150,7 @@ mark_files_committed_update::apply(topics_state& state) {
     // Mark all files that fall entirely below `new_committed` as committed.
     auto& files_state = state.topic_to_state[topic].pid_to_pending_files[pid];
     while (!files_state.pending_entries.empty()
-           && files_state.pending_entries.front().last_offset
+           && files_state.pending_entries.front().data.last_offset
                 <= new_committed) {
         files_state.pending_entries.pop_front();
     }

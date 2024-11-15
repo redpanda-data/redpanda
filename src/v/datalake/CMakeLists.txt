@@ -49,6 +49,7 @@ v_cc_library(
     cloud_data_io.cc
     translation_task.cc
     schema_parquet.cc
+    values_parquet.cc
   DEPS
     v::cloud_io
     v::datalake_common
