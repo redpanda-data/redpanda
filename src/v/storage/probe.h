@@ -34,8 +34,6 @@ public:
     void set_disk_metrics(
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert);
 
-    const disk_metrics& get_disk_metrics() const { return _disk; }
-
     node_probe() = default;
     node_probe(const node_probe&) = delete;
     node_probe& operator=(const node_probe&) = delete;
