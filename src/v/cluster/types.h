@@ -948,19 +948,25 @@ using topic_configuration_assignment
   = configuration_with_assignment<topic_configuration>;
 
 struct topic_result
-  : serde::envelope<topic_result, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<topic_result, serde::version<1>, serde::compat_version<0>> {
     topic_result() noexcept = default;
     explicit topic_result(model::topic_namespace t, errc ec = errc::success)
       : tp_ns(std::move(t))
       , ec(ec) {}
+    topic_result(model::topic_namespace t, errc ec, std::string_view msg)
+      : tp_ns(std::move(t))
+      , ec(ec)
+      , error_message{
+          ssx::sformat("{}: {}", make_error_code(ec).message(), msg)} {}
     model::topic_namespace tp_ns;
-    errc ec;
+    errc ec{errc::success};
+    std::optional<ss::sstring> error_message;
 
     friend bool operator==(const topic_result&, const topic_result&) = default;
 
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
 
-    auto serde_fields() { return std::tie(tp_ns, ec); }
+    auto serde_fields() { return std::tie(tp_ns, ec, error_message); }
 };
 
 struct create_topics_request

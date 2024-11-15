@@ -145,7 +145,8 @@ from_cluster_topic_result(const cluster::topic_result& err) {
     return {
       .name = err.tp_ns.tp,
       .error_code = map_topic_error_code(err.ec),
-      .error_message = cluster::make_error_code(err.ec).message()};
+      .error_message = err.error_message.value_or(
+        cluster::make_error_code(err.ec).message())};
 }
 
 config_map_t config_map(const std::vector<createable_topic_config>& config);
