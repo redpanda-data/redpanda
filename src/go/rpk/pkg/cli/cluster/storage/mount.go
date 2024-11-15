@@ -108,10 +108,11 @@ with my-new-topic as the new topic name
 				id = mg.ID
 			}
 
-			fmt.Printf(`
-Topic mount from Tiered Storage topic %v to your Redpanda Cluster topic %v
-has started with Migration ID %v
-To check the status run 'rpk cluster storage status-mount %d`+"\n", t, alias, id, id)
+			fmt.Printf(`Topic mount from Tiered Storage topic %q to your Redpanda Cluster topic %q
+has started with Migration ID %v.
+
+To check the status run 'rpk cluster storage status-mount %d.
+`, t, alias, id, id)
 		},
 	}
 	cmd.Flags().StringVar(&to, "to", "", "New namespace/topic name for the mounted topic (optional)")

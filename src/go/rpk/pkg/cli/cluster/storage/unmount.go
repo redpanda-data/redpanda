@@ -86,10 +86,11 @@ Unmount topic 'my-topic' from the cluster in the 'my-namespace'
 				id = mg.ID
 			}
 
-			fmt.Printf(`
-Topic unmounting from your Redpanda Cluster topic %v
-has started with Migration ID %v
-To check the status run 'rpk cluster storage status-mount %d`+"\n", t, id, id)
+			fmt.Printf(`Topic unmounting from your Redpanda Cluster topic %q has started with 
+Migration ID %v.
+
+To check the status run 'rpk cluster storage status-mount %d.
+`, t, id, id)
 		},
 	}
 	return cmd

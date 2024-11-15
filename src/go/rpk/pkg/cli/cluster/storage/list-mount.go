@@ -80,7 +80,7 @@ Use filter to list only migrations in a specific state
 		},
 	}
 	p.InstallFormatFlag(cmd)
-	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter the list of migrations by state. Only valid for text")
+	cmd.Flags().StringVarP(&filter, "filter", "f", "all", "Filter the list of migrations by state. Only valid for text")
 	return cmd
 }
 
@@ -166,9 +166,11 @@ func rpadminTopicsToStringSlice(in []rpadmin.NamespacedOrInboundTopic) (resp []s
 	for _, entry := range in {
 		if entry.Namespace != nil {
 			resp = append(resp, fmt.Sprintf("%s/%s", *entry.Namespace, entry.Topic))
-			continue
+		} else if entry.SourceTopicReference.Topic != "" {
+			resp = append(resp, entry.SourceTopicReference.Topic)
+		} else {
+			resp = append(resp, entry.Topic)
 		}
-		resp = append(resp, entry.Topic)
 	}
 	return
 }
