@@ -81,7 +81,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
 
-        for (int i = 0; i < count; ++i) {
+        for (size_t i = 0; i < count; ++i) {
             iobuf v{};
             v.append("v", 1);
             builder.add_raw_kv(iobuf{}, std::move(v));
@@ -417,7 +417,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
 
         for (int k = -warmup_cycles(
                rate_limit_in, batch_size + kafka_packet_in_overhead);
-             k != batches_cnt;
+             k != static_cast<int>(batches_cnt);
              ++k) {
             if (k == 0) {
                 start = ch::steady_clock::now();

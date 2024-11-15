@@ -24,7 +24,6 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "security/types.h"
-#include "types.h"
 
 #include <absl/algorithm/container.h>
 #include <boost/test/tools/old/interface.hpp>

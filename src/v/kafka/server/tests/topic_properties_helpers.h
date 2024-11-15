@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "config_frontend.h"
+#include "cluster/config_frontend.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/create_partitions.h"
 #include "kafka/protocol/create_topics.h"

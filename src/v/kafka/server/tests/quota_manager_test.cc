@@ -297,7 +297,7 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         set_config([&](config::configuration& conf) {
             auto produce_config = YAML::Load(
               std::string(raw_basic_produce_config));
-            for (auto i = 0; i < produce_config.size(); ++i) {
+            for (size_t i = 0; i < produce_config.size(); ++i) {
                 if (
                   produce_config[i]["clients_prefix"].as<std::string>()
                   == client_id) {
