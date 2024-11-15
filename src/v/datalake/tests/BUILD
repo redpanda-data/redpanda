@@ -321,3 +321,23 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "serde_parquet_writer_test",
+    timeout = "short",
+    srcs = [
+        "serde_parquet_writer_test.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/datalake:serde_parquet_writer",
+        "//src/v/datalake/tests:test_data",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg/tests:value_generator",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:seastar_boost",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
