@@ -27,7 +27,16 @@ class NodeMetrics:
         return self._get_metrics_vals("storage_disk_free_bytes")
 
     def disk_space_alert(self) -> list[float]:
-        return self._get_metrics_vals("storage_disk_free_space_alert")
+        return self._get_metrics_vals("storage_cache_disk_free_space_alert")
+
+    def cache_disk_total_bytes(self) -> list[float]:
+        return self._get_metrics_vals("storage_cache_disk_total_bytes")
+
+    def cache_disk_free_bytes(self) -> list[float]:
+        return self._get_metrics_vals("storage_cache_disk_free_bytes")
+
+    def cache_disk_space_alert(self) -> list[float]:
+        return self._get_metrics_vals("storage_cache_disk_free_space_alert")
 
     def wait_until_ready(self, timeout_sec=15):
         """ Wait until we have metrics for all nodes. """
