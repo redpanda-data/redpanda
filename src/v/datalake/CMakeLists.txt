@@ -51,6 +51,7 @@ v_cc_library(
     schema_parquet.cc
     values_parquet.cc
     local_parquet_file_writer.cc
+    serde_parquet_writer.cc
   DEPS
     v::cloud_io
     v::datalake_common
