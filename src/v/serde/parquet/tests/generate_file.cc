@@ -340,6 +340,7 @@ ss::future<iobuf> serialize_testcase(size_t test_case) {
       {
         .schema = all_types_schema(),
         .metadata = {{"foo", "bar"}},
+        .compress = test_case % 2 == 0,
       },
       make_iobuf_ref_output_stream(file));
     co_await w.init();

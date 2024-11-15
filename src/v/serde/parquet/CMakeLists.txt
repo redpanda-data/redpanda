@@ -14,6 +14,7 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::container
+    v::compression
     v::utils
     v::serde_thrift
   )
