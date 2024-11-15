@@ -13,6 +13,7 @@
 #include "kafka/protocol/metadata.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/tests/topic_properties_helpers.h"
+#include "model/errc.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -402,6 +403,53 @@ FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
     BOOST_CHECK_EQUAL(resp.data.topics[2].name, "topic_c");
     BOOST_CHECK_EQUAL(
       resp.data.topics[2].error_code, kafka::error_code::invalid_config);
+}
+
+FIXTURE_TEST(create_multiple_topics_all_invalid_name, create_topic_fixture) {
+    static constexpr size_t kafka_max_topic_name_length = 249;
+    constexpr auto check_message = [](const auto& res, model::errc ec) {
+        return res.error_message.value_or("").contains(
+          make_error_code(ec).message());
+    };
+
+    auto topic_empty = make_topic("");
+    auto topic_forbidden = make_topic(".");
+    auto topic_too_long = make_topic(
+      ss::sstring(kafka_max_topic_name_length + 1, 'a'));
+    auto topic_invalid = make_topic("$nope");
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp
+      = client
+          .dispatch(
+            make_req(
+              {topic_empty, topic_forbidden, topic_too_long, topic_invalid}),
+            kafka::api_version(5))
+          .get();
+
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 4);
+    const auto& res = resp.data.topics;
+
+    BOOST_CHECK_EQUAL(res[0].name, topic_empty.name);
+    BOOST_CHECK_EQUAL(
+      res[0].error_code, kafka::error_code::invalid_topic_exception);
+    BOOST_CHECK(check_message(res[0], model::errc::topic_name_empty));
+
+    BOOST_CHECK_EQUAL(res[1].name, topic_forbidden.name);
+    BOOST_CHECK_EQUAL(
+      res[1].error_code, kafka::error_code::invalid_topic_exception);
+    BOOST_CHECK(check_message(res[1], model::errc::forbidden_topic_name));
+
+    BOOST_CHECK_EQUAL(res[2].name, topic_too_long.name);
+    BOOST_CHECK_EQUAL(
+      res[2].error_code, kafka::error_code::invalid_topic_exception);
+    BOOST_CHECK(check_message(res[2], model::errc::topic_name_len_exceeded));
+
+    BOOST_CHECK_EQUAL(res[3].name, topic_invalid.name);
+    BOOST_CHECK_EQUAL(
+      res[3].error_code, kafka::error_code::invalid_topic_exception);
+    BOOST_CHECK(check_message(res[3], model::errc::invalid_topic_name));
 }
 
 FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {

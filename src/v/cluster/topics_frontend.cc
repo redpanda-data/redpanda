@@ -541,8 +541,8 @@ topic_result topics_frontend::validate_topic_configuration(
         return cluster::make_error_result(
           assignable_config.cfg.tp_ns, err, std::move(msg));
     };
-    if (!validate_topic_name(assignable_config.cfg.tp_ns)) {
-        return make_result(errc::invalid_topic_name);
+    if (auto ec = validate_topic_name(assignable_config.cfg.tp_ns); ec) {
+        return make_result(errc::invalid_topic_name, ec.message());
     }
 
     if (assignable_config.cfg.partition_count < 1) {
@@ -1151,15 +1151,16 @@ ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
     co_return std::move(r.value().result);
 }
 
-bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
+std::error_code
+topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
     if (topic.ns == model::kafka_namespace) {
         const auto errc = model::validate_kafka_topic_name(topic.tp);
         if (static_cast<model::errc>(errc.value()) != model::errc::success) {
             vlog(clusterlog.info, "{} {}", errc.message(), topic.tp());
-            return false;
+            return errc;
         }
     }
-    return true;
+    return model::errc::success;
 }
 
 ss::future<std::error_code> topics_frontend::move_partition_replicas(

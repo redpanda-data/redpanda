@@ -273,8 +273,8 @@ private:
     ss::future<result<model::offset>>
       stm_linearizable_barrier(model::timeout_clock::time_point);
 
-    // returns true if the topic name is valid
-    static bool validate_topic_name(const model::topic_namespace&);
+    // returns whether the topic name is valid
+    static std::error_code validate_topic_name(const model::topic_namespace&);
 
     topic_result
     validate_topic_configuration(const custom_assignable_topic_configuration&);
