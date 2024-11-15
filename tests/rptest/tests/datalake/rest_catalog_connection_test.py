@@ -30,7 +30,12 @@ class RestCatalogConnectionTest(RedpandaTest):
             })
         self.catalog_service = IcebergRESTCatalog(
             test_context,
-            cloud_storage_bucket=self.si_settings.cloud_storage_bucket)
+            cloud_storage_bucket=self.si_settings.cloud_storage_bucket,
+            cloud_storage_access_key=self.si_settings.cloud_storage_access_key,
+            cloud_storage_secret_key=self.si_settings.cloud_storage_secret_key,
+            cloud_storage_region=self.si_settings.cloud_storage_region,
+            cloud_storage_api_endpoint=self.si_settings.endpoint_url,
+            filesystem_wrapper_mode=False)
 
     def setUp(self):
         self.catalog_service.start()
@@ -83,8 +88,8 @@ class RestCatalogConnectionTest(RedpandaTest):
         return producer
 
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_redpanda_connection_to_rest_catalog(self, cloud_storage_type):
+    @matrix(storage_type=supported_storage_types())
+    def test_redpanda_connection_to_rest_catalog(self, storage_type):
 
         catalog = self.catalog_service.client()
         namespace = "redpanda"
@@ -99,21 +104,37 @@ class RestCatalogConnectionTest(RedpandaTest):
         # wait for the producer to finish
         producer.wait()
 
-        def data_available_in_table():
-            table = catalog.load_table(f"{namespace}.{topic.name}")
-            return len(table.snapshots()) > 1
+        def table_created_in_iceberg():
+            namespaces = catalog.list_namespaces()
+            return (namespace, ) in namespaces and (
+                namespace, topic.name) in catalog.list_tables(namespace)
 
-        wait_until(data_available_in_table,
+        def data_available_in_iceberg_table():
+            if not table_created_in_iceberg():
+                # Wait for the table to be created
+                return False
+            table = catalog.load_table(f"{namespace}.{topic.name}")
+            return len(table.snapshots()) > 0
+
+        wait_until(data_available_in_iceberg_table,
                    timeout_sec=90,
                    backoff_sec=5,
                    err_msg="Error waiting for Iceberg table to have data",
                    retry_on_exc=True)
 
-        table = catalog.load_table(f"{namespace}.{topic.name}")
+        def all_data_translated():
+            table = catalog.load_table(f"{namespace}.{topic.name}")
+            df = table.scan().to_pandas()
+            self.logger.info(
+                f"offsets: {df['redpanda_offset'].head(5).to_list()}")
+            return all([
+                isinstance(o, int)
+                for o in df['redpanda_offset'].head(5).to_list()
+            ])
 
-        df = table.scan().to_pandas()
-        self.logger.info(f"offsets: {df['redpanda_offset'].head(5).to_list()}")
-        assert all([
-            isinstance(o, int)
-            for o in df['redpanda_offset'].head(5).to_list()
-        ])
+        wait_until(
+            all_data_translated,
+            timeout_sec=90,
+            backoff_sec=5,
+            err_msg="Error waiting for data to be fully available in icberg",
+            retry_on_exc=True)

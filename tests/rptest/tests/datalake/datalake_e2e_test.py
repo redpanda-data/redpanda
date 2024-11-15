@@ -65,10 +65,10 @@ class DatalakeE2ETests(RedpandaTest):
                            compression_type=compression_type)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
+    @matrix(storage_type=supported_storage_types(),
             query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
             filesystem_catalog_mode=[True])
-    def test_e2e_basic(self, cloud_storage_type, query_engine,
+    def test_e2e_basic(self, storage_type, query_engine,
                        filesystem_catalog_mode):
         # Create a topic
         # Produce some events
@@ -83,9 +83,9 @@ class DatalakeE2ETests(RedpandaTest):
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=supported_storage_types(),
+    @matrix(storage_type=supported_storage_types(),
             query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO])
-    def test_avro_schema(self, cloud_storage_type, query_engine):
+    def test_avro_schema(self, storage_type, query_engine):
         count = 100
         table_name = f"redpanda.{self.topic_name}"
 

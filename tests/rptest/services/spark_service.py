@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import subprocess
 from typing import Optional
 from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
@@ -15,6 +14,7 @@ from ducktape.utils.util import wait_until
 from pyhive import hive
 from rptest.services.redpanda import SISettings
 from rptest.tests.datalake.query_engine_base import QueryEngineType, QueryEngineBase
+import jinja2
 
 
 class SparkService(Service, QueryEngineBase):
@@ -24,17 +24,18 @@ class SparkService(Service, QueryEngineBase):
     LOGS_DIR = f"{SPARK_HOME}/logs"
     logs = {"spark_sql_logs": {"path": LOGS_DIR, "collect_default": True}}
 
-    SPARK_SERVER_CMD = """AWS_ACCESS_KEY_ID={akey} AWS_SECRET_ACCESS_KEY={skey} AWS_REGION={region} \
-    /opt/spark/sbin/start-thriftserver.sh \
+    SPARK_SERVER_CMD = jinja2.Template(
+        """ /opt/spark/sbin/start-thriftserver.sh \
         --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
         --conf spark.sql.defaultCatalog=redpanda-iceberg-catalog \
         --conf spark.sql.catalog.redpanda-iceberg-catalog=org.apache.iceberg.spark.SparkCatalog \
         --conf spark.sql.catalog.redpanda-iceberg-catalog.type=rest \
-        --conf spark.sql.catalog.redpanda-iceberg-catalog.uri={catalog} \
+        --conf spark.sql.catalog.redpanda-iceberg-catalog.uri={{ catalog }} \
         --conf spark.sql.catalog.redpanda-iceberg-catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO \
-        --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={s3} \
-        --conf spark.sql.catalog.redpanda-iceberg-catalog.cache-enabled=false
-    """
+        --conf spark.sql.catalog.redpanda-iceberg-catalog.cache-enabled=false \
+        {% if s3 -%}
+        --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={{ s3 }}
+        {% endif %}""")
 
     def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
         super(SparkService, self).__init__(ctx, num_nodes=1)
@@ -46,20 +47,29 @@ class SparkService(Service, QueryEngineBase):
         self.spark_host: Optional[SparkService] = None
         self.spark_port = 10000
 
-    def start_cmd(self):
-        return SparkService.SPARK_SERVER_CMD.format(\
-            akey=self.cloud_storage_access_key, \
-            skey=self.cloud_storage_secret_key, \
-            region=self.cloud_storage_region, \
-            catalog=self.iceberg_catalog_rest_uri, \
-            s3=self.cloud_storage_api_endpoint)
+    def make_env(self):
+        env = dict()
+        if self.cloud_storage_access_key:
+            env["AWS_ACCESS_KEY_ID"] = self.cloud_storage_access_key
+        if self.cloud_storage_secret_key:
+            env["AWS_SECRET_ACCESS_KEY"] = self.cloud_storage_secret_key
+        if self.cloud_storage_region:
+            env["AWS_REGION"] = self.cloud_storage_region
+        return " ".join([f"{k}={v}" for k, v in env.items()])
 
-    def start_node(self, node, timeout_sec=30, **kwargs):
+    def start_cmd(self):
+        cmd = SparkService.SPARK_SERVER_CMD.render(
+            catalog=self.iceberg_catalog_rest_uri,
+            s3=self.cloud_storage_api_endpoint)
+        env = self.make_env()
+        return f"{env} {cmd}"
+
+    def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(self.start_cmd(), allow_fail=False)
         self.spark_host = node.account.hostname
         self.wait(timeout_sec=timeout_sec)
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec):
         def _ready():
             try:
                 self.run_query_fetch_all("show databases")

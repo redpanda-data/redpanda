@@ -16,6 +16,7 @@ from ducktape.utils.util import wait_until
 from pyhive import trino
 from rptest.services.redpanda import SISettings
 from rptest.services.spark_service import QueryEngineBase
+import jinja2
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 
 
@@ -29,16 +30,24 @@ class TrinoService(Service, QueryEngineBase):
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "trino_server.log")
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
 
-    ICEBERG_CONNECTOR_CONF = """
+    ICEBERG_CONNECTOR_CONF = jinja2.Template("""
 connector.name=iceberg
 iceberg.catalog.type=rest
-iceberg.rest-catalog.uri={catalog_rest_uri}
+iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 fs.native-s3.enabled=true
-s3.endpoint={s3_endpoint}
-s3.region={s3_region}
+{%- if s3_region %}
+s3.region={{ s3_region }}
+{%- endif %}
 s3.path-style-access=true
-s3.aws-access-key={s3_access_key}
-s3.aws-secret-key={s3_secret_key}"""
+{%- if s3_endpoint %}
+s3.endpoint={{ s3_endpoint }}
+{%- endif %}
+{%- if s3_access_key %}
+s3.aws-access-key={{ s3_access_key }}
+{%- endif %}
+{%- if s3_secret_key %}
+s3.aws-secret-key={{ s3_secret_key }}
+{%- endif %}""")
     TRINO_LOGGING_CONF = "io.trino=INFO\n"
     TRINO_LOGGING_CONF_FILE = "/opt/trino/etc/log.properties"
 
@@ -52,18 +61,18 @@ s3.aws-secret-key={s3_secret_key}"""
         self.trino_host: Optional[str] = None
         self.trino_port = 8083
 
-    def start_node(self, node, timeout_sec=60, **kwargs):
+    def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(f"mkdir -p {TrinoService.PERSISTENT_ROOT}")
         node.account.ssh(f"rm -f {TrinoService.TRINO_CONF_PATH}")
-        connector_config = TrinoService.ICEBERG_CONNECTOR_CONF.format(
-            catalog_rest_uri=self.iceberg_catalog_rest_uri,
-            s3_endpoint=self.cloud_storage_api_endpoint,
-            s3_region=self.cloud_storage_region,
-            s3_access_key=self.cloud_storage_access_key,
-            s3_secret_key=self.cloud_storage_secret_key)
-        self.logger.debug(f"Using connector config: {connector_config}")
-        node.account.create_file(TrinoService.TRINO_CONF_PATH,
-                                 connector_config)
+        connector_config = dict(catalog_rest_uri=self.iceberg_catalog_rest_uri,
+                                s3_region=self.cloud_storage_region,
+                                s3_endpoint=self.cloud_storage_api_endpoint,
+                                s3_access_key=self.cloud_storage_access_key,
+                                s3_secret_key=self.cloud_storage_secret_key)
+        config_str = TrinoService.ICEBERG_CONNECTOR_CONF.render(
+            connector_config)
+        self.logger.debug(f"Using connector config: {config_str}")
+        node.account.create_file(TrinoService.TRINO_CONF_PATH, config_str)
         # Create logger configuration
         node.account.ssh(f"rm -f {TrinoService.TRINO_LOGGING_CONF_FILE}")
         node.account.create_file(TrinoService.TRINO_LOGGING_CONF_FILE,
@@ -72,9 +81,9 @@ s3.aws-secret-key={s3_secret_key}"""
             f"nohup /opt/trino/bin/trino-launcher run 1> {TrinoService.LOG_FILE} 2>&1 &",
             allow_fail=False)
         self.trino_host = node.account.hostname
-        self.wait(timeout_sec=30)
+        self.wait(timeout_sec=timeout_sec)
 
-    def wait_node(self, node, timeout_sec=None):
+    def wait_node(self, node, timeout_sec):
         def _ready():
             try:
                 self.run_query_fetch_all("show catalogs")
