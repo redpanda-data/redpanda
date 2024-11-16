@@ -16,6 +16,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 if [ -f "/etc/os-release" ]; then
+  # shellcheck source=/dev/null
   . /etc/os-release
 elif [ -f "/etc/arch-release" ]; then
   export ID=arch
