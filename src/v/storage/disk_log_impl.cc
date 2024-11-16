@@ -3368,7 +3368,7 @@ disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
     if (segments.size() < 2) {
         vlog(
           stlog.trace,
-          "time-based-usage: skipping log without too few segments ({}) ntp {}",
+          "time-based-usage: skipping log with too few segments ({}) ntp {}",
           segments.size(),
           config().ntp());
         co_return std::nullopt;
