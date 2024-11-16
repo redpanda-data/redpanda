@@ -159,25 +159,29 @@ void local_monitor::maybe_log_space_error(const storage::disk& disk) {
     if (disk.alert == storage::disk_space_alert::ok) {
         return;
     }
-    size_t min_by_bytes = _free_bytes_alert_threshold();
-    size_t min_by_percent = alert_percent_in_bytes(
+    size_t alert_min_by_bytes = _free_bytes_alert_threshold();
+    size_t alert_min_by_percent = alert_percent_in_bytes(
       _free_percent_alert_threshold(), disk.total);
+    size_t degraded_min_bytes
+      = config::shard_local_cfg().storage_min_free_bytes();
 
-    auto min_space = std::min(min_by_percent, min_by_bytes);
+    auto min_space = std::min(alert_min_by_percent, alert_min_by_bytes);
     constexpr auto alert_text = "avoid running out of space";
     constexpr auto degraded_text = "allow writing again";
     clusterlog.log(
       ss::log_level::error,
       _despam_interval,
-      "{}: free space at {:.3f}\% on {}: {} total, {} free, min. free {}. "
-      "Please adjust retention policies as needed to {}",
+      "{}: free space at {:.3f}\% on {}: {} total, {} free, min. free for "
+      "alert {}, min. free for degraded {}. Please adjust retention policies "
+      "as needed to {}",
       stable_alert_string,
       percent_free(disk),
       disk.path,
       // TODO: generalize human::bytes for unsigned long
-      human::bytes(disk.total), // NOLINT narrowing conv.
-      human::bytes(disk.free),  // NOLINT  "  "
-      human::bytes(min_space),  // NOLINT  "  "
+      human::bytes(disk.total),         // NOLINT narrowing conv.
+      human::bytes(disk.free),          // NOLINT  "  "
+      human::bytes(min_space),          // NOLINT  "  "
+      human::bytes(degraded_min_bytes), // NOLINT  "  "
       disk.alert == storage::disk_space_alert::degraded ? degraded_text
                                                         : alert_text);
 }
