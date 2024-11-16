@@ -51,7 +51,11 @@ public:
               element.position,
               column{
                 .leaf = &element,
-                .writer = column_writer(element),
+                .writer = column_writer(
+                  element,
+                  {
+                    .compress = _opts.compress,
+                  }),
               });
         });
         // write the leading magic bytes
@@ -110,7 +114,7 @@ private:
         row_group rg{};
         rg.file_offset = static_cast<int64_t>(_offset);
         for (auto& [pos, col] : _columns) {
-            auto page = col.writer.flush_page();
+            auto page = co_await col.writer.flush_page();
             const auto& data_header = std::get<data_page_header>(
               page.header.type);
             rg.num_rows = data_header.num_rows;
@@ -121,7 +125,7 @@ private:
                 .type = col.leaf->type,
                 .encodings = {data_header.data_encoding},
                 .path_in_schema = path_in_schema(*col.leaf),
-                .codec = compression_codec::uncompressed,
+                .codec = _opts.compress ? compression_codec::zstd : compression_codec::uncompressed,
                 .num_values = data_header.num_values,
                 .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
                 .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,

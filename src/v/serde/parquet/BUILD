@@ -119,6 +119,7 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
+        "//src/v/compression",
         "//src/v/hashing:crc32",
         "@seastar",
     ],
