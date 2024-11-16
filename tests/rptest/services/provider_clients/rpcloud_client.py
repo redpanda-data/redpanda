@@ -104,28 +104,27 @@ class RpCloudApiClient(object):
         _r = self._handle_error(resp)
         return _r if _r is None else _r.json()
 
-    def _http_delete(self, endpoint='', **kwargs):
+    def _http_delete(self, base_url=None, endpoint='', **kwargs):
         token = self._get_token()
         headers = {
             'Authorization': f'Bearer {token}',
             'Accept': 'application/json'
         }
-        resp = requests.delete(f'{self._config.api_url}{endpoint}',
-                               headers=headers,
-                               **kwargs)
+        _base = base_url if base_url else self._config.api_url
+        resp = requests.delete(f'{_base}{endpoint}', headers=headers, **kwargs)
         _r = self._handle_error(resp)
         return _r if _r is None else _r.json()
 
     @staticmethod
     def namespace_endpoint(uuid=None):
-        _e = "/api/v1/namespaces"
+        _e = '/v1beta2/resource-groups'
         if uuid:
-            _e += f"/{uuid}"
+            _e += f'/{uuid}'
         return _e
 
     @staticmethod
     def cluster_endpoint(id=None):
-        _e = "/api/v1/clusters"
+        _e = "/v1beta2/clusters"
         if id:
             _e += f"/{id}"
         return _e
@@ -139,6 +138,7 @@ class RpCloudApiClient(object):
 
     @staticmethod
     def network_peering_endpoint(id=None, peering_id=None):
+        # the network_peerings API has no public API replacement yet :(
         _e = "/api/v1/networks"
         if id:
             _e += f"/{id}/network-peerings"
@@ -152,9 +152,19 @@ class RpCloudApiClient(object):
             params['namespaceUuid'] = ns_uuid
         return params
 
+    def list_clusters(self, ns_uuid=None):
+        # get clusters for a namespace
+        _ret = self._http_get(self.cluster_endpoint(),
+                              base_url=self._config.public_api_url,
+                              params=self._prepare_params(ns_uuid))
+        # return it
+        return _ret['clusters']
+
     def list_namespaces(self, include_deleted=False):
         # Use local var to manupulate output
-        _ret = self._http_get(self.namespace_endpoint())
+        _ret = self._http_get(
+            self.namespace_endpoint(),
+            base_url=self._config.public_api_url)['resource_groups']
         # Filter out deleted ones
         if include_deleted:
             _namespaces = _ret
@@ -170,17 +180,16 @@ class RpCloudApiClient(object):
         # return it
         return _ret
 
-    def list_clusters(self, ns_uuid=None):
-        # get networks for a namespace
-        _ret = self._http_get(self.cluster_endpoint(),
-                              params=self._prepare_params(ns_uuid))
-        # return it
-        return _ret
-
+    # the network_peerings API has no public API replacement yet :(
     def list_network_peerings(self, network_id, ns_uuid=None):
         _ret = self._http_get(self.network_peering_endpoint(id=network_id),
                               params=self._prepare_params(ns_uuid=ns_uuid))
         return _ret
+
+    def get_cluster(self, cluster_id: str):
+        _cluster = self._http_get(self.cluster_endpoint(id=cluster_id),
+                                  base_url=self._config.public_api_url)
+        return _cluster['cluster']
 
     def get_network(self, network_id):
         _network = self._http_get(self.network_endpoint(id=network_id))
@@ -197,7 +206,8 @@ class RpCloudApiClient(object):
         return _r
 
     def delete_namespace(self, uuid):
-        _r = self._http_delete(endpoint=self.namespace_endpoint(uuid=uuid))
+        _r = self._http_delete(endpoint=self.namespace_endpoint(uuid=uuid),
+                               base_url=self._config.public_api_url)
         # Check status
         return _r
 
