@@ -108,7 +108,7 @@ public:
             co_return -1;
         }
         co_await archiver.flush_manifest_clean_offset();
-        for (int i = 0; i < _num_local_segs; i++) {
+        for (size_t i = 0; i < _num_local_segs; i++) {
             for (size_t i = 0; i < _batches_per_seg; i++) {
                 std::vector<kv_t> records = kv_t::sequence(
                   total_records, _records_per_batch);

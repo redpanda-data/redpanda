@@ -232,7 +232,7 @@ TEST_F(TopicManifestDownloaderTest, TestDownloadLabeledManifestWithHint) {
     ASSERT_NO_FATAL_FAILURE(upload_labeled_bin_manifest(tm));
 
     retry_chain_node retry(never_abort, 1s, 10ms);
-    for (int i = 0; i < test_uuid_str.size(); i++) {
+    for (size_t i = 0; i < test_uuid_str.size(); i++) {
         auto uuid_substr = test_uuid_str.substr(0, i);
         topic_manifest_downloader dl(
           bucket_name, uuid_substr, test_tp_ns, remote_.local());

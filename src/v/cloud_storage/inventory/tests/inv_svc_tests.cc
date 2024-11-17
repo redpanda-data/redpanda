@@ -125,7 +125,7 @@ validate_create_inv_req_failure(cst::upload_request r) {
 }
 
 ss::future<cst::cloud_storage_api::list_result> validate_list_objs(
-  const cloud_storage_clients::bucket_name& b,
+  const cloud_storage_clients::bucket_name&,
   retry_chain_node&,
   std::optional<cloud_storage_clients::object_key> pre,
   std::optional<char> delimiter,
@@ -181,9 +181,9 @@ ss::future<cst::download_result> validate_download_inventory_file_request(
   const cloud_storage_clients::bucket_name& b,
   const cst::remote_segment_path& path,
   const csi::MockRemote::try_consume_stream& cons_str,
-  retry_chain_node& parent,
+  retry_chain_node&,
   const std::string_view stream_label,
-  const csi::MockRemote::download_metrics& metrics,
+  const csi::MockRemote::download_metrics&,
   std::optional<cloud_storage_clients::http_byte_range> byte_range) {
     EXPECT_EQ(b, bucket);
     EXPECT_EQ(
