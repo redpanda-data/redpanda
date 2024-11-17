@@ -658,3 +658,33 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "alter_config_test",
+    timeout = "short",
+    srcs = [
+        "alter_config_test.cc",
+    ],
+    cpu = "1",
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/config",
+        "//src/v/container:fragmented_vector",
+        "//src/v/kafka/client",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:alter_configs",
+        "//src/v/kafka/protocol:create_topics",
+        "//src/v/kafka/protocol:describe_configs",
+        "//src/v/kafka/protocol:incremental_alter_configs",
+        "//src/v/kafka/protocol:metadata",
+        "//src/v/kafka/server",
+        "//src/v/kafka/server/tests:topic_properties_helpers",
+        "//src/v/model",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
