@@ -8,6 +8,7 @@ redpanda_test_cc_library(
     implementation_deps = [
     ],
     include_prefix = "kafka/client/test",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/kafka/client",
         "//src/v/redpanda/tests:fixture",
