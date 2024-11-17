@@ -13,6 +13,7 @@
 
 #include "cluster/types.h"
 #include "kafka/data/partition_proxy.h"
+#include "logger.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

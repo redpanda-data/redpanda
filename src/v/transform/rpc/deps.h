@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "kafka/data/partition_proxy.h"
+#include "kafka/data/rpc/deps.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
@@ -64,17 +65,16 @@ public:
     virtual std::vector<model::node_id> all_cluster_members() = 0;
 };
 
-/**
- * Handles routing for shard local partitions.
- */
-class partition_manager {
+// TODO(oren): does this actually need to extend the kdr version? I don't think
+// it does.
+class partition_manager : public kafka::data::rpc::partition_manager {
 public:
     partition_manager() = default;
     partition_manager(const partition_manager&) = delete;
     partition_manager(partition_manager&&) = delete;
     partition_manager& operator=(const partition_manager&) = delete;
     partition_manager& operator=(partition_manager&&) = delete;
-    virtual ~partition_manager() = default;
+    ~partition_manager() override = default;
 
     static std::unique_ptr<partition_manager> make_default(
       ss::sharded<cluster::shard_table>*,
@@ -84,8 +84,7 @@ public:
     /**
      * Lookup which shard owns a particular ntp.
      */
-    virtual std::optional<ss::shard_id> shard_owner(const model::ktp& ktp);
-    virtual std::optional<ss::shard_id> shard_owner(const model::ntp&) = 0;
+    std::optional<ss::shard_id> shard_owner(const model::ntp&) override = 0;
 
     /**
      * Invoke a function on the ntp's leader shard.
@@ -93,17 +92,18 @@ public:
      * Will return cluster::errc::not_leader if the shard_id is incorrect for
      * that ntp.
      */
-    virtual ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn)
+        kafka::partition_proxy*)> fn) override
       = 0;
-    virtual ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id,
       const model::ntp&,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)>)
+        kafka::partition_proxy*)>) override
       = 0;
 
     virtual ss::future<result<model::wasm_binary_iobuf, cluster::errc>>
@@ -123,15 +123,18 @@ public:
           kafka::partition_proxy*)>)
       = 0;
 
-    virtual ss::future<find_coordinator_response>
-    invoke_on_shard(ss::shard_id, const model::ntp&, find_coordinator_request)
+    virtual ss::future<transform::rpc::find_coordinator_response>
+    invoke_on_shard(
+      ss::shard_id, const model::ntp&, transform::rpc::find_coordinator_request)
       = 0;
 
-    virtual ss::future<offset_commit_response>
-    invoke_on_shard(ss::shard_id, const model::ntp&, offset_commit_request) = 0;
+    virtual ss::future<transform::rpc::offset_commit_response> invoke_on_shard(
+      ss::shard_id, const model::ntp&, transform::rpc::offset_commit_request)
+      = 0;
 
-    virtual ss::future<offset_fetch_response>
-    invoke_on_shard(ss::shard_id, const model::ntp&, offset_fetch_request) = 0;
+    virtual ss::future<transform::rpc::offset_fetch_response> invoke_on_shard(
+      ss::shard_id, const model::ntp&, transform::rpc::offset_fetch_request)
+      = 0;
 
     virtual ss::future<result<model::transform_offsets_map, cluster::errc>>
     list_committed_offsets_on_shard(ss::shard_id, const model::ntp&) = 0;

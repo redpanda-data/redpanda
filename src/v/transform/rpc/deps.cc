@@ -41,19 +41,15 @@ namespace {
 
 class partition_manager_impl final : public partition_manager {
 public:
-    partition_manager_impl(
-      ss::sharded<cluster::shard_table>* table,
-      ss::sharded<cluster::partition_manager>* manager,
-      ss::smp_service_group smp_group)
-      : _table(table)
-      , _manager(manager)
-      , _smp_group(smp_group) {}
+    explicit partition_manager_impl(
+      std::unique_ptr<kafka::data::rpc::partition_manager_proxy> proxy)
+      : _proxy(std::move(proxy)) {}
 
     std::optional<ss::shard_id> shard_owner(const model::ktp& ntp) final {
-        return _table->local().shard_for(ntp);
+        return _proxy->shard_owner(ntp);
     };
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
-        return _table->local().shard_for(ntp);
+        return _proxy->shard_owner(ntp);
     };
 
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
@@ -61,7 +57,15 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ktp, std::move(fn));
+        return _proxy->invoke_on_shard_impl(shard, ktp, std::move(fn));
+    }
+
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return _proxy->invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
@@ -70,30 +74,23 @@ public:
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
           kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ktp, std::move(fn));
+        return _proxy->invoke_on_shard_impl(shard, ktp, std::move(fn));
     }
 
-    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
-      ss::shard_id shard,
-      const model::ntp& ntp,
-      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ntp, std::move(fn));
-    }
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
           kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ntp, std::move(fn));
+        return _proxy->invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 
     ss::future<find_coordinator_response> invoke_on_shard(
       ss::shard_id shard,
       const model::ntp& ntp,
       find_coordinator_request req) final {
-        return invoke_func_on_shard_impl(
+        return _proxy->invoke_func_on_shard_impl(
           shard,
           [this, ntp, req = std::move(req)](
             cluster::partition_manager& mgr) mutable {
@@ -105,7 +102,7 @@ public:
       ss::shard_id shard,
       const model::ntp& ntp,
       offset_commit_request req) final {
-        return invoke_func_on_shard_impl(
+        return _proxy->invoke_func_on_shard_impl(
           shard,
           [this, ntp, req = std::move(req)](
             cluster::partition_manager& mgr) mutable {
@@ -117,7 +114,7 @@ public:
       ss::shard_id shard,
       const model::ntp& ntp,
       offset_fetch_request req) final {
-        return invoke_func_on_shard_impl(
+        return _proxy->invoke_func_on_shard_impl(
           shard,
           [this, ntp, req = req](cluster::partition_manager& mgr) mutable {
               return do_offset_fetch(mgr.get(ntp), req);
@@ -126,7 +123,7 @@ public:
     ss::future<result<model::transform_offsets_map, cluster::errc>>
     list_committed_offsets_on_shard(
       ss::shard_id shard, const model::ntp& ntp) final {
-        return invoke_func_on_shard_impl(
+        return _proxy->invoke_func_on_shard_impl(
           shard, [this, ntp](cluster::partition_manager& mgr) mutable {
               return do_list_committed_offsets(mgr.get(ntp));
           });
@@ -136,7 +133,7 @@ public:
       ss::shard_id shard,
       const model::ntp& ntp,
       absl::btree_set<model::transform_id> ids) final {
-        return invoke_func_on_shard_impl(
+        return _proxy->invoke_func_on_shard_impl(
           shard,
           [this, ntp, ids = std::move(ids)](
             cluster::partition_manager& mgr) mutable {
@@ -157,8 +154,9 @@ private:
             }
             co_return response;
         }
-        auto stm
-          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<transform::transform_offsets_stm_t>();
         if (partition->ntp().tp.partition != coordinator_partition) {
             for (const auto& key : request.keys) {
                 response.errors[key] = cluster::errc::not_leader;
@@ -188,8 +186,9 @@ private:
             response.errc = cluster::errc::not_leader;
             co_return response;
         }
-        auto stm
-          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<transform::transform_offsets_stm_t>();
         response.errc = co_await stm->put(std::move(req.kvs));
         co_return response;
     }
@@ -204,8 +203,9 @@ private:
             }
             co_return response;
         }
-        auto stm
-          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<transform::transform_offsets_stm_t>();
         for (const auto& key : request.keys) {
             auto result = co_await stm->get(key);
             if (result.has_error()) {
@@ -225,8 +225,9 @@ private:
         if (!partition) {
             co_return cluster::errc::not_leader;
         }
-        auto stm
-          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<transform::transform_offsets_stm_t>();
         co_return co_await stm->list();
     }
 
@@ -236,48 +237,17 @@ private:
         if (!partition) {
             co_return cluster::errc::not_leader;
         }
-        auto stm
-          = partition->raft()->stm_manager()->get<transform_offsets_stm_t>();
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<transform::transform_offsets_stm_t>();
         co_return co_await stm->remove_all(
           [&ids](model::transform_offsets_key key) {
               return ids.contains(key.id);
           });
     }
 
-    template<typename R, typename NTP>
-    ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
-      ss::shard_id shard,
-      const NTP& ntp,
-      ss::noncopyable_function<
-        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> func) {
-        return invoke_func_on_shard_impl(
-          shard,
-          [ntp,
-           func = std::move(func)](cluster::partition_manager& mgr) mutable {
-              auto pp = kafka::make_partition_proxy(ntp, mgr);
-              if (!pp || !pp->is_leader()) {
-                  return ss::make_ready_future<result<R, cluster::errc>>(
-                    cluster::errc::not_leader);
-              }
-              return ss::do_with(
-                *std::move(pp),
-                [func = std::move(func)](kafka::partition_proxy& pp) {
-                    return func(&pp);
-                });
-          });
-    }
-
-    template<class Func>
-    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
-    std::invoke_result_t<Func, cluster::partition_manager&>
-    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
-        return _manager->invoke_on(
-          shard, {_smp_group}, std::forward<Func>(func));
-    }
-
-    ss::sharded<cluster::shard_table>* _table;
-    ss::sharded<cluster::partition_manager>* _manager;
-    ss::smp_service_group _smp_group;
+private:
+    std::unique_ptr<kafka::data::rpc::partition_manager_proxy> _proxy;
 };
 
 class cluster_members_cache_impl : public cluster_members_cache {
@@ -296,22 +266,19 @@ private:
 
 } // namespace
 
+std::unique_ptr<cluster_members_cache>
+cluster_members_cache::make_default(ss::sharded<cluster::members_table>* m) {
+    return std::make_unique<cluster_members_cache_impl>(m);
+}
+
 std::unique_ptr<partition_manager>
 transform::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
   ss::smp_service_group smp_group) {
-    return std::make_unique<partition_manager_impl>(table, manager, smp_group);
-}
-
-std::optional<ss::shard_id>
-partition_manager::shard_owner(const model::ktp& ktp) {
-    return shard_owner(ktp.to_ntp());
-}
-
-std::unique_ptr<cluster_members_cache>
-cluster_members_cache::make_default(ss::sharded<cluster::members_table>* m) {
-    return std::make_unique<cluster_members_cache_impl>(m);
+    return std::make_unique<partition_manager_impl>(
+      std::make_unique<kafka::data::rpc::partition_manager_proxy>(
+        table, manager, smp_group));
 }
 
 } // namespace transform::rpc

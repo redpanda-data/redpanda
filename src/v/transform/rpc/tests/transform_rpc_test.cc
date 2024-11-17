@@ -76,7 +76,9 @@ namespace {
 
 namespace kdrt = kafka::data::rpc::test;
 
-using fake_partition_leader_cache = kdrt::fake_partition_leader_cache;
+using fake_partition_manager_proxy = kdrt::fake_partition_manager_proxy;
+using delegating_fake_partition_leader_cache
+  = kdrt::delegating_fake_partition_leader_cache;
 using fake_topic_metadata_cache = kdrt::fake_topic_metadata_cache;
 using delegating_fake_topic_metadata_cache
   = kdrt::delegating_fake_topic_metadata_cache;
@@ -149,61 +151,48 @@ private:
 
 class fake_partition_manager : public partition_manager {
 public:
-    explicit fake_partition_manager(fake_offset_tracker* fot)
-      : _offset_tracker(fot) {}
+    explicit fake_partition_manager(
+      fake_offset_tracker* fot, fake_partition_manager_proxy* fake_proxy)
+      : _offset_tracker(fot)
+      , _fake_proxy(fake_proxy) {}
 
-    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) final {
-        auto it = _shard_locations.find(ktp);
-        if (it == _shard_locations.end()) {
-            return std::nullopt;
-        }
-        return it->second;
+    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) override {
+        return _fake_proxy->shard_owner(ktp);
     };
+    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) override {
+        return _fake_proxy->shard_owner(ntp);
+    }
 
-    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
-        auto it = _shard_locations.find(ntp);
-        if (it == _shard_locations.end()) {
-            return std::nullopt;
-        }
-        return it->second;
-    };
-
-    void set_errors(int n) { _errors_to_inject = n; }
+    void set_errors(int n) {
+        // TODO(oren): could just reach down for this
+        _errors_to_inject = n;
+        _fake_proxy->set_errors(n);
+    }
 
     void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
-        _shard_locations.insert_or_assign(ntp, shard_id);
+        _fake_proxy->set_shard_owner(ntp, shard_id);
     }
     void remove_shard_owner(const model::ntp& ntp) {
-        _shard_locations.erase(ntp);
+        _fake_proxy->remove_shard_owner(ntp);
     }
 
     record_batches partition_records(const model::ntp& ntp) {
-        record_batches batches;
-        for (const auto& produced : _produced_batches) {
-            if (produced.ntp == ntp) {
-                batches.underlying.emplace_back(produced.batch.copy());
-            }
-        }
-        return batches;
+        return _fake_proxy->partition_records(ntp);
     }
 
-    template<typename R, typename N>
-    ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
-      const N& ntp,
-      ss::noncopyable_function<
-        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> fn) {
-        auto owner = shard_owner(ntp);
-        if (!owner || shard_id != *owner) {
-            co_return cluster::errc::not_leader;
-        }
-        if (_errors_to_inject > 0) {
-            --_errors_to_inject;
-            co_return cluster::errc::timeout;
-        }
-        auto pp = kafka::partition_proxy(
-          std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
-        co_return co_await fn(&pp);
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
     }
 
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
@@ -212,7 +201,7 @@ public:
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
           kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
     }
     ss::future<result<model::wasm_binary_iobuf, cluster::errc>> invoke_on_shard(
       ss::shard_id shard_id,
@@ -220,21 +209,7 @@ public:
       ss::noncopyable_function<
         ss::future<result<model::wasm_binary_iobuf, cluster::errc>>(
           kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ktp, std::move(fn));
-    }
-    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
-      ss::shard_id shard_id,
-      const model::ktp& ktp,
-      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ktp, std::move(fn));
-    }
-    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
-      ss::shard_id shard_id,
-      const model::ntp& ntp,
-      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
     }
 
     ss::future<find_coordinator_response> invoke_on_shard(
@@ -352,136 +327,9 @@ public:
     }
 
 private:
-    class in_memory_proxy : public kafka::partition_proxy::impl {
-    public:
-        in_memory_proxy(
-          const model::ktp& ktp,
-          ss::chunked_fifo<produced_batch>* produced_batches)
-          : _ntp(ktp.to_ntp())
-          , _produced_batches(produced_batches) {}
-        in_memory_proxy(
-          model::ntp ntp, ss::chunked_fifo<produced_batch>* produced_batches)
-          : _ntp(std::move(ntp))
-          , _produced_batches(produced_batches) {}
-
-        const model::ntp& ntp() const final { return _ntp; }
-        ss::future<result<model::offset, kafka::error_code>>
-        sync_effective_start(model::timeout_clock::duration) final {
-            throw std::runtime_error("unimplemented");
-        }
-        model::offset local_start_offset() const final {
-            throw std::runtime_error("unimplemented");
-        }
-        model::offset start_offset() const final {
-            throw std::runtime_error("unimplemented");
-        }
-        model::offset high_watermark() const final {
-            throw std::runtime_error("unimplemented");
-        }
-        checked<model::offset, kafka::error_code>
-        last_stable_offset() const final {
-            throw std::runtime_error("unimplemented");
-        }
-        kafka::leader_epoch leader_epoch() const final {
-            throw std::runtime_error("unimplemented");
-        }
-        ss::future<std::optional<model::offset>>
-        get_leader_epoch_last_offset(kafka::leader_epoch) const final {
-            throw std::runtime_error("unimplemented");
-        }
-        bool is_leader() const final { return true; }
-        ss::future<std::error_code> linearizable_barrier() final {
-            throw std::runtime_error("unimplemented");
-        }
-        ss::future<kafka::error_code>
-        prefix_truncate(model::offset, ss::lowres_clock::time_point) final {
-            throw std::runtime_error("unimplemented");
-        }
-        ss::future<storage::translating_reader> make_reader(
-          storage::log_reader_config config,
-          std::optional<model::timeout_clock::time_point>) final {
-            if (
-              config.first_timestamp.has_value()
-              || config.type_filter.has_value()) {
-                throw std::runtime_error("unimplemented");
-            }
-            model::record_batch_reader::data_t read_batches;
-            for (auto& b : *_produced_batches) {
-                if (b.ntp != _ntp) {
-                    continue;
-                }
-                if (b.batch.base_offset() < config.start_offset) {
-                    continue;
-                }
-                read_batches.push_back(b.batch.copy());
-                if (b.batch.last_offset() > config.max_offset) {
-                    break;
-                }
-            }
-            co_return model::make_memory_record_batch_reader(
-              std::move(read_batches));
-        }
-        ss::future<std::optional<storage::timequery_result>>
-        timequery(storage::timequery_config) final {
-            throw std::runtime_error("unimplemented");
-        }
-        ss::future<std::vector<model::tx_range>> aborted_transactions(
-          model::offset,
-          model::offset,
-          ss::lw_shared_ptr<const storage::offset_translator_state>) final {
-            throw std::runtime_error("unimplemented");
-        }
-        ss::future<kafka::error_code> validate_fetch_offset(
-          model::offset, bool, model::timeout_clock::time_point) final {
-            throw std::runtime_error("unimplemented");
-        }
-
-        ss::future<result<model::offset>> replicate(
-          model::record_batch_reader rdr, raft::replicate_options) final {
-            auto batches = co_await model::consume_reader_to_memory(
-              std::move(rdr), model::no_timeout);
-            auto offset = latest_offset();
-            for (const auto& batch : batches) {
-                auto b = batch.copy();
-                b.header().base_offset = offset++;
-                _produced_batches->emplace_back(_ntp, std::move(b));
-            }
-            co_return _produced_batches->back().batch.last_offset();
-        }
-
-        raft::replicate_stages replicate(
-          model::batch_identity,
-          model::record_batch_reader&&,
-          raft::replicate_options) final {
-            throw std::runtime_error("unimplemented");
-        }
-
-        result<kafka::partition_info> get_partition_info() const override {
-            throw std::runtime_error("unimplemented");
-        }
-        cluster::partition_probe& probe() override {
-            throw std::runtime_error("unimplemented");
-        }
-
-    private:
-        model::offset latest_offset() {
-            auto o = model::offset(0);
-            for (const auto& b : *_produced_batches) {
-                if (b.ntp == _ntp) {
-                    o = b.batch.last_offset();
-                }
-            }
-            return o;
-        }
-
-        model::ntp _ntp;
-        ss::chunked_fifo<produced_batch>* _produced_batches;
-    };
-
-    fake_offset_tracker* _offset_tracker;
+    fake_offset_tracker* _offset_tracker = nullptr;
+    fake_partition_manager_proxy* _fake_proxy;
     int _errors_to_inject = 0;
-    ss::chunked_fifo<produced_batch> _produced_batches;
-    model::ntp_map_type<ss::shard_id> _shard_locations;
 };
 
 constexpr uint16_t test_server_port = 8080;
@@ -521,13 +369,15 @@ public:
         _remote_services
           .start_single(
             ss::sharded_parameter([this]() {
-                auto ftmc = std::make_unique<fake_topic_metadata_cache>();
+                auto ftmc
+                  = std::make_unique<delegating_fake_topic_metadata_cache>(
+                    _kd->remote_metadata_cache());
                 _remote_ftmc = ftmc.get();
                 return ftmc;
             }),
             ss::sharded_parameter([this]() {
                 auto fpm = std::make_unique<fake_partition_manager>(
-                  &_tracked_offsets);
+                  &_tracked_offsets, _kd->remote_partition_manager_proxy());
                 _remote_fpm = fpm.get();
                 return fpm;
             }),
@@ -558,13 +408,15 @@ public:
         _local_services
           .start_single(
             ss::sharded_parameter([this]() {
-                auto ftmc = std::make_unique<fake_topic_metadata_cache>();
+                auto ftmc
+                  = std::make_unique<delegating_fake_topic_metadata_cache>(
+                    _kd->local_metadata_cache());
                 _local_ftmc = ftmc.get();
                 return ftmc;
             }),
             ss::sharded_parameter([this]() {
                 auto fpm = std::make_unique<fake_partition_manager>(
-                  &_tracked_offsets);
+                  &_tracked_offsets, _kd->local_partition_manager_proxy());
                 _local_fpm = fpm.get();
                 return fpm;
             }),
@@ -585,26 +437,14 @@ public:
             ::rpc::make_exponential_backoff_policy<ss::lowres_clock>(1s, 3s))
           .get();
 
-        auto fplc = std::make_unique<fake_partition_leader_cache>();
+        auto fplc = std::make_unique<delegating_fake_partition_leader_cache>(
+          _kd->partition_leader_cache());
         _fplc = fplc.get();
-        auto ftpc = std::make_unique<fake_topic_creator>(
-          [this](const cluster::topic_configuration& tp_cfg) {
-              remote_metadata_cache()->set_topic_cfg(tp_cfg);
-              local_metadata_cache()->set_topic_cfg(tp_cfg);
-          },
-          [this](const cluster::topic_properties_update& update) {
-              remote_metadata_cache()->update_topic_cfg(update);
-              local_metadata_cache()->update_topic_cfg(update);
-          },
-          [this](const model::ntp& ntp, model::node_id leader) {
-              elect_leader(ntp, leader);
-          });
-        _ftpc = ftpc.get();
         _client = std::make_unique<rpc::client>(
           self_node,
           std::move(fplc),
-          std::make_unique<delegating_fake_topic_metadata_cache>(_local_ftmc),
-          std::move(ftpc),
+          std::make_unique<delegating_fake_topic_metadata_cache>(
+            _kd->local_metadata_cache()),
           std::make_unique<fake_cluster_members_cache>(),
           &_conn_cache,
           &_local_services,
@@ -621,11 +461,11 @@ public:
         _local_services.stop().get();
         _remote_services.stop().get();
         _as.stop().get();
+        _local_fpm = nullptr;
         _local_fr = nullptr;
         _local_ftmc = nullptr;
-        _local_fpm = nullptr;
-        _remote_ftmc = nullptr;
         _remote_fpm = nullptr;
+        _remote_ftmc = nullptr;
         _remote_fr = nullptr;
         _fplc = nullptr;
         _kd->reset();
@@ -659,12 +499,12 @@ public:
     }
 
     void set_default_new_topic_leader(model::node_id node_id) {
-        _ftpc->set_default_new_topic_leader(node_id);
+        _kd->topic_creator()->set_default_new_topic_leader(node_id);
     }
 
     void set_errors_to_inject(int n) {
-        _local_fpm->set_errors(n);
-        _remote_fpm->set_errors(n);
+        local_partition_manager()->set_errors(n);
+        remote_partition_manager()->set_errors(n);
     }
 
     cluster::errc produce(const model::ntp& ntp, record_batches batches) {
@@ -699,14 +539,20 @@ public:
     fake_reporter* remote_reporter() { return _remote_fr; }
 
     // local node state
-    fake_topic_metadata_cache* local_metadata_cache() { return _local_ftmc; }
+    delegating_fake_topic_metadata_cache* local_metadata_cache() {
+        return _local_ftmc;
+    }
     fake_partition_manager* local_partition_manager() { return _local_fpm; }
-    fake_partition_leader_cache* partition_leader_cache() { return _fplc; }
+    delegating_fake_partition_leader_cache* partition_leader_cache() {
+        return _fplc;
+    }
     rpc::local_service* local_service() { return &_local_services.local(); }
     client* client() { return _client.get(); }
 
     // remote node state
-    fake_topic_metadata_cache* remote_metadata_cache() { return _remote_ftmc; }
+    delegating_fake_topic_metadata_cache* remote_metadata_cache() {
+        return _remote_ftmc;
+    }
     fake_partition_manager* remote_partition_manager() { return _remote_fpm; }
     rpc::local_service* remote_service() { return &_remote_services.local(); }
 
@@ -724,12 +570,11 @@ private:
     fake_offset_tracker _tracked_offsets;
 
     std::unique_ptr<::rpc::rpc_server> _server;
-    fake_topic_metadata_cache* _local_ftmc = nullptr;
     fake_partition_manager* _local_fpm = nullptr;
-    fake_topic_metadata_cache* _remote_ftmc = nullptr;
     fake_partition_manager* _remote_fpm = nullptr;
-    fake_partition_leader_cache* _fplc = nullptr;
-    fake_topic_creator* _ftpc = nullptr;
+    delegating_fake_topic_metadata_cache* _local_ftmc = nullptr;
+    delegating_fake_topic_metadata_cache* _remote_ftmc = nullptr;
+    delegating_fake_partition_leader_cache* _fplc = nullptr;
     fake_reporter* _local_fr = nullptr;
     fake_reporter* _remote_fr = nullptr;
     ss::sharded<rpc::local_service> _local_services;
@@ -789,7 +634,8 @@ TEST_P(TransformRpcTest, WasmBinaryCrud) {
 
     set_errors_to_inject(2);
     auto stored = store_wasm_binary(model::share_wasm_binary(wasm_binary));
-    ASSERT_TRUE(stored.has_value());
+    ASSERT_TRUE(stored.has_value())
+      << fmt::format("Error storing binary: {}", stored.assume_error());
     EXPECT_THAT(
       non_leader_batches(model::wasm_binaries_internal_ntp), IsEmpty());
     EXPECT_THAT(leader_batches(model::wasm_binaries_internal_ntp), SizeIs(1));
