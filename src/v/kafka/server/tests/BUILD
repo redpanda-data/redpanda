@@ -58,6 +58,7 @@ redpanda_test_cc_library(
     implementation_deps = [
     ],
     include_prefix = "kafka/server/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/bytes:iobuf",
         "//src/v/kafka/client",

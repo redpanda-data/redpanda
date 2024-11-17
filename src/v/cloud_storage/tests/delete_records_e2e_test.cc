@@ -321,7 +321,7 @@ FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
     deleter.start().get();
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    for (size_t i = 1; i < total_records; i++) {
+    for (int i = 1; i < total_records; i++) {
         auto lwm = deleter
                      .delete_records_from_partition(
                        topic_name, model::partition_id(0), model::offset(i), 5s)
