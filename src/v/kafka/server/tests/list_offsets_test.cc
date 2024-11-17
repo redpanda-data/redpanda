@@ -222,7 +222,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     // Arbitrary synthetic timestamp for start of produce
     auto base_timestamp = 100000;
 
-    for (long i = 0; i < batch_count; ++i) {
+    for (size_t i = 0; i < batch_count; ++i) {
         // Mixture of compressed and uncompressed, they have distinct offset
         // lookup behavior when searching by timequery, which will be
         // validated
@@ -241,7 +241,7 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
         BOOST_REQUIRE_EQUAL(parts[0].error_code, kafka::error_code::none);
     }
 
-    for (long i = 0; i < batch_count; ++i) {
+    for (size_t i = 0; i < batch_count; ++i) {
         // fetch timestamp i, expect offset 2 * i.
         kafka::list_offsets_request req;
 
