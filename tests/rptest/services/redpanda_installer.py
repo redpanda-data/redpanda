@@ -15,6 +15,7 @@ import re
 import typing
 import threading
 from datetime import datetime, timezone, timedelta
+from time import sleep
 
 import requests
 
@@ -447,7 +448,17 @@ class RedpandaInstaller:
         """
         r = requests.head(self._version_package_url(version))
         # allow 403 ClientError, it usually indicates Unauthorized get and can happen on S3 while dealing with old releases
-        if r.status_code not in (200, 403, 404):
+        allowed = (200, 403, 404)
+        if r.status_code not in allowed:
+            num_retries = 3
+            while num_retries > 0:
+                sleep(5.0**(4 - num_retries))
+                r = requests.head(self._version_package_url(version))
+                if r.status_code in allowed:
+                    break
+                num_retries -= 1
+
+        if r.status_code not in allowed:
             r.raise_for_status()
 
         if r.status_code == 403:
