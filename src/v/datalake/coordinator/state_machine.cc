@@ -45,12 +45,12 @@ void maybe_log_update_error(
 } // namespace
 
 coordinator_stm::coordinator_stm(ss::logger& logger, raft::consensus* raft)
-  : raft::persisted_stm<>("datalake_coordinator_stm.snapshot", logger, raft) {}
+  : coordinator_stm_base("datalake_coordinator_stm.snapshot", logger, raft) {}
 
 ss::future<checked<model::term_id, coordinator_stm::errc>>
 coordinator_stm::sync(model::timeout_clock::duration timeout) {
     auto sync_res = co_await ss::coroutine::as_future(
-      raft::persisted_stm<>::sync(timeout));
+      coordinator_stm_base::sync(timeout));
     if (sync_res.failed()) {
         auto eptr = sync_res.get_exception();
         auto msg = fmt::format("Exception caught while syncing: {}", eptr);
@@ -129,27 +129,38 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
 
 model::offset coordinator_stm::max_collectible_offset() { return {}; }
 
-ss::future<>
-coordinator_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
-    co_return;
+ss::future<> coordinator_stm::apply_local_snapshot(
+  raft::stm_snapshot_header, iobuf&& snapshot_buf) {
+    auto parser = iobuf_parser(std::move(snapshot_buf));
+    auto snapshot = co_await serde::read_async<stm_snapshot>(parser);
+    state_ = std::move(snapshot.topics);
 }
 
 ss::future<raft::stm_snapshot>
-coordinator_stm::take_local_snapshot(ssx::semaphore_units) {
-    // temporarily ignore snapshots, to be fixed later.
-    // throwing here results in uncaught exceptions, so a dummy snapshot
-    // at offset 0 avoids that.
-    co_return raft::stm_snapshot::create(0, model::offset{0}, iobuf{});
+coordinator_stm::take_local_snapshot(ssx::semaphore_units units) {
+    auto snapshot_offset = last_applied_offset();
+    auto snapshot = make_snapshot();
+    units.return_all();
+    iobuf snapshot_buf;
+    co_await serde::write_async(snapshot_buf, std::move(snapshot));
+    co_return raft::stm_snapshot::create(
+      0, snapshot_offset, std::move(snapshot_buf));
 }
 
-ss::future<> coordinator_stm::apply_raft_snapshot(const iobuf&) { co_return; }
+ss::future<> coordinator_stm::apply_raft_snapshot(const iobuf& snapshot_buf) {
+    auto parser = iobuf_parser(snapshot_buf.copy());
+    auto snapshot = co_await serde::read_async<stm_snapshot>(parser);
+    state_ = std::move(snapshot.topics);
+}
 
-ss::future<iobuf> coordinator_stm::take_snapshot(model::offset) {
-    co_return iobuf{};
+ss::future<iobuf> coordinator_stm::take_snapshot() {
+    iobuf snapshot_buf;
+    co_await serde::write_async(snapshot_buf, make_snapshot());
+    co_return std::move(snapshot_buf);
 }
 
 stm_snapshot coordinator_stm::make_snapshot() const {
-    return stm_snapshot{.topics = state_.copy()};
+    return {.topics = state_.copy()};
 }
 
 bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {

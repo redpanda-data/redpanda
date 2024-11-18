@@ -264,6 +264,10 @@ private:
 
 template<supported_stm_snapshot T = file_backed_stm_snapshot>
 using persisted_stm = persisted_stm_base<state_machine_base, T>;
+
+template<supported_stm_snapshot T = file_backed_stm_snapshot>
+using persisted_stm_no_snapshot_at_offset
+  = persisted_stm_base<no_at_offset_snapshot_stm_base, T>;
 /**
  * Helper to copy persisted_stm kvstore snapshot from the source kvstore to
  * target shard
