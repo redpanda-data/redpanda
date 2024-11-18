@@ -3706,6 +3706,14 @@ configuration::configuration()
       "Iceberg is enabled, do not change this value.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       "redpanda-iceberg-catalog")
+  , datalake_coordinator_snapshot_max_delay_secs(
+      *this,
+      "datalake_coordinator_snapshot_max_delay_secs",
+      "Maximum amount of time the coordinator waits to snapshot after a "
+      "command appears in the log.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::chrono::seconds(15min),
+      {.min = 10s})
   , iceberg_catalog_type(
       *this,
       "iceberg_catalog_type",

@@ -703,6 +703,8 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds>
       iceberg_catalog_commit_interval_ms;
     property<ss::sstring> iceberg_catalog_base_location;
+    bounded_property<std::chrono::seconds>
+      datalake_coordinator_snapshot_max_delay_secs;
 
     // datalake catalog configuration
     enum_property<datalake_catalog_type> iceberg_catalog_type;
