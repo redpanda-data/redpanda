@@ -13,6 +13,7 @@
 #include "datalake/batching_parquet_writer.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/cloud_data_io.h"
+#include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/translation_task.h"
 #include "model/record_batch_reader.h"
@@ -72,13 +73,13 @@ public:
         return model::make_memory_record_batch_reader(std::move(batches));
     }
 
-    std::unique_ptr<datalake::data_writer_factory> get_writer_factory(
+    std::unique_ptr<datalake::parquet_file_writer_factory> get_writer_factory(
       size_t row_threshold = 200, size_t bytes_threshold = 4096) {
-        return std::make_unique<datalake::batching_parquet_writer_factory>(
+        return std::make_unique<datalake::local_parquet_file_writer_factory>(
           datalake::local_path(tmp_dir.get_path()),
           "test-prefix",
-          row_threshold,
-          bytes_threshold);
+          ss::make_shared<datalake::batching_parquet_writer_factory>(
+            row_threshold, bytes_threshold));
     }
 
     lazy_abort_source& never_abort() {

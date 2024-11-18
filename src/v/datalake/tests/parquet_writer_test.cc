@@ -10,7 +10,7 @@
 
 #include "bytes/bytes.h"
 #include "datalake/arrow_translator.h"
-#include "datalake/parquet_writer.h"
+#include "datalake/arrow_writer.h"
 #include "datalake/tests/test_data.h"
 #include "iceberg/tests/value_generator.h"
 #include "utils/file_io.h"

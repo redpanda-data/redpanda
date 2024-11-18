@@ -13,14 +13,14 @@
 #include <fmt/core.h>
 namespace datalake {
 std::string data_writer_error_category::message(int ev) const {
-    switch (static_cast<data_writer_error>(ev)) {
-    case data_writer_error::ok:
+    switch (static_cast<writer_error>(ev)) {
+    case writer_error::ok:
         return "Ok";
-    case data_writer_error::parquet_conversion_error:
+    case writer_error::parquet_conversion_error:
         return "Parquet Conversion Error";
-    case data_writer_error::file_io_error:
+    case writer_error::file_io_error:
         return "File IO Error";
-    case data_writer_error::no_data:
+    case writer_error::no_data:
         return "No data";
     }
 }
