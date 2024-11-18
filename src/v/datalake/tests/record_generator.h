@@ -12,10 +12,10 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "container/chunked_hash_map.h"
-#include "model/record.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "serde/avro/tests/data_generator.h"
+#include "serde/protobuf/tests/data_generator.h"
 #include "storage/record_batch_builder.h"
 #include "utils/named_type.h"
 
@@ -37,12 +37,24 @@ public:
     ss::future<checked<std::nullopt_t, error>>
     register_avro_schema(std::string_view name, std::string_view schema);
 
+    // Registers the given schema with the given name.
+    ss::future<checked<std::nullopt_t, error>>
+    register_protobuf_schema(std::string_view name, std::string_view schema);
+
     // Adds a record of the given schema to the builder.
     ss::future<checked<std::nullopt_t, error>> add_random_avro_record(
       storage::record_batch_builder&,
       std::string_view schema_name,
       std::optional<iobuf> key,
       testing::avro_generator_config config = {});
+
+    // Adds a record of the given schema to the builder.
+    ss::future<checked<std::nullopt_t, error>> add_random_protobuf_record(
+      storage::record_batch_builder&,
+      std::string_view schema_name,
+      const std::vector<int32_t>& message_index,
+      std::optional<iobuf> key,
+      testing::protobuf_generator_config config = {});
 
 private:
     chunked_hash_map<std::string_view, pandaproxy::schema_registry::schema_id>
