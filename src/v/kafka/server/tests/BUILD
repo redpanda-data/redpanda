@@ -688,3 +688,30 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "produce_consume_test",
+    timeout = "moderate",
+    srcs = [
+        "produce_consume_test.cc",
+    ],
+    cpu = "1",
+    tags = ["exclusive"],
+    deps = [
+        ":kafka_test_utils",
+        "//src/v/container:fragmented_vector",
+        "//src/v/kafka/client",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:fetch",
+        "//src/v/kafka/protocol:produce",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
