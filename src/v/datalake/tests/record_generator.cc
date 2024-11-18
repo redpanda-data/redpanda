@@ -10,7 +10,6 @@
 #include "datalake/tests/record_generator.h"
 
 #include "schema/registry.h"
-#include "serde/avro/tests/data_generator.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -45,7 +44,8 @@ ss::future<checked<std::nullopt_t, record_generator::error>>
 record_generator::add_random_avro_record(
   storage::record_batch_builder& b,
   std::string_view name,
-  std::optional<iobuf> key) {
+  std::optional<iobuf> key,
+  testing::avro_generator_config config) {
     using namespace pandaproxy::schema_registry;
     auto it = _id_by_name.find(name);
     if (it == _id_by_name.end()) {
@@ -83,8 +83,8 @@ record_generator::add_random_avro_record(
         co_return error{
           fmt::format("Schema {} didn't resolve Avro node", name)};
     }
-    testing::generator_state gs;
-    auto datum = generate_datum(node_ptr, gs, 10);
+    testing::avro_generator gen(config);
+    auto datum = gen.generate_datum(node_ptr);
     std::unique_ptr<avro::OutputStream> out = avro::memoryOutputStream();
     avro::EncoderPtr e = avro::binaryEncoder();
     e->init(*out);

@@ -305,9 +305,9 @@ TEST_P(AvroParserTest, RoundtripTest) {
 
     for (int i = 0; i < 500; ++i) {
         // Generate random value
-        generator_state state;
-        ::avro::GenericDatum random_value = generate_datum(
-          valid_schema.root(), state, 10);
+        avro_generator gen({});
+        ::avro::GenericDatum random_value = gen.generate_datum(
+          valid_schema.root());
         // serialize data with AVRO library
         iobuf buffer = serialize_with_avro(random_value, valid_schema);
         // read using serde::avro
@@ -358,9 +358,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(AvroParserTest, TestTooManyBytes) {
     auto valid_schema = load_json_schema("record2");
-    generator_state state;
-    ::avro::GenericDatum random_value = generate_datum(
-      valid_schema.root(), state, 10);
+    avro_generator gen({});
+    ::avro::GenericDatum random_value = gen.generate_datum(valid_schema.root());
 
     iobuf buffer = serialize_with_avro(random_value, valid_schema);
     buffer.append(random_generators::make_iobuf(128));
@@ -415,9 +414,8 @@ bool try_deserialize_with_avro_lib(
 
 TEST_F(AvroParserTest, TestIncorrectSchema) {
     auto valid_schema = load_json_schema("record2");
-    generator_state state;
-    ::avro::GenericDatum random_value = generate_datum(
-      valid_schema.root(), state, 10);
+    avro_generator gen({});
+    ::avro::GenericDatum random_value = gen.generate_datum(valid_schema.root());
     iobuf buffer = serialize_with_avro(random_value, valid_schema);
     auto invalid_schema = load_json_schema("tree2");
     auto success = try_deserialize_with_avro_lib(invalid_schema, buffer);

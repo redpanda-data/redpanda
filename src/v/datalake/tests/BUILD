@@ -101,7 +101,6 @@ redpanda_test_cc_library(
     implementation_deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/schema:registry",
-        "//src/v/serde/avro/tests:data_generator",
         "@avro",
     ],
     include_prefix = "datalake/tests",
@@ -112,6 +111,7 @@ redpanda_test_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/pandaproxy",
+        "//src/v/serde/avro/tests:data_generator",
         "//src/v/storage:record_batch_builder",
         "//src/v/utils:named_type",
         "@seastar",

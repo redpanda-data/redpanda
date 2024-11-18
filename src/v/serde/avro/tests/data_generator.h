@@ -19,13 +19,25 @@
 
 namespace testing {
 
-struct generator_state {
-    int level{0};
+struct avro_generator_config {
+    std::optional<size_t> elements_in_collection{};
+    std::pair<size_t, size_t> string_length_range{0, 32};
+    int max_nesting_level{10};
 };
-avro::GenericDatum generate_datum(
-  const avro::NodePtr& node,
-  generator_state& state,
-  int max_nesting_level,
-  std::optional<size_t> elements_in_collection = std::nullopt);
+
+class avro_generator {
+public:
+    explicit avro_generator(avro_generator_config c)
+      : _config(c) {}
+
+    avro::GenericDatum generate_datum(const avro::NodePtr& node) {
+        return generate_datum_impl(1, node);
+    }
+
+private:
+    avro::GenericDatum
+    generate_datum_impl(int level, const avro::NodePtr& node);
+    avro_generator_config _config;
+};
 
 } // namespace testing
