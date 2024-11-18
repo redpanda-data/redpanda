@@ -148,6 +148,10 @@ ss::future<iobuf> coordinator_stm::take_snapshot(model::offset) {
     co_return iobuf{};
 }
 
+stm_snapshot coordinator_stm::make_snapshot() const {
+    return stm_snapshot{.topics = state_.copy()};
+}
+
 bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
     const auto& ntp = config.ntp();
     return (ntp.ns == model::datalake_coordinator_nt.ns)

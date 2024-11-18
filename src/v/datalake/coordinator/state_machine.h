@@ -46,6 +46,8 @@ public:
     const topics_state& state() const { return state_; }
 
 protected:
+    stm_snapshot make_snapshot() const;
+
     ss::future<> do_apply(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;

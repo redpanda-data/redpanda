@@ -10,6 +10,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
+#include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/errors.h"
 #include "model/fundamental.h"
@@ -135,6 +136,14 @@ struct fetch_latest_translated_offset_request
     operator<<(std::ostream&, const fetch_latest_translated_offset_request&);
 
     auto serde_fields() { return std::tie(tp); }
+};
+
+struct stm_snapshot
+  : public serde::
+      envelope<stm_snapshot, serde::version<0>, serde::compat_version<0>> {
+    topics_state topics;
+
+    auto serde_fields() { return std::tie(topics); }
 };
 
 } // namespace datalake::coordinator
