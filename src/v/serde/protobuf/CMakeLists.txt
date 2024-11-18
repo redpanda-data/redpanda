@@ -11,3 +11,5 @@ v_cc_library(
     v::utils
     protobuf::libprotobuf
   )
+
+add_subdirectory(tests)

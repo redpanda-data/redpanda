@@ -1,5 +1,5 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
-load("//bazel:test.bzl", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 proto_library(
     name = "two_proto",
@@ -56,5 +56,23 @@ redpanda_cc_gtest(
         "@protobuf",
         "@protobuf//:differencer",
         "@seastar",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "data_generator",
+    srcs = [
+        "data_generator.cc",
+    ],
+    hdrs = [
+        "data_generator.h",
+    ],
+    implementation_deps = [
+        "//src/v/random:generators",
+    ],
+    include_prefix = "serde/protobuf/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@protobuf",
     ],
 )
