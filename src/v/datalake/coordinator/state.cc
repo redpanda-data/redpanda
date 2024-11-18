@@ -11,6 +11,28 @@
 
 namespace datalake::coordinator {
 
+pending_entry pending_entry::copy() const {
+    return {.data = data.copy(), .added_pending_at = added_pending_at};
+}
+
+partition_state partition_state::copy() const {
+    partition_state result;
+    result.last_committed = last_committed;
+    for (const auto& entry : pending_entries) {
+        result.pending_entries.push_back(entry.copy());
+    }
+    return result;
+}
+
+topic_state topic_state::copy() const {
+    topic_state result;
+    result.pid_to_pending_files.reserve(pid_to_pending_files.size());
+    for (const auto& [id, state] : pid_to_pending_files) {
+        result.pid_to_pending_files[id] = state.copy();
+    }
+    return result;
+}
+
 std::optional<std::reference_wrapper<const partition_state>>
 topics_state::partition_state(const model::topic_partition& tp) const {
     auto state_iter = topic_to_state.find(tp.topic);
@@ -23,6 +45,15 @@ topics_state::partition_state(const model::topic_partition& tp) const {
         return std::nullopt;
     }
     return prt_iter->second;
+}
+
+topics_state topics_state::copy() const {
+    topics_state result;
+    result.topic_to_state.reserve(topic_to_state.size());
+    for (const auto& [id, state] : topic_to_state) {
+        result.topic_to_state[id] = state.copy();
+    }
+    return result;
 }
 
 } // namespace datalake::coordinator
