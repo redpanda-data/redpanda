@@ -652,6 +652,15 @@ class KgoVerifierProducer(KgoVerifierService):
                                   backoff_sec=1)
         self._status_thread.raise_on_error()
 
+    def wait_for_latest_value_map(self):
+        # Producer worker aims to checkpoint every 5 seconds, so we should see this promptly.
+        self._redpanda.wait_until(lambda: self._status_thread.errored or all(
+            node.account.exists(f"latest_value_{self._topic}.json")
+            for node in self.nodes),
+                                  timeout_sec=15,
+                                  backoff_sec=1)
+        self._status_thread.raise_on_error()
+
     def is_complete(self):
         return self._status.acked >= self._msg_count
 
