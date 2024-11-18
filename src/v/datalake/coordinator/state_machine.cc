@@ -44,8 +44,14 @@ void maybe_log_update_error(
 }
 } // namespace
 
-coordinator_stm::coordinator_stm(ss::logger& logger, raft::consensus* raft)
-  : coordinator_stm_base("datalake_coordinator_stm.snapshot", logger, raft) {}
+coordinator_stm::coordinator_stm(
+  ss::logger& logger,
+  raft::consensus* raft,
+  config::binding<std::chrono::seconds> snapshot_delay)
+  : coordinator_stm_base("datalake_coordinator_stm.snapshot", logger, raft)
+  , snapshot_delay_secs_(std::move(snapshot_delay)) {
+    snapshot_timer_.set_callback([this] { write_snapshot_async(); });
+}
 
 ss::future<checked<model::term_id, coordinator_stm::errc>>
 coordinator_stm::sync(model::timeout_clock::duration timeout) {
@@ -125,6 +131,7 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
           key,
           b.header());
     }
+    rearm_snapshot_timer();
 }
 
 model::offset coordinator_stm::max_collectible_offset() { return {}; }
@@ -163,6 +170,40 @@ stm_snapshot coordinator_stm::make_snapshot() const {
     return {.topics = state_.copy()};
 }
 
+ss::future<> coordinator_stm::stop() {
+    snapshot_timer_.cancel();
+    return coordinator_stm_base::stop();
+}
+
+ss::future<> coordinator_stm::maybe_write_snapshot() {
+    if (_raft->last_snapshot_index() >= last_applied()) {
+        co_return;
+    }
+    auto snapshot = co_await _raft->stm_manager()->take_snapshot();
+    vlog(
+      _log.debug,
+      "creating snapshot at offset: {}",
+      snapshot.last_included_offset);
+    co_await _raft->write_snapshot(raft::write_snapshot_cfg(
+      snapshot.last_included_offset, std::move(snapshot.data)));
+}
+
+void coordinator_stm::write_snapshot_async() {
+    ssx::background = ssx::spawn_with_gate_then(
+                        _gate, [this] { return maybe_write_snapshot(); })
+                        .handle_exception([this](const std::exception_ptr& e) {
+                            vlog(_log.warn, "failed to write snapshot: {}", e);
+                        })
+                        .finally([holder = _gate.hold()] {});
+}
+
+void coordinator_stm::rearm_snapshot_timer() {
+    if (_gate.is_closed() || snapshot_timer_.armed()) {
+        return;
+    }
+    snapshot_timer_.arm(snapshot_delay_secs_());
+}
+
 bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
     const auto& ntp = config.ntp();
     return (ntp.ns == model::datalake_coordinator_nt.ns)
@@ -171,7 +212,11 @@ bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
 
 void stm_factory::create(
   raft::state_machine_manager_builder& builder, raft::consensus* raft) {
-    auto stm = builder.create_stm<coordinator_stm>(datalake_log, raft);
+    auto stm = builder.create_stm<coordinator_stm>(
+      datalake_log,
+      raft,
+      config::shard_local_cfg()
+        .datalake_coordinator_snapshot_max_delay_secs.bind());
     raft->log()->stm_manager()->add_stm(stm);
 }
 
