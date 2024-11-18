@@ -15,6 +15,7 @@ rp_test(
   SOURCES
     coordinator_test.cc
     state_update_test.cc
+    state_machine_test.cc
   LIBRARIES
     v::datalake_coordinator
     v::datalake_coordinator_test_utils

@@ -90,3 +90,21 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "state_machine_test",
+    timeout = "short",
+    srcs = [
+        "state_machine_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":state_test_utils",
+        "//src/v/datalake/coordinator",
+        "//src/v/datalake/coordinator:stm",
+        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/storage",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
