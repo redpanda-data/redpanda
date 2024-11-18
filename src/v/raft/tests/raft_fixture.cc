@@ -59,8 +59,10 @@ ss::future<> channel::stop() {
 
         auto f = _gate.close();
 
-        for (auto& m : _messages) {
-            m.resp_data.set_exception(ss::abort_requested_exception());
+        while (!_messages.empty()) {
+            auto msg = std::move(_messages.front());
+            _messages.pop_front();
+            msg.resp_data.set_exception(ss::abort_requested_exception());
         }
         co_await std::move(f);
     }
