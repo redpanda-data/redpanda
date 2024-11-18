@@ -12,6 +12,7 @@
 #include "base/vlog.h"
 #include "datalake/conversion_outcome.h"
 #include "datalake/logger.h"
+#include "datalake/record_schema_resolver.h"
 #include "datalake/table_definition.h"
 #include "datalake/values_avro.h"
 #include "datalake/values_protobuf.h"
@@ -32,8 +33,8 @@ struct value_translating_visitor {
     const iceberg::field_type& type;
 
     ss::future<optional_value_outcome>
-    operator()(const google::protobuf::Descriptor& d) {
-        return deserialize_protobuf(std::move(parsable_buf), d);
+    operator()(const wrapped_protobuf_descriptor& d) {
+        return deserialize_protobuf(std::move(parsable_buf), d.descriptor);
     }
     ss::future<optional_value_outcome> operator()(const avro::ValidSchema& s) {
         auto value = co_await deserialize_avro(std::move(parsable_buf), s);
