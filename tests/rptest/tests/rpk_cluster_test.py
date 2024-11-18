@@ -245,7 +245,7 @@ class RpkClusterTest(RedpandaTest):
                 "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
             return
 
-        evaluation_period = 3888000  # 45 days
+        evaluation_period = 2592000  # 30 days
         wait_until(
             lambda: self._get_license_expiry() <= evaluation_period,
             timeout_sec=10,
