@@ -39,37 +39,6 @@ public:
     ~noop_file_committer() override = default;
 };
 
-// Simple committer that returns the set of updates that would mark all the
-// pending files as committed. Doesn't affect any external state.
-class simple_file_committer : public file_committer {
-public:
-    ss::future<checked<chunked_vector<mark_files_committed_update>, errc>>
-    commit_topic_files_to_catalog(
-      model::topic t, const topics_state& state) const override {
-        chunked_vector<mark_files_committed_update> ret;
-        auto t_iter = std::ranges::find(
-          state.topic_to_state,
-          t,
-          &std::pair<model::topic, topic_state>::first);
-        if (t_iter == state.topic_to_state.end()) {
-            co_return ret;
-        }
-        // Mark the last file in each partition as committed.
-        auto& t_state = t_iter->second;
-        for (const auto& [pid, files] : t_state.pid_to_pending_files) {
-            if (files.pending_entries.empty()) {
-                continue;
-            }
-            model::topic_partition tp(t, pid);
-            auto build_res = mark_files_committed_update::build(
-              state, tp, files.pending_entries.back().data.last_offset);
-            EXPECT_FALSE(build_res.has_error());
-            ret.emplace_back(std::move(build_res.value()));
-        }
-        co_return ret;
-    }
-    ~simple_file_committer() override = default;
-};
 const model::topic topic_base{"test_topic"};
 model::topic_partition tp(int t, int pid) {
     return model::topic_partition(
