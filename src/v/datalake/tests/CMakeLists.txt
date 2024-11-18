@@ -10,7 +10,9 @@ v_cc_library(
   DEPS
     Avro::avro
     Seastar::seastar
+    protobuf::libprotobuf
     v::avro_test_utils
+    v::protobuf_test_utils
     v::schema
     v::schema_test_fixture
     v::storage
