@@ -691,7 +691,7 @@ class RedpandaInstaller:
         version_root = self.root_for_version(version)
 
         tgz = "redpanda.tar.gz"
-        cmd = f"curl -fsSL {self._version_package_url(version)} --retry 3 --retry-connrefused --retry-delay 2 --create-dir -o {version_root}/{tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
+        cmd = f"curl -vfsSL {self._version_package_url(version)} --retry 3 --retry-connrefused --retry-delay 2 --create-dir -o {version_root}/{tgz} && echo 'curl finished successfully' && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && echo 'tarball extraction finished successfully' && rm {version_root}/{tgz} && echo 'tarball cleanup finished successfully'"
         return node.account.ssh_capture(cmd)
 
     def reset_current_install(self, nodes):
