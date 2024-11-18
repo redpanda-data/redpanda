@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 
+	dataplanev1alpha2 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha2"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -52,19 +54,33 @@ Use filter to list only migrations in a specific state
 				out.Exit(h)
 			}
 
-			pf, err := p.LoadVirtualProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(pf)
-			adm, err := adminapi.NewClient(cmd.Context(), fs, pf)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
-			migrations, err := adm.ListMigrations(cmd.Context())
-			out.MaybeDie(err, "unable to list migrations: %v", err)
-			printDetailedListMount(p.Formatter, filterOptFromString(filter), rpadminMigrationStateToMigrationState(migrations), os.Stdout)
+			var migrations []rpadmin.MigrationState
+			if p.FromCloud {
+				cl, err := createDataplaneClient(p)
+				out.MaybeDieErr(err)
+
+				resp, err := cl.CloudStorage.ListMountTasks(cmd.Context(), connect.NewRequest(&dataplanev1alpha2.ListMountTasksRequest{}))
+				out.MaybeDie(err, "unable to list mount/unmount operations: %v", err)
+
+				if resp != nil {
+					migrations = listMountTaskToAdminMigrationState(resp.Msg)
+				}
+			} else {
+				adm, err := adminapi.NewClient(cmd.Context(), fs, p)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+				migrations, err = adm.ListMigrations(cmd.Context())
+				out.MaybeDie(err, "unable to list migrations: %v", err)
+			}
+			printDetailedListMount(f, filterOptFromString(filter), rpadminMigrationStateToMigrationState(migrations), os.Stdout)
 		},
 	}
 	p.InstallFormatFlag(cmd)
-	cmd.Flags().StringVarP(&filter, "filter", "f", "", "Filter the list of migrations by state. Only valid for text")
+	cmd.Flags().StringVarP(&filter, "filter", "f", "all", "Filter the list of migrations by state. Only valid for text")
 	return cmd
 }
 
@@ -96,7 +112,7 @@ func (f filterOpts) String() string {
 }
 
 func filterOptFromString(s string) filterOpts {
-	switch s {
+	switch strings.ToLower(s) {
 	case "planned":
 		return FilterOptsPlanned
 	case "prepared":
@@ -150,9 +166,11 @@ func rpadminTopicsToStringSlice(in []rpadmin.NamespacedOrInboundTopic) (resp []s
 	for _, entry := range in {
 		if entry.Namespace != nil {
 			resp = append(resp, fmt.Sprintf("%s/%s", *entry.Namespace, entry.Topic))
-			continue
+		} else if entry.SourceTopicReference.Topic != "" {
+			resp = append(resp, entry.SourceTopicReference.Topic)
+		} else {
+			resp = append(resp, entry.Topic)
 		}
-		resp = append(resp, entry.Topic)
 	}
 	return
 }
@@ -162,4 +180,48 @@ type migrationState struct {
 	State         string   `json:"state" yaml:"state"`
 	MigrationType string   `json:"type" yaml:"type"`
 	Topics        []string `json:"topics" yaml:"topics"`
+}
+
+func listMountTaskToAdminMigrationState(resp *dataplanev1alpha2.ListMountTasksResponse) []rpadmin.MigrationState {
+	var migrations []rpadmin.MigrationState
+	if resp != nil {
+		for _, task := range resp.Tasks {
+			if task != nil {
+				migrations = append(migrations, rpadmin.MigrationState{
+					ID:    int(task.Id),
+					State: strings.TrimPrefix(task.State.String(), "STATE_"),
+					Migration: rpadmin.Migration{
+						MigrationType: task.Type.String(),
+						Topics:        mountTaskTopicsToNamespacedOrInboundTopics(task.Topics, task.Type),
+					},
+				})
+			}
+		}
+	}
+	return migrations
+}
+
+// mountTaskTopicsToNamespacedOrInboundTopics converts the dataplane's
+// mountTaskTopics to the rpadmin's equivalent.
+func mountTaskTopicsToNamespacedOrInboundTopics(taskTopics []*dataplanev1alpha2.MountTask_Topic, taskType dataplanev1alpha2.MountTask_Type) []rpadmin.NamespacedOrInboundTopic {
+	var topics []rpadmin.NamespacedOrInboundTopic
+	for _, topic := range taskTopics {
+		// Inbound == Mount.
+		if taskType == dataplanev1alpha2.MountTask_TYPE_MOUNT {
+			topics = append(topics, rpadmin.NamespacedOrInboundTopic{
+				InboundTopic: rpadmin.InboundTopic{
+					SourceTopicReference: rpadmin.NamespacedTopic{
+						Topic: topic.SourceTopicReference, // The topic of the bucket you are mounting.
+					},
+				},
+			})
+		} else {
+			topics = append(topics, rpadmin.NamespacedOrInboundTopic{
+				NamespacedTopic: rpadmin.NamespacedTopic{
+					Topic: topic.TopicReference, // The topic in the cluster you are un-mounting.
+				},
+			})
+		}
+	}
+	return topics
 }

@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 
+	dataplanev1alpha2 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha2"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -33,15 +35,30 @@ List all mountable topics:
 				out.Exit(h)
 			}
 
-			pf, err := p.LoadVirtualProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(pf)
-			adm, err := adminapi.NewClient(cmd.Context(), fs, pf)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
-			response, err := adm.ListMountableTopics(cmd.Context())
-			out.MaybeDie(err, "unable to list mountable topics: %v", err)
-			printDetailedListMountable(p.Formatter, rpadminMountableTopicsToMountableTopicState(response.Topics), os.Stdout)
+			var mountableTopics []rpadmin.MountableTopic
+			if p.FromCloud {
+				cl, err := createDataplaneClient(p)
+				out.MaybeDieErr(err)
+
+				resp, err := cl.CloudStorage.ListMountableTopics(cmd.Context(), connect.NewRequest(&dataplanev1alpha2.ListMountableTopicsRequest{}))
+				out.MaybeDie(err, "unable to list mountable topics: %v", err)
+				if resp != nil {
+					mountableTopics = dataplaneToAdminMountableTopics(resp.Msg)
+				}
+			} else {
+				adm, err := adminapi.NewClient(cmd.Context(), fs, p)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+				response, err := adm.ListMountableTopics(cmd.Context())
+				out.MaybeDie(err, "unable to list mountable topics: %v", err)
+				mountableTopics = response.Topics
+			}
+
+			printDetailedListMountable(f, rpadminMountableTopicsToMountableTopicState(mountableTopics), os.Stdout)
 		},
 	}
 	p.InstallFormatFlag(cmd)
@@ -82,4 +99,17 @@ func rpadminMountableTopicsToMountableTopicState(in []rpadmin.MountableTopic) []
 		resp = append(resp, state)
 	}
 	return resp
+}
+
+func dataplaneToAdminMountableTopics(resp *dataplanev1alpha2.ListMountableTopicsResponse) []rpadmin.MountableTopic {
+	var topics []rpadmin.MountableTopic
+	if resp != nil {
+		for _, topic := range resp.Topics {
+			topics = append(topics, rpadmin.MountableTopic{
+				TopicLocation: topic.TopicLocation,
+				Topic:         topic.Name,
+			})
+		}
+	}
+	return topics
 }
