@@ -204,3 +204,20 @@ rp_test(
   LABELS datalake
   ARGS "-- -c 1"
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME record_multiplexer
+  SOURCES record_multiplexer_bench.cc
+  LIBRARIES
+    Seastar::seastar_perf_testing
+    Boost::unit_test_framework
+    v::cloud_io_utils
+    v::application
+    v::datalake_test_utils
+    v::iceberg_test_utils
+    v::schema
+    v::s3_imposter
+  ARGS "-c 1 --duration=1 --runs=1 --memory=4G"
+  LABELS datalake
+)
