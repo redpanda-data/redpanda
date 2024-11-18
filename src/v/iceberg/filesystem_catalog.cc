@@ -105,6 +105,12 @@ filesystem_catalog::load_table(const table_identifier& table_ident) {
     co_return std::move(table_res.value().tmeta);
 }
 
+ss::future<checked<void, catalog::errc>>
+filesystem_catalog::drop_table(const table_identifier&, bool) {
+    // TODO: implement
+    co_return outcome::success();
+}
+
 ss::future<checked<std::nullopt_t, catalog::errc>>
 filesystem_catalog::commit_txn(
   const table_identifier& table_ident, transaction txn) {

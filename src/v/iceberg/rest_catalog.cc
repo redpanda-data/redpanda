@@ -108,6 +108,20 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
       });
 }
 
+ss::future<checked<void, catalog::errc>>
+rest_catalog::drop_table(const table_identifier& table_ident, bool purge) {
+    auto rtc = create_rtc();
+    vlog(log.trace, "drop table {} requested, purge: {}", table_ident, purge);
+    auto h = co_await lock_.get_units();
+
+    auto res = co_await client_->drop_table(
+      table_ident.ns, table_ident.table, purge, rtc);
+    if (res.has_value()) {
+        co_return outcome::success();
+    }
+    co_return map_error("drop_table", res.error());
+}
+
 ss::future<checked<std::nullopt_t, errc>>
 rest_catalog::commit_txn(const table_identifier& t_id, transaction txn) {
     auto rtc = create_rtc();

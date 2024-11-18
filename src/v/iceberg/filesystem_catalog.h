@@ -88,6 +88,9 @@ public:
     ss::future<checked<table_metadata, errc>>
     load_table(const table_identifier& table_ident) final;
 
+    ss::future<checked<void, errc>>
+    drop_table(const table_identifier& table_ident, bool purge) final;
+
     ss::future<checked<std::nullopt_t, errc>>
     commit_txn(const table_identifier& table_ident, transaction) final;
 
