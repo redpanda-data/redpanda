@@ -194,7 +194,9 @@ public:
             auto* raft = node->raft().get();
             raft::state_machine_manager_builder builder;
             auto stm = builder.create_stm<coordinator_stm>(
-              datalake::datalake_log, raft);
+              datalake::datalake_log,
+              raft,
+              config::mock_binding<std::chrono::seconds>(1s));
             node->start(std::move(builder)).get();
             if (args.noop_commits) {
                 crds.at(id()) = std::make_unique<coordinator_node>(
