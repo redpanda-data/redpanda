@@ -26,13 +26,18 @@ class Descriptor;
 
 namespace datalake {
 
+struct wrapped_protobuf_descriptor {
+    std::reference_wrapper<const google::protobuf::Descriptor> descriptor;
+    // `descriptor` references an object owned by `schema_def`.
+    pandaproxy::schema_registry::protobuf_schema_definition schema_def;
+};
+
 // Represents an object that can be converted into an Iceberg schema.
 // NOTE: these aren't exactly just the schemas from the registry: Protobuf
 // schemas are FileDescriptors in the registry rather than Descriptors, and
 // require additional information to get the Descriptors.
-using resolved_schema = std::variant<
-  std::reference_wrapper<const google::protobuf::Descriptor>,
-  avro::ValidSchema>;
+using resolved_schema
+  = std::variant<wrapped_protobuf_descriptor, avro::ValidSchema>;
 
 struct resolved_type {
     // The resolved schema that corresponds to the type.

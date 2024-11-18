@@ -39,7 +39,7 @@ struct schema_translating_visitor {
     ppsr::schema_id id;
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
-    operator()(const ppsr::avro_schema_definition& avro_def) {
+    operator()(ppsr::avro_schema_definition&& avro_def) {
         const auto& avro_schema = avro_def();
         try {
             auto result = datalake::type_to_iceberg(avro_schema.root());
@@ -70,7 +70,7 @@ struct schema_translating_visitor {
         }
     }
     ss::future<checked<type_and_buf, type_resolver::errc>>
-    operator()(const ppsr::protobuf_schema_definition& pb_def) {
+    operator()(ppsr::protobuf_schema_definition&& pb_def) {
         const google::protobuf::Descriptor* d;
         proto_offsets_message_data offsets;
         try {
@@ -96,7 +96,7 @@ struct schema_translating_visitor {
             auto type = type_to_iceberg(*d).value();
             co_return type_and_buf{
               .type = resolved_type{
-                .schema = *d,
+                .schema = wrapped_protobuf_descriptor { *d, std::move(pb_def) },
                 .id = {.schema_id = id, .protobuf_offsets = std::move(offsets.protobuf_offsets)},
                 .type = std::move(type),
                 .type_name = d->name(),
@@ -112,7 +112,7 @@ struct schema_translating_visitor {
         }
     }
     ss::future<checked<type_and_buf, type_resolver::errc>>
-    operator()(const ppsr::json_schema_definition&) {
+    operator()(ppsr::json_schema_definition&&) {
         co_return type_and_buf::make_raw_binary(std::move(buf_no_id));
     }
 };
@@ -182,8 +182,8 @@ record_schema_resolver::resolve_buf_type(iobuf b) const {
         co_return errc::registry_error;
     }
     auto resolved_schema = std::move(schema_fut.get());
-    co_return co_await resolved_schema.visit(
-      schema_translating_visitor{std::move(buf_no_id), schema_id});
+    co_return co_await std::move(resolved_schema)
+      .visit(schema_translating_visitor{std::move(buf_no_id), schema_id});
 }
 
 } // namespace datalake
