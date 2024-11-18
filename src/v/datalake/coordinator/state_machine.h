@@ -15,7 +15,9 @@
 
 namespace datalake::coordinator {
 
-class coordinator_stm final : public raft::persisted_stm<> {
+using coordinator_stm_base = raft::persisted_stm_no_snapshot_at_offset<>;
+
+class coordinator_stm final : public coordinator_stm_base {
 public:
     static constexpr std::string_view name = "datalake_coordinator_stm";
     enum class errc {
@@ -60,7 +62,7 @@ protected:
 
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
-    ss::future<iobuf> take_snapshot(model::offset) final;
+    ss::future<iobuf> take_snapshot() final;
 
 private:
     // The deterministic state managed by this STM.
