@@ -734,3 +734,25 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "fetch_test",
+    timeout = "short",
+    srcs = [
+        "fetch_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/server",
+        "//src/v/model",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/resource_mgmt:io_priority",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
