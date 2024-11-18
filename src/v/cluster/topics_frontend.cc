@@ -181,6 +181,64 @@ std::vector<std::string_view> get_enterprise_features(
     return features;
 }
 
+cluster::allocation_request make_allocation_request(
+  const cluster::custom_assignable_topic_configuration& ca_cfg,
+  bool topic_aware) {
+    // no custom assignments, lets allocator decide based on partition count
+    const auto& tp_ns = ca_cfg.cfg.tp_ns;
+    cluster::allocation_request req(tp_ns);
+    if (!ca_cfg.has_custom_assignment()) {
+        req.partitions.reserve(ca_cfg.cfg.partition_count);
+        for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
+            req.partitions.emplace_back(
+              model::partition_id(p), ca_cfg.cfg.replication_factor);
+        }
+    } else {
+        req.partitions.reserve(ca_cfg.custom_assignments.size());
+        for (auto& cas : ca_cfg.custom_assignments) {
+            cluster::allocation_constraints constraints;
+            constraints.add(cluster::on_nodes(cas.replicas));
+
+            req.partitions.emplace_back(
+              cas.id, cas.replicas.size(), std::move(constraints));
+        }
+    }
+    if (topic_aware) {
+        req.existing_replica_counts = cluster::node2count_t{};
+    }
+    return req;
+}
+
+cluster::allocation_request make_allocation_request(
+  int16_t replication_factor,
+  const int32_t current_partitions_count,
+  std::optional<cluster::node2count_t> existing_replica_counts,
+  const cluster::create_partitions_configuration& cfg) {
+    const auto new_partitions_cnt = cfg.new_total_partition_count
+                                    - current_partitions_count;
+    cluster::allocation_request req(cfg.tp_ns);
+    req.existing_replica_counts = std::move(existing_replica_counts);
+    req.partitions.reserve(new_partitions_cnt);
+    for (auto p = 0; p < new_partitions_cnt; ++p) {
+        req.partitions.emplace_back(model::partition_id(p), replication_factor);
+    }
+    return req;
+}
+
+cluster::allocation_request make_allocation_request(
+  model::ntp ntp,
+  cluster::replication_factor tp_replication_factor,
+  const std::vector<model::node_id>& new_replicas) {
+    auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
+    cluster::allocation_request req(nt);
+    req.partitions.reserve(1);
+    cluster::allocation_constraints constraints;
+    constraints.add(cluster::on_nodes(new_replicas));
+    req.partitions.emplace_back(
+      ntp.tp.partition, tp_replication_factor, std::move(constraints));
+    return req;
+}
+
 } // namespace
 
 namespace cluster {
@@ -504,33 +562,6 @@ topic_result make_error_result(
         return {tp_ns, error, std::move(msg).value()};
     }
     return topic_result{tp_ns, error};
-}
-
-static allocation_request make_allocation_request(
-  const custom_assignable_topic_configuration& ca_cfg, bool topic_aware) {
-    // no custom assignments, lets allocator decide based on partition count
-    const auto& tp_ns = ca_cfg.cfg.tp_ns;
-    allocation_request req(tp_ns);
-    if (!ca_cfg.has_custom_assignment()) {
-        req.partitions.reserve(ca_cfg.cfg.partition_count);
-        for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
-            req.partitions.emplace_back(
-              model::partition_id(p), ca_cfg.cfg.replication_factor);
-        }
-    } else {
-        req.partitions.reserve(ca_cfg.custom_assignments.size());
-        for (auto& cas : ca_cfg.custom_assignments) {
-            allocation_constraints constraints;
-            constraints.add(on_nodes(cas.replicas));
-
-            req.partitions.emplace_back(
-              cas.id, cas.replicas.size(), std::move(constraints));
-        }
-    }
-    if (topic_aware) {
-        req.existing_replica_counts = node2count_t{};
-    }
-    return req;
 }
 
 topic_result topics_frontend::validate_topic_configuration(
@@ -1579,22 +1610,6 @@ topics_frontend::validate_shard(model::node_id node, uint32_t shard) const {
       });
 }
 
-static allocation_request make_allocation_request(
-  int16_t replication_factor,
-  const int32_t current_partitions_count,
-  std::optional<node2count_t> existing_replica_counts,
-  const create_partitions_configuration& cfg) {
-    const auto new_partitions_cnt = cfg.new_total_partition_count
-                                    - current_partitions_count;
-    allocation_request req(cfg.tp_ns);
-    req.existing_replica_counts = std::move(existing_replica_counts);
-    req.partitions.reserve(new_partitions_cnt);
-    for (auto p = 0; p < new_partitions_cnt; ++p) {
-        req.partitions.emplace_back(model::partition_id(p), replication_factor);
-    }
-    return req;
-}
-
 ss::future<topic_result> topics_frontend::do_create_partition(
   create_partitions_configuration p_cfg,
   model::timeout_clock::time_point timeout) {
@@ -2047,20 +2062,6 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
     move_topic_replicas_cmd cmd(topic, std::move(new_assignments));
 
     co_return co_await replicate_and_wait(_stm, _as, std::move(cmd), timeout);
-}
-
-allocation_request make_allocation_request(
-  model::ntp ntp,
-  replication_factor tp_replication_factor,
-  const std::vector<model::node_id>& new_replicas) {
-    auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
-    allocation_request req(nt);
-    req.partitions.reserve(1);
-    allocation_constraints constraints;
-    constraints.add(on_nodes(new_replicas));
-    req.partitions.emplace_back(
-      ntp.tp.partition, tp_replication_factor, std::move(constraints));
-    return req;
 }
 
 ss::future<result<ss::chunked_fifo<partition_assignment>>>
