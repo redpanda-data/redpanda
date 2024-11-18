@@ -19,6 +19,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, MetricSamples, Metr
 from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
+from rptest.utils.mode_checks import in_fips_environment
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
@@ -269,6 +270,7 @@ class RpkClusterTest(RedpandaTest):
             err_msg="The expiry metric should be positive with a valid license"
         )
 
+        expected_features = ['fips'] if in_fips_environment() else []
         expected_license = {
             'expires': "Jul 11 2122",
             'organization': 'redpanda-testing',
@@ -279,11 +281,12 @@ class RpkClusterTest(RedpandaTest):
             'license_expired': False,
             'license_status': 'valid',
             'license_violation': False,
-            'enterprise_features_in_use': [],
+            'enterprise_features_in_use': expected_features,
         }
 
         def compare_license():
             license = self._rpk.license_info()
+            self.redpanda.logger.debug(f"License response: {license}")
             if license is None or license == "{}":
                 return False
             return json.loads(license) == expected_license
