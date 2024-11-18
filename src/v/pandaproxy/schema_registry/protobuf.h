@@ -34,6 +34,11 @@ compatibility_result check_compatible(
   const protobuf_schema_definition& writer,
   verbose is_verbose = verbose::no);
 
+///\brief Returns a reference to the `Descriptor` at the offset specified by
+///`fields`.
+/// Note that the returned reference to is an object owned by
+/// `protobuf_schema_definition` and therefore should only be used while that
+/// object is alive.
 ::result<
   std::reference_wrapper<const google::protobuf::Descriptor>,
   kafka::error_code>
