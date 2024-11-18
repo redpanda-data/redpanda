@@ -307,7 +307,7 @@ namespace {
 
 security::license
 make_builtin_trial_license(security::license::clock::time_point start_time) {
-    auto expiry_time = start_time + std::chrono::days{45};
+    auto expiry_time = start_time + std::chrono::days{30};
     auto expiry = std::chrono::duration_cast<std::chrono::seconds>(
       expiry_time.time_since_epoch());
 
