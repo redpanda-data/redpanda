@@ -1321,6 +1321,15 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     KAFKA_KERBEROS_PORT = 9094
     ADMIN_ALTERNATE_PORT = 9647
 
+    GLOBAL_USE_STRESS_FIBER = 'enable_stress_fiber'
+    GLOBAL_NUM_STRESS_FIBERS = 'num_stress_fibers'
+    GLOBAL_STRESS_FIBER_MIN_MS = 'stress_fiber_min_ms'
+    GLOBAL_STRESS_FIBER_MAX_MS = 'stress_fiber_max_ms'
+    DEFAULT_USE_STRESS_FIBER = 'OFF'
+    DEFAULT_NUM_STRESS_FIBERS = 1
+    DEFAULT_STRESS_FIBER_MIN_MS = 100
+    DEFAULT_STRESS_FIBER_MAX_MS = 200
+
     CLUSTER_CONFIG_DEFAULTS = {
         'join_retry_timeout_ms': 200,
         'default_topic_partitions': 4,
@@ -1460,6 +1469,31 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         self._si_settings = si_settings
         self._extra_rp_conf = self._si_settings.update_rp_conf(
             self._extra_rp_conf)
+
+    def use_stress_fiber(self) -> bool:
+        """Return true if the test should run with the stress fiber."""
+        use_stress_fiber = self._context.globals.get(
+            self.GLOBAL_USE_STRESS_FIBER, self.DEFAULT_USE_STRESS_FIBER)
+        if use_stress_fiber == "ON":
+            return True
+        elif use_stress_fiber == "OFF":
+            return False
+
+        self.logger.warn(
+            f"{self.GLOBAL_USE_STRESS_FIBER} should be 'ON', or 'OFF'")
+        return False
+
+    def get_stress_fiber_params(self) -> Tuple[int, int, int]:
+        fibers = int(
+            self._context.globals.get(self.GLOBAL_NUM_STRESS_FIBERS,
+                                      self.DEFAULT_NUM_STRESS_FIBERS))
+        min_ms = int(
+            self._context.globals.get(self.GLOBAL_STRESS_FIBER_MIN_MS,
+                                      self.DEFAULT_STRESS_FIBER_MIN_MS))
+        max_ms = int(
+            self._context.globals.get(self.GLOBAL_STRESS_FIBER_MAX_MS,
+                                      self.DEFAULT_STRESS_FIBER_MAX_MS))
+        return (fibers, min_ms, max_ms)
 
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
@@ -2884,6 +2918,22 @@ class RedpandaService(RedpandaServiceBase):
                                          request_timeout_ms=30000,
                                          api_version_auto_timeout_ms=3000)
 
+        # Start stress fiber if requested
+        if self.use_stress_fiber():
+
+            def start_stress_fiber(node):
+                count, min_ms, max_ms = self.get_stress_fiber_params()
+                self.start_stress_fiber(node, count, min_ms, max_ms)
+
+            if first_start:
+                self.logger.info(
+                    f"Starting stress fiber for {len(to_start)} nodes")
+                self.for_nodes(to_start, start_stress_fiber)
+            else:
+                self.logger.info(
+                    f"Starting stress fiber for {len(self.nodes)} nodes")
+                self.for_nodes(self.nodes, start_stress_fiber)
+
     def write_crl_file(self, node: ClusterNode, ca: tls.CertificateAuthority):
         self.logger.info(
             f"Writing Redpanda node tls ca CRL file: {RedpandaService.TLS_CA_CRL_FILE}"
@@ -3010,6 +3060,14 @@ class RedpandaService(RedpandaServiceBase):
 
         # fall through
         return True
+
+    def start_stress_fiber(self, node, count, min_ms, max_ms):
+        """Start stress fiber"""
+        admin = Admin(self)
+        admin.stress_fiber_start(node=node,
+                                 num_fibers=count,
+                                 min_ms_per_scheduling_point=min_ms,
+                                 max_ms_per_scheduling_point=max_ms)
 
     def all_up(self):
         def check_node(node):
