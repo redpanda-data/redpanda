@@ -31,6 +31,8 @@ struct pending_entry
     // Offset of the control topic partition at which this data entry was added
     // to the state machine as a pending entry.
     model::offset added_pending_at;
+
+    pending_entry copy() const;
 };
 
 // State tracked per Kafka partition. Groups of files get added added to this
@@ -69,6 +71,8 @@ struct partition_state
     //
     // Is nullopt iff we have never committed any files to the table.
     std::optional<kafka::offset> last_committed;
+
+    partition_state copy() const;
 };
 
 // Tracks the state managed for each Kafka partition. Since data workers are
@@ -81,6 +85,8 @@ struct topic_state
 
     // Map from Redpanda partition id to the files pending per partition.
     chunked_hash_map<model::partition_id, partition_state> pid_to_pending_files;
+
+    topic_state copy() const;
 
     // TODO: add table-wide metadata like Kafka schema id, Iceberg table uuid,
     // etc.
@@ -95,6 +101,8 @@ struct topics_state
     // Map from the Redpanda topic to the state managed per topic, e.g. pending
     // files per partition.
     chunked_hash_map<model::topic, topic_state> topic_to_state;
+
+    topics_state copy() const;
 
     // Returns the state for the given partition.
     std::optional<std::reference_wrapper<const partition_state>>
