@@ -90,10 +90,11 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
         // Happens on unclean client disconnect, when io_iterator_consumer
         // gets fewer bytes than it wanted
         return "short read";
-    } catch (const net::parsing_exception&) {
+    } catch (const net::parsing_exception& e) {
         // Happens on unclean client disconnect, typically wrapping
-        // an out_of_range
-        return "parse error";
+        // an out_of_range.
+        // Also raised from the kafka protocol layer on bad header
+        return ssx::sformat("parse error: {}", e.what());
     } catch (const invalid_request_error& e) {
         if (std::strlen(e.what())) {
             return fmt::format("invalid request: {}", e.what());
