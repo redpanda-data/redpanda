@@ -7,10 +7,9 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "datalake/parquet_writer.h"
+#include "datalake/arrow_writer.h"
 
 #include "bytes/iobuf.h"
-#include "datalake/data_writer_interface.h"
 
 #include <arrow/array/array_base.h>
 #include <arrow/chunked_array.h>
@@ -22,7 +21,6 @@
 #include <parquet/arrow/writer.h>
 #include <parquet/properties.h>
 
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 

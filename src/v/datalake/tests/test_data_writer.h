@@ -19,7 +19,7 @@
 #include <memory>
 namespace datalake {
 
-class test_data_writer : public data_writer {
+class test_data_writer : public parquet_file_writer {
 public:
     explicit test_data_writer(
       const iceberg::struct_type& schema, bool return_error)
@@ -27,19 +27,18 @@ public:
       , _result{}
       , _return_error{return_error} {}
 
-    ss::future<data_writer_error> add_data_struct(
+    ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
         _result.row_count++;
-        data_writer_error status
-          = _return_error ? data_writer_error::parquet_conversion_error
-                          : data_writer_error::ok;
-        return ss::make_ready_future<data_writer_error>(status);
+        writer_error status = _return_error
+                                ? writer_error::parquet_conversion_error
+                                : writer_error::ok;
+        return ss::make_ready_future<writer_error>(status);
     }
 
-    ss::future<result<local_file_metadata, data_writer_error>>
-    finish() override {
-        return ss::make_ready_future<
-          result<local_file_metadata, data_writer_error>>(_result);
+    ss::future<result<local_file_metadata, writer_error>> finish() override {
+        return ss::make_ready_future<result<local_file_metadata, writer_error>>(
+          _result);
     }
 
 private:
@@ -47,12 +46,12 @@ private:
     local_file_metadata _result;
     bool _return_error;
 };
-class test_data_writer_factory : public data_writer_factory {
+class test_data_writer_factory : public parquet_file_writer_factory {
 public:
     explicit test_data_writer_factory(bool return_error)
       : _return_error{return_error} {}
 
-    ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
+    ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
     create_writer(const iceberg::struct_type& schema) override {
         co_return std::make_unique<test_data_writer>(
           std::move(schema), _return_error);

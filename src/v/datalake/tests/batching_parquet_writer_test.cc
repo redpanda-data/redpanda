@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/batching_parquet_writer.h"
+#include "datalake/local_parquet_file_writer.h"
 #include "datalake/tests/test_data.h"
 #include "iceberg/tests/value_generator.h"
 #include "iceberg/values.h"
@@ -30,23 +31,21 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
     std::filesystem::path full_path = tmp_dir.get_path() / file_path;
     int num_rows = 1000;
 
-    datalake::batching_parquet_writer writer(
-      test_schema(iceberg::field_required::no),
-      500,
-      1000000,
-      local_path(full_path));
+    local_parquet_file_writer file_writer(
+      local_path(full_path),
+      ss::make_shared<batching_parquet_writer_factory>(500, 100000));
 
-    writer.initialize().get();
+    file_writer.initialize(test_schema(iceberg::field_required::no)).get();
 
     for (int i = 0; i < num_rows; i++) {
         auto data = iceberg::tests::make_struct_value(
           iceberg::tests::value_spec{
             .forced_fixed_val = iobuf::from("Hello world")},
           test_schema(iceberg::field_required::no));
-        writer.add_data_struct(std::move(data), 1000).get();
+        file_writer.add_data_struct(std::move(data), 1000).get();
     }
 
-    auto result = writer.finish().get0();
+    auto result = file_writer.finish().get0();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().path, full_path);
     EXPECT_EQ(result.value().row_count, num_rows);
@@ -69,31 +68,6 @@ TEST(BatchingParquetWriterTest, WritesParquetFiles) {
 
     EXPECT_EQ(table->num_rows(), num_rows);
     EXPECT_EQ(table->num_columns(), 17);
-}
-
-TEST(BatchingParquetWriterTest, DeletesFileOnAbort) {
-    temporary_dir tmp_dir("batching_parquet_writer");
-    std::filesystem::path file_path = "test_file.parquet";
-    int num_rows = 1000;
-
-    datalake::batching_parquet_writer writer(
-      test_schema(iceberg::field_required::no),
-      500,
-      1000000,
-      local_path(tmp_dir.get_path() / file_path));
-
-    writer.initialize().get();
-
-    for (int i = 0; i < num_rows; i++) {
-        auto data = iceberg::tests::make_struct_value(
-          iceberg::tests::value_spec{
-            .forced_fixed_val = iobuf::from("Hello world")},
-          test_schema(iceberg::field_required::no));
-        writer.add_data_struct(std::move(data), 1000).get0();
-    }
-    writer.abort().get();
-    auto exists = ss::file_exists(file_path.c_str()).get();
-    EXPECT_FALSE(exists);
 }
 
 } // namespace datalake

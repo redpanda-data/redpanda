@@ -34,7 +34,7 @@ v_cc_library(
     batching_parquet_writer.cc
     catalog_schema_manager.cc
     data_writer_interface.cc
-    parquet_writer.cc
+    arrow_writer.cc
     record_multiplexer.cc
     record_schema_resolver.cc
     record_translator.cc
@@ -50,6 +50,7 @@ v_cc_library(
     translation_task.cc
     schema_parquet.cc
     values_parquet.cc
+    local_parquet_file_writer.cc
   DEPS
     v::cloud_io
     v::datalake_common

@@ -11,8 +11,8 @@
 #pragma once
 #include "base/outcome.h"
 #include "datalake/arrow_translator.h"
+#include "datalake/arrow_writer.h"
 #include "datalake/data_writer_interface.h"
-#include "datalake/parquet_writer.h"
 #include "iceberg/datatypes.h"
 
 #include <seastar/core/file.hh>
@@ -27,38 +27,30 @@ namespace datalake {
 // batching_parquet_writer ties together the low-level components for iceberg to
 // parquet translation to provide a high-level interface for creating parquet
 // files from iceberg::value. It:
-// 1. Opens a ss::file to store the results
-// 2. Accepts iceberg::value and collects them in an arrow_translator
-// 3. Once the row count or size threshold is reached it writes data to the
-//    file:
+// 1. Accepts iceberg::value and collects them in an arrow_translator
+// 2. Once the row count or size threshold is reached it writes data to the
+//    output stream:
 //    1. takes a chunk from the arrow_translator
 //    2. Adds the chunk to the parquet_writer
 //    3. Extracts iobufs from the parquet_writer
-//    4. Writes them to the open file
+//    4. Writes them to the stream
 // 4. When finish() is called it flushes all remaining data and closes the
-// files.
-class batching_parquet_writer : public data_writer {
+// stream.
+class batching_parquet_writer : public parquet_ostream {
 public:
     batching_parquet_writer(
       const iceberg::struct_type& schema,
       size_t row_count_threshold,
       size_t byte_count_threshold,
-      local_path output_file_path);
+      ss::output_stream<char> output_stream);
 
-    ss::future<checked<std::nullopt_t, data_writer_error>> initialize();
+    ss::future<writer_error>
+    add_data_struct(iceberg::struct_value data, size_t approx_size) override;
 
-    ss::future<data_writer_error>
-    add_data_struct(iceberg::struct_value data, int64_t approx_size) override;
-
-    ss::future<result<local_file_metadata, data_writer_error>>
-    finish() override;
-
-    // Close the file handle, delete any temporary data and clean up any other
-    // state.
-    ss::future<> abort();
+    ss::future<writer_error> finish() override;
 
 private:
-    ss::future<data_writer_error> write_row_group();
+    ss::future<writer_error> write_row_group();
 
     // translating
     arrow_translator _iceberg_to_arrow;
@@ -69,31 +61,20 @@ private:
     size_t _byte_count_threshold;
     size_t _row_count = 0;
     size_t _byte_count = 0;
-    size_t _total_row_count = 0;
-    size_t _total_bytes = 0;
-
     // Output
-    local_path _output_file_path;
-    ss::file _output_file;
     ss::output_stream<char> _output_stream;
 };
 
-class batching_parquet_writer_factory : public data_writer_factory {
+class batching_parquet_writer_factory : public parquet_ostream_factory {
 public:
     batching_parquet_writer_factory(
-      local_path base_directory,
-      ss::sstring file_name_prefix,
-      size_t row_count_threshold,
-      size_t byte_count_threshold);
+      size_t row_count_threshold, size_t byte_count_threshold);
 
-    ss::future<result<std::unique_ptr<data_writer>, data_writer_error>>
-    create_writer(const iceberg::struct_type& schema) override;
+    ss::future<std::unique_ptr<parquet_ostream>> create_writer(
+      const iceberg::struct_type& schema,
+      ss::output_stream<char> output) override;
 
 private:
-    local_path create_filename() const;
-
-    local_path _base_directory;
-    ss::sstring _file_name_prefix;
     size_t _row_count_threshold;
     size_t _byte_count_threshold;
 };

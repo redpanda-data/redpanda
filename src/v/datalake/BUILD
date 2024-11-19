@@ -159,6 +159,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "@seastar",
     ],
 )
 
@@ -454,5 +455,25 @@ redpanda_cc_library(
         ":conversion_outcome",
         "//src/v/iceberg:values",
         "//src/v/serde/parquet:value",
+    ],
+)
+
+redpanda_cc_library(
+    name = "local_parquet_file_writer",
+    srcs = [
+        "local_parquet_file_writer.cc",
+    ],
+    hdrs = [
+        "local_parquet_file_writer.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":logger",
+        ":writer",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "@seastar",
     ],
 )

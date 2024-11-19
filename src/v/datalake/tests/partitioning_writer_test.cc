@@ -68,7 +68,7 @@ TEST_P(PartitioningWriterExtraColumnsTest, TestSchemaHappyPath) {
     // Give the data to the partitioning writer.
     for (auto& v : source_vals) {
         auto err = writer.add_data(std::move(v), /*approx_size=*/0).get();
-        EXPECT_EQ(err, data_writer_error::ok);
+        EXPECT_EQ(err, writer_error::ok);
     }
 
     // The resulting files should match the number of hours the records were
@@ -104,7 +104,7 @@ TEST(PartitioningWriterTest, TestWriterError) {
                    val_with_timestamp(field, model::timestamp::now()),
                    /*approx_size=*/0)
                  .get();
-    EXPECT_EQ(err, data_writer_error::parquet_conversion_error);
+    EXPECT_EQ(err, writer_error::parquet_conversion_error);
 }
 
 TEST(PartitioningWriterTest, TestUnexpectedSchema) {
@@ -118,5 +118,5 @@ TEST(PartitioningWriterTest, TestUnexpectedSchema) {
                      unexpected_field_type, model::timestamp::now()),
                    /*approx_size=*/0)
                  .get();
-    EXPECT_EQ(err, data_writer_error::parquet_conversion_error);
+    EXPECT_EQ(err, writer_error::parquet_conversion_error);
 }

@@ -46,7 +46,7 @@ ss::future<
   checked<coordinator::translated_offset_range, translation_task::errc>>
 translation_task::translate(
   const model::ntp& ntp,
-  std::unique_ptr<data_writer_factory> writer_factory,
+  std::unique_ptr<parquet_file_writer_factory> writer_factory,
   model::record_batch_reader reader,
   const remote_path& remote_path_prefix,
   retry_chain_node& rcn,
