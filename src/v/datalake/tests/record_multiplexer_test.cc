@@ -287,7 +287,7 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestMissingSchema) {
     EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
 
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 4);
+    EXPECT_EQ(schema->highest_field_id(), 5);
 }
 
 TEST_F(RecordMultiplexerInvalidAppendTest, TestBadData) {
@@ -313,7 +313,7 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestBadData) {
     // shouldn't register the Avro schema -- instead we should see the default
     // schema.
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 4);
+    EXPECT_EQ(schema->highest_field_id(), 5);
 }
 
 TEST_F(RecordMultiplexerInvalidAppendTest, TestBadSchemaChange) {
