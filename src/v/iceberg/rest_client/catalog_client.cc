@@ -182,6 +182,25 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
     }
 }
 
+ss::future<expected<create_namespace_response>>
+catalog_client::create_namespace(
+  create_namespace_request req, retry_chain_node& rtc) {
+    auto token = co_await ensure_token(rtc);
+    if (!token.has_value()) {
+        co_return tl::unexpected(token.error());
+    }
+    auto http_request = namespaces{root_path()}
+                          .create()
+                          .with_bearer_auth(token.value())
+                          .with_content_type(json_content_type);
+
+    co_return (co_await perform_request(
+                 rtc, http_request, serialize_payload_as_json(req)))
+      .and_then(parse_json)
+      .and_then(
+        parse_as_expected("create_namespace", parse_create_namespace_response));
+}
+
 ss::future<expected<load_table_result>> catalog_client::create_table(
   const chunked_vector<ss::sstring>& ns,
   create_table_request req,
