@@ -93,12 +93,22 @@ datalake_manager::datalake_manager(
   , _sg(sg)
   , _effective_max_translator_buffered_data(
       std::min(memory_limit, max_translator_buffered_data))
-  , _parallel_translations(std::make_unique<ssx::semaphore>(
-      size_t(
-        std::floor(memory_limit / _effective_max_translator_buffered_data)),
-      "datalake_parallel_translations"))
   , _iceberg_commit_interval(
-      config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind()) {}
+      config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind()) {
+    vassert(memory_limit > 0, "Memory limit must be greater than 0");
+    auto max_parallel = static_cast<size_t>(
+      std::floor(memory_limit / _effective_max_translator_buffered_data));
+    vlog(
+      datalake_log.debug,
+      "Creating datalake manager with memory limit: {}, effective max "
+      "translator buffered data: {} and max parallel translations: {}",
+      memory_limit,
+      _effective_max_translator_buffered_data,
+      max_parallel);
+
+    _parallel_translations = std::make_unique<ssx::semaphore>(
+      size_t(max_parallel), "datalake_parallel_translations");
+}
 datalake_manager::~datalake_manager() = default;
 
 ss::future<> datalake_manager::start() {
