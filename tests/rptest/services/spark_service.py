@@ -12,6 +12,7 @@ from ducktape.services.service import Service
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyhive import hive
+from rptest.context import cloud_storage
 from rptest.services.redpanda import SISettings
 from rptest.tests.datalake.query_engine_base import QueryEngineType, QueryEngineBase
 import jinja2
@@ -37,13 +38,21 @@ class SparkService(Service, QueryEngineBase):
         --conf spark.sql.catalog.redpanda-iceberg-catalog.s3.endpoint={{ s3 }}
         {% endif %}""")
 
-    def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
+    def __init__(self, ctx, iceberg_catalog_rest_uri: str):
         super(SparkService, self).__init__(ctx, num_nodes=1)
         self.iceberg_catalog_rest_uri = iceberg_catalog_rest_uri
-        self.cloud_storage_access_key = si.cloud_storage_access_key
-        self.cloud_storage_secret_key = si.cloud_storage_secret_key
-        self.cloud_storage_region = si.cloud_storage_region
-        self.cloud_storage_api_endpoint = si.endpoint_url
+        self.credentials = cloud_storage.Credentials.from_context(ctx)
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            self.cloud_storage_access_key = self.credentials.access_key
+            self.cloud_storage_secret_key = self.credentials.secret_key
+            self.cloud_storage_region = self.credentials.region
+            self.cloud_storage_api_endpoint = self.credentials.endpoint
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported cloud storage type {type(self.credentials)}")
         self.spark_host: Optional[SparkService] = None
         self.spark_port = 10000
 

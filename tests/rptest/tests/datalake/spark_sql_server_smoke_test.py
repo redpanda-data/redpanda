@@ -27,9 +27,8 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
 
     def setUp(self):
         super().setUp()
-        si = self.redpanda.si_settings
         self.spark = SparkService(self.test_ctx,
-                                  self.catalog_service.catalog_url, si)
+                                  self.catalog_service.catalog_url)
         self.spark.start()
 
     def tearDown(self):
