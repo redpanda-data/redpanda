@@ -8,14 +8,13 @@
 # by the Apache License, Version 2.0
 
 from time import time
-from rptest.services.cluster import cluster
+
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_metrics import NodeMetrics
 
 
@@ -107,3 +106,9 @@ class NodeMetricsTest(RedpandaTest):
         self.redpanda.logger.info(
             f"Elapsed: {t1-t0} sec to first metrics, {t2-t1} to consume space metric"
         )
+
+        # Assert cache disk metrics match data disk metrics since it is the same disk in this test setup.
+        assert_lists_equal(self.node_metrics.disk_total_bytes(),
+                           self.node_metrics.cache_disk_total_bytes())
+        assert_lists_equal(self.node_metrics.disk_free_bytes(),
+                           self.node_metrics.cache_disk_free_bytes())
