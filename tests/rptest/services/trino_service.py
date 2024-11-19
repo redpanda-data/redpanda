@@ -69,6 +69,16 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
             extra_conf = self.dict_to_conf({"fs.native-s3.enabled": True})
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            extra_conf = self.dict_to_conf({
+                "fs.native-azure.enabled":
+                True,
+                "azure.auth-type":
+                "ACCESS_KEY",
+                "azure.access-key":
+                self.credentials.account_key,
+            })
         else:
             raise NotImplementedError(
                 f"Unsupported cloud storage credentials: {self.credentials}")
