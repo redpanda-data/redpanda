@@ -70,3 +70,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "key_test",
+    timeout = "short",
+    srcs = [
+        "key_tests.cc",
+    ],
+    deps = [
+        ":crypto_test_utils",
+        "//src/v/crypto",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
