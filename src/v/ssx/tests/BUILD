@@ -79,3 +79,18 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "work_queue_test",
+    timeout = "short",
+    srcs = [
+        "work_queue_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:work_queue",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
