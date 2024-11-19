@@ -24,20 +24,19 @@ class TrinoService(Service, QueryEngineBase):
     """Trino service for querying data generated in datalake."""
 
     TRINO_HOME = "/opt/trino"
-    TRINO_CONF_PATH = os.path.join(
-        TRINO_HOME, "/opt/trino/etc/catalog/redpanda.properties")
     PERSISTENT_ROOT = "/var/lib/trino"
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "trino_server.log")
+    TRINO_LOGGING_CONF = "io.trino=INFO\n"
+    TRINO_LOGGING_CONF_FILE = "/opt/trino/etc/log.properties"
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
 
-    ICEBERG_CONNECTOR_CONF = jinja2.Template("""
+    REDPANDA_CATALOG_PATH = "/opt/trino/etc/catalog/redpanda.properties"
+    REDPANDA_CATALOG_CONF = jinja2.Template("""
 connector.name=iceberg
 iceberg.catalog.type=rest
 iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 {{extra_conf}}
 """)
-    TRINO_LOGGING_CONF = "io.trino=INFO\n"
-    TRINO_LOGGING_CONF_FILE = "/opt/trino/etc/log.properties"
 
     def __init__(self, ctx, iceberg_catalog_rest_uri: str):
         super(TrinoService, self).__init__(ctx, num_nodes=1)
@@ -48,7 +47,7 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 
     def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(f"mkdir -p {TrinoService.PERSISTENT_ROOT}")
-        node.account.ssh(f"rm -f {TrinoService.TRINO_CONF_PATH}")
+        node.account.ssh(f"rm -f {TrinoService.REDPANDA_CATALOG_PATH}")
 
         extra_conf = ""
         if isinstance(self.credentials, cloud_storage.S3Credentials):
@@ -85,10 +84,11 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
 
         connector_config = dict(catalog_rest_uri=self.iceberg_catalog_rest_uri,
                                 extra_conf=extra_conf)
-        config_str = TrinoService.ICEBERG_CONNECTOR_CONF.render(
+        config_str = TrinoService.REDPANDA_CATALOG_CONF.render(
             connector_config)
         self.logger.debug(f"Using connector config: {config_str}")
-        node.account.create_file(TrinoService.TRINO_CONF_PATH, config_str)
+        node.account.create_file(TrinoService.REDPANDA_CATALOG_PATH,
+                                 config_str)
         # Create logger configuration
         node.account.ssh(f"rm -f {TrinoService.TRINO_LOGGING_CONF_FILE}")
         node.account.create_file(TrinoService.TRINO_LOGGING_CONF_FILE,
