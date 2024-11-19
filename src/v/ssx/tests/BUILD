@@ -94,6 +94,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "task_local_ptr_test",
+    timeout = "short",
+    srcs = [
+        "task_local_ptr_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:task_local",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/algorithm:container",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "when_all_test",
     timeout = "short",
