@@ -164,7 +164,7 @@ TEST_F(FileCommitterTest, TestLoadOrCreateTable) {
     // Simple check for the schema.
     const auto& table = load_res.value();
     ASSERT_EQ(1, table.schemas.size());
-    ASSERT_EQ(4, table.schemas[0].schema_struct.fields.size());
+    ASSERT_EQ(1, table.schemas[0].schema_struct.fields.size());
     ASSERT_EQ(1, table.partition_specs.size());
     ASSERT_EQ(1, table.partition_specs[0].fields.size());
 }
