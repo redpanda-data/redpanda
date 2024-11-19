@@ -23,11 +23,12 @@
 namespace datalake::coordinator {
 
 namespace {
+template<typename Res>
 void maybe_log_update_error(
   prefix_logger& log,
   update_key key,
   model::offset o,
-  const checked<std::nullopt_t, stm_update_error>& r) {
+  const checked<Res, stm_update_error>& r) {
     if (r.has_value()) {
         return;
     }

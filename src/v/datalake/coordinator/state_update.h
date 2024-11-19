@@ -86,8 +86,9 @@ struct topic_lifecycle_update
     static constexpr auto key{update_key::topic_lifecycle_update};
     auto serde_fields() { return std::tie(topic, revision, new_state); }
 
-    checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
-    checked<std::nullopt_t, stm_update_error> apply(topics_state&);
+    // returns true if the update actually changes anything
+    checked<bool, stm_update_error> can_apply(const topics_state&);
+    checked<bool, stm_update_error> apply(topics_state&);
 
     friend std::ostream& operator<<(std::ostream&, topic_lifecycle_update);
 

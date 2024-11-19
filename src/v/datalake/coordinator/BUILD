@@ -39,6 +39,7 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/base",
         "//src/v/datalake:logger",
+        "//src/v/datalake:schema_identifier",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sleep_abortable",
         "//src/v/storage:record_batch_builder",
@@ -216,6 +217,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":translated_offset_range",
+        "//src/v/datalake:schema_identifier",
         "//src/v/datalake:types",
         "//src/v/datalake/coordinator:state",
         "//src/v/model",
@@ -318,6 +320,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/container:fragmented_vector",
         "//src/v/datalake:logger",
+        "//src/v/datalake:schema_identifier",
         "//src/v/datalake:types",
         "//src/v/model",
         "//src/v/raft",

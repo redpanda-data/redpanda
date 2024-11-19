@@ -220,30 +220,78 @@ mark_files_committed_update::apply(topics_state& state) {
     return std::nullopt;
 }
 
-checked<std::nullopt_t, stm_update_error>
+checked<bool, stm_update_error>
 topic_lifecycle_update::can_apply(const topics_state& state) {
     auto topic_it = state.topic_to_state.find(topic);
     if (topic_it == state.topic_to_state.end()) {
-        return stm_update_error{fmt::format("topic {} not found", topic)};
+        return true;
     }
-    if (topic_it->second.revision != revision) {
+
+    auto& cur_state = topic_it->second;
+    if (revision < cur_state.revision) {
         return stm_update_error{fmt::format(
-          "topic {} revision mismatch, expected {}, got {}",
+          "topic {} rev {}: lifecycle update with obsolete revision {}",
           topic,
-          revision,
-          topic_it->second.revision)};
+          cur_state.revision,
+          revision)};
     }
-    return std::nullopt;
+
+    if (revision > cur_state.revision) {
+        if (
+          cur_state.lifecycle_state != topic_state::lifecycle_state_t::purged) {
+            return stm_update_error{fmt::format(
+              "topic {} rev {} not fully purged, but already trying to "
+              "register revision {}",
+              topic,
+              cur_state.revision,
+              revision)};
+        }
+
+        return true;
+    }
+
+    // after this point revision matches
+
+    if (new_state < cur_state.lifecycle_state) {
+        return stm_update_error{fmt::format(
+          "topic {} rev {} invalid lifecycle state transition",
+          topic,
+          cur_state.revision)};
+    }
+
+    if (new_state > cur_state.lifecycle_state) {
+        if (
+          new_state == topic_state::lifecycle_state_t::purged
+          && cur_state.has_pending_entries()) {
+            return stm_update_error{fmt::format(
+              "can't purge topic {} rev {}: still has pending entries",
+              topic,
+              cur_state.revision)};
+        }
+        return true;
+    }
+
+    // no-op
+    return false;
 }
 
-checked<std::nullopt_t, stm_update_error>
+checked<bool, stm_update_error>
 topic_lifecycle_update::apply(topics_state& state) {
-    auto allowed = can_apply(state);
-    if (allowed.has_error()) {
-        return allowed.error();
+    auto check_res = can_apply(state);
+    if (check_res.has_error()) {
+        return check_res.error();
     }
-    state.topic_to_state[topic].lifecycle_state = new_state;
-    return std::nullopt;
+    if (!check_res.value()) {
+        return false;
+    }
+    auto& t_state = state.topic_to_state[topic];
+    t_state.revision = revision;
+    t_state.lifecycle_state = new_state;
+    if (new_state == topic_state::lifecycle_state_t::purged) {
+        // release memory
+        t_state.pid_to_pending_files = decltype(t_state.pid_to_pending_files){};
+    }
+    return true;
 }
 
 std::ostream& operator<<(std::ostream& o, topic_lifecycle_update u) {

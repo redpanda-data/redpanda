@@ -99,6 +99,8 @@ struct topic_state
     friend std::ostream&
     operator<<(std::ostream&, topic_state::lifecycle_state_t);
 
+    bool has_pending_entries() const;
+
     // Topic revision
     model::revision_id revision;
     // Map from Redpanda partition id to the files pending per partition.
