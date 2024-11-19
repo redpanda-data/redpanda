@@ -27,6 +27,9 @@ class IcebergRESTCatalog(Service):
     S3 based (minio) implementaion by setting org.apache.iceberg.aws.s3.S3FileIO.
     """
 
+    # Available after start. Use catalog_url property to access.
+    _catalog_url: Optional[str] = None
+
     PERSISTENT_ROOT = "/var/lib/iceberg_rest/"
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "iceberg_rest_server.log")
     JAR = "iceberg-rest-catalog-all.jar"
@@ -91,7 +94,7 @@ class IcebergRESTCatalog(Service):
         #
         # Trino <-> REST server (HadoopCatalog) <-> S3
         # Trino <-> REST server (JDBC Catalog) <-> local sqllite DB.
-        self.catalog_url = None
+        self._catalog_url = None
         self.db_file = None
 
     def compute_warehouse_path(self):
@@ -154,7 +157,6 @@ class IcebergRESTCatalog(Service):
             1>> {IcebergRESTCatalog.LOG_FILE} 2>> {IcebergRESTCatalog.LOG_FILE} &"
 
     def client(self, catalog_name="default"):
-        assert self.catalog_url, "Catalog not started"
         conf = dict()
         conf["uri"] = self.catalog_url
 
@@ -227,7 +229,7 @@ class IcebergRESTCatalog(Service):
             f"Starting Iceberg REST catalog service on {node.name} with command {cmd}"
         )
         node.account.ssh(cmd, allow_fail=False)
-        self.catalog_url = f"http://{node.account.hostname}:8181"
+        self._catalog_url = f"http://{node.account.hostname}:8181"
         self.wait(timeout_sec=30)
 
     def wait_node(self, node, timeout_sec=None):
@@ -249,7 +251,6 @@ class IcebergRESTCatalog(Service):
         return True
 
     def stop_node(self, node, allow_fail=False, **_):
-
         node.account.kill_java_processes(IcebergRESTCatalog.JAR,
                                          allow_fail=allow_fail)
 
@@ -266,6 +267,11 @@ class IcebergRESTCatalog(Service):
         self.stop_node(node, allow_fail=True)
         node.account.remove(IcebergRESTCatalog.PERSISTENT_ROOT,
                             allow_fail=True)
+
+    @property
+    def catalog_url(self) -> str:
+        assert self._catalog_url, "URL not available because service is not started"
+        return self._catalog_url
 
     @staticmethod
     def dict_to_xml_properties(d: dict[str, Optional[str | bool]]):
