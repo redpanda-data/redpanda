@@ -26,7 +26,10 @@ struct_type schemaless_struct_type() {
       nested_field::create(5, "value", field_required::no, binary_type{}));
     struct_type res;
     res.fields.emplace_back(nested_field::create(
-      1, "redpanda", field_required::yes, std::move(system_fields)));
+      1,
+      ss::sstring{rp_struct_name},
+      field_required::yes,
+      std::move(system_fields)));
 
     return res;
 }
