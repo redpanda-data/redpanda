@@ -70,15 +70,6 @@ iobuf encode_pb_offsets(const std::vector<int32_t>& offsets) {
     }
     return buf;
 }
-
-// Checks that the given resolved buffer has no schema, and just returns a
-// single binary column that matches the input iobuf.
-void check_no_schema(const type_and_buf& resolved, const iobuf& expected) {
-    EXPECT_FALSE(resolved.type.has_value());
-
-    // The value should match the expected buf.
-    ASSERT_EQ(resolved.parsable_buf, expected);
-}
 } // namespace
 
 class RecordSchemaResolverTest : public ::testing::Test {
@@ -244,9 +235,8 @@ TEST_F(RecordSchemaResolverTest, TestMissingMagic) {
     buf.append(generate_dummy_body());
     auto resolver = record_schema_resolver(*sr);
     auto res = resolver.resolve_buf_type(buf.copy()).get();
-    ASSERT_FALSE(res.has_error());
-    const auto& resolved_buf = res.value();
-    ASSERT_NO_FATAL_FAILURE(check_no_schema(resolved_buf, buf));
+    ASSERT_TRUE(res.has_error());
+    ASSERT_EQ(res.error(), type_resolver::errc::bad_input);
 }
 
 TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
