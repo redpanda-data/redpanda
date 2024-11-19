@@ -88,9 +88,9 @@ class RestCatalogConnectionTest(RedpandaTest):
         return producer
 
     @cluster(num_nodes=5)
-    @matrix(storage_type=supported_storage_types(),
+    @matrix(cloud_storage_type=supported_storage_types(),
             use_serde_parquet=[False, True])
-    def test_redpanda_connection_to_rest_catalog(self, storage_type,
+    def test_redpanda_connection_to_rest_catalog(self, cloud_storage_type,
                                                  use_serde_parquet):
 
         catalog = self.catalog_service.client()
