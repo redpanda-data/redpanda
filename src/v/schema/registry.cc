@@ -100,10 +100,15 @@ public:
 };
 } // namespace
 
-ss::future<ppsr::valid_schema>
+ss::future<std::optional<ppsr::valid_schema>>
 registry::get_valid_schema(ppsr::schema_id schema_id) const {
     auto reader = co_await getter();
-    auto schema_def = co_await reader->get_schema_definition(schema_id);
+    auto schema_def_opt = co_await reader->maybe_get_schema_definition(
+      schema_id);
+    if (!schema_def_opt.has_value()) {
+        co_return std::nullopt;
+    }
+    auto& schema_def = *schema_def_opt;
     auto schema_type = schema_def.type();
     switch (schema_type) {
     case ppsr::schema_type::json: {
