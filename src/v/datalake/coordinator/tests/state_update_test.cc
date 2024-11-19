@@ -77,11 +77,6 @@ void check_commit_doesnt_apply(
 TEST(StateUpdateTest, TestAddFile) {
     topics_state state;
 
-    // We can't add files to a topic or partition that isn't yet tracked.
-    ASSERT_TRUE(
-      add_files_update::build(state, tp, rev, make_pending_files({{0, 100}}))
-        .has_error());
-
     // create table state
     ASSERT_FALSE(
       apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
@@ -232,4 +227,87 @@ TEST(StateUpdateTest, TestMarkCommitted) {
             .apply(state);
     EXPECT_FALSE(res.has_error());
     ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 220, {}));
+}
+
+TEST(StateUpdateTest, TestLifecycle) {
+    topics_state state;
+
+    // We can't add files to a topic or partition that isn't yet tracked.
+    ASSERT_FALSE(
+      add_files_update::build(state, tp, rev, make_pending_files({{0, 100}}))
+        .has_value());
+
+    auto rev2 = model::revision_id{345};
+    auto rev3 = model::revision_id{678};
+
+    ASSERT_TRUE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::live)
+        .has_value());
+
+    // files for obsolete revision can't be added
+    ASSERT_FALSE(
+      add_files_update::build(
+        state, tp, rev, make_pending_files({{0, 100}}, /*with_file=*/true))
+        .has_value());
+
+    // add files
+    {
+        auto upd = add_files_update::build(
+          state, tp, rev2, make_pending_files({{0, 100}}, /*with_file=*/true));
+        ASSERT_TRUE(upd.has_value());
+        ASSERT_TRUE(upd.value().apply(state, model::offset{}).has_value());
+    }
+
+    // can't go back to obsolete revision
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_value());
+
+    // can't go to the next revision as well without purging first
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev3, topic_state::lifecycle_state_t::live)
+        .has_value());
+
+    // state transitions are idempotent
+    ASSERT_TRUE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::live)
+        .has_value());
+
+    // can transition to closed
+    ASSERT_TRUE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::closed)
+        .has_value());
+    // but can't go back to live
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::live)
+        .has_value());
+
+    // can't add new files after topic has been closed
+    ASSERT_FALSE(
+      add_files_update::build(
+        state, tp, rev2, make_pending_files({{100, 200}}, /*with_file=*/true))
+        .has_value());
+
+    // can't transition to purged while files are still pending
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::purged)
+        .has_value());
+
+    {
+        auto upd = mark_files_committed_update::build(
+          state, tp, rev2, kafka::offset{100});
+        ASSERT_TRUE(upd.has_value());
+        ASSERT_TRUE(upd.value().apply(state).has_value());
+    }
+
+    // now we can transition to purged
+    ASSERT_TRUE(
+      apply_lc_transition(state, rev2, topic_state::lifecycle_state_t::purged)
+        .has_value());
+    ASSERT_EQ(state.topic_to_state.at(topic).pid_to_pending_files.size(), 0);
+
+    // ...and to the next revision, even straight to the closed state
+    ASSERT_TRUE(
+      apply_lc_transition(state, rev3, topic_state::lifecycle_state_t::closed)
+        .has_value());
 }
