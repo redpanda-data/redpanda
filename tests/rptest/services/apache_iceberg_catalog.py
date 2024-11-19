@@ -95,11 +95,18 @@ class IcebergRESTCatalog(Service):
         self.db_file = None
 
     def compute_warehouse_path(self):
-        s3_prefix = "s3"
-        if self.filesystem_wrapper_mode:
-            # For hadoop catalog compatibility
-            s3_prefix = "s3a"
-        self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
+        if isinstance(self.credentials,
+                      cloud_storage.S3Credentials) or isinstance(
+                          self.credentials,
+                          cloud_storage.AWSInstanceMetadataCredentials):
+            s3_prefix = "s3"
+            if self.filesystem_wrapper_mode:
+                # For hadoop catalog compatibility
+                s3_prefix = "s3a"
+            self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            self.cloud_storage_warehouse = f"abfs://{self.cloud_storage_bucket}@{self.credentials.endpoint}/{self.cloud_storage_catalog_prefix}"
 
     def set_filesystem_wrapper_mode(self, mode: bool):
         self.filesystem_wrapper_mode = mode
@@ -159,6 +166,14 @@ class IcebergRESTCatalog(Service):
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
             pass
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            # Legancy pyiceberg https://github.com/apache/iceberg-python/issues/866
+            conf["adlfs.account-name"] = self.credentials.account_name
+            conf["adlfs.account-key"] = self.credentials.account_key
+            # Modern pyiceberg https://github.com/apache/iceberg-python/issues/866
+            conf["adls.account-name"] = self.credentials.account_name
+            conf["alds.account-key"] = self.credentials.account_key
         else:
             raise ValueError(
                 f"Unsupported credential type: {type(self.credentials)}")
@@ -189,6 +204,14 @@ class IcebergRESTCatalog(Service):
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
             pass
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            extra_config += self.dict_to_xml_properties({
+                f"fs.azure.account.auth.type.{self.credentials.account_name}.dfs.core.windows.net":
+                "SharedKey",
+                f"fs.azure.account.key.{self.credentials.account_name}.dfs.core.windows.net":
+                self.credentials.account_key,
+            })
         else:
             raise ValueError(
                 f"Unsupported credential type: {type(self.credentials)}")
