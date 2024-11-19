@@ -103,7 +103,7 @@ struct task_counter {
 
 } // namespace
 
-std::vector<int> make_container(size_t elems, std::vector<int>) {
+std::vector<int> make_container(int elems, std::vector<int>) {
     std::vector<int> ret;
     for (int i = 0; i < elems; i++) {
         ret.push_back(i);
@@ -112,7 +112,7 @@ std::vector<int> make_container(size_t elems, std::vector<int>) {
 }
 
 std::unordered_map<int, int>
-make_container(size_t elems, std::unordered_map<int, int>) {
+make_container(int elems, std::unordered_map<int, int>) {
     std::unordered_map<int, int> ret;
     for (int i = 0; i < elems; i++) {
         ret[i] = i;
@@ -124,7 +124,7 @@ template<typename T>
 struct AsyncAlgo : public testing::Test {
     using container = T;
 
-    static T make(size_t size) { return make_container(size, T{}); }
+    static T make(int size) { return make_container(size, T{}); }
 };
 
 // using container_types = ::testing::Types<std::vector<int>>;
