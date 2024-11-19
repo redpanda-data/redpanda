@@ -94,3 +94,18 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "event_test",
+    timeout = "short",
+    srcs = [
+        "event_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:event",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
