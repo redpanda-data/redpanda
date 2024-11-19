@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "future-util_test",
@@ -209,5 +209,19 @@ redpanda_cc_gtest(
         "//src/v/utils:move_canary",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "thread_worker_bench",
+    timeout = "short",
+    srcs = [
+        "thread_worker_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:thread_worker",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
