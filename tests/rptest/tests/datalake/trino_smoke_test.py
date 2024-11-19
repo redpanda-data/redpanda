@@ -27,9 +27,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
 
     def setUp(self):
         super().setUp()
-        si = self.redpanda.si_settings
         self.trino = TrinoService(self.test_ctx,
-                                  self.catalog_service.catalog_url, si)
+                                  self.catalog_service.catalog_url)
         self.trino.start()
 
     def tearDown(self):
