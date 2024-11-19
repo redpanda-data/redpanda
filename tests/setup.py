@@ -47,6 +47,7 @@ setup(
         'jsonschema==4.10.0',
         'polaris.management@git+https://github.com/apache/polaris.git@1a6b3eb3963355f78c5ca916cc1d66ecd1493092#&subdirectory=regtests/client/python',
         "pyiceberg==0.7.1",
+        "adlfs==2024.7.0",
         "pyarrow",
         "pandas",
         "pyparsing>=3.1.0",
