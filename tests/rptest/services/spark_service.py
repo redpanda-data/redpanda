@@ -44,6 +44,9 @@ class SparkService(Service, QueryEngineBase):
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
             pass
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            pass
         else:
             raise ValueError(
                 f"Unsupported cloud storage type {type(self.credentials)}")
@@ -78,6 +81,16 @@ class SparkService(Service, QueryEngineBase):
             conf_args.update({
                 "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
                 "org.apache.iceberg.aws.s3.S3FileIO",
+            })
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            conf_args.update({
+                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
+                "org.apache.iceberg.azure.adlsv2.ADLSFileIO",
+                "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.name":
+                self.credentials.account_name,
+                "spark.sql.catalog.redpanda-iceberg-catalog.adls.auth.shared-key.account.key":
+                self.credentials.account_key,
             })
         else:
             raise ValueError(
