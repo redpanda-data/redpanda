@@ -40,6 +40,10 @@ class registry;
 
 namespace datalake {
 
+namespace coordinator {
+class catalog_factory;
+} // namespace coordinator
+
 /*
  * Per shard instance responsible for launching and synchronizing all datalake
  * related tasks like file format translation, frontend etc.
@@ -57,7 +61,7 @@ public:
       ss::sharded<features::feature_table>*,
       ss::sharded<coordinator::frontend>*,
       ss::sharded<cloud_io::remote>*,
-      std::unique_ptr<iceberg::catalog>,
+      std::unique_ptr<coordinator::catalog_factory>,
       pandaproxy::schema_registry::api* schema_registry,
       ss::sharded<ss::abort_source>*,
       cloud_storage_clients::bucket_name,
@@ -87,6 +91,7 @@ private:
     ss::sharded<coordinator::frontend>* _coordinator_frontend;
     std::unique_ptr<datalake::cloud_data_io> _cloud_data_io;
     std::unique_ptr<schema::registry> _schema_registry;
+    std::unique_ptr<coordinator::catalog_factory> _catalog_factory;
     std::unique_ptr<iceberg::catalog> _catalog;
     std::unique_ptr<datalake::schema_manager> _schema_mgr;
     std::unique_ptr<datalake::type_resolver> _type_resolver;

@@ -24,9 +24,28 @@ namespace datalake::coordinator {
  * The method always accept the cloud storage primitives to be able to create a
  * filesystem catalog if required.
  */
-std::unique_ptr<iceberg::catalog> create_catalog(
+ss::future<std::unique_ptr<iceberg::catalog>> create_catalog(
   cloud_io::remote& remote,
   const cloud_storage_clients::bucket_name& bucket_name,
   config::configuration& cluster_configuration);
+
+class catalog_factory {
+public:
+    catalog_factory(
+      cloud_io::remote& io,
+      cloud_storage_clients::bucket_name bucket_name,
+      config::configuration& cluster_configuration)
+      : _io(io)
+      , _bucket(std::move(bucket_name))
+      , _cfg(cluster_configuration) {}
+
+    ss::future<std::unique_ptr<iceberg::catalog>>
+      make_catalog(ss::sstring) const;
+
+private:
+    cloud_io::remote& _io;
+    const cloud_storage_clients::bucket_name _bucket;
+    config::configuration& _cfg;
+};
 
 } // namespace datalake::coordinator

@@ -1436,9 +1436,8 @@ void application::wire_up_runtime_services(
           std::ref(raft_group_manager),
           std::ref(partition_manager),
           ss::sharded_parameter(
-            [bucket](
-              cloud_io::remote& remote) -> std::unique_ptr<iceberg::catalog> {
-                return datalake::coordinator::create_catalog(
+            [bucket](cloud_io::remote& remote) {
+                return std::make_unique<datalake::coordinator::catalog_factory>(
                   remote, *bucket, config::shard_local_cfg());
             },
             std::ref(cloud_io)),
@@ -1472,7 +1471,7 @@ void application::wire_up_runtime_services(
           &cloud_io,
           ss::sharded_parameter(
             [bucket](cloud_io::remote& remote) {
-                return datalake::coordinator::create_catalog(
+                return std::make_unique<datalake::coordinator::catalog_factory>(
                   remote, *bucket, config::shard_local_cfg());
             },
             std::ref(cloud_io)),
