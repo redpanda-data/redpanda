@@ -95,8 +95,8 @@ FIXTURE_TEST(test_audit_init_phase, kafka_client_fixture) {
     /// with auditing disabled, calls to enqueue should be no-ops
     const auto n_events = pending_audit_events(audit_mgr.local()).get();
     audit_mgr
-      .invoke_on_all([](sa::audit_log_manager& m) {
-          for (auto i = 0; i < 20; ++i) {
+      .invoke_on_all([]([[maybe_unused]] sa::audit_log_manager& m) {
+          for ([[maybe_unused]] int i = 0; i < 20; ++i) {
               BOOST_ASSERT(m.enqueue_authn_event(make_random_authn_options()));
           }
       })

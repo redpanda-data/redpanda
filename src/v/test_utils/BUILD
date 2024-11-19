@@ -1,6 +1,25 @@
 load("//bazel:test.bzl", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
+    name = "fixture",
+    hdrs = [
+        "async.h",
+        "fixture.h",
+        "logs.h",
+        "test_macros.h",
+        "tmp_dir.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/model",
+        "//src/v/storage",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "gtest",
     srcs = [
         "gtest_main.cc",
@@ -16,9 +35,7 @@ redpanda_test_cc_library(
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/base",
-        "//src/v/model",
-        "//src/v/storage",
+        ":fixture",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",
@@ -41,9 +58,7 @@ redpanda_test_cc_library(
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/base",
-        "//src/v/model",
-        "//src/v/storage",
+        "//src/v/test_utils:fixture",
         "@seastar//:testing",
     ],
 )
