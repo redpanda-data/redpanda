@@ -203,9 +203,9 @@ tm_stm::do_update_tx(tx_metadata tx, model::term_id term) {
     if (replicate_result != tm_stm::op_status::success) {
         vlog(
           _ctx_log.warn,
-          "[tx_id={}] error replicating tx update: {}",
+          "[tx_id={}] error replicating tx update - {}",
           tx_id,
-          tx);
+          replicate_result);
 
         co_return replicate_result;
     }
