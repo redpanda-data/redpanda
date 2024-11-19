@@ -78,6 +78,22 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "watchdog_test",
+    timeout = "short",
+    srcs = [
+        "watchdog_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:watchdog",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "when_all_test",
     timeout = "short",
