@@ -103,7 +103,7 @@ struct schema_translating_visitor {
     }
     ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(ppsr::json_schema_definition&&) {
-        co_return type_and_buf::make_raw_binary(std::move(buf_no_id));
+        co_return type_resolver::errc::bad_input;
     }
 };
 
@@ -144,12 +144,17 @@ record_schema_resolver::resolve_buf_type(iobuf b) const {
           datalake_log.trace,
           "Error parsing schema ID; using binary type: {}",
           res.error());
-        co_return type_and_buf::make_raw_binary(std::move(b));
+        co_return errc::bad_input;
     }
     auto schema_id_res = std::move(res.value());
     auto schema_id = schema_id_res.schema_id;
     auto buf_no_id = std::move(schema_id_res.shared_message_data);
 
+    if (!sr_.is_enabled()) {
+        vlog(datalake_log.warn, "Schema registry is not enabled");
+        // TODO: should we treat this as transient?
+        co_return errc::translation_error;
+    }
     // TODO: It'd be nice to cache these -- translation interval instills a
     // natural limit to concurrency so a cache wouldn't grow huge.
     auto schema_fut = co_await ss::coroutine::as_future(
@@ -167,7 +172,7 @@ record_schema_resolver::resolve_buf_type(iobuf b) const {
           datalake_log.trace,
           "Schema ID {} not in registry; using binary type",
           schema_id);
-        co_return type_and_buf::make_raw_binary(std::move(b));
+        co_return errc::bad_input;
     }
     co_return co_await std::move(*resolved_schema)
       .visit(schema_translating_visitor{std::move(buf_no_id), schema_id});
