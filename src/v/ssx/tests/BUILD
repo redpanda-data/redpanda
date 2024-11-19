@@ -109,3 +109,21 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "async_algorithm_test",
+    timeout = "short",
+    srcs = [
+        "async_algorithm_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:async_algorithm",
+        "//src/v/ssx:async_clear",
+        "//src/v/ssx:future_util",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:move_canary",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
