@@ -23,4 +23,9 @@ ss::sstring table::resource_name() const {
     return fmt::format("namespaces/{}/tables", _namespace);
 }
 
+namespaces::namespaces(std::string_view root_url)
+  : rest_entity(root_url) {}
+
+ss::sstring namespaces::resource_name() const { return "namespaces"; }
+
 } // namespace iceberg::rest_client

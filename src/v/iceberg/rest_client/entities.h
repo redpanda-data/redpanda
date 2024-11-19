@@ -26,4 +26,10 @@ private:
     ss::sstring _namespace;
 };
 
+struct namespaces : public http::rest_client::rest_entity {
+    explicit namespaces(std::string_view root_url);
+
+    ss::sstring resource_name() const final;
+};
+
 } // namespace iceberg::rest_client
