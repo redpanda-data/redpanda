@@ -84,8 +84,9 @@ class DatalakeE2ETests(RedpandaTest):
 
     @cluster(num_nodes=4)
     @matrix(storage_type=supported_storage_types(),
-            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO])
-    def test_avro_schema(self, storage_type, query_engine):
+            query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
+            use_serde_parquet=[False, True])
+    def test_avro_schema(self, storage_type, query_engine, use_serde_parquet):
         count = 100
         table_name = f"redpanda.{self.topic_name}"
 
