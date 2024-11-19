@@ -10,13 +10,13 @@
 import os
 from typing import Optional
 
+import jinja2
 from ducktape.services.service import Service
-from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 from pyhive import trino
-from rptest.services.redpanda import SISettings
+
+from rptest.context import cloud_storage
 from rptest.services.spark_service import QueryEngineBase
-import jinja2
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 
 
@@ -34,41 +34,47 @@ class TrinoService(Service, QueryEngineBase):
 connector.name=iceberg
 iceberg.catalog.type=rest
 iceberg.rest-catalog.uri={{ catalog_rest_uri }}
-fs.native-s3.enabled=true
-{%- if s3_region %}
-s3.region={{ s3_region }}
-{%- endif %}
-s3.path-style-access=true
-{%- if s3_endpoint %}
-s3.endpoint={{ s3_endpoint }}
-{%- endif %}
-{%- if s3_access_key %}
-s3.aws-access-key={{ s3_access_key }}
-{%- endif %}
-{%- if s3_secret_key %}
-s3.aws-secret-key={{ s3_secret_key }}
-{%- endif %}""")
+{{extra_conf}}
+""")
     TRINO_LOGGING_CONF = "io.trino=INFO\n"
     TRINO_LOGGING_CONF_FILE = "/opt/trino/etc/log.properties"
 
-    def __init__(self, ctx, iceberg_catalog_rest_uri: str, si: SISettings):
+    def __init__(self, ctx, iceberg_catalog_rest_uri: str):
         super(TrinoService, self).__init__(ctx, num_nodes=1)
         self.iceberg_catalog_rest_uri = iceberg_catalog_rest_uri
-        self.cloud_storage_access_key = si.cloud_storage_access_key
-        self.cloud_storage_secret_key = si.cloud_storage_secret_key
-        self.cloud_storage_region = si.cloud_storage_region
-        self.cloud_storage_api_endpoint = si.endpoint_url
+        self.credentials = cloud_storage.Credentials.from_context(ctx)
         self.trino_host: Optional[str] = None
         self.trino_port = 8083
 
     def start_node(self, node, timeout_sec=120, **kwargs):
         node.account.ssh(f"mkdir -p {TrinoService.PERSISTENT_ROOT}")
         node.account.ssh(f"rm -f {TrinoService.TRINO_CONF_PATH}")
+
+        extra_conf = ""
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            extra_conf = self.dict_to_conf({
+                "fs.native-s3.enabled":
+                True,
+                "s3.region":
+                self.credentials.region,
+                "s3.path-style-access":
+                True,
+                "s3.endpoint":
+                self.credentials.endpoint,
+                "s3.aws-access-key":
+                self.credentials.access_key,
+                "s3.aws-secret-key":
+                self.credentials.secret_key
+            })
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            extra_conf = self.dict_to_conf({"fs.native-s3.enabled": True})
+        else:
+            raise NotImplementedError(
+                f"Unsupported cloud storage credentials: {self.credentials}")
+
         connector_config = dict(catalog_rest_uri=self.iceberg_catalog_rest_uri,
-                                s3_region=self.cloud_storage_region,
-                                s3_endpoint=self.cloud_storage_api_endpoint,
-                                s3_access_key=self.cloud_storage_access_key,
-                                s3_secret_key=self.cloud_storage_secret_key)
+                                extra_conf=extra_conf)
         config_str = TrinoService.ICEBERG_CONNECTOR_CONF.render(
             connector_config)
         self.logger.debug(f"Using connector config: {config_str}")
@@ -116,3 +122,16 @@ s3.aws-secret-key={{ s3_secret_key }}
         return trino.connect(host=self.trino_host,
                              port=self.trino_port,
                              catalog="redpanda")
+
+    @staticmethod
+    def dict_to_conf(d: dict[str, Optional[str | bool]]):
+        """
+        Convert a dictionary to trino conf.
+        """
+        def transform_value(v: str | bool):
+            if isinstance(v, bool):
+                return str(v).lower()
+            return v
+
+        return "\n".join(
+            [f"{k}={transform_value(v)}" for k, v in d.items() if v])
