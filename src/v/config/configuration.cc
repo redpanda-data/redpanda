@@ -157,7 +157,7 @@ configuration::configuration()
       "The maximum number of connections a broker will open to each of its "
       "peers.",
       {.example = "8"},
-      32,
+      128,
       {.min = 8})
   , rpc_server_compress_replies(
       *this,
