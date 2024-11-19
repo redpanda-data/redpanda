@@ -35,6 +35,16 @@ struct create_table_request {
     std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
 };
 
+struct create_namespace_request {
+    chunked_vector<ss::sstring> ns;
+    std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
+};
+
+struct create_namespace_response {
+    chunked_vector<ss::sstring> ns;
+    std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
+};
+
 struct load_table_result {
     table_metadata metadata;
     std::optional<ss::sstring> metadata_location;
