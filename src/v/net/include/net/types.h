@@ -32,6 +32,14 @@ protected:
       : std::runtime_error(m) {}
 };
 
-class parsing_exception : public std::exception {};
+class parsing_exception : public std::runtime_error {
+public:
+    parsing_exception()
+      : std::runtime_error("") {}
+
+protected:
+    explicit parsing_exception(const std::string& m)
+      : std::runtime_error(m) {}
+};
 
 } // namespace net
