@@ -128,6 +128,24 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "single_sharded_test",
+    timeout = "short",
+    srcs = [
+        "single_sharded_test.cc",
+    ],
+    cpu = 2,
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:single_sharded",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "when_all_test",
     timeout = "short",
