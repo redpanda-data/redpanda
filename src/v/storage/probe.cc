@@ -163,6 +163,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _compaction_removed_bytes; },
           sm::description("Number of bytes removed by a compaction operation"),
           labels),
+        sm::make_counter(
+          "tombstones_removed",
+          [this] { return _tombstones_removed; },
+          sm::description("Number of tombstone records removed by compaction "
+                          "due to the delete.retention.ms setting."),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});
