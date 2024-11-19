@@ -211,6 +211,12 @@ FAILURE_INJECTION_LOG_ALLOW_LIST = [
     re.compile("finject - .* flush called concurrently with other operations")
 ]
 
+# Log errors that are acceptable for tests that hit the OIDC endpoint but don't
+# necessarily test OIDC functionality
+OIDC_ALLOW_LIST = [
+    re.compile("security - .* - Error updating"),
+]
+
 
 class RemoteClusterNode(Protocol):
     account: RemoteAccount
