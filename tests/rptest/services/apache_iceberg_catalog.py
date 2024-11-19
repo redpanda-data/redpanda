@@ -9,13 +9,14 @@
 
 import os
 import tempfile
-from typing import Optional
 
-from ducktape.services.service import Service
+import jinja2
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from pyiceberg.catalog import load_catalog
-import jinja2
+
+from rptest.context import cloud_storage
 
 
 class IcebergRESTCatalog(Service):
@@ -89,18 +90,28 @@ class IcebergRESTCatalog(Service):
             ctx,
             cloud_storage_bucket: str,
             cloud_storage_catalog_prefix: str = 'redpanda-iceberg-catalog',
-            cloud_storage_access_key: Optional[str] = 'panda-user',
-            cloud_storage_secret_key: Optional[str] = 'panda-secret',
-            cloud_storage_region: Optional[str] = 'panda-region',
-            cloud_storage_api_endpoint: Optional[str] = "http://minio-s3:9000",
             filesystem_wrapper_mode: bool = False,
             node: ClusterNode | None = None):
         super(IcebergRESTCatalog, self).__init__(ctx,
                                                  num_nodes=0 if node else 1)
-        self.cloud_storage_access_key = cloud_storage_access_key
-        self.cloud_storage_secret_key = cloud_storage_secret_key
-        self.cloud_storage_region = cloud_storage_region
-        self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+        self.credentials = cloud_storage.Credentials.from_context(ctx)
+
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            self.cloud_storage_access_key = self.credentials.access_key
+            self.cloud_storage_secret_key = self.credentials.secret_key
+            self.cloud_storage_region = self.credentials.region
+            self.cloud_storage_api_endpoint = self.credentials.endpoint
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            # Iceberg catalog knows how to read AWS credentials from the instance metadata.
+            self.cloud_storage_access_key = None
+            self.cloud_storage_secret_key = None
+            self.cloud_storage_region = None
+            self.cloud_storage_api_endpoint = None
+        else:
+            raise ValueError(
+                f"Unsupported credential type: {type(self.credentials)}")
+
         self.cloud_storage_bucket = cloud_storage_bucket
         self.cloud_storage_catalog_prefix = cloud_storage_catalog_prefix
         self.dedicated_nodes = ctx.globals.get("dedicated_nodes", False)

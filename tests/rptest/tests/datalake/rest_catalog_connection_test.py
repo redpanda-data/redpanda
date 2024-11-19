@@ -31,10 +31,6 @@ class RestCatalogConnectionTest(RedpandaTest):
         self.catalog_service = IcebergRESTCatalog(
             test_context,
             cloud_storage_bucket=self.si_settings.cloud_storage_bucket,
-            cloud_storage_access_key=self.si_settings.cloud_storage_access_key,
-            cloud_storage_secret_key=self.si_settings.cloud_storage_secret_key,
-            cloud_storage_region=self.si_settings.cloud_storage_region,
-            cloud_storage_api_endpoint=self.si_settings.endpoint_url,
             filesystem_wrapper_mode=False)
 
     def setUp(self):
