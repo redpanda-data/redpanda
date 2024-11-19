@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
-git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
+git -C /opt clone https://github.com/WillemKauf/kgo-verifier.git
 cd /opt/kgo-verifier
-git reset --hard 7bbf8c883d1807cdf297fdb589d92f436604772b
+git reset --hard 65fa3e856df8388175748526b3708b0be3e070d3
 go mod tidy
 make
