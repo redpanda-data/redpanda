@@ -286,6 +286,8 @@ redpanda_cc_library(
     srcs = ["schema_registry.cc"],
     hdrs = ["schema_registry.h"],
     implementation_deps = [
+        ":logger",
+        "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
     ],
