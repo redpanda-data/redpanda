@@ -21,6 +21,12 @@ service::service(
   : impl::datalake_coordinator_rpc_service(sg, smp_sg)
   , _frontend(frontend) {}
 
+ss::future<ensure_table_exists_reply> service::ensure_table_exists(
+  ensure_table_exists_request request, ::rpc::streaming_context&) {
+    return _frontend->local().ensure_table_exists(
+      std::move(request), frontend::local_only::yes);
+}
+
 ss::future<add_translated_data_files_reply> service::add_translated_data_files(
   add_translated_data_files_request request, ::rpc::streaming_context&) {
     return _frontend->local().add_translated_data_files(

@@ -47,6 +47,18 @@ std::ostream& operator<<(std::ostream& o, const errc& errc) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const ensure_table_exists_reply& r) {
+    fmt::print(o, "{{errc: {}}}", r.errc);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const ensure_table_exists_request& r) {
+    fmt::print(
+      o, "{{topic: {}, topic_revision: {}}}", r.topic, r.topic_revision);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const add_translated_data_files_reply& reply) {
     fmt::print(o, "{{errc: {}}}", reply.errc);

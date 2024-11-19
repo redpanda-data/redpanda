@@ -7,6 +7,9 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+
+#pragma once
+
 #include "datalake/coordinator/rpc_service.h"
 #include "datalake/fwd.h"
 
@@ -15,6 +18,9 @@ class service final : public impl::datalake_coordinator_rpc_service {
 public:
     service(
       ss::scheduling_group, ss::smp_service_group, ss::sharded<frontend>*);
+
+    ss::future<ensure_table_exists_reply> ensure_table_exists(
+      ensure_table_exists_request, ::rpc::streaming_context&) override;
 
     ss::future<add_translated_data_files_reply> add_translated_data_files(
       add_translated_data_files_request, ::rpc::streaming_context&) override;
