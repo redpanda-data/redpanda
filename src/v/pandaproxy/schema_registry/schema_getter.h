@@ -27,6 +27,8 @@ public:
       = 0;
     virtual ss::future<canonical_schema_definition>
     get_schema_definition(schema_id id) = 0;
+    virtual ss::future<std::optional<canonical_schema_definition>>
+    maybe_get_schema_definition(schema_id id) = 0;
     virtual ~schema_getter() = default;
 };
 

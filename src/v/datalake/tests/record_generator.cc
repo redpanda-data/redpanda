@@ -52,7 +52,11 @@ record_generator::add_random_avro_record(
         co_return error{fmt::format("Schema {} is missing", name)};
     }
     auto schema_id = it->second;
-    auto schema_def = co_await _sr->get_valid_schema(schema_id);
+    auto schema_def_res = co_await _sr->get_valid_schema(schema_id);
+    if (!schema_def_res.has_value()) {
+        co_return error{fmt::format("Schema {} not in store", schema_id)};
+    }
+    auto& schema_def = schema_def_res.value();
     if (schema_def.type() != schema_type::avro) {
         co_return error{
           fmt::format("Schema {} has wrong type: {}", name, schema_def.type())};

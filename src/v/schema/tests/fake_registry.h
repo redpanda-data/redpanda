@@ -25,6 +25,10 @@ public:
       pandaproxy::schema_registry::include_deleted inc_dec) final;
     ss::future<pandaproxy::schema_registry::canonical_schema_definition>
     get_schema_definition(pandaproxy::schema_registry::schema_id id) final;
+    ss::future<
+      std::optional<pandaproxy::schema_registry::canonical_schema_definition>>
+    maybe_get_schema_definition(
+      pandaproxy::schema_registry::schema_id id) final;
 
     std::vector<pandaproxy::schema_registry::subject_schema> schemas;
 };
