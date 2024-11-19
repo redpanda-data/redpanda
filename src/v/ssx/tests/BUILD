@@ -225,3 +225,18 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_bench(
+    name = "sformat_bench",
+    timeout = "short",
+    srcs = [
+        "sformat_bench.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:sformat",
+        "@boost//:uuid",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
