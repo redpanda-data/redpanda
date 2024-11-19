@@ -47,13 +47,7 @@ class DatalakeServices():
         self.catalog_service.start()
         for engine in self.included_query_engines:
             svc_cls = get_query_engine_by_type(engine)
-            if svc_cls == TrinoService:
-                svc = svc_cls(self.test_ctx,
-                              str(self.catalog_service.catalog_url))
-            else:
-                svc = svc_cls(self.test_ctx,
-                              str(self.catalog_service.catalog_url),
-                              self.redpanda.si_settings)
+            svc = svc_cls(self.test_ctx, self.catalog_service.catalog_url)
             svc.start()
             self.query_engines.append(svc)
 
