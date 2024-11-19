@@ -9,6 +9,7 @@
 
 import os
 import tempfile
+from typing import Optional
 
 import jinja2
 from ducktape.cluster.cluster import ClusterNode
@@ -44,7 +45,6 @@ class IcebergRESTCatalog(Service):
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 
 <configuration>
-
 <property>
     <name>fs.s3a.aws.credentials.provider</name>
 {%- if fs_dedicated_nodes %}
@@ -53,36 +53,13 @@ class IcebergRESTCatalog(Service):
     <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
 {% endif %}
 </property>
-{%- if fs_endpoint %}
-<property>
-    <name>fs.s3a.endpoint</name>
-    <value>{{ fs_endpoint }}</value>
-</property>
-{%- endif %}
-<property>
-    <name>fs.s3a.path.style.access</name>
-    <value>true</value>
-</property>
-<property>
-    <name>fs.s3a.endpoint.region</name>
-    <value>{{ fs_region }}</value>
-</property>
-{%- if fs_access_key %}
-<property>
-    <name>fs.s3a.access.key</name>
-    <value>{{ fs_access_key }}</value>
-</property>
-{%- endif %}
-{%- if fs_secret_key %}
-<property>
-    <name>fs.s3a.secret.key</name>
-    <value>{{ fs_secret_key }}</value>
-</property>
-{%- endif %}
+
 <property>
     <name>fs.s3a.connection.ssl.enabled</name>
     <value>{{ fs_dedicated_nodes }}</value>
 </property>
+
+{{extra_config}}
 </configuration>""")
 
     def __init__(
@@ -95,22 +72,6 @@ class IcebergRESTCatalog(Service):
         super(IcebergRESTCatalog, self).__init__(ctx,
                                                  num_nodes=0 if node else 1)
         self.credentials = cloud_storage.Credentials.from_context(ctx)
-
-        if isinstance(self.credentials, cloud_storage.S3Credentials):
-            self.cloud_storage_access_key = self.credentials.access_key
-            self.cloud_storage_secret_key = self.credentials.secret_key
-            self.cloud_storage_region = self.credentials.region
-            self.cloud_storage_api_endpoint = self.credentials.endpoint
-        elif isinstance(self.credentials,
-                        cloud_storage.AWSInstanceMetadataCredentials):
-            # Iceberg catalog knows how to read AWS credentials from the instance metadata.
-            self.cloud_storage_access_key = None
-            self.cloud_storage_secret_key = None
-            self.cloud_storage_region = None
-            self.cloud_storage_api_endpoint = None
-        else:
-            raise ValueError(
-                f"Unsupported credential type: {type(self.credentials)}")
 
         self.cloud_storage_bucket = cloud_storage_bucket
         self.cloud_storage_catalog_prefix = cloud_storage_catalog_prefix
@@ -148,14 +109,24 @@ class IcebergRESTCatalog(Service):
         env = dict()
 
         # Common envs
-        if self.cloud_storage_region:
-            env["AWS_REGION"] = self.cloud_storage_region
-        if self.cloud_storage_access_key:
-            env["AWS_ACCESS_KEY_ID"] = self.cloud_storage_access_key
-        if self.cloud_storage_secret_key:
-            env["AWS_SECRET_ACCESS_KEY"] = self.cloud_storage_secret_key
-        if self.cloud_storage_api_endpoint:
-            env["CATALOG_S3_ENDPOINT"] = self.cloud_storage_api_endpoint
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
+            env["AWS_ACCESS_KEY_ID"] = self.credentials.access_key
+            env["AWS_SECRET_ACCESS_KEY"] = self.credentials.secret_key
+            env["AWS_REGION"] = self.credentials.region
+            env["CATALOG_S3_ENDPOINT"] = self.credentials.endpoint
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
+        elif isinstance(self.credentials,
+                        cloud_storage.ABSSharedKeyCredentials):
+            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.azure.adlsv2.ADLSFileIO"
+            env["CATALOG_adls_auth_shared__key_account_name"] = self.credentials.account_name
+            env["CATALOG_adls_auth_shared__key_account_key"] = self.credentials.account_key
+        else:
+            raise ValueError(
+                f"Unsupported credential type: {type(self.credentials)}")
+
         env["CATALOG_WAREHOUSE"] = self.cloud_storage_warehouse
         if self.filesystem_wrapper_mode:
             env["CATALOG_CATALOG__IMPL"] = IcebergRESTCatalog.FS_CATALOG_IMPL
@@ -166,7 +137,6 @@ class IcebergRESTCatalog(Service):
             env["CATALOG_URI"] = IcebergRESTCatalog.DB_CATALOG_JDBC_URI_PREFIX + self.db_file.name
             env["CATALOG_JDBC_USER"] = IcebergRESTCatalog.DB_CATALOG_DB_USER
             env["CATALOG_JDBC_PASSWORD"] = IcebergRESTCatalog.DB_CATALOG_DB_PASS
-            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
         return env
 
     def _cmd(self):
@@ -177,17 +147,22 @@ class IcebergRESTCatalog(Service):
             1>> {IcebergRESTCatalog.LOG_FILE} 2>> {IcebergRESTCatalog.LOG_FILE} &"
 
     def client(self, catalog_name="default"):
-        assert self.catalog_url
+        assert self.catalog_url, "Catalog not started"
         conf = dict()
         conf["uri"] = self.catalog_url
-        if self.cloud_storage_api_endpoint:
-            conf["s3.endpoint"] = self.cloud_storage_api_endpoint
-        if self.cloud_storage_access_key:
-            conf["s3.access-key-id"] = self.cloud_storage_access_key
-        if self.cloud_storage_secret_key:
-            conf["s3.secret-access-key"] = self.cloud_storage_secret_key
-        if self.cloud_storage_region:
-            conf["s3.region"] = self.cloud_storage_region
+
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            conf["s3.endpoint"] = self.credentials.endpoint
+            conf["s3.access-key-id"] = self.credentials.access_key
+            conf["s3.secret-access-key"] = self.credentials.secret_key
+            conf["s3.region"] = self.credentials.region
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported credential type: {type(self.credentials)}")
+
         return load_catalog(catalog_name, **conf)
 
     def start_node(self, node, timeout_sec=60, **kwargs):
@@ -195,12 +170,31 @@ class IcebergRESTCatalog(Service):
                          allow_fail=False)
         # Delete any existing hadoop config and repopulate
         node.account.ssh(f"rm -f {IcebergRESTCatalog.FS_CATALOG_CONF_PATH}")
+
+        extra_config = ""
+
+        if isinstance(self.credentials, cloud_storage.S3Credentials):
+            extra_config += self.dict_to_xml_properties({
+                "fs.s3a.path.style.access":
+                True,
+                "fs.s3a.endpoint":
+                self.credentials.endpoint,
+                "fs.s3a.endpoint.region":
+                self.credentials.region,
+                "fs.s3a.access.key":
+                self.credentials.access_key,
+                "fs.s3a.secret.key":
+                self.credentials.secret_key,
+            })
+        elif isinstance(self.credentials,
+                        cloud_storage.AWSInstanceMetadataCredentials):
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported credential type: {type(self.credentials)}")
+
         config_tmpl = IcebergRESTCatalog.HADOOP_CONF_TMPL.render(
-            fs_endpoint=self.cloud_storage_api_endpoint,
-            fs_region=self.cloud_storage_region,
-            fs_access_key=self.cloud_storage_access_key,
-            fs_secret_key=self.cloud_storage_secret_key,
-            fs_dedicated_nodes=self.dedicated_nodes)
+            fs_dedicated_nodes=self.dedicated_nodes, extra_config=extra_config)
         self.logger.debug(f"Using hadoop config: {config_tmpl}")
         node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH,
                                  config_tmpl)
@@ -249,3 +243,19 @@ class IcebergRESTCatalog(Service):
         self.stop_node(node, allow_fail=True)
         node.account.remove(IcebergRESTCatalog.PERSISTENT_ROOT,
                             allow_fail=True)
+
+    @staticmethod
+    def dict_to_xml_properties(d: dict[str, Optional[str | bool]]):
+        """
+        Convert a dictionary to hadoop xml properties format.
+        If a value is None, it is skipped.
+        """
+        def transform_value(v: str | bool):
+            if isinstance(v, bool):
+                return str(v).lower()
+            return v
+
+        return "\n".join([
+            f"<property><name>{k}</name><value>{transform_value(v)}</value></property>"
+            for k, v in d.items() if v is not None
+        ])
