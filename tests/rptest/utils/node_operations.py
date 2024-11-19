@@ -461,18 +461,22 @@ class FailureInjectorBackgroundThread():
         self.error = None
 
     def start(self):
+        assert self.thread is None, "failure injector thread already started"
         self.logger.info(
             f"Starting failure injector thread with: (max suspend duration {self.max_suspend_duration_seconds},"
             f"min inter failure time: {self.min_inter_failure_time}, max inter failure time: {self.max_inter_failure_time})"
         )
+        self.redpanda.tolerate_not_running += 1
         self.thread = threading.Thread(target=lambda: self._worker(), args=())
         self.thread.daemon = True
         self.thread.start()
 
     def stop(self):
-        self.logger.info(f"Stopping failure injector thread")
+        assert self.thread is not None, "failure injector thread not started"
+        self.logger.info("Stopping failure injector thread")
         self.stop_ev.set()
         self.thread.join()
+        self.redpanda.tolerate_not_running -= 1
         assert self.error is None, f"failure injector error, most likely node failed to stop: {self.error}"
 
     def _worker(self):
