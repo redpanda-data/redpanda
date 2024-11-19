@@ -69,4 +69,13 @@ topics_state topics_state::copy() const {
     return result;
 }
 
+bool topic_state::has_pending_entries() const {
+    for (const auto& [_, partition_state] : pid_to_pending_files) {
+        if (!partition_state.pending_entries.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace datalake::coordinator

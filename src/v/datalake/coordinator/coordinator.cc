@@ -224,6 +224,59 @@ checked<ss::gate::holder, coordinator::errc> coordinator::maybe_gate() {
 }
 
 ss::future<checked<std::nullopt_t, coordinator::errc>>
+coordinator::sync_ensure_table_exists(
+  model::topic topic,
+  model::revision_id topic_revision,
+  record_schema_components) {
+    auto gate = maybe_gate();
+    if (gate.has_error()) {
+        co_return gate.error();
+    }
+
+    vlog(
+      datalake_log.debug,
+      "Sync ensure table exists requested, topic: {} rev: {}",
+      topic,
+      topic_revision);
+
+    auto sync_res = co_await stm_->sync(10s);
+    if (sync_res.has_error()) {
+        co_return convert_stm_errc(sync_res.error());
+    }
+
+    topic_lifecycle_update update{
+      .topic = topic,
+      .revision = topic_revision,
+      .new_state = topic_state::lifecycle_state_t::live,
+    };
+    auto check_res = update.can_apply(stm_->state());
+    if (check_res.has_error()) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting ensure_table_exist for {} rev {}: {}",
+          topic,
+          topic_revision,
+          check_res.error());
+        co_return errc::revision_mismatch;
+    }
+    if (check_res.value()) {
+        // update is non-trivial
+        storage::record_batch_builder builder(
+          model::record_batch_type::datalake_coordinator, model::offset{0});
+        builder.add_raw_kv(
+          serde::to_iobuf(topic_lifecycle_update::key),
+          serde::to_iobuf(std::move(update)));
+        auto repl_res = co_await stm_->replicate_and_wait(
+          sync_res.value(), std::move(builder).build(), as_);
+        if (repl_res.has_error()) {
+            co_return convert_stm_errc(repl_res.error());
+        }
+    }
+    // TODO: actually create table
+    co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, coordinator::errc>>
 coordinator::sync_add_files(
   model::topic_partition tp,
   model::revision_id topic_revision,
@@ -397,11 +450,9 @@ coordinator::update_lifecycle_state(
         break;
     }
     case topic_state::lifecycle_state_t::closed: {
-        for (const auto& [_, partition_state] : topic.pid_to_pending_files) {
-            if (!partition_state.pending_entries.empty()) {
-                // still have entries to commit
-                co_return ss::stop_iteration::yes;
-            }
+        if (topic.has_pending_entries()) {
+            // can't purge yet, have to deal with pending entries first
+            co_return ss::stop_iteration::yes;
         }
 
         // Now that we don't have pending files, we can check if the
