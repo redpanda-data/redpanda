@@ -58,6 +58,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
+from rptest.context.cloud_storage import CloudStorageType  # noqa: F401 # Re-exported for backwards compatibility.
 from rptest.services import redpanda_types, tls
 from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowListElem
 from rptest.services.admin import Admin
@@ -242,13 +243,6 @@ class MetricSamples:
 class MetricsEndpoint(Enum):
     METRICS = 'metrics'
     PUBLIC_METRICS = 'public_metrics'
-
-
-class CloudStorageType(IntEnum):
-    # Use (AWS, GCP) S3 compatible API on dedicated nodes, or minio in docker
-    S3 = 1
-    # Use Azure ABS on dedicated nodes, or azurite in docker
-    ABS = 2
 
 
 CloudStorageTypeAndUrlStyle = Tuple[CloudStorageType, Literal['virtual_host',
