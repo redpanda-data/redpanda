@@ -74,6 +74,9 @@ public:
     ss::future<canonical_schema_definition>
     get_schema_definition(schema_id id) override;
 
+    ss::future<std::optional<canonical_schema_definition>>
+    maybe_get_schema_definition(schema_id id) override;
+
     ///\brief Return a list of subject-versions for the shema id.
     ss::future<chunked_vector<subject_version>>
     get_schema_subject_versions(schema_id id);

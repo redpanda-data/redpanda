@@ -159,11 +159,17 @@ record_schema_resolver::resolve_buf_type(iobuf b) const {
           datalake_log.warn,
           "Error getting schema from registry: {}",
           schema_fut.get_exception());
-        // TODO: make schema::registry tell us whether the issue was transient.
         co_return errc::registry_error;
     }
     auto resolved_schema = std::move(schema_fut.get());
-    co_return co_await std::move(resolved_schema)
+    if (!resolved_schema.has_value()) {
+        vlog(
+          datalake_log.trace,
+          "Schema ID {} not in registry; using binary type",
+          schema_id);
+        co_return type_and_buf::make_raw_binary(std::move(b));
+    }
+    co_return co_await std::move(*resolved_schema)
       .visit(schema_translating_visitor{std::move(buf_no_id), schema_id});
 }
 
