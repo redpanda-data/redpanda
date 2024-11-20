@@ -299,6 +299,16 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "bounds",
+    hdrs = [
+        "bounds.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+    ],
+)
+
+redpanda_cc_library(
     name = "stream_provider",
     hdrs = [
         "stream_provider.h",

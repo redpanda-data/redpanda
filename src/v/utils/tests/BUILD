@@ -524,3 +524,16 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "bounds_test",
+    timeout = "short",
+    srcs = [
+        "bounds_test.cc",
+    ],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:bounds",
+        "@googletest//:gtest",
+    ],
+)

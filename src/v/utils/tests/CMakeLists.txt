@@ -75,6 +75,7 @@ rp_test(
   GTEST
   BINARY_NAME gtest_utils
   SOURCES
+    bounds_test.cc
     xid_test.cc
   LIBRARIES v::utils absl::flat_hash_map v::random v::gtest_main
   LABELS utils
