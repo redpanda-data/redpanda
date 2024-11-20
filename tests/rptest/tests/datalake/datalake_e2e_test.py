@@ -20,6 +20,8 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from ducktape.mark import matrix
 
+# zzz
+
 
 class DatalakeE2ETests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
