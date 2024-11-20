@@ -33,7 +33,8 @@ public:
     // is handled during adl/serde decode).
     static constexpr bool default_remote_delete{true};
     static constexpr bool legacy_remote_delete{false};
-    static constexpr bool default_iceberg_enabled{false};
+    static constexpr model::iceberg_mode default_iceberg_mode
+      = model::iceberg_mode::disabled;
     static constexpr bool default_cloud_topic_enabled{false};
 
     static constexpr std::chrono::milliseconds read_replica_retention{3600000};
@@ -78,7 +79,7 @@ public:
 
         std::optional<std::chrono::milliseconds> flush_ms;
         std::optional<size_t> flush_bytes;
-        bool iceberg_enabled{default_iceberg_enabled};
+        model::iceberg_mode iceberg_mode{default_iceberg_mode};
         bool cloud_topic_enabled{default_cloud_topic_enabled};
         std::optional<std::chrono::milliseconds>
           iceberg_translation_interval_ms{std::nullopt};
@@ -343,12 +344,15 @@ public:
         return cleanup_policy_override().value_or(cluster_default);
     }
 
-    bool iceberg_enabled() const {
+    model::iceberg_mode iceberg_mode() const {
         if (!config::shard_local_cfg().iceberg_enabled) {
-            return false;
+            return model::iceberg_mode::disabled;
         }
-        return _overrides ? _overrides->iceberg_enabled
-                          : default_iceberg_enabled;
+        return _overrides ? _overrides->iceberg_mode : default_iceberg_mode;
+    }
+
+    bool iceberg_enabled() const {
+        return iceberg_mode() != model::iceberg_mode::disabled;
     }
 
     bool cloud_topic_enabled() const {

@@ -72,7 +72,7 @@ struct topic_properties
       std::optional<model::write_caching_mode> write_caching,
       std::optional<std::chrono::milliseconds> flush_ms,
       std::optional<size_t> flush_bytes,
-      bool iceberg_enabled,
+      model::iceberg_mode iceberg_mode,
       std::optional<config::leaders_preference> leaders_preference,
       bool cloud_topic_enabled,
       std::optional<std::chrono::milliseconds> iceberg_translation_interval,
@@ -115,7 +115,7 @@ struct topic_properties
       , write_caching(write_caching)
       , flush_ms(flush_ms)
       , flush_bytes(flush_bytes)
-      , iceberg_enabled(iceberg_enabled)
+      , iceberg_mode(iceberg_mode)
       , leaders_preference(std::move(leaders_preference))
       , cloud_topic_enabled(cloud_topic_enabled)
       , iceberg_translation_interval_ms(iceberg_translation_interval)
@@ -174,7 +174,7 @@ struct topic_properties
     std::optional<model::write_caching_mode> write_caching;
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
-    bool iceberg_enabled{storage::ntp_config::default_iceberg_enabled};
+    model::iceberg_mode iceberg_mode{storage::ntp_config::default_iceberg_mode};
 
     // Label to be used when generating paths of remote objects (manifests,
     // segments, etc) of this topic.
@@ -241,7 +241,7 @@ struct topic_properties
           flush_bytes,
           remote_label,
           remote_topic_namespace_override,
-          iceberg_enabled,
+          iceberg_mode,
           leaders_preference,
           cloud_topic_enabled,
           iceberg_translation_interval_ms,

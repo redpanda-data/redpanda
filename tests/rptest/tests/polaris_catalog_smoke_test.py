@@ -235,8 +235,8 @@ class PolarisCatalogSmokeTest(RedpandaTest):
         topic = TopicSpec(partition_count=1, replication_factor=1)
         client = DefaultClient(self.redpanda)
         client.create_topic(topic)
-        client.alter_topic_config(topic.name,
-                                  TopicSpec.PROPERTY_ICEBERG_ENABLED, "true")
+        client.alter_topic_config(topic.name, TopicSpec.PROPERTY_ICEBERG_MODE,
+                                  "key_value")
         rpk = RpkTool(self.redpanda)
         for i in range(10):
             rpk.produce(topic.name, "key", f"value-{i}")

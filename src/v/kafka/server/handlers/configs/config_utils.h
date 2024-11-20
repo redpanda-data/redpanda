@@ -334,6 +334,14 @@ struct noop_bool_validator {
     }
 };
 
+template<typename T>
+struct noop_validator_with_tn {
+    std::optional<ss::sstring>
+    operator()(model::topic_namespace_view, const ss::sstring&, const T&) {
+        return std::nullopt;
+    }
+};
+
 struct segment_size_validator {
     std::optional<ss::sstring>
     operator()(const ss::sstring&, const size_t& value) {
@@ -460,12 +468,16 @@ struct flush_bytes_validator {
 
 struct iceberg_config_validator {
     std::optional<ss::sstring> operator()(
-      model::topic_namespace_view tns, const ss::sstring&, bool value) {
+      model::topic_namespace_view tns,
+      const ss::sstring&,
+      const model::iceberg_mode& value) {
         if (!model::is_user_topic(tns)) {
             return fmt::format(
               "Iceberg configuration cannot be altered on non user topics");
         }
-        if (!config::shard_local_cfg().iceberg_enabled() && value) {
+        if (
+          !config::shard_local_cfg().iceberg_enabled()
+          && value != model::iceberg_mode::disabled) {
             return fmt::format(
               "Iceberg disabled in the cluster configuration, enable it by "
               "setting: {}",
@@ -520,6 +532,50 @@ using replication_factor_validator = config_validator_list<
   replication_factor_must_be_positive,
   replication_factor_must_be_odd,
   replication_factor_must_be_greater_or_equal_to_minimum>;
+
+template<
+  typename T,
+  typename Validator = noop_validator_with_tn<T>,
+  typename ParseFunc = decltype(boost::lexical_cast<T, ss::sstring>)>
+requires requires(
+  model::topic_namespace_view tn,
+  const T& value,
+  const ss::sstring& str,
+  Validator validator,
+  ParseFunc parse) {
+    { parse(str) } -> std::convertible_to<T>;
+    {
+        validator(tn, str, value)
+    } -> std::convertible_to<std::optional<ss::sstring>>;
+}
+void parse_and_set_property(
+  model::topic_namespace_view tn,
+  cluster::property_update<T>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op,
+  Validator validator = noop_validator<T>{},
+  ParseFunc parse = boost::lexical_cast<T, ss::sstring>) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value if preset, otherwise do nothing
+    if (op == config_resource_operation::set && value) {
+        property.op = cluster::incremental_update_operation::set;
+        try {
+            auto v = parse(*value);
+            auto v_error = validator(tn, *value, v);
+            if (v_error) {
+                throw validation_error(*v_error);
+            }
+            property.value = std::move(v);
+        } catch (const std::runtime_error&) {
+            throw boost::bad_lexical_cast();
+        }
+        return;
+    }
+}
 
 template<
   typename T,
