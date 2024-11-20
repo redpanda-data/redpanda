@@ -107,8 +107,4 @@ manifest_io::from_uri(const uri& s) const {
     }
 }
 
-ss::sstring manifest_io::uri_base() const {
-    return fmt::format("s3://{}/", bucket_);
-}
-
 } // namespace iceberg

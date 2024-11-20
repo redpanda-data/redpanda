@@ -57,10 +57,6 @@ public:
     uri to_uri(const std::filesystem::path& p) const;
 
 private:
-    // TODO: make URIs less fragile with an explicit type?
-    // E.g. s3://bucket/
-    ss::sstring uri_base() const;
-
     // E.g. s3://bucket/path/to/file => path/to/file
     // Leaves the path as is if it doesn't match the expected URI base.
     checked<std::filesystem::path, metadata_io::errc>
