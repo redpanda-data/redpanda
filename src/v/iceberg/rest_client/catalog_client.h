@@ -99,6 +99,14 @@ public:
      */
 
     /**
+     * Create namespace API
+     *
+     * POST /v1/{prefix}/namespaces
+     */
+    ss::future<expected<create_namespace_response>>
+    create_namespace(create_namespace_request, retry_chain_node&);
+
+    /**
      * Load Table API
      *
      * GET /v1/{prefix}/namespaces/{namespace}/tables/{table}
@@ -126,7 +134,6 @@ public:
      * NOTE: using std::monostate instead of void, because
      * ss::future<expected<void>> is not no-throw move constructible
      */
-
     ss::future<expected<std::monostate>> drop_table(
       const chunked_vector<ss::sstring>& ns,
       const ss::sstring& table,
