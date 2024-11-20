@@ -289,7 +289,6 @@ redpanda_cc_library(
         "//src/v/strings:string_switch",
         "//src/v/strings:utf8",
         "//src/v/utils:absl_sstring_hash",
-        "//src/v/utils:bottomless_token_bucket",
         "//src/v/utils:ema",
         "//src/v/utils:log_hist",
         "//src/v/utils:mutex",

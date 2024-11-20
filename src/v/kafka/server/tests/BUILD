@@ -154,20 +154,6 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
-    name = "snc_quota_manager_test",
-    timeout = "short",
-    srcs = [
-        "snc_quota_manager_test.cc",
-    ],
-    deps = [
-        "//src/v/kafka/server",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar//:testing",
-    ],
-)
-
-redpanda_cc_btest(
     name = "validator_tests",
     timeout = "short",
     srcs = [

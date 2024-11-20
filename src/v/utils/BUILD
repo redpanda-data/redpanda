@@ -475,22 +475,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "bottomless_token_bucket",
-    srcs = [
-        "bottomless_token_bucket.cc",
-    ],
-    hdrs = [
-        "bottomless_token_bucket.h",
-    ],
-    include_prefix = "utils",
-    deps = [
-        "//src/v/base",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
     name = "move_canary",
     hdrs = [
         "move_canary.h",
