@@ -32,7 +32,7 @@ using namespace datalake;
 namespace {
 auto schema_mgr = std::make_unique<simple_schema_manager>();
 auto schema_resolver = std::make_unique<binary_type_resolver>();
-auto translator = std::make_unique<record_translator>();
+auto translator = std::make_unique<default_translator>();
 const auto ntp = model::ntp{};
 } // namespace
 

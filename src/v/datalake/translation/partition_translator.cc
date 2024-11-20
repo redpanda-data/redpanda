@@ -84,6 +84,7 @@ constexpr ::model::timeout_clock::duration wait_timeout = 5s;
 constexpr size_t max_rows_per_row_group = std::numeric_limits<size_t>::max();
 constexpr size_t max_bytes_per_row_group = std::numeric_limits<size_t>::max();
 
+partition_translator::~partition_translator() = default;
 partition_translator::partition_translator(
   ss::lw_shared_ptr<cluster::partition> partition,
   ss::sharded<coordinator::frontend>* frontend,
@@ -107,7 +108,7 @@ partition_translator::partition_translator(
   // TODO: type resolver and record translator should be constructed based on
   // topic configs.
   , _type_resolver(type_resolver)
-  , _record_translator(std::make_unique<record_translator>())
+  , _record_translator(std::make_unique<default_translator>())
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}

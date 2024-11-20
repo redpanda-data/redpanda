@@ -77,6 +77,7 @@ public:
       ss::scheduling_group sg,
       size_t reader_max_bytes,
       std::unique_ptr<ssx::semaphore>* parallel_translations);
+    ~partition_translator();
 
     void start_translation_in_background(ss::scheduling_group);
 
