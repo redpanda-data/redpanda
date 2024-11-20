@@ -11,7 +11,10 @@ package storage
 
 import (
 	"fmt"
+	"strings"
 
+	dataplanev1alpha2 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha2"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -46,23 +49,48 @@ Unmount topic 'my-topic' from the cluster in the 'my-namespace'
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			pf, err := p.LoadVirtualProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(pf)
-			adm, err := adminapi.NewClient(cmd.Context(), fs, pf)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
-			n, t := nsTopic(topics[0])
+			ns, t := nsTopic(topics[0])
 			if t == "" {
 				out.Die("topic is required")
 			}
 
-			mg, err := adm.UnmountTopics(cmd.Context(), rpadmin.UnmountConfiguration{Topics: []rpadmin.NamespacedTopic{{Namespace: string2pointer(n), Topic: t}}})
-			out.MaybeDie(err, "unable to unmount topic: %v", err)
-			fmt.Printf(`
-Topic unmounting from your Redpanda Cluster topic %v
-has started with Migration ID %v
-To check the status run 'rpk cluster storage status-mount %d`+"\n", t, mg.ID, mg.ID)
+			var id int
+			if p.FromCloud {
+				if ns != "" && strings.ToLower(ns) != "kafka" {
+					out.Die("Namespace %q not allowed. Only kafka topics can be unmounted in Redpanda Cloud clusters", ns)
+				}
+				cl, err := createDataplaneClient(p)
+				out.MaybeDieErr(err)
+
+				resp, err := cl.CloudStorage.UnmountTopics(
+					cmd.Context(),
+					connect.NewRequest(
+						&dataplanev1alpha2.UnmountTopicsRequest{
+							Topics: []string{t},
+						}),
+				)
+				out.MaybeDie(err, "unable to unmount topic: %v", err)
+				if resp != nil {
+					id = int(resp.Msg.MountTaskId)
+				}
+			} else {
+				adm, err := adminapi.NewClient(cmd.Context(), fs, p)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+				mg, err := adm.UnmountTopics(cmd.Context(), rpadmin.UnmountConfiguration{Topics: []rpadmin.NamespacedTopic{{Namespace: string2pointer(ns), Topic: t}}})
+				out.MaybeDie(err, "unable to unmount topic: %v", err)
+				id = mg.ID
+			}
+
+			fmt.Printf(`Topic unmounting from your Redpanda Cluster topic %q has started with 
+Migration ID %v.
+
+To check the status run 'rpk cluster storage status-mount %d.
+`, t, id, id)
 		},
 	}
 	return cmd

@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"strings"
 
+	dataplanev1alpha2 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha2"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -46,39 +48,71 @@ with my-new-topic as the new topic name
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, from []string) {
-			pf, err := p.LoadVirtualProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-			config.CheckExitCloudAdmin(pf)
-			adm, err := adminapi.NewClient(cmd.Context(), fs, pf)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
-			n, t := nsTopic(from[0])
+			ns, t := nsTopic(from[0])
 			if t == "" {
 				out.Die("topic is required")
 			}
-			topic := rpadmin.InboundTopic{
-				SourceTopicReference: rpadmin.NamespacedTopic{
-					Namespace: string2pointer(n),
-					Topic:     t,
-				},
-			}
 			an, at := nsTopic(to)
 			alias := t
-			if at != "" {
-				alias = at
-				topic.Alias = &rpadmin.NamespacedTopic{
-					Namespace: string2pointer(an),
-					Topic:     alias,
+			var id int
+			if p.FromCloud {
+				if ns != "" && strings.ToLower(ns) != "kafka" {
+					out.Die("Namespace %q not allowed. Only kafka topics can be mounted in Redpanda Cloud clusters", ns)
 				}
+				if an != "" && strings.ToLower(an) != "kafka" {
+					out.Die("Failed to parse '--to' flag: namespace %q not allowed. Only kafka topics can be mounted in Redpanda Cloud clusters", an)
+				}
+				cl, err := createDataplaneClient(p)
+				out.MaybeDieErr(err)
+
+				topicMount := &dataplanev1alpha2.MountTopicsRequest_TopicMount{
+					SourceTopicReference: t,
+				}
+				if at != "" {
+					alias = at
+					topicMount.Alias = alias
+				}
+				resp, err := cl.CloudStorage.MountTopics(
+					cmd.Context(),
+					connect.NewRequest(
+						&dataplanev1alpha2.MountTopicsRequest{
+							Topics: []*dataplanev1alpha2.MountTopicsRequest_TopicMount{topicMount},
+						}),
+				)
+				out.MaybeDie(err, "unable to mount topic: %v", err)
+				if resp.Msg != nil {
+					id = int(resp.Msg.MountTaskId)
+				}
+			} else {
+				adm, err := adminapi.NewClient(cmd.Context(), fs, p)
+				out.MaybeDie(err, "unable to initialize admin client: %v", err)
+				topic := rpadmin.InboundTopic{
+					SourceTopicReference: rpadmin.NamespacedTopic{
+						Namespace: string2pointer(ns),
+						Topic:     t,
+					},
+				}
+				if at != "" {
+					alias = at
+					topic.Alias = &rpadmin.NamespacedTopic{
+						Namespace: string2pointer(an),
+						Topic:     alias,
+					}
+				}
+				mg, err := adm.MountTopics(cmd.Context(), rpadmin.MountConfiguration{Topics: []rpadmin.InboundTopic{topic}})
+				out.MaybeDie(err, "unable to mount topic: %v", err)
+				id = mg.ID
 			}
 
-			mg, err := adm.MountTopics(cmd.Context(), rpadmin.MountConfiguration{Topics: []rpadmin.InboundTopic{topic}})
-			out.MaybeDie(err, "unable to mount topic: %v", err)
+			fmt.Printf(`Topic mount from Tiered Storage topic %q to your Redpanda Cluster topic %q
+has started with Migration ID %v.
 
-			fmt.Printf(`
-Topic mount from Tiered Storage topic %v to your Redpanda Cluster topic %v
-has started with Migration ID %v
-To check the status run 'rpk cluster storage status-mount %d`+"\n", t, alias, mg.ID, mg.ID)
+To check the status run 'rpk cluster storage status-mount %d.
+`, t, alias, id, id)
 		},
 	}
 	cmd.Flags().StringVar(&to, "to", "", "New namespace/topic name for the mounted topic (optional)")

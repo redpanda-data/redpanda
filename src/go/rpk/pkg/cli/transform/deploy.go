@@ -22,9 +22,8 @@ import (
 	"strings"
 	"time"
 
+	dataplanev1alpha2 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha2"
 	"github.com/redpanda-data/common-go/rpadmin"
-
-	dataplanev1alpha1 "buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/project"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -360,15 +359,15 @@ func parseOffset(formattedOffset string) (*rpadmin.Offset, error) {
 	return &rpadmin.Offset{Format: format, Value: val}, nil
 }
 
-func adminAPIToDataplaneMetadata(m rpadmin.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {
-	var envs []*dataplanev1alpha1.TransformMetadata_EnvironmentVariable
+func adminAPIToDataplaneMetadata(m rpadmin.TransformMetadata) *dataplanev1alpha2.DeployTransformRequest {
+	var envs []*dataplanev1alpha2.TransformMetadata_EnvironmentVariable
 	for _, e := range m.Environment {
-		envs = append(envs, &dataplanev1alpha1.TransformMetadata_EnvironmentVariable{
+		envs = append(envs, &dataplanev1alpha2.TransformMetadata_EnvironmentVariable{
 			Key:   e.Key,
 			Value: e.Value,
 		})
 	}
-	return &dataplanev1alpha1.DeployTransformRequest{
+	return &dataplanev1alpha2.DeployTransformRequest{
 		Name:                 m.Name,
 		InputTopicName:       m.InputTopic,
 		OutputTopicNames:     m.OutputTopics,
