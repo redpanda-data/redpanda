@@ -52,6 +52,7 @@ redpanda_cc_btest(
     srcs = [
         "abort_source_test.cc",
     ],
+    cpu = 2,
     deps = [
         "//src/v/base",
         "//src/v/ssx:abort_source",
