@@ -95,6 +95,9 @@ SaslCredentials = redpanda_types.SaslCredentials
 # Map of path -> (checksum, size)
 FileToChecksumSize = dict[str, Tuple[str, int]]
 
+# Map of node -> (path -> (arbitrary dictionary))
+NodeConfigOverridesT = dict[ClusterNode, dict]
+
 # The endpoint info for the azurite (Azure ABS emulator )container that
 # is used when running tests in a docker environment.
 AZURITE_HOSTNAME = 'azurite'
@@ -2794,13 +2797,20 @@ class RedpandaService(RedpandaServiceBase):
               expect_fail: bool = False,
               auto_assign_node_id: bool = False,
               omit_seeds_on_idx_one: bool = True,
-              node_config_overrides={}):
+              node_config_overrides: NodeConfigOverridesT = {}):
         """
         Start the service on all nodes.
 
         :param expect_fail: if true, expect redpanda nodes to terminate shortly
                             after starting.  Raise exception if they don't.
         """
+
+        # Callers sometimes forget that this must be keyed by ClusterNode.
+        for k in node_config_overrides:
+            assert type(
+                k
+            ) is ClusterNode, f"Expected ClusterNode as key in node_config_overrides, got {type(k)}"
+
         to_start = nodes if nodes is not None else self.nodes
         assert all((node in self.nodes for node in to_start))
         self.logger.info("%s: starting service" % self.who_am_i())
