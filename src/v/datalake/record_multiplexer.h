@@ -52,8 +52,12 @@ private:
     // target table.
     // TODO: this just writes to the existing table, populating internal
     // columns. Consider a separate table entirely.
-    ss::future<result<std::nullopt_t, writer_error>>
-      handle_invalid_record(kafka::offset, iobuf, iobuf, model::timestamp);
+    ss::future<result<std::nullopt_t, writer_error>> handle_invalid_record(
+      kafka::offset,
+      iobuf,
+      iobuf,
+      model::timestamp,
+      chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>);
 
     prefix_logger _log;
     const model::ntp& _ntp;
