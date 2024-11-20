@@ -804,6 +804,7 @@ ss::future<std::optional<model::offset>> archival_metadata_stm::sync(
 
 ss::future<bool> archival_metadata_stm::do_sync(
   model::timeout_clock::duration timeout, ss::abort_source* as) {
+    auto holder = _gate.hold();
     if (!co_await raft::persisted_stm<>::sync(timeout)) {
         co_return false;
     }
@@ -850,6 +851,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     // Otherwise, it will lead to _lock and _active_operation_res being reset
     // early allowing for concurrent sync and replicate calls which will lead
     // to race conditions/corruption/undefined behavior.
+
+    auto holder = _gate.hold();
 
     vassert(
       !_lock.try_get_units().has_value(),
@@ -972,6 +975,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as,
   segment_validated is_validated) {
+    auto holder = _gate.hold();
     {
         auto now = ss::lowres_clock::now();
         auto timeout = now < deadline ? deadline - now : 0ms;
