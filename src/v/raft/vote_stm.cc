@@ -126,71 +126,74 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
         proceed_with_election,
         immediate_success,
     };
-    return _ptr->_op_lock
-      .with([this, leadership_transfer] {
-          _config = _ptr->config();
-          // check again while under op_sem
-          if (_ptr->should_skip_vote(leadership_transfer)) {
-              return ss::make_ready_future<prepare_election_result>(
-                prepare_election_result::skip_election);
-          }
-          // 5.2.1 mark node as candidate, and update leader id
-          _ptr->_vstate = consensus::vote_state::candidate;
-          //  only trigger notification when we had a leader previously
-          if (_ptr->_leader_id) {
-              _ptr->_leader_id = std::nullopt;
-              _ptr->trigger_leadership_notification();
-          }
+    return _ptr->_election_lock.with([this, leadership_transfer] {
+        return _ptr->_op_lock
+          .with([this, leadership_transfer] {
+              _config = _ptr->config();
+              // check again while under op_sem
+              if (_ptr->should_skip_vote(leadership_transfer)) {
+                  return ss::make_ready_future<prepare_election_result>(
+                    prepare_election_result::skip_election);
+              }
+              // 5.2.1 mark node as candidate, and update leader id
+              _ptr->_vstate = consensus::vote_state::candidate;
+              //  only trigger notification when we had a leader previously
+              if (_ptr->_leader_id) {
+                  _ptr->_leader_id = std::nullopt;
+                  _ptr->trigger_leadership_notification();
+              }
 
-          if (_prevote && leadership_transfer) {
-              return ssx::now(prepare_election_result::immediate_success);
-          }
+              if (_prevote && leadership_transfer) {
+                  return ssx::now(prepare_election_result::immediate_success);
+              }
 
-          // 5.2.1.2
-          /**
-           * Pre-voting doesn't increase the term
-           */
-          if (!_prevote) {
-              _ptr->_term += model::term_id(1);
-              _ptr->_voted_for = {};
-          }
+              // 5.2.1.2
+              /**
+               * Pre-voting doesn't increase the term
+               */
+              if (!_prevote) {
+                  _ptr->_term += model::term_id(1);
+                  _ptr->_voted_for = {};
+              }
 
-          // special case, it may happen that node requesting votes is not a
-          // voter, it may happen if it is a learner in previous configuration
-          _replies.emplace(_ptr->_self, *this);
+              // special case, it may happen that node requesting votes is not a
+              // voter, it may happen if it is a learner in previous
+              // configuration
+              _replies.emplace(_ptr->_self, *this);
 
-          // vote is the only method under _op_sem
-          _config->for_each_voter(
-            [this](vnode id) { _replies.emplace(id, *this); });
+              // vote is the only method under _op_sem
+              _config->for_each_voter(
+                [this](vnode id) { _replies.emplace(id, *this); });
 
-          auto lstats = _ptr->_log->offsets();
-          auto last_entry_term = _ptr->get_last_entry_term(lstats);
+              auto lstats = _ptr->_log->offsets();
+              auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
-          _req = vote_request{
-            .node_id = _ptr->_self,
-            .group = _ptr->group(),
-            .term = _ptr->term(),
-            .prev_log_index = lstats.dirty_offset,
-            .prev_log_term = last_entry_term,
-            .leadership_transfer = leadership_transfer};
-          // we have to self vote before dispatching vote request to
-          // other nodes, this vote has to be done under op semaphore as
-          // it changes voted_for state
-          return self_vote().then(
-            [] { return prepare_election_result::proceed_with_election; });
-      })
-      .then([this](prepare_election_result result) {
-          switch (result) {
-          case prepare_election_result::skip_election:
-              return ss::make_ready_future<election_success>(
-                election_success::no);
-          case prepare_election_result::proceed_with_election:
-              return do_vote();
-          case prepare_election_result::immediate_success:
-              return ss::make_ready_future<election_success>(
-                election_success::yes);
-          }
-      });
+              _req = vote_request{
+                .node_id = _ptr->_self,
+                .group = _ptr->group(),
+                .term = _ptr->term(),
+                .prev_log_index = lstats.dirty_offset,
+                .prev_log_term = last_entry_term,
+                .leadership_transfer = leadership_transfer};
+              // we have to self vote before dispatching vote request to
+              // other nodes, this vote has to be done under op semaphore as
+              // it changes voted_for state
+              return self_vote().then(
+                [] { return prepare_election_result::proceed_with_election; });
+          })
+          .then([this](prepare_election_result result) {
+              switch (result) {
+              case prepare_election_result::skip_election:
+                  return ss::make_ready_future<election_success>(
+                    election_success::no);
+              case prepare_election_result::proceed_with_election:
+                  return do_vote();
+              case prepare_election_result::immediate_success:
+                  return ss::make_ready_future<election_success>(
+                    election_success::yes);
+              }
+          });
+    });
 }
 
 ss::future<election_success> vote_stm::do_vote() {
@@ -342,7 +345,7 @@ ss::future<> vote_stm::wait_for_next_reply() {
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
 ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
-    // use reply term to update voter term
+    // use reply term to update our term
     for (auto& [_, r] : _replies) {
         if (r.value && r.value->has_value()) {
             auto term = r.value->value().term;
@@ -354,7 +357,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
                   term);
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
-                _ptr->_vstate = consensus::vote_state::follower;
+                fail_election();
                 co_return;
             }
         }
@@ -376,7 +379,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     }
     if (!_success) {
         vlog(_ctxlog.info, "[pre-vote: {}] vote failed", _prevote);
-        _ptr->_vstate = consensus::vote_state::follower;
+        fail_election();
         co_return;
     }
     /**
@@ -394,7 +397,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           "[pre-vote: false] Ignoring successful vote. Node priority too low: "
           "{}",
           _ptr->_node_priority_override.value());
-        _ptr->_vstate = consensus::vote_state::follower;
+        fail_election();
         co_return;
     }
 
@@ -420,7 +423,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     auto ec = co_await replicate_config_as_new_leader(std::move(u));
 
-    // if we didn't replicated configuration, step down
+    // even if failed to replicate, don't step down: followers may be behind
     if (ec) {
         vlog(
           _ctxlog.info,
@@ -476,4 +479,13 @@ ss::future<> vote_stm::self_vote() {
     auto m = _replies.find(_ptr->self());
     m->second.set_value(reply);
 }
+
+void vote_stm::fail_election() {
+    vassert(
+      _ptr->_vstate != consensus::vote_state::leader
+        && _ptr->_hbeat != clock_type::time_point::max(),
+      "Became a leader outside current election");
+    _ptr->_vstate = consensus::vote_state::follower;
+}
+
 } // namespace raft
