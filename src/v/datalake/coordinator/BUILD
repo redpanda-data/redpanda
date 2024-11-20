@@ -281,6 +281,11 @@ redpanda_cc_library(
         "translated_offset_range.h",
     ],
     include_prefix = "datalake/coordinator",
+    visibility = [
+        ":__subpackages__",
+        "//src/v/datalake:__pkg__",
+        "//src/v/datalake/translation:__pkg__",
+    ],
     deps = [
         ":data_file",
         "//src/v/base",
