@@ -474,6 +474,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
 
     auto units = co_await _stm.get()._lock.get_units(_as);
+    auto holder = _stm.get()._gate.hold();
 
     vlog(_stm.get()._logger.debug, "command_batch_builder::replicate called");
     auto now = ss::lowres_clock::now();
@@ -488,7 +489,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
     auto batch = std::move(_builder).build();
     auto f = _stm.get()
                .do_replicate_commands(std::move(batch), _as)
-               .finally([u = std::move(units), h = _stm.get()._gate.hold()] {});
+               .finally([u = std::move(units), h = std::move(holder)] {});
 
     // The above do_replicate_commands call is not cancellable at every point
     // due to the guarantees we need from the operation for linearizability. To
