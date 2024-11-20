@@ -1109,4 +1109,27 @@ remote::propagate_credentials(cloud_roles::credentials credentials) {
       });
 }
 
+std::string remote::uri(
+  const cloud_storage_clients::bucket_name& bucket,
+  const cloud_storage_clients::object_key& key) const {
+    switch (_cloud_storage_backend) {
+    case model::cloud_storage_backend::google_s3_compat:
+    case model::cloud_storage_backend::minio:
+    case model::cloud_storage_backend::oracle_s3_compat:
+    case model::cloud_storage_backend::aws:
+        return fmt::format("s3://{}/{}", bucket(), key().native());
+    case model::cloud_storage_backend::azure: {
+        auto abs_config = std::get<cloud_storage_clients::abs_configuration>(
+          _auth_refresh_bg_op.get_client_config());
+        return fmt::format(
+          "abfss://{}@{}.blob.core.microsoft.net/{}",
+          bucket(),
+          abs_config.storage_account_name(),
+          key().native());
+    }
+    case model::cloud_storage_backend::unknown:
+        throw std::runtime_error(
+          "Can't build uri for unknown cloud storage backend;. This is a bug.");
+    }
+}
 } // namespace cloud_io

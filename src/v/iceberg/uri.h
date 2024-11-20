@@ -35,12 +35,4 @@ using uri = named_type<ss::sstring, struct iceberg_uri_tag>;
  */
 std::filesystem::path path_from_uri(const uri&);
 
-/**
- * Builds uri from protocol scheme, bucket and object path
- */
-uri make_uri(
-  const ss::sstring& bucket,
-  const std::filesystem::path& path,
-  std::string_view scheme = s3_scheme);
-
 }; // namespace iceberg

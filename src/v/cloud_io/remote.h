@@ -297,6 +297,10 @@ public:
 
     const io_resources& resources() const { return *_resources; }
 
+    std::string uri(
+      const cloud_storage_clients::bucket_name& bucket,
+      const cloud_storage_clients::object_key& key) const;
+
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
 

@@ -14,6 +14,7 @@
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "iceberg/logger.h"
+#include "iceberg/uri.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -43,6 +44,23 @@ public:
       : io_(io)
       , bucket_(std::move(b)) {}
     ~metadata_io() = default;
+
+public:
+    // E.g. path/to/file => s3://bucket/path/to/file
+    uri to_uri(const std::filesystem::path& path) const {
+        return uri(io_.uri(bucket_, cloud_storage_clients::object_key(path)));
+    }
+
+    // E.g. s3://bucket/path/to/file => path/to/file
+    // Leaves the path as is if it doesn't match the expected URI base.
+    checked<std::filesystem::path, metadata_io::errc>
+    from_uri(const uri& uri) const {
+        try {
+            return std::filesystem::path(path_from_uri(uri));
+        } catch (...) {
+            return metadata_io::errc::invalid_uri;
+        }
+    }
 
 protected:
     template<typename T>

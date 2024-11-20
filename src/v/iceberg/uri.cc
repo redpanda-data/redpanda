@@ -18,6 +18,7 @@ namespace {
 static std::regex uri_pattern{R"(^(.*):\/\/(.*?)\/(.*)$)"};
 }
 
+// TODO(nv): This is probably wrong for Azure
 std::filesystem::path path_from_uri(const uri& u) {
     std::cmatch match;
     std::regex_match(u().data(), match, uri_pattern);
@@ -25,13 +26,6 @@ std::filesystem::path path_from_uri(const uri& u) {
         throw std::invalid_argument(fmt::format("Malformed URI: {}", u));
     }
     return std::filesystem::path(match[3]);
-}
-
-uri make_uri(
-  const ss::sstring& bucket,
-  const std::filesystem::path& path,
-  std::string_view scheme) {
-    return uri(ssx::sformat("{}://{}/{}", scheme, bucket, path.native()));
 }
 
 }; // namespace iceberg
