@@ -93,7 +93,6 @@ class RestCatalogConnectionTest(RedpandaTest):
 
         catalog = self.catalog_service.client()
         namespace = "redpanda"
-        catalog.create_namespace(namespace)
         topic = TopicSpec(name='datalake-test-topic', partition_count=3)
 
         self.client().create_topic(topic)
