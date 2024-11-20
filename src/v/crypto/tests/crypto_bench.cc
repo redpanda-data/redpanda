@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#include "base/vassert.h"
 #include "crypto/crypto.h"
 #include "crypto/ossl_context_service.h"
 #include "random/generators.h"
@@ -42,6 +43,15 @@ public:
         auto fips_mode = crypto::is_fips_mode::no;
 #endif
         _thread_worker->start({.name = "worker"}).get();
+        if (auto module_override = ::getenv("__FIPS_MODULE_PATH");
+            module_override != nullptr) {
+            vassert(
+              std::filesystem::exists(module_override),
+              "Module not found: {}",
+              module_override);
+            auto mod = std::filesystem::path{module_override}.parent_path();
+            ::setenv("MODULE_DIR", mod.c_str(), 1);
+        }
         _svc
           .start(
             std::ref(*_thread_worker),

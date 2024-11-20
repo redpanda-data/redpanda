@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "crypto_test_utils",
@@ -113,3 +113,37 @@ common_env = {
     "__FIPS_MODULE_PATH": "$(rootpath @openssl-fips//:fipsmodule_so)",
 }
 
+redpanda_cc_bench(
+    name = "crypto_bench",
+    timeout = "short",
+    srcs = ["crypto_bench.cc"],
+    data = common_data_deps,
+    env = common_env,
+    deps = [
+        "//src/v/base",
+        "//src/v/crypto",
+        "//src/v/random:generators",
+        "//src/v/ssx:thread_worker",
+        "@openssl-fips",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "crypto_bench_fips",
+    timeout = "short",
+    srcs = ["crypto_bench.cc"],
+    data = common_data_deps,
+    defines = ["PERF_FIPS_MODE"],
+    env = common_env,
+    deps = [
+        "//src/v/base",
+        "//src/v/crypto",
+        "//src/v/random:generators",
+        "//src/v/ssx:thread_worker",
+        "@openssl",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
