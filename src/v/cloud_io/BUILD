@@ -98,6 +98,7 @@ redpanda_cc_library(
         ":auth_refresh_bg_op",
         ":io_resources",
         ":io_result",
+        ":provider",
         ":transfer_details",
         "//src/v/base",
         "//src/v/cloud_roles",
@@ -143,4 +144,13 @@ redpanda_cc_library(
         "//src/v/base",
         "@seastar",
     ],
+)
+
+redpanda_cc_library(
+    name = "provider",
+    hdrs = [
+        "provider.h",
+    ],
+    include_prefix = "cloud_io",
+    visibility = ["//visibility:public"],
 )
