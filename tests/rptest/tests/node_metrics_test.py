@@ -112,3 +112,49 @@ class NodeMetricsTest(RedpandaTest):
                            self.node_metrics.cache_disk_total_bytes())
         assert_lists_equal(self.node_metrics.disk_free_bytes(),
                            self.node_metrics.cache_disk_free_bytes())
+
+
+class NodeMetricsCloudStorageCacheTest(RedpandaTest):
+    def __init__(self, test_ctx):
+        # Set storage_min_free_bytes to 0 to avoid alerting on low disk space with custom cache directory mount.
+        super().__init__(test_context=test_ctx,
+                         extra_rp_conf={"storage_min_free_bytes": 0})
+        self.node_metrics = NodeMetrics(self.redpanda)
+
+    def setUp(self):
+        # add node config override not to spawn a new cluster with empty seed servers
+        overrides = {}
+        for n in self.redpanda.nodes:
+            overrides[n] = {
+                "cloud_storage_cache_directory":
+                f"/var/lib/cloud_storage_cache_100M_test/{n.name}/"
+            }
+        self.redpanda.start(node_config_overrides=overrides)
+
+    @cluster(num_nodes=3)
+    def test_node_cache_storage_metrics(self):
+        # Skip the test if dedicated nodes are used as we don't have custom
+        # mount points for cache directories.
+        if self.redpanda.dedicated_nodes:
+            return
+
+        # disk metrics are updated via health monitor's periodic tick().
+        self.node_metrics.wait_until_ready()
+
+        assert self.node_metrics.disk_total_bytes(
+        ) != self.node_metrics.cache_disk_total_bytes(
+        ), "Total bytes should not be the same as we are using different mount points"
+
+        assert self.node_metrics.disk_free_bytes(
+        ) != self.node_metrics.cache_disk_free_bytes(
+        ), "Free bytes should not be the same as we are using different mount points"
+
+        assert all(
+            v == 100 * 1024 * 1024
+            for v in self.node_metrics.cache_disk_total_bytes()
+        ), f"Expected 100M total bytes, got {self.node_metrics.cache_disk_total_bytes()}"
+
+        assert self.node_metrics.cache_disk_free_bytes(
+        ) <= self.node_metrics.cache_disk_total_bytes(
+        ), f"""Free bytes should be less than or equal to total bytes got
+            {self.node_metrics.cache_disk_free_bytes()} > {self.node_metrics.cache_disk_total_bytes()}"""
