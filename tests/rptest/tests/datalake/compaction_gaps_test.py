@@ -41,6 +41,10 @@ class CompactionGapsTest(RedpandaTest):
         self.segment_size = 5 * 1024 * 1024
         self.kafka_cat = KafkaCat(self.redpanda)
 
+    def setUp(self):
+        # redpanda will be started by DatalakeServices
+        pass
+
     def partition_segments(self) -> int:
         assert len(self.redpanda.nodes) == 1, self.redpanda.nodes
         node = self.redpanda.nodes[0]
