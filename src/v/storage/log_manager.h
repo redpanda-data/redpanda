@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -255,7 +256,7 @@ public:
 
 private:
     using logs_type
-      = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
+      = chunked_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
     using compaction_list_type
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
