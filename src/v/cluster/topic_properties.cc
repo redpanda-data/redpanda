@@ -39,7 +39,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "write_caching: {}, "
       "flush_ms: {}, "
       "flush_bytes: {}, "
-      "remote_label: {}, iceberg_enabled: {}, "
+      "remote_label: {}, iceberg_mode: {}, "
       "leaders_preference: {}, "
       "iceberg_translation_interval_ms: {}, "
       "delete_retention_ms: {}, "
@@ -77,7 +77,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.flush_ms,
       properties.flush_bytes,
       properties.remote_label,
-      properties.iceberg_enabled,
+      properties.iceberg_mode,
       properties.leaders_preference,
       properties.iceberg_translation_interval_ms,
       properties.delete_retention_ms,
@@ -125,7 +125,7 @@ bool topic_properties::has_overrides() const {
         || initial_retention_local_target_ms.is_engaged()
         || write_caching.has_value() || flush_ms.has_value()
         || flush_bytes.has_value() || remote_label.has_value()
-        || (iceberg_enabled != storage::ntp_config::default_iceberg_enabled)
+        || (iceberg_mode != storage::ntp_config::default_iceberg_mode)
         || leaders_preference.has_value()
         || iceberg_translation_interval_ms.has_value()
         || delete_retention_ms.is_engaged() || iceberg_delete.has_value();
@@ -168,7 +168,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.write_caching = write_caching;
     ret.flush_ms = flush_ms;
     ret.flush_bytes = flush_bytes;
-    ret.iceberg_enabled = iceberg_enabled;
+    ret.iceberg_mode = iceberg_mode;
     ret.cloud_topic_enabled = cloud_topic_enabled;
     ret.iceberg_translation_interval_ms = iceberg_translation_interval_ms;
     ret.tombstone_retention_ms = delete_retention_ms;
@@ -260,7 +260,7 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       std::nullopt,
       std::nullopt,
       std::nullopt,
-      false,
+      model::iceberg_mode::disabled,
       std::nullopt,
       false,
       std::nullopt,

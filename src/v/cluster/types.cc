@@ -402,7 +402,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.write_caching,
       i.flush_ms,
       i.flush_bytes,
-      i.iceberg_enabled,
+      i.iceberg_mode,
       i.leaders_preference,
       i.remote_read,
       i.remote_write,

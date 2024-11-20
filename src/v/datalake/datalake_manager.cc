@@ -101,7 +101,7 @@ ss::future<> datalake_manager::start() {
             }
         });
 
-    // Handle topic properties changes (iceberg.enabled=true/false)
+    // Handle topic properties changes (iceberg_mode)
     auto topic_properties_registration
       = _topic_table->local().register_ntp_delta_notification(
         [this](cluster::topic_table::ntp_delta_range_t range) {
@@ -162,7 +162,9 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
     }
     auto it = _translators.find(ntp);
     // todo(iceberg) handle topic / partition disabling
-    if (!partition->is_leader() || !topic_cfg->properties.iceberg_enabled) {
+    auto iceberg_disabled = topic_cfg->properties.iceberg_mode
+                            == model::iceberg_mode::disabled;
+    if (!partition->is_leader() || iceberg_disabled) {
         if (it != _translators.end()) {
             ssx::spawn_with_gate(_gate, [this, partition] {
                 return stop_translator(partition->ntp());

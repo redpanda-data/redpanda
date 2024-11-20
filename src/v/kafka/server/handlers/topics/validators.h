@@ -280,16 +280,15 @@ struct iceberg_config_validator {
           c.configs.begin(),
           c.configs.end(),
           [](const createable_topic_config& cfg) {
-              return cfg.name == topic_property_iceberg_enabled;
+              return cfg.name == topic_property_iceberg_mode;
           });
         if (it == c.configs.end() || !it->value.has_value()) {
             return true;
         }
-        bool enabled_with_topic_override = false;
+        model::iceberg_mode parsed_mode;
         try {
-            enabled_with_topic_override = string_switch<bool>(it->value.value())
-                                            .match("true", true)
-                                            .match("false", false);
+            parsed_mode = boost::lexical_cast<model::iceberg_mode>(
+              it->value.value());
         } catch (...) {
             return false;
         }
@@ -298,7 +297,7 @@ struct iceberg_config_validator {
         // at the cluster level, it cannot be enabled with a topic
         // override.
         return config::shard_local_cfg().iceberg_enabled()
-               || !enabled_with_topic_override;
+               || parsed_mode == model::iceberg_mode::disabled;
     }
 };
 

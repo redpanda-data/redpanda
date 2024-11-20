@@ -94,8 +94,8 @@ class RestCatalogConnectionTest(RedpandaTest):
         topic = TopicSpec(name='datalake-test-topic', partition_count=3)
 
         self.client().create_topic(topic)
-        self.client().alter_topic_config(topic.name,
-                                         "redpanda.iceberg.enabled", "true")
+        self.client().alter_topic_config(topic.name, "redpanda.iceberg.mode",
+                                         "key_value")
 
         producer = self.start_producer(topic_name=topic.name)
         # wait for the producer to finish
