@@ -87,7 +87,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
-        "@abseil-cpp//absl/container:flat_hash_map",
+        "//src/v/container:chunked_hash_map",
         "@seastar",
     ],
 )
