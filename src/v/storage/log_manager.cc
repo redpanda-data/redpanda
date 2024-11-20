@@ -594,10 +594,10 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
     vlog(stlog.debug, "Asked to shutdown: {}", ntp);
     auto gate = _gate.hold();
     auto handle = _logs.extract(ntp);
-    if (handle.empty()) {
+    if (!handle) {
         co_return;
     }
-    co_await clean_close(handle.mapped()->handle);
+    co_await clean_close(handle.value().second->handle);
     vlog(stlog.debug, "Shutdown: {}", ntp);
 }
 
@@ -606,11 +606,11 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     auto g = _gate.hold();
     auto handle = _logs.extract(ntp);
     update_log_count();
-    if (handle.empty()) {
+    if (!handle) {
         co_return;
     }
     // 'ss::shared_ptr<>' make a copy
-    auto lg = handle.mapped()->handle;
+    auto lg = handle.value().second->handle;
     vlog(stlog.info, "Removing: {}", lg);
     // NOTE: it is ok to *not* externally synchronize the log here
     // because remove, takes a write lock on each individual segments
