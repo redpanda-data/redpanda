@@ -1309,16 +1309,22 @@ ss::future<> cache::put(
     // eager trim, and rethrow the exception.
     if (eptr) {
         if (!_gate.is_closed()) {
+            vlog(
+              cst_log.debug,
+              "Removing temporary file {}. Exception during copy: {}",
+              tmp_filepath.native(),
+              eptr);
             auto delete_tmp_fut = co_await ss::coroutine::as_future(
               delete_file_and_empty_parents(tmp_filepath.native()));
-            if (
-              delete_tmp_fut.failed()
-              && !ssx::is_shutdown_exception(delete_tmp_fut.get_exception())) {
-                vlog(
-                  cst_log.error,
-                  "Failed to delete tmp file {}: {}",
-                  tmp_filepath.native(),
-                  delete_tmp_fut.get_exception());
+            if (delete_tmp_fut.failed()) {
+                auto e = delete_tmp_fut.get_exception();
+                if (!ssx::is_shutdown_exception(e)) {
+                    vlog(
+                      cst_log.error,
+                      "Failed to delete tmp file {}: {}",
+                      tmp_filepath.native(),
+                      e);
+                }
             }
         }
 
