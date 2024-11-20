@@ -13,9 +13,21 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
+#include "serde/async.h"
+#include "serde/peek.h"
+#include "serde/rw/array.h"
+#include "serde/rw/bool_class.h"
+#include "serde/rw/bytes.h"
+#include "serde/rw/chrono.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/inet_address.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/map.h"
 #include "serde/rw/rw.h"
+#include "serde/rw/set.h"
+#include "serde/rw/sstring.h"
 #include "serde/rw/variant.h"
-#include "serde/serde.h"
 #include "test_utils/randoms.h"
 #include "utils/tristate.h"
 
@@ -36,6 +48,7 @@
 #include <limits>
 #include <optional>
 #include <ratio>
+#include <utility>
 
 struct custom_read_write {
     friend inline void read_nested(
@@ -468,7 +481,7 @@ ss::future<> test_snapshot_header::serde_async_read(
     crc.extend(ss::cpu_to_le(version));
     crc.extend(ss::cpu_to_le(metadata_size));
 
-    if (header_crc != crc.value()) {
+    if (std::cmp_not_equal(header_crc, crc.value())) {
         throw std::runtime_error(fmt::format(
           "Corrupt snapshot. Failed to verify header crc: {} != "
           "{}: path?",
