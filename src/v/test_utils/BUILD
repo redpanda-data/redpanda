@@ -128,3 +128,24 @@ redpanda_test_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "profile_utils",
+    srcs = [
+        "profile_utils.cc",
+    ],
+    hdrs = [
+        "profile_utils.h",
+    ],
+    implementation_deps = [
+        "//src/v/redpanda/admin",
+        "//src/v/resource_mgmt:cpu_profiler",
+        "//src/v/resource_mgmt:memory_sampling",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
