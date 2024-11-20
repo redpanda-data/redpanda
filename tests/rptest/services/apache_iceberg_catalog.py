@@ -109,7 +109,7 @@ class IcebergRESTCatalog(Service):
             self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
         elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
-            self.cloud_storage_warehouse = f"abfs://{self.cloud_storage_bucket}@{self.credentials.endpoint}/{self.cloud_storage_catalog_prefix}"
+            self.cloud_storage_warehouse = f"abfss://{self.cloud_storage_bucket}@{self.credentials.endpoint}/{self.cloud_storage_catalog_prefix}"
 
     def set_filesystem_wrapper_mode(self, mode: bool):
         self.filesystem_wrapper_mode = mode

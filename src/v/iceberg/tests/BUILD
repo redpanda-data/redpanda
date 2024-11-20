@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "test_schemas",
@@ -605,9 +605,23 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":test_schemas",
+        "//src/v/cloud_io:provider",
         "//src/v/iceberg:uri",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "uri_bench",
+    timeout = "short",
+    srcs = [
+        "uri_bench.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/iceberg:uri",
+        "@seastar//:benchmark",
     ],
 )

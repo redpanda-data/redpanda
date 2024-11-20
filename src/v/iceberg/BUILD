@@ -409,8 +409,10 @@ redpanda_cc_library(
     include_prefix = "iceberg",
     deps = [
         ":logger",
+        ":uri",
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:provider",
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage_clients",
         "//src/v/ssx:future_util",
@@ -1094,9 +1096,14 @@ redpanda_cc_library(
     hdrs = [
         "uri.h",
     ],
+    implementation_deps = [
+        "//src/v/thirdparty/ada",
+    ],
     include_prefix = "iceberg",
     deps = [
         "//src/v/base",
+        "//src/v/cloud_io:provider",
+        "//src/v/model",
         "//src/v/ssx:sformat",
         "//src/v/utils:named_type",
         "@seastar",
