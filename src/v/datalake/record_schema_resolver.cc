@@ -71,27 +71,17 @@ struct schema_translating_visitor {
     }
     ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(ppsr::protobuf_schema_definition&& pb_def) {
-        const google::protobuf::Descriptor* d;
-        proto_offsets_message_data offsets;
-        try {
-            auto offsets_res = get_proto_offsets(buf_no_id);
-            if (offsets_res.has_error()) {
-                co_return type_resolver::errc::bad_input;
-            }
-            offsets = std::move(offsets_res.value());
-            // TODO: maybe there's another caching opportunity here.
-            auto d_res = descriptor(pb_def, offsets.protobuf_offsets);
-            if (d_res.has_error()) {
-                co_return type_resolver::errc::bad_input;
-            }
-            d = &d_res.value().get();
-        } catch (...) {
-            vlog(
-              datalake_log.error,
-              "Error getting protobuf offsets from buffer: {}",
-              std::current_exception());
+        auto offsets_res = get_proto_offsets(buf_no_id);
+        if (offsets_res.has_error()) {
             co_return type_resolver::errc::bad_input;
         }
+        auto offsets = std::move(offsets_res.value());
+        // TODO: maybe there's another caching opportunity here.
+        auto d_res = descriptor(pb_def, offsets.protobuf_offsets);
+        if (d_res.has_error()) {
+            co_return type_resolver::errc::bad_input;
+        }
+        const auto* d = &d_res.value().get();
         try {
             auto type = type_to_iceberg(*d).value();
             co_return type_and_buf{
@@ -113,7 +103,7 @@ struct schema_translating_visitor {
     }
     ss::future<checked<type_and_buf, type_resolver::errc>>
     operator()(ppsr::json_schema_definition&&) {
-        co_return type_and_buf::make_raw_binary(std::move(buf_no_id));
+        co_return type_resolver::errc::bad_input;
     }
 };
 
@@ -144,31 +134,27 @@ binary_type_resolver::resolve_buf_type(iobuf b) const {
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
 record_schema_resolver::resolve_buf_type(iobuf b) const {
-    schema_message_data schema_id_res;
-    try {
-        // NOTE: Kafka's serialization protocol relies on a magic byte to
-        // indicate if we have a schema. This has room for false positives, and
-        // we can't say for sure if an error is the result of the record not
-        // having a schema. Just translate to binary.
-        auto res = get_value_schema_id(b);
-        if (res.has_error()) {
-            vlog(
-              datalake_log.trace,
-              "Error parsing schema ID; using binary type: {}",
-              res.error());
-            co_return type_and_buf::make_raw_binary(std::move(b));
-        }
-        schema_id_res = std::move(res.value());
-    } catch (...) {
+    // NOTE: Kafka's serialization protocol relies on a magic byte to
+    // indicate if we have a schema. This has room for false positives, and
+    // we can't say for sure if an error is the result of the record not
+    // having a schema. Just translate to binary.
+    auto res = get_value_schema_id(b);
+    if (res.has_error()) {
         vlog(
           datalake_log.trace,
           "Error parsing schema ID; using binary type: {}",
-          std::current_exception());
-        co_return type_and_buf::make_raw_binary(std::move(b));
+          res.error());
+        co_return errc::bad_input;
     }
+    auto schema_id_res = std::move(res.value());
     auto schema_id = schema_id_res.schema_id;
     auto buf_no_id = std::move(schema_id_res.shared_message_data);
 
+    if (!sr_.is_enabled()) {
+        vlog(datalake_log.warn, "Schema registry is not enabled");
+        // TODO: should we treat this as transient?
+        co_return errc::translation_error;
+    }
     // TODO: It'd be nice to cache these -- translation interval instills a
     // natural limit to concurrency so a cache wouldn't grow huge.
     auto schema_fut = co_await ss::coroutine::as_future(
@@ -178,11 +164,17 @@ record_schema_resolver::resolve_buf_type(iobuf b) const {
           datalake_log.warn,
           "Error getting schema from registry: {}",
           schema_fut.get_exception());
-        // TODO: make schema::registry tell us whether the issue was transient.
         co_return errc::registry_error;
     }
     auto resolved_schema = std::move(schema_fut.get());
-    co_return co_await std::move(resolved_schema)
+    if (!resolved_schema.has_value()) {
+        vlog(
+          datalake_log.trace,
+          "Schema ID {} not in registry; using binary type",
+          schema_id);
+        co_return errc::bad_input;
+    }
+    co_return co_await std::move(*resolved_schema)
       .visit(schema_translating_visitor{std::move(buf_no_id), schema_id});
 }
 

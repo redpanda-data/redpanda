@@ -76,10 +76,10 @@ using get_proto_offsets_result
 
 // Extract the schema id from a record's value. This simply extracts the id. It
 // does not validate that the schema exists in the Schema Registry.
-get_schema_id_result get_value_schema_id(iobuf& record);
-get_proto_offsets_result get_schema_proto_offsets(iobuf& record);
+get_schema_id_result get_value_schema_id(iobuf& record) noexcept;
+get_proto_offsets_result get_schema_proto_offsets(iobuf& record) noexcept;
 result<proto_offsets_message_data, get_schema_error>
-get_proto_offsets(iobuf& record);
+get_proto_offsets(iobuf& record) noexcept;
 
 } // namespace datalake
 

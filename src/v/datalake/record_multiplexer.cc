@@ -55,11 +55,11 @@ record_multiplexer::operator()(model::record_batch batch) {
           std::move(val));
         if (val_type_res.has_error()) {
             switch (val_type_res.error()) {
+            case type_resolver::errc::registry_error:
+                _error = writer_error::parquet_conversion_error;
+                co_return ss::stop_iteration::yes;
             case type_resolver::errc::bad_input:
             case type_resolver::errc::translation_error:
-                // XXX: need to differentiate missing schema ID from transient
-                // registry errors.
-            case type_resolver::errc::registry_error:
                 auto invalid_res = co_await handle_invalid_record(
                   offset, record.share_key(), record.share_value(), timestamp);
                 if (invalid_res.has_error()) {
