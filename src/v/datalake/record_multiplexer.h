@@ -21,6 +21,7 @@
 #include <memory>
 
 namespace datalake {
+class record_translator;
 class schema_manager;
 class type_resolver;
 
@@ -42,7 +43,8 @@ public:
       const model::ntp& ntp,
       std::unique_ptr<parquet_file_writer_factory> writer,
       schema_manager& schema_mgr,
-      type_resolver& type_resolver);
+      type_resolver& type_resolver,
+      record_translator& record_translator);
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
     ss::future<result<write_result, writer_error>> end_of_stream();
@@ -64,6 +66,7 @@ private:
     std::unique_ptr<parquet_file_writer_factory> _writer_factory;
     schema_manager& _schema_mgr;
     type_resolver& _type_resolver;
+    record_translator& _record_translator;
     chunked_hash_map<
       record_schema_components,
       std::unique_ptr<partitioning_writer>>

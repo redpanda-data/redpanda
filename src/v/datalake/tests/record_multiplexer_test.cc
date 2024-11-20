@@ -10,6 +10,7 @@
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "datalake/table_definition.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
@@ -28,6 +29,7 @@
 using namespace datalake;
 
 namespace {
+record_translator translator;
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
 // v1: struct field with one field.
@@ -129,7 +131,8 @@ public:
           ntp,
           std::make_unique<test_data_writer_factory>(false),
           schema_mgr,
-          type_resolver);
+          type_resolver,
+          translator);
         auto res = reader.consume(std::move(mux), model::no_timeout).get();
         EXPECT_FALSE(res.has_error()) << res.error();
         if (res.has_error()) {

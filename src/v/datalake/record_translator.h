@@ -31,8 +31,9 @@ public:
         translation_error,
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
-    static record_type build_type(std::optional<resolved_type> val_type);
-    static ss::future<checked<iceberg::struct_value, errc>> translate_data(
+
+    record_type build_type(std::optional<resolved_type> val_type);
+    ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
       iobuf key,
