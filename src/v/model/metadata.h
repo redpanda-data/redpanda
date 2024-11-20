@@ -588,6 +588,25 @@ enum class recovery_validation_mode : std::uint16_t {
 std::ostream& operator<<(std::ostream&, recovery_validation_mode);
 std::istream& operator>>(std::istream&, recovery_validation_mode&);
 
+// Iceberg enablement options for a topic
+enum class iceberg_mode : uint8_t {
+    // Iceberg is disabled
+    disabled = 0,
+    // Iceberg translation interprets record key and value as binary
+    // types and uses default Iceberg table schema.
+    key_value = 1,
+    // Iceberg translation interprets the record value using the schema
+    // id embedded in value. Kafka serializers embed a magic byte as the
+    // first byte of the value to indicate the presence of a schema id
+    // which is then resolved with the schema registry. The value bytes
+    // are then interepted using the schema and the resulting columns are
+    // mapped to appropriate iceberg types and corresponding table columns.
+    value_schema_id_prefix = 2
+};
+
+std::ostream& operator<<(std::ostream&, const iceberg_mode&);
+std::istream& operator>>(std::istream&, iceberg_mode&);
+
 } // namespace model
 
 template<>
