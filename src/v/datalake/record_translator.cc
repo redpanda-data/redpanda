@@ -19,6 +19,7 @@
 #include "iceberg/avro_utils.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/values.h"
+#include "model/fundamental.h"
 
 #include <avro/Generic.hh>
 #include <avro/GenericDatum.hh>
@@ -78,7 +79,7 @@ record_translator::build_type(std::optional<resolved_type> val_type) {
                   ret_type.fields[0]->type);
                 // Use the next id of the system defaults.
                 system_fields.fields.emplace_back(iceberg::nested_field::create(
-                  6, "data", field->required, std::move(field->type)));
+                  11, "data", field->required, std::move(field->type)));
                 continue;
             }
             // Add the extra user-defined fields.
@@ -96,17 +97,41 @@ record_translator::build_type(std::optional<resolved_type> val_type) {
 
 ss::future<checked<iceberg::struct_value, record_translator::errc>>
 record_translator::translate_data(
+  model::partition_id pid,
   kafka::offset o,
   iobuf key,
   const std::optional<resolved_type>& val_type,
   iobuf parsable_val,
-  model::timestamp ts) {
+  model::timestamp ts,
+  const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
+    headers) {
     auto ret_data = iceberg::struct_value{};
     auto system_data = std::make_unique<iceberg::struct_value>();
+    system_data->fields.emplace_back(iceberg::int_value(pid));
     system_data->fields.emplace_back(iceberg::long_value(o));
     // NOTE: Kafka uses milliseconds, Iceberg uses microseconds.
     system_data->fields.emplace_back(
       iceberg::timestamp_value(ts.value() * 1000));
+
+    if (headers.empty()) {
+        system_data->fields.emplace_back(std::nullopt);
+    } else {
+        auto headers_list = std::make_unique<iceberg::list_value>();
+        for (const auto& [k, v] : headers) {
+            auto header_kv_struct = std::make_unique<iceberg::struct_value>();
+            header_kv_struct->fields.emplace_back(
+              k ? std::make_optional<iceberg::value>(
+                    iceberg::binary_value(k->copy()))
+                : std::nullopt);
+            header_kv_struct->fields.emplace_back(
+              v ? std::make_optional<iceberg::value>(
+                    iceberg::binary_value(v->copy()))
+                : std::nullopt);
+            headers_list->elements.emplace_back(std::move(header_kv_struct));
+        }
+        system_data->fields.emplace_back(std::move(headers_list));
+    }
+
     system_data->fields.emplace_back(iceberg::binary_value{std::move(key)});
     if (val_type.has_value()) {
         // Fill in the internal value field.
