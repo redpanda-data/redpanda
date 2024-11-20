@@ -55,57 +55,16 @@ std::optional<size_t> get_redpanda_idx(const iceberg::struct_type& val_type) {
     return std::nullopt;
 }
 
-} // namespace
-
-std::ostream& operator<<(std::ostream& o, const record_translator::errc& e) {
-    switch (e) {
-    case record_translator::errc::translation_error:
-        return o << "record_translator::errc::translation_error";
-    }
-}
-
-record_type
-record_translator::build_type(std::optional<resolved_type> val_type) {
-    auto ret_type = schemaless_struct_type();
-    std::optional<schema_identifier> val_id;
-    if (val_type.has_value()) {
-        val_id = std::move(val_type->id);
-        auto& struct_type = std::get<iceberg::struct_type>(val_type->type);
-        for (auto& field : struct_type.fields) {
-            if (field->name == rp_struct_name) {
-                // To avoid collisions, move user fields named "redpanda" into
-                // the nested "redpanda" system field.
-                auto& system_fields = std::get<iceberg::struct_type>(
-                  ret_type.fields[0]->type);
-                // Use the next id of the system defaults.
-                system_fields.fields.emplace_back(iceberg::nested_field::create(
-                  11, "data", field->required, std::move(field->type)));
-                continue;
-            }
-            // Add the extra user-defined fields.
-            ret_type.fields.emplace_back(std::move(field));
-        }
-    }
-    return record_type{
-      .comps = record_schema_components{
-          .key_identifier = std::nullopt,
-          .val_identifier = std::move(val_id),
-      },
-      .type = std::move(ret_type),
-    };
-}
-
-ss::future<checked<iceberg::struct_value, record_translator::errc>>
-record_translator::translate_data(
+// Builds a struct value meant to be used as the base of the "redpanda" struct.
+// Additional fields specific to the mode (e.g. "value" for key-value mode) may
+// be appended to the end.
+std::unique_ptr<iceberg::struct_value> build_rp_struct(
   model::partition_id pid,
   kafka::offset o,
   iobuf key,
-  const std::optional<resolved_type>& val_type,
-  iobuf parsable_val,
   model::timestamp ts,
   const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
     headers) {
-    auto ret_data = iceberg::struct_value{};
     auto system_data = std::make_unique<iceberg::struct_value>();
     system_data->fields.emplace_back(iceberg::int_value(pid));
     system_data->fields.emplace_back(iceberg::long_value(o));
@@ -133,48 +92,175 @@ record_translator::translate_data(
     }
 
     system_data->fields.emplace_back(iceberg::binary_value{std::move(key)});
+    return system_data;
+}
+
+} // namespace
+
+std::ostream& operator<<(std::ostream& o, const record_translator::errc& e) {
+    switch (e) {
+    case record_translator::errc::translation_error:
+        return o << "record_translator::errc::translation_error";
+    case record_translator::errc::unexpected_schema:
+        return o << "record_translator::errc::unexpected_schema";
+    }
+}
+
+record_type
+default_translator::build_type(std::optional<resolved_type> val_type) {
     if (val_type.has_value()) {
-        // Fill in the internal value field.
-        system_data->fields.emplace_back(std::nullopt);
-        ret_data.fields.emplace_back(std::move(system_data));
+        return structured_translator.build_type(std::move(val_type));
+    }
+    return kv_translator.build_type(std::move(val_type));
+}
 
-        auto translated_val = co_await std::visit(
-          value_translating_visitor{std::move(parsable_val), val_type->type},
-          val_type->schema);
-        if (translated_val.has_error()) {
-            vlog(
-              datalake_log.error,
-              "Error converting buffer: {}",
-              translated_val.error());
-            // TODO: metric for data translation errors.
-            // Either needs to drop the data or send it to a dead-letter queue.
-            co_return errc::translation_error;
-        }
+ss::future<checked<iceberg::struct_value, record_translator::errc>>
+default_translator::translate_data(
+  model::partition_id pid,
+  kafka::offset o,
+  iobuf key,
+  const std::optional<resolved_type>& val_type,
+  iobuf parsable_val,
+  model::timestamp ts,
+  const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
+    headers) {
+    if (val_type.has_value()) {
+        co_return co_await structured_translator.translate_data(
+          pid,
+          o,
+          std::move(key),
+          val_type,
+          std::move(parsable_val),
+          ts,
+          headers);
+    }
+    co_return co_await kv_translator.translate_data(
+      pid, o, std::move(key), val_type, std::move(parsable_val), ts, headers);
+}
 
-        auto redpanda_field_idx = get_redpanda_idx(
-          std::get<iceberg::struct_type>(val_type->type));
-        // Unwrap the struct fields.
-        auto& val_struct = std::get<std::unique_ptr<iceberg::struct_value>>(
-          translated_val.value().value());
-        for (size_t i = 0; i < val_struct->fields.size(); ++i) {
-            auto& field = val_struct->fields[i];
-            if (redpanda_field_idx == i) {
+record_type key_value_translator::build_type(std::optional<resolved_type>) {
+    auto ret_type = schemaless_struct_type();
+    std::optional<schema_identifier> val_id;
+    auto& system_fields = std::get<iceberg::struct_type>(
+      ret_type.fields[0]->type);
+    system_fields.fields.emplace_back(iceberg::nested_field::create(
+      10, "data", iceberg::field_required::no, iceberg::binary_type{}));
+    return record_type{
+      .comps = record_schema_components{
+          .key_identifier = std::nullopt,
+          .val_identifier = std::move(val_id),
+      },
+      .type = std::move(ret_type),
+    };
+}
+
+ss::future<checked<iceberg::struct_value, record_translator::errc>>
+key_value_translator::translate_data(
+  model::partition_id pid,
+  kafka::offset o,
+  iobuf key,
+  const std::optional<resolved_type>& val_type,
+  iobuf parsable_val,
+  model::timestamp ts,
+  const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
+    headers) {
+    if (val_type.has_value()) {
+        vlog(
+          datalake_log.error,
+          "Must not have parsed schema when using key-value mode");
+        co_return record_translator::errc::unexpected_schema;
+    }
+    auto ret_data = iceberg::struct_value{};
+    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
+    system_data->fields.emplace_back(
+      iceberg::binary_value{std::move(parsable_val)});
+
+    ret_data.fields.emplace_back(std::move(system_data));
+    co_return ret_data;
+}
+
+record_type
+structured_data_translator::build_type(std::optional<resolved_type> val_type) {
+    auto ret_type = schemaless_struct_type();
+    std::optional<schema_identifier> val_id;
+    if (val_type.has_value()) {
+        val_id = std::move(val_type->id);
+        auto& struct_type = std::get<iceberg::struct_type>(val_type->type);
+        for (auto& field : struct_type.fields) {
+            if (field->name == rp_struct_name) {
                 // To avoid collisions, move user fields named "redpanda" into
                 // the nested "redpanda" system field.
-                auto& system_vals
-                  = std::get<std::unique_ptr<iceberg::struct_value>>(
-                    ret_data.fields[0].value());
-                system_vals->fields.emplace_back(std::move(field));
+                auto& system_fields = std::get<iceberg::struct_type>(
+                  ret_type.fields[0]->type);
+                // Use the next id of the system defaults.
+                system_fields.fields.emplace_back(iceberg::nested_field::create(
+                  10, "data", field->required, std::move(field->type)));
                 continue;
             }
-            ret_data.fields.emplace_back(std::move(field));
+            // Add the extra user-defined fields.
+            ret_type.fields.emplace_back(std::move(field));
         }
-    } else {
-        system_data->fields.emplace_back(
-          iceberg::binary_value{std::move(parsable_val)});
+    }
+    return record_type{
+      .comps = record_schema_components{
+          .key_identifier = std::nullopt,
+          .val_identifier = std::move(val_id),
+      },
+      .type = std::move(ret_type),
+    };
+}
 
-        // Just add the system fields.
-        ret_data.fields.emplace_back(std::move(system_data));
+ss::future<checked<iceberg::struct_value, record_translator::errc>>
+structured_data_translator::translate_data(
+  model::partition_id pid,
+  kafka::offset o,
+  iobuf key,
+  const std::optional<resolved_type>& val_type,
+  iobuf parsable_val,
+  model::timestamp ts,
+  const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
+    headers) {
+    if (!val_type.has_value()) {
+        vlog(
+          datalake_log.error,
+          "Must have parsed schema when using structured data mode");
+        co_return record_translator::errc::unexpected_schema;
+    }
+    auto ret_data = iceberg::struct_value{};
+    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
+    // Fill in the internal value field.
+    ret_data.fields.emplace_back(std::move(system_data));
+
+    auto translated_val = co_await std::visit(
+      value_translating_visitor{std::move(parsable_val), val_type->type},
+      val_type->schema);
+    if (translated_val.has_error()) {
+        vlog(
+          datalake_log.error,
+          "Error converting buffer: {}",
+          translated_val.error());
+        // TODO: metric for data translation errors.
+        // Either needs to drop the data or send it to a dead-letter queue.
+        co_return errc::translation_error;
+    }
+
+    auto redpanda_field_idx = get_redpanda_idx(
+      std::get<iceberg::struct_type>(val_type->type));
+    // Unwrap the struct fields.
+    auto& val_struct = std::get<std::unique_ptr<iceberg::struct_value>>(
+      translated_val.value().value());
+    for (size_t i = 0; i < val_struct->fields.size(); ++i) {
+        auto& field = val_struct->fields[i];
+        if (redpanda_field_idx == i) {
+            // To avoid collisions, move user fields named "redpanda" into
+            // the nested "redpanda" system field.
+            auto& system_vals
+              = std::get<std::unique_ptr<iceberg::struct_value>>(
+                ret_data.fields[0].value());
+            system_vals->fields.emplace_back(std::move(field));
+            continue;
+        }
+        ret_data.fields.emplace_back(std::move(field));
     }
     co_return ret_data;
 }
