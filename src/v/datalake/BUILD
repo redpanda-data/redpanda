@@ -163,37 +163,65 @@ redpanda_cc_library(
     ],
 )
 
-# TODO(iceberg): uncomment once partition_translator
-# and dependencies are bazel friendly.
-#redpanda_cc_library(
-#    name = "manager",
-#    srcs = [
-#        "datalake_manager.cc",
-#    ],
-#    hdrs = [
-#        "datalake_manager.h",
-#    ],
-#    include_prefix = "datalake",
-#    visibility = ["//visibility:public"],
-#    deps = [
-#        ":cloud_data_io",
-#        ":logger",
-#        ":types",
-#        "//src/v/base",
-#        "//src/v/cluster",
-#        "//src/v/config",
-#        "//src/v/container:chunked_hash_map",
-#        "//src/v/datalake/coordinator:frontend",
-#        "//src/v/datalake/translation:partition_translator",
-#        "//src/v/features",
-#        "//src/v/model",
-#        "//src/v/raft",
-#        "//src/v/serde",
-#        "//src/v/ssx:semaphore",
-#        "@fmt",
-#        "@seastar",
-#    ],
-#)
+redpanda_cc_library(
+    name = "manager",
+    srcs = [
+        "datalake_manager.cc",
+    ],
+    hdrs = [
+        "datalake_manager.h",
+    ],
+    include_prefix = "datalake",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":catalog_schema_manager",
+        ":cloud_data_io",
+        ":logger",
+        ":types",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake/coordinator:frontend",
+        "//src/v/datalake/translation:partition_translator",
+        "//src/v/features",
+        "//src/v/model",
+        "//src/v/pandaproxy",
+        "//src/v/raft",
+        "//src/v/schema:registry",
+        "//src/v/serde",
+        "//src/v/ssx:semaphore",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "translation_task",
+    srcs = [
+        "translation_task.cc",
+    ],
+    hdrs = [
+        "translation_task.h",
+    ],
+    include_prefix = "datalake",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cloud_data_io",
+        ":logger",
+        ":record_multiplexer",
+        ":types",
+        ":writer",
+        "//src/v/base",
+        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/model",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:retry_chain_node",
+        "@fmt",
+        "@seastar",
+    ],
+)
 
 redpanda_cc_library(
     name = "table_definition",
