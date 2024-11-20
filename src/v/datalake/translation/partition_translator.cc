@@ -19,6 +19,7 @@
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/logger.h"
 #include "datalake/record_multiplexer.h"
+#include "datalake/record_translator.h"
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation_task.h"
@@ -103,7 +104,10 @@ partition_translator::partition_translator(
   , _features(features)
   , _cloud_io(cloud_io)
   , _schema_mgr(schema_mgr)
+  // TODO: type resolver and record translator should be constructed based on
+  // topic configs.
   , _type_resolver(type_resolver)
+  , _record_translator(std::make_unique<record_translator>())
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}
@@ -207,7 +211,8 @@ partition_translator::do_translation_for_range(
       fmt::format("{}", begin_offset),   // file prefix
       get_parquet_writer_factory());
 
-    auto task = translation_task{**_cloud_io, *_schema_mgr, *_type_resolver};
+    auto task = translation_task{
+      **_cloud_io, *_schema_mgr, *_type_resolver, *_record_translator};
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_file_path_prefix, ntp.path(), _term)};
