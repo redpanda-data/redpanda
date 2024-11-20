@@ -266,11 +266,6 @@ class AddPartitionsOperation(Operation):
             n = ctx.redpanda.get_node_by_id(b['node_id'])
             if n not in ctx.redpanda.started_nodes():
                 continue
-            node_version = int_tuple(
-                VERSION_RE.findall(ctx.redpanda.get_version(n))[0])
-            # do not query nodes with redpanda version prior to v23.1.x
-            if node_version[0] < 23:
-                return None
             try:
                 partitions = ctx.admin().get_partitions(node=n,
                                                         topic=self.topic)
