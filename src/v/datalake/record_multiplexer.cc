@@ -91,6 +91,7 @@ record_multiplexer::operator()(model::record_batch batch) {
           header_kvs);
         if (record_data_res.has_error()) {
             switch (record_data_res.error()) {
+            case record_translator::errc::unexpected_schema:
             case record_translator::errc::translation_error:
                 vlog(
                   _log.debug,

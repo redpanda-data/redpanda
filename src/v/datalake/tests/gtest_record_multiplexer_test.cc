@@ -37,7 +37,7 @@ simple_schema_manager simple_schema_mgr;
 binary_type_resolver bin_resolver;
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
-record_translator translator;
+default_translator translator;
 } // namespace
 
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
@@ -295,7 +295,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
         // Default columns + a nested struct.
         EXPECT_EQ(table->num_columns(), 8);
         auto expected_type
-          = R"(redpanda: struct<partition: int32 not null, offset: int64 not null, timestamp: timestamp[us] not null, headers: list<element: struct<key: binary, value: binary> not null>, key: binary, value: binary> not null
+          = R"(redpanda: struct<partition: int32 not null, offset: int64 not null, timestamp: timestamp[us] not null, headers: list<element: struct<key: binary, value: binary> not null>, key: binary> not null
 mylong: int64 not null
 nestedrecord: struct<inval1: double not null, inval2: string not null, inval3: int32 not null> not null
 myarray: list<element: double not null> not null
