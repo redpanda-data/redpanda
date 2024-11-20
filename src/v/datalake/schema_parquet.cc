@@ -130,7 +130,9 @@ struct type_converting_visitor {
 
     serde::parquet::schema_element
     operator()(const iceberg::struct_type& type) {
-        return struct_to_parquet(type);
+        auto res = struct_to_parquet(type);
+        res.repetition_type = map_repetition_type(required);
+        return res;
     }
 
     serde::parquet::schema_element operator()(const iceberg::list_type& type) {
