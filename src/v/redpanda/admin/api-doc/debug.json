@@ -1148,9 +1148,9 @@
                     "type": "long",
                     "description": "Next cloud offset"
                 },
-                "iceberg_enabled": {
-                    "type": "boolean",
-                    "description": "Whether iceberg translation is enabled on this replica."
+                "iceberg_mode": {
+                    "type": "string",
+                    "description": "Iceberg enablement mode for the topic"
                 },
                 "raft_state": {
                     "type": "raft_replica_state",

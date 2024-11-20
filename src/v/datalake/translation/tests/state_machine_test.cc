@@ -21,18 +21,23 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
         return builder.create_stm<stm>(logger(), node.raft().get());
     }
 
-    ss::future<> update_iceberg_config(bool value) {
-        co_await parallel_for_each_node([value](raft_node_instance& node) {
+    ss::future<> update_iceberg_config(model::iceberg_mode mode) {
+        co_await parallel_for_each_node([mode](raft_node_instance& node) {
             auto log = node.raft()->log();
             log->set_overrides(
-              storage::ntp_config::default_overrides{.iceberg_enabled = value});
+              storage::ntp_config::default_overrides{.iceberg_mode = mode});
             return ss::make_ready_future<>();
         });
     }
 
-    ss::future<> enable_iceberg() { return update_iceberg_config(true); }
+    ss::future<> enable_iceberg() {
+        return update_iceberg_config(
+          model::iceberg_mode::value_schema_id_prefix);
+    }
 
-    ss::future<> disable_iceberg() { return update_iceberg_config(false); }
+    ss::future<> disable_iceberg() {
+        return update_iceberg_config(model::iceberg_mode::disabled);
+    }
 
     template<typename Func>
     ss::future<> for_each_stm(Func&& f) {

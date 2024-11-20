@@ -275,12 +275,11 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Maximum number of bytes that are not flushed per partition. If the configured threshold is reached, the log is automatically flushed even if it has not been explicitly requested."
             ),
-            "redpanda.iceberg.enabled":
+            "redpanda.iceberg.mode":
             ConfigProperty(
-                config_type="BOOLEAN",
-                value="false",
-                doc_string=
-                "Iceberg format translation enabled on this topic if true."),
+                config_type="STRING",
+                value="disabled",
+                doc_string="Iceberg enablement mode for the topic."),
             "redpanda.leaders.preference":
             ConfigProperty(
                 config_type="STRING",
