@@ -27,10 +27,12 @@ redpanda_test_cc_library(
     ],
     hdrs = [
         "async.h",
+        "fixture.h",
         "gtest_utils.h",
         "logs.h",
         "test.h",
         "test_macros.h",
+        "tmp_dir.h",
     ],
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],

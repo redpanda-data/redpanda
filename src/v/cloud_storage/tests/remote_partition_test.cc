@@ -1634,7 +1634,7 @@ FIXTURE_TEST(
     };
 
     auto num_conf_batches = 0;
-    auto num_data_batches = 0;
+    size_t num_data_batches = 0;
     for (const auto& segment : batch_types) {
         for (const auto& b : segment) {
             if (b.type == model::record_batch_type::raft_configuration) {
@@ -1699,7 +1699,7 @@ FIXTURE_TEST(
     };
 
     auto num_conf_batches = 0;
-    auto num_data_batches = 0;
+    size_t num_data_batches = 0;
     for (const auto& segment : batch_types) {
         for (const auto& b : segment) {
             if (b.type == model::record_batch_type::raft_configuration) {
@@ -2132,10 +2132,10 @@ bool timequery(
   cloud_storage_fixture& fixture,
   model::offset min,
   model::timestamp tm,
-  int expected_num_records) {
+  size_t expected_num_records) {
     auto scan_res = scan_remote_partition(
       fixture, min, tm, model::offset::max());
-    int num_data_records = 0;
+    size_t num_data_records = 0;
     size_t bytes_read_acc = 0;
     for (const auto& hdr : scan_res.headers) {
         test_log.debug("Consumed header: {}", hdr);
@@ -2232,7 +2232,7 @@ FIXTURE_TEST(test_scan_by_timestamp, cloud_storage_fixture) {
       *this, model::offset(0), model::offset_delta(0), batch_types);
 
     print_segments(segments);
-    auto num_data_batches = data_timestamps.size();
+    int num_data_batches = data_timestamps.size();
 
     for (int i = 0; i < num_data_batches; i++) {
         kafka::offset ko(i);

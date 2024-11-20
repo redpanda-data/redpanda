@@ -12,6 +12,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/tests/produce_utils.h"
+#include "cloud_storage/tests/read_replica_e2e_fixture.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
@@ -34,8 +35,6 @@
 #include <gtest/gtest.h>
 
 #include <iterator>
-
-#include "cloud_storage/tests/read_replica_test.cc"
 
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
@@ -182,7 +181,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
                               .get();
     auto records = kv_t::sequence(0, 3);
     BOOST_CHECK_EQUAL(records.size(), consumed_records.size());
-    for (int i = 0; i < records.size(); ++i) {
+    for (size_t i = 0; i < records.size(); ++i) {
         BOOST_CHECK_EQUAL(records[i].key, consumed_records[i].key);
         BOOST_CHECK_EQUAL(records[i].val, consumed_records[i].val);
     }

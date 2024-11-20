@@ -19,6 +19,7 @@ redpanda_test_cc_library(
         "topic_properties_generator.h",
     ],
     include_prefix = "cluster/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "//src/v/cluster",

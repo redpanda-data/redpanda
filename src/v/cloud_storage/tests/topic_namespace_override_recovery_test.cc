@@ -113,7 +113,7 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
               .get();
 
         ASSERT_EQ(records.size(), consumed_records.size());
-        for (int i = 0; i < records.size(); ++i) {
+        for (size_t i = 0; i < records.size(); ++i) {
             ASSERT_EQ(records[i].key, consumed_records[i].key);
             ASSERT_EQ(records[i].val, consumed_records[i].val);
         }
@@ -166,7 +166,7 @@ TEST_F(TopicRecoveryFixture, TestTopicNamespaceOverrideRecovery) {
           .get();
 
     ASSERT_EQ(records.size(), consumed_records.size());
-    for (int i = 0; i < records.size(); ++i) {
+    for (size_t i = 0; i < records.size(); ++i) {
         ASSERT_EQ(records[i].key, consumed_records[i].key);
         ASSERT_EQ(records[i].val, consumed_records[i].val);
     }

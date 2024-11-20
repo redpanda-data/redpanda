@@ -58,10 +58,44 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
-    name = "common",
+    name = "read_replica_e2e_fixture",
     hdrs = [
+        "read_replica_e2e_fixture.h",
+    ],
+    implementation_deps = [
+    ],
+    include_prefix = "cloud_storage/tests",
+    deps = [
+        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/redpanda/tests:fixture",
+        "//src/v/test_utils:scoped_config",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "read_replica_e2e_fixture_gtest",
+    hdrs = [
+        "read_replica_e2e_fixture.h",
+    ],
+    implementation_deps = [
+    ],
+    include_prefix = "cloud_storage/tests",
+    deps = [
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/redpanda/tests:fixture_gtest",
+        "//src/v/test_utils:scoped_config",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "common",
+    srcs = ["util.cc"],
+    hdrs = [
+        "cache_test_fixture.h",
         "cloud_storage_fixture.h",
         "common_def.h",
+        "manual_fixture.h",
+        "produce_utils.h",
         "util.h",
     ],
     include_prefix = "cloud_storage/tests",
@@ -69,9 +103,42 @@ redpanda_test_cc_library(
         ":s3_imposter",
         "//src/v/bytes:iobuf",
         "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/cluster/cloud_metadata/tests:manual_mixin",
+        "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model/tests:random",
+        "//src/v/redpanda/tests:fixture",
         "//src/v/storage/tests:disk_log_builder",
+        "//src/v/test_utils:scoped_config",
         "//src/v/test_utils:seastar_boost",
+        "@boost//:numeric_conversion",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "common_gtest",
+    srcs = ["util.cc"],
+    hdrs = [
+        "cache_test_fixture.h",
+        "cloud_storage_fixture.h",
+        "common_def.h",
+        "manual_fixture.h",
+        "produce_utils.h",
+        "util.h",
+    ],
+    include_prefix = "cloud_storage/tests",
+    deps = [
+        ":s3_imposter_gtest",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/cluster/cloud_metadata/tests:manual_mixin",
+        "//src/v/kafka/server/tests:kafka_test_utils",
+        "//src/v/model/tests:random",
+        "//src/v/redpanda/tests:fixture_gtest",
+        "//src/v/storage/tests:disk_log_builder",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
         "@boost//:numeric_conversion",
     ],
 )
@@ -207,6 +274,7 @@ redpanda_cc_gtest(
         "remote_path_provider_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         "//src/v/cloud_storage",
         "//src/v/cloud_storage:topic_mount_manifest_path",
@@ -241,6 +309,7 @@ redpanda_cc_gtest(
         "topic_mount_handler_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":s3_imposter_gtest",
         "//src/v/cloud_storage",
@@ -279,5 +348,311 @@ redpanda_cc_btest(
         "@boost//:filesystem",
         "@boost//:test",
         "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "tx_range_manifest_test",
+    timeout = "short",
+    srcs = [
+        "tx_range_manifest_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "topic_mount_manifest_test",
+    timeout = "short",
+    srcs = [
+        "topic_mount_manifest_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage:remote_label",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "topic_manifest_test",
+    timeout = "short",
+    srcs = [
+        "topic_manifest_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:streambuf",
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:random",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remote_file_test",
+    timeout = "short",
+    srcs = [
+        "remote_file_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:lazy_abort_source",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remote_segment_test",
+    timeout = "short",
+    srcs = [
+        "remote_segment_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remote_partition_test",
+    timeout = "short",
+    srcs = [
+        "remote_partition_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/ssx:future_util",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry_chain_node",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "async_manifest_view_test",
+    timeout = "short",
+    srcs = [
+        "async_manifest_view_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:retry_chain_node",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "anomalies_detector_test",
+    timeout = "short",
+    srcs = [
+        "anomalies_detector_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/config",
+        "//src/v/hashing:xx",
+        "//src/v/http/tests:utils",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "partition_manifest_downloader_test",
+    timeout = "short",
+    srcs = [
+        "partition_manifest_downloader_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:streambuf",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/cloud_storage_clients",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "remote_test",
+    timeout = "short",
+    srcs = [
+        "remote_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common_gtest",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:lazy_abort_source",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/utils:stream_provider",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "topic_manifest_downloader_test",
+    timeout = "short",
+    srcs = [
+        "topic_manifest_downloader_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/bytes:streambuf",
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/cloud_storage_clients",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "topic_namespace_override_recovery_test",
+    timeout = "short",
+    srcs = [
+        "topic_namespace_override_recovery_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common_gtest",
+        "//src/v/cloud_storage/tests:s3_imposter_gtest",
+        "//src/v/cluster",
+        "//src/v/cluster/tests:topic_properties_generator",
+        "//src/v/config",
+        "//src/v/kafka/server/tests:kafka_test_utils",
+        "//src/v/model",
+        "//src/v/redpanda:application",
+        "//src/v/redpanda/tests:fixture_gtest",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/utils:retry_chain_node",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "remote_partition_fuzz_test",
+    timeout = "moderate",
+    srcs = [
+        "remote_partition_fuzz_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/cloud_storage",
+        "//src/v/cloud_storage/tests:common",
+        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )

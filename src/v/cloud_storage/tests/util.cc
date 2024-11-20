@@ -29,8 +29,8 @@ namespace cloud_storage {
 
 static const remote_path_provider path_provider(std::nullopt, std::nullopt);
 
-segment_layout
-generate_segment_layout(int num_segments, int seed, bool exclude_tx_fence) {
+segment_layout generate_segment_layout(
+  int num_segments, [[maybe_unused]] int seed, bool exclude_tx_fence) {
     static constexpr size_t max_segment_size = 20;
     static constexpr size_t max_batch_size = 10;
     static constexpr size_t max_record_bytes = 2048;
@@ -60,7 +60,7 @@ generate_segment_layout(int num_segments, int seed, bool exclude_tx_fence) {
                 batch_size = 1;
             }
             std::vector<size_t> sizes;
-            for (int j = 0; j < batch_size; j++) {
+            for (size_t j = 0; j < batch_size; j++) {
                 sizes.push_back(
                   random_generators::get_int(max_record_bytes - 1));
             }
@@ -362,7 +362,7 @@ std::vector<in_memory_segment> make_segments(
         // s2 should have delta_offset_shift set to number of config records
         // in batch 7, otherwise the manifest will be generated incorrectly.
         in_memory_segment prev;
-        for (int i = 0; i < segments.size(); i++) {
+        for (size_t i = 0; i < segments.size(); i++) {
             const auto& batches = segments[i];
             auto body = make_segment(base_offset, batches);
             if (i > 0) {
@@ -391,7 +391,7 @@ std::vector<in_memory_segment> make_segments(
         // s2             [4, 5, 6, 7]
         // s2'               [5, 6, 7]
         vlog(test_util_log.debug, "Producing duplicated log segments");
-        for (int i = 0; i < segments.size(); i++) {
+        for (size_t i = 0; i < segments.size(); i++) {
             const auto& batches = segments[i];
             auto body = make_segment(base_offset, batches);
             if (batches.size() > 1) {
@@ -404,7 +404,7 @@ std::vector<in_memory_segment> make_segments(
             base_offset = s.back().max_offset + model::offset(1);
         }
     } else {
-        for (int i = 0; i < segments.size(); i++) {
+        for (size_t i = 0; i < segments.size(); i++) {
             const auto& batches = segments[i];
             auto body = make_segment(base_offset, batches);
             s.push_back(std::move(body));
