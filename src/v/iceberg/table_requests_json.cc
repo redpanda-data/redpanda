@@ -46,6 +46,24 @@ commit_table_response parse_commit_table_response(const json::Value& value) {
       .table_metadata = parse_table_meta(parse_required(value, "metadata")),
     };
 }
+
+create_namespace_response
+parse_create_namespace_response(const json::Value& value) {
+    create_namespace_response ret;
+    auto ns_json_array = parse_required_array(value, "namespace");
+    ret.ns.reserve(ns_json_array.Size());
+    for (const auto& ns_json : ns_json_array) {
+        if (!ns_json.IsString()) {
+            throw std::invalid_argument(fmt::format(
+              "Expected 'namespace' to be string array, element is {}",
+              ns_json.GetType()));
+        }
+        ret.ns.emplace_back(ns_json.GetString());
+    }
+    ret.properties = parse_optional_string_map(value, "properties");
+    return ret;
+}
+
 } // namespace iceberg
 namespace json {
 
@@ -118,6 +136,27 @@ void rjson_serialize(
         rjson_serialize(w, update);
     }
     w.EndArray();
+    w.EndObject();
+}
+
+void rjson_serialize(
+  iceberg::json_writer& w, const iceberg::create_namespace_request& req) {
+    w.StartObject();
+    w.Key("namespace");
+    w.StartArray();
+    for (const auto& n : req.ns) {
+        w.String(n);
+    }
+    w.EndArray();
+    if (req.properties.has_value()) {
+        w.Key("properties");
+        w.StartObject();
+        for (const auto& [k, v] : *req.properties) {
+            w.Key(k);
+            w.String(v);
+        }
+        w.EndObject();
+    }
     w.EndObject();
 }
 
