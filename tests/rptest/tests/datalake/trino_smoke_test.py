@@ -27,9 +27,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
 
     def setUp(self):
         super().setUp()
-        si = self.redpanda.si_settings
         self.trino = TrinoService(self.test_ctx,
-                                  self.catalog_service.catalog_url, si)
+                                  self.catalog_service.catalog_url)
         self.trino.start()
 
     def tearDown(self):
@@ -37,13 +36,9 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
             self.trino.stop()
         return super().tearDown()
 
-    def execute_query(self, query_str):
-        assert self.trino
-        return self.trino.execute(query=query_str)
-
     @cluster(num_nodes=3)
-    @matrix(storage_type=supported_storage_types())
-    def test_trino_smoke(self, storage_type):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_trino_smoke(self, cloud_storage_type):
         assert self.trino
         client = self.trino.make_client()
         try:
@@ -61,8 +56,8 @@ class TrinoSmokeTest(IcebergRESTCatalogTest):
                 )
                 cursor.fetchall()
                 cursor.execute("SELECT count(*) from redpanda.test")
-                count = cursor.fetchone()[0]
-                assert count == 1, count
+                row = cursor.fetchone()
+                assert row == (1, ), row
             finally:
                 cursor.close()
         finally:

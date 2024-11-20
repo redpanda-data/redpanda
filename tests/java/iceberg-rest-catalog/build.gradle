@@ -39,6 +39,7 @@ dependencies {
   // probably ok since this is just for tests and it is mind numbing
   // to debug hadoop dependency mess :'(
   implementation "org.apache.hadoop:hadoop-aws:${hadoopVersion}"
+  implementation "org.apache.hadoop:hadoop-azure:${hadoopVersion}"
   runtimeOnly "com.amazonaws:aws-java-sdk-bundle:${awsJavaSdkVersion}"
   implementation "org.apache.iceberg:iceberg-api:${icebergVersion}"
   implementation "org.apache.iceberg:iceberg-core:${icebergVersion}"

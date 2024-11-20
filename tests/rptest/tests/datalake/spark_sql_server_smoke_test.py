@@ -8,11 +8,13 @@
 # by the Apache License, Version 2.0
 
 from typing import Optional
+
+from ducktape.mark import matrix
+
 from rptest.services.cluster import cluster
 from rptest.services.spark_service import SparkService
 from rptest.tests.datalake.iceberg_rest_catalog import IcebergRESTCatalogTest
 from rptest.tests.datalake.utils import supported_storage_types
-from ducktape.mark import matrix
 
 
 class SparkSmokeTest(IcebergRESTCatalogTest):
@@ -27,9 +29,8 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
 
     def setUp(self):
         super().setUp()
-        si = self.redpanda.si_settings
         self.spark = SparkService(self.test_ctx,
-                                  self.catalog_service.catalog_url, si)
+                                  self.catalog_service.catalog_url)
         self.spark.start()
 
     def tearDown(self):
@@ -37,13 +38,9 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
             self.spark.stop()
         return super().tearDown()
 
-    def execute_query(self, query_str):
-        assert self.spark
-        return self.spark.execute(query=query_str)
-
     @cluster(num_nodes=3)
-    @matrix(storage_type=supported_storage_types())
-    def test_spark_smoke(self, storage_type):
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_spark_smoke(self, cloud_storage_type):
         assert self.spark
         client = self.spark.make_client()
         try:
@@ -57,8 +54,8 @@ class SparkSmokeTest(IcebergRESTCatalogTest):
                 cursor.execute(
                     "INSERT into redpanda.test values(2024, 'Wohn Jick')")
                 cursor.execute("SELECT count(*) from redpanda.test")
-                count = cursor.fetchone()[0]
-                assert count == 1, count
+                row = cursor.fetchone()
+                assert row == (1, ), row
             finally:
                 cursor.close()
         finally:

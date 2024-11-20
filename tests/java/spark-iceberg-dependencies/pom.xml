@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.redpanda</groupId>
   <artifactId>spark-iceberg-dependencies</artifactId>
@@ -10,6 +12,16 @@
     <iceberg.version>1.6.1</iceberg.version>
   </properties>
   <dependencies>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.9</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.9</version>
+    </dependency>
     <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-spark-runtime-3.5_2.12</artifactId>
@@ -25,12 +37,17 @@
       <artifactId>iceberg-core</artifactId>
       <version>${iceberg.version}</version>
       <exclusions>
-	<exclusion>
-	  <!-- incompatible with spark -->
-	  <groupId>com.fasterxml.jackson.core</groupId>
-	  <artifactId>*</artifactId>
-	</exclusion>
+        <exclusion>
+          <!-- incompatible with spark -->
+          <groupId>com.fasterxml.jackson.core</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-azure-bundle</artifactId>
+      <version>${iceberg.version}</version>
     </dependency>
   </dependencies>
   <build>
