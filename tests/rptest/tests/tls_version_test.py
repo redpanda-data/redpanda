@@ -20,7 +20,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import TLSProvider, SecurityConfig
 from rptest.services.redpanda_installer import RedpandaInstaller
-from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager
+from rptest.services.tls import Certificate, CertificateAuthority, TLSCertManager, TLSKeyType
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -83,10 +83,10 @@ class TLSVersionTestBase(RedpandaTest):
     """
     Base test class that sets up TLS on the Kafka API interface
     """
-    def __init__(self, test_context):
+    def __init__(self, test_context, key_type: TLSKeyType):
         super(TLSVersionTestBase, self).__init__(test_context=test_context)
         self.security = SecurityConfig()
-        self.tls = TLSCertManager(self.logger)
+        self.tls = TLSCertManager(self.logger, key_type=key_type)
         self.admin = Admin(self.redpanda)
         self.installer = self.redpanda._installer
 
@@ -122,8 +122,6 @@ class TLSVersionTestBase(RedpandaTest):
                 assert self._output_error(e.output.decode(
                 )), f"Output not expected for failure: {e.output.decode()}"
 
-
-class TLSVersionTest(TLSVersionTestBase):
     @cluster(num_nodes=3, log_allow_list=PERMITTED_ERROR_MESSAGE)
     @matrix(version=[0, 1, 2, 3])
     def test_change_version(self, version: int):
@@ -150,3 +148,15 @@ class TLSVersionTest(TLSVersionTestBase):
                 self.verify_tls_version(node=n,
                                         tls_version=v,
                                         expect_fail=expect_failure)
+
+
+class TLSVersionTestRSA(TLSVersionTestBase):
+    def __init__(self, test_context):
+        super(TLSVersionTestRSA, self).__init__(test_context=test_context,
+                                                key_type=TLSKeyType.RSA)
+
+
+class TLSVersionTestECDSA(TLSVersionTestBase):
+    def __init__(self, test_context):
+        super(TLSVersionTestECDSA, self).__init__(test_context=test_context,
+                                                  key_type=TLSKeyType.ECDSA)
