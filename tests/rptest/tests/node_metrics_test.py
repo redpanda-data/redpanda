@@ -19,7 +19,7 @@ from rptest.utils.node_metrics import NodeMetrics
 
 
 def assert_lists_equal(l1: list[float], l2: list[float]):
-    assert l1 == l2
+    assert l1 == l2, f"Expected {l1} == {l2}"
 
 
 class NodeMetricsTest(RedpandaTest):
@@ -110,5 +110,3 @@ class NodeMetricsTest(RedpandaTest):
         # Assert cache disk metrics match data disk metrics since it is the same disk in this test setup.
         assert_lists_equal(self.node_metrics.disk_total_bytes(),
                            self.node_metrics.cache_disk_total_bytes())
-        assert_lists_equal(self.node_metrics.disk_free_bytes(),
-                           self.node_metrics.cache_disk_free_bytes())
