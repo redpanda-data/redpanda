@@ -101,10 +101,40 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
       .partition_spec = spec.copy()};
     auto h = co_await lock_.get_units();
 
-    co_return (co_await client_->create_table(t_id.ns, std::move(request), rtc))
+    auto res = co_await client_->create_table(t_id.ns, std::move(request), rtc);
+    if (res.has_value()) {
+        co_return get_metadata(std::move(res.value()));
+    }
+    auto err = map_error("create_table", res.error());
+    if (err != catalog::errc::not_found) {
+        co_return err;
+    }
+
+    // The namespace presumably doesn't exist. Create it and then try again.
+    vlog(
+      log.trace, "received not_found for table {}, creating namespace", t_id);
+    create_namespace_request ns_request{
+      .ns = t_id.ns.copy(),
+    };
+    auto ns_res = co_await client_->create_namespace(
+      std::move(ns_request), rtc);
+    if (!ns_res.has_value()) {
+        auto ns_errc = map_error("create_namespace", ns_res.error());
+        if (ns_errc != catalog::errc::already_exists) {
+            co_return ns_errc;
+        }
+        // If the namespace already exists, presumably there was a race, so
+        // fall through to retry table creation.
+    }
+    create_table_request retry_request{
+      .name = t_id.table,
+      .schema = schema.copy(),
+      .partition_spec = spec.copy()};
+    co_return (
+      co_await client_->create_table(t_id.ns, std::move(retry_request), rtc))
       .transform(get_metadata)
       .transform_error([](const rest_client::domain_error& err) {
-          return map_error("create_table", err);
+          return map_error("create_table_retry", err);
       });
 }
 
