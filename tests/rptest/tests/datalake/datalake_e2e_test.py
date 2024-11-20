@@ -38,6 +38,10 @@ class DatalakeE2ETests(RedpandaTest):
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
+    def setUp(self):
+        # redpanda will be started by DatalakeServices
+        pass
+
     def _get_serde_client(
             self,
             schema_type: SchemaType,

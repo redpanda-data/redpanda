@@ -35,6 +35,10 @@ class CoordinatorRetentionTest(RedpandaTest):
         self.test_ctx = test_ctx
         self.topic_name = "test"
 
+    def setUp(self):
+        # redpanda will be started by DatalakeServices
+        pass
+
     def wait_until_coordinator_snapshots(self):
         try:
             replica_last_snapshot_offsets = []
