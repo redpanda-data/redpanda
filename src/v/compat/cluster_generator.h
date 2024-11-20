@@ -651,7 +651,7 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional([] { return tests::random_duration_ms(); }),
           tests::random_optional(
             [] { return random_generators::get_int<size_t>(); }),
-          false,
+          model::iceberg_mode::disabled,
           std::nullopt,
           false,
           std::nullopt,

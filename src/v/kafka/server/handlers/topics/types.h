@@ -96,8 +96,8 @@ inline constexpr std::string_view
 inline constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";
 
-inline constexpr std::string_view topic_property_iceberg_enabled
-  = "redpanda.iceberg.enabled";
+inline constexpr std::string_view topic_property_iceberg_mode
+  = "redpanda.iceberg.mode";
 
 inline constexpr std::string_view topic_property_leaders_preference
   = "redpanda.leaders.preference";

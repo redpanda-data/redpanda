@@ -93,7 +93,8 @@ class DatalakeE2ETests(RedpandaTest):
                               redpanda=self.redpanda,
                               filesystem_catalog_mode=True,
                               include_query_engines=[query_engine]) as dl:
-            dl.create_iceberg_enabled_topic(self.topic_name)
+            dl.create_iceberg_enabled_topic(
+                self.topic_name, iceberg_mode="value_schema_id_prefix")
             avro_serde_client = self._get_serde_client(SchemaType.AVRO,
                                                        SerdeClientType.Golang,
                                                        self.topic_name, count)
