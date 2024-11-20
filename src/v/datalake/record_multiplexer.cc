@@ -26,12 +26,14 @@ record_multiplexer::record_multiplexer(
   const model::ntp& ntp,
   std::unique_ptr<parquet_file_writer_factory> writer_factory,
   schema_manager& schema_mgr,
-  type_resolver& type_resolver)
+  type_resolver& type_resolver,
+  record_translator& record_translator)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
   , _writer_factory{std::move(writer_factory)}
   , _schema_mgr(schema_mgr)
-  , _type_resolver(type_resolver) {}
+  , _type_resolver(type_resolver)
+  , _record_translator(record_translator) {}
 
 ss::future<ss::stop_iteration>
 record_multiplexer::operator()(model::record_batch batch) {
@@ -79,7 +81,7 @@ record_multiplexer::operator()(model::record_batch batch) {
             }
         }
 
-        auto record_data_res = co_await record_translator::translate_data(
+        auto record_data_res = co_await _record_translator.translate_data(
           _ntp.tp.partition,
           offset,
           std::move(key),
@@ -108,7 +110,7 @@ record_multiplexer::operator()(model::record_batch batch) {
                 continue;
             }
         }
-        auto record_type = record_translator::build_type(
+        auto record_type = _record_translator.build_type(
           std::move(val_type_res.value().type));
         auto writer_iter = _writers.find(record_type.comps);
         if (writer_iter == _writers.end()) {
@@ -213,7 +215,7 @@ record_multiplexer::handle_invalid_record(
     headers) {
     vlog(_log.debug, "Handling invalid record {}", offset);
     int64_t estimated_size = key.size_bytes() + val.size_bytes();
-    auto record_data_res = co_await record_translator::translate_data(
+    auto record_data_res = co_await _record_translator.translate_data(
       _ntp.tp.partition,
       offset,
       std::move(key),
@@ -229,7 +231,7 @@ record_multiplexer::handle_invalid_record(
           record_data_res.error());
         co_return writer_error::parquet_conversion_error;
     }
-    auto record_type = record_translator::build_type(std::nullopt);
+    auto record_type = _record_translator.build_type(std::nullopt);
 
     // TODO: maybe this should be a writer specific for a dead-letter queue.
     auto writer_iter = _writers.find(record_type.comps);

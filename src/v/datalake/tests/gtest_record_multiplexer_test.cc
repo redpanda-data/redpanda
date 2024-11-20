@@ -13,6 +13,7 @@
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
@@ -36,6 +37,7 @@ simple_schema_manager simple_schema_mgr;
 binary_type_resolver bin_resolver;
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
+record_translator translator;
 } // namespace
 
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
@@ -45,7 +47,11 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       false);
     datalake::record_multiplexer multiplexer(
-      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
+      ntp,
+      std::move(writer_factory),
+      simple_schema_mgr,
+      bin_resolver,
+      translator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -79,7 +85,11 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     auto writer_factory = std::make_unique<datalake::test_data_writer_factory>(
       true);
     datalake::record_multiplexer multiplexer(
-      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
+      ntp,
+      std::move(writer_factory),
+      simple_schema_mgr,
+      bin_resolver,
+      translator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -114,7 +124,11 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       ss::make_shared<datalake::batching_parquet_writer_factory>(100, 10000));
 
     datalake::record_multiplexer multiplexer(
-      ntp, std::move(writer_factory), simple_schema_mgr, bin_resolver);
+      ntp,
+      std::move(writer_factory),
+      simple_schema_mgr,
+      bin_resolver,
+      translator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -251,7 +265,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       "data",
       ss::make_shared<datalake::batching_parquet_writer_factory>(100, 10000));
     record_multiplexer mux(
-      ntp, std::move(writer_factory), schema_mgr, type_resolver);
+      ntp, std::move(writer_factory), schema_mgr, type_resolver, translator);
     auto res = reader.consume(std::move(mux), model::no_timeout).get();
     ASSERT_FALSE(res.has_error()) << res.error();
     EXPECT_EQ(res.value().start_offset(), start_offset());
