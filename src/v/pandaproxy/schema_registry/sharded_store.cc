@@ -313,6 +313,22 @@ sharded_store::has_schema(canonical_schema schema, include_deleted inc_del) {
     co_return std::move(sub_schema).value();
 }
 
+ss::future<std::optional<canonical_schema_definition>>
+sharded_store::maybe_get_schema_definition(schema_id id) {
+    co_return co_await _store.invoke_on(
+      shard_for(id),
+      _smp_opts,
+      [id](store& s) -> std::optional<canonical_schema_definition> {
+          auto s_res = s.get_schema_definition(id);
+          if (
+            s_res.has_error()
+            && s_res.error().code() == error_code::schema_id_not_found) {
+              return std::nullopt;
+          }
+          return std::move(s_res.value());
+      });
+}
+
 ss::future<canonical_schema_definition>
 sharded_store::get_schema_definition(schema_id id) {
     co_return co_await _store.invoke_on(

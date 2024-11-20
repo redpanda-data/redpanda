@@ -52,6 +52,16 @@ schema::fake_store::get_schema_definition(ppsr::schema_id id) {
     throw std::runtime_error("unknown schema id");
 }
 
+ss::future<std::optional<ppsr::canonical_schema_definition>>
+schema::fake_store::maybe_get_schema_definition(ppsr::schema_id id) {
+    for (const auto& s : schemas) {
+        if (s.id == id) {
+            co_return s.schema.def().share();
+        }
+    }
+    co_return std::nullopt;
+}
+
 void schema::fake_registry::maybe_throw_injected_failure() const {
     if (_injected_failure) {
         std::rethrow_exception(_injected_failure);
