@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "utils",
@@ -196,5 +196,21 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "role_store_bench",
+    timeout = "moderate",
+    srcs = [
+        "role_store_bench.cc",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/random:generators",
+        "//src/v/security",
+        "@boost//:range",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
