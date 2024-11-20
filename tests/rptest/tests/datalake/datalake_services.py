@@ -117,14 +117,23 @@ class DatalakeServices():
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(topic, "redpanda.iceberg.mode", mode)
 
+    def catalog_client(self):
+        return self.catalog_service.client("redpanda-iceberg-catalog")
+
+    def table_exists(self, table, namespace="redpanda", client=None):
+        if client is None:
+            client = self.catalog_client()
+
+        namespaces = client.list_namespaces()
+        self.redpanda.logger.debug(f"namespaces: {namespaces}")
+        return (namespace, ) in namespaces and (
+            namespace, table) in client.list_tables(namespace)
+
     def wait_for_iceberg_table(self, namespace, table, timeout, backoff_sec):
-        client = self.catalog_service.client("redpanda-iceberg-catalog")
+        client = self.catalog_client()
 
         def table_created():
-            namespaces = client.list_namespaces()
-            self.redpanda.logger.debug(f"namespaces: {namespaces}")
-            return (namespace, ) in namespaces and (
-                namespace, table) in client.list_tables(namespace)
+            return self.table_exists(table, namespace=namespace, client=client)
 
         wait_until(
             table_created,
