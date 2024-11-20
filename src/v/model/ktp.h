@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -338,22 +339,12 @@ struct ktp_hash_eq {
 };
 
 /**
- * @brief Helper alias to declare a flat map from ntp to V.
+ * @brief Helper alias to declare a map from ntp to V.
  *
  * Uses transparent comparator to allow any ntp object to be used for lookup.
  */
 template<typename V>
-using ntp_flat_map_type
-  = absl::flat_hash_map<model::ntp, V, ktp_hash_eq, ktp_hash_eq>;
-
-/**
- * @brief Helper alias to declare a flat map from ntp to V.
- *
- * Uses transparent comparator to allow any ntp object to be used for lookup.
- */
-template<typename V>
-using ntp_node_map_type
-  = absl::node_hash_map<model::ntp, V, ktp_hash_eq, ktp_hash_eq>;
+using ntp_map_type = chunked_hash_map<model::ntp, V, ktp_hash_eq, ktp_hash_eq>;
 
 } // namespace model
 

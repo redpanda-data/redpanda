@@ -20,6 +20,7 @@
 #include "cluster/state_machine_registry.h"
 #include "cluster/types.h"
 #include "config/property.h"
+#include "container/chunked_hash_map.h"
 #include "container/intrusive_list_helpers.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -37,7 +38,7 @@ class partition_manager
   : public ss::peering_sharded_service<partition_manager> {
 public:
     using ntp_table_container
-      = model::ntp_flat_map_type<ss::lw_shared_ptr<partition>>;
+      = model::ntp_map_type<ss::lw_shared_ptr<partition>>;
 
     partition_manager(
       ss::sharded<storage::api>&,
@@ -277,8 +278,7 @@ private:
     ntp_callbacks<unmanage_cb_t> _unmanage_watchers;
     // XXX use intrusive containers here
     ntp_table_container _ntp_table;
-    absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
-      _raft_table;
+    chunked_hash_map<raft::group_id, ss::lw_shared_ptr<partition>> _raft_table;
 
     ss::sharded<cloud_storage::partition_recovery_manager>&
       _partition_recovery_mgr;
