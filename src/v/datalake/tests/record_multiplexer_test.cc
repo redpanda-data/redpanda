@@ -61,6 +61,23 @@ constexpr std::string_view avro_schema_v2_str = R"({
         { "name": "bytes", "type": "bytes" }
     ]
 })";
+constexpr std::string_view avro_schema_w_redpanda_str = R"({
+    "type": "record",
+    "name": "RootRecord",
+    "fields": [
+        { "name": "mylong", "doc": "mylong field doc.", "type": "long" },
+        {
+            "name": "redpanda",
+            "type": {
+                "type": "record",
+                "name": "Nested",
+                "fields": [
+                    { "name": "foo", "type": "double" }
+                ]
+            }
+        }
+    ]
+})";
 } // namespace
 
 struct records_param {
@@ -209,7 +226,7 @@ TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
 
     // 4 default columns + RootRecord + mylong
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 6);
+    EXPECT_EQ(schema->highest_field_id(), 11);
 }
 
 TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
@@ -245,7 +262,7 @@ TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
     }
     EXPECT_EQ(hrs.size(), GetParam().hrs);
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 16);
+    EXPECT_EQ(schema->highest_field_id(), 21);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -268,11 +285,48 @@ INSTANTIATE_TEST_SUITE_P(
         "rpb{}_bph{}_h{}", p.records_per_batch, p.batches_per_hr, p.hrs);
   });
 
-class RecordMultiplexerInvalidAppendTest
+class RecordMultiplexerTest
   : public RecordMultiplexerTestBase
   , public ::testing::Test {};
 
-TEST_F(RecordMultiplexerInvalidAppendTest, TestMissingSchema) {
+TEST_F(RecordMultiplexerTest, TestAvroRecordsWithRedpandaField) {
+    tests::record_generator gen(&registry);
+    auto reg_res
+      = gen.register_avro_schema("avro_rp", avro_schema_w_redpanda_str).get();
+    EXPECT_FALSE(reg_res.has_error()) << reg_res.error();
+
+    // Add Avro records.
+    auto start_offset = model::offset{0};
+    auto res = mux(
+      default_param, start_offset, [&gen](storage::record_batch_builder& b) {
+          auto res
+            = gen.add_random_avro_record(b, "avro_rp", std::nullopt).get();
+          ASSERT_FALSE(res.has_error());
+      });
+    ASSERT_TRUE(res.has_value());
+    const auto& write_res = res.value();
+    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+
+    std::unordered_set<int> hrs;
+    for (auto& f : write_res.data_files) {
+        hrs.emplace(f.hour);
+        EXPECT_EQ(f.row_count, default_param.records_per_hr());
+    }
+    EXPECT_EQ(hrs.size(), default_param.hrs);
+
+    // 1 nested redpanda column + 4 default columns + mylong + 1 user redpanda
+    // column + 1 nested
+    auto schema = get_current_schema();
+    EXPECT_EQ(schema->highest_field_id(), 13);
+
+    // The redpanda system fields should include the 'data' column.
+    const auto& rp_struct = std::get<iceberg::struct_type>(
+      schema->schema_struct.fields[0]->type);
+    EXPECT_EQ(7, rp_struct.fields.size());
+    EXPECT_EQ("data", rp_struct.fields.back()->name);
+}
+
+TEST_F(RecordMultiplexerTest, TestMissingSchema) {
     auto start_offset = model::offset{0};
     auto res = mux(
       default_param, start_offset, [](storage::record_batch_builder& b) {
@@ -287,10 +341,10 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestMissingSchema) {
     EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
 
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 4);
+    EXPECT_EQ(schema->highest_field_id(), 10);
 }
 
-TEST_F(RecordMultiplexerInvalidAppendTest, TestBadData) {
+TEST_F(RecordMultiplexerTest, TestBadData) {
     tests::record_generator gen(&registry);
     auto reg_res
       = gen.register_avro_schema("avro_v1", avro_schema_v1_str).get();
@@ -313,10 +367,10 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestBadData) {
     // shouldn't register the Avro schema -- instead we should see the default
     // schema.
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 4);
+    EXPECT_EQ(schema->highest_field_id(), 10);
 }
 
-TEST_F(RecordMultiplexerInvalidAppendTest, TestBadSchemaChange) {
+TEST_F(RecordMultiplexerTest, TestBadSchemaChange) {
     constexpr std::string_view avro_incompat_schema_str = R"({
         "type": "record",
         "name": "RootRecord",
@@ -346,7 +400,7 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestBadSchemaChange) {
 
     // This should have registered the valid schema.
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 6);
+    EXPECT_EQ(schema->highest_field_id(), 11);
 
     // Now try writing with an incompatible schema.
     res = mux(
@@ -362,5 +416,5 @@ TEST_F(RecordMultiplexerInvalidAppendTest, TestBadSchemaChange) {
     const auto& write_res = res.value();
     EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
     schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 6);
+    EXPECT_EQ(schema->highest_field_id(), 11);
 }

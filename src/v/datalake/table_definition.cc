@@ -15,15 +15,35 @@ namespace datalake {
 using namespace iceberg;
 struct_type schemaless_struct_type() {
     using namespace iceberg;
+    struct_type system_fields;
+    system_fields.fields.emplace_back(
+      nested_field::create(2, "partition", field_required::yes, int_type{}));
+    system_fields.fields.emplace_back(
+      nested_field::create(3, "offset", field_required::yes, long_type{}));
+    system_fields.fields.emplace_back(nested_field::create(
+      4, "timestamp", field_required::yes, timestamp_type{}));
+
+    struct_type headers_kv;
+    headers_kv.fields.emplace_back(
+      nested_field::create(7, "key", field_required::no, binary_type{}));
+    headers_kv.fields.emplace_back(
+      nested_field::create(8, "value", field_required::no, binary_type{}));
+    system_fields.fields.emplace_back(nested_field::create(
+      5,
+      "headers",
+      field_required::no,
+      list_type::create(6, field_required::yes, std::move(headers_kv))));
+
+    system_fields.fields.emplace_back(
+      nested_field::create(9, "key", field_required::no, binary_type{}));
+    system_fields.fields.emplace_back(
+      nested_field::create(10, "value", field_required::no, binary_type{}));
     struct_type res;
     res.fields.emplace_back(nested_field::create(
-      1, "redpanda_offset", field_required::yes, long_type{}));
-    res.fields.emplace_back(nested_field::create(
-      2, "redpanda_timestamp", field_required::yes, timestamp_type{}));
-    res.fields.emplace_back(nested_field::create(
-      3, "redpanda_key", field_required::no, binary_type{}));
-    res.fields.emplace_back(nested_field::create(
-      4, "redpanda_value", field_required::no, binary_type{}));
+      1,
+      ss::sstring{rp_struct_name},
+      field_required::yes,
+      std::move(system_fields)));
 
     return res;
 }
@@ -39,7 +59,7 @@ schema default_schema() {
 partition_spec hour_partition_spec() {
     chunked_vector<partition_field> fields;
     fields.emplace_back(partition_field{
-      .source_id = nested_field::id_t{2},
+      .source_id = nested_field::id_t{4},
       .field_id = partition_field::id_t{1000},
       .name = "redpanda_timestamp_hour",
       .transform = hour_transform{},

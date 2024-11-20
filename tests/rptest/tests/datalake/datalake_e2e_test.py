@@ -105,27 +105,23 @@ class DatalakeE2ETests(RedpandaTest):
 
             if query_engine == QueryEngineType.TRINO:
                 trino = dl.trino()
-                trino_expected_out = [('redpanda_offset', 'bigint', '', ''),
-                                      ('redpanda_timestamp', 'timestamp(6)',
-                                       '', ''),
-                                      ('redpanda_key', 'varbinary', '', ''),
-                                      ('redpanda_value', 'varbinary', '', ''),
-                                      ('payload', 'row(val bigint)', '', '')]
+                trino_expected_out = [(
+                    'redpanda',
+                    'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary, value varbinary)',
+                    '', ''), ('val', 'bigint', '', '')]
                 trino_describe_out = trino.run_query_fetch_all(
                     f"describe {table_name}")
                 assert trino_describe_out == trino_expected_out, str(
                     trino_describe_out)
             else:
                 spark = dl.spark()
-                spark_expected_out = [
-                    ('redpanda_offset', 'bigint', None),
-                    ('redpanda_timestamp', 'timestamp_ntz', None),
-                    ('redpanda_key', 'binary', None),
-                    ('redpanda_value', 'binary', None),
-                    ('payload', 'struct<val:bigint>', None), ('', '', ''),
-                    ('# Partitioning', '', ''),
-                    ('Part 0', 'hours(redpanda_timestamp)', '')
-                ]
+                spark_expected_out = [(
+                    'redpanda',
+                    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary,value:binary>',
+                    None), ('val', 'bigint', None), ('', '', ''),
+                                      ('# Partitioning', '', ''),
+                                      ('Part 0', 'hours(redpanda.timestamp)',
+                                       '')]
                 spark_describe_out = spark.run_query_fetch_all(
                     f"describe {table_name}")
                 assert spark_describe_out == spark_expected_out, str(

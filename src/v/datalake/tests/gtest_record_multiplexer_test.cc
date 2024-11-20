@@ -164,8 +164,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
         ASSERT_TRUE(r.ok());
 
         EXPECT_EQ(table->num_rows(), record_count * batch_count);
-        // Expect 4 columns for schemaless: offset, timestamp, key, value
-        EXPECT_EQ(table->num_columns(), 4);
+        // Expect one nested column.
+        EXPECT_EQ(table->num_columns(), 1);
     }
     // Expect this test to create exactly 1 file
     EXPECT_EQ(file_count, 1);
@@ -279,12 +279,16 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
         EXPECT_EQ(table->num_rows(), num_records / num_hrs);
 
         // Default columns + a nested struct.
-        EXPECT_EQ(table->num_columns(), 5);
-        auto expected_type = R"(redpanda_offset: int64 not null
-redpanda_timestamp: timestamp[us] not null
-redpanda_key: binary
-redpanda_value: binary
-RootRecord: struct<mylong: int64 not null, nestedrecord: struct<inval1: double not null, inval2: string not null, inval3: int32 not null> not null, myarray: list<element: double not null> not null, mybool: bool not null, myfixed: fixed_size_binary[16] not null, anotherint: int32 not null, bytes: binary not null>)";
+        EXPECT_EQ(table->num_columns(), 8);
+        auto expected_type
+          = R"(redpanda: struct<partition: int32 not null, offset: int64 not null, timestamp: timestamp[us] not null, headers: list<element: struct<key: binary, value: binary> not null>, key: binary, value: binary> not null
+mylong: int64 not null
+nestedrecord: struct<inval1: double not null, inval2: string not null, inval3: int32 not null> not null
+myarray: list<element: double not null> not null
+mybool: bool not null
+myfixed: fixed_size_binary[16] not null
+anotherint: int32 not null
+bytes: binary not null)";
         EXPECT_EQ(expected_type, table->schema()->ToString());
     }
     // Expect this test to create exactly 1 file

@@ -122,12 +122,9 @@ class RestCatalogConnectionTest(RedpandaTest):
         def all_data_translated():
             table = catalog.load_table(f"{namespace}.{topic.name}")
             df = table.scan().to_pandas()
-            self.logger.info(
-                f"offsets: {df['redpanda_offset'].head(5).to_list()}")
-            return all([
-                isinstance(o, int)
-                for o in df['redpanda_offset'].head(5).to_list()
-            ])
+            offsets_df = df['redpanda'].str.get('offset').head(5).to_list()
+            self.logger.info(f"offsets: {offsets_df}")
+            return all([isinstance(o, int) for o in offsets_df])
 
         wait_until(
             all_data_translated,
