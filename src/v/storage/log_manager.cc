@@ -194,7 +194,7 @@ ss::future<> log_manager::stop() {
           return clean_close(entry.second->handle);
       });
     co_await _batch_cache.stop();
-    co_await ssx::async_clear(_logs)();
+    co_await ssx::async_clear(_logs);
     if (_compaction_hash_key_map) {
         // Clear memory used for the compaction hash map, if any.
         co_await _compaction_hash_key_map->initialize(0);
