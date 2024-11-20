@@ -7,6 +7,8 @@ import os
 import string
 import random
 
+from enum import Enum
+
 _ca_config_tmpl = """
 # OpenSSL CA configuration file
 [ ca ]
@@ -302,6 +304,11 @@ Certificate = collections.namedtuple(
     "Certificate", ["cfg", "key", "crt", "ca", "p12_file", "p12_password"])
 
 
+class TLSKeyType(Enum):
+    RSA = 0,
+    ECDSA = 1
+
+
 class TLSCertManager:
     """
     When a TLSCertManager is instantiated a new CA is automatically created and
@@ -312,11 +319,20 @@ class TLSCertManager:
     it is common for clients to take paths to these files, it is best to keep
     the instance alive for as long as the files are in use.
     """
-    def __init__(self, logger, ca_end_date=None, cert_expiry_days=1):
+    def __init__(self,
+                 logger,
+                 ca_end_date=None,
+                 cert_expiry_days=1,
+                 key_type: typing.Optional[TLSKeyType] = None):
         self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
         self._ca_end_date = ca_end_date
         self._cert_expiry_days = cert_expiry_days
+        # Before this change, all ducktape tests would use RSA based certificates
+        # In order to attempt to cover more code paths, we will randomly select
+        # between RSA and ECDSA if the key type is not specified
+        self._key_type: TLSKeyType = key_type or random.choice(
+            list(TLSKeyType))
         self._ca = self._create_ca()
         self.certs: dict[str, Certificate] = {}
 
@@ -354,6 +370,15 @@ class TLSCertManager:
 
             retries += 1
 
+    def _generate_key(self, out: str) -> None:
+        if self._key_type == TLSKeyType.RSA:
+            self._exec(f"openssl genrsa -out {out} 2048")
+        elif self._key_type == TLSKeyType.ECDSA:
+            self._exec(
+                f"openssl ecparam -name prime256v1 -genkey -noout -out {out}")
+        else:
+            raise ValueError(f"Unknown key type: {self._key_type}")
+
     def _create_ca(self) -> CertificateAuthority:
         cfg = self._with_dir("ca.conf")
         key = self._with_dir("ca.key")
@@ -365,7 +390,7 @@ class TLSCertManager:
         with open(f"{cfg}", "w") as f:
             f.write(_ca_config_tmpl.format(dir=self._dir.name))
 
-        self._exec(f"openssl genrsa -out {key} 2048")
+        self._generate_key(key)
         self._exec(f"openssl req -new -x509 -config {cfg} "
                    f"-key {key} -out {crt} -days 365 -batch")
 
@@ -418,7 +443,7 @@ class TLSCertManager:
             f.write(
                 _node_config_tmpl.format(host=host, common_name=common_name))
 
-        self._exec(f"openssl genrsa -out {key} 2048")
+        self._generate_key(key)
 
         self._exec(f"openssl req -new -config {cfg} "
                    f"-key {key} -out {csr} -batch")
@@ -482,12 +507,18 @@ class TLSChainCACertManager(TLSCertManager):
                  logger,
                  chain_len=2,
                  cert_expiry_days=1,
-                 ca_expiry_days=7):
+                 ca_expiry_days=7,
+                 key_type: typing.Optional[TLSKeyType] = None):
         assert chain_len > 0
         self._logger = logger
         self._dir = tempfile.TemporaryDirectory()
         self.cert_expiry_days = cert_expiry_days
         self.ca_expiry_days = ca_expiry_days
+        # Before this change, all ducktape tests would use RSA based certificates
+        # In order to attempt to cover more code paths, we will randomly select
+        # between RSA and ECDSA if the key type is not specified
+        self._key_type: TLSKeyType = key_type or random.choice(
+            list(TLSKeyType))
         self._cas: list[CertificateAuthority] = []
         self._cas.append(
             self._create_ca(
@@ -550,8 +581,10 @@ class TLSChainCACertManager(TLSCertManager):
         with open(srl, 'w') as f:
             f.writelines(["01"])
 
+        self._generate_key(key)
+
         self._exec(
-            f"openssl req -new -nodes -config {cfg} -out {csr} -keyout {key}")
+            f"openssl req -new -nodes -config {cfg} -out {csr} -key {key}")
         self._exec(
             f"openssl ca {'-selfsign' if selfsign else ''} -config {parent_cfg} "
             f"-in {csr} -out {crt} -extensions {ext} -days {days} -batch")
@@ -609,8 +642,9 @@ class TLSChainCACertManager(TLSCertManager):
             f.write(
                 _server_config_tmpl.format(host=host, common_name=common_name))
 
+        self._generate_key(key)
         self._exec(f"openssl req -new -nodes -config {cfg} "
-                   f"-keyout {key} -out {csr} -batch")
+                   f"-key {key} -out {csr} -batch")
         self._exec(
             f"faketime -f {faketime} openssl ca -config {self.signing_ca.cfg} -policy match_pol "
             f"-in {csr} -out {crt} -extensions server_ext -days {self.cert_expiry_days} -batch"
