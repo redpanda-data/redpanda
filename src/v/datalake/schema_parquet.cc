@@ -196,7 +196,6 @@ field_to_parquet(const iceberg::nested_field& field) {
     auto element = std::visit(
       type_converting_visitor{field.required}, field.type);
     element.field_id = field.id;
-    element.path.emplace_back(field.name);
 
     return element;
 }
@@ -207,7 +206,9 @@ struct_to_parquet(const iceberg::struct_type& schema) {
 
     res.children.reserve(schema.fields.size());
     for (const auto& f : schema.fields) {
-        res.children.push_back(field_to_parquet(*f));
+        auto field = field_to_parquet(*f);
+        field.path.emplace_back(f->name);
+        res.children.push_back(std::move(field));
     }
     return res;
 }

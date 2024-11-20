@@ -479,3 +479,26 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "serde_parquet_writer",
+    srcs = [
+        "serde_parquet_writer.cc",
+    ],
+    hdrs = [
+        "serde_parquet_writer.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":logger",
+        ":schema_parquet",
+        ":values_parquet",
+        ":writer",
+        "//src/v/base",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:values",
+        "//src/v/serde/parquet:writer",
+        "@seastar",
+    ],
+)
