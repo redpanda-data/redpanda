@@ -400,10 +400,8 @@ class NodeWiseRecoveryTest(RedpandaTest):
 
     def setUp(self):
         # add node config override not to spawn a new cluster with empty seed servers
-        self.redpanda.start(
-            auto_assign_node_id=True,
-            omit_seeds_on_idx_one=True,
-            node_config_overrides={"empty_seed_starts_cluster": False})
+        self.redpanda.start(auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=True)
 
     def collect_topic_partition_states(self, topic):
         states = {}
