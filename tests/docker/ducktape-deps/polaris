@@ -3,6 +3,9 @@ set -e
 
 git -C /opt clone https://github.com/apache/polaris.git
 cd /opt/polaris
-git reset --hard 1a6b3eb3963355f78c5ca916cc1d66ecd1493092
+git reset --hard 445c42768d1e3148c912ac5c45ee53036b9ef318
 ARCH=$(dpkg-architecture -q DEB_BUILD_ARCH)
-JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${ARCH}" ./gradlew --no-daemon --info shadowJar
+JAVA_HOME="/usr/lib/jvm/java-21-openjdk-${ARCH}" ./gradlew --no-daemon --info prepareDockerDist
+mkdir -p app
+mv polaris-service/build/docker-dist/bin app/bin
+mv polaris-service/build/docker-dist/lib app/lib
