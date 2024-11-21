@@ -532,3 +532,22 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "table_creator",
+    srcs = [
+        "table_creator.cc",
+    ],
+    hdrs = [
+        "table_creator.h",
+    ],
+    implementation_deps = [
+        ":record_translator",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":catalog_schema_manager",
+        ":record_schema_resolver",
+    ],
+)

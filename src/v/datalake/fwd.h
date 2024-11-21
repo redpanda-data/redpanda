@@ -15,6 +15,7 @@ struct data_writer_result;
 class record_translator;
 class schema_manager;
 class type_resolver;
+class table_creator;
 namespace coordinator {
 class coordinator_manager;
 class frontend;
