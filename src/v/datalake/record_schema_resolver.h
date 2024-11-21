@@ -74,6 +74,8 @@ public:
     friend std::ostream& operator<<(std::ostream&, const errc&);
     virtual ss::future<checked<type_and_buf, errc>>
     resolve_buf_type(iobuf b) const = 0;
+    virtual ss::future<checked<resolved_type, errc>>
+      resolve_identifier(schema_identifier) const = 0;
     virtual ~type_resolver() = default;
 };
 
@@ -81,6 +83,8 @@ class binary_type_resolver : public type_resolver {
 public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(iobuf b) const override;
+    ss::future<checked<resolved_type, errc>>
+      resolve_identifier(schema_identifier) const override;
     ~binary_type_resolver() override = default;
 };
 
@@ -91,6 +95,10 @@ public:
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(iobuf b) const override;
+
+    ss::future<checked<resolved_type, errc>>
+      resolve_identifier(schema_identifier) const override;
+
     ~record_schema_resolver() override = default;
 
 private:
