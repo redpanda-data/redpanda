@@ -31,10 +31,10 @@ struct disk_metrics {
 class node_probe {
 public:
     void setup_node_metrics();
-    void set_disk_metrics(
+    void set_data_disk_metrics(
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert);
-
-    const disk_metrics& get_disk_metrics() const { return _disk; }
+    void set_cache_disk_metrics(
+      uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert);
 
     node_probe() = default;
     node_probe(const node_probe&) = delete;
@@ -44,7 +44,8 @@ public:
     ~node_probe() = default;
 
 private:
-    disk_metrics _disk;
+    disk_metrics _data_disk;
+    disk_metrics _cache_disk;
     metrics::public_metric_groups _public_metrics;
 };
 
