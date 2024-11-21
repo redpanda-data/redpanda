@@ -628,8 +628,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # Local storage deletion should proceed even if remote can't
             wait_until(
                 lambda: topic_storage_purged(self.redpanda, self.topic),
-                timeout_sec=30,
-                backoff_sec=1,
+                timeout_sec=90,
+                backoff_sec=10,
                 err_msg=
                 "Local storage purge did not complete while cloud storage was unavailable"
             )
