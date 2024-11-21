@@ -177,6 +177,7 @@ redpanda_cc_library(
         ":catalog_schema_manager",
         ":cloud_data_io",
         ":logger",
+        ":record_translator",
         ":types",
         "//src/v/base",
         "//src/v/cluster",
