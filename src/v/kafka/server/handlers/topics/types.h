@@ -105,9 +105,6 @@ inline constexpr std::string_view topic_property_leaders_preference
 inline constexpr std::string_view topic_property_cloud_topic_enabled
   = "redpanda.cloud_topic.enabled";
 
-inline constexpr std::string_view topic_property_iceberg_translation_interval_ms
-  = "redpanda.iceberg.translation.interval.ms";
-
 inline constexpr std::string_view topic_property_iceberg_delete
   = "redpanda.iceberg.delete";
 

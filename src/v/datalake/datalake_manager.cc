@@ -65,8 +65,8 @@ datalake_manager::datalake_manager(
       size_t(
         std::floor(memory_limit / _effective_max_translator_buffered_data)),
       "datalake_parallel_translations"))
-  , _translation_ms_conf(config::shard_local_cfg()
-                           .iceberg_translation_interval_ms_default.bind()) {}
+  , _iceberg_commit_interval(
+      config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind()) {}
 datalake_manager::~datalake_manager() = default;
 
 ss::future<> datalake_manager::start() {
@@ -131,7 +131,7 @@ ss::future<> datalake_manager::start() {
         _topic_table->local().unregister_ntp_delta_notification(
           topic_properties_registration);
     });
-    _translation_ms_conf.watch([this] {
+    _iceberg_commit_interval.watch([this] {
         ssx::spawn_with_gate(_gate, [this]() {
             for (const auto& [group, _] : _translators) {
                 on_group_notification(group);
@@ -148,6 +148,15 @@ ss::future<> datalake_manager::stop() {
           return entry.second->stop();
       });
     co_await std::move(f);
+}
+
+std::chrono::milliseconds datalake_manager::translation_interval_ms() const {
+    // This aims to have multiple translations within a single commit interval
+    // window. A minimum interval is in place to disallow frequent translations
+    // and hence tiny parquet files. This is generally optimized for higher
+    // throughputs that accumulate enough data within a commit interval window.
+    static constexpr std::chrono::milliseconds min_translation_interval{5s};
+    return std::max(min_translation_interval, _iceberg_commit_interval() / 3);
 }
 
 void datalake_manager::on_group_notification(const model::ntp& ntp) {
@@ -178,9 +187,7 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
         start_translator(partition);
     } else {
         // check if translation interval changed.
-        auto target_interval
-          = topic_cfg->properties.iceberg_translation_interval_ms.value_or(
-            _translation_ms_conf());
+        auto target_interval = translation_interval_ms();
         if (it->second->translation_interval() != target_interval) {
             it->second->reset_translation_interval(target_interval);
         }
@@ -203,7 +210,7 @@ void datalake_manager::start_translator(
       &_cloud_data_io,
       _schema_mgr.get(),
       _type_resolver.get(),
-      partition->get_ntp_config().iceberg_translation_interval_ms(),
+      translation_interval_ms(),
       _sg,
       _effective_max_translator_buffered_data,
       &_parallel_translations);
