@@ -13,6 +13,7 @@
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/translated_offset_range.h"
+#include "datalake/table_creator.h"
 #include "model/fundamental.h"
 
 #include <gtest/gtest.h>
@@ -20,6 +21,15 @@
 #include <vector>
 
 namespace datalake::coordinator {
+
+class noop_table_creator : public table_creator {
+    ss::future<checked<std::nullopt_t, errc>> ensure_table(
+      const model::topic&,
+      model::revision_id,
+      record_schema_components) const final {
+        co_return std::nullopt;
+    }
+};
 
 // Simple committer that returns the set of updates that would mark all the
 // pending files as committed. Doesn't affect any external state.

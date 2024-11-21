@@ -50,6 +50,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
               = std::make_unique<datalake::coordinator::coordinator>(
                 get_stm<0>(node),
                 topic_table,
+                table_creator,
                 [this](const model::topic& t, model::revision_id r) {
                     return remove_tombstone(t, r);
                 },
@@ -134,6 +135,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
     model::revision_id rev{123};
     cluster::data_migrations::migrated_resources mr;
     cluster::topic_table topic_table{mr};
+    datalake::coordinator::noop_table_creator table_creator;
     datalake::coordinator::simple_file_committer file_committer;
     absl::flat_hash_map<raft::vnode, coordinator> coordinators;
 };

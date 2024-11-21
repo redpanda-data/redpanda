@@ -11,6 +11,7 @@ redpanda_test_cc_library(
     include_prefix = "datalake/coordinator/tests",
     deps = [
         "//src/v/container:fragmented_vector",
+        "//src/v/datalake:table_creator",
         "//src/v/datalake/coordinator:file_committer",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:translated_offset_range",

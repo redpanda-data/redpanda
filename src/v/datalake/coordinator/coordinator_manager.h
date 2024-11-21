@@ -13,9 +13,10 @@
 #include "cluster/fwd.h"
 #include "cluster/notification.h"
 #include "datalake/coordinator/coordinator.h"
-#include "datalake/coordinator/file_committer.h"
+#include "datalake/fwd.h"
 #include "iceberg/catalog.h"
 #include "model/fundamental.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
 #include "raft/notification.h"
 
@@ -23,6 +24,10 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+
+namespace schema {
+class registry;
+}
 
 namespace datalake::coordinator {
 class catalog_factory;
@@ -37,9 +42,11 @@ public:
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<cluster::topic_table>&,
       ss::sharded<cluster::topics_frontend>&,
+      pandaproxy::schema_registry::api*,
       std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
       cloud_storage_clients::bucket_name);
+    ~coordinator_manager();
 
     ss::future<> start();
     ss::future<> stop();
@@ -62,11 +69,15 @@ private:
     cluster::partition_manager& pm_;
     cluster::topic_table& topics_;
     ss::sharded<cluster::topics_frontend>& topics_fe_;
+    std::unique_ptr<schema::registry> schema_registry_;
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;
     std::unique_ptr<catalog_factory> catalog_factory_;
     std::unique_ptr<iceberg::catalog> catalog_;
+    std::unique_ptr<schema_manager> schema_mgr_;
+    std::unique_ptr<type_resolver> type_resolver_;
+    std::unique_ptr<table_creator> table_creator_;
     std::unique_ptr<file_committer> file_committer_;
 
     std::optional<cluster::notification_id_type> manage_notifications_;
