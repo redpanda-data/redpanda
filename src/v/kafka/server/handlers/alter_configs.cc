@@ -83,7 +83,7 @@ create_topic_properties_update(
     std::apply(apply_op(op_t::none), update.custom_properties.serde_fields());
 
     static_assert(
-      std::tuple_size_v<decltype(update.properties.serde_fields())> == 33,
+      std::tuple_size_v<decltype(update.properties.serde_fields())> == 32,
       "If you added a property, please decide on it's default alter config "
       "policy, and handle the update in the loop below");
     static_assert(
@@ -361,14 +361,6 @@ create_topic_properties_update(
                   cfg.value,
                   kafka::config_resource_operation::set,
                   delete_retention_ms_validator{});
-                continue;
-            }
-
-            if (cfg.name == topic_property_iceberg_translation_interval_ms) {
-                parse_and_set_optional_duration(
-                  update.properties.iceberg_translation_interval_ms,
-                  cfg.value,
-                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_iceberg_delete) {

@@ -11,6 +11,7 @@
 #include "datalake/tests/fixture.h"
 #include "kafka/client/client.h"
 #include "kafka/client/test/utils.h"
+#include "test_utils/scoped_config.h"
 #include "test_utils/test.h"
 
 namespace kc = kafka::client;
@@ -25,6 +26,9 @@ class PartitionTranslatorTestFixture
             add_node();
         }
         co_await wait_for_all_members(5s);
+        reduced_commit_interval.get("iceberg_catalog_commit_interval_ms")
+          .set_value(10000ms);
+
         co_await create_iceberg_topic(test_topic.tp);
         // create a kafka client for the cluster.
         auto* rp = instance(model::node_id{0});
@@ -71,6 +75,8 @@ public:
           });
     }
 
+    scoped_config reduced_commit_interval;
+
     model::topic_namespace test_topic{
       model::kafka_namespace, model::topic{"test"}};
 
@@ -83,7 +89,7 @@ TEST_F_CORO(PartitionTranslatorTestFixture, TestBasic) {
     std::vector<ss::future<>> background;
     background.reserve(5);
     background.push_back(produce_data_for(ntp, test_runtime));
-    // roundrobin leadership across test topic replicas.
+    // roundrobin leadership across test topic replicas
     background.push_back(shuffle_leadership(ntp, test_runtime));
     for (auto i = 0; i < 3; i++) {
         auto f = ss::do_with(

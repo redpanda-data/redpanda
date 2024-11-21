@@ -84,11 +84,8 @@ class DatalakeServices():
                                      partitions=1,
                                      replicas=1,
                                      iceberg_mode="key_value",
-                                     translation_interval_ms=3000,
                                      config: dict[str, Any] = dict()):
         config[TopicSpec.PROPERTY_ICEBERG_MODE] = iceberg_mode
-        config[TopicSpec.
-               PROPERTY_ICEBERG_TRANSLATION_INTERVAL] = translation_interval_ms
         rpk = RpkTool(self.redpanda)
         rpk.create_topic(topic=name,
                          partitions=partitions,

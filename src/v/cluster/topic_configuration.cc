@@ -57,8 +57,6 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .flush_bytes = properties.flush_bytes,
             .iceberg_mode = properties.iceberg_mode,
             .cloud_topic_enabled = properties.cloud_topic_enabled,
-            .iceberg_translation_interval_ms
-            = properties.iceberg_translation_interval_ms,
             .tombstone_retention_ms = properties.delete_retention_ms,
           });
     }
