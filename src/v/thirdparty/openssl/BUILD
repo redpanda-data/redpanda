@@ -13,6 +13,7 @@ cc_library(
         "provider.h",
         "rand.h",
         "ssl.h",
+        "types.h",
     ],
     include_prefix = "thirdparty/openssl",
     visibility = ["//visibility:public"],
