@@ -111,6 +111,11 @@ struct partition_allocator_fixture {
           });
     }
 
+    cluster::simple_allocation_request make_simple_allocation_request(
+      int32_t partitions, int16_t replication_factor) {
+        return {tn, partitions, replication_factor};
+    }
+
     cluster::allocation_request
     make_allocation_request(int partitions, uint16_t replication_factor) {
         return make_allocation_request(tn, partitions, replication_factor);

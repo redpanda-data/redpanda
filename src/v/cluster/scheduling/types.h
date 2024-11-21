@@ -15,6 +15,7 @@
 #include "base/vassert.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 
 #include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
@@ -23,6 +24,8 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_set.h>
+
+#include <optional>
 
 namespace cluster {
 class allocation_node;
@@ -358,6 +361,42 @@ struct allocation_request {
     std::optional<node2count_t> existing_replica_counts;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);
+};
+
+/**
+ * The simple_allocation_request represents a simplified allocation_request
+ * that doesn't allow for partition-specific requirements. The memory required
+ * for a simple_allocation_request objects does not scale with the number of
+ * requested partitions.
+ */
+struct simple_allocation_request {
+    simple_allocation_request() = delete;
+    simple_allocation_request(const simple_allocation_request&) = delete;
+    simple_allocation_request(simple_allocation_request&&) = default;
+    simple_allocation_request& operator=(const simple_allocation_request&)
+      = delete;
+    simple_allocation_request& operator=(simple_allocation_request&&) = default;
+    ~simple_allocation_request() = default;
+
+    simple_allocation_request(
+      model::topic_namespace tp_ns,
+      int32_t additional_partitions,
+      int16_t replication_factor,
+      std::optional<node2count_t> existing_replac_counts = std::nullopt)
+      : tp_ns{std::move(tp_ns)}
+      , additional_partitions{additional_partitions}
+      , replication_factor{replication_factor}
+      , existing_replica_counts{std::move(existing_replac_counts)} {}
+
+    model::topic_namespace tp_ns;
+    int32_t additional_partitions{0};
+    int16_t replication_factor{0};
+    // if present, new partitions will be allocated using topic-aware counts
+    // objective.
+    std::optional<node2count_t> existing_replica_counts;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const simple_allocation_request&);
 };
 
 } // namespace cluster

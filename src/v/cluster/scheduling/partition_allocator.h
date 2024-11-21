@@ -46,6 +46,18 @@ public:
     /**
      * Return an allocation_units object wrapping the result of the allocating
      * the given allocation request, or an error if it was not possible.
+     *
+     * This overload of allocate will validate cluster limits upfront, before
+     * instantiating an allocation_request. This allows to validate very big
+     * allocation_requests, where the size of the request itself could be an
+     * issue in itself. E.g. a request for a billion partitions.
+     */
+    ss::future<result<allocation_units::pointer>>
+      allocate(simple_allocation_request);
+
+    /**
+     * Return an allocation_units object wrapping the result of the allocating
+     * the given allocation request, or an error if it was not possible.
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
@@ -130,8 +142,13 @@ public:
     ss::future<> apply_snapshot(const controller_snapshot&);
 
 private:
-    std::error_code
-    check_cluster_limits(const allocation_request& request) const;
+    // new_partitions_replicas_requested represents the total number of
+    // partitions requested by a request. i.e. partitions * replicas requested.
+    std::error_code check_cluster_limits(
+      const uint64_t new_partitions_replicas_requested) const;
+
+    ss::future<result<allocation_units::pointer>>
+      do_allocate(allocation_request);
 
     result<reallocation_step> do_allocate_replica(
       allocated_partition&,

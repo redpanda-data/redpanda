@@ -108,7 +108,7 @@ allocation_constraints partition_allocator::default_constraints() {
  * with partitions that cannot be re-accommodated on smaller peers).
  */
 std::error_code partition_allocator::check_cluster_limits(
-  const allocation_request& request) const {
+  const uint64_t new_partitions_replicas_requested) const {
     if (_members.local().nodes().empty()) {
         // Empty members table, we're probably running in a unit test
         return errc::success;
@@ -120,16 +120,8 @@ std::error_code partition_allocator::check_cluster_limits(
         existent_partitions += uint64_t(i.second->allocated_partitions());
     }
 
-    // Partition-replicas requested
-    uint64_t create_count{0};
-    for (const auto& i : request.partitions) {
-        if (i.replication_factor > i.existing_replicas.size()) {
-            create_count += uint64_t(
-              i.replication_factor - i.existing_replicas.size());
-        }
-    }
-
-    uint64_t proposed_total_partitions = existent_partitions + create_count;
+    uint64_t proposed_total_partitions = existent_partitions
+                                         + new_partitions_replicas_requested;
 
     // Gather information about system-wide resource sizes
     uint32_t min_core_count = 0;
@@ -182,7 +174,7 @@ std::error_code partition_allocator::check_cluster_limits(
           clusterlog.warn,
           "Refusing to create {} partitions as total partition count {} would "
           "exceed core limit {}",
-          create_count,
+          new_partitions_replicas_requested,
           proposed_total_partitions,
           effective_cpu_count * _partitions_per_shard());
         return errc::topic_invalid_partitions_core_limit;
@@ -203,7 +195,7 @@ std::error_code partition_allocator::check_cluster_limits(
               "Refusing to create {} new partitions as total partition count "
               "{} "
               "would exceed memory limit {}",
-              create_count,
+              new_partitions_replicas_requested,
               proposed_total_partitions,
               memory_limit);
             return errc::topic_invalid_partitions_memory_limit;
@@ -225,7 +217,7 @@ std::error_code partition_allocator::check_cluster_limits(
                       clusterlog.warn,
                       "Refusing to create {} partitions as total partition "
                       "count {} would exceed FD limit {}",
-                      create_count,
+                      new_partitions_replicas_requested,
                       proposed_total_partitions,
                       fds_limit);
                     return errc::topic_invalid_partitions_fd_limit;
@@ -241,17 +233,57 @@ std::error_code partition_allocator::check_cluster_limits(
 }
 
 ss::future<result<allocation_units::pointer>>
+partition_allocator::allocate(simple_allocation_request simple_req) {
+    vlog(
+      clusterlog.trace,
+      "allocation request for {} partitions",
+      simple_req.additional_partitions);
+
+    const uint64_t create_count
+      = static_cast<uint64_t>(simple_req.additional_partitions)
+        * static_cast<uint64_t>(simple_req.replication_factor);
+    auto cluster_errc = check_cluster_limits(create_count);
+    if (cluster_errc) {
+        co_return cluster_errc;
+    }
+
+    allocation_request req(simple_req.tp_ns);
+    req.partitions.reserve(simple_req.additional_partitions);
+    for (auto p = 0; p < simple_req.additional_partitions; ++p) {
+        req.partitions.emplace_back(
+          model::partition_id(p), simple_req.replication_factor);
+    }
+    req.existing_replica_counts = std::move(simple_req.existing_replica_counts);
+
+    co_return co_await do_allocate(std::move(req));
+}
+
+ss::future<result<allocation_units::pointer>>
 partition_allocator::allocate(allocation_request request) {
     vlog(
       clusterlog.trace,
       "allocation request for {} partitions",
       request.partitions.size());
 
-    auto cluster_errc = check_cluster_limits(request);
+    // Partition-replicas requested
+    uint64_t create_count{0};
+    for (const auto& i : request.partitions) {
+        if (i.replication_factor > i.existing_replicas.size()) {
+            create_count += uint64_t(
+              i.replication_factor - i.existing_replicas.size());
+        }
+    }
+
+    auto cluster_errc = check_cluster_limits(create_count);
     if (cluster_errc) {
         co_return cluster_errc;
     }
 
+    co_return co_await do_allocate(std::move(request));
+}
+
+ss::future<result<allocation_units::pointer>>
+partition_allocator::do_allocate(allocation_request request) {
     std::optional<node2count_t> node2count;
     if (request.existing_replica_counts) {
         node2count = std::move(*request.existing_replica_counts);
