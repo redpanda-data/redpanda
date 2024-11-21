@@ -19,6 +19,14 @@
 
 namespace serde::parquet {
 
+// Statistics about the current row group.
+//
+// These are mainly provided to limit memory usage.
+struct row_group_stats {
+    uint64_t rows = 0;
+    uint64_t memory_usage = 0;
+};
+
 // A parquet file writer for seastar.
 class writer {
 public:
@@ -54,12 +62,33 @@ public:
     // Write the record as a row to the parquet file. This value must exactly
     // match the provided schema.
     //
-    // The returned future must be awaited *before* calling write_row again with
-    // another value.
+    // This method may not be called concurrently with other methods on this
+    // class.
     ss::future<> write_row(group_value);
+
+    // The current stats on the buffered row group.
+    //
+    // This can be used to account for memory usage and flush a row group
+    // when the memory usage is over some limit.
+    row_group_stats current_row_group_stats() const;
+
+    // Flush the current row group to the output stream, creating a new row
+    // group.
+    //
+    // This may only be called if there is at least a single row in the group.
+    //
+    // This method may not be called concurrently with other methods on this
+    // class.
+    ss::future<> flush_row_group();
 
     // Close the writer by writing the parquet file footer. Then flush/close the
     // underlying stream that is being written too.
+    //
+    // This method will automatically flush the current row group if there are
+    // any rows buffered in it.
+    //
+    // This method may not be called concurrently with other methods on this
+    // class.
     //
     // The resulting future must be awaited before destroying this object.
     ss::future<> close();

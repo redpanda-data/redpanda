@@ -350,6 +350,10 @@ ss::future<iobuf> serialize_testcase(size_t test_case) {
         auto v = generate_value(schema);
         rows.push_back(copy(v));
         co_await w.write_row(std::get<group_value>(std::move(v)));
+        // Create multiple row groups and make sure it works
+        if (i % 32 == 0) {
+            co_await w.flush_row_group();
+        }
     }
     co_await w.close();
     co_return json(testcase{
