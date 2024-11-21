@@ -187,8 +187,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
         ASSERT_TRUE(r.ok());
 
         EXPECT_EQ(table->num_rows(), record_count * batch_count);
-        // Expect one nested column.
-        EXPECT_EQ(table->num_columns(), 1);
+        // Expect one nested column and one value column.
+        EXPECT_EQ(table->num_columns(), 2);
     }
     // Expect this test to create exactly 1 file
     EXPECT_EQ(file_count, 1);
