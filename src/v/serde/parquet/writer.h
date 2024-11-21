@@ -19,6 +19,14 @@
 
 namespace serde::parquet {
 
+// Statistics about the current row group.
+//
+// These are mainly provided to limit memory usage.
+struct row_group_stats {
+    uint64_t rows = 0;
+    uint64_t memory_usage = 0;
+};
+
 // A parquet file writer for seastar.
 class writer {
 public:
@@ -57,6 +65,12 @@ public:
     // This method may not be called concurrently with other methods on this
     // class.
     ss::future<> write_row(group_value);
+
+    // The current stats on the buffered row group.
+    //
+    // This can be used to account for memory usage and flush a row group
+    // when the memory usage is over some limit.
+    row_group_stats current_row_group_stats() const;
 
     // Flush the current row group to the output stream, creating a new row
     // group.

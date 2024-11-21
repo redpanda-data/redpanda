@@ -67,10 +67,17 @@ public:
           _opts.schema, std::move(row), [this](shredded_value sv) {
               return write_value(std::move(sv));
           });
+        ++_current_row_group_stats.rows;
+    }
+
+    row_group_stats current_row_group_stats() const {
+        return _current_row_group_stats;
     }
 
     ss::future<> flush_row_group() {
-        // TODO(rockwood): guard against empty row groups
+        if (_current_row_group_stats.rows == 0) {
+            co_return;
+        }
         row_group rg{};
         rg.file_offset = static_cast<int64_t>(_offset);
         for (auto& [pos, col] : _columns) {
@@ -95,6 +102,7 @@ public:
             });
             co_await write_iobuf(std::move(page.serialized));
         }
+        _current_row_group_stats = {};
         _row_groups.push_back(std::move(rg));
     }
 
@@ -131,7 +139,9 @@ private:
 
     ss::future<> write_value(shredded_value sv) {
         auto& col = _columns.at(sv.schema_element_position);
-        col.writer.add(std::move(sv.val), sv.rep_level, sv.def_level);
+        auto stats = col.writer.add(
+          std::move(sv.val), sv.rep_level, sv.def_level);
+        _current_row_group_stats.memory_usage += stats.memory_usage;
         return ss::now();
     }
 
@@ -150,6 +160,7 @@ private:
     size_t _offset = 0; // offset written to the stream
     contiguous_range_map<int32_t, column> _columns;
     chunked_vector<row_group> _row_groups;
+    row_group_stats _current_row_group_stats;
 };
 
 writer::writer(options opts, ss::output_stream<char> output)
@@ -163,6 +174,10 @@ ss::future<> writer::init() { return _impl->init(); }
 
 ss::future<> writer::write_row(group_value row) {
     return _impl->write_row(std::move(row));
+}
+
+row_group_stats writer::current_row_group_stats() const {
+    return _impl->current_row_group_stats();
 }
 
 ss::future<> writer::flush_row_group() { return _impl->flush_row_group(); }
