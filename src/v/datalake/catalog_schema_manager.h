@@ -35,6 +35,8 @@ public:
     get_registered_ids(const model::topic&, iceberg::struct_type& desired_type)
       = 0;
     virtual ~schema_manager() = default;
+
+    iceberg::table_identifier table_id_for_topic(const model::topic& t) const;
 };
 
 class simple_schema_manager : public schema_manager {
@@ -71,8 +73,6 @@ public:
       const model::topic&, iceberg::struct_type& desired_type) override;
 
 private:
-    iceberg::table_identifier table_id_for_topic(const model::topic& t) const;
-
     // Attempts to fill the field ids in the given type with those from the
     // current schema of the given table metadata.
     //
