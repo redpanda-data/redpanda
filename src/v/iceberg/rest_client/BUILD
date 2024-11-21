@@ -113,7 +113,7 @@ redpanda_cc_library(
         ":oauth_token",
         ":retry_policy",
         "//src/v/bytes:iobuf",
-        "//src/v/bytes:iobuf_parser",
+        "//src/v/bytes:streambuf",
         "//src/v/http",
         "//src/v/http:request_builder",
         "//src/v/http:utils",
