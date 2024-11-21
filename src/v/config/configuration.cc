@@ -3766,6 +3766,30 @@ configuration::configuration()
       "catalog before aborting the request",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , iceberg_rest_catalog_trust_file(
+      *this,
+      "iceberg_rest_catalog_trust_file",
+      "Path to a file containing a certificate chain to trust for the REST "
+      "Iceberg catalog",
+      {.visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_crl_file(
+      *this,
+      "iceberg_rest_catalog_crl_file",
+      "Path to certificate revocation list for "
+      "`iceberg_rest_catalog_trust_file`.",
+      {.visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_prefix(
+      *this,
+      "iceberg_rest_catalog_prefix",
+      "Prefix part of the Iceberg REST catalog URL. Prefix is appended to the "
+      "catalog path f.e. '/v1/{prefix}/namespaces'",
+      {.visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
