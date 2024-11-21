@@ -17,7 +17,7 @@ from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from ducktape.tests.test import TestContext
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda_cloud import ProductInfo
+from rptest.services.redpanda_cloud import ThroughputTierInfo
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
@@ -178,7 +178,8 @@ class OMBValidationTest(RedpandaCloudTest):
             self.config_profile_name]
 
         self.num_brokers: int = config_profile['nodes_count']
-        self.tier_limits: ProductInfo = not_none(self.redpanda.get_product())
+        self.tier_limits: ThroughputTierInfo = not_none(
+            self.redpanda.get_tier())
         self.tier_machine_info = get_machine_info(
             config_profile['machine_type'])
         self.rpk = RpkTool(self.redpanda)
@@ -316,7 +317,7 @@ class OMBValidationTest(RedpandaCloudTest):
         # advertised limit and this uses up ~half the slack we have in the enforcement (we currently
         # set the per broker limit to 1.2x of what it would be if enforced exactly).
         swarm_target_connections = int(
-            (tier_limits.max_connection_count - omb_connections) * 1.1)
+            (tier_limits.max_connections_count - omb_connections) * 1.1)
 
         # we expect each swarm producer to create 1 connection per broker, plus 1 additional connection
         # for metadata
@@ -375,7 +376,7 @@ class OMBValidationTest(RedpandaCloudTest):
         # If this fails it is probably because some other test left services running
         # against the cluster.
         count_before = self._connection_count()
-        maximum_allowed = int(tier_limits.max_connection_count * 0.02 + 100)
+        maximum_allowed = int(tier_limits.max_connections_count * 0.02 + 100)
         assert count_before <= maximum_allowed, (
             f"Wanted less than {maximum_allowed} "
             f"connections to start but got {count_before}")

@@ -2212,13 +2212,13 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
             _config = globals[RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG]
         return _config
 
-    def get_product(self):
+    def get_tier(self):
         """ Get product information.
 
         Returns dict with info of product, including advertised limits.
         Returns none if product info for the tier is not found.
         """
-        return self._cloud_cluster.get_product()
+        return self._cloud_cluster.get_tier()
 
     def get_install_pack(self):
         install_pack_client = InstallPackClient(

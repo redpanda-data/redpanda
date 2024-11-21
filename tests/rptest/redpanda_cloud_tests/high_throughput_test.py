@@ -241,7 +241,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._memory_per_broker = get_machine_info(
             config_profile['machine_type']).memory
 
-        tier_product = self.redpanda.get_product()
+        tier_product = self.redpanda.get_tier()
         assert tier_product, "Could not get product info"
         """
         The _partitions_upper_limit represents a rough value for the estimated
@@ -259,7 +259,7 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         self._partitions_min = tier_product.max_partition_count // 50
         self._advertised_max_ingress = tier_product.max_ingress
         self._advertised_max_egress = tier_product.max_egress
-        self._advertised_max_client_count = tier_product.max_connection_count
+        self._advertised_max_client_count = tier_product.max_connections_count
 
         test_ctx.logger.info(
             f"config profile {self.config_profile_name}: {config_profile}")
