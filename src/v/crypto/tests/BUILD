@@ -147,3 +147,59 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "ossl_context_service_test_base",
+    hdrs = [
+        "ossl_context_service_test_base.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/v/ssx:thread_worker",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "ossl_context_service_test",
+    timeout = "short",
+    srcs = [
+        "ossl_context_service_test.cc",
+    ],
+    cpu = 2,
+    data = common_data_deps,
+    defines = ["FIPS_MODULE_REQUIRED"],
+    env = common_env,
+    deps = [
+        ":crypto_test_utils",
+        ":ossl_context_service_test_base",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/crypto",
+        "//src/v/ssx:thread_worker",
+        "//src/v/test_utils:gtest",
+        "//src/v/thirdparty/openssl",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "ossl_context_service_failure_tests",
+    timeout = "short",
+    srcs = [
+        "ossl_context_service_failure_tests.cc",
+    ],
+    cpu = 2,
+    data = common_data_deps,
+    defines = ["FIPS_MODULE_REQUIRED"],
+    env = common_env,
+    deps = [
+        ":crypto_test_utils",
+        ":ossl_context_service_test_base",
+        "//src/v/crypto",
+        "//src/v/ssx:thread_worker",
+        "@seastar",
+    ],
+)
