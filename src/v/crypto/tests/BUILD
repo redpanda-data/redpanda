@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
@@ -84,3 +85,31 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+expand_template(
+    name = "openssl_conf",
+    out = "openssl_conf.cnf",
+    substitutions = {
+        "@REDPANDA_DEPS_INSTALL_DIR@": "src/v/crypto/tests",
+    },
+    template = "test_openssl_conf.cnf.in",
+)
+
+genrule(
+    name = "fipsmodule_cnf",
+    srcs = ["@openssl-fips//:gen_dir"],
+    outs = ["etc/ssl/fipsmodule.cnf"],
+    cmd = "cp -L $(SRCS)/ssl/fipsmodule.cnf $@",
+)
+
+common_data_deps = [
+    ":fipsmodule_cnf",
+    "@openssl-fips//:fipsmodule_so",
+    ":openssl_conf",
+]
+
+common_env = {
+    "OPENSSL_CONF": "$(rootpath :openssl_conf)",
+    "__FIPS_MODULE_PATH": "$(rootpath @openssl-fips//:fipsmodule_so)",
+}
+
