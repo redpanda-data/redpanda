@@ -249,4 +249,14 @@ std::ostream& operator<<(std::ostream& o, const allocation_request& req) {
       o, "{{partion_constraints: {}, domain: {}}}", req.partitions, req.domain);
     return o;
 }
+std::ostream&
+operator<<(std::ostream& o, const simple_allocation_request& req) {
+    fmt::print(
+      o,
+      "{{topic: {}, additional_partitions: {}, replication_factor: {}}}",
+      req.tp_ns,
+      req.additional_partitions,
+      req.replication_factor);
+    return o;
+}
 } // namespace cluster
