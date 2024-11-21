@@ -53,8 +53,8 @@ protected:
         retry_chain_node retry(
           io_.as(),
           ss::lowres_clock::duration{30s},
-          {},
-          retry_strategy::disallow);
+          10ms,
+          retry_strategy::backoff);
         iobuf buf;
         auto res = co_await ss::coroutine::as_future(io_.download_object({
           .transfer_details = {
@@ -109,8 +109,8 @@ protected:
         retry_chain_node retry(
           io_.as(),
           ss::lowres_clock::duration{30s},
-          {},
-          retry_strategy::disallow);
+          10ms,
+          retry_strategy::backoff);
         auto res = co_await ss::coroutine::as_future(io_.upload_object({
           .transfer_details = {
             .bucket = bucket_,
@@ -149,8 +149,8 @@ protected:
         retry_chain_node retry(
           io_.as(),
           ss::lowres_clock::duration{30s},
-          {},
-          retry_strategy::disallow);
+          10ms,
+          retry_strategy::backoff);
         auto res = co_await ss::coroutine::as_future(io_.object_exists(
           bucket_,
           cloud_storage_clients::object_key{path},
