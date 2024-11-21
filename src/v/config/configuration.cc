@@ -3741,15 +3741,6 @@ configuration::configuration()
         .visibility = visibility::user,
       },
       false)
-  , iceberg_translation_interval_ms_default(
-      *this,
-      "iceberg_translation_interval_ms_default",
-      "How often an Iceberg enabled topic is checked for new data to "
-      "translate. You can override this value at topic level using "
-      "redpanda.iceberg.translation.interval.ms.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::chrono::milliseconds(1min),
-      {.min = 10ms})
   , iceberg_catalog_commit_interval_ms(
       *this,
       "iceberg_catalog_commit_interval_ms",

@@ -634,8 +634,6 @@ struct incremental_topic_updates
       incremental_update_operation::none};
     property_update<std::optional<config::leaders_preference>>
       leaders_preference;
-    property_update<std::optional<std::chrono::milliseconds>>
-      iceberg_translation_interval_ms;
     property_update<tristate<std::chrono::milliseconds>> delete_retention_ms;
     property_update<std::optional<bool>> iceberg_delete;
 
@@ -676,7 +674,6 @@ struct incremental_topic_updates
           leaders_preference,
           remote_read,
           remote_write,
-          iceberg_translation_interval_ms,
           delete_retention_ms,
           iceberg_delete);
     }

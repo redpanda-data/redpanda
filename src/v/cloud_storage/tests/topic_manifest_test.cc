@@ -482,7 +482,6 @@ SEASTAR_THREAD_TEST_CASE(test_topic_manifest_serde_feature_table) {
       model::iceberg_mode::disabled,
       std::nullopt,
       false,
-      std::nullopt,
       tristate<std::chrono::milliseconds>{},
       std::nullopt,
     };

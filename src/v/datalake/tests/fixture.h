@@ -68,7 +68,6 @@ public:
       model::topic topic, int num_partitions = 1, int16_t num_replicas = 3) {
         cluster::topic_properties props;
         props.iceberg_mode = model::iceberg_mode::value_schema_id_prefix;
-        props.iceberg_translation_interval_ms = 50ms;
         return cluster_test_fixture::create_topic(
           {model::kafka_namespace, topic},
           num_partitions,

@@ -75,7 +75,6 @@ struct topic_properties
       model::iceberg_mode iceberg_mode,
       std::optional<config::leaders_preference> leaders_preference,
       bool cloud_topic_enabled,
-      std::optional<std::chrono::milliseconds> iceberg_translation_interval,
       tristate<std::chrono::milliseconds> delete_retention_ms,
       std::optional<bool> iceberg_delete)
       : compression(compression)
@@ -118,7 +117,6 @@ struct topic_properties
       , iceberg_mode(iceberg_mode)
       , leaders_preference(std::move(leaders_preference))
       , cloud_topic_enabled(cloud_topic_enabled)
-      , iceberg_translation_interval_ms(iceberg_translation_interval)
       , delete_retention_ms(delete_retention_ms)
       , iceberg_delete(iceberg_delete) {}
 
@@ -193,8 +191,6 @@ struct topic_properties
 
     bool cloud_topic_enabled{storage::ntp_config::default_cloud_topic_enabled};
 
-    std::optional<std::chrono::milliseconds> iceberg_translation_interval_ms;
-
     tristate<std::chrono::milliseconds> delete_retention_ms{disable_tristate};
     // Should we delete the corresponding iceberg table when deleting the topic.
     std::optional<bool> iceberg_delete;
@@ -244,7 +240,6 @@ struct topic_properties
           iceberg_mode,
           leaders_preference,
           cloud_topic_enabled,
-          iceberg_translation_interval_ms,
           delete_retention_ms,
           iceberg_delete);
     }
