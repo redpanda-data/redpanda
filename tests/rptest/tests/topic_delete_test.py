@@ -111,7 +111,8 @@ def topic_storage_purged(redpanda, topic_name):
             for topic_name, topic in ns.topics.items():
                 for p_id, p in topic.partitions.items():
                     for f in p.files:
-                        redpanda.logger.info(f"  {n.name}: {f}")
+                        redpanda.logger.info(
+                            f"  {n.name}: {topic_name}_{p_id}_{f}")
 
         return False
 
