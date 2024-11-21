@@ -31,8 +31,8 @@ class PolarisCatalog(Service):
     """
     PERSISTENT_ROOT = "/var/lib/polaris"
     INSTALL_PATH = "/opt/polaris"
-    JAR = "polaris-service-1.0.0-all.jar"
-    JAR_PATH = os.path.join(INSTALL_PATH, "polaris-service/build/libs", JAR)
+    CLASS = "PolarisApplication"
+
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "polaris.log")
     POLARIS_CONFIG = os.path.join(PERSISTENT_ROOT, "polaris-server.yml")
     logs = {
@@ -50,9 +50,14 @@ class PolarisCatalog(Service):
 
     nodes: list[ClusterNode]
 
+    def _java_home(self, node):
+        return node.account.ssh_output(
+            "echo /usr/lib/jvm/java-21-openjdk-$(dpkg-architecture -q DEB_BUILD_ARCH)"
+        ).decode('utf-8').strip()
+
     def _cmd(self, node):
-        java = "/opt/java/java-21"
-        return f"{java} -jar {PolarisCatalog.JAR_PATH} server  {PolarisCatalog.POLARIS_CONFIG} \
+        java_home = self._java_home(node)
+        return f"JAVA_HOME={java_home} /opt/polaris/app/bin/polaris-service server  {PolarisCatalog.POLARIS_CONFIG} \
             1>> {PolarisCatalog.LOG_FILE} 2>> {PolarisCatalog.LOG_FILE} &"
 
     def __init__(self, ctx, node: ClusterNode | None = None):
@@ -148,12 +153,12 @@ class PolarisCatalog(Service):
 
     def stop_node(self, node, allow_fail=False, **_):
 
-        node.account.kill_java_processes(PolarisCatalog.JAR,
+        node.account.kill_java_processes(PolarisCatalog.CLASS,
                                          allow_fail=allow_fail)
 
         def _stopped():
             out = node.account.ssh_output("jcmd").decode('utf-8')
-            return PolarisCatalog.JAR not in out
+            return PolarisCatalog.CLASS not in out
 
         wait_until(_stopped,
                    timeout_sec=10,
