@@ -91,10 +91,15 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
     auto type = std::get<struct_type>(test_nested_schema_type());
     reset_field_ids(type);
 
-    // Trying to fill the field IDs requires querying the catalog, which will
-    // result in the table being created.
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
-    ASSERT_FALSE(res.has_error());
+    // Create the table
+    auto create_res
+      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(create_res.has_error());
+
+    // Fill the field IDs in `type`.
+    auto fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(fill_res.has_error());
 
     auto table_ident = table_identifier{.ns = {"redpanda"}, .table = "foo"};
     auto schema = load_table_schema(table_ident).get();
@@ -172,9 +177,15 @@ TEST_F(CatalogSchemaManagerTest, TestFillSuperset) {
           field_required::no,
           std::move(nested)));
     }
+    // Alter the table schema
+    auto ensure_res
+      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(ensure_res.has_error());
 
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
-    ASSERT_FALSE(res.has_error());
+    // Fill the ids in `type`
+    auto fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(fill_res.has_error());
 
     // Check the resulting schema.
     schema s{
@@ -204,8 +215,15 @@ TEST_F(CatalogSchemaManagerTest, TestFillSupersetSubtype) {
             field_required::no,
             int_type{}));
     }
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
-    ASSERT_FALSE(res.has_error());
+    // Alter the table schema
+    auto ensure_res
+      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(ensure_res.has_error());
+
+    // Fill the ids
+    auto fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(fill_res.has_error());
 
     // Check the resulting schema.
     schema s{
