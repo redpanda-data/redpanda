@@ -105,7 +105,9 @@ private:
 
     using checkpoint_result = ss::bool_class<struct checkpoint_result>;
     ss::future<checkpoint_result> checkpoint_translated_data(
-      retry_chain_node& parent, coordinator::translated_offset_range);
+      retry_chain_node& parent,
+      kafka::offset reader_begin_offset,
+      coordinator::translated_offset_range task_result);
 
     kafka::offset min_offset_for_translation() const;
     // Returns max consumable offset for translation.
