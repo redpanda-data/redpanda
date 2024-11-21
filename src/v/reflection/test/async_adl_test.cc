@@ -13,15 +13,12 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "reflection/absl/btree_map.h"
-#include "reflection/absl/flat_hash_map.h"
-#include "reflection/absl/node_hash_map.h"
+#include "reflection/async_adl.h"
 #include "reflection/seastar/circular_buffer.h"
-#include "reflection/std/map.h"
-#include "reflection/std/vector.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 #include <boost/test/tools/old/interface.hpp>
@@ -31,6 +28,32 @@
 #include <vector>
 
 namespace rand_gen = random_generators;
+
+namespace reflection {
+
+// Enable reflection for absl containers
+template<typename... Args>
+struct async_adl<absl::btree_map<Args...>>
+  : public detail::async_adl_map<absl::btree_map<Args...>> {};
+
+template<typename... Args>
+struct async_adl<absl::flat_hash_map<Args...>>
+  : public detail::async_adl_map<absl::flat_hash_map<Args...>> {};
+
+template<typename... Args>
+struct async_adl<absl::node_hash_map<Args...>>
+  : public detail::async_adl_map<absl::node_hash_map<Args...>> {};
+
+// Enable reflection for std containers
+template<typename... Args>
+struct async_adl<std::map<Args...>>
+  : public detail::async_adl_map<std::map<Args...>> {};
+
+template<typename... Args>
+struct async_adl<std::vector<Args...>>
+  : public detail::async_adl_list<std::vector<Args...>> {};
+
+} // namespace reflection
 
 template<typename T>
 struct random_type {
