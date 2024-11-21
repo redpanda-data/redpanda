@@ -140,15 +140,12 @@ default_translator::translate_data(
 
 record_type key_value_translator::build_type(std::optional<resolved_type>) {
     auto ret_type = schemaless_struct_type();
-    std::optional<schema_identifier> val_id;
-    auto& system_fields = std::get<iceberg::struct_type>(
-      ret_type.fields[0]->type);
-    system_fields.fields.emplace_back(iceberg::nested_field::create(
-      10, "data", iceberg::field_required::no, iceberg::binary_type{}));
+    ret_type.fields.emplace_back(iceberg::nested_field::create(
+      10, "value", iceberg::field_required::no, iceberg::binary_type{}));
     return record_type{
       .comps = record_schema_components{
           .key_identifier = std::nullopt,
-          .val_identifier = std::move(val_id),
+          .val_identifier = std::nullopt,
       },
       .type = std::move(ret_type),
     };
@@ -171,11 +168,11 @@ key_value_translator::translate_data(
         co_return record_translator::errc::unexpected_schema;
     }
     auto ret_data = iceberg::struct_value{};
-    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
-    system_data->fields.emplace_back(
-      iceberg::binary_value{std::move(parsable_val)});
 
+    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
     ret_data.fields.emplace_back(std::move(system_data));
+    ret_data.fields.emplace_back(
+      iceberg::binary_value{std::move(parsable_val)});
     co_return ret_data;
 }
 
