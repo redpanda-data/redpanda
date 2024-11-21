@@ -26,6 +26,7 @@ v_cc_library(
         generated_datalake_coordinator_rpc
         v::cluster
         v::datalake_common
+        v::datalake_writer
         v::model
         v::rpc
         Seastar::seastar

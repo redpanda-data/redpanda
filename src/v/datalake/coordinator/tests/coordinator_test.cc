@@ -65,6 +65,7 @@ struct coordinator_node {
       , crd(
           stm,
           topic_table,
+          table_creator,
           [this](const model::topic& t, model::revision_id r) {
               return remove_tombstone(t, r);
           },
@@ -80,6 +81,7 @@ struct coordinator_node {
     config::mock_property<std::chrono::milliseconds> commit_interval_ms;
     cluster::data_migrations::migrated_resources mr;
     cluster::topic_table topic_table;
+    noop_table_creator table_creator;
     std::unique_ptr<file_committer> file_committer;
     coordinator crd;
 };

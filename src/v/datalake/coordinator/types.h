@@ -29,6 +29,7 @@ enum class errc : int16_t {
     stale,
     concurrent_requests,
     revision_mismatch,
+    incompatible_schema,
     failed,
 };
 

@@ -14,6 +14,7 @@
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
+#include "datalake/table_creator.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "ssx/future-util.h"
@@ -52,6 +53,8 @@ std::ostream& operator<<(std::ostream& o, coordinator::errc e) {
         return o << "coordinator::errc::stm_apply_error";
     case coordinator::errc::revision_mismatch:
         return o << "coordinator::errc::revision_mismatch";
+    case coordinator::errc::incompatible_schema:
+        return o << "coordinator::errc::incompatible_schema";
     case coordinator::errc::timedout:
         return o << "coordinator::errc::timedout";
     case coordinator::errc::failed:
@@ -227,7 +230,7 @@ ss::future<checked<std::nullopt_t, coordinator::errc>>
 coordinator::sync_ensure_table_exists(
   model::topic topic,
   model::revision_id topic_revision,
-  record_schema_components) {
+  record_schema_components comps) {
     auto gate = maybe_gate();
     if (gate.has_error()) {
         co_return gate.error();
@@ -243,6 +246,8 @@ coordinator::sync_ensure_table_exists(
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
+
+    // TODO: add mutex to protect against the thundering herd problem
 
     topic_lifecycle_update update{
       .topic = topic,
@@ -272,7 +277,22 @@ coordinator::sync_ensure_table_exists(
             co_return convert_stm_errc(repl_res.error());
         }
     }
-    // TODO: actually create table
+
+    // TODO: verify stm state after replication
+
+    auto ensure_res = co_await table_creator_.ensure_table(
+      topic, topic_revision, std::move(comps));
+    if (ensure_res.has_error()) {
+        switch (ensure_res.error()) {
+        case table_creator::errc::incompatible_schema:
+            co_return errc::incompatible_schema;
+        case table_creator::errc::failed:
+            co_return errc::failed;
+        case table_creator::errc::shutting_down:
+            co_return errc::shutting_down;
+        }
+    }
+
     co_return std::nullopt;
 }
 

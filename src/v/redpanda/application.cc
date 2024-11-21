@@ -1437,6 +1437,7 @@ void application::wire_up_runtime_services(
           std::ref(partition_manager),
           std::ref(controller->get_topics_state()),
           std::ref(controller->get_topics_frontend()),
+          _schema_registry.get(),
           ss::sharded_parameter(
             [bucket](cloud_io::remote& remote)
               -> std::unique_ptr<datalake::coordinator::catalog_factory> {
