@@ -75,7 +75,6 @@ bool is_supported(std::string_view name) {
        topic_property_flush_bytes,
        topic_property_iceberg_mode,
        topic_property_leaders_preference,
-       topic_property_iceberg_translation_interval_ms,
        topic_property_delete_retention_ms,
        topic_property_iceberg_delete});
 

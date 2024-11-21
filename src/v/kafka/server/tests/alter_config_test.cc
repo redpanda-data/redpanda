@@ -377,7 +377,6 @@ FIXTURE_TEST(
       "flush.bytes",
       "redpanda.iceberg.mode",
       "redpanda.leaders.preference",
-      "redpanda.iceberg.translation.interval.ms",
       "delete.retention.ms",
       "redpanda.iceberg.delete",
     };

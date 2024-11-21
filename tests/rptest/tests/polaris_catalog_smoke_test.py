@@ -81,8 +81,6 @@ class PolarisCatalogSmokeTest(RedpandaTest):
             client_id,
             "iceberg_rest_catalog_client_secret":
             client_secret,
-            "iceberg_translation_interval_ms_default":
-            3000,
             "iceberg_catalog_commit_interval_ms":
             10000,
             "iceberg_rest_catalog_prefix":
