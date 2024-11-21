@@ -26,7 +26,6 @@ def _expand_with_stamp_vars(ctx):
     )
     return DefaultInfo(
         files = depset([ctx.outputs.out]),
-        runfiles = ctx.runfiles(files = [ctx.outputs.out]),
     )
 
 expand_with_stamp_vars = rule(
