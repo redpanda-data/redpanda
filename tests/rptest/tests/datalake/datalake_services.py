@@ -37,10 +37,6 @@ class DatalakeServices():
         self.catalog_service = IcebergRESTCatalog(
             test_ctx,
             cloud_storage_bucket=si_settings.cloud_storage_bucket,
-            cloud_storage_access_key=si_settings.cloud_storage_access_key,
-            cloud_storage_secret_key=si_settings.cloud_storage_secret_key,
-            cloud_storage_region=si_settings.cloud_storage_region,
-            cloud_storage_api_endpoint=si_settings.endpoint_url,
             filesystem_wrapper_mode=filesystem_catalog_mode)
         self.included_query_engines = include_query_engines
         # To be populated later once we have the URI of the catalog
@@ -51,8 +47,7 @@ class DatalakeServices():
         self.catalog_service.start()
         for engine in self.included_query_engines:
             svc_cls = get_query_engine_by_type(engine)
-            svc = svc_cls(self.test_ctx, str(self.catalog_service.catalog_url),
-                          self.redpanda.si_settings)
+            svc = svc_cls(self.test_ctx, self.catalog_service.catalog_url)
             svc.start()
             self.query_engines.append(svc)
 
