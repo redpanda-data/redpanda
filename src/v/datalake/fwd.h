@@ -12,6 +12,7 @@
 
 namespace datalake {
 struct data_writer_result;
+class record_translator;
 class schema_manager;
 class type_resolver;
 namespace coordinator {

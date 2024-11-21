@@ -37,10 +37,12 @@ translation_task::errc map_error_code(cloud_data_io::errc errc) {
 translation_task::translation_task(
   cloud_data_io& cloud_io,
   schema_manager& schema_mgr,
-  type_resolver& type_resolver)
+  type_resolver& type_resolver,
+  record_translator& record_translator)
   : _cloud_io(&cloud_io)
   , _schema_mgr(&schema_mgr)
-  , _type_resolver(&type_resolver) {}
+  , _type_resolver(&type_resolver)
+  , _record_translator(&record_translator) {}
 
 ss::future<
   checked<coordinator::translated_offset_range, translation_task::errc>>
@@ -52,7 +54,11 @@ translation_task::translate(
   retry_chain_node& rcn,
   lazy_abort_source& lazy_as) {
     record_multiplexer mux(
-      ntp, std::move(writer_factory), *_schema_mgr, *_type_resolver);
+      ntp,
+      std::move(writer_factory),
+      *_schema_mgr,
+      *_type_resolver,
+      *_record_translator);
     // Write local files
     auto mux_result = co_await std::move(reader).consume(
       std::move(mux), _read_timeout + model::timeout_clock::now());

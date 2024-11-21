@@ -15,6 +15,7 @@
 #include "datalake/cloud_data_io.h"
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "datalake/translation_task.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"
@@ -31,6 +32,7 @@ using namespace datalake;
 namespace {
 auto schema_mgr = std::make_unique<simple_schema_manager>();
 auto schema_resolver = std::make_unique<binary_type_resolver>();
+auto translator = std::make_unique<default_translator>();
 const auto ntp = model::ntp{};
 } // namespace
 
@@ -157,7 +159,8 @@ private:
 };
 
 TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
-    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
+    datalake::translation_task task(
+      cloud_io, *schema_mgr, *schema_resolver, *translator);
 
     auto result = task
                     .translate(
@@ -184,7 +187,8 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
 }
 
 TEST_F(TranslateTaskTest, TestDataFileMissing) {
-    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
+    datalake::translation_task task(
+      cloud_io, *schema_mgr, *schema_resolver, *translator);
     // create deleting task to cause local io error
     deleter del(tmp_dir.get_path().string());
     del.start();
@@ -204,7 +208,8 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
 }
 
 TEST_F(TranslateTaskTest, TestUploadError) {
-    datalake::translation_task task(cloud_io, *schema_mgr, *schema_resolver);
+    datalake::translation_task task(
+      cloud_io, *schema_mgr, *schema_resolver, *translator);
     // fail all PUT requests
     fail_request_if(
       [](const http_test_utils::request_info& req) -> bool {

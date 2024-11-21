@@ -28,7 +28,8 @@ public:
     explicit translation_task(
       cloud_data_io& uploader,
       schema_manager& schema_mgr,
-      type_resolver& type_resolver);
+      type_resolver& type_resolver,
+      record_translator& record_translator);
     enum class errc {
         file_io_error,
         cloud_io_error,
@@ -65,5 +66,6 @@ private:
     cloud_data_io* _cloud_io;
     schema_manager* _schema_mgr;
     type_resolver* _type_resolver;
+    record_translator* _record_translator;
 };
 } // namespace datalake
