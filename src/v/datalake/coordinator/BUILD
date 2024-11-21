@@ -74,6 +74,7 @@ redpanda_cc_library(
     include_prefix = "datalake/coordinator",
     visibility = ["//visibility:public"],
     deps = [
+        ":catalog_factory",
         ":coordinator",
         ":file_committer",
         ":state_update",
@@ -84,6 +85,7 @@ redpanda_cc_library(
         "//src/v/iceberg:catalog",
         "//src/v/iceberg:manifest_io",
         "//src/v/model",
+        "//src/v/net",
         "//src/v/raft",
         "@seastar",
     ],
@@ -105,6 +107,7 @@ redpanda_cc_library(
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:rest_catalog",
         "//src/v/iceberg/rest_client:client",
+        "//src/v/net",
         "//src/v/thirdparty/ada",
         "@abseil-cpp//absl/strings",
     ],
