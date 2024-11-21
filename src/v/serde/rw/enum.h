@@ -16,8 +16,8 @@
 #include "serde/type_str.h"
 #include "ssx/sformat.h"
 
-#include <cinttypes>
 #include <limits>
+#include <utility>
 
 namespace serde {
 
@@ -26,9 +26,7 @@ requires(serde_is_enum_v<std::decay_t<T>>)
 void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
     const auto val = static_cast<std::underlying_type_t<Type>>(t);
-    if (unlikely(
-          val > std::numeric_limits<serde_enum_serialized_t>::max()
-          || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
+    if (unlikely(!std::in_range<serde_enum_serialized_t>(val))) {
         throw serde_exception{fmt_with_ctx(
           ssx::sformat,
           "serde: enum of type {} has value {} which is out of bounds for "
@@ -46,8 +44,8 @@ void tag_invoke(
     using Type = std::decay_t<T>;
 
     const auto val = read_nested<serde_enum_serialized_t>(in, bytes_left_limit);
-    if (unlikely(
-          val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
+    if (unlikely(std::cmp_greater(
+          val, std::numeric_limits<std::underlying_type_t<Type>>::max()))) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
           "enum value {} too large for {}",

@@ -58,6 +58,7 @@ def _redpanda_cc_test(
         memory,
         cpu,
         srcs = [],
+        defines = [],
         deps = [],
         extra_args = [],
         custom_args = [],
@@ -74,6 +75,7 @@ def _redpanda_cc_test(
       timeout: same as native cc_test
       dash_dash_protocol: false for google test, true for boost test
       srcs: test source files
+      defines: definitions of object-like macros
       deps: test dependencies
       memory: seastar memory as a string ("1GB" or "512MiB" or "256M")
       cpu: seastar cores
@@ -114,6 +116,7 @@ def _redpanda_cc_test(
         name = name,
         timeout = timeout,
         srcs = srcs,
+        defines = defines,
         deps = deps,
         copts = redpanda_copts(),
         args = args,
@@ -147,6 +150,7 @@ def redpanda_cc_gtest(
         name,
         timeout,
         srcs = [],
+        defines = [],
         deps = [],
         args = [],
         env = {},
@@ -159,6 +163,7 @@ def redpanda_cc_gtest(
         name = name,
         timeout = timeout,
         srcs = srcs,
+        defines = defines,
         cpu = cpu,
         memory = memory,
         deps = deps,
@@ -173,6 +178,7 @@ def redpanda_cc_btest(
         name,
         timeout,
         srcs = [],
+        defines = [],
         deps = [],
         args = [],
         env = {},
@@ -186,6 +192,7 @@ def redpanda_cc_btest(
         name = name,
         timeout = timeout,
         srcs = srcs,
+        defines = defines,
         deps = deps,
         cpu = cpu,
         memory = memory,
@@ -200,6 +207,7 @@ def redpanda_cc_bench(
         name,
         timeout,
         srcs = [],
+        defines = [],
         deps = [],
         args = [],
         env = {},
@@ -215,6 +223,7 @@ def redpanda_cc_bench(
         name = name,
         timeout = timeout,
         srcs = srcs,
+        defines = defines,
         deps = deps,
         custom_args = args,
         tags = [
