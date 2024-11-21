@@ -169,7 +169,7 @@ optimized for such data.
 ```
 
 The format of the subject is `area[/detail]: short description` and the entire
-line should be no more than 50 characters in length. The `prefix:` is helpful
+line should be no more than 72 characters in length. The `prefix:` is helpful
 for readers to quickly identify the relevant subsystem. We recommend taking
 a look at recent Git history for examples of common `prefix:` choices.
 
