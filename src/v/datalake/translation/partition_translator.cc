@@ -88,7 +88,8 @@ partition_translator::partition_translator(
   ss::sharded<features::feature_table>* features,
   std::unique_ptr<cloud_data_io>* cloud_io,
   schema_manager* schema_mgr,
-  type_resolver* type_resolver,
+  std::unique_ptr<type_resolver> type_resolver,
+  std::unique_ptr<record_translator> record_translator,
   std::chrono::milliseconds translation_interval,
   ss::scheduling_group sg,
   size_t reader_max_bytes,
@@ -102,10 +103,8 @@ partition_translator::partition_translator(
   , _features(features)
   , _cloud_io(cloud_io)
   , _schema_mgr(schema_mgr)
-  // TODO: type resolver and record translator should be constructed based on
-  // topic configs.
-  , _type_resolver(type_resolver)
-  , _record_translator(std::make_unique<default_translator>())
+  , _type_resolver(std::move(type_resolver))
+  , _record_translator(std::move(record_translator))
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}

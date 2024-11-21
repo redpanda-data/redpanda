@@ -19,12 +19,44 @@
 #include "datalake/coordinator/frontend.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "raft/group_manager.h"
 #include "schema/registry.h"
 
 #include <memory>
 
 namespace datalake {
+
+namespace {
+
+static std::unique_ptr<type_resolver>
+make_type_resolver(model::iceberg_mode mode, schema::registry& sr) {
+    switch (mode) {
+    case model::iceberg_mode::disabled:
+        vassert(
+          false,
+          "Cannot make record translator when iceberg is disabled, logic bug.");
+    case model::iceberg_mode::key_value:
+        return std::make_unique<binary_type_resolver>();
+    case model::iceberg_mode::value_schema_id_prefix:
+        return std::make_unique<record_schema_resolver>(sr);
+    }
+}
+
+static std::unique_ptr<record_translator>
+make_record_translator(model::iceberg_mode mode) {
+    switch (mode) {
+    case model::iceberg_mode::disabled:
+        vassert(
+          false,
+          "Cannot make record translator when iceberg is disabled, logic bug.");
+    case model::iceberg_mode::key_value:
+        return std::make_unique<key_value_translator>();
+    case model::iceberg_mode::value_schema_id_prefix:
+        return std::make_unique<structured_data_translator>();
+    }
+}
+} // namespace
 
 datalake_manager::datalake_manager(
   model::node_id self,
@@ -184,7 +216,7 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
     // By now we know the partition is a leader and iceberg is enabled, so
     // there has to be a translator, spin one up if it doesn't already exist.
     if (it == _translators.end()) {
-        start_translator(partition);
+        start_translator(partition, topic_cfg->properties.iceberg_mode);
     } else {
         // check if translation interval changed.
         auto target_interval = translation_interval_ms();
@@ -195,7 +227,7 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
 }
 
 void datalake_manager::start_translator(
-  ss::lw_shared_ptr<cluster::partition> partition) {
+  ss::lw_shared_ptr<cluster::partition> partition, model::iceberg_mode mode) {
     auto it = _translators.find(partition->ntp());
     vassert(
       it == _translators.end(),
@@ -209,7 +241,8 @@ void datalake_manager::start_translator(
       _features,
       &_cloud_data_io,
       _schema_mgr.get(),
-      _type_resolver.get(),
+      make_type_resolver(mode, *_schema_registry),
+      make_record_translator(mode),
       translation_interval_ms(),
       _sg,
       _effective_max_translator_buffered_data,
