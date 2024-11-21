@@ -30,8 +30,10 @@
 
 namespace kafka {
 class read_committed_reader;
-}
-
+} // namespace kafka
+namespace datalake {
+class record_translator;
+} // namespace datalake
 namespace datalake::translation {
 
 /**
@@ -75,6 +77,7 @@ public:
       ss::scheduling_group sg,
       size_t reader_max_bytes,
       std::unique_ptr<ssx::semaphore>* parallel_translations);
+    ~partition_translator();
 
     void start_translation_in_background(ss::scheduling_group);
 
@@ -115,6 +118,7 @@ private:
     std::unique_ptr<datalake::cloud_data_io>* _cloud_io;
     schema_manager* _schema_mgr;
     type_resolver* _type_resolver;
+    std::unique_ptr<record_translator> _record_translator;
     std::unique_ptr<kafka::partition_proxy> _partition_proxy;
     using jitter_t
       = simple_time_jitter<ss::lowres_clock, std::chrono::milliseconds>;

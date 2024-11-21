@@ -107,7 +107,7 @@ class DatalakeE2ETests(RedpandaTest):
                 trino = dl.trino()
                 trino_expected_out = [(
                     'redpanda',
-                    'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary, value varbinary)',
+                    'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
                     '', ''), ('val', 'bigint', '', '')]
                 trino_describe_out = trino.run_query_fetch_all(
                     f"describe {table_name}")
@@ -117,7 +117,7 @@ class DatalakeE2ETests(RedpandaTest):
                 spark = dl.spark()
                 spark_expected_out = [(
                     'redpanda',
-                    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary,value:binary>',
+                    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
                     None), ('val', 'bigint', None), ('', '', ''),
                                       ('# Partitioning', '', ''),
                                       ('Part 0', 'hours(redpanda.timestamp)',

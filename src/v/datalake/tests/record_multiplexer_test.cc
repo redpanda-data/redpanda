@@ -10,6 +10,7 @@
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "datalake/table_definition.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
@@ -28,6 +29,7 @@
 using namespace datalake;
 
 namespace {
+structured_data_translator translator;
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
 // v1: struct field with one field.
@@ -101,7 +103,8 @@ public:
     std::optional<record_multiplexer::write_result> mux(
       const records_param& param,
       model::offset o,
-      const std::function<void(storage::record_batch_builder&)>& cb) {
+      const std::function<void(storage::record_batch_builder&)>& cb,
+      bool expect_error = false) {
         auto start_offset = o;
         ss::circular_buffer<model::record_batch> batches;
         const auto start_ts = model::timestamp::now();
@@ -129,9 +132,14 @@ public:
           ntp,
           std::make_unique<test_data_writer_factory>(false),
           schema_mgr,
-          type_resolver);
+          type_resolver,
+          translator);
         auto res = reader.consume(std::move(mux), model::no_timeout).get();
-        EXPECT_FALSE(res.has_error()) << res.error();
+        if (expect_error) {
+            EXPECT_TRUE(res.has_error());
+        } else {
+            EXPECT_FALSE(res.has_error()) << res.error();
+        }
         if (res.has_error()) {
             return std::nullopt;
         }
@@ -176,29 +184,21 @@ class RecordMultiplexerParamTest
 public:
     std::optional<record_multiplexer::write_result> mux(
       model::offset o,
-      const std::function<void(storage::record_batch_builder&)>& cb) {
-        return RecordMultiplexerTestBase::mux(GetParam(), o, cb);
+      const std::function<void(storage::record_batch_builder&)>& cb,
+      bool expect_error = false) {
+        return RecordMultiplexerTestBase::mux(GetParam(), o, cb, expect_error);
     }
 };
 
 TEST_P(RecordMultiplexerParamTest, TestNoSchema) {
     auto start_offset = model::offset{0};
-    auto res = mux(start_offset, [](storage::record_batch_builder& b) {
-        b.add_raw_kv(std::nullopt, iobuf::from("foobar"));
-    });
-    ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), GetParam().hrs);
-
-    std::unordered_set<int> hrs;
-    for (auto& f : write_res.data_files) {
-        hrs.emplace(f.hour);
-        EXPECT_EQ(f.row_count, GetParam().records_per_hr());
-    }
-    EXPECT_EQ(hrs.size(), GetParam().hrs);
-    auto schema = get_current_schema();
-    ASSERT_TRUE(schema.has_value());
-    EXPECT_EQ(schema->schema_struct, schemaless_struct_type());
+    auto res = mux(
+      start_offset,
+      [](storage::record_batch_builder& b) {
+          b.add_raw_kv(std::nullopt, iobuf::from("foobar"));
+      },
+      true);
+    ASSERT_FALSE(res.has_value());
 }
 
 TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
@@ -226,7 +226,7 @@ TEST_P(RecordMultiplexerParamTest, TestSimpleAvroRecords) {
 
     // 4 default columns + RootRecord + mylong
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 11);
+    EXPECT_EQ(schema->highest_field_id(), 10);
 }
 
 TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
@@ -262,7 +262,7 @@ TEST_P(RecordMultiplexerParamTest, TestAvroRecordsMultipleSchemas) {
     }
     EXPECT_EQ(hrs.size(), GetParam().hrs);
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 21);
+    EXPECT_EQ(schema->highest_field_id(), 20);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -317,31 +317,29 @@ TEST_F(RecordMultiplexerTest, TestAvroRecordsWithRedpandaField) {
     // 1 nested redpanda column + 4 default columns + mylong + 1 user redpanda
     // column + 1 nested
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 13);
+    EXPECT_EQ(schema->highest_field_id(), 12);
 
     // The redpanda system fields should include the 'data' column.
     const auto& rp_struct = std::get<iceberg::struct_type>(
       schema->schema_struct.fields[0]->type);
-    EXPECT_EQ(7, rp_struct.fields.size());
+    EXPECT_EQ(6, rp_struct.fields.size());
     EXPECT_EQ("data", rp_struct.fields.back()->name);
 }
 
 TEST_F(RecordMultiplexerTest, TestMissingSchema) {
     auto start_offset = model::offset{0};
     auto res = mux(
-      default_param, start_offset, [](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [](storage::record_batch_builder& b) {
           iobuf buf;
           // Append data with a magic 0 byte that doesn't actually correspond to
           // anything.
           buf.append("\0\0\0\0\0\0\0", 7);
           b.add_raw_kv(std::nullopt, std::move(buf));
-      });
-    ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
-
-    auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 10);
+      },
+      true);
+    ASSERT_FALSE(res.has_value());
 }
 
 TEST_F(RecordMultiplexerTest, TestBadData) {
@@ -352,22 +350,17 @@ TEST_F(RecordMultiplexerTest, TestBadData) {
 
     auto start_offset = model::offset{0};
     auto res = mux(
-      default_param, start_offset, [](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [](storage::record_batch_builder& b) {
           iobuf buf;
           // Append data with a magic bytes that corresponds to the actual
           // schema.
           buf.append("\0\0\0\0\0\1\0", 7);
           b.add_raw_kv(std::nullopt, std::move(buf));
-      });
-    ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
-
-    // When we go to translate the data, the translation should fail and we
-    // shouldn't register the Avro schema -- instead we should see the default
-    // schema.
-    auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 10);
+      },
+      true);
+    ASSERT_FALSE(res.has_value());
 }
 
 TEST_F(RecordMultiplexerTest, TestBadSchemaChange) {
@@ -400,21 +393,22 @@ TEST_F(RecordMultiplexerTest, TestBadSchemaChange) {
 
     // This should have registered the valid schema.
     auto schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 11);
+    EXPECT_EQ(schema->highest_field_id(), 10);
 
     // Now try writing with an incompatible schema.
     res = mux(
-      default_param, start_offset, [&gen](storage::record_batch_builder& b) {
+      default_param,
+      start_offset,
+      [&gen](storage::record_batch_builder& b) {
           auto res
             = gen.add_random_avro_record(b, "incompat", std::nullopt).get();
           ASSERT_FALSE(res.has_error());
-      });
+      },
+      true);
 
     // This should successfully write the binary records but not update the
     // schema.
-    ASSERT_TRUE(res.has_value());
-    const auto& write_res = res.value();
-    EXPECT_EQ(write_res.data_files.size(), default_param.hrs);
+    ASSERT_FALSE(res.has_value());
     schema = get_current_schema();
-    EXPECT_EQ(schema->highest_field_id(), 11);
+    EXPECT_EQ(schema->highest_field_id(), 10);
 }

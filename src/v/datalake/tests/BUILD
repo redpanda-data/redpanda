@@ -212,6 +212,7 @@ redpanda_cc_gtest(
         "//src/v/datalake:catalog_schema_manager",
         "//src/v/datalake:record_multiplexer",
         "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:record_translator",
         "//src/v/datalake:table_definition",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/model",
