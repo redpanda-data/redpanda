@@ -260,7 +260,7 @@ redpanda_cc_btest(
 
 redpanda_cc_bench(
     name = "coro_bench",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "coro_bench.cc",
     ],
@@ -484,7 +484,7 @@ redpanda_cc_btest(
 
 redpanda_cc_bench(
     name = "delta_for_bench",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "delta_for_bench.cc",
     ],
