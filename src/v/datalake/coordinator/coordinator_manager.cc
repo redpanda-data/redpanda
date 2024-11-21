@@ -11,6 +11,7 @@
 
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/state_machine.h"
@@ -27,18 +28,20 @@ coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
-  std::unique_ptr<iceberg::catalog> catalog,
+  std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
   cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
   , manifest_io_(io.local(), bucket)
-  , catalog_(std::move(catalog))
-  , file_committer_(
-      std::make_unique<iceberg_file_committer>(*catalog_, manifest_io_)) {}
+  , catalog_factory_(std::move(catalog_factory)) {}
 
 ss::future<> coordinator_manager::start() {
+    catalog_ = co_await catalog_factory_->create_catalog();
+    file_committer_ = std::make_unique<iceberg_file_committer>(
+      *catalog_, manifest_io_);
+
     manage_notifications_ = pm_.register_manage_notification(
       model::datalake_coordinator_nt.ns,
       [this](ss::lw_shared_ptr<cluster::partition> p) { start_managing(*p); });
@@ -61,7 +64,6 @@ ss::future<> coordinator_manager::start() {
         std::optional<model::node_id> leader_id) {
           notify_leadership_change(group, term, leader_id);
       });
-    return ss::now();
 }
 
 ss::future<> coordinator_manager::stop() {

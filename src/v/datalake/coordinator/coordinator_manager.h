@@ -25,6 +25,7 @@
 #include <seastar/core/sharded.hh>
 
 namespace datalake::coordinator {
+class catalog_factory;
 
 // Manages the lifecycle of datalake coordinators, each of which operate on a
 // single partition of the control topic.
@@ -34,7 +35,7 @@ public:
       model::node_id self,
       ss::sharded<raft::group_manager>&,
       ss::sharded<cluster::partition_manager>&,
-      std::unique_ptr<iceberg::catalog>,
+      std::unique_ptr<catalog_factory>,
       ss::sharded<cloud_io::remote>&,
       cloud_storage_clients::bucket_name);
 
@@ -58,6 +59,7 @@ private:
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;
+    std::unique_ptr<catalog_factory> catalog_factory_;
     std::unique_ptr<iceberg::catalog> catalog_;
     std::unique_ptr<file_committer> file_committer_;
 
