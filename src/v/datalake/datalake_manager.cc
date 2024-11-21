@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/cloud_data_io.h"
+#include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
@@ -36,7 +37,7 @@ datalake_manager::datalake_manager(
   ss::sharded<features::feature_table>* features,
   ss::sharded<coordinator::frontend>* frontend,
   ss::sharded<cloud_io::remote>* cloud_io,
-  std::unique_ptr<iceberg::catalog> catalog,
+  std::unique_ptr<coordinator::catalog_factory> catalog_factory,
   pandaproxy::schema_registry::api* sr_api,
   ss::sharded<ss::abort_source>* as,
   cloud_storage_clients::bucket_name bucket_name,
@@ -54,8 +55,7 @@ datalake_manager::datalake_manager(
   , _cloud_data_io(std::make_unique<cloud_data_io>(
       cloud_io->local(), std::move(bucket_name)))
   , _schema_registry(schema::registry::make_default(sr_api))
-  , _catalog(std::move(catalog))
-  , _schema_mgr(std::make_unique<catalog_schema_manager>(*_catalog))
+  , _catalog_factory(std::move(catalog_factory))
   , _type_resolver(std::make_unique<record_schema_resolver>(*_schema_registry))
   , _as(as)
   , _sg(sg)
@@ -70,6 +70,8 @@ datalake_manager::datalake_manager(
 datalake_manager::~datalake_manager() = default;
 
 ss::future<> datalake_manager::start() {
+    _catalog = co_await _catalog_factory->create_catalog();
+    _schema_mgr = std::make_unique<catalog_schema_manager>(*_catalog);
     // partition managed notification, this is particularly
     // relevant for cross core movements without a term change.
     auto partition_managed_notification
@@ -136,7 +138,6 @@ ss::future<> datalake_manager::start() {
             }
         });
     });
-    return ss::make_ready_future<>();
 }
 
 ss::future<> datalake_manager::stop() {

@@ -9,7 +9,6 @@
  */
 #pragma once
 #include "cloud_io/remote.h"
-#include "config/configuration.h"
 
 namespace iceberg {
 class catalog;
@@ -18,15 +17,50 @@ class rest_catalog;
 } // namespace iceberg
 
 namespace datalake::coordinator {
+
+class catalog_factory {
+public:
+    virtual ~catalog_factory() = default;
+    virtual ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() = 0;
+};
 /**
- * This function creates an Iceberg catalog for the datalake_coordinator manager
- * to use. The catalog type is decided base on the configuration provided.
- * The method always accept the cloud storage primitives to be able to create a
- * filesystem catalog if required.
+ * Rest catalog factory, the catalog properties are set based on the
+ * configuration provided.
  */
-std::unique_ptr<iceberg::catalog> create_catalog(
+class rest_catalog_factory : public catalog_factory {
+public:
+    explicit rest_catalog_factory(config::configuration& config);
+
+    ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() final;
+
+private:
+    config::configuration* config_;
+};
+/**
+ * Filesystem catalog factory, the will use provided cloud_io::remote and bucket
+ */
+
+class filesystem_catalog_factory : public catalog_factory {
+public:
+    filesystem_catalog_factory(
+      config::configuration& config,
+      cloud_io::remote& remote,
+      const cloud_storage_clients::bucket_name& bucket);
+
+    ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() final;
+
+private:
+    config::configuration* config_;
+    cloud_io::remote* remote_;
+    cloud_storage_clients::bucket_name bucket_;
+};
+
+/**
+ * Returns a catalog factory based on the configuration provided.
+ */
+std::unique_ptr<catalog_factory> get_catalog_factory(
+  config::configuration& config,
   cloud_io::remote& remote,
-  const cloud_storage_clients::bucket_name& bucket_name,
-  config::configuration& cluster_configuration);
+  const cloud_storage_clients::bucket_name& bucket);
 
 } // namespace datalake::coordinator
