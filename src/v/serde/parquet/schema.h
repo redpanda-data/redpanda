@@ -261,7 +261,7 @@ struct schema_element {
      *
      * This must be set to required on the schema root
      */
-    field_repetition_type repetition_type;
+    field_repetition_type repetition_type{field_repetition_type::required};
 
     /**
      * The full path of the node within the schema.

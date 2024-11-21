@@ -105,6 +105,15 @@ public:
     iobuf release_value() { return std::exchange(_value, {}); }
     iobuf share_value() { return _value.share(0, _value.size_bytes()); }
 
+    std::optional<iobuf> share_key_opt() {
+        return key_size() < 0 ? std::nullopt
+                              : std::make_optional<iobuf>(share_key());
+    }
+    std::optional<iobuf> share_value_opt() {
+        return value_size() < 0 ? std::nullopt
+                                : std::make_optional<iobuf>(share_value());
+    }
+
     bool operator==(const record_header& rhs) const {
         return _key_size == rhs._key_size && _val_size == rhs._val_size
                && _key == rhs._key && _value == rhs._value;
@@ -113,8 +122,10 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record_header&);
 
 private:
+    // If negative, the key is nil.
     int32_t _key_size{-1};
     iobuf _key;
+    // If negative, the value is nil.
     int32_t _val_size{-1};
     iobuf _value;
 };
