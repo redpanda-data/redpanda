@@ -10,13 +10,14 @@
 
 #include "iceberg/rest_client/catalog_client.h"
 
-#include "bytes/iobuf_parser.h"
+#include "bytes/streambuf.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
 #include "iceberg/json_writer.h"
 #include "iceberg/rest_client/entities.h"
 #include "iceberg/rest_client/json.h"
 #include "iceberg/table_requests_json.h"
+#include "json/istreamwrapper.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -67,11 +68,12 @@ auto parse_as_expected(std::string_view ctx, Func&& parse_func) {
 } // namespace
 
 expected<json::Document> parse_json(iobuf&& raw_response) {
-    iobuf_parser p{std::move(raw_response)};
-    auto raw_json = p.read_string(p.bytes_left());
+    iobuf_istreambuf ibuf{raw_response};
+    std::istream stream{&ibuf};
+    json::IStreamWrapper wrapper(stream);
 
     json::Document doc;
-    doc.Parse(raw_json);
+    doc.ParseStream(wrapper);
 
     if (doc.HasParseError()) {
         return tl::unexpected(json_parse_error{
