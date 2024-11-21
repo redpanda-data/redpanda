@@ -109,7 +109,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     }
 
     auto table_id = table_id_for_topic(topic);
-    auto table_res = co_await load_or_create_table(table_id);
+    auto table_res = co_await load_table(table_id);
     if (table_res.has_error()) {
         co_return table_res.error();
     }
@@ -232,13 +232,12 @@ iceberg_file_committer::table_id_for_topic(const model::topic& t) const {
 }
 
 ss::future<checked<iceberg::table_metadata, file_committer::errc>>
-iceberg_file_committer::load_or_create_table(
+iceberg_file_committer::load_table(
   const iceberg::table_identifier& table_id) const {
-    auto res = co_await catalog_.load_or_create_table(
-      table_id, schemaless_struct_type(), hour_partition_spec());
+    auto res = co_await catalog_.load_table(table_id);
     if (res.has_error()) {
         co_return log_and_convert_catalog_errc(
-          res.error(), fmt::format("Failed to load or create {}", table_id));
+          res.error(), fmt::format("Failed to load table {}", table_id));
     }
     co_return std::move(res.value());
 }

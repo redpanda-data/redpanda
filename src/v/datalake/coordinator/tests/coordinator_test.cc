@@ -77,6 +77,14 @@ struct coordinator_node {
         co_return std::nullopt;
     }
 
+    void ensure_table(const model::topic& topic, model::revision_id rev) {
+        auto res = crd
+                     .sync_ensure_table_exists(
+                       topic, rev, datalake::record_schema_components{})
+                     .get();
+        ASSERT_FALSE(res.has_error()) << res.error();
+    }
+
     coordinator_stm& stm;
     config::mock_property<std::chrono::milliseconds> commit_interval_ms;
     cluster::data_migrations::migrated_resources mr;
@@ -111,6 +119,11 @@ ss::future<> file_adder_loop(
         auto last_res = co_await n.crd.sync_get_last_added_offset(
           tp, topic_rev);
         if (last_res.has_error()) {
+            continue;
+        }
+        auto ensure_res = co_await n.crd.sync_ensure_table_exists(
+          tp.topic, topic_rev, datalake::record_schema_components{});
+        if (ensure_res.has_error()) {
             continue;
         }
         auto cur_last_opt = last_res.value();
@@ -314,6 +327,8 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
     const model::revision_id rev0{1};
     const auto tp10 = tp(1, 0);
     const model::revision_id rev1{2};
+
+    leader.ensure_table(tp00.topic, rev0);
     pairs_t total_expected_00;
     for (const auto& v : {
            pairs_t{{0, 100}},
@@ -333,6 +348,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
               c->stm.state(), tp00, std::nullopt, total_expected_00));
         }
     }
+
     // Now try adding to a different partition of the same topic.
     pairs_t total_expected_01;
     for (const auto& v : {pairs_t{{0, 100}}, pairs_t{{101, 200}}}) {
@@ -350,6 +366,7 @@ TEST_F(CoordinatorTest, TestAddFilesHappyPath) {
         }
     }
     // And finally a different topic entirely.
+    leader.ensure_table(tp10.topic, rev1);
     pairs_t total_expected_10;
     for (const auto& v : {pairs_t{{100, 200}}, pairs_t{{201, 300}}}) {
         auto add_res
@@ -376,6 +393,7 @@ TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
     const auto tp00 = tp(0, 0);
     const auto tp01 = tp(0, 1);
     const model::revision_id rev{1};
+    leader.ensure_table(tp00.topic, rev);
     pairs_t total_expected_00;
     for (const auto& v :
          {pairs_t{{101, 200}}, pairs_t{{201, 300}, {301, 400}}}) {
@@ -408,6 +426,7 @@ TEST_F(CoordinatorTest, TestNotLeader) {
     auto& non_leader = non_leader_opt->get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev{1};
+    leader_opt.value().get().ensure_table(tp00.topic, rev);
     pairs_t total_expected_00;
 
     auto add_res = non_leader.crd
@@ -543,6 +562,7 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesHappyPath) {
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev0{1};
+    leader.ensure_table(tp00.topic, rev0);
     auto add_res = leader.crd
                      .sync_add_files(tp00, rev0, make_pending_files({{0, 100}}))
                      .get();
@@ -572,6 +592,7 @@ TEST_F(CoordinatorLoopTest, TestCommitFilesNotLeader) {
     auto& leader = leader_opt->get();
     const auto tp00 = tp(0, 0);
     const model::revision_id rev0{1};
+    leader.ensure_table(tp00.topic, rev0);
     auto add_res = leader.crd
                      .sync_add_files(tp00, rev0, make_pending_files({{0, 100}}))
                      .get();
@@ -651,11 +672,10 @@ TEST_F(CoordinatorSleepingLoopTest, TestQuickShutdownOnLeadershipChange) {
     auto& leader = leader_opt->get();
     for (int i = 0; i < 100; i++) {
         auto t = tp(i, 0);
+        auto rev = model::revision_id{i};
+        leader.ensure_table(t.topic, rev);
         auto add_res = leader.crd
-                         .sync_add_files(
-                           t,
-                           model::revision_id{i},
-                           make_pending_files({{0, 100}}))
+                         .sync_add_files(t, rev, make_pending_files({{0, 100}}))
                          .get();
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
     }
