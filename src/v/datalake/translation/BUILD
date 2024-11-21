@@ -54,6 +54,7 @@ redpanda_cc_library(
         "//src/v/datalake:record_schema_resolver",
         "//src/v/datalake:record_translator",
         "//src/v/datalake:serde_parquet_writer",
+        "//src/v/datalake:table_creator",
         "//src/v/datalake:translation_task",
         "//src/v/datalake:types",
         "//src/v/datalake:writer",

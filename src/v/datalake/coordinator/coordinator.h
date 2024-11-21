@@ -15,6 +15,7 @@
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/fwd.h"
 #include "model/fundamental.h"
 
 namespace datalake::coordinator {
@@ -29,6 +30,7 @@ public:
         not_leader,
         stm_apply_error,
         revision_mismatch,
+        incompatible_schema,
         timedout,
         shutting_down,
         failed,
@@ -39,11 +41,13 @@ public:
     coordinator(
       ss::shared_ptr<coordinator_stm> stm,
       cluster::topic_table& topics,
+      table_creator& table_creator,
       remove_tombstone_f remove_tombstone,
       file_committer& file_committer,
       config::binding<std::chrono::milliseconds> commit_interval)
       : stm_(std::move(stm))
       , topic_table_(topics)
+      , table_creator_(table_creator)
       , remove_tombstone_(std::move(remove_tombstone))
       , file_committer_(file_committer)
       , commit_interval_(std::move(commit_interval)) {}
@@ -88,6 +92,7 @@ private:
 
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;
+    table_creator& table_creator_;
     remove_tombstone_f remove_tombstone_;
     file_committer& file_committer_;
     config::binding<std::chrono::milliseconds> commit_interval_;

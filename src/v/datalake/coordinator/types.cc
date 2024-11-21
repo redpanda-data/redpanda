@@ -40,6 +40,9 @@ std::ostream& operator<<(std::ostream& o, const errc& errc) {
     case errc::revision_mismatch:
         o << "errc::revision_mismatch";
         break;
+    case errc::incompatible_schema:
+        o << "errc::incompatible_schema";
+        break;
     case errc::failed:
         o << "errc::failed";
         break;

@@ -34,6 +34,8 @@ errc to_rpc_errc(coordinator::errc e) {
         return errc::stale;
     case coordinator::errc::revision_mismatch:
         return errc::revision_mismatch;
+    case coordinator::errc::incompatible_schema:
+        return errc::incompatible_schema;
     case coordinator::errc::timedout:
         return errc::timeout;
     case coordinator::errc::failed:
