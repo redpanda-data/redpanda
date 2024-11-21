@@ -67,23 +67,48 @@ public:
           _opts.schema, std::move(row), [this](shredded_value sv) {
               return write_value(std::move(sv));
           });
-        // TODO: periodically flush the row_group if we're using enough memory
-        // or at least flush the pages if we don't want to create too many row
-        // groups.
+    }
+
+    ss::future<> flush_row_group() {
+        // TODO(rockwood): guard against empty row groups
+        row_group rg{};
+        rg.file_offset = static_cast<int64_t>(_offset);
+        for (auto& [pos, col] : _columns) {
+            auto page = co_await col.writer.flush_page();
+            const auto& data_header = std::get<data_page_header>(
+              page.header.type);
+            rg.num_rows = data_header.num_rows;
+            auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
+            rg.total_byte_size += page_size;
+            rg.columns.push_back(column_chunk{
+              .meta_data = column_meta_data{
+                .type = col.leaf->type,
+                .encodings = {data_header.data_encoding},
+                .path_in_schema = path_in_schema(*col.leaf),
+                .codec = _opts.compress ? compression_codec::zstd : compression_codec::uncompressed,
+                .num_values = data_header.num_values,
+                .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
+                .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,
+                .key_value_metadata = {},
+                .data_page_offset = static_cast<int64_t>(_offset),
+              },
+            });
+            co_await write_iobuf(std::move(page.serialized));
+        }
+        _row_groups.push_back(std::move(rg));
     }
 
     ss::future<> close() {
-        chunked_vector<row_group> row_groups;
-        row_groups.push_back(co_await flush_row_group());
+        co_await flush_row_group();
         int64_t num_rows = 0;
-        for (const auto& rg : row_groups) {
+        for (const auto& rg : _row_groups) {
             num_rows += rg.num_rows;
         }
         auto encoded_footer = encode(file_metadata{
           .version = 2,
           .schema = flatten(_opts.schema),
           .num_rows = num_rows,
-          .row_groups = std::move(row_groups),
+          .row_groups = std::move(_row_groups),
           .key_value_metadata = std::move(_opts.metadata),
           .created_by = fmt::format(
             "Redpanda version {} (build {})", _opts.version, _opts.build),
@@ -110,34 +135,6 @@ private:
         return ss::now();
     }
 
-    ss::future<row_group> flush_row_group() {
-        row_group rg{};
-        rg.file_offset = static_cast<int64_t>(_offset);
-        for (auto& [pos, col] : _columns) {
-            auto page = co_await col.writer.flush_page();
-            const auto& data_header = std::get<data_page_header>(
-              page.header.type);
-            rg.num_rows = data_header.num_rows;
-            auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
-            rg.total_byte_size += page_size;
-            rg.columns.push_back(column_chunk{
-              .meta_data = column_meta_data{
-                .type = col.leaf->type,
-                .encodings = {data_header.data_encoding},
-                .path_in_schema = path_in_schema(*col.leaf),
-                .codec = _opts.compress ? compression_codec::zstd : compression_codec::uncompressed,
-                .num_values = data_header.num_values,
-                .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
-                .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,
-                .key_value_metadata = {},
-                .data_page_offset = static_cast<int64_t>(_offset),
-              },
-            });
-            co_await write_iobuf(std::move(page.serialized));
-        }
-        co_return rg;
-    }
-
     ss::future<> write_iobuf(iobuf b) {
         _offset += b.size_bytes();
         co_await write_iobuf_to_output_stream(std::move(b), _output);
@@ -152,6 +149,7 @@ private:
     ss::output_stream<char> _output;
     size_t _offset = 0; // offset written to the stream
     contiguous_range_map<int32_t, column> _columns;
+    chunked_vector<row_group> _row_groups;
 };
 
 writer::writer(options opts, ss::output_stream<char> output)
@@ -166,6 +164,8 @@ ss::future<> writer::init() { return _impl->init(); }
 ss::future<> writer::write_row(group_value row) {
     return _impl->write_row(std::move(row));
 }
+
+ss::future<> writer::flush_row_group() { return _impl->flush_row_group(); }
 
 ss::future<> writer::close() { return _impl->close(); }
 
