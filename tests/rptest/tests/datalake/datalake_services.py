@@ -92,6 +92,10 @@ class DatalakeServices():
                          replicas=replicas,
                          config=config)
 
+    def set_iceberg_mode_on_topic(self, topic: str, mode: str):
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(topic, "redpanda.iceberg.mode", mode)
+
     def wait_for_iceberg_table(self, namespace, table, timeout, backoff_sec):
         client = self.catalog_service.client("redpanda-iceberg-catalog")
 
@@ -107,6 +111,34 @@ class DatalakeServices():
             backoff_sec=backoff_sec,
             err_msg=
             f"Timed out waiting {namespace}.{table} to be created in the catalog"
+        )
+
+    def wait_for_translation_until_offset(self,
+                                          topic,
+                                          offset,
+                                          partition=0,
+                                          timeout=30,
+                                          backoff_sec=5):
+        self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
+        table_name = f"redpanda.{topic}"
+
+        def translation_done():
+            offsets = dict(
+                map(
+                    lambda e: (e.engine_name(),
+                               e.max_translated_offset(table_name, partition)),
+                    self.query_engines))
+            self.redpanda.logger.debug(
+                f"Current translated offsets: {offsets}")
+            return all(
+                [offset <= max_offset for _, max_offset in offsets.items()])
+
+        wait_until(
+            translation_done,
+            timeout_sec=timeout,
+            backoff_sec=backoff_sec,
+            err_msg=
+            f"Timed out waiting for iceberg translation until offset: {offset}"
         )
 
     def wait_for_translation(self,
