@@ -15,7 +15,9 @@
 
 namespace datalake::coordinator {
 
-class coordinator_stm final : public raft::persisted_stm<> {
+using coordinator_stm_base = raft::persisted_stm_no_snapshot_at_offset<>;
+
+class coordinator_stm final : public coordinator_stm_base {
 public:
     static constexpr std::string_view name = "datalake_coordinator_stm";
     enum class errc {
@@ -25,7 +27,8 @@ public:
         shutting_down,
     };
 
-    explicit coordinator_stm(ss::logger&, raft::consensus*);
+    explicit coordinator_stm(
+      ss::logger&, raft::consensus*, config::binding<std::chrono::seconds>);
     raft::consensus* raft() { return _raft; }
 
     // Syncs the STM such that we're guaranteed that it has applied all records
@@ -46,6 +49,10 @@ public:
     const topics_state& state() const { return state_; }
 
 protected:
+    ss::future<> stop() override;
+
+    stm_snapshot make_snapshot() const;
+
     ss::future<> do_apply(const model::record_batch&) override;
 
     model::offset max_collectible_offset() override;
@@ -58,11 +65,17 @@ protected:
 
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 
-    ss::future<iobuf> take_snapshot(model::offset) final;
+    ss::future<iobuf> take_snapshot() final;
 
 private:
+    void rearm_snapshot_timer();
+    void write_snapshot_async();
+    ss::future<> maybe_write_snapshot();
+
     // The deterministic state managed by this STM.
     topics_state state_;
+    config::binding<std::chrono::seconds> snapshot_delay_secs_;
+    ss::timer<ss::lowres_clock> snapshot_timer_;
 };
 class stm_factory : public cluster::state_machine_factory {
 public:
