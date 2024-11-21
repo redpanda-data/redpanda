@@ -26,6 +26,18 @@ const model::revision_id rev{123};
 const model::partition_id pid{0};
 const model::topic_partition tp{topic, pid};
 
+checked<bool, stm_update_error> apply_lc_transition(
+  topics_state& state,
+  model::revision_id rev,
+  topic_state::lifecycle_state_t new_state) {
+    topic_lifecycle_update upd{
+      .topic = topic,
+      .revision = rev,
+      .new_state = new_state,
+    };
+    return upd.apply(state);
+}
+
 // Asserts that the given ranges can't be applied to the given partition state.
 void check_add_doesnt_apply(
   topics_state& state,
@@ -64,11 +76,20 @@ void check_commit_doesnt_apply(
 
 TEST(StateUpdateTest, TestAddFile) {
     topics_state state;
+
+    // We can't add files to a topic or partition that isn't yet tracked.
+    ASSERT_TRUE(
+      add_files_update::build(state, tp, rev, make_pending_files({{0, 100}}))
+        .has_error());
+
+    // create table state
+    ASSERT_FALSE(
+      apply_lc_transition(state, rev, topic_state::lifecycle_state_t::live)
+        .has_error());
+
     auto update = add_files_update::build(
       state, tp, rev, make_pending_files({{0, 100}}));
-    // We can always add files to a topic or partition that isn't yet tracked.
     ASSERT_FALSE(update.has_error());
-    EXPECT_FALSE(state.partition_state(tp).has_value());
 
     // Now apply the update and check that we have the expected tracked file.
     auto res = update.value().apply(state, model::offset{});

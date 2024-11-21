@@ -90,19 +90,30 @@ public:
     FileCommitterTest()
       : sr(cloud_io::scoped_remote::create(10, conf))
       , catalog(remote(), bucket_name, ss::sstring(base_location))
+      , schema_mgr(catalog)
       , manifest_io(remote(), bucket_name)
       , committer(catalog, manifest_io) {
         set_expectations_and_listen({});
     }
     cloud_io::remote& remote() { return sr->remote.local(); }
 
+    void create_table() {
+        auto res = schema_mgr
+                     .ensure_table_schema(
+                       topic, datalake::schemaless_struct_type())
+                     .get();
+        ASSERT_FALSE(res.has_error());
+    }
+
     std::unique_ptr<cloud_io::scoped_remote> sr;
     iceberg::filesystem_catalog catalog;
+    datalake::catalog_schema_manager schema_mgr;
     iceberg::manifest_io manifest_io;
     iceberg_file_committer committer;
 };
 
 TEST_F(FileCommitterTest, TestCommit) {
+    create_table();
     topics_state state;
     state.topic_to_state[topic] = make_topic_state({
       {{0, 99}, {100, 199}},
@@ -125,7 +136,7 @@ TEST_F(FileCommitterTest, TestCommit) {
     ASSERT_EQ(updates[2].new_committed(), 299);
 }
 
-TEST_F(FileCommitterTest, TestLoadOrCreateTable) {
+TEST_F(FileCommitterTest, TestMissingTable) {
     auto load_res = catalog
                       .load_table(
                         iceberg::table_identifier{{"redpanda"}, "test-topic"})
@@ -137,17 +148,22 @@ TEST_F(FileCommitterTest, TestLoadOrCreateTable) {
     topics_state state;
     state.topic_to_state[topic] = make_topic_state({});
 
+    // Requires a table (which is not created yet)
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
+    ASSERT_TRUE(res.has_error());
+
+    create_table();
+
+    res = committer.commit_topic_files_to_catalog(topic, state).get();
     ASSERT_FALSE(res.has_error());
     ASSERT_TRUE(res.value().empty());
     load_res = catalog
                  .load_table(
                    iceberg::table_identifier{{"redpanda"}, "test-topic"})
                  .get();
-    ASSERT_FALSE(load_res.value().snapshots.has_value());
-
     // The table should be created.
     ASSERT_FALSE(load_res.has_error());
+    ASSERT_FALSE(load_res.value().snapshots.has_value());
 
     // Now try again with some data.
     state.topic_to_state[topic] = make_topic_state({{{0, 100}}});
@@ -185,6 +201,8 @@ TEST_F(FileCommitterTest, TestMissingTopic) {
 }
 
 TEST_F(FileCommitterTest, TestFilesGetPartitionKey) {
+    create_table();
+
     using namespace iceberg;
     // Constructs topic state with offset ranges added to partition 0.
     model::offset added_at_counter{1000};
@@ -272,6 +290,8 @@ TEST_F(FileCommitterTest, TestFilesGetPartitionKey) {
 // Test that deduplication happens when all of the pending files are already
 // committed to Iceberg.
 TEST_F(FileCommitterTest, TestDeduplicateAllFiles) {
+    create_table();
+
     topics_state state;
     state.topic_to_state[topic] = make_topic_state(
       {
@@ -322,6 +342,8 @@ TEST_F(FileCommitterTest, TestDeduplicateAllFiles) {
 // Test that deduplication happens when some of the pending files are already
 // committed to Iceberg.
 TEST_F(FileCommitterTest, TestDeduplicateSomeFiles) {
+    create_table();
+
     topics_state state;
     state.topic_to_state[topic] = make_topic_state(
       {{{0, 99}, {100, 199}}}, model::offset{1000}, true);
@@ -371,6 +393,8 @@ TEST_F(FileCommitterTest, TestDeduplicateSomeFiles) {
 // Test that deduplication happens when the Iceberg commit metadata is not in
 // the latest snapshot.
 TEST_F(FileCommitterTest, TestDeduplicateFromAncestor) {
+    create_table();
+
     topics_state state;
     state.topic_to_state[topic] = make_topic_state(
       {
@@ -437,6 +461,8 @@ TEST_F(FileCommitterTest, TestDeduplicateFromAncestor) {
 }
 
 TEST_F(FileCommitterTest, TestDeduplicateConcurrently) {
+    create_table();
+
     std::vector<ss::future<>> committers;
     constexpr auto num_committers = 10;
     constexpr auto num_chunks = 50;

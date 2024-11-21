@@ -14,6 +14,7 @@
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/table_creator.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
@@ -35,8 +36,10 @@ using namespace datalake;
 namespace {
 simple_schema_manager simple_schema_mgr;
 binary_type_resolver bin_resolver;
+direct_table_creator t_creator{bin_resolver, simple_schema_mgr};
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
+const model::revision_id rev{123};
 default_translator translator;
 } // namespace
 
@@ -48,10 +51,12 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       false);
     datalake::record_multiplexer multiplexer(
       ntp,
+      rev,
       std::move(writer_factory),
       simple_schema_mgr,
       bin_resolver,
-      translator);
+      translator,
+      t_creator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -86,10 +91,12 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       true);
     datalake::record_multiplexer multiplexer(
       ntp,
+      rev,
       std::move(writer_factory),
       simple_schema_mgr,
       bin_resolver,
-      translator);
+      translator,
+      t_creator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -125,10 +132,12 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
 
     datalake::record_multiplexer multiplexer(
       ntp,
+      rev,
       std::move(writer_factory),
       simple_schema_mgr,
       bin_resolver,
-      translator);
+      translator,
+      t_creator);
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -218,9 +227,11 @@ class RecordMultiplexerParquetTest
 public:
     RecordMultiplexerParquetTest()
       : schema_mgr(catalog)
-      , type_resolver(registry) {}
+      , type_resolver(registry)
+      , t_creator(type_resolver, schema_mgr) {}
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
+    direct_table_creator t_creator;
 };
 
 TEST_F(RecordMultiplexerParquetTest, TestSimple) {
@@ -265,7 +276,13 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       "data",
       ss::make_shared<datalake::batching_parquet_writer_factory>(100, 10000));
     record_multiplexer mux(
-      ntp, std::move(writer_factory), schema_mgr, type_resolver, translator);
+      ntp,
+      rev,
+      std::move(writer_factory),
+      schema_mgr,
+      type_resolver,
+      translator,
+      t_creator);
     auto res = reader.consume(std::move(mux), model::no_timeout).get();
     ASSERT_FALSE(res.has_error()) << res.error();
     EXPECT_EQ(res.value().start_offset(), start_offset());

@@ -51,30 +51,17 @@ add_files_update::can_apply(const topics_state& state) {
     }
     auto topic_it = state.topic_to_state.find(tp.topic);
     if (topic_it == state.topic_to_state.end()) {
-        return std::nullopt;
+        return stm_update_error{fmt::format(
+          "topic {} rev {} not yet registered", tp.topic, topic_revision)};
     }
     auto& cur_topic = topic_it->second;
-    if (topic_revision < cur_topic.revision) {
+    if (topic_revision != cur_topic.revision) {
         return stm_update_error{fmt::format(
-          "topic {} rev {} not yet registered (current rev {})",
+          "topic {} revision mismatch (update rev {}, current rev {})",
           tp.topic,
           topic_revision,
           cur_topic.revision)};
-    } else if (topic_revision > cur_topic.revision) {
-        if (
-          cur_topic.lifecycle_state != topic_state::lifecycle_state_t::purged) {
-            return stm_update_error{fmt::format(
-              "topic {} rev {} not yet purged (new topic rev {})",
-              tp.topic,
-              cur_topic.revision,
-              topic_revision)};
-        }
-
-        // Previous topic instance has been fully purged, so we are ready to
-        // accept files for an instance with the higher revision id.
-        return std::nullopt;
     }
-
     if (cur_topic.lifecycle_state != topic_state::lifecycle_state_t::live) {
         return stm_update_error{fmt::format(
           "topic {} rev {} already closed", tp.topic, cur_topic.revision)};
@@ -120,14 +107,15 @@ add_files_update::apply(topics_state& state, model::offset applied_offset) {
     const auto& pid = tp.partition;
 
     auto& tp_state = state.topic_to_state[topic];
-    if (topic_revision > tp_state.revision) {
-        // We've got files for a topic instance with higher revision id, reset
-        // topic state
-        topic_state new_state;
-        new_state.revision = topic_revision;
-        tp_state = std::move(new_state);
-    }
-    // after this point tp_state.revision == topic_revision and state == live
+    vassert(
+      tp_state.revision == topic_revision
+        && tp_state.lifecycle_state == topic_state::lifecycle_state_t::live,
+      "topic {} unexpected state (rev {} lc_state {}) (expected rev {})",
+      topic,
+      tp_state.revision,
+      tp_state.lifecycle_state,
+      topic_revision);
+
     auto& partition_state = tp_state.pid_to_pending_files[pid];
     for (auto& e : entries) {
         partition_state.pending_entries.emplace_back(pending_entry{
@@ -247,6 +235,8 @@ topic_lifecycle_update::can_apply(const topics_state& state) {
               revision)};
         }
 
+        // Old revision is fully purged, we can now transition to the new
+        // revision.
         return true;
     }
 

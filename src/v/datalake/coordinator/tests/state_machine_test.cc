@@ -169,13 +169,24 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
                         next_offset = next_offset + 6;
                     }
                     return coordinator
-                      ->sync_add_files(
-                        tp,
-                        rev,
-                        datalake::coordinator::make_pending_files(offset_pairs))
-                      .then([](auto result) {
-                          return ss::make_ready_future<bool>(
-                            result.has_value());
+                      ->sync_ensure_table_exists(
+                        tp.topic, rev, datalake::record_schema_components{})
+                      .then([this, tp, offset_pairs, &coordinator](
+                              auto ensure_res) {
+                          if (!ensure_res) {
+                              return ss::make_ready_future<bool>(false);
+                          }
+
+                          return coordinator
+                            ->sync_add_files(
+                              tp,
+                              rev,
+                              datalake::coordinator::make_pending_files(
+                                offset_pairs))
+                            .then([](auto result) {
+                                return ss::make_ready_future<bool>(
+                                  result.has_value());
+                            });
                       });
                 });
           });
