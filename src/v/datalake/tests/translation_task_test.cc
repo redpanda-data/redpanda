@@ -16,6 +16,7 @@
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/table_creator.h"
 #include "datalake/translation_task.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"
@@ -33,7 +34,10 @@ namespace {
 auto schema_mgr = std::make_unique<simple_schema_manager>();
 auto schema_resolver = std::make_unique<binary_type_resolver>();
 auto translator = std::make_unique<default_translator>();
+auto t_creator = std::make_unique<direct_table_creator>(
+  *schema_resolver, *schema_mgr);
 const auto ntp = model::ntp{};
+const auto rev = model::revision_id{123};
 } // namespace
 
 class TranslateTaskTest
@@ -160,11 +164,12 @@ private:
 
 TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
     datalake::translation_task task(
-      cloud_io, *schema_mgr, *schema_resolver, *translator);
+      cloud_io, *schema_mgr, *schema_resolver, *translator, *t_creator);
 
     auto result = task
                     .translate(
                       ntp,
+                      rev,
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
@@ -188,7 +193,7 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
 
 TEST_F(TranslateTaskTest, TestDataFileMissing) {
     datalake::translation_task task(
-      cloud_io, *schema_mgr, *schema_resolver, *translator);
+      cloud_io, *schema_mgr, *schema_resolver, *translator, *t_creator);
     // create deleting task to cause local io error
     deleter del(tmp_dir.get_path().string());
     del.start();
@@ -196,6 +201,7 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
     auto result = task
                     .translate(
                       ntp,
+                      rev,
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
@@ -209,7 +215,7 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
 
 TEST_F(TranslateTaskTest, TestUploadError) {
     datalake::translation_task task(
-      cloud_io, *schema_mgr, *schema_resolver, *translator);
+      cloud_io, *schema_mgr, *schema_resolver, *translator, *t_creator);
     // fail all PUT requests
     fail_request_if(
       [](const http_test_utils::request_info& req) -> bool {
@@ -222,6 +228,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
     auto result = task
                     .translate(
                       ntp,
+                      model::revision_id{123},
                       get_writer_factory(),
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),

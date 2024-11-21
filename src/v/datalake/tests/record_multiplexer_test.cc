@@ -11,6 +11,7 @@
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/table_creator.h"
 #include "datalake/table_definition.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
@@ -32,6 +33,7 @@ namespace {
 structured_data_translator translator;
 const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
+const model::revision_id topic_rev{123};
 // v1: struct field with one field.
 constexpr std::string_view avro_schema_v1_str = R"({
     "type": "record",
@@ -96,7 +98,8 @@ class RecordMultiplexerTestBase
 public:
     RecordMultiplexerTestBase()
       : schema_mgr(catalog)
-      , type_resolver(registry) {}
+      , type_resolver(registry)
+      , t_creator(type_resolver, schema_mgr) {}
 
     // Runs the multiplexer on records generated with cb() based on the test
     // parameters.
@@ -130,10 +133,12 @@ public:
           std::move(batches));
         record_multiplexer mux(
           ntp,
+          topic_rev,
           std::make_unique<test_data_writer_factory>(false),
           schema_mgr,
           type_resolver,
-          translator);
+          translator,
+          t_creator);
         auto res = reader.consume(std::move(mux), model::no_timeout).get();
         if (expect_error) {
             EXPECT_TRUE(res.has_error());
@@ -170,6 +175,7 @@ public:
 
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
+    direct_table_creator t_creator;
 
     static constexpr records_param default_param = {
       .records_per_batch = 1,

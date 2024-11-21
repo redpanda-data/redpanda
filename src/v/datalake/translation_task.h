@@ -29,7 +29,8 @@ public:
       cloud_data_io& uploader,
       schema_manager& schema_mgr,
       type_resolver& type_resolver,
-      record_translator& record_translator);
+      record_translator& record_translator,
+      table_creator&);
     enum class errc {
         file_io_error,
         cloud_io_error,
@@ -41,6 +42,7 @@ public:
      */
     ss::future<checked<coordinator::translated_offset_range, errc>> translate(
       const model::ntp& ntp,
+      model::revision_id topic_revision,
       std::unique_ptr<parquet_file_writer_factory> writer_factory,
       model::record_batch_reader reader,
       const remote_path& remote_path_prefix,
@@ -67,5 +69,6 @@ private:
     schema_manager* _schema_mgr;
     type_resolver* _type_resolver;
     record_translator* _record_translator;
+    table_creator* _table_creator;
 };
 } // namespace datalake

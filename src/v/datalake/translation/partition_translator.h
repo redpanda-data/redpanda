@@ -122,6 +122,7 @@ private:
     schema_manager* _schema_mgr;
     std::unique_ptr<type_resolver> _type_resolver;
     std::unique_ptr<record_translator> _record_translator;
+    std::unique_ptr<table_creator> _table_creator;
     std::unique_ptr<kafka::partition_proxy> _partition_proxy;
     using jitter_t
       = simple_time_jitter<ss::lowres_clock, std::chrono::milliseconds>;

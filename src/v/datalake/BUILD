@@ -342,6 +342,7 @@ redpanda_cc_library(
         ":logger",
         ":record_schema_resolver",
         ":record_translator",
+        ":table_creator",
         "//src/v/base",
         "//src/v/storage:parser_utils",
         "//src/v/utils:prefix_logger",
@@ -351,6 +352,7 @@ redpanda_cc_library(
     deps = [
         ":partitioning_writer",
         ":schema_identifier",
+        ":types",
         ":writer",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
