@@ -44,13 +44,19 @@ void maybe_log_update_error(
 }
 } // namespace
 
-coordinator_stm::coordinator_stm(ss::logger& logger, raft::consensus* raft)
-  : raft::persisted_stm<>("datalake_coordinator_stm.snapshot", logger, raft) {}
+coordinator_stm::coordinator_stm(
+  ss::logger& logger,
+  raft::consensus* raft,
+  config::binding<std::chrono::seconds> snapshot_delay)
+  : coordinator_stm_base("datalake_coordinator_stm.snapshot", logger, raft)
+  , snapshot_delay_secs_(std::move(snapshot_delay)) {
+    snapshot_timer_.set_callback([this] { write_snapshot_async(); });
+}
 
 ss::future<checked<model::term_id, coordinator_stm::errc>>
 coordinator_stm::sync(model::timeout_clock::duration timeout) {
     auto sync_res = co_await ss::coroutine::as_future(
-      raft::persisted_stm<>::sync(timeout));
+      coordinator_stm_base::sync(timeout));
     if (sync_res.failed()) {
         auto eptr = sync_res.get_exception();
         auto msg = fmt::format("Exception caught while syncing: {}", eptr);
@@ -125,27 +131,77 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
           key,
           b.header());
     }
+    rearm_snapshot_timer();
 }
 
 model::offset coordinator_stm::max_collectible_offset() { return {}; }
 
-ss::future<>
-coordinator_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
-    co_return;
+ss::future<> coordinator_stm::apply_local_snapshot(
+  raft::stm_snapshot_header, iobuf&& snapshot_buf) {
+    auto parser = iobuf_parser(std::move(snapshot_buf));
+    auto snapshot = co_await serde::read_async<stm_snapshot>(parser);
+    state_ = std::move(snapshot.topics);
 }
 
 ss::future<raft::stm_snapshot>
-coordinator_stm::take_local_snapshot(ssx::semaphore_units) {
-    // temporarily ignore snapshots, to be fixed later.
-    // throwing here results in uncaught exceptions, so a dummy snapshot
-    // at offset 0 avoids that.
-    co_return raft::stm_snapshot::create(0, model::offset{0}, iobuf{});
+coordinator_stm::take_local_snapshot(ssx::semaphore_units units) {
+    auto snapshot_offset = last_applied_offset();
+    auto snapshot = make_snapshot();
+    units.return_all();
+    iobuf snapshot_buf;
+    co_await serde::write_async(snapshot_buf, std::move(snapshot));
+    co_return raft::stm_snapshot::create(
+      0, snapshot_offset, std::move(snapshot_buf));
 }
 
-ss::future<> coordinator_stm::apply_raft_snapshot(const iobuf&) { co_return; }
+ss::future<> coordinator_stm::apply_raft_snapshot(const iobuf& snapshot_buf) {
+    auto parser = iobuf_parser(snapshot_buf.copy());
+    auto snapshot = co_await serde::read_async<stm_snapshot>(parser);
+    state_ = std::move(snapshot.topics);
+}
 
-ss::future<iobuf> coordinator_stm::take_snapshot(model::offset) {
-    co_return iobuf{};
+ss::future<iobuf> coordinator_stm::take_snapshot() {
+    iobuf snapshot_buf;
+    co_await serde::write_async(snapshot_buf, make_snapshot());
+    co_return std::move(snapshot_buf);
+}
+
+stm_snapshot coordinator_stm::make_snapshot() const {
+    return {.topics = state_.copy()};
+}
+
+ss::future<> coordinator_stm::stop() {
+    snapshot_timer_.cancel();
+    return coordinator_stm_base::stop();
+}
+
+ss::future<> coordinator_stm::maybe_write_snapshot() {
+    if (_raft->last_snapshot_index() >= last_applied()) {
+        co_return;
+    }
+    auto snapshot = co_await _raft->stm_manager()->take_snapshot();
+    vlog(
+      _log.debug,
+      "creating snapshot at offset: {}",
+      snapshot.last_included_offset);
+    co_await _raft->write_snapshot(raft::write_snapshot_cfg(
+      snapshot.last_included_offset, std::move(snapshot.data)));
+}
+
+void coordinator_stm::write_snapshot_async() {
+    ssx::background = ssx::spawn_with_gate_then(
+                        _gate, [this] { return maybe_write_snapshot(); })
+                        .handle_exception([this](const std::exception_ptr& e) {
+                            vlog(_log.warn, "failed to write snapshot: {}", e);
+                        })
+                        .finally([holder = _gate.hold()] {});
+}
+
+void coordinator_stm::rearm_snapshot_timer() {
+    if (_gate.is_closed() || snapshot_timer_.armed()) {
+        return;
+    }
+    snapshot_timer_.arm(snapshot_delay_secs_());
 }
 
 bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
@@ -156,7 +212,11 @@ bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
 
 void stm_factory::create(
   raft::state_machine_manager_builder& builder, raft::consensus* raft) {
-    auto stm = builder.create_stm<coordinator_stm>(datalake_log, raft);
+    auto stm = builder.create_stm<coordinator_stm>(
+      datalake_log,
+      raft,
+      config::shard_local_cfg()
+        .datalake_coordinator_snapshot_max_delay_secs.bind());
     raft->log()->stm_manager()->add_stm(stm);
 }
 

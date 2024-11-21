@@ -184,29 +184,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "model",
-    srcs = [
-        "types.cc",
-    ],
-    hdrs = [
-        "types.h",
-    ],
-    include_prefix = "datalake/coordinator",
-    visibility = [":__subpackages__"],
-    deps = [
-        ":translated_offset_range",
-        "//src/v/datalake:types",
-        "//src/v/model",
-        "//src/v/serde",
-        "//src/v/serde:enum",
-        # todo: split writer further once it evolves
-        "//src/v/datalake:writer",
-        "//src/v/container:fragmented_vector",
-        "//src/v/utils:to_string",
-    ],
-)
-
-redpanda_cc_library(
     name = "state",
     srcs = [
         "state.cc",
@@ -220,6 +197,30 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
         "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
+    name = "model",
+    srcs = [
+        "types.cc",
+    ],
+    hdrs = [
+        "types.h",
+    ],
+    include_prefix = "datalake/coordinator",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":translated_offset_range",
+        "//src/v/datalake:types",
+        "//src/v/datalake/coordinator:state",
+        "//src/v/model",
+        "//src/v/serde",
+        "//src/v/serde:enum",
+        # todo: split writer further once it evolves
+        "//src/v/datalake:writer",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:to_string",
     ],
 )
 

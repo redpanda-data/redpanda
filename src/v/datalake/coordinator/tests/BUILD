@@ -11,6 +11,7 @@ redpanda_test_cc_library(
     include_prefix = "datalake/coordinator/tests",
     deps = [
         "//src/v/container:fragmented_vector",
+        "//src/v/datalake/coordinator:file_committer",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:translated_offset_range",
         "//src/v/model",
@@ -87,5 +88,23 @@ redpanda_cc_gtest(
         "//src/v/model",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "state_machine_test",
+    timeout = "short",
+    srcs = [
+        "state_machine_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":state_test_utils",
+        "//src/v/datalake/coordinator",
+        "//src/v/datalake/coordinator:stm",
+        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/storage",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
