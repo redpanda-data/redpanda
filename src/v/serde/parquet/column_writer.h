@@ -28,6 +28,13 @@ struct data_page {
     iobuf serialized;
 };
 
+// The delta in stats when a value is written to a column.
+//
+// This is used to account memory usage at the row group level.
+struct incremental_column_stats {
+    uint64_t memory_usage;
+};
+
 // A writer for a single column of parquet data.
 class column_writer {
 public:
@@ -54,7 +61,7 @@ public:
     // nodes.
     //
     // Use `shred_record` to get the value and levels from an arbitrary value.
-    void add(value, rep_level, def_level);
+    incremental_column_stats add(value, rep_level, def_level);
 
     // Flush the currently buffered values to a page.
     //

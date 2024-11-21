@@ -34,7 +34,7 @@ public:
     impl& operator=(impl&&) noexcept = default;
     virtual ~impl() noexcept = default;
 
-    virtual void add(value, rep_level, def_level) = 0;
+    virtual incremental_column_stats add(value, rep_level, def_level) = 0;
     virtual ss::future<data_page> flush_page() = 0;
 };
 
@@ -62,16 +62,27 @@ public:
       , _max_def_level(max_def_level)
       , _opts(opts) {}
 
-    void add(value val, rep_level rl, def_level dl) override {
+    incremental_column_stats
+    add(value val, rep_level rl, def_level dl) override {
         ++_num_values;
         // A repetition level of zero means that it's the start of a new row and
         // not a repeated value within the same row.
         if (rl == rep_level(0)) {
             ++_num_rows;
         }
+
+        uint64_t value_memory_usage = 0;
+
         ss::visit(
           std::move(val),
-          [this](value_type& v) { _value_buffer.push_back(std::move(v)); },
+          [this, &value_memory_usage](value_type& v) {
+              if constexpr (!std::is_trivially_copyable_v<value_type>) {
+                  value_memory_usage = v.val.size_bytes();
+              } else {
+                  value_memory_usage = sizeof(value_type);
+              }
+              _value_buffer.push_back(std::move(v));
+          },
           [this](null_value&) {
               // null values are valid, but are not encoded in the actual data,
               // they are encoded in the defintion levels.
@@ -83,6 +94,16 @@ public:
           });
         _rep_levels.push_back(rl);
         _def_levels.push_back(dl);
+
+        // NOTE: This does not account for the underlying buffer memory
+        // but we don't want account for the capacity here, ideally we
+        // always use the full capacity in our value buffer, and eagerly
+        // accounting that usage might cause callers to overagressively
+        // flush pages/row groups.
+        return {
+          .memory_usage = value_memory_usage + sizeof(rep_level)
+                          + sizeof(def_level),
+        };
     }
 
     ss::future<data_page> flush_page() override {
@@ -216,7 +237,8 @@ column_writer::column_writer(column_writer&&) noexcept = default;
 column_writer& column_writer::operator=(column_writer&&) noexcept = default;
 column_writer::~column_writer() noexcept = default;
 
-void column_writer::add(value val, rep_level rep_level, def_level def_level) {
+incremental_column_stats
+column_writer::add(value val, rep_level rep_level, def_level def_level) {
     return _impl->add(std::move(val), rep_level, def_level);
 }
 
