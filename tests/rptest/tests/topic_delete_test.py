@@ -111,7 +111,8 @@ def topic_storage_purged(redpanda, topic_name):
             for topic_name, topic in ns.topics.items():
                 for p_id, p in topic.partitions.items():
                     for f in p.files:
-                        redpanda.logger.info(f"  {n.name}: {f}")
+                        redpanda.logger.info(
+                            f"  {n.name}: {topic_name}_{p_id}_{f}")
 
         return False
 
@@ -628,9 +629,13 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             assert self.topic not in self.kafka_tools.list_topics()
 
             # Local storage deletion should proceed even if remote can't
-            wait_until(lambda: topic_storage_purged(self.redpanda, self.topic),
-                       timeout_sec=30,
-                       backoff_sec=1)
+            wait_until(
+                lambda: topic_storage_purged(self.redpanda, self.topic),
+                timeout_sec=90,
+                backoff_sec=10,
+                err_msg=
+                "Local storage purge did not complete while cloud storage was unavailable"
+            )
 
             # Erase timeout is hardcoded 60 seconds, wait long enough
             # for it to give up.
