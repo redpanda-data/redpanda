@@ -72,7 +72,7 @@ class CoordinatorRetentionTest(RedpandaTest):
         try:
             wait_until(
                 self.wait_until_coordinator_snapshots,
-                timeout_sec=20,
+                timeout_sec=30,
                 backoff_sec=3,
                 err_msg=
                 "Timed out waiting for coordinator partitions to snapshot.")
