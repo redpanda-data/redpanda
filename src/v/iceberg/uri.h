@@ -41,6 +41,6 @@ std::filesystem::path path_from_uri(const uri&);
 uri make_uri(
   const ss::sstring& bucket,
   const std::filesystem::path& path,
-  std::string_view scheme = s3_scheme);
+  std::string_view scheme);
 
 }; // namespace iceberg
