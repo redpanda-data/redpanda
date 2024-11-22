@@ -40,8 +40,6 @@ public:
 
     ss::future<checked<bool, metadata_io::errc>>
     version_hint_exists(const version_hint_path& path);
-
-    uri to_uri(const ss::sstring& p) const;
 };
 
 } // namespace iceberg

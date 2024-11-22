@@ -396,7 +396,7 @@ iceberg::table_metadata create_empty_table_metadata(const ss::sstring& bucket) {
     return {
       .format_version = iceberg::format_version::v2,
       .table_uuid = uuid_t::from_string("9c12d441-03fe-4693-9a96-a0705ddf69c1"),
-      .location = iceberg::make_uri(bucket, "foo_table"),
+      .location = iceberg::uri(fmt::format("s3://{}/foo_table", bucket)),
       .last_sequence_number = iceberg::sequence_number(0),
       .last_updated_ms = model::timestamp(11231231),
       .last_column_id = iceberg::nested_field::id_t(2),
