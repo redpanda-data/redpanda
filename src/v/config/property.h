@@ -15,6 +15,7 @@
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "container/intrusive_list_helpers.h"
+#include "features/enterprise_feature_messages.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -1084,8 +1085,8 @@ public:
         if (do_check_restricted(v)) {
             return std::make_optional<validation_error>(
               P::name().data(),
-              ssx::sformat(
-                "'{}' is restricted to enterprise licensed clusters", v));
+              features::enterprise_error_message::cluster_property(
+                P::name().data(), v));
         }
         return std::nullopt;
     }
