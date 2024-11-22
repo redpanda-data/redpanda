@@ -202,7 +202,7 @@ std::ostream& operator<<(std::ostream& o, const type_resolver::errc& e) {
     }
 }
 
-type_and_buf type_and_buf::make_raw_binary(iobuf b) {
+type_and_buf type_and_buf::make_raw_binary(std::optional<iobuf> b) {
     return type_and_buf{
       .type = std::nullopt,
       .parsable_buf = std::move(b),
@@ -210,7 +210,7 @@ type_and_buf type_and_buf::make_raw_binary(iobuf b) {
 }
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-binary_type_resolver::resolve_buf_type(iobuf b) const {
+binary_type_resolver::resolve_buf_type(std::optional<iobuf> b) const {
     co_return type_and_buf::make_raw_binary(std::move(b));
 }
 
@@ -222,17 +222,18 @@ binary_type_resolver::resolve_identifier(schema_identifier) const {
 }
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-record_schema_resolver::resolve_buf_type(iobuf b) const {
+record_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
+    if (!b.has_value()) {
+        vlog(datalake_log.trace, "Ignoring tombstone value");
+        co_return errc::bad_input;
+    }
     // NOTE: Kafka's serialization protocol relies on a magic byte to
     // indicate if we have a schema. This has room for false positives, and
     // we can't say for sure if an error is the result of the record not
     // having a schema. Just translate to binary.
-    auto res = get_value_schema_id(b);
+    auto res = get_value_schema_id(*b);
     if (res.has_error()) {
-        vlog(
-          datalake_log.trace,
-          "Error parsing schema ID; using binary type: {}",
-          res.error());
+        vlog(datalake_log.trace, "Error parsing schema ID: {}", res.error());
         co_return errc::bad_input;
     }
     auto schema_id_res = std::move(res.value());
