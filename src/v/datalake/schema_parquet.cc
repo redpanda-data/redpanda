@@ -30,15 +30,11 @@ struct primitive_type_converting_visitor {
     serde::parquet::schema_element operator()(const iceberg::int_type&) {
         return serde::parquet::schema_element{
           .type = serde::parquet::i32_type{},
-          .logical_type
-          = serde::parquet::int_type{.bit_width = 32, .is_signed = true},
         };
     }
     serde::parquet::schema_element operator()(const iceberg::long_type&) {
         return serde::parquet::schema_element{
           .type = serde::parquet::i64_type{},
-          .logical_type
-          = serde::parquet::int_type{.bit_width = 64, .is_signed = true},
         };
     }
     serde::parquet::schema_element operator()(const iceberg::float_type&) {
@@ -221,7 +217,7 @@ serde::parquet::schema_element
 schema_to_parquet(const iceberg::struct_type& schema) {
     auto root = struct_to_parquet(schema);
     root.repetition_type = serde::parquet::field_repetition_type::required;
-    root.path.emplace_back("root");
+    root.path.emplace_back("schema");
     return root;
 }
 } // namespace datalake
