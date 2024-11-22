@@ -321,6 +321,18 @@ coordinator::sync_add_files(
     if (sync_res.has_error()) {
         co_return convert_stm_errc(sync_res.error());
     }
+
+    auto topic_it = stm_->state().topic_to_state.find(tp.topic);
+    if (
+      topic_it == stm_->state().topic_to_state.end()
+      || topic_it->second.revision != topic_revision) {
+        vlog(
+          datalake_log.debug,
+          "Rejecting request to add files for {}: unexpected topic revision",
+          tp);
+        co_return errc::revision_mismatch;
+    }
+
     auto added_last_offset = entries.back().last_offset;
     auto update_res = add_files_update::build(
       stm_->state(), tp, topic_revision, std::move(entries));
@@ -349,6 +361,17 @@ coordinator::sync_add_files(
     // NOTE: a mismatch here just means there was a race to update the STM, and
     // this should be handled by callers.
     // TODO: would be nice to encapsulate this in some update validator.
+
+    if (
+      topic_it == stm_->state().topic_to_state.end()
+      || topic_it->second.revision != topic_revision) {
+        vlog(
+          datalake_log.debug,
+          "Unexpected topic revision for {} after STM update",
+          tp);
+        co_return errc::stm_apply_error;
+    }
+
     auto prt_opt = stm_->state().partition_state(tp);
     if (
       !prt_opt.has_value() || prt_opt->get().pending_entries.empty()
