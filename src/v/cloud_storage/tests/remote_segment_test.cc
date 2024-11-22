@@ -11,6 +11,7 @@
 #include "base/seastarx.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/download_exception.h"
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
@@ -41,6 +42,8 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
@@ -502,4 +505,56 @@ FIXTURE_TEST(
 
     reader.stop().get();
     segment->stop().get();
+}
+
+FIXTURE_TEST(
+  test_remote_segment_concurrent_download, cloud_storage_fixture) { // NOLINT
+    auto conf = get_configuration();
+    partition_manifest m(manifest_ntp, manifest_revision);
+    model::initial_revision_id segment_ntp_revision{777};
+    iobuf segment_bytes = generate_segment(model::offset(1), 20);
+    uint64_t clen = segment_bytes.size_bytes();
+    auto reset_stream = make_reset_fn(segment_bytes);
+    retry_chain_node fib(never_abort, 1000ms, 200ms);
+    partition_manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = model::offset(1),
+      .committed_offset = model::offset(20),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset_delta(0),
+      .ntp_revision = segment_ntp_revision,
+      .sname_format = segment_name_format::v2};
+    auto path = m.generate_segment_path(meta, path_provider);
+    set_expectations_and_listen({});
+    auto upl_res
+      = api.local()
+          .upload_segment(
+            bucket_name, path, clen, reset_stream, fib, always_continue)
+          .get();
+    BOOST_REQUIRE(upl_res == upload_result::success);
+    m.add(meta);
+
+    partition_probe probe{manifest_ntp};
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+
+    auto name = m.generate_segment_path(meta, path_provider);
+    mark_as_in_progress(name);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket_name,
+      name,
+      m.get_ntp(),
+      meta,
+      fib,
+      probe,
+      ts_probe);
+
+    auto d = ss::defer([&segment] { segment.stop().get(); });
+
+    BOOST_REQUIRE_THROW(
+      segment.data_stream(0, ss::default_priority_class()).get(),
+      std::runtime_error);
 }
