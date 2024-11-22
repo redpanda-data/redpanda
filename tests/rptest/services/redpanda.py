@@ -2598,13 +2598,6 @@ class RedpandaService(RedpandaServiceBase):
         self._seed_servers = self.nodes
 
         self._expect_max_controller_records = 1000
-        #TODO: remove when sered parquet is enabled by default
-        if hasattr(self._context, 'injected_args') \
-            and self._context.injected_args is not None:
-            if 'use_serde_parquet' in  self._context.injected_args  \
-               and self._context.injected_args['use_serde_parquet']:
-                self._environment.update(
-                    {"__REDPANDA_USE_SERDE_PARQUET_WRITER": "1"})
 
     def redpanda_env_preamble(self):
         # Pass environment variables via FOO=BAR shell expressions
