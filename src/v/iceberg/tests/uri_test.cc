@@ -29,7 +29,8 @@ TEST(IcebergUriTest, TestParsingInvalidURI) {
 TEST(IcebergUriTest, TestConstructingUriFromParts) {
     auto uri = make_uri(
       "panda-bucket",
-      std::filesystem::path("foo/bar/baz/element/from/path/test.json"));
+      std::filesystem::path("foo/bar/baz/element/from/path/test.json"),
+      s3_scheme);
 
     ASSERT_EQ(
       uri,

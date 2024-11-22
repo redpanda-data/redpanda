@@ -54,8 +54,6 @@ public:
     ss::future<checked<size_t, metadata_io::errc>>
     upload_manifest_list(const uri& path, const manifest_list&);
 
-    uri to_uri(const std::filesystem::path& p) const;
-
 private:
     // E.g. s3://bucket/path/to/file => path/to/file
     // Leaves the path as is if it doesn't match the expected URI base.

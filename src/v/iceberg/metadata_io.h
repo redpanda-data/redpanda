@@ -14,6 +14,7 @@
 #include "cloud_io/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "iceberg/logger.h"
+#include "iceberg/uri.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -24,6 +25,22 @@
 namespace iceberg {
 
 using namespace std::chrono_literals;
+
+namespace detail {
+std::string_view scheme_for(model::cloud_storage_backend backend) {
+    switch (backend) {
+    case model::cloud_storage_backend::aws:
+    case model::cloud_storage_backend::google_s3_compat:
+    case model::cloud_storage_backend::minio:
+    case model::cloud_storage_backend::oracle_s3_compat:
+    case model::cloud_storage_backend::unknown:
+        return s3_scheme;
+    case model::cloud_storage_backend::azure:
+        return abs_scheme;
+    }
+}
+} // namespace detail
+
 class metadata_io {
 public:
     enum class errc {
@@ -43,6 +60,13 @@ public:
       : io_(io)
       , bucket_(std::move(b)) {}
     ~metadata_io() = default;
+
+    uri to_uri(const std::filesystem::path& path) const {
+        return make_uri(
+          bucket_(),
+          std::filesystem::path(path),
+          detail::scheme_for(io_.backend()));
+    }
 
 protected:
     template<typename T>
