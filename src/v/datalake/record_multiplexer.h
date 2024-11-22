@@ -56,8 +56,8 @@ private:
     // columns. Consider a separate table entirely.
     ss::future<result<std::nullopt_t, writer_error>> handle_invalid_record(
       kafka::offset,
-      iobuf,
-      iobuf,
+      std::optional<iobuf>,
+      std::optional<iobuf>,
       model::timestamp,
       chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>);
 

@@ -37,9 +37,9 @@ public:
     virtual ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
-      iobuf key,
+      std::optional<iobuf> key,
       const std::optional<resolved_type>& val_type,
-      iobuf parsable_val,
+      std::optional<iobuf> parsable_val,
       model::timestamp ts,
       const chunked_vector<
         std::pair<std::optional<iobuf>, std::optional<iobuf>>>& headers)
@@ -53,9 +53,9 @@ public:
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
-      iobuf key,
+      std::optional<iobuf> key,
       const std::optional<resolved_type>& val_type,
-      iobuf parsable_val,
+      std::optional<iobuf> parsable_val,
       model::timestamp ts,
       const chunked_vector<
         std::pair<std::optional<iobuf>, std::optional<iobuf>>>& headers)
@@ -69,9 +69,9 @@ public:
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
-      iobuf key,
+      std::optional<iobuf> key,
       const std::optional<resolved_type>& val_type,
-      iobuf parsable_val,
+      std::optional<iobuf> parsable_val,
       model::timestamp ts,
       const chunked_vector<
         std::pair<std::optional<iobuf>, std::optional<iobuf>>>& headers)
@@ -89,9 +89,9 @@ public:
     ss::future<checked<iceberg::struct_value, errc>> translate_data(
       model::partition_id pid,
       kafka::offset o,
-      iobuf key,
+      std::optional<iobuf> key,
       const std::optional<resolved_type>& val_type,
-      iobuf parsable_val,
+      std::optional<iobuf> parsable_val,
       model::timestamp ts,
       const chunked_vector<
         std::pair<std::optional<iobuf>, std::optional<iobuf>>>& headers)

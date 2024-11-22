@@ -46,12 +46,13 @@ record_multiplexer::operator()(model::record_batch batch) {
 
     while (it.has_next()) {
         auto record = it.next();
-        iobuf key = record.share_key();
-        iobuf val = record.share_value();
+        auto key = record.share_key_opt();
+        auto val = record.share_value_opt();
         auto timestamp = model::timestamp{
           first_timestamp + record.timestamp_delta()};
         kafka::offset offset{batch.base_offset()() + record.offset_delta()};
-        int64_t estimated_size = key.size_bytes() + val.size_bytes();
+        int64_t estimated_size = (key ? key->size_bytes() : 0)
+                                 + (val ? val->size_bytes() : 0);
         chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
           header_kvs;
         for (auto& hdr : record.headers()) {
@@ -209,13 +210,14 @@ record_multiplexer::end_of_stream() {
 ss::future<result<std::nullopt_t, writer_error>>
 record_multiplexer::handle_invalid_record(
   kafka::offset offset,
-  iobuf key,
-  iobuf val,
+  std::optional<iobuf> key,
+  std::optional<iobuf> val,
   model::timestamp ts,
   chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
     headers) {
     vlog(_log.debug, "Handling invalid record {}", offset);
-    int64_t estimated_size = key.size_bytes() + val.size_bytes();
+    int64_t estimated_size = (key ? key->size_bytes() : 0)
+                             + (val ? val->size_bytes() : 0);
     auto record_data_res = co_await _record_translator.translate_data(
       _ntp.tp.partition,
       offset,
