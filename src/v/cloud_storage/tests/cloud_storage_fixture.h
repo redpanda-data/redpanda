@@ -105,6 +105,10 @@ struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture(cloud_storage_fixture&&) = delete;
     cloud_storage_fixture operator=(cloud_storage_fixture&&) = delete;
 
+    void mark_as_in_progress(remote_segment_path path) {
+        cache.local()._files_in_progress.insert(path);
+    }
+
     ss::tmp_dir tmp_directory;
     ss::sharded<cloud_storage::cache> cache;
     ss::sharded<cloud_storage_clients::client_pool> pool;
