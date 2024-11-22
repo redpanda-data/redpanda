@@ -21,31 +21,25 @@ server:
   minThreads: 10
   applicationConnectors:
     # HTTP-specific options.
-    - type: http
-
-      # The port on which the HTTP server listens for service requests.
+   
+    {% if keystore_path%}
+    - type: https
       port: 8181
-
+      keyStorePath: {{ keystore_path }}
+      keyStorePassword:  {{ keystore_password }}
+      keyStoreType: PKCS12
+    {% else %}
+    - type: http
+      port: 8181
+    {% endif %}
+    
   adminConnectors:
     - type: http
       port: 8182
-
-  # The hostname of the interface to which the HTTP server socket wil be found. If omitted, the
-  # socket will listen on all interfaces.
-  #bindHost: localhost
-
-  #  ssl:
-  #    keyStore: ./example.keystore
-  #    keyStorePassword: example
-  #
-  #    keyStoreType: JKS # (optional, JKS is default)
-
   # HTTP request log settings
   requestLog:
     appenders:
       - type: console
-# Either 'jdbc' or 'polaris'; specifies the underlying delegate catalog
-baseCatalogType: "polaris"
 
 featureConfiguration:
   ENFORCE_PRINCIPAL_CREDENTIAL_ROTATION_REQUIRED_CHECKING: false
@@ -80,11 +74,14 @@ oauth2:
 #    secret: polaris
 
 authenticator:
-  class: io.polaris.service.auth.TestInlineBearerTokenPolarisAuthenticator
+  class: org.apache.polaris.service.auth.TestInlineBearerTokenPolarisAuthenticator
   # class: io.polaris.service.auth.DefaultPolarisAuthenticator # - uncomment to support Auth0 JWT tokens
   # tokenBroker:
   #  type: symmetric-key
   #  secret: polaris
+
+io:
+  factoryType: default
 
 cors:
   allowed-origins:
