@@ -46,11 +46,12 @@ class LicenseEnforcementTest(RedpandaTest):
     @matrix(
         clean_node_before_recovery=[False, True],
         clean_node_after_recovery=[False, True],
+        disable_trial=[False, True],
     )
     def test_license_enforcement(self, clean_node_before_recovery,
-                                 clean_node_after_recovery):
+                                 clean_node_after_recovery, disable_trial):
         self.redpanda.set_environment(
-            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': disable_trial})
 
         installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
