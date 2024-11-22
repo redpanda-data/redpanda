@@ -64,3 +64,13 @@ rp_test(
     "${testdata_dir}/nested_manifest.avro"
   ARGS "-- -c1"
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME iceberg_uri
+  SOURCES uri_bench.cc
+  LIBRARIES
+    Seastar::seastar_perf_testing
+    v::iceberg
+  ARGS "-- -c1"
+)

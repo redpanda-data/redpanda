@@ -94,21 +94,4 @@ manifest_io::upload_manifest_list(const uri& uri, const manifest_list& m) {
     return upload_manifest_list(manifest_list_path(path_res.value()), m);
 }
 
-uri manifest_io::to_uri(const std::filesystem::path& p) const {
-    return make_uri(bucket_, p);
-}
-
-checked<std::filesystem::path, metadata_io::errc>
-manifest_io::from_uri(const uri& s) const {
-    try {
-        return std::filesystem::path(path_from_uri(s));
-    } catch (...) {
-        return metadata_io::errc::invalid_uri;
-    }
-}
-
-ss::sstring manifest_io::uri_base() const {
-    return fmt::format("s3://{}/", bucket_);
-}
-
 } // namespace iceberg

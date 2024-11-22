@@ -13,6 +13,7 @@
 #include "cloud_io/auth_refresh_bg_op.h"
 #include "cloud_io/io_resources.h"
 #include "cloud_io/io_result.h"
+#include "cloud_io/provider.h"
 #include "cloud_io/transfer_details.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage_clients/client.h"
@@ -167,6 +168,7 @@ public:
     size_t concurrency() const;
 
     model::cloud_storage_backend backend() const;
+    const provider& provider() const;
 
     bool is_batch_delete_supported() const;
     int delete_objects_max_keys() const;
@@ -309,6 +311,7 @@ private:
     config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
 
     model::cloud_storage_backend _cloud_storage_backend;
+    cloud_io::provider _provider;
 };
 
 } // namespace cloud_io
