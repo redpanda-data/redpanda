@@ -23,6 +23,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/enterprise_features.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
@@ -370,9 +371,9 @@ ss::future<> partition_balancer_backend::do_tick() {
     if (is_sanctioned) {
         vlog(
           clusterlog.warn,
-          "A Redpanda Enterprise Edition license is required to use enterprise "
-          "feature \"partition_autobalancing_mode\" with value \"{}\". "
-          "Behavior is being restricted to \"{}\".",
+          "{}",
+          features::enterprise_error_message::
+            partition_autobalancing_continuous(),
           _mode(false).first,
           mode);
     }
