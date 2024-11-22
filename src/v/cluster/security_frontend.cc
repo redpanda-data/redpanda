@@ -21,6 +21,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
+#include "features/enterprise_feature_messages.h"
 #include "model/errc.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -235,8 +236,8 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
         err = errc::feature_disabled;
         vlog(
           clusterlog.warn,
-          "An enterprise license is required to create an ACL with a role "
-          "binding");
+          "{}",
+          features::enterprise_error_message::acl_with_rbac());
     } else {
         try {
             create_acls_cmd_data data;
