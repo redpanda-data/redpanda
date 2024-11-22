@@ -183,6 +183,9 @@ redpanda_cc_library(
         "util.h",
         "@fmt",
     ],
+    implementation_deps = [
+        "//src/v/features:enterprise_feature_messages",
+    ],
     include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],
     deps = [
