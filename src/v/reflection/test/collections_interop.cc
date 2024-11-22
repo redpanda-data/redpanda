@@ -7,18 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "bytes/hash.h"
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_parser.h"
-#include "model/adl_serde.h"
-#include "model/fundamental.h"
 #include "random/generators.h"
-#include "reflection/absl/btree_map.h"
-#include "reflection/absl/flat_hash_map.h"
-#include "reflection/absl/node_hash_map.h"
-#include "reflection/seastar/circular_buffer.h"
-#include "reflection/std/map.h"
-#include "reflection/std/vector.h"
+#include "reflection/adl.h"
 #include "test_utils/randoms.h"
 
 #include <seastar/testing/thread_test_case.hh>
