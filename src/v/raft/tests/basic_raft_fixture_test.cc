@@ -16,7 +16,6 @@
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/async.h"
 #include "test_utils/test.h"
@@ -598,7 +597,7 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
             {all_vnodes()[0]}, model::revision_id{1});
       });
     // wait for reconfiguration
-    auto wait_for_reconfiguration = [&](int expected_nodes) {
+    auto wait_for_reconfiguration = [&](size_t expected_nodes) {
         return tests::cooperative_spin_wait_with_timeout(
           10s, [&, expected_nodes] {
               return std::all_of(

@@ -21,7 +21,6 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
-#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
@@ -327,7 +326,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_with_failures) {
     auto buf = serde::to_iobuf(reply);
 
     auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
-    for (auto i = 0; i < reply.meta.size(); ++i) {
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
         BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(
           reply.meta[i].last_flushed_log_index,
@@ -390,7 +389,7 @@ SEASTAR_THREAD_TEST_CASE(
     auto buf = serde::to_iobuf(reply);
 
     auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
-    for (auto i = 0; i < reply.meta.size(); ++i) {
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
         BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(
           reply.meta[i].last_flushed_log_index,
@@ -450,7 +449,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_with_only_failures) {
     auto buf = serde::to_iobuf(reply);
 
     auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
-    for (auto i = 0; i < reply.meta.size(); ++i) {
+    for (size_t i = 0; i < reply.meta.size(); ++i) {
         BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(
           reply.meta[i].last_flushed_log_index,
