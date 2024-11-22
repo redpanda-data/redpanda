@@ -23,6 +23,7 @@
 #include "config/node_config.h"
 #include "config/types.h"
 #include "config/validators.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/feature_state.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
@@ -304,12 +305,9 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         if (_feature_table.local().should_sanction()) {
             vlog(
               clusterlog.warn,
-              "A Redpanda Enterprise Edition license is required to use "
-              "enterprise features: ([{}]). Enter an active license key (for "
-              "example, rpk cluster license set <key>). To request a license, "
-              "see https://redpanda.com/license-request. For more information, "
-              "see https://docs.redpanda.com/current/get-started/licenses.",
-              fmt::join(enterprise_features.enabled(), ", "));
+              "{}",
+              features::enterprise_error_message::license_nag(
+                enterprise_features.enabled()));
         }
     }
 }
@@ -363,14 +361,9 @@ void feature_manager::verify_enterprise_license() {
       fallback_license ? " (detected fallback license)" : "");
 
     if (enterprise_features.any() && license_missing_or_expired) {
-        throw std::runtime_error{fmt::format(
-          "A Redpanda Enterprise Edition license is required to use enterprise "
-          "features: ([{}]). To add your license, downgrade this broker to the "
-          "pre-upgrade version, and enter the active license key (for example, "
-          "rpk cluster license set). To request a license, see "
-          "https://redpanda.com/license-request. For more information, see "
-          "https://docs.redpanda.com/current/get-started/licenses.",
-          fmt::join(enterprise_features.enabled(), ", "))};
+        throw std::runtime_error{
+          features::enterprise_error_message::upgrade_failure(
+            enterprise_features.enabled())};
     }
 
     _verified_enterprise_license.signal();
