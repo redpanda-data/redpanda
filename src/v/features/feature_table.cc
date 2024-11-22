@@ -36,40 +36,12 @@ namespace features {
 
 std::string_view to_string_view(feature f) {
     switch (f) {
-    case feature::serde_raft_0:
-        return "serde_raft_0";
-    case feature::license:
-        return "license";
-    case feature::raft_improved_configuration:
-        return "raft_improved_configuration";
-    case feature::transaction_ga:
-        return "transaction_ga";
-    case feature::raftless_node_status:
-        return "raftless_node_status";
-    case feature::rpc_v2_by_default:
-        return "rpc_v2_by_default";
     case feature::cloud_retention:
         return "cloud_retention";
-    case feature::node_id_assignment:
-        return "node_id_assignment";
-    case feature::replication_factor_change:
-        return "replication_factor_change";
-    case feature::ephemeral_secrets:
-        return "ephemeral_secrets";
-    case feature::seeds_driven_bootstrap_capable:
-        return "seeds_driven_bootstrap_capable";
-    case feature::tm_stm_cache:
-        return "tm_stm_cache";
-    case feature::kafka_gssapi:
-        return "kafka_gssapi";
-    case feature::partition_move_revert_cancel:
-        return "partition_move_cancel_revert";
     case feature::node_isolation:
         return "node_isolation";
     case feature::group_offset_retention:
         return "group_offset_retention";
-    case feature::rpc_transport_unknown_errc:
-        return "rpc_transport_unknown_errc";
     case feature::membership_change_controller_cmds:
         return "membership_change_controller_cmds";
     case feature::controller_snapshots:

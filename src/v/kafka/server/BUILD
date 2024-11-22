@@ -103,7 +103,6 @@ redpanda_cc_library(
         "handlers/describe_log_dirs.h",
         "handlers/describe_producers.h",
         "handlers/describe_transactions.h",
-        "handlers/details/isolated_node_utils.h",
         "handlers/details/leader_epoch.h",
         "handlers/details/security.h",
         "handlers/end_txn.h",

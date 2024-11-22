@@ -2276,12 +2276,6 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
         throw ss::httpd::bad_request_exception(
           "Missing redpanda license from request body");
     }
-    if (!_controller->get_feature_table().local().is_active(
-          features::feature::license)) {
-        throw ss::httpd::bad_request_exception(
-          "Feature manager reports the cluster is not fully upgraded to "
-          "accept license put requests");
-    }
 
     try {
         boost::trim_if(raw_license, boost::is_any_of(" \n\r"));
@@ -2320,12 +2314,6 @@ admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
 
 ss::future<ss::json::json_return_type>
 admin_server::get_enterprise_handler(std::unique_ptr<ss::http::request>) {
-    if (!_controller->get_feature_table().local().is_active(
-          features::feature::license)) {
-        throw ss::httpd::bad_request_exception(
-          "Feature manager reports the cluster is not fully upgraded to "
-          "accept get enterprise requests");
-    }
     using status = ss::httpd::features_json::enterprise_response::
       enterprise_response_license_status;
 
@@ -2437,12 +2425,6 @@ void admin_server::register_features_routes() {
     register_route<user>(
       ss::httpd::features_json::get_license,
       [this](std::unique_ptr<ss::http::request>) {
-          if (!_controller->get_feature_table().local().is_active(
-                features::feature::license)) {
-              throw ss::httpd::bad_request_exception(
-                "Feature manager reports the cluster is not fully upgraded to "
-                "accept license get requests");
-          }
           ss::httpd::features_json::license_response res;
           res.loaded = false;
           const auto& ft = _controller->get_feature_table().local();

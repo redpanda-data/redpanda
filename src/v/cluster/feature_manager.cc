@@ -299,20 +299,17 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         // Shutting down - next iteration will drop out
         co_return;
     }
-    if (_feature_table.local().is_active(features::feature::license)) {
-        auto enterprise_features = report_enterprise_features();
-        if (enterprise_features.any()) {
-            if (_feature_table.local().should_sanction()) {
-                vlog(
-                  clusterlog.warn,
-                  "A Redpanda Enterprise Edition license is required to use "
-                  "enterprise features: ([{}]). Enter an active license key "
-                  "(for example, rpk cluster license set <key>). To request a "
-                  "license, see https://redpanda.com/license-request. For more "
-                  "information, see "
-                  "https://docs.redpanda.com/current/get-started/licenses.",
-                  fmt::join(enterprise_features.enabled(), ", "));
-            }
+    auto enterprise_features = report_enterprise_features();
+    if (enterprise_features.any()) {
+        if (_feature_table.local().should_sanction()) {
+            vlog(
+              clusterlog.warn,
+              "A Redpanda Enterprise Edition license is required to use "
+              "enterprise features: ([{}]). Enter an active license key (for "
+              "example, rpk cluster license set <key>). To request a license, "
+              "see https://redpanda.com/license-request. For more information, "
+              "see https://docs.redpanda.com/current/get-started/licenses.",
+              fmt::join(enterprise_features.enabled(), ", "));
         }
     }
 }
