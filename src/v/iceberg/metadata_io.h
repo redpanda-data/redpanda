@@ -68,6 +68,17 @@ public:
           detail::scheme_for(io_.backend()));
     }
 
+    // E.g. s3://bucket/path/to/file => path/to/file
+    // Leaves the path as is if it doesn't match the expected URI base.
+    checked<std::filesystem::path, metadata_io::errc>
+    from_uri(const uri& uri) const {
+        try {
+            return std::filesystem::path(path_from_uri(uri));
+        } catch (...) {
+            return metadata_io::errc::invalid_uri;
+        }
+    }
+
 protected:
     template<typename T>
     ss::future<checked<T, errc>> download_object(
