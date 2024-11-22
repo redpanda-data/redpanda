@@ -153,7 +153,14 @@ func checkLicenseExpiry(expiresUnix int64, licenseType string, enterpriseFeature
 	}
 	if daysLeft < dayThreshold && !ut.Before(time.Now()) {
 		msg := "WARNING: your license will expire soon.\n\n"
-		if isTrial && len(enterpriseFeatures) == 0 {
+		if isTrial {
+			if len(enterpriseFeatures) > 0 {
+				// We don't print if isTrial and we have enterprise features.
+				// Because in this case we already print the warning when
+				// creating the admin client and printing another warning is
+				// repetitive.
+				return
+			}
 			msg = fmt.Sprintf("Note: your TRIAL license will expire in %v days. To request a license, please visit https://redpanda.com/upgrade. To try Redpanda Enterprise for 30 days, visit https://redpanda.com/try-enterprise. For more information, see https://docs.redpanda.com/current/get-started/licenses/#redpanda-enterprise-edition\n\n", daysLeft)
 		}
 		if ws, err := mTerm.GetWinsize(0); err == nil {
