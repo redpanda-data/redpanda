@@ -348,14 +348,14 @@ ss::future<> partition_manager::stop_partitions() {
     // prevent partitions from being accessed
     auto partitions = std::exchange(_ntp_table, {});
 
-    co_await ssx::async_clear(_raft_table)();
+    co_await ssx::async_clear(_raft_table);
 
     // shutdown all partitions
     co_await ss::max_concurrent_for_each(partitions, 1024, [this](auto& e) {
         return do_shutdown(e.second).discard_result();
     });
 
-    co_await ssx::async_clear(partitions)();
+    co_await ssx::async_clear(partitions);
 }
 
 ss::future<xshard_transfer_state>

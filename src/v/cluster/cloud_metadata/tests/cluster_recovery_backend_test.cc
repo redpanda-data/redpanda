@@ -29,6 +29,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "partition_manager.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "security/scram_credential.h"
@@ -167,7 +168,9 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     cluster::tx_executor{}.run_random_workload(
       spec, remote_p->raft()->term(), remote_p->rm_stm(), remote_p->log());
 
-    auto partitions = app.partition_manager.local().partitions();
+    cluster::partition_manager::ntp_table_container partitions(
+      app.partition_manager.local().partitions().begin(),
+      app.partition_manager.local().partitions().end());
     for (const auto& [ntp, p] : partitions) {
         if (ntp == model::controller_ntp) {
             continue;
@@ -264,7 +267,9 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         auto topic_count
           = app.controller->get_topics_state().local().all_topics_count();
         ASSERT_LE(2, topic_count);
-        auto partitions = app.partition_manager.local().partitions();
+        cluster::partition_manager::ntp_table_container partitions(
+          app.partition_manager.local().partitions().begin(),
+          app.partition_manager.local().partitions().end());
         for (const auto& [ntp, p] : partitions) {
             if (!model::is_user_topic(ntp)) {
                 continue;

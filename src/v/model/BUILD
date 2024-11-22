@@ -52,6 +52,7 @@ redpanda_cc_library(
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
         "//src/v/hashing:crc32c",
         "//src/v/reflection:adl",

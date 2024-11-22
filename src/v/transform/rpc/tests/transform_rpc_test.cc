@@ -667,7 +667,7 @@ private:
     fake_offset_tracker* _offset_tracker;
     int _errors_to_inject = 0;
     ss::chunked_fifo<produced_batch> _produced_batches;
-    model::ntp_flat_map_type<ss::shard_id> _shard_locations;
+    model::ntp_map_type<ss::shard_id> _shard_locations;
 };
 
 constexpr uint16_t test_server_port = 8080;
