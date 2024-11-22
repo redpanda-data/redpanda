@@ -2477,6 +2477,8 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
 class RedpandaService(RedpandaServiceBase):
 
+    ENTERPRISE_LICENSE_NAG = "license is required to use enterprise features"
+
     nodes: list[ClusterNode]
 
     def __init__(self,
@@ -5413,6 +5415,9 @@ class RedpandaService(RedpandaServiceBase):
                    backoff_sec=1,
                    err_msg="Inserted license not observable in time")
         self.logger.debug("Enterprise License installed successfully")
+
+    def has_license_nag(self):
+        return self.search_log_any(self.ENTERPRISE_LICENSE_NAG)
 
 
 def make_redpanda_service(context: TestContext,

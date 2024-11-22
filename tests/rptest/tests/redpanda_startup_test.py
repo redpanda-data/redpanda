@@ -249,10 +249,6 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
             True
         })
 
-    def _has_license_nag(self) -> bool:
-        return self.redpanda.search_log_any(
-            "license is required to use enterprise features")
-
     def _license_nag_is_set(self) -> bool:
         return self.redpanda.search_log_all(
             f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
@@ -267,7 +263,7 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
 
         self.logger.debug("Ensuring no license nag")
         sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
-        assert not self._has_license_nag(
+        assert not self.redpanda.has_license_nag(
         ), "Should not have license nag yet, FIPS mode not enabled"
 
         fips_mode = RedpandaServiceBase.FIPSMode.enabled if in_fips_environment(
@@ -282,6 +278,6 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
         self.redpanda.restart_nodes(self.redpanda.nodes,
                                     override_cfg_params=fips_config)
 
-        wait_until(self._has_license_nag,
+        wait_until(self.redpanda.has_license_nag,
                    timeout_sec=30,
                    err_msg="License nag failed to appear")
