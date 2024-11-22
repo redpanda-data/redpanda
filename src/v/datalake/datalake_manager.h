@@ -19,7 +19,6 @@
 #include "datalake/translation/partition_translator.h"
 #include "features/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
-#include "raft/fundamental.h"
 #include "raft/fwd.h"
 #include "ssx/semaphore.h"
 
@@ -57,7 +56,7 @@ public:
       ss::sharded<features::feature_table>*,
       ss::sharded<coordinator::frontend>*,
       ss::sharded<cloud_io::remote>*,
-      std::unique_ptr<iceberg::catalog>,
+      std::unique_ptr<coordinator::catalog_factory>,
       pandaproxy::schema_registry::api* schema_registry,
       ss::sharded<ss::abort_source>*,
       cloud_storage_clients::bucket_name,
@@ -87,6 +86,7 @@ private:
     ss::sharded<coordinator::frontend>* _coordinator_frontend;
     std::unique_ptr<datalake::cloud_data_io> _cloud_data_io;
     std::unique_ptr<schema::registry> _schema_registry;
+    std::unique_ptr<coordinator::catalog_factory> _catalog_factory;
     std::unique_ptr<iceberg::catalog> _catalog;
     std::unique_ptr<datalake::schema_manager> _schema_mgr;
     std::unique_ptr<datalake::type_resolver> _type_resolver;

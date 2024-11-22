@@ -11,6 +11,7 @@ import os
 import json
 import collections
 import re
+import time
 from typing import Optional, Any
 
 from ducktape.services.service import Service
@@ -20,6 +21,9 @@ from ducktape.cluster.cluster import ClusterNode
 from polaris.management.api_client import ApiClient
 from polaris.management.configuration import Configuration
 from polaris.management.api.polaris_default_api import PolarisDefaultApi
+import requests
+
+from rptest.services.tls import TLSCertManager
 
 
 class PolarisCatalog(Service):
@@ -31,8 +35,8 @@ class PolarisCatalog(Service):
     """
     PERSISTENT_ROOT = "/var/lib/polaris"
     INSTALL_PATH = "/opt/polaris"
-    JAR = "polaris-service-1.0.0-all.jar"
-    JAR_PATH = os.path.join(INSTALL_PATH, "polaris-service/build/libs", JAR)
+    CLASS = "PolarisApplication"
+
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "polaris.log")
     POLARIS_CONFIG = os.path.join(PERSISTENT_ROOT, "polaris-server.yml")
     logs = {
@@ -50,12 +54,20 @@ class PolarisCatalog(Service):
 
     nodes: list[ClusterNode]
 
+    def _java_home(self, node):
+        return node.account.ssh_output(
+            "echo /usr/lib/jvm/java-21-openjdk-$(dpkg-architecture -q DEB_BUILD_ARCH)"
+        ).decode('utf-8').strip()
+
     def _cmd(self, node):
-        java = "/opt/java/java-21"
-        return f"{java} -jar {PolarisCatalog.JAR_PATH} server  {PolarisCatalog.POLARIS_CONFIG} \
+        java_home = self._java_home(node)
+        return f"JAVA_HOME={java_home} /opt/polaris/app/bin/polaris-service server  {PolarisCatalog.POLARIS_CONFIG} \
             1>> {PolarisCatalog.LOG_FILE} 2>> {PolarisCatalog.LOG_FILE} &"
 
-    def __init__(self, ctx, node: ClusterNode | None = None):
+    def __init__(self,
+                 ctx,
+                 node: ClusterNode | None = None,
+                 tls: TLSCertManager | None = None):
         super(PolarisCatalog, self).__init__(ctx, num_nodes=0 if node else 1)
 
         if node:
@@ -67,6 +79,29 @@ class PolarisCatalog(Service):
         self.management_url = None
         self.client_id = None
         self.password = None
+        self.tls = tls
+        self.ca = None
+
+    def _keystore_path(self):
+        return f"{PolarisCatalog.PERSISTENT_ROOT}/keystore.jks"
+
+    def _maybe_create_keystore(self, node):
+        if self.tls is None:
+            return None, None
+
+        cert = self.tls.create_cert(host=node.account.hostname,
+                                    common_name="polaris",
+                                    name="polaris")
+        self.ca = cert.ca
+        cert_dir = os.path.join(PolarisCatalog.PERSISTENT_ROOT, "certs")
+        node.account.mkdirs(cert_dir)
+        node.account.copy_to(cert.crt, os.path.join(cert_dir, "polaris.crt"))
+        node.account.copy_to(cert.key, os.path.join(cert_dir, "polaris.key"))
+        node.account.copy_to(cert.p12_file,
+                             os.path.join(cert_dir, "polaris.p12"))
+
+        pkcs_path = os.path.join(cert_dir, "polaris.p12")
+        return pkcs_path, cert.p12_password
 
     def _parse_credentials(self, node):
         line = node.account.ssh_output(
@@ -78,11 +113,17 @@ class PolarisCatalog(Service):
         self.client_id = m['client_id']
         self.password = m['password']
 
+    def _proto_scheme(self):
+        return "https" if self.tls else "http"
+
     def start_node(self, node, timeout_sec=60, **kwargs):
         node.account.ssh("mkdir -p %s" % PolarisCatalog.PERSISTENT_ROOT,
                          allow_fail=False)
+        keystore_path, keystore_password = self._maybe_create_keystore(node)
         # polaris server settings
-        cfg_yaml = self.render("polaris-server.yml")
+        cfg_yaml = self.render("polaris-server.yml",
+                               keystore_path=keystore_path,
+                               keystore_password=keystore_password)
         node.account.create_file(PolarisCatalog.POLARIS_CONFIG, cfg_yaml)
         cmd = self._cmd(node)
         self.logger.info(
@@ -92,12 +133,16 @@ class PolarisCatalog(Service):
 
         # wait for the healthcheck to return 200
         def _polaris_ready():
-            out = node.account.ssh_output(
-                "curl -s -o /dev/null -w '%{http_code}' http://localhost:8182/healthcheck"
+
+            self.logger.debug(
+                f"Querying polaris healthcheck on http://{node.account.hostname}:8182/healthcheck"
             )
-            status_code = int(out.decode('utf-8'))
-            self.logger.info(f"health check result status code: {status_code}")
-            return status_code == 200
+            r = requests.get(
+                f"http://{node.account.hostname}:8182/healthcheck")
+
+            self.logger.info(
+                f"health check result status code: {r.status_code}")
+            return r.status_code == 200
 
         wait_until(_polaris_ready,
                    timeout_sec=timeout_sec,
@@ -106,15 +151,17 @@ class PolarisCatalog(Service):
                    retry_on_exc=True)
 
         # setup urls and credentials
-        self.catalog_url = f"http://{node.account.hostname}:8181/api/catalog"
-        self.management_url = f'http://{node.account.hostname}:8181/api/management/v1'
+        self.catalog_url = f"{self._proto_scheme()}://{node.account.hostname}:8181/api/catalog"
+        self.management_url = f'{self._proto_scheme()}://{node.account.hostname}:8181/api/management/v1'
         self._parse_credentials(node)
         self.logger.info(
             f"Polaris catalog ready, credentials - client_id: {self.client_id}, password: {self.password}"
         )
 
     def _get_token(self) -> str:
-        client = ApiClient(configuration=Configuration(host=self.catalog_url))
+        client = ApiClient(configuration=Configuration(
+            host=self.catalog_url,
+            ssl_ca_cert=None if not self.tls else self.ca.crt))
         response = client.call_api('POST',
                                    f'{self.catalog_url}/v1/oauth/tokens',
                                    header_params={
@@ -134,13 +181,17 @@ class PolarisCatalog(Service):
 
     def management_client(self) -> ApiClient:
         token = self._get_token()
-        return ApiClient(configuration=Configuration(host=self.management_url,
-                                                     access_token=token))
+        return ApiClient(configuration=Configuration(
+            host=self.management_url,
+            access_token=token,
+            ssl_ca_cert=None if not self.tls else self.ca.crt))
 
     def catalog_client(self) -> ApiClient:
         token = self._get_token()
-        return ApiClient(configuration=Configuration(host=self.catalog_url,
-                                                     access_token=token))
+        return ApiClient(configuration=Configuration(
+            host=self.catalog_url,
+            access_token=token,
+            ssl_ca_cert=None if not self.tls else self.ca.crt))
 
     def wait_node(self, node, timeout_sec=None):
         ## unused as there is nothing to wait for here
@@ -148,12 +199,12 @@ class PolarisCatalog(Service):
 
     def stop_node(self, node, allow_fail=False, **_):
 
-        node.account.kill_java_processes(PolarisCatalog.JAR,
+        node.account.kill_java_processes(PolarisCatalog.CLASS,
                                          allow_fail=allow_fail)
 
         def _stopped():
             out = node.account.ssh_output("jcmd").decode('utf-8')
-            return PolarisCatalog.JAR not in out
+            return PolarisCatalog.CLASS not in out
 
         wait_until(_stopped,
                    timeout_sec=10,

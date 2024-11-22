@@ -19,6 +19,7 @@ namespace coordinator {
 class coordinator_manager;
 class frontend;
 struct translated_offset_range;
+class catalog_factory;
 }; // namespace coordinator
 namespace translation {
 class translation_stm;
