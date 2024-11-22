@@ -390,6 +390,7 @@ redpanda_cc_btest(
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/features:enterprise_feature_messages",
+        "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
         "//src/v/kafka/protocol:metadata",
         "//src/v/kafka/server",
