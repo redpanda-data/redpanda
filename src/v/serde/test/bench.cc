@@ -12,7 +12,7 @@
 #include "cluster/node/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "serde/serde.h"
+#include "serde/envelope.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
