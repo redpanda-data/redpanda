@@ -128,9 +128,11 @@ redpanda_test_cc_library(
     ],
     include_prefix = "datalake/tests",
     deps = [
+        "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake:writer",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/utils:null_output_stream",
         "@seastar",
     ],
 )
