@@ -38,7 +38,7 @@ func Test_licenseFeatureChecks(t *testing.T) {
 			name:         "free_trial about to expire, with features",
 			prof:         &config.RpkProfile{},
 			responseCase: "ok-features",
-			expContain:   "WARNING: your TRIAL license is about to expire",
+			expContain:   "Note: your TRIAL license will expire in",
 		},
 		{
 			name: "license ok, cache valid",
@@ -175,7 +175,6 @@ var mapLicenseInfoResponses = map[string]response{
 
 func licenseHandler(respCase string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(r.URL.Path)
 		if r.URL.Path == "/v1/features/enterprise" {
 			resp := mapLicenseFeatureResponses[respCase]
 			w.WriteHeader(resp.status)
