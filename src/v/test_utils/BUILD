@@ -128,3 +128,16 @@ redpanda_test_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "rpc",
+    hdrs = [
+        "rpc.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/reflection:adl",
+        "//src/v/serde",
+    ],
+)

@@ -8,21 +8,21 @@
 // by the Apache License, Version 2.0
 
 #include "base/vassert.h"
-#include "group_configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
+#include "raft/group_configuration.h"
 #include "raft/mux_state_machine.h"
+#include "raft/state_machine_base.h"
+#include "raft/tests/raft_fixture.h"
 #include "raft/tests/raft_fixture_retry_policy.h"
 #include "raft/tests/simple_raft_fixture.h"
 #include "reflection/adl.h"
-#include "state_machine_base.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 #include "test_utils/test.h"
-#include "tests/raft_fixture.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -32,7 +32,6 @@
 #include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
-#include <boost/test/tools/old/interface.hpp>
 #include <fmt/format.h>
 #include <gtest/gtest.h>
 
@@ -173,7 +172,7 @@ struct simple_kv {
         return ss::make_ready_future<std::error_code>(errc::cas_error);
     }
 
-    ss::future<std::error_code> apply(timeout_cmd c) {
+    ss::future<std::error_code> apply(timeout_cmd) {
         return ss::sleep_abortable(5s, as).then(
           [] { return std::error_code(errc::success); });
     }
@@ -263,8 +262,7 @@ struct kv1_stm_fixture : kv_stm_fixture<kv1_stm_t> {
     using kv_t = simple_kv<batch_type_1>;
     using map_t = kv_t::map_t;
     std::tuple<ss::shared_ptr<kv1_stm_t>> create_stms(
-      raft::state_machine_manager_builder& builder,
-      raft_node_instance& node) override {
+      raft::state_machine_manager_builder&, raft_node_instance& node) override {
         auto [it, inserted] = kvs.emplace(
           std::piecewise_construct,
           std::tuple{node.get_vnode()},
@@ -358,7 +356,7 @@ TEST_F_CORO(kv1_stm_fixture, test_concurrent_sets) {
       futures.begin(), futures.end());
 
     auto success_count = 0;
-    for (int i = 0; i < results.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(results.size()); ++i) {
         if (results[i] == errc::success) {
             vlog(kvlog.info, "Applied value: {}", i);
             ++success_count;
@@ -479,8 +477,7 @@ struct kv2_stm_fixture : kv_stm_fixture<kv2_stm_t> {
     using map1_t = kv1_t::map_t;
     using map2_t = kv2_t::map_t;
     std::tuple<ss::shared_ptr<kv2_stm_t>> create_stms(
-      raft::state_machine_manager_builder& builder,
-      raft_node_instance& node) override {
+      raft::state_machine_manager_builder&, raft_node_instance& node) override {
         auto [it, inserted] = kvs.emplace(
           std::piecewise_construct,
           std::tuple{node.get_vnode()},

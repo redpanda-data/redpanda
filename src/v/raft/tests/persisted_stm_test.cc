@@ -159,7 +159,7 @@ public:
      * Called when local snapshot is applied to the state machine
      */
     ss::future<>
-    apply_local_snapshot(stm_snapshot_header header, iobuf&& buffer) final {
+    apply_local_snapshot(stm_snapshot_header, iobuf&& buffer) final {
         state = serde::from_iobuf<kv_state>(std::move(buffer));
         co_return;
     };
@@ -468,17 +468,14 @@ public:
         co_return;
     }
 
-    ss::future<> apply_raft_snapshot(const iobuf& buffer) override {
-        co_return;
-    };
+    ss::future<> apply_raft_snapshot(const iobuf&) override { co_return; };
 
-    ss::future<iobuf>
-    take_snapshot(model::offset last_included_offset) override {
+    ss::future<iobuf> take_snapshot(model::offset) override {
         co_return iobuf{};
     }
 
     ss::future<>
-    apply_local_snapshot(stm_snapshot_header header, iobuf&& buffer) override {
+    apply_local_snapshot(stm_snapshot_header, iobuf&& buffer) override {
         _last_stm_applied = serde::from_iobuf<model::offset>(std::move(buffer));
         co_return;
     }

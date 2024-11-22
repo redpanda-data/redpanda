@@ -12,6 +12,7 @@
 #pragma once
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "serde/rw/rw.h"
 
 #include <memory>
 

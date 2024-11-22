@@ -213,7 +213,7 @@ FIXTURE_TEST(sharing_correcteness_test, foreign_entry_fixture) {
         auto shared = model::consume_reader_to_memory(
                         std::move(copy), model::no_timeout)
                         .get();
-        for (int i = 0; i < reference_batches.size(); ++i) {
+        for (size_t i = 0; i < reference_batches.size(); ++i) {
             BOOST_REQUIRE_EQUAL(shared[i], reference_batches[i]);
         }
     }
