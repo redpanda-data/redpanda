@@ -278,7 +278,8 @@ class SelfTestTest(EndToEndTest):
         num_nodes = 3
 
         install_opts = InstallOptions(version=RedpandaVersionLine((24, 1)),
-                                      num_to_upgrade=2)
+                                      num_to_upgrade=2,
+                                      set_fallback_license=True)
         self.start_redpanda(
             num_nodes=num_nodes,
             si_settings=SISettings(test_context=self.test_context),

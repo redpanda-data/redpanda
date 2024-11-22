@@ -375,8 +375,9 @@ class AlterConfigMixedNodeTest(EndToEndTest):
         changed behavior in v24.3 and above versions of `redpanda`."""
         num_nodes = 3
 
-        install_opts = InstallOptions(version=RedpandaVersionTriple((24, 1,
-                                                                     1)))
+        install_opts = InstallOptions(version=RedpandaVersionTriple(
+            (24, 1, 1)),
+                                      set_fallback_license=True)
         self.start_redpanda(
             num_nodes=num_nodes,
             si_settings=SISettings(test_context=self.test_context),

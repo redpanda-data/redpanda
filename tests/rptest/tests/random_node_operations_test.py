@@ -146,6 +146,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         self.redpanda.set_seed_servers(self.redpanda.nodes)
         if mixed_versions:
+            self.redpanda.set_fallback_license()
             node_count = len(self.redpanda.nodes)
             with_prev_version = math.ceil(node_count / 2.0)
             self.logger.info(

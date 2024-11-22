@@ -386,7 +386,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
     # However, these did not exist prior to v23.1 and the test would fail
     # before it can be skipped.
     def setUp(self):
-        pass
+        self.redpanda.set_fallback_license()
 
     def install_and_start(self):
         self.prev_version = \

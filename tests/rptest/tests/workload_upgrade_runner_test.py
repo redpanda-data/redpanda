@@ -187,6 +187,8 @@ class RedpandaUpgradeTest(PreallocNodesTest):
         #  (23, 1, 7), (23, 1, 6), (23, 1, 7),
         #  (23, 2, 0)]
 
+        self.redpanda.set_fallback_license()
+
         # compute the upgrade steps, merging the upgrade steps of each workload
         workloads_steps = [
             self.load_version_range(w.get_earliest_applicable_release())

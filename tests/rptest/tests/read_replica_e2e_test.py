@@ -493,7 +493,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         applies_only_on=[CloudStorageType.S3]))
     def test_upgrades(self, cloud_storage_type):
         partition_count = 1
-        install_opts = InstallOptions(install_previous_version=True)
+        install_opts = InstallOptions(install_previous_version=True,
+                                      set_fallback_license=True)
         self.start_redpanda(3,
                             si_settings=self.si_settings,
                             install_opts=install_opts)
@@ -517,6 +518,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
 
         self.second_cluster = make_redpanda_service(
             self.test_context, num_brokers=3, si_settings=self.rr_settings)
+        self.second_cluster.set_fallback_license()
         previous_version = self.second_cluster._installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
         self.second_cluster._installer.install(self.second_cluster.nodes,

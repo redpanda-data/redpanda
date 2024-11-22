@@ -348,7 +348,8 @@ void feature_manager::verify_enterprise_license() {
     auto invalid = [](const std::optional<security::license>& license) {
         return !license || license->is_expired();
     };
-    auto license_missing_or_expired = _feature_table.local().should_sanction()
+    auto license_missing_or_expired = _feature_table.local().should_sanction(
+                                        features::ignore_trial_license::yes)
                                       && invalid(fallback_license);
     auto enterprise_features = report_enterprise_features();
 

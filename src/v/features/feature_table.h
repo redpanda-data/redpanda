@@ -527,6 +527,13 @@ public:
 
     /// Whether to act on an expired license or evaluation period by restricting
     /// enterprise feature usage
+    ///
+    /// \param ignore_trial - When set, should_sanction will return true
+    ///          irrespective of whether the cluster is in the initial
+    ///          30d trial period. This is useful for preventing upgrades
+    ///          across major version boundaries, categorically. Defaults
+    ///          to ::no to preserve sanctioning behavior in general.
+    ///
     bool should_sanction(
       ignore_trial_license ignore_trial = ignore_trial_license::no) const;
 
