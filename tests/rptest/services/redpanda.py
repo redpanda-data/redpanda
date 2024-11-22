@@ -2440,7 +2440,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
 class RedpandaService(RedpandaServiceBase):
 
-    ENTERPRISE_LICENSE_NAG = "license is required to use enterprise features"
+    ENTERPRISE_LICENSE_NAG = "A Redpanda Enterprise Edition license is required"
 
     nodes: list[ClusterNode]
 
