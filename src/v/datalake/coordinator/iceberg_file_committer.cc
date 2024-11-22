@@ -107,6 +107,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
       tp_it->second.lifecycle_state == topic_state::lifecycle_state_t::purged) {
         co_return chunked_vector<mark_files_committed_update>{};
     }
+    auto topic_revision = tp_it->second.revision;
 
     auto table_id = table_id_for_topic(topic);
     auto table_res = co_await load_table(table_id);
@@ -125,6 +126,14 @@ iceberg_file_committer::commit_topic_files_to_catalog(
         co_return errc::failed;
     }
     auto iceberg_commit_meta_opt = meta_res.value();
+
+    // update the iterator after a scheduling point
+    tp_it = state.topic_to_state.find(topic);
+    if (
+      tp_it == state.topic_to_state.end()
+      || tp_it->second.revision != topic_revision) {
+        co_return chunked_vector<mark_files_committed_update>{};
+    }
 
     chunked_hash_map<model::partition_id, kafka::offset> pending_commits;
     chunked_vector<iceberg::data_file> icb_files;
@@ -167,7 +176,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     for (const auto& [pid, committed_offset] : pending_commits) {
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
-          state, tp, tp_state.revision, committed_offset);
+          state, tp, topic_revision, committed_offset);
         if (update_res.has_error()) {
             vlog(
               datalake_log.warn,
