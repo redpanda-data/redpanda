@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "features/enterprise_feature_messages.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/tests/topic_properties_helpers.h"
 #include "model/fundamental.h"
@@ -74,7 +75,7 @@ FIXTURE_TEST(
             BOOST_CHECK_EQUAL(
               res.results[0].error_code, kafka::error_code::invalid_config);
             BOOST_CHECK(res.results[0].error_message.value_or("").contains(
-              "An enterprise license is required"));
+              features::enterprise_error_message::required));
 
             delete_topic(
               model::topic_namespace{model::kafka_namespace, std::move(tp)})

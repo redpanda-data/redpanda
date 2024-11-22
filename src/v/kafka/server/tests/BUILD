@@ -389,6 +389,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/config",
         "//src/v/container:fragmented_vector",
+        "//src/v/features:enterprise_feature_messages",
         "//src/v/kafka/protocol:create_topics",
         "//src/v/kafka/protocol:metadata",
         "//src/v/kafka/server",
@@ -499,6 +500,7 @@ redpanda_cc_btest(
     tags = ["exclusive"],
     deps = [
         "//src/v/config",
+        "//src/v/features:enterprise_feature_messages",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server/tests:topic_properties_helpers",
         "//src/v/model",
@@ -657,6 +659,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/config",
         "//src/v/container:fragmented_vector",
+        "//src/v/features:enterprise_feature_messages",
         "//src/v/kafka/client",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:alter_configs",

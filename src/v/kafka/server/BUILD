@@ -153,6 +153,9 @@ redpanda_cc_library(
         "usage_aggregator.h",
         "usage_manager.h",
     ],
+    implementation_deps = [
+        "//src/v/features:enterprise_feature_messages",
+    ],
     include_prefix = "kafka/server",
     visibility = ["//visibility:public"],
     deps = [

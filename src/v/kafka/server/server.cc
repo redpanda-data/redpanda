@@ -17,6 +17,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
@@ -1578,13 +1579,13 @@ ss::future<response_ptr> create_acls_handler::handle(
         ss::visit(
           result,
           [&response, &results](size_t i) {
-              auto ec = map_topic_error_code(results[i]);
-              response.data.results.push_back(
-                creatable_acl_result{.error_code = ec});
               if (results[i] == cluster::errc::feature_disabled) {
-                  response.data.results.back().error_message.emplace(
-                    "An enterprise license is required to create an ACL with a "
-                    "role binding");
+                  response.data.results.emplace_back(
+                    error_code::invalid_config,
+                    features::enterprise_error_message::acl_with_rbac());
+              } else {
+                  response.data.results.emplace_back(
+                    map_topic_error_code(results[i]));
               }
           },
           [&response](creatable_acl_result r) {
