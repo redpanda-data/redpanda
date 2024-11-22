@@ -180,11 +180,7 @@ ss::future<std::error_code>
 migrations_table::apply(create_data_migration_cmd cmd) {
     auto migration = std::move(cmd.value.migration);
     const auto id = cmd.value.id;
-    vlog(
-      dm_log.debug,
-      "applying create data migration: {} with id: {}",
-      migration,
-      id);
+    vlog(dm_log.debug, "applying create data migration: {}", cmd.value);
     if (id <= _last_applied) {
         co_return errc::data_migration_already_exists;
     }
@@ -202,7 +198,11 @@ migrations_table::apply(create_data_migration_cmd cmd) {
     }
 
     auto [it, success] = _migrations.try_emplace(
-      id, migration_metadata{.id = id, .migration = std::move(migration)});
+      id,
+      migration_metadata{
+        .id = id,
+        .migration = std::move(migration),
+        .created_timestamp = cmd.value.op_timestamp});
 
     if (!success) {
         // TODO: consider explaining to the client that we had an internal race
@@ -325,11 +325,7 @@ ss::future<std::error_code>
 migrations_table::apply(update_data_migration_state_cmd cmd) {
     const auto id = cmd.value.id;
     const auto requested_state = cmd.value.requested_state;
-    vlog(
-      dm_log.debug,
-      "applying update data migration {} state to {}",
-      id,
-      requested_state);
+    vlog(dm_log.debug, "applying update data migration state {}", cmd.value);
     auto it = _migrations.find(id);
     if (it == _migrations.end()) {
         vlog(
@@ -354,6 +350,11 @@ migrations_table::apply(update_data_migration_state_cmd cmd) {
         co_return errc::invalid_data_migration_state;
     }
     it->second.state = requested_state;
+    if (
+      requested_state == state::finished
+      || requested_state == state::cancelled) {
+        it->second.completed_timestamp = cmd.value.op_timestamp;
+    }
     // notify callbacks after resources, see comment in migrations_table::apply
     co_await _resources.invoke_on_all(
       [&meta = it->second](migrated_resources& resources) {
