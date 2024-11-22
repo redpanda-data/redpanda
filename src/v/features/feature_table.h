@@ -31,6 +31,8 @@ struct feature_update_action;
 
 namespace features {
 
+using ignore_trial_license = ss::bool_class<struct ignore_trial_license_tag>;
+
 struct feature_table_snapshot;
 
 /// The integers in this enum must be unique wrt each other, but _not_ over
@@ -525,7 +527,8 @@ public:
 
     /// Whether to act on an expired license or evaluation period by restricting
     /// enterprise feature usage
-    bool should_sanction() const;
+    bool should_sanction(
+      ignore_trial_license ignore_trial = ignore_trial_license::no) const;
 
     /**
      * For use in unit tests: activate all features that would

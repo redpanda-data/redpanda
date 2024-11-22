@@ -726,11 +726,11 @@ feature_table::get_configured_license() const {
     return _license;
 }
 
-bool feature_table::should_sanction() const {
+bool feature_table::should_sanction(ignore_trial_license ignore_trial) const {
     if (_license) {
         return _license->is_expired();
     } else if (_builtin_trial_license) {
-        return _builtin_trial_license->is_expired();
+        return ignore_trial || _builtin_trial_license->is_expired();
     }
 
     // While we are yet to initialize _builtin_trial_license on cluster
