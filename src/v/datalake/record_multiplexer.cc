@@ -210,70 +210,13 @@ record_multiplexer::end_of_stream() {
 ss::future<result<std::nullopt_t, writer_error>>
 record_multiplexer::handle_invalid_record(
   kafka::offset offset,
-  std::optional<iobuf> key,
-  std::optional<iobuf> val,
-  model::timestamp ts,
-  chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
-    headers) {
-    vlog(_log.debug, "Handling invalid record {}", offset);
-    int64_t estimated_size = (key ? key->size_bytes() : 0)
-                             + (val ? val->size_bytes() : 0);
-    auto record_data_res = co_await _record_translator.translate_data(
-      _ntp.tp.partition,
-      offset,
-      std::move(key),
-      /*val_type*/ std::nullopt,
-      std::move(val),
-      ts,
-      headers);
-    if (record_data_res.has_error()) {
-        vlog(
-          _log.error,
-          "Error translating data to binary record {}: {}",
-          offset,
-          record_data_res.error());
-        co_return writer_error::parquet_conversion_error;
-    }
-    auto record_type = _record_translator.build_type(std::nullopt);
-
-    // TODO: maybe this should be a writer specific for a dead-letter queue.
-    auto writer_iter = _writers.find(record_type.comps);
-    if (writer_iter == _writers.end()) {
-        auto get_ids_res = co_await _schema_mgr.get_registered_ids(
-          _ntp.tp.topic, record_type.type);
-        if (get_ids_res.has_error()) {
-            // TODO: log shutting_down errors at debug log and make other
-            // errors log an error.
-            vlog(
-              _log.warn,
-              "Error getting field IDs for binary record {}: {}",
-              offset,
-              get_ids_res.error());
-            co_return writer_error::parquet_conversion_error;
-        }
-        auto [iter, _] = _writers.emplace(
-          record_type.comps,
-          std::make_unique<partitioning_writer>(
-            *_writer_factory, std::move(record_type.type)));
-        writer_iter = iter;
-    }
-    if (!_result.has_value()) {
-        _result = write_result{
-          .start_offset = offset,
-        };
-    }
-    _result.value().last_offset = offset;
-    auto& writer = writer_iter->second;
-    auto write_result = co_await writer->add_data(
-      std::move(record_data_res.value()), estimated_size);
-    if (write_result != writer_error::ok) {
-        vlog(
-          _log.error,
-          "Error adding data to writer for binary record {}: {}",
-          offset,
-          write_result);
-        co_return write_result;
-    }
+  std::optional<iobuf>,
+  std::optional<iobuf>,
+  model::timestamp,
+  chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>) {
+    vlog(_log.debug, "Dropping invalid record at offset {}", offset);
+    // TODO: add a metric!
+    // TODO: dead-letter table?
     co_return std::nullopt;
 }
 } // namespace datalake
