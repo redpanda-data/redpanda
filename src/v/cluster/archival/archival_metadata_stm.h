@@ -15,6 +15,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival/stm_subscriptions.h"
 #include "cluster/errc.h"
 #include "cluster/state_machine_registry.h"
 #include "cluster/topic_table.h"
@@ -287,6 +288,18 @@ public:
         return _remote_path_provider;
     }
 
+    // Subscribe to STM state changes.
+    [[nodiscard("return value must be used to unsubscribe")]] archival::
+      stm_subscriptions::id_t
+      subscribe_to_state_change(ss::noncopyable_function<void() noexcept> f) {
+        return _subscriptions.subscribe(std::move(f));
+    }
+
+    // Unsubscribe from STM state changes.
+    void unsubscribe_from_state_change(archival::stm_subscriptions::id_t id) {
+        _subscriptions.unsubscribe(id);
+    }
+
 private:
     ss::future<bool>
     do_sync(model::timeout_clock::duration timeout, ss::abort_source* as);
@@ -394,6 +407,9 @@ private:
     // the change in size in cloud storage until the original segment(s) are
     // garbage collected.
     size_t _compacted_replaced_bytes{0};
+
+    // Subscriptions to STM state changes.
+    archival::stm_subscriptions _subscriptions;
 };
 
 class archival_metadata_stm_factory : public state_machine_factory {

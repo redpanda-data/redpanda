@@ -9,6 +9,7 @@
  */
 
 #pragma once
+
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
@@ -21,6 +22,7 @@
 #include "cluster/archival/archiver_scheduler_api.h"
 #include "cluster/archival/probe.h"
 #include "cluster/archival/scrubber.h"
+#include "cluster/archival/stm_subscriptions.h"
 #include "cluster/archival/types.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
@@ -633,7 +635,7 @@ private:
     // the state of manifest uploads.
     bool uploaded_data_past_flush_offset() const;
 
-    void update_probe();
+    void update_probe() noexcept;
 
     /// Return true if archival metadata can be replicated.
     /// This means that the replica is a leader, the term did not
@@ -767,6 +769,8 @@ private:
 
     config::binding<std::chrono::milliseconds> _initial_backoff;
     config::binding<std::chrono::milliseconds> _max_backoff;
+
+    archival::stm_subscriptions::id_t _stm_sub_id;
 
     friend class archiver_fixture;
 };

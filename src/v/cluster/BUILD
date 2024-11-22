@@ -432,6 +432,7 @@ redpanda_cc_library(
         "archival/scrubber.h",
         "archival/scrubber_scheduler.h",
         "archival/segment_reupload.h",
+        "archival/stm_subscriptions.h",
         "archival/types.h",
         "archival/upload_controller.h",
         "archival/upload_housekeeping_service.h",

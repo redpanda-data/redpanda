@@ -338,6 +338,15 @@ ss::future<> ntp_archiver::upload_until_abort(bool legacy_mode) {
     }
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+
+        // Ensure we are exception safe and won't leave the probe without
+        // a watcher in case of exceptions. Also ensures we won't crash calling
+        // the callback.
+        static_assert(noexcept(update_probe()));
+
+        update_probe();
+        _stm_sub_id = _parent.archival_meta_stm()->subscribe_to_state_change(
+          [this]() noexcept { update_probe(); });
     }
 
     while (!_as.abort_requested()) {
@@ -797,8 +806,6 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             co_await maybe_flush_manifest_clean_offset();
         }
 
-        update_probe();
-
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
         units.return_all();
@@ -1062,8 +1069,6 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             // flush it for them.
             co_await maybe_flush_manifest_clean_offset();
         }
-
-        update_probe();
     }
 }
 
@@ -1163,7 +1168,7 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
     co_return cloud_storage::download_result::success;
 }
 
-void ntp_archiver::update_probe() {
+void ntp_archiver::update_probe() noexcept {
     const auto& man = manifest();
 
     _probe->segments_in_manifest(man.size());
@@ -1189,6 +1194,10 @@ bool ntp_archiver::may_begin_uploads() const {
 }
 
 ss::future<> ntp_archiver::stop() {
+    if (_stm_sub_id != archival::stm_subscriptions::id_t{}) {
+        _parent.archival_meta_stm()->unsubscribe_from_state_change(_stm_sub_id);
+    }
+
     if (_local_segment_merger) {
         if (!_local_segment_merger->interrupted()) {
             _local_segment_merger->interrupt();

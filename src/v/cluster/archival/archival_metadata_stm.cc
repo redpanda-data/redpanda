@@ -1179,6 +1179,9 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
 
     // The offset should only be advanced after all the changes are applied.
     _manifest->advance_insync_offset(b.last_offset());
+
+    // Notify subscribers that the STM has been updated.
+    _subscriptions.notify();
 }
 
 ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
@@ -1240,6 +1243,9 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
       next_offset,
       start_offset,
       get_last_offset());
+
+    // Notify subscribers that the STM has been updated.
+    _subscriptions.notify();
 }
 
 ss::future<> archival_metadata_stm::apply_local_snapshot(
@@ -1310,6 +1316,10 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
     } else {
         _last_clean_at = header.offset;
     }
+
+    // Notify subscribers that the STM has been updated.
+    _subscriptions.notify();
+
     co_return;
 }
 
