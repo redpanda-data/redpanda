@@ -57,9 +57,9 @@ def data_dependency():
     http_archive(
         name = "hwloc",
         build_file = "//bazel/thirdparty:hwloc.BUILD",
-        sha256 = "1f6d0f3edddd0070717f9f17e3a090a26d203e026c192144aa5f587725cf11e3",
-        strip_prefix = "hwloc-hwloc-2.9.3",
-        url = "https://vectorized-public.s3.amazonaws.com/dependencies/hwloc-2.9.3.tar.gz",
+        sha256 = "866ac8ef07b350a6a2ba0c6826c37d78e8994dcbcd443bdd2b436350de19d540",
+        strip_prefix = "hwloc-2.11.2",
+        url = "https://vectorized-public.s3.amazonaws.com/dependencies/hwloc-2.11.2.tar.gz",
     )
 
     http_archive(
