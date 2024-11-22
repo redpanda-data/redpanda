@@ -2252,7 +2252,8 @@ class AuditLogTestSanctionMode(AuditLogTestBase):
             self.super_rpk.consume(self.audit_log)
 
         self.redpanda.search_log_any(
-            "An enterprise license is required to consume the audit log topic")
+            f"{self.redpanda.ENTERPRISE_LICENSE_NAG} to consume the audit log topic"
+        )
 
         self.redpanda.logger.debug(
             "Install a license to get out of sanctioning mode")
