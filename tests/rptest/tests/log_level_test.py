@@ -49,7 +49,7 @@ class LogLevelTest(RedpandaTest):
         # Any logger we get we should be able to set.
         for logger in loggers:
             # Skip to avoid bad log lines.
-            if logger == "assert":
+            if logger in ["assert", "assert-unreachable"]:
                 continue
 
             with self.redpanda.monitor_log(node) as mon:
