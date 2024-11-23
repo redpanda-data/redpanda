@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kr/text"
+	mTerm "github.com/moby/term"
 	"github.com/redpanda-data/common-go/rpadmin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -134,21 +136,37 @@ func printTextLicenseInfo(resp infoResponse) {
 		if *resp.Expired {
 			tw.Print("License expired:", *resp.Expired)
 		}
-		checkLicenseExpiry(resp.ExpiresUnix, resp.Type)
+		checkLicenseExpiry(resp.ExpiresUnix, resp.Type, resp.EnterpriseFeatures)
 	}
 	out.Section("LICENSE INFORMATION")
 	tw.Flush()
 }
 
-func checkLicenseExpiry(expiresUnix int64, licenseType string) {
+func checkLicenseExpiry(expiresUnix int64, licenseType string, enterpriseFeatures []string) {
 	ut := time.Unix(expiresUnix, 0)
 	daysLeft := int(time.Until(ut).Hours() / 24)
 
 	dayThreshold := 30
-	if strings.EqualFold(licenseType, "free_trial") {
+	isTrial := strings.EqualFold(licenseType, "free_trial")
+	if isTrial {
 		dayThreshold = 15
 	}
 	if daysLeft < dayThreshold && !ut.Before(time.Now()) {
-		fmt.Fprintf(os.Stderr, "WARNING: your license will expire soon.\n\n")
+		msg := "WARNING: your license will expire soon.\n\n"
+		if isTrial {
+			if len(enterpriseFeatures) > 0 {
+				// We don't print if isTrial and we have enterprise features.
+				// Because in this case we already print the warning when
+				// creating the admin client and printing another warning is
+				// repetitive.
+				return
+			}
+			msg = fmt.Sprintf("Note: your TRIAL license will expire in %v days. To request a license, please visit https://redpanda.com/upgrade. To try Redpanda Enterprise for 30 days, visit https://redpanda.com/try-enterprise. For more information, see https://docs.redpanda.com/current/get-started/licenses/#redpanda-enterprise-edition\n\n", daysLeft)
+		}
+		if ws, err := mTerm.GetWinsize(0); err == nil {
+			// text.Wrap removes the newlines from the text. We add it back.
+			msg = text.Wrap(msg, int(ws.Width)) + "\n\n"
+		}
+		fmt.Fprint(os.Stderr, msg)
 	}
 }
