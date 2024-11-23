@@ -183,6 +183,7 @@ redpanda_cc_library(
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake/coordinator:catalog_factory",
         "//src/v/datalake/coordinator:frontend",
         "//src/v/datalake/translation:partition_translator",
         "//src/v/features",
