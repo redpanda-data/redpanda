@@ -33,3 +33,5 @@ v_cc_library(
     v::model
     v::storage
 )
+
+add_subdirectory(test)
