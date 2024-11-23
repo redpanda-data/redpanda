@@ -99,7 +99,8 @@ class InstallOptions:
     def __init__(self,
                  install_previous_version=False,
                  version=None,
-                 num_to_upgrade=0):
+                 num_to_upgrade=0,
+                 set_fallback_license=False):
         # If true, install the highest version of the prior feature version
         # before HEAD.
         self.install_previous_version = install_previous_version
@@ -112,6 +113,10 @@ class InstallOptions:
         # cluster on an older version, e.g. to simulate a mixed-version
         # environment.
         self.num_to_upgrade = num_to_upgrade
+
+        # Install a fallback enterprise license from the local environment.
+        # RedpandaService will assert if a license is not found.
+        self.set_fallback_license = set_fallback_license
 
 
 class RedpandaInstaller:

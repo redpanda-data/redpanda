@@ -105,6 +105,10 @@ class EndToEndTest(Test):
             extra_node_conf=self._extra_node_conf,
             si_settings=self.si_settings,
             environment=environment)
+
+        if install_opts is not None and install_opts.set_fallback_license:
+            self.redpanda.set_fallback_license()
+
         if new_bootstrap:
             seeds = [
                 self.redpanda.nodes[i]

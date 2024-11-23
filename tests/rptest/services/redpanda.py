@@ -5391,6 +5391,18 @@ class RedpandaService(RedpandaServiceBase):
 
             return
 
+    def set_fallback_license(self):
+        """
+        Set REDPANDA_FALLBACK_ENTERPRISE_LICENSE to a samlple license from the local
+        environment. Useful for situations where the behavior under test requires a
+        redpanda upgrade and front-door license API access may be inconvenient.
+        """
+        self.logger.debug("Installing fallback enterprise license")
+        license = sample_license(assert_exists=True)
+        assert license is not None, "license not found"
+
+        self.set_environment({'REDPANDA_FALLBACK_ENTERPRISE_LICENSE': license})
+
     def install_license(self):
         """Install a sample Enterprise License for testing Enterprise features during upgrades"""
         self.logger.debug("Installing an Enterprise License")
