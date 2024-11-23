@@ -96,8 +96,8 @@ inline constexpr std::string_view
 inline constexpr std::string_view topic_property_mpx_virtual_cluster_id
   = "redpanda.virtual.cluster.id";
 
-inline constexpr std::string_view topic_property_iceberg_enabled
-  = "redpanda.iceberg.enabled";
+inline constexpr std::string_view topic_property_iceberg_mode
+  = "redpanda.iceberg.mode";
 
 inline constexpr std::string_view topic_property_leaders_preference
   = "redpanda.leaders.preference";
@@ -105,8 +105,8 @@ inline constexpr std::string_view topic_property_leaders_preference
 inline constexpr std::string_view topic_property_cloud_topic_enabled
   = "redpanda.cloud_topic.enabled";
 
-inline constexpr std::string_view topic_property_iceberg_translation_interval_ms
-  = "redpanda.iceberg.translation.interval.ms";
+inline constexpr std::string_view topic_property_iceberg_delete
+  = "redpanda.iceberg.delete";
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler

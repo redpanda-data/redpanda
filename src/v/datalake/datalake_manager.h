@@ -71,8 +71,10 @@ private:
     using translator = std::unique_ptr<translation::partition_translator>;
     using translator_map = chunked_hash_map<model::ntp, translator>;
 
+    std::chrono::milliseconds translation_interval_ms() const;
     void on_group_notification(const model::ntp&);
-    void start_translator(ss::lw_shared_ptr<cluster::partition>);
+    void start_translator(
+      ss::lw_shared_ptr<cluster::partition>, model::iceberg_mode);
     ss::future<> stop_translator(const model::ntp&);
 
     model::node_id _self;
@@ -99,7 +101,7 @@ private:
     translator_map _translators;
     using deferred_action = ss::deferred_action<std::function<void()>>;
     std::vector<deferred_action> _deregistrations;
-    config::binding<std::chrono::milliseconds> _translation_ms_conf;
+    config::binding<std::chrono::milliseconds> _iceberg_commit_interval;
 
     // Translation requires buffering data batches in memory for efficient
     // output representation, this controls the maximum bytes buffered in memory

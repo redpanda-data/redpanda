@@ -19,12 +19,44 @@
 #include "datalake/coordinator/frontend.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/record_translator.h"
 #include "raft/group_manager.h"
 #include "schema/registry.h"
 
 #include <memory>
 
 namespace datalake {
+
+namespace {
+
+static std::unique_ptr<type_resolver>
+make_type_resolver(model::iceberg_mode mode, schema::registry& sr) {
+    switch (mode) {
+    case model::iceberg_mode::disabled:
+        vassert(
+          false,
+          "Cannot make record translator when iceberg is disabled, logic bug.");
+    case model::iceberg_mode::key_value:
+        return std::make_unique<binary_type_resolver>();
+    case model::iceberg_mode::value_schema_id_prefix:
+        return std::make_unique<record_schema_resolver>(sr);
+    }
+}
+
+static std::unique_ptr<record_translator>
+make_record_translator(model::iceberg_mode mode) {
+    switch (mode) {
+    case model::iceberg_mode::disabled:
+        vassert(
+          false,
+          "Cannot make record translator when iceberg is disabled, logic bug.");
+    case model::iceberg_mode::key_value:
+        return std::make_unique<key_value_translator>();
+    case model::iceberg_mode::value_schema_id_prefix:
+        return std::make_unique<structured_data_translator>();
+    }
+}
+} // namespace
 
 datalake_manager::datalake_manager(
   model::node_id self,
@@ -65,8 +97,8 @@ datalake_manager::datalake_manager(
       size_t(
         std::floor(memory_limit / _effective_max_translator_buffered_data)),
       "datalake_parallel_translations"))
-  , _translation_ms_conf(config::shard_local_cfg()
-                           .iceberg_translation_interval_ms_default.bind()) {}
+  , _iceberg_commit_interval(
+      config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind()) {}
 datalake_manager::~datalake_manager() = default;
 
 ss::future<> datalake_manager::start() {
@@ -101,7 +133,7 @@ ss::future<> datalake_manager::start() {
             }
         });
 
-    // Handle topic properties changes (iceberg.enabled=true/false)
+    // Handle topic properties changes (iceberg_mode)
     auto topic_properties_registration
       = _topic_table->local().register_ntp_delta_notification(
         [this](cluster::topic_table::ntp_delta_range_t range) {
@@ -131,7 +163,7 @@ ss::future<> datalake_manager::start() {
         _topic_table->local().unregister_ntp_delta_notification(
           topic_properties_registration);
     });
-    _translation_ms_conf.watch([this] {
+    _iceberg_commit_interval.watch([this] {
         ssx::spawn_with_gate(_gate, [this]() {
             for (const auto& [group, _] : _translators) {
                 on_group_notification(group);
@@ -150,6 +182,15 @@ ss::future<> datalake_manager::stop() {
     co_await std::move(f);
 }
 
+std::chrono::milliseconds datalake_manager::translation_interval_ms() const {
+    // This aims to have multiple translations within a single commit interval
+    // window. A minimum interval is in place to disallow frequent translations
+    // and hence tiny parquet files. This is generally optimized for higher
+    // throughputs that accumulate enough data within a commit interval window.
+    static constexpr std::chrono::milliseconds min_translation_interval{5s};
+    return std::max(min_translation_interval, _iceberg_commit_interval() / 3);
+}
+
 void datalake_manager::on_group_notification(const model::ntp& ntp) {
     auto partition = _partition_mgr->local().get(ntp);
     if (!partition || !model::is_user_topic(ntp)) {
@@ -162,7 +203,9 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
     }
     auto it = _translators.find(ntp);
     // todo(iceberg) handle topic / partition disabling
-    if (!partition->is_leader() || !topic_cfg->properties.iceberg_enabled) {
+    auto iceberg_disabled = topic_cfg->properties.iceberg_mode
+                            == model::iceberg_mode::disabled;
+    if (!partition->is_leader() || iceberg_disabled) {
         if (it != _translators.end()) {
             ssx::spawn_with_gate(_gate, [this, partition] {
                 return stop_translator(partition->ntp());
@@ -173,12 +216,10 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
     // By now we know the partition is a leader and iceberg is enabled, so
     // there has to be a translator, spin one up if it doesn't already exist.
     if (it == _translators.end()) {
-        start_translator(partition);
+        start_translator(partition, topic_cfg->properties.iceberg_mode);
     } else {
         // check if translation interval changed.
-        auto target_interval
-          = topic_cfg->properties.iceberg_translation_interval_ms.value_or(
-            _translation_ms_conf());
+        auto target_interval = translation_interval_ms();
         if (it->second->translation_interval() != target_interval) {
             it->second->reset_translation_interval(target_interval);
         }
@@ -186,7 +227,7 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
 }
 
 void datalake_manager::start_translator(
-  ss::lw_shared_ptr<cluster::partition> partition) {
+  ss::lw_shared_ptr<cluster::partition> partition, model::iceberg_mode mode) {
     auto it = _translators.find(partition->ntp());
     vassert(
       it == _translators.end(),
@@ -200,8 +241,9 @@ void datalake_manager::start_translator(
       _features,
       &_cloud_data_io,
       _schema_mgr.get(),
-      _type_resolver.get(),
-      partition->get_ntp_config().iceberg_translation_interval_ms(),
+      make_type_resolver(mode, *_schema_registry),
+      make_record_translator(mode),
+      translation_interval_ms(),
       _sg,
       _effective_max_translator_buffered_data,
       &_parallel_translations);

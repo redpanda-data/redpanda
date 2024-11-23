@@ -374,8 +374,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "initial_retention_local_target_bytes: {}, "
       "initial_retention_local_target_ms: {}, write_caching: {}, flush_ms: {}, "
       "flush_bytes: {}, iceberg_enabled: {}, leaders_preference: {}, "
-      "remote_read: {}, remote_write: {}",
-      "iceberg_translation_interval_ms: {}",
+      "remote_read: {}, remote_write: {}, iceberg_delete: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -402,11 +401,11 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.write_caching,
       i.flush_ms,
       i.flush_bytes,
-      i.iceberg_enabled,
+      i.iceberg_mode,
       i.leaders_preference,
       i.remote_read,
       i.remote_write,
-      i.iceberg_translation_interval_ms);
+      i.iceberg_delete);
     return o;
 }
 

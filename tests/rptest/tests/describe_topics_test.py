@@ -275,12 +275,11 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Maximum number of bytes that are not flushed per partition. If the configured threshold is reached, the log is automatically flushed even if it has not been explicitly requested."
             ),
-            "redpanda.iceberg.enabled":
+            "redpanda.iceberg.mode":
             ConfigProperty(
-                config_type="BOOLEAN",
-                value="false",
-                doc_string=
-                "Iceberg format translation enabled on this topic if true."),
+                config_type="STRING",
+                value="disabled",
+                doc_string="Iceberg enablement mode for the topic."),
             "redpanda.leaders.preference":
             ConfigProperty(
                 config_type="STRING",
@@ -288,20 +287,20 @@ class DescribeTopicsTest(RedpandaTest):
                 doc_string=
                 "Preferred location (e.g. rack) for partition leaders of this topic."
             ),
-            "redpanda.iceberg.translation.interval.ms":
-            ConfigProperty(
-                config_type="LONG",
-                value="60000",
-                doc_string=
-                "Controls how often iceberg translation is attempted on the topic partitions."
-            ),
             "delete.retention.ms":
             ConfigProperty(
                 config_type="LONG",
                 value="-1",
                 doc_string=
                 "The retention time for tombstone records in a compacted topic. Cannot be enabled at the same time as any of `cloud_storage_enabled`, `cloud_storage_enable_remote_read`, or `cloud_storage_enable_remote_write`."
-            )
+            ),
+            "redpanda.iceberg.delete":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="true",
+                doc_string=
+                "If true, delete the corresponding Iceberg table when deleting the topic."
+            ),
         }
 
         tp_spec = TopicSpec()

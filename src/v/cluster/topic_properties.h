@@ -72,11 +72,11 @@ struct topic_properties
       std::optional<model::write_caching_mode> write_caching,
       std::optional<std::chrono::milliseconds> flush_ms,
       std::optional<size_t> flush_bytes,
-      bool iceberg_enabled,
+      model::iceberg_mode iceberg_mode,
       std::optional<config::leaders_preference> leaders_preference,
       bool cloud_topic_enabled,
-      std::optional<std::chrono::milliseconds> iceberg_translation_interval,
-      tristate<std::chrono::milliseconds> delete_retention_ms)
+      tristate<std::chrono::milliseconds> delete_retention_ms,
+      std::optional<bool> iceberg_delete)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -114,11 +114,11 @@ struct topic_properties
       , write_caching(write_caching)
       , flush_ms(flush_ms)
       , flush_bytes(flush_bytes)
-      , iceberg_enabled(iceberg_enabled)
+      , iceberg_mode(iceberg_mode)
       , leaders_preference(std::move(leaders_preference))
       , cloud_topic_enabled(cloud_topic_enabled)
-      , iceberg_translation_interval_ms(iceberg_translation_interval)
-      , delete_retention_ms(delete_retention_ms) {}
+      , delete_retention_ms(delete_retention_ms)
+      , iceberg_delete(iceberg_delete) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -172,7 +172,7 @@ struct topic_properties
     std::optional<model::write_caching_mode> write_caching;
     std::optional<std::chrono::milliseconds> flush_ms;
     std::optional<size_t> flush_bytes;
-    bool iceberg_enabled{storage::ntp_config::default_iceberg_enabled};
+    model::iceberg_mode iceberg_mode{storage::ntp_config::default_iceberg_mode};
 
     // Label to be used when generating paths of remote objects (manifests,
     // segments, etc) of this topic.
@@ -191,9 +191,9 @@ struct topic_properties
 
     bool cloud_topic_enabled{storage::ntp_config::default_cloud_topic_enabled};
 
-    std::optional<std::chrono::milliseconds> iceberg_translation_interval_ms;
-
     tristate<std::chrono::milliseconds> delete_retention_ms{disable_tristate};
+    // Should we delete the corresponding iceberg table when deleting the topic.
+    std::optional<bool> iceberg_delete;
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -237,11 +237,11 @@ struct topic_properties
           flush_bytes,
           remote_label,
           remote_topic_namespace_override,
-          iceberg_enabled,
+          iceberg_mode,
           leaders_preference,
           cloud_topic_enabled,
-          iceberg_translation_interval_ms,
-          delete_retention_ms);
+          delete_retention_ms,
+          iceberg_delete);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
