@@ -699,8 +699,6 @@ struct configuration final : public config_store {
     // datalake configurations
     enterprise<property<bool>> iceberg_enabled;
     bounded_property<std::chrono::milliseconds>
-      iceberg_translation_interval_ms_default;
-    bounded_property<std::chrono::milliseconds>
       iceberg_catalog_commit_interval_ms;
     property<ss::sstring> iceberg_catalog_base_location;
     bounded_property<std::chrono::seconds>
@@ -716,6 +714,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> iceberg_rest_catalog_trust_file;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_crl_file;
     property<std::optional<ss::sstring>> iceberg_rest_catalog_prefix;
+
+    property<bool> iceberg_delete;
 
     configuration();
 

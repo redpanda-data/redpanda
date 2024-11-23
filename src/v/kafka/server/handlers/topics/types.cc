@@ -259,18 +259,18 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.flush_bytes = get_config_value<size_t>(
       config_entries, topic_property_flush_bytes);
 
-    cfg.properties.iceberg_enabled
-      = get_bool_value(config_entries, topic_property_iceberg_enabled)
-          .value_or(storage::ntp_config::default_iceberg_enabled);
+    cfg.properties.iceberg_mode
+      = get_config_value<model::iceberg_mode>(
+          config_entries, topic_property_iceberg_mode)
+          .value_or(storage::ntp_config::default_iceberg_mode);
 
     cfg.properties.leaders_preference = get_leaders_preference(config_entries);
 
-    cfg.properties.iceberg_translation_interval_ms
-      = get_duration_value<std::chrono::milliseconds>(
-        config_entries, topic_property_iceberg_translation_interval_ms, true);
-
     cfg.properties.delete_retention_ms = get_delete_retention_ms(
       config_entries);
+
+    cfg.properties.iceberg_delete = get_bool_value(
+      config_entries, topic_property_iceberg_delete);
 
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};

@@ -3680,15 +3680,6 @@ configuration::configuration()
         .visibility = visibility::user,
       },
       false)
-  , iceberg_translation_interval_ms_default(
-      *this,
-      "iceberg_translation_interval_ms_default",
-      "How often an Iceberg enabled topic is checked for new data to "
-      "translate. You can override this value at topic level using "
-      "redpanda.iceberg.translation.interval.ms.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::chrono::milliseconds(1min),
-      {.min = 10ms})
   , iceberg_catalog_commit_interval_ms(
       *this,
       "iceberg_catalog_commit_interval_ms",
@@ -3790,6 +3781,17 @@ configuration::configuration()
       {.visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , iceberg_delete(
+      *this,
+      "iceberg_delete",
+      "Default value for the redpanda.iceberg.delete topic property that "
+      "determines if the corresponding Iceberg table is deleted upon deleting "
+      "the topic.",
+      meta{
+        .needs_restart = needs_restart::no,
+        .visibility = visibility::user,
+      },
+      true)
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",

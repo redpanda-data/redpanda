@@ -72,7 +72,8 @@ public:
       ss::sharded<features::feature_table>* features,
       std::unique_ptr<datalake::cloud_data_io>* cloud_io,
       schema_manager* schema_mgr,
-      type_resolver* type_resolver,
+      std::unique_ptr<type_resolver> type_resolver,
+      std::unique_ptr<record_translator> record_translator,
       std::chrono::milliseconds translation_interval,
       ss::scheduling_group sg,
       size_t reader_max_bytes,
@@ -104,7 +105,9 @@ private:
 
     using checkpoint_result = ss::bool_class<struct checkpoint_result>;
     ss::future<checkpoint_result> checkpoint_translated_data(
-      retry_chain_node& parent, coordinator::translated_offset_range);
+      retry_chain_node& parent,
+      kafka::offset reader_begin_offset,
+      coordinator::translated_offset_range task_result);
 
     kafka::offset min_offset_for_translation() const;
     // Returns max consumable offset for translation.
@@ -117,7 +120,7 @@ private:
     ss::sharded<features::feature_table>* _features;
     std::unique_ptr<datalake::cloud_data_io>* _cloud_io;
     schema_manager* _schema_mgr;
-    type_resolver* _type_resolver;
+    std::unique_ptr<type_resolver> _type_resolver;
     std::unique_ptr<record_translator> _record_translator;
     std::unique_ptr<kafka::partition_proxy> _partition_proxy;
     using jitter_t

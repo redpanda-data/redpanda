@@ -88,7 +88,8 @@ partition_translator::partition_translator(
   ss::sharded<features::feature_table>* features,
   std::unique_ptr<cloud_data_io>* cloud_io,
   schema_manager* schema_mgr,
-  type_resolver* type_resolver,
+  std::unique_ptr<type_resolver> type_resolver,
+  std::unique_ptr<record_translator> record_translator,
   std::chrono::milliseconds translation_interval,
   ss::scheduling_group sg,
   size_t reader_max_bytes,
@@ -102,10 +103,8 @@ partition_translator::partition_translator(
   , _features(features)
   , _cloud_io(cloud_io)
   , _schema_mgr(schema_mgr)
-  // TODO: type resolver and record translator should be constructed based on
-  // topic configs.
-  , _type_resolver(type_resolver)
-  , _record_translator(std::make_unique<default_translator>())
+  , _type_resolver(std::move(type_resolver))
+  , _record_translator(std::move(record_translator))
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}
@@ -280,7 +279,7 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
     if (
       translation_result
       && co_await checkpoint_translated_data(
-        parent_rcn, std::move(translation_result.value()))) {
+        parent_rcn, read_begin_offset, std::move(translation_result.value()))) {
         co_return translation_success::yes;
     }
     co_return translation_success::no;
@@ -289,9 +288,27 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
 ss::future<partition_translator::checkpoint_result>
 partition_translator::checkpoint_translated_data(
   retry_chain_node& rcn,
+  kafka::offset reader_begin_offset,
   coordinator::translated_offset_range translated_range) {
     if (translated_range.files.empty()) {
         co_return checkpoint_result::yes;
+    }
+    if (reader_begin_offset != translated_range.start_offset) {
+        // This is possible if there is a gap in offsets range, eg from
+        // compaction. Normally that shouldn't be the case, as translation
+        // enforces max_collectible_offset which prevents compaction or other
+        // forms of retention from kicking in before translation actually
+        // happens. However there could be a sequence of enabling / disabling
+        // iceberg configuration on the topic that can temporarily unblock
+        // compaction thus creating gaps. Here we adjust the offset range to
+        // so the coordinator sees a contiguous offset range.
+        vlog(
+          _logger.info,
+          "detected an offset range gap in [{}, {}), adjusting the begin "
+          "offset to avoid gaps in coordinator tracked offsets.",
+          reader_begin_offset,
+          translated_range.start_offset);
+        translated_range.start_offset = reader_begin_offset;
     }
     auto last_offset = translated_range.last_offset;
     coordinator::add_translated_data_files_request request;

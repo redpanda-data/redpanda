@@ -329,13 +329,12 @@ create_topic_properties_update(
                   flush_bytes_validator{});
                 continue;
             }
-            if (cfg.name == topic_property_iceberg_enabled) {
-                parse_and_set_bool(
+            if (cfg.name == topic_property_iceberg_mode) {
+                parse_and_set_property(
                   tp_ns,
-                  update.properties.iceberg_enabled,
+                  update.properties.iceberg_mode,
                   cfg.value,
                   kafka::config_resource_operation::set,
-                  storage::ntp_config::default_iceberg_enabled,
                   iceberg_config_validator{});
                 continue;
             }
@@ -364,10 +363,9 @@ create_topic_properties_update(
                   delete_retention_ms_validator{});
                 continue;
             }
-
-            if (cfg.name == topic_property_iceberg_translation_interval_ms) {
-                parse_and_set_optional_duration(
-                  update.properties.iceberg_translation_interval_ms,
+            if (cfg.name == topic_property_iceberg_delete) {
+                parse_and_set_optional_bool_alpha(
+                  update.properties.iceberg_delete,
                   cfg.value,
                   kafka::config_resource_operation::set);
                 continue;

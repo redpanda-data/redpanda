@@ -73,7 +73,7 @@ inline cluster::topic_properties random_topic_properties() {
       [] { return tests::random_duration_ms(); });
     properties.flush_bytes = tests::random_optional(
       [] { return random_generators::get_int<size_t>(); });
-    properties.iceberg_enabled = false;
+    properties.iceberg_mode = model::iceberg_mode::disabled;
 
     return properties;
 }

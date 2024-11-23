@@ -103,7 +103,7 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy> ||
         std::is_same_v<T, model::vcluster_id> ||
         std::is_same_v<T, model::write_caching_mode> ||
-        std::is_same_v<T, config::leaders_preference>;
+        std::is_same_v<T, config::leaders_preference> || std::is_same_v<T, model::iceberg_mode>;
 
     constexpr auto is_long_type = is_long<T> ||
         // Long type since seconds is atleast a 35-bit signed integral
@@ -730,20 +730,6 @@ config_response_container_t make_topic_configs(
     add_topic_config_if_requested(
       config_keys,
       result,
-      topic_property_iceberg_translation_interval_ms,
-      config::shard_local_cfg().iceberg_translation_interval_ms_default(),
-      topic_property_iceberg_translation_interval_ms,
-      topic_properties.iceberg_translation_interval_ms,
-      include_synonyms,
-      maybe_make_documentation(
-        include_documentation,
-        "Controls how often iceberg translation is attempted on the topic "
-        "partitions."),
-      &describe_as_string<std::chrono::milliseconds>);
-
-    add_topic_config_if_requested(
-      config_keys,
-      result,
       topic_property_segment_ms,
       metadata_cache.get_default_segment_ms(),
       topic_property_segment_ms,
@@ -772,21 +758,22 @@ config_response_container_t make_topic_configs(
           });
     }
 
-    if (config_property_requested(
-          config_keys, topic_property_iceberg_enabled)) {
-        add_topic_config<bool>(
+    if (config_property_requested(config_keys, topic_property_iceberg_mode)) {
+        add_topic_config<model::iceberg_mode>(
           result,
-          topic_property_iceberg_enabled,
-          storage::ntp_config::default_iceberg_enabled,
-          topic_property_iceberg_enabled,
+          topic_property_iceberg_mode,
+          storage::ntp_config::default_iceberg_mode,
+          topic_property_iceberg_mode,
           override_if_not_default(
-            std::make_optional<bool>(topic_properties.iceberg_enabled),
-            storage::ntp_config::default_iceberg_enabled),
+            std::make_optional<model::iceberg_mode>(
+              topic_properties.iceberg_mode),
+            storage::ntp_config::default_iceberg_mode),
           true,
           maybe_make_documentation(
-            include_documentation,
-            "Iceberg format translation enabled on this topic if true."),
-          [](const bool& b) { return b ? "true" : "false"; });
+            include_documentation, "Iceberg enablement mode for the topic."),
+          [](const model::iceberg_mode& mode) {
+              return ssx::sformat("{}", mode);
+          });
     }
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
@@ -990,6 +977,20 @@ config_response_container_t make_topic_configs(
         include_documentation,
         "Preferred location (e.g. rack) for partition leaders of this topic."),
       &describe_as_string<config::leaders_preference>);
+
+    add_topic_config_if_requested(
+      config_keys,
+      result,
+      config::shard_local_cfg().iceberg_delete.name(),
+      config::shard_local_cfg().iceberg_delete(),
+      topic_property_iceberg_delete,
+      topic_properties.iceberg_delete,
+      include_synonyms,
+      maybe_make_documentation(
+        include_documentation,
+        "If true, delete the corresponding Iceberg table when deleting the "
+        "topic."),
+      &describe_as_string<bool>);
 
     return result;
 }
