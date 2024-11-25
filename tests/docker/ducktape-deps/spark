@@ -23,6 +23,7 @@ HADOOP_DEPS=(
   https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client/3.3.6/hadoop-client-3.3.6.jar
   https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.20.18/bundle-2.20.18.jar
   https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar
+  https://github.com/GoogleCloudDataproc/hadoop-connectors/releases/download/v3.0.4/gcs-connector-3.0.4-shaded.jar
 )
 
 for jar in "${HADOOP_DEPS[@]}"; do

@@ -45,6 +45,9 @@ class SparkService(Service, QueryEngineBase):
                         cloud_storage.AWSInstanceMetadataCredentials):
             pass
         elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            pass
+        elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
             pass
         else:
@@ -81,6 +84,12 @@ class SparkService(Service, QueryEngineBase):
             conf_args.update({
                 "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
                 "org.apache.iceberg.aws.s3.S3FileIO",
+            })
+        elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            conf_args.update({
+                "spark.sql.catalog.redpanda-iceberg-catalog.io-impl":
+                "org.apache.iceberg.gcp.gcs.GCSFileIO",
             })
         elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
