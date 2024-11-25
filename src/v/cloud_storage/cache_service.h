@@ -35,6 +35,8 @@
 #include <set>
 #include <string_view>
 
+struct cloud_storage_fixture;
+
 namespace cloud_storage {
 
 // These timeout/backoff settings are for S3 requests
@@ -360,6 +362,7 @@ private:
     ss::condition_variable _block_puts_cond;
 
     friend class cache_test_fixture;
+    friend struct ::cloud_storage_fixture;
 
     // List of probable deletion candidates from the last trim.
     std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
