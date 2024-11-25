@@ -38,6 +38,7 @@ ss::future<> controller_stm::on_batch_applied() {
         _snapshot_debounce_timer.arm(_snapshot_max_age());
     };
 }
+void controller_stm::shutdown_apply_loop() { _as.request_abort(); }
 
 ss::future<> controller_stm::shutdown() {
     _snapshot_debounce_timer.cancel();
