@@ -1662,6 +1662,12 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
             next_offset = model::offset(0);
         }
     }
+    vlog(
+      stlog.trace,
+      "creating log appender for: {}, next offset: {}, log offsets: {}",
+      config().ntp(),
+      next_offset,
+      ofs);
     return log_appender(
       std::make_unique<disk_log_appender>(*this, cfg, now, next_offset));
 }
@@ -1770,7 +1776,7 @@ ss::future<> disk_log_impl::maybe_roll_unlocked(
         co_return co_await new_segment(next_offset, t, iopc);
     }
     auto ptr = _segs.back();
-    if (!ptr->has_appender()) {
+    if (!ptr->has_appender() || ptr->is_tombstone()) {
         co_return co_await new_segment(next_offset, t, iopc);
     }
     bool size_should_roll = false;
@@ -2528,12 +2534,6 @@ ss::future<> disk_log_impl::remove_segment_permanently(
     _probe->delete_segment(*s);
     // background close
     s->tombstone();
-    if (s->has_outstanding_locks()) {
-        vlog(
-          stlog.info,
-          "Segment has outstanding locks. Might take a while to close:{}",
-          s->reader().filename());
-    }
 
     return _readers_cache->evict_segment_readers(s)
       .then([s](readers_cache::range_lock_holder cache_lock) {
@@ -2574,9 +2574,29 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
       },
       [this] {
           auto ptr = _segs.front();
-          _segs.pop_front();
-          _probe->add_bytes_prefix_truncated(ptr->file_size());
-          return remove_segment_permanently(ptr, "remove_prefix_full_segments");
+          // evict readers before trying to grab a write lock to prevent
+          // contention
+          return _readers_cache->evict_segment_readers(ptr).then(
+            [this, ptr](readers_cache::range_lock_holder cache_lock) {
+                /**
+                 * If segment has outstanding locks wait for it to be unlocked
+                 * before prefixing truncating it, this way the prefix
+                 * truncation will not overlap with appends.
+                 */
+                return ptr->write_lock().then(
+                  [this, ptr, cache_lock = std::move(cache_lock)](
+                    ss::rwlock::holder lock_holder) {
+                      _segs.pop_front();
+                      _probe->add_bytes_prefix_truncated(ptr->file_size());
+                      // first call the remove segments, then release the lock
+                      // before waiting for future to finish
+                      auto f = remove_segment_permanently(
+                        ptr, "remove_prefix_full_segments");
+                      lock_holder.return_all();
+
+                      return f;
+                  });
+            });
       });
 }
 
