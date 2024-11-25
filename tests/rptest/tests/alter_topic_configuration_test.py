@@ -20,6 +20,7 @@ from rptest.services.cluster import cluster
 from ducktape.mark import parametrize, matrix
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
+from rptest.utils.mode_checks import skip_fips_mode
 
 from rptest.services.redpanda_installer import RedpandaVersionTriple
 from rptest.clients.types import TopicSpec
@@ -367,6 +368,8 @@ class AlterConfigMixedNodeTest(EndToEndTest):
     def __init__(self, ctx):
         super(AlterConfigMixedNodeTest, self).__init__(test_context=ctx)
 
+    # fips_mode requires the bucket to configured in virtual_host mode which is not available prior to v24.2
+    @skip_fips_mode
     @cluster(num_nodes=3)
     @matrix(incremental_update=[True, False])
     def test_alter_config_shadow_indexing_mixed_node(self, incremental_update):
