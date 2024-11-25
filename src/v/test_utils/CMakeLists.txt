@@ -22,3 +22,12 @@ v_cc_library(
 
 add_subdirectory(go/kreq-gen)
 add_subdirectory(tests)
+
+v_cc_library(
+  NAME profile_utils
+  SRCS
+    profile_utils.cc
+  DEPS
+    Seastar::seastar
+    v::resource_mgmt
+)
