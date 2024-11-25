@@ -28,21 +28,19 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
     return bytes;
 }
 
-::avro::GenericDatum generate_datum(
-  const avro::NodePtr& node,
-  generator_state& state,
-  int max_nesting_level,
-  std::optional<size_t> elements_in_collection) {
-    state.level++;
+ss::sstring random_string(const avro_generator_config& config) {
+    auto [min, max] = config.string_length_range;
+    return random_generators::gen_alphanum_string(
+      random_generators::get_int(min, max));
+}
 
-    auto decrement_level = ss::defer([&state] { state.level--; });
-
-    auto get_elements_count =
-      [&state, elements_in_collection, max_nesting_level]() -> size_t {
-        if (state.level >= max_nesting_level) {
+::avro::GenericDatum
+avro_generator::generate_datum_impl(int level, const avro::NodePtr& node) {
+    auto get_elements_count = [this, level]() -> size_t {
+        if (level >= _config.max_nesting_level) {
             return 0;
         }
-        return elements_in_collection.value_or(
+        return _config.elements_in_collection.value_or(
           random_generators::get_int<size_t>(10));
     };
     ::avro::GenericDatum datum{node};
@@ -52,8 +50,7 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
             datum.value<std::string>() = fmt::to_string(uuid_t::create());
             return datum;
         }
-        auto v = random_generators::gen_alphanum_string(
-          random_generators::get_int(32));
+        auto v = random_string(_config);
         datum.value<std::string>() = v;
         return datum;
     }
@@ -113,11 +110,7 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
     case avro::AVRO_RECORD: {
         ::avro::GenericRecord record{node};
         for (size_t i = 0; i < record.fieldCount(); ++i) {
-            record.fieldAt(i) = generate_datum(
-              node->leafAt(i),
-              state,
-              max_nesting_level,
-              elements_in_collection);
+            record.fieldAt(i) = generate_datum_impl(level + 1, node->leafAt(i));
         }
         return {node, record};
     }
@@ -126,11 +119,8 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
 
         auto sz = get_elements_count();
         for (size_t i = 0; i < sz; ++i) {
-            array.value().push_back(generate_datum(
-              array.schema()->leafAt(0),
-              state,
-              max_nesting_level,
-              elements_in_collection));
+            array.value().push_back(
+              generate_datum_impl(level + 1, array.schema()->leafAt(0)));
         }
         return {node, array};
     }
@@ -142,26 +132,20 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
               random_generators::get_int(16));
 
             map.value().emplace_back(
-              key,
-              generate_datum(
-                map.schema()->leafAt(1),
-                state,
-                max_nesting_level,
-                elements_in_collection));
+              key, generate_datum_impl(level + 1, map.schema()->leafAt(1)));
         }
         return {node, map};
     }
     case avro::AVRO_SYMBOLIC: {
         auto resolved = ::avro::resolveSymbol(node);
-        return generate_datum(
-          resolved, state, max_nesting_level, elements_in_collection);
+        return generate_datum_impl(level + 1, resolved);
     }
     case avro::AVRO_UNION: {
         ::avro::GenericUnion u{node};
         int branch = 0;
         // some of the unions are recursive, prevent infinite recursion by
         // choosing a plain type instead of the record
-        if (state.level >= max_nesting_level) {
+        if (level >= _config.max_nesting_level) {
             for (size_t i = 0; i < node->leaves(); i++) {
                 if (node->leafAt(i)->type() != avro::AVRO_RECORD) {
                     branch = i;
@@ -173,11 +157,7 @@ std::vector<uint8_t> generate_decimal(size_t max_size = 16) {
         }
         u.selectBranch(branch);
 
-        u.datum() = generate_datum(
-          u.schema()->leafAt(branch),
-          state,
-          max_nesting_level,
-          elements_in_collection);
+        u.datum() = generate_datum_impl(level + 1, u.schema()->leafAt(branch));
         return {node, u};
     }
     case avro::AVRO_FIXED: {

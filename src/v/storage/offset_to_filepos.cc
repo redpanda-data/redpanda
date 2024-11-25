@@ -16,35 +16,9 @@
 #include "storage/parser.h"
 #include "storage/segment.h"
 #include "storage/segment_utils.h"
+#include "utils/null_output_stream.h"
 
 #include <seastar/core/iostream.hh>
-
-namespace {
-// Data sink for noop output_stream instance
-// needed to implement scanning
-struct null_data_sink final : ss::data_sink_impl {
-    ss::future<> put(ss::net::packet data) final { return put(data.release()); }
-    ss::future<> put(std::vector<ss::temporary_buffer<char>> all) final {
-        return ss::do_with(
-          std::move(all), [this](std::vector<ss::temporary_buffer<char>>& all) {
-              return ss::do_for_each(
-                all, [this](ss::temporary_buffer<char>& buf) {
-                    return put(std::move(buf));
-                });
-          });
-    }
-    ss::future<> put(ss::temporary_buffer<char>) final { return ss::now(); }
-    ss::future<> flush() final { return ss::now(); }
-    ss::future<> close() final { return ss::now(); }
-};
-
-ss::output_stream<char> make_null_output_stream() {
-    auto ds = ss::data_sink(std::make_unique<null_data_sink>());
-    ss::output_stream<char> ostr(std::move(ds), 4_KiB);
-    return ostr;
-}
-
-} // namespace
 
 namespace storage {
 
@@ -120,7 +94,7 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
       std::move(handle),
       [&begin_inclusive, &sto, &offset_found, &ts, &offset_inside_batch](
         segment_reader_handle& reader_handle) {
-          auto ostr = make_null_output_stream();
+          auto ostr = utils::make_null_output_stream();
           return transform_stream(
             reader_handle.take_stream(),
             std::move(ostr),
@@ -228,7 +202,7 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
        &offset_found,
        &ts,
        &offset_inside_batch](segment_reader_handle& handle) {
-          auto ostr = make_null_output_stream();
+          auto ostr = utils::make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
             std::move(ostr),

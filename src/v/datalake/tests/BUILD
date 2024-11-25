@@ -100,7 +100,6 @@ redpanda_test_cc_library(
     ],
     implementation_deps = [
         "//src/v/schema:registry",
-        "//src/v/serde/avro/tests:data_generator",
         "@avro",
     ],
     include_prefix = "datalake/tests",
@@ -111,6 +110,8 @@ redpanda_test_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/pandaproxy",
+        "//src/v/serde/avro/tests:data_generator",
+        "//src/v/serde/protobuf/tests:data_generator",
         "//src/v/storage:record_batch_builder",
         "//src/v/utils:named_type",
         "@seastar",
@@ -124,9 +125,11 @@ redpanda_test_cc_library(
     ],
     include_prefix = "datalake/tests",
     deps = [
+        "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake:writer",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/utils:null_output_stream",
         "@seastar",
     ],
 )
