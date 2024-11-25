@@ -49,6 +49,11 @@
       <artifactId>iceberg-azure-bundle</artifactId>
       <version>${iceberg.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-gcp-bundle</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
   </dependencies>
   <build>
     <plugins>
