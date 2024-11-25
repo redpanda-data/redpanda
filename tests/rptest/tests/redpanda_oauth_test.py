@@ -612,10 +612,6 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
             f'{self.LICENSE_CHECK_INTERVAL_SEC}',
         })
 
-    def _has_license_nag(self):
-        return self.redpanda.search_log_any(
-            "license is required to use enterprise features")
-
     def _license_nag_is_set(self):
         return self.redpanda.search_log_all(
             f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
@@ -634,7 +630,7 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
         # NOTE: This assertion will FAIL if running in FIPS mode because
         # being in FIPS mode will trigger the license nag
-        assert not self._has_license_nag()
+        assert not self.redpanda.has_license_nag()
 
         self.logger.debug("Setting cluster config")
         self.redpanda.set_cluster_config(authn_config)
@@ -649,6 +645,6 @@ class OIDCLicenseTest(RedpandaOIDCTestBase):
                    err_msg="Failed to set license nag internal")
 
         self.logger.debug("Waiting for license nag")
-        wait_until(self._has_license_nag,
+        wait_until(self.redpanda.has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")

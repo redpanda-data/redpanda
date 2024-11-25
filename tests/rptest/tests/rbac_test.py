@@ -633,10 +633,6 @@ class RBACLicenseTest(RBACTestBase):
             f'{self.LICENSE_CHECK_INTERVAL_SEC}'
         })
 
-    def _has_license_nag(self):
-        return self.redpanda.search_log_any(
-            "license is required to use enterprise features")
-
     def _license_nag_is_set(self):
         return self.redpanda.search_log_all(
             f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
@@ -653,7 +649,7 @@ class RBACLicenseTest(RBACTestBase):
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
         # NOTE: This assertion will FAIL if running in FIPS mode because
         # being in FIPS mode will trigger the license nag
-        assert not self._has_license_nag()
+        assert not self.redpanda.has_license_nag()
 
         self.logger.debug("Adding a role")
         self.superuser_admin.create_role(role=self.role_name0)
@@ -667,7 +663,7 @@ class RBACLicenseTest(RBACTestBase):
                    err_msg="Failed to set license nag internal")
 
         self.logger.debug("Waiting for license nag")
-        wait_until(self._has_license_nag,
+        wait_until(self.redpanda.has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")
 
@@ -685,7 +681,7 @@ class RBACLicenseTest(RBACTestBase):
         self.logger.debug("Under trial license, we can bind an ACL to a Role")
         check_rpk_output(
             rpk.allow_principal("RedpandaRole:foo", ['all'], 'topic', 'bar'),
-            "UNKNOWN_SERVER_ERROR",
+            "INVALID_CONFIG",
             False,
         )
         check_rpk_output(rpk.acl_list(), "RedpandaRole:foo", True)
@@ -699,7 +695,7 @@ class RBACLicenseTest(RBACTestBase):
 
         check_rpk_output(
             rpk.allow_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
-            "UNKNOWN_SERVER_ERROR",
+            "INVALID_CONFIG",
             True,
         )
         check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", False)
@@ -709,7 +705,7 @@ class RBACLicenseTest(RBACTestBase):
 
         check_rpk_output(
             rpk.delete_principal("RedpandaRole:foo", ['all'], 'topic', 'bar'),
-            "UNKNOWN_SERVER_ERROR",
+            "INVALID_CONFIG",
             False,
         )
 
@@ -722,14 +718,14 @@ class RBACLicenseTest(RBACTestBase):
 
         check_rpk_output(
             rpk.allow_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
-            "UNKNOWN_SERVER_ERROR",
+            "INVALID_CONFIG",
             False,
         )
         check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", True)
 
         check_rpk_output(
             rpk.delete_principal("RedpandaRole:baz", ['all'], 'topic', 'qux'),
-            "UNKNOWN_SERVER_ERROR",
+            "INVALID_CONFIG",
             False,
         )
         check_rpk_output(rpk.acl_list(), "RedpandaRole:baz", False)

@@ -9,6 +9,7 @@
 
 #include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
+#include "features/enterprise_feature_messages.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -532,10 +533,11 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
 
         BOOST_CHECK_EQUAL(
           resp.data.topics[0].error_code, kafka::error_code::invalid_config);
-        auto expected_message = (name == kafka::topic_property_recovery
-                                 || name == kafka::topic_property_read_replica)
-                                  ? "Tiered storage is not enabled"
-                                  : "An enterprise license is required";
+        auto expected_message
+          = (name == kafka::topic_property_recovery
+             || name == kafka::topic_property_read_replica)
+              ? "Tiered storage is not enabled"
+              : features::enterprise_error_message::required;
         BOOST_CHECK(resp.data.topics[0].error_message.value_or("").contains(
           expected_message));
     }
@@ -561,7 +563,7 @@ FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
         BOOST_CHECK_EQUAL(
           resp.data.topics[0].error_code, kafka::error_code::invalid_config);
         BOOST_CHECK(resp.data.topics[0].error_message.value_or("").contains(
-          "An enterprise license is required"));
+          features::enterprise_error_message::required));
         update_cluster_config(config, "false");
     }
 }

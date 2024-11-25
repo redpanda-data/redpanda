@@ -1746,11 +1746,10 @@ void config_multi_property_validation(
 }
 } // namespace
 
-void admin_server::check_license() const {
+void admin_server::check_license(const ss::sstring& msg) const {
     if (_controller->get_feature_table().local().should_sanction()) {
         throw ss::httpd::base_exception(
-          "Enterprise License Required",
-          ss::http::reply::status_type::forbidden);
+          msg, ss::http::reply::status_type::forbidden);
     }
 }
 
