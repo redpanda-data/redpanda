@@ -83,7 +83,7 @@ inline model::record_batch make_delete_subject_permanently_batch(
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer
@@ -114,7 +114,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
 
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic1},
-      pps::canonical_schema_value{{subject0, string_def0}, version0, id0});
+      pps::canonical_schema_value{
+        {subject0, string_def0.share()}, version0, id0});
     BOOST_REQUIRE_NO_THROW(c(good_schema_1.copy()).get());
 
     auto s_res = s.get_subject_schema(
@@ -124,7 +125,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
 
     auto good_schema_ref_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version1, magic1},
-      pps::canonical_schema_value{{subject0, string_def0}, version1, id1});
+      pps::canonical_schema_value{
+        {subject0, string_def0.share()}, version1, id1});
     BOOST_REQUIRE_NO_THROW(c(good_schema_ref_1.copy()).get());
 
     auto s_ref_res = s.get_subject_schema(
@@ -141,7 +143,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
 
     auto bad_schema_magic = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic2},
-      pps::canonical_schema_value{{subject0, string_def0}, version0, id0});
+      pps::canonical_schema_value{
+        {subject0, string_def0.share()}, version0, id0});
     BOOST_REQUIRE_THROW(c(bad_schema_magic.copy()).get(), pps::exception);
 
     BOOST_REQUIRE(
@@ -202,7 +205,7 @@ model::record_batch as_record_batch(Key key) {
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_after_compaction) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer
@@ -234,7 +237,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store_after_compaction) {
     // Insert the schema at seq 0
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic1},
-      pps::canonical_schema_value{{subject0, string_def0}, version0, id0});
+      pps::canonical_schema_value{
+        {subject0, string_def0.share()}, version0, id0});
     BOOST_REQUIRE_NO_THROW(c(good_schema_1.copy()).get());
     // Roll the segment
     // Soft delete the version (at seq 1)

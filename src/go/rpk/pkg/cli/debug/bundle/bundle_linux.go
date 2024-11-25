@@ -151,6 +151,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveSysctl(ctx, ps),
 		saveSyslog(ps),
 		saveTopOutput(ctx, ps),
+		saveUname(ctx, ps),
 		saveVmstat(ctx, ps),
 	}
 
@@ -646,7 +647,6 @@ func saveNTPDrift(ps *stepParams) step {
 				zap.L().Sugar().Debugf("Retrying (%d retries left)", retries-n)
 			}),
 		)
-
 		if err != nil {
 			return fmt.Errorf("error querying '%s': %w", host, err)
 		}
@@ -694,6 +694,13 @@ func saveSyslog(ps *stepParams) step {
 func saveDNSData(ctx context.Context, ps *stepParams) step {
 	return func() error {
 		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "dig.txt"), "dig")
+	}
+}
+
+// Saves the output of `uname -a`.
+func saveUname(ctx context.Context, ps *stepParams) step {
+	return func() error {
+		return writeCommandOutputToZip(ctx, ps, filepath.Join(linuxUtilsRoot, "uname.txt"), "uname", "-a")
 	}
 }
 

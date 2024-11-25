@@ -31,7 +31,7 @@ Additionally show the version of cluster configuration that each node
 has applied: under normal circumstances these should all be equal,
 a lower number shows that a node is out of sync, perhaps because it
 is offline.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)

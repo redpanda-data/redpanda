@@ -1310,7 +1310,7 @@ class EndToEndThrottlingTest(RedpandaTest):
     def __init__(self, test_context):
         self.si_settings = SISettings(
             test_context,
-            log_segment_size=1024,
+            log_segment_size=1024 * 1024,
             fast_uploads=True,
             # Set small throughput limit to trigger throttling
             cloud_storage_max_throughput_per_shard=8 * 1024 * 1024)
@@ -1386,17 +1386,6 @@ class EndToEndThrottlingTest(RedpandaTest):
                                             timeout_sec=30)
 
         self.logger.info("Start consumer")
-        self.consume()
-
-        self.logger.info("Stop nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.stop_node(node, timeout=120)
-
-        self.logger.info("Start nodes")
-        for node in self.redpanda.nodes:
-            self.redpanda.start_node(node, timeout=120)
-
-        self.logger.info("Restart consumer")
         self.consume()
 
         times_throttled = self.get_throttling_metric()

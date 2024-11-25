@@ -154,13 +154,16 @@ def cluster(log_allow_list=None,
 
                 self.redpanda.validate_controller_log()
 
-                if self.redpanda.si_settings is not None:
+                if self.redpanda.si_settings is not None and not self.redpanda.si_settings.skip_end_of_test_scrubbing:
                     try:
                         self.redpanda.maybe_do_internal_scrub()
                         self.redpanda.stop_and_scrub_object_storage()
                     except:
                         self.redpanda.cloud_storage_diagnostics()
                         raise
+                else:
+                    # stop here explicitly to fail if stop times out, otherwise ducktape won't catch it
+                    self.redpanda.stop()
 
                 # Finally, if the test passed and all post-test checks
                 # also passed, we may trim the logs to INFO level to

@@ -17,6 +17,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/types.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -49,7 +50,7 @@ public:
       duration_type session_timeout,
       duration_type rebalance_timeout,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : group_member(
         member_state{
           .id = std::move(member_id),
@@ -73,7 +74,7 @@ public:
       kafka::member_state state,
       kafka::group_id group_id,
       kafka::protocol_type protocol_type,
-      std::vector<member_protocol> protocols)
+      chunked_vector<member_protocol> protocols)
       : _state(std::move(state))
       , _group_id(std::move(group_id))
       , _is_new(false)
@@ -87,6 +88,22 @@ public:
 
     void replace_id(member_id new_id) { _state.id = std::move(new_id); }
 
+    /// Get the member's client_id.
+    const kafka::client_id& client_id() const { return _state.client_id; }
+
+    /// Replace the member's client_id.
+    void replace_client_id(kafka::client_id new_client_id) {
+        _state.client_id = std::move(new_client_id);
+    }
+
+    /// Get the member's client_host.
+    const kafka::client_host& client_host() const { return _state.client_host; }
+
+    /// Replace the member's client_host.
+    void replace_client_host(kafka::client_host new_client_host) {
+        _state.client_host = std::move(new_client_host);
+    }
+
     /// Get the id of the member's group.
     const kafka::group_id& group_id() const { return _group_id; }
 
@@ -98,8 +115,20 @@ public:
     /// Get the member's session timeout.
     duration_type session_timeout() const { return _state.session_timeout; }
 
+    /// Replace the member's session timeout.
+    void
+    replace_session_timeout(std::chrono::milliseconds new_session_timeout) {
+        _state.session_timeout = new_session_timeout;
+    }
+
     /// Get the member's rebalance timeout.
     duration_type rebalance_timeout() const { return _state.rebalance_timeout; }
+
+    /// Replace the member's rebalance timeout.
+    void
+    replace_rebalance_timeout(std::chrono::milliseconds new_rebalance_timeout) {
+        _state.rebalance_timeout = new_rebalance_timeout;
+    }
 
     /// Get the member's protocol type.
     const kafka::protocol_type& protocol_type() const { return _protocol_type; }
@@ -115,10 +144,12 @@ public:
     /// Clear the member's assignment.
     void clear_assignment() { _state.assignment.clear(); }
 
-    const std::vector<member_protocol>& protocols() const { return _protocols; }
+    const chunked_vector<member_protocol>& protocols() const {
+        return _protocols;
+    }
 
     /// Update the set of protocols supported by the member.
-    void set_protocols(std::vector<member_protocol> protocols) {
+    void set_protocols(chunked_vector<member_protocol> protocols) {
         _protocols = std::move(protocols);
     }
 
@@ -215,7 +246,7 @@ private:
     clock_type::time_point _latest_heartbeat;
     ss::timer<clock_type> _expire_timer;
     kafka::protocol_type _protocol_type;
-    std::vector<member_protocol> _protocols;
+    chunked_vector<member_protocol> _protocols;
 
     // external shutdown synchronization
     std::unique_ptr<sync_promise> _sync_promise;

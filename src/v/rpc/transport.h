@@ -248,7 +248,7 @@ inline errc map_server_error(status status) {
     case status::version_not_supported:
         return errc::version_not_supported;
     case status::service_unavailable:
-        return errc::exponential_backoff;
+        return errc::service_unavailable;
     default:
         return errc::unknown;
     };

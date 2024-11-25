@@ -104,6 +104,7 @@ class archival_metadata_stm final : public raft::persisted_stm<> {
     friend class details::archival_metadata_stm_accessor;
 
 public:
+    static constexpr const char* name = "archival_metadata_stm";
     friend class command_batch_builder;
 
     explicit archival_metadata_stm(
@@ -247,7 +248,6 @@ public:
 
     model::offset max_collectible_offset() override;
 
-    std::string_view get_name() const final { return "archival_metadata_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
 private:

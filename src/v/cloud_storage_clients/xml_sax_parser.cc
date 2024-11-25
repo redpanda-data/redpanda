@@ -190,7 +190,9 @@ bool abs_parse_impl::is_in_blob_prefixes() const {
 }
 
 void abs_parse_impl::handle_start_element(std::string_view element_name) {
-    if (element_name == abs_tags::blob && _tags.size() == 2) {
+    if (
+      (element_name == abs_tags::blob || element_name == abs_tags::blob_prefix)
+      && _tags.size() == 2) {
         // Reinitialize the item in preparation for next values
         _current_item.emplace();
     } else if (element_name == abs_tags::name) {

@@ -92,12 +92,6 @@ private:
 
     /// Whether the connection belongs to an exempt tput control group
     bool _exempt{false};
-
-    // Operating
-
-    /// What time the client on this conection should throttle (be throttled)
-    /// until
-    ss::lowres_clock::time_point _throttled_until;
 };
 
 /// Isolates \ref quota_manager functionality related to
@@ -125,10 +119,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    /// @p enforce delay to enforce in this call
     /// @p request delay to request from the client via throttle_ms
     struct delays_t {
-        clock::duration enforce{0};
         clock::duration request{0};
     };
 
@@ -144,24 +136,24 @@ public:
       std::optional<std::string_view> client_id);
 
     /// Determine throttling required by shard level TP quotas.
-    delays_t get_shard_delays(snc_quota_context&, clock::time_point now) const;
+    delays_t get_shard_delays(const snc_quota_context&) const;
 
     /// Record the request size when it has arrived from the transport.
     /// This should be done before calling \ref get_shard_delays because the
     /// recorded request size is used to calculate throttling parameters.
     void record_request_receive(
-      snc_quota_context&,
+      const snc_quota_context&,
       size_t request_size,
       clock::time_point now = clock::now()) noexcept;
 
     /// Record the request size when the request data is about to be consumed.
     /// This data is used to represent throttled throughput.
-    void
-    record_request_intake(snc_quota_context&, size_t request_size) noexcept;
+    void record_request_intake(
+      const snc_quota_context&, size_t request_size) noexcept;
 
     /// Record the response size for all purposes
     void record_response(
-      snc_quota_context&,
+      const snc_quota_context&,
       size_t request_size,
       clock::time_point now = clock::now()) noexcept;
 

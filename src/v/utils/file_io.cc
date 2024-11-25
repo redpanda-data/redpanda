@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -57,17 +58,11 @@ ss::future<> write_fully(const std::filesystem::path& p, iobuf buf) {
                  | ss::open_flags::truncate;
     /// Closes file on failure, otherwise file is expected to be closed in the
     /// success case where the ss::output_stream calls close()
-    return ss::with_file_close_on_failure(
-      ss::open_file_dma(p.string(), flags),
-      [buf = std::move(buf)](ss::file f) mutable {
-          return ss::make_file_output_stream(std::move(f), buf_size)
-            .then([buf = std::move(buf)](ss::output_stream<char> out) mutable {
-                return ss::do_with(
-                  std::move(out),
-                  [buf = std::move(buf)](ss::output_stream<char>& out) mutable {
-                      return write_iobuf_to_output_stream(std::move(buf), out)
-                        .then([&out]() mutable { return out.close(); });
-                  });
-            });
+    auto out = co_await ss::with_file_close_on_failure(
+      ss::open_file_dma(p.string(), flags), [](ss::file f) {
+          return ss::make_file_output_stream(std::move(f), buf_size);
       });
+    co_await write_iobuf_to_output_stream(std::move(buf), out).finally([&out] {
+        return out.close();
+    });
 }

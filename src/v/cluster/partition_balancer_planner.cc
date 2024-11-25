@@ -341,9 +341,11 @@ void partition_balancer_planner::init_per_node_state(
     }
 
     for (const auto& node_report : health_report.node_reports) {
-        const auto [total, free] = get_node_bytes_info(node_report.local_state);
+        const auto [total, free] = get_node_bytes_info(
+          node_report->local_state);
         ctx.node_disk_reports.emplace(
-          node_report.id, node_disk_space(node_report.id, total, total - free));
+          node_report->id,
+          node_disk_space(node_report->id, total, total - free));
     }
 
     for (model::node_id id : ctx.all_nodes) {
@@ -375,7 +377,7 @@ void partition_balancer_planner::init_per_node_state(
 ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
   const cluster_health_report& health_report, request_context& ctx) {
     for (const auto& node_report : health_report.node_reports) {
-        for (const auto& tp_ns : node_report.topics) {
+        for (const auto& tp_ns : node_report->topics) {
             for (const auto& partition : tp_ns.partitions) {
                 model::ntp ntp{tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id};
                 size_t reclaimable = partition.reclaimable_size_bytes.value_or(
@@ -384,12 +386,12 @@ ss::future<> partition_balancer_planner::init_ntp_sizes_from_health_report(
                   clusterlog.trace,
                   "ntp {} on node {}: size {}, reclaimable: {}",
                   ntp,
-                  node_report.id,
+                  node_report->id,
                   human::bytes(partition.size_bytes),
                   human::bytes(reclaimable));
 
                 auto& sizes = ctx._ntp2sizes[ntp];
-                sizes.current[node_report.id] = partition.size_bytes;
+                sizes.current[node_report->id] = partition.size_bytes;
 
                 size_t non_reclaimable = 0;
                 if (reclaimable < partition.size_bytes) {
@@ -883,13 +885,13 @@ auto partition_balancer_planner::request_context::do_with_partition(
     }
 
     // check if the ntp is to be force reconfigured.
-    auto topic_md = _parent._state.topics().get_topic_metadata(
+    auto topic_md = _parent._state.topics().get_topic_metadata_ref(
       model::topic_namespace_view{ntp});
     const auto& force_reconfigurable_partitions
       = _parent._state.topics().partitions_to_force_recover();
     auto force_it = force_reconfigurable_partitions.find(ntp);
     if (topic_md && force_it != force_reconfigurable_partitions.end()) {
-        auto topic_revision = topic_md.value().get_revision();
+        auto topic_revision = topic_md.value().get().get_revision();
         const auto& entries = force_it->second;
         auto it = std::find_if(
           entries.begin(), entries.end(), [&](const auto& entry) {
@@ -1172,11 +1174,17 @@ void partition_balancer_planner::reassignable_partition::revert(
       _reallocated->partition.is_original(move.previous()->node_id),
       "ntp {}: move {}->{} should have been from original node",
       _ntp,
-      move.current(),
-      move.previous());
+      move.previous(),
+      move.current());
 
     auto err = _reallocated->partition.try_revert(move);
     vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
+    vlog(
+      clusterlog.info,
+      "ntp {}: reverted previously scheduled move {} -> {}",
+      _ntp,
+      move.previous()->node_id,
+      move.current().node_id);
 
     auto from_it = _ctx.node_disk_reports.find(move.previous()->node_id);
     if (from_it != _ctx.node_disk_reports.end()) {
@@ -1744,7 +1752,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     // haven't been able to improve the objective, this means that we've reached
     // (local) optimum and rebalance can be finished.
 
-    bool actions_added = false;
+    bool should_stop = true;
     co_await ctx.for_each_partition_random_order([&](partition& part) {
         part.match_variant(
           [&](reassignable_partition& part) {
@@ -1777,10 +1785,14 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
                           // number of partitions)
                           part.revert(res.value());
                       } else {
-                          actions_added = true;
+                          should_stop = false;
                       }
                   }
               }
+          },
+          [&](immutable_partition& p) {
+              p.report_failure(change_reason::partition_count_rebalancing);
+              should_stop = false;
           },
           [](auto&) {});
 
@@ -1791,7 +1803,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         double cur_objective = calc_objective(domain);
         vlog(
           clusterlog.info,
-          "counts rebalancing objective in domain {}: {:6} -> {:6}",
+          "counts rebalancing objective in domain {}: {:.6} -> {:.6}",
           domain,
           orig_objective,
           cur_objective);
@@ -1812,7 +1824,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
         return true;
     };
 
-    if (!actions_added && all_nodes_healthy()) {
+    if (should_stop && all_nodes_healthy()) {
         ctx._counts_rebalancing_finished = true;
     }
 }

@@ -27,6 +27,7 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "security/acl.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sstring.hh>
@@ -39,12 +40,12 @@
 namespace kafka {
 template<typename T>
 struct groupped_resources {
-    std::vector<T> topic_changes;
-    std::vector<T> broker_changes;
+    chunked_vector<T> topic_changes;
+    chunked_vector<T> broker_changes;
 };
 
 template<typename T>
-groupped_resources<T> group_alter_config_resources(std::vector<T> req) {
+groupped_resources<T> group_alter_config_resources(chunked_vector<T> req) {
     groupped_resources<T> ret;
     for (auto& res : req) {
         switch (config_resource_type(res.resource_type)) {
@@ -59,7 +60,7 @@ groupped_resources<T> group_alter_config_resources(std::vector<T> req) {
 }
 
 template<typename T, typename R>
-T assemble_alter_config_response(std::vector<std::vector<R>> responses) {
+T assemble_alter_config_response(std::vector<chunked_vector<R>> responses) {
     T response;
     for (auto& v : responses) {
         std::move(
@@ -79,9 +80,9 @@ T make_error_alter_config_resource_response(
 }
 
 template<typename R, typename T>
-std::vector<std::vector<R>> make_audit_failure_response(
-  groupped_resources<T>&& resources, std::vector<R> unauthorized_responses) {
-    std::vector<R> responses;
+std::vector<chunked_vector<R>> make_audit_failure_response(
+  groupped_resources<T>&& resources, chunked_vector<R> unauthorized_responses) {
+    chunked_vector<R> responses;
 
     auto gen_resp = [](const T& res) {
         return make_error_alter_config_resource_response<R>(
@@ -117,7 +118,9 @@ std::vector<std::vector<R>> make_audit_failure_response(
       unauthorized_responses.end(),
       std::back_inserter(responses));
 
-    return {responses};
+    std::vector<chunked_vector<R>> res;
+    res.push_back(std::move(responses));
+    return res;
 }
 
 /**
@@ -125,9 +128,9 @@ std::vector<std::vector<R>> make_audit_failure_response(
  * responsens and modifies passed in group_resources<T>
  */
 template<typename T, typename R>
-std::vector<R> authorize_alter_config_resources(
+chunked_vector<R> authorize_alter_config_resources(
   request_context& ctx, groupped_resources<T>& to_authorize) {
-    std::vector<R> not_authorized;
+    chunked_vector<R> not_authorized;
     /**
      * Check broker configuration authorization
      */
@@ -193,16 +196,18 @@ std::vector<R> authorize_alter_config_resources(
             res, error_code::topic_authorization_failed);
       });
 
-    to_authorize.topic_changes.erase(
-      unauthorized_it, to_authorize.topic_changes.end());
+    to_authorize.topic_changes.erase_to_end(unauthorized_it);
 
     return not_authorized;
 }
 
 template<typename T, typename R, typename Func>
-ss::future<std::vector<R>> do_alter_topics_configuration(
-  request_context& ctx, std::vector<T> resources, bool validate_only, Func f) {
-    std::vector<R> responses;
+ss::future<chunked_vector<R>> do_alter_topics_configuration(
+  request_context& ctx,
+  chunked_vector<T> resources,
+  bool validate_only,
+  Func f) {
+    chunked_vector<R> responses;
     responses.reserve(resources.size());
 
     absl::node_hash_set<ss::sstring> topic_names;
@@ -256,9 +261,9 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
 }
 
 template<typename T, typename R>
-ss::future<std::vector<R>> unsupported_broker_configuration(
-  std::vector<T> resources, std::string_view const msg) {
-    std::vector<R> responses;
+ss::future<chunked_vector<R>> unsupported_broker_configuration(
+  chunked_vector<T> resources, std::string_view const msg) {
+    chunked_vector<R> responses;
     responses.reserve(resources.size());
     std::transform(
       resources.begin(),
@@ -269,7 +274,7 @@ ss::future<std::vector<R>> unsupported_broker_configuration(
             resource, error_code::invalid_config, ss::sstring(msg));
       });
 
-    return ss::make_ready_future<std::vector<R>>(std::move(responses));
+    return ss::make_ready_future<chunked_vector<R>>(std::move(responses));
 }
 
 class validation_error final : std::exception {

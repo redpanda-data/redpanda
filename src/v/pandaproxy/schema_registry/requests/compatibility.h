@@ -18,14 +18,24 @@ namespace pandaproxy::schema_registry {
 
 struct post_compatibility_res {
     bool is_compat{false};
+    std::vector<ss::sstring> messages;
+
+    // `is_verbose` is not rendered into the response but `messages` are
+    // conditionally rendered based on `is_verbose`
+    verbose is_verbose;
 };
 
-inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
   const schema_registry::post_compatibility_res& res) {
     w.StartObject();
     w.Key("is_compatible");
     ::json::rjson_serialize(w, res.is_compat);
+    if (res.is_verbose) {
+        w.Key("messages");
+        ::json::rjson_serialize(w, res.messages);
+    }
     w.EndObject();
 }
 

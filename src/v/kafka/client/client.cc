@@ -289,10 +289,13 @@ ss::future<produce_response> client::produce_records(
             std::move(*p.records->adapter.batch));
       });
 
+    chunked_vector<topic_produce_response> responses_cv;
+    responses_cv.emplace_back(topic_produce_response{
+      .name{std::move(topic)}, .partitions{std::move(responses)}});
+
     co_return produce_response{
       .data = produce_response_data{
-        .responses{
-          {.name{std::move(topic)}, .partitions{std::move(responses)}}},
+        .responses = std::move(responses_cv),
         .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
 }
 
@@ -302,8 +305,12 @@ client::create_topic(kafka::creatable_topic req) {
         auto controller = _controller;
         return _brokers.find(controller)
           .then([req](auto broker) mutable {
-              return broker->dispatch(
-                kafka::create_topics_request{.data{.topics{std::move(req)}}});
+              chunked_vector<kafka::creatable_topic> cv;
+              cv.push_back(std::move(req));
+              return broker->dispatch(kafka::create_topics_request{
+                .data = {
+                  .topics = std::move(cv),
+                }});
           })
           .then([controller](auto res) {
               auto ec = res.data.topics[0].error_code;
@@ -337,11 +344,19 @@ ss::future<list_offsets_response>
 client::do_list_offsets(model::topic_partition tp) {
     auto node_id = co_await _topic_cache.leader(tp);
     auto broker = co_await _brokers.find(node_id);
+    chunked_vector<kafka::list_offset_topic> cv;
+    cv.push_back(kafka::list_offset_topic{
+      .name{tp.topic},
+      .partitions{
+        {
+          {.partition_index{tp.partition}, .max_num_offsets = 1},
+        },
+      },
+    });
     auto res = co_await broker->dispatch(kafka::list_offsets_request{
-      .data = {.topics{
-        {{.name{tp.topic},
-          .partitions{
-            {{.partition_index{tp.partition}, .max_num_offsets = 1}}}}}}}});
+      .data = {
+        .topics = std::move(cv),
+      }});
 
     const auto& topics = res.data.topics;
     auto ec = error_code::none;
@@ -474,17 +489,18 @@ ss::future<> client::remove_consumer(group_id g_id, const member_id& name) {
 ss::future<> client::subscribe_consumer(
   const group_id& g_id,
   const member_id& name,
-  std::vector<model::topic> topics) {
+  chunked_vector<model::topic> topics) {
     return get_consumer(g_id, name)
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->subscribe(std::move(topics));
       });
 }
 
-ss::future<std::vector<model::topic>>
+ss::future<chunked_vector<model::topic>>
 client::consumer_topics(const group_id& g_id, const member_id& name) {
     return get_consumer(g_id, name).then([](shared_consumer_t c) {
-        return ss::make_ready_future<std::vector<model::topic>>(c->topics());
+        return ss::make_ready_future<chunked_vector<model::topic>>(
+          c->topics().copy());
     });
 }
 

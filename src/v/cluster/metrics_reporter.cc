@@ -199,43 +199,33 @@ metrics_reporter::build_metrics_snapshot() {
     if (!report) {
         co_return result<metrics_snapshot>(report.error());
     }
-    metrics_map.reserve(report.value().node_states.size());
+    metrics_map.reserve(report.value().node_reports.size());
 
-    for (auto& ns : report.value().node_states) {
-        auto [it, _] = metrics_map.emplace(ns.id, node_metrics{.id = ns.id});
+    for (auto& report : report.value().node_reports) {
+        auto [it, _] = metrics_map.emplace(
+          report->id, node_metrics{.id = report->id});
         auto& metrics = it->second;
-        metrics.is_alive = (bool)ns.is_alive;
 
-        auto nm = _members_table.local().get_node_metadata_ref(ns.id);
+        auto nm = _members_table.local().get_node_metadata_ref(report->id);
         if (!nm) {
             continue;
         }
-
         metrics.cpu_count = nm->get().broker.properties().cores;
-    }
-
-    for (auto& report : report.value().node_reports) {
-        auto it = metrics_map.find(report.id);
-        if (it == metrics_map.end()) {
-            auto [eit, _] = metrics_map.emplace(
-              report.id, node_metrics{.id = report.id});
-            it = eit;
-        }
-        auto& metrics = it->second;
-
-        metrics.version = report.local_state.redpanda_version;
-        metrics.logical_version = report.local_state.logical_version;
-        metrics.disks.reserve(report.local_state.shared_disk() ? 1 : 2);
-        auto transform_disk = [](storage::disk& d) -> node_disk_space {
+        metrics.is_alive = _health_monitor.local().is_alive(report->id)
+                           == cluster::alive::yes;
+        metrics.version = report->local_state.redpanda_version;
+        metrics.logical_version = report->local_state.logical_version;
+        metrics.disks.reserve(report->local_state.shared_disk() ? 1 : 2);
+        auto transform_disk = [](const storage::disk& d) -> node_disk_space {
             return node_disk_space{.free = d.free, .total = d.total};
         };
-        metrics.disks.push_back(transform_disk(report.local_state.data_disk));
-        if (!report.local_state.shared_disk()) {
+        metrics.disks.push_back(transform_disk(report->local_state.data_disk));
+        if (!report->local_state.shared_disk()) {
             metrics.disks.push_back(
-              transform_disk(*(report.local_state.cache_disk)));
+              transform_disk(*(report->local_state.cache_disk)));
         }
 
-        metrics.uptime_ms = report.local_state.uptime / 1ms;
+        metrics.uptime_ms = report->local_state.uptime / 1ms;
     }
     auto& topics = _topics.local().topics_map();
     snapshot.topic_count = 0;
@@ -414,6 +404,23 @@ ss::future<http::client> metrics_reporter::make_http_client() {
     co_return http::client(client_configuration, _as.local());
 }
 
+ss::future<> metrics_reporter::do_send_metrics(
+  http::client& client,
+  http::client::request_header header,
+  ss::input_stream<char>& body) {
+    auto timeout = config::shard_local_cfg().metrics_reporter_tick_interval();
+    auto res = co_await client.get_connected(timeout, _logger);
+    // skip sending metrics, unable to connect
+    if (res != http::reconnect_result_t::connected) {
+        vlog(
+          _logger.trace, "unable to send metrics report, connection timeout");
+        co_return;
+    }
+    auto resp_stream = co_await client.request(
+      std::move(header), body, timeout);
+    co_await resp_stream->prefetch_headers();
+}
+
 ss::future<> metrics_reporter::do_report_metrics() {
     // try initializing cluster info, if it is already present this operation
     // does nothing.
@@ -471,22 +478,11 @@ ss::future<> metrics_reporter::do_report_metrics() {
     auto header = make_header(out);
     auto body = make_iobuf_input_stream(std::move(out));
     try {
-        // prepare http client
-        auto client = co_await make_http_client();
-        auto timeout
-          = config::shard_local_cfg().metrics_reporter_tick_interval();
-        auto res = co_await client.get_connected(timeout, _logger);
-        // skip sending metrics, unable to connect
-        if (res != http::reconnect_result_t::connected) {
-            vlog(
-              _logger.trace,
-              "unable to send metrics report, connection timeout");
-            co_return;
-        }
-        auto resp_stream = co_await client.request(
-          std::move(header), body, timeout);
-        co_await resp_stream->prefetch_headers();
-        co_await resp_stream->shutdown();
+        co_await http::with_client(
+          co_await make_http_client(),
+          [this, &header, &body](http::client& client) {
+              return do_send_metrics(client, std::move(header), body);
+          });
         _last_success = ss::lowres_clock::now();
     } catch (...) {
         vlog(

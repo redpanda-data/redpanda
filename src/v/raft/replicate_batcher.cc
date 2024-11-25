@@ -13,6 +13,7 @@
 #include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -118,7 +119,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   model::record_batch_reader r,
   consistency_level consistency_lvl,
   std::optional<std::chrono::milliseconds> timeout) {
-    auto batches = co_await model::consume_reader_to_memory(
+    auto batches = co_await model::consume_reader_to_chunked_vector(
       std::move(r),
       timeout ? model::timeout_clock::now() + *timeout : model::no_timeout);
 
@@ -136,7 +137,7 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
 ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
   std::optional<model::term_id> expected_term,
-  ss::circular_buffer<model::record_batch> batches,
+  chunked_vector<model::record_batch> batches,
   size_t bytes,
   consistency_level consistency_lvl,
   std::optional<std::chrono::milliseconds> timeout) {
@@ -164,7 +165,7 @@ replicate_batcher::do_cache_with_backpressure(
     }
 
     size_t record_count = 0;
-    std::vector<model::record_batch> data;
+    chunked_vector<model::record_batch> data;
     data.reserve(batches.size());
     for (auto& b : batches) {
         record_count += b.record_count();

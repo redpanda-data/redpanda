@@ -121,35 +121,17 @@ size_t metadata_cache::node_count() const {
 
 ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
     std::vector<node_metadata> brokers;
-    auto res = co_await _health_monitor.local().get_nodes_status(
-      config::shard_local_cfg().metadata_status_wait_timeout_ms()
-      + model::timeout_clock::now());
-    if (!res) {
-        // if we were not able to refresh the cache, return all brokers
-        // (controller may be unreachable)
-        co_return _members_table.local().node_list();
-    }
-
-    std::set<model::node_id> brokers_with_health;
-    for (auto& st : res.value()) {
-        brokers_with_health.insert(st.id);
-        if (st.is_alive) {
-            auto broker = _members_table.local().get_node_metadata(st.id);
-            if (broker) {
-                brokers.push_back(std::move(*broker));
-            }
+    for (auto& st : _members_table.local().node_list()) {
+        auto is_alive = _health_monitor.local().is_alive(st.broker.id());
+        /**
+         * if node is not alive we skip adding it to the list of brokers. If
+         * there is no information or the node is healthy we include it into the
+         * list of alive brokers.
+         */
+        if (is_alive == alive::no) {
+            continue;
         }
-    }
-
-    // Corner case during node joins:
-    // If a node appears in the members table but not in the health report,
-    // presume it is newly added and assume it is alive.  This avoids
-    // newly added nodes being inconsistently excluded from metadata
-    // responses until all nodes' health caches update.
-    for (const auto& [id, broker] : _members_table.local().nodes()) {
-        if (!brokers_with_health.contains(id)) {
-            brokers.push_back(broker);
-        }
+        brokers.push_back(st);
     }
 
     co_return !brokers.empty() ? brokers : _members_table.local().node_list();

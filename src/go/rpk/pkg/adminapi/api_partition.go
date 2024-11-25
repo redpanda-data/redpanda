@@ -15,6 +15,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/spf13/afero"
 )
 
 const partitionsBaseURL = "/v1/cluster/partitions"
@@ -187,4 +190,17 @@ func (a *AdminAPI) ForceRecoverFromNode(ctx context.Context, plan []MajorityLost
 		"partitions_to_force_recover": plan,
 	}
 	return a.sendAny(ctx, http.MethodPost, "/v1/partitions/force_recover_from_nodes", body, nil)
+}
+
+func (a *AdminAPI) TransferLeadership(ctx context.Context, fs afero.Fs, p *config.RpkProfile, source int, ns, topic string, partition int, target string) error {
+	brokerURL, err := a.brokerIDToURL(ctx, source)
+	if err != nil {
+		return err
+	}
+	cl, err := NewHostClient(fs, p, brokerURL)
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("/v1/partitions/%s/%s/%d/transfer_leadership?target=%s", ns, topic, partition, target)
+	return cl.sendOne(ctx, http.MethodPost, path, nil, nil, false)
 }

@@ -21,6 +21,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Aliases:    []string{"ns"},
 		SuggestFor: []string{"namespaces"},
 		Args:       cobra.ExactArgs(0),
+		Hidden:     true,
 		Short:      "Interact with Namespaces in Redpanda Cloud",
 	}
 	cmd.AddCommand(

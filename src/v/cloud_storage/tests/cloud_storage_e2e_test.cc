@@ -13,6 +13,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/manual_fixture.h"
 #include "cloud_storage/tests/produce_utils.h"
+#include "cloud_storage/tests/read_replica_fixture.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/cloud_metadata/tests/manual_mixin.h"
 #include "cluster/health_monitor_frontend.h"
@@ -20,6 +21,7 @@
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
+#include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/ntp_config.h"
 #include "test_utils/async.h"
@@ -54,6 +56,51 @@ public:
 
     scoped_config test_local_cfg;
 };
+
+FIXTURE_TEST(test_spillover_retention_compacted_topic, e2e_fixture) {
+    test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
+      .set_value(true);
+    test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional<size_t>(5));
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{});
+    test_local_cfg.get("log_retention_ms")
+      .set_value(std::make_optional<std::chrono::milliseconds>(1ms));
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    const auto records_per_seg = 5;
+    const auto num_segs = 100;
+    auto partition = app.partition_manager.local().get(ntp);
+    auto& archiver = partition->archiver().value().get();
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(records_per_seg)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_GE(total_records, 500);
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.apply_spillover().get();
+    ss::sleep(5s).get();
+    archiver.apply_archive_retention().get();
+
+    tests::kafka_list_offsets_transport lister(make_kafka_client().get());
+    lister.start().get();
+
+    auto offset
+      = lister.start_offset_for_partition(topic_name, model::partition_id(0))
+          .get();
+    BOOST_REQUIRE_EQUAL(offset(), 0);
+    BOOST_REQUIRE_EQUAL(
+      archiver.manifest().full_log_start_offset().value_or(model::offset{})(),
+      0);
+}
 
 FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     test_local_cfg.get("cloud_storage_disable_upload_loop_for_tests")
@@ -617,7 +664,7 @@ FIXTURE_TEST(
         if (report.has_value()) {
             std::vector<size_t> sizes;
             for (auto& node_report : report.value().node_reports) {
-                for (auto& topic : node_report.topics) {
+                for (auto& topic : node_report->topics) {
                     if (
                       topic.tp_ns
                       != model::topic_namespace_view(
@@ -670,4 +717,375 @@ FIXTURE_TEST(
 
     // health report never reported non-zero reclaimable sizes. bummer!
     BOOST_REQUIRE(false);
+}
+
+FIXTURE_TEST(test_local_timequery, e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    // Force local timequeries only through archival mode.
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::archival;
+
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+
+    const auto batches_per_segment = 1;
+    const auto num_segs = 5;
+    const auto batch_time_delta_ms = 10;
+    const auto base_timestamp = model::timestamp{0};
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(base_timestamp)
+                           .batch_time_delta_ms(batch_time_delta_ms)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_EQUAL(total_records, 5);
+
+    auto make_and_verify_timequery =
+      [partition](
+        model::timestamp t,
+        model::offset o,
+        bool expect_value = false,
+        std::optional<model::offset> expected_o = std::nullopt) {
+          auto timequery_conf = storage::timequery_config(
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
+
+          auto result = partition->timequery(timequery_conf).get();
+
+          if (expect_value) {
+              BOOST_REQUIRE(result.has_value());
+              BOOST_REQUIRE_EQUAL(result.value().offset, expected_o.value());
+          } else {
+              BOOST_REQUIRE(!result.has_value());
+          }
+      };
+
+    make_and_verify_timequery(
+      base_timestamp, model::offset{0}, true, model::offset{0});
+
+    for (int i = 1; i < total_records; ++i) {
+        const auto min_timestamp = base_timestamp()
+                                   + batch_time_delta_ms * (i - 1);
+        const auto max_timestamp = min_timestamp + batch_time_delta_ms;
+        const auto query_timestamp = random_generators::get_int(
+          min_timestamp + 1, max_timestamp);
+        make_and_verify_timequery(
+          model::timestamp{query_timestamp},
+          model::offset{i},
+          true,
+          model::offset{i});
+    }
+
+    make_and_verify_timequery(
+      model::timestamp{
+        base_timestamp() + (batch_time_delta_ms * total_records)},
+      model::offset{total_records},
+      false);
+}
+
+FIXTURE_TEST(test_cloud_storage_timequery, e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    // Allow cloud storage timequeries with full shadow indexing mode.
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(0);
+
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+
+    const auto batches_per_segment = 1;
+    const auto num_segs = 5;
+    const auto batch_time_delta_ms = 10;
+    const auto base_timestamp = model::timestamp{0};
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(base_timestamp)
+                           .batch_time_delta_ms(batch_time_delta_ms)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_EQUAL(total_records, 5);
+
+    // Force garbage collection of all local records, so that timequeries must
+    // go through cloud storage.
+    ss::abort_source as;
+    storage::housekeeping_config housekeeping_conf(
+      model::timestamp::max(),
+      0,
+      log->stm_manager()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    partition->log()->housekeeping(housekeeping_conf).get();
+
+    RPTEST_REQUIRE_EVENTUALLY(
+      10s, [log = partition->log()] { return log->segments().size() == 1; });
+
+    auto make_and_verify_timequery =
+      [partition](
+        model::timestamp t,
+        model::offset o,
+        bool expect_value = false,
+        std::optional<model::offset> expected_o = std::nullopt) {
+          auto timequery_conf = storage::timequery_config(
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
+
+          auto result = partition->timequery(timequery_conf).get();
+
+          if (expect_value) {
+              BOOST_REQUIRE(result.has_value());
+              BOOST_REQUIRE_EQUAL(result.value().offset, expected_o.value());
+          } else {
+              BOOST_REQUIRE(!result.has_value());
+          }
+      };
+
+    make_and_verify_timequery(
+      base_timestamp, model::offset{0}, true, model::offset{0});
+
+    for (int i = 1; i < total_records; ++i) {
+        const auto min_timestamp = base_timestamp()
+                                   + batch_time_delta_ms * (i - 1);
+        const auto max_timestamp = min_timestamp + batch_time_delta_ms;
+        const auto query_timestamp = random_generators::get_int(
+          min_timestamp + 1, max_timestamp);
+        make_and_verify_timequery(
+          model::timestamp{query_timestamp},
+          model::offset{i},
+          true,
+          model::offset{i});
+    }
+
+    // This will attempt to timequery from local disk since cloud storage cannot
+    // answer it, but won't have a value anyways.
+    make_and_verify_timequery(
+      model::timestamp{
+        base_timestamp() + (batch_time_delta_ms * total_records)},
+      model::offset{total_records},
+      false);
+}
+
+FIXTURE_TEST(
+  test_cloud_storage_timequery_read_replica_mode, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(0);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+
+    const auto batches_per_segment = 1;
+    const auto num_segs = 5;
+    const auto batch_time_delta_ms = 10;
+    const auto base_timestamp = model::timestamp{0};
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(base_timestamp)
+                           .batch_time_delta_ms(batch_time_delta_ms)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_EQUAL(total_records, 5);
+
+    auto rr_rp = start_read_replica_fixture();
+
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::disabled;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
+    auto rr_archiver_ref = rr_partition->archiver();
+    BOOST_REQUIRE(rr_archiver_ref.has_value());
+    auto& rr_archiver = rr_partition->archiver()->get();
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    BOOST_REQUIRE_EQUAL(rr_archiver.manifest().size(), 5);
+
+    auto make_and_verify_timequery =
+      [rr_partition](
+        model::timestamp t,
+        model::offset o,
+        bool expect_value = false,
+        std::optional<model::offset> expected_o = std::nullopt) {
+          auto timequery_conf = storage::timequery_config(
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
+
+          auto result = rr_partition->timequery(timequery_conf).get();
+
+          if (expect_value) {
+              BOOST_REQUIRE(result.has_value());
+              BOOST_REQUIRE_EQUAL(result.value().offset, expected_o.value());
+          } else {
+              BOOST_REQUIRE(!result.has_value());
+          }
+      };
+
+    make_and_verify_timequery(
+      base_timestamp, model::offset{0}, true, model::offset{0});
+
+    for (int i = 1; i < total_records; ++i) {
+        const auto min_timestamp = base_timestamp()
+                                   + batch_time_delta_ms * (i - 1);
+        const auto max_timestamp = min_timestamp + batch_time_delta_ms;
+        const auto query_timestamp = random_generators::get_int(
+          min_timestamp + 1, max_timestamp);
+        make_and_verify_timequery(
+          model::timestamp{query_timestamp},
+          model::offset{i},
+          true,
+          model::offset{i});
+    }
+
+    // This won't have a valid result in cloud storage.
+    make_and_verify_timequery(
+      model::timestamp{
+        base_timestamp() + (batch_time_delta_ms * total_records)},
+      model::offset{total_records},
+      false);
+}
+
+FIXTURE_TEST(test_mixed_timequery, e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
+
+    // Enable full shadow indexing for now.
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto log = partition->log();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+
+    // Generate batches [0, 10, 20, ..., 100]
+    const auto num_segs = 11;
+    const auto batches_per_segment = 1;
+    const auto batch_time_delta_ms = 10;
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(batches_per_segment)
+                           .base_timestamp(model::timestamp{0})
+                           .batch_time_delta_ms(batch_time_delta_ms)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_EQUAL(total_records, 11);
+
+    const auto base_timestamp = log->start_timestamp();
+    BOOST_REQUIRE_EQUAL(base_timestamp, model::timestamp{0});
+
+    const auto num_segments_to_keep = 2;
+    const auto upper_timestamp = base_timestamp()
+                                 + (num_segs - num_segments_to_keep)
+                                     * batch_time_delta_ms;
+    const auto max_timestamp = base_timestamp()
+                               + (num_segs - 1) * batch_time_delta_ms;
+
+    // Sum the sizes of trailing segments
+    const auto& segments = log->segments();
+    const size_t max_bytes = std::accumulate(
+      std::next(segments.begin(), segments.size() - num_segments_to_keep),
+      segments.end(),
+      size_t{0},
+      [](size_t size, const auto& seg) { return size + seg->file_size(); });
+
+    // Force garbage collection of all local records [0, upper_timestamp). Full
+    // records [0, max_timestamp] still exist in the cloud.
+    storage::gc_config gc_conf(model::timestamp{upper_timestamp}, max_bytes);
+    log->gc(gc_conf).get();
+
+    RPTEST_REQUIRE_EVENTUALLY(10s, [log = partition->log()] {
+        return log->segments().size() == num_segments_to_keep;
+    });
+
+    // Disable remote fetch, forcing local data usage only.
+    auto disable_fetch_override = storage::ntp_config::default_overrides{
+      .shadow_indexing_mode = model::shadow_indexing_mode::archival};
+    log->update_configuration(disable_fetch_override).get();
+
+    auto make_and_verify_timequery =
+      [partition](
+        model::timestamp t,
+        model::offset o,
+        bool expect_value = false,
+        std::optional<model::offset> expected_o = std::nullopt) {
+          auto timequery_conf = storage::timequery_config(
+            model::offset(0), t, o, ss::default_priority_class(), std::nullopt);
+
+          auto result = partition->timequery(timequery_conf).get();
+
+          if (expect_value) {
+              BOOST_REQUIRE(result.has_value());
+              BOOST_REQUIRE_EQUAL(result.value().offset, expected_o.value());
+          } else {
+              BOOST_REQUIRE(!result.has_value());
+          }
+      };
+
+    // Queries for timestamps [0, upper_timestamp] should return
+    // [upper_timestamp], since we cannot read from cloud storage, and we have
+    // deleted local records [0, upper_timestamp)
+    for (int i = 0; i <= upper_timestamp; ++i) {
+        make_and_verify_timequery(
+          model::timestamp{i},
+          model::offset::max(),
+          true,
+          model::offset{num_segs - num_segments_to_keep + 1});
+    }
+
+    // Queries for timestamps (upper_timestamp, max_timestamp] should return
+    // [max_timestamp].
+    for (int i = upper_timestamp + 1; i < max_timestamp; ++i) {
+        make_and_verify_timequery(
+          model::timestamp{i},
+          model::offset::max(),
+          true,
+          model::offset{num_segs - 1});
+    }
+
+    // Enable remote fetch.
+    auto allow_fetch_override = storage::ntp_config::default_overrides{
+      .shadow_indexing_mode = model::shadow_indexing_mode::fetch};
+    log->update_configuration(allow_fetch_override).get();
+
+    // Now, timequeries should be able to read over the whole domain [0,
+    // max_timestamp]
+    for (int i = 0; i < num_segs; ++i) {
+        auto timestamp = base_timestamp() + i * batch_time_delta_ms;
+        make_and_verify_timequery(
+          model::timestamp{timestamp},
+          model::offset::max(),
+          true,
+          model::offset{i});
+    }
 }

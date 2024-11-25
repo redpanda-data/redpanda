@@ -41,7 +41,6 @@
 
 using namespace raft;
 namespace {
-
 /**
  * We use value entry struct to make kv_store apply operations not
  * idempotent
@@ -71,6 +70,7 @@ struct value_entry
  */
 struct simple_kv : public raft::state_machine_base {
     using state_t = absl::flat_hash_map<ss::sstring, value_entry>;
+    static constexpr std::string_view name = "simple_kv";
     explicit simple_kv(raft_node_instance& rn)
       : raft_node(rn) {}
 
@@ -107,8 +107,6 @@ struct simple_kv : public raft::state_machine_base {
         state = serde::from_iobuf<state_t>(buffer.copy());
         co_return;
     };
-
-    std::string_view get_name() const override { return "simple_kv"; };
 
     ss::future<iobuf>
     take_snapshot(model::offset last_included_offset) override {
@@ -174,11 +172,14 @@ struct state_machine_fixture : raft_fixture {
 
     ss::future<absl::flat_hash_map<ss::sstring, value_entry>>
     build_random_state(
-      int op_cnt, wait_for_each_batch wait_for_each = wait_for_each_batch::no) {
+      int op_cnt,
+      wait_for_each_batch wait_for_each = wait_for_each_batch::no,
+      size_t max_batch_size = 50) {
         absl::flat_hash_map<ss::sstring, value_entry> state;
 
         for (int i = 0; i < op_cnt;) {
-            const auto batch_sz = random_generators::get_int(1, 50);
+            const auto batch_sz = random_generators::get_int<size_t>(
+              1, max_batch_size);
             std::vector<std::pair<ss::sstring, std::optional<ss::sstring>>> ops;
             for (auto n = 0; n < batch_sz; ++n) {
                 auto k = random_generators::gen_alphanum_string(10);

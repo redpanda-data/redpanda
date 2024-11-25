@@ -124,7 +124,7 @@ batch_applicator::apply_to_stm(
       _log.trace,
       "[{}][{}] applying batch with base {} and last {} offsets",
       _ctx,
-      state.stm_entry->stm->get_name(),
+      state.stm_entry->name,
       batch.header().base_offset,
       last_offset);
 
@@ -145,7 +145,7 @@ batch_applicator::apply_to_stm(
           _log.warn,
           "[{}][{}] error applying batch with base_offset: {} - {}",
           _ctx,
-          state.stm_entry->stm->get_name(),
+          state.stm_entry->name,
           batch.base_offset(),
           std::current_exception());
         state.error = true;
@@ -153,16 +153,20 @@ batch_applicator::apply_to_stm(
     }
 }
 
+state_machine_manager::named_stm::named_stm(ss::sstring name, stm_ptr stm)
+  : name(std::move(name))
+  , stm(std::move(stm)) {}
+
 state_machine_manager::state_machine_manager(
-  consensus* raft, std::vector<stm_ptr> stms, ss::scheduling_group apply_sg)
+  consensus* raft, std::vector<named_stm> stms, ss::scheduling_group apply_sg)
   : _raft(raft)
   , _log(ctx_log(_raft->group(), _raft->ntp()))
   , _apply_sg(apply_sg) {
-    for (auto& stm : stms) {
-        std::string_view name = stm->get_name();
+    for (auto& n_stm : stms) {
         _machines.try_emplace(
-          ss::sstring(name),
-          ss::make_lw_shared<state_machine_entry>(std::move(stm)));
+          n_stm.name,
+          ss::make_lw_shared<state_machine_entry>(
+            n_stm.name, std::move(n_stm.stm)));
     }
 }
 
@@ -211,7 +215,10 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
     }
 
     auto fut = co_await ss::coroutine::as_future(
-      do_apply_raft_snapshot(std::move(snapshot->metadata), snapshot->reader));
+      acquire_background_apply_mutexes().then([&, this](auto units) mutable {
+          return do_apply_raft_snapshot(
+            std::move(snapshot->metadata), snapshot->reader, std::move(units));
+      }));
     co_await snapshot->reader.close();
     if (fut.failed()) {
         const auto e = fut.get_exception();
@@ -224,7 +231,9 @@ ss::future<> state_machine_manager::apply_raft_snapshot() {
 }
 
 ss::future<> state_machine_manager::do_apply_raft_snapshot(
-  snapshot_metadata metadata, storage::snapshot_reader& reader) {
+  snapshot_metadata metadata,
+  storage::snapshot_reader& reader,
+  std::vector<ssx::semaphore_units> background_apply_units) {
     const auto snapshot_file_sz = co_await reader.get_snapshot_size();
     const auto last_offset = metadata.last_included_index;
 
@@ -247,11 +256,11 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
           _log.debug,
           "applying empty snapshot at offset: {} for backward "
           "compatibility",
-          metadata.last_included_index);
+          last_offset);
         co_await ss::coroutine::parallel_for_each(
-          _machines, [metadata, last_offset](auto& pair) {
+          _machines, [last_offset](auto& pair) {
               auto stm = pair.second->stm;
-              if (stm->last_applied_offset() >= metadata.last_included_index) {
+              if (stm->last_applied_offset() >= last_offset) {
                   return ss::now();
               }
               return stm->apply_raft_snapshot(iobuf{}).then([stm, last_offset] {
@@ -265,28 +274,39 @@ ss::future<> state_machine_manager::do_apply_raft_snapshot(
         auto snap = co_await serde::read_async<managed_snapshot>(parser);
 
         co_await ss::coroutine::parallel_for_each(
-          snap.snapshot_map,
-          [this, metadata, last_offset](auto& snapshot_pair) {
-              auto it = _machines.find(snapshot_pair.first);
-              if (
-                it == _machines.end()
-                || it->second->stm->last_applied_offset()
-                     >= metadata.last_included_index) {
-                  return ss::now();
-              }
-
-              return it->second->stm
-                ->apply_raft_snapshot(std::move(snapshot_pair.second))
-                .then([stm = it->second->stm, last_offset] {
-                    stm->set_next(
-                      std::max(model::next_offset(last_offset), stm->next()));
-                });
+          _machines,
+          [this, snap = std::move(snap), last_offset](
+            state_machines_t::value_type& stm_pair) mutable {
+              return apply_snapshot_to_stm(stm_pair.second, snap, last_offset);
           });
     }
     _next = model::next_offset(metadata.last_included_index);
+    background_apply_units.clear();
 }
 
-ss::future<> state_machine_manager::apply() {
+ss::future<> state_machine_manager::apply_snapshot_to_stm(
+  ss::lw_shared_ptr<state_machine_entry> stm_entry,
+  const managed_snapshot& snapshot,
+  model::offset last_offset) {
+    auto it = snapshot.snapshot_map.find(stm_entry->name);
+
+    if (stm_entry->stm->last_applied_offset() < last_offset) {
+        if (it != snapshot.snapshot_map.end()) {
+            co_await stm_entry->stm->apply_raft_snapshot(it->second);
+        } else {
+            /**
+             * In order to hold the stm contract we need to call the
+             * apply_raft_snapshot with empty data
+             */
+            co_await stm_entry->stm->apply_raft_snapshot(iobuf{});
+        }
+    }
+
+    stm_entry->stm->set_next(
+      std::max(model::next_offset(last_offset), stm_entry->stm->next()));
+}
+
+ss::future<> state_machine_manager::try_apply_in_foreground() {
     try {
         ss::coroutine::switch_to sg_sw(_apply_sg);
         // wait until consensus commit index is >= _next
@@ -301,6 +321,30 @@ ss::future<> state_machine_manager::apply() {
             co_return co_await apply_raft_snapshot();
         }
 
+        // collect STMs which has the same _next offset as the offset in
+        // manager and there is no background apply taking place
+        std::vector<entry_ptr> machines;
+        for (auto& [_, entry] : _machines) {
+            /**
+             * We can simply check if a mutex is ready here as calling
+             * maybe_start_background_apply() will make the mutex underlying
+             * semaphore immediately not ready as there are no scheduling points
+             * before calling `get_units`
+             */
+            if (
+              entry->stm->next() == _next
+              && entry->background_apply_mutex.ready()) {
+                machines.push_back(entry);
+            }
+        }
+        if (machines.empty()) {
+            vlog(
+              _log.debug,
+              "no machines were selected to apply in foreground, current next "
+              "offset: {}",
+              _next);
+            co_return;
+        }
         /**
          * Raft make_reader method allows callers reading up to
          * last_visible index. In order to make the STMs safe and working
@@ -320,27 +364,24 @@ ss::future<> state_machine_manager::apply() {
           _next, _raft->committed_offset(), ss::default_priority_class());
 
         model::record_batch_reader reader = co_await _raft->make_reader(config);
-        // collect STMs which has the same _next offset as the offset in
-        // manager and there is no background apply taking place
-        std::vector<entry_ptr> machines;
-        for (auto& [_, entry] : _machines) {
-            /**
-             * We can simply check if a mutex is ready here as calling
-             * maybe_start_background_apply() will make the mutex underlying
-             * semaphore immediately not ready as there are no scheduling points
-             * before calling `get_units`
-             */
-            if (
-              entry->stm->next() == _next
-              && entry->background_apply_mutex.ready()) {
-                machines.push_back(entry);
-            }
-        }
-        auto last_applied = co_await std::move(reader).consume(
+
+        auto max_last_applied = co_await std::move(reader).consume(
           batch_applicator(default_ctx, machines, _as, _log),
           model::no_timeout);
 
-        _next = std::max(model::next_offset(last_applied), _next);
+        if (max_last_applied == model::offset{}) {
+            vlog(
+              _log.warn,
+              "no progress has been made during state machine apply. Current "
+              "next offset: {}",
+              _next);
+            /**
+             * If no progress has been made, yield to prevent busy looping
+             */
+            co_await ss::sleep_abortable(100ms, _as);
+            co_return;
+        }
+        _next = std::max(model::next_offset(max_last_applied), _next);
         vlog(_log.trace, "updating _next offset with: {}", _next);
     } catch (const ss::timed_out_error&) {
         vlog(_log.debug, "state machine apply timeout");
@@ -351,6 +392,10 @@ ss::future<> state_machine_manager::apply() {
         vlog(
           _log.warn, "manager apply exception: {}", std::current_exception());
     }
+}
+
+ss::future<> state_machine_manager::apply() {
+    co_await try_apply_in_foreground();
     /**
      * If any of the state machine is behind, dispatch background apply fibers
      */
@@ -377,7 +422,7 @@ void state_machine_manager::maybe_start_background_apply(
     vlog(
       _log.debug,
       "starting background apply fiber for '{}' state machine",
-      entry->stm->get_name());
+      entry->name);
 
     ssx::spawn_with_gate(_gate, [this, entry] {
         return entry->background_apply_mutex.get_units().then(
@@ -394,39 +439,44 @@ ss::future<> state_machine_manager::background_apply_fiber(
   entry_ptr entry, ssx::semaphore_units units) {
     while (!_as.abort_requested() && entry->stm->next() < _next) {
         storage::log_reader_config config(
-          entry->stm->next(), _next, ss::default_priority_class());
+          entry->stm->next(),
+          model::prev_offset(_next),
+          ss::default_priority_class());
 
         vlog(
           _log.debug,
           "reading batches in range [{}, {}] for '{}' stm background apply",
           entry->stm->next(),
           _next,
-          entry->stm->get_name());
+          entry->name);
         bool error = false;
         try {
             model::record_batch_reader reader = co_await _raft->make_reader(
               config);
-            co_await std::move(reader).consume(
+            auto last_applied_before = entry->stm->last_applied_offset();
+            auto last_applied_after = co_await std::move(reader).consume(
               batch_applicator(background_ctx, {entry}, _as, _log),
               model::no_timeout);
-
+            if (last_applied_before >= last_applied_after) {
+                error = true;
+            }
         } catch (...) {
             error = true;
             vlog(
               _log.warn,
               "exception thrown from background apply fiber for {} - {}",
-              entry->stm->get_name(),
+              entry->name,
               std::current_exception());
         }
         if (error) {
-            co_await ss::sleep_abortable(1s, _as);
+            co_await ss::sleep_abortable(100ms, _as);
         }
     }
     units.return_all();
     vlog(
       _log.debug,
       "finished background apply for '{}' state machine",
-      entry->stm->get_name());
+      entry->name);
 }
 
 ss::future<iobuf>

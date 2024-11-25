@@ -12,23 +12,97 @@
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/storage.h"
-#include "random/simple_time_jitter.h"
 #include "ssx/future-util.h"
+#include "storage/record_batch_builder.h"
 #include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <exception>
 
 using namespace std::chrono_literals;
 
 namespace pandaproxy::schema_registry {
+
+namespace {
+
+struct batch_builder : public storage::record_batch_builder {
+    explicit batch_builder(
+      model::offset base_offset, std::optional<subject> sub)
+      : record_batch_builder{model::record_batch_type::raft_data, model::offset{base_offset}}
+      , sub{std::move(sub)} {}
+
+    using record_batch_builder::add_raw_kv;
+    using record_batch_builder::build;
+
+    void operator()(std::optional<iobuf>&& key, std::optional<iobuf>&& value) {
+        add_raw_kw(std::move(key), std::move(value), {});
+    }
+
+    template<typename K, typename V>
+    requires requires(K k, V v) {
+        to_json_iobuf(k);
+        to_json_iobuf(v);
+    }
+    void operator()(K&& key, V&& value) {
+        add_raw_kv(
+          to_json_iobuf(std::forward<K>(key)),
+          to_json_iobuf(std::forward<V>(value)));
+    }
+
+    void operator()(const seq_marker& s) {
+        vlog(
+          plog.debug,
+          "Delete {} tombstoning sub={} at {}",
+          to_string_view(s.key_type),
+          sub,
+          s);
+
+        // Assumption: magic is the same as it was when key was
+        // originally read.
+        switch (s.key_type) {
+        case seq_marker_key_type::schema: {
+            auto key = schema_key{
+              .seq{s.seq}, .node{s.node}, .sub{*sub}, .version{s.version}};
+            add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+        } break;
+        case seq_marker_key_type::delete_subject: {
+            auto key = delete_subject_key{
+              .seq{s.seq}, .node{s.node}, .sub{*sub}};
+            add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+        } break;
+        case seq_marker_key_type::config: {
+            auto key = config_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
+            add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+        } break;
+        case seq_marker_key_type::mode: {
+            auto key = mode_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
+            add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+        } break;
+        case seq_marker_key_type::invalid:
+            vassert(false, "Unknown key type");
+            break;
+        }
+    }
+
+    void operator()(const std::vector<seq_marker>& sequences) {
+        for (const seq_marker& s : sequences) {
+            (*this)(s);
+        }
+    }
+
+    std::optional<subject> sub;
+};
+
+} // namespace
 
 /// Call this before reading from the store, if servicing
 /// a REST API endpoint that requires global knowledge of latest
@@ -39,6 +113,15 @@ ss::future<> seq_writer::read_sync() {
 
     auto max_offset = offsets.data.topics[0].partitions[0].offset;
     co_await wait_for(max_offset - model::offset{1});
+}
+
+ss::future<> seq_writer::check_mutable(std::optional<subject> const& sub) {
+    auto mode = sub ? co_await _store.get_mode(*sub, default_to_global::yes)
+                    : co_await _store.get_mode();
+    if (mode == mode::read_only) {
+        throw as_exception(mode_is_readonly(sub));
+    }
+    co_return;
 }
 
 ss::future<> seq_writer::wait_for(model::offset offset) {
@@ -72,37 +155,36 @@ ss::future<> seq_writer::wait_for(model::offset offset) {
 /// Helper for write methods that need to check + retry if their
 /// write landed where they expected it to.
 ///
-/// \param write_at Offset at which caller expects their write to land
+/// \param write_at Offset at which caller expects their write to land. If
+/// std::nullopt, the offset is not checked.
 /// \param batch Message to write
 /// \return true if the write landed at `write_at`, else false
-ss::future<bool> seq_writer::produce_and_check(
-  model::offset write_at, model::record_batch batch) {
-    // Because we rely on checking exactly where our message (singular) landed,
-    // only use this function with batches of a single message.
-    vassert(batch.record_count() == 1, "Only single-message batches allowed");
+ss::future<bool> seq_writer::produce_and_apply(
+  std::optional<model::offset> write_at, model::record_batch batch) {
+    vassert(
+      write_at.value_or(batch.base_offset()) == batch.base_offset(),
+      "Set the base_offset to the expected write_at");
 
     kafka::partition_produce_response res
       = co_await _client.local().produce_record_batch(
-        model::schema_registry_internal_tp, std::move(batch));
+        model::schema_registry_internal_tp, batch.copy());
 
-    // TODO(Ben): Check the error reporting here
     if (res.error_code != kafka::error_code::none) {
-        throw kafka::exception(res.error_code, *res.error_message);
+        throw kafka::exception(res.error_code, res.error_message.value_or(""));
     }
 
-    auto wrote_at = res.base_offset;
-    if (wrote_at == write_at) {
-        vlog(plog.debug, "seq_writer: Successful write at {}", wrote_at);
-
-        co_return true;
+    auto success = write_at.value_or(res.base_offset) == res.base_offset;
+    if (success) {
+        vlog(plog.debug, "seq_writer: Successful write at {}", res.base_offset);
+        co_await consume_to_store(_store, *this)(std::move(batch));
     } else {
         vlog(
           plog.debug,
           "seq_writer: Failed write at {} (wrote at {})",
           write_at,
-          wrote_at);
-        co_return false;
+          res.base_offset);
     }
+    co_return success;
 };
 
 ss::future<> seq_writer::advance_offset(model::offset offset) {
@@ -129,19 +211,25 @@ void seq_writer::advance_offset_inner(model::offset offset) {
 }
 
 ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
-  subject_schema schema, model::offset write_at, seq_writer& seq) {
+  subject_schema schema, model::offset write_at) {
+    co_await check_mutable(schema.schema.sub());
+
     // Check if store already contains this data: if
     // so, we do no I/O and return the schema ID.
-    auto projected = co_await seq._store.project_ids(schema).handle_exception(
-      [](std::exception_ptr e) {
-          vlog(plog.debug, "write_subject_version: project_ids failed: {}", e);
-          return ss::make_exception_future<sharded_store::insert_result>(e);
-      });
+    auto projected
+      = co_await _store.project_ids(schema.share())
+          .handle_exception([](std::exception_ptr e) {
+              vlog(
+                plog.debug, "write_subject_version: project_ids failed: {}", e);
+              return ss::make_exception_future<sharded_store::insert_result>(e);
+          });
 
     if (!projected.inserted) {
         vlog(plog.debug, "write_subject_version: no-op");
         co_return projected.id;
     } else {
+        auto canonical = std::move(schema.schema);
+        auto sub = canonical.sub();
         vlog(
           plog.debug,
           "seq_writer::write_subject_version project offset={} "
@@ -149,49 +237,44 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
           "schema={} "
           "version={}",
           write_at,
-          schema.schema.sub(),
+          sub,
           projected.id,
           projected.version);
 
         auto key = schema_key{
           .seq{write_at},
-          .node{seq._node_id},
-          .sub{schema.schema.sub()},
+          .node{_node_id},
+          .sub{sub},
           .version{projected.version}};
         auto value = canonical_schema_value{
-          .schema{schema.schema},
+          .schema{std::move(canonical)},
           .version{projected.version},
           .id{projected.id},
           .deleted = is_deleted::no};
 
-        auto batch = as_record_batch(key, value);
+        batch_builder rb(write_at, sub);
+        rb(std::move(key), std::move(value));
 
-        auto success = co_await seq.produce_and_check(
-          write_at, std::move(batch));
-        if (success) {
-            auto applier = consume_to_store(seq._store, seq);
-            using Tag = decltype(value.schema)::tag;
-            co_await applier.apply<Tag>(write_at, key, value);
-            seq.advance_offset_inner(write_at);
+        if (co_await produce_and_apply(write_at, std::move(rb).build())) {
             co_return projected.id;
         } else {
+            // Pass up a None, our caller's cue to retry
             co_return std::nullopt;
         }
     }
 }
 
 ss::future<schema_id> seq_writer::write_subject_version(subject_schema schema) {
-    return sequenced_write([this, schema{std::move(schema)}](
-                             model::offset write_at, seq_writer& seq) {
-        return do_write_subject_version(schema, write_at, seq);
-    });
+    co_return co_await sequenced_write(
+      [&schema](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_subject_version(schema.share(), write_at);
+      });
 }
 
 ss::future<std::optional<bool>> seq_writer::do_write_config(
   std::optional<subject> sub,
   compatibility_level compat,
-  model::offset write_at,
-  seq_writer& seq) {
+  model::offset write_at) {
     vlog(
       plog.debug,
       "write_config sub={} compat={} offset={}",
@@ -199,14 +282,16 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
       to_string_view(compat),
       write_at);
 
+    co_await check_mutable(sub);
+
     try {
         // Check for no-op case
         compatibility_level existing;
         if (sub.has_value()) {
-            existing = co_await seq._store.get_compatibility(
+            existing = co_await _store.get_compatibility(
               sub.value(), default_to_global::no);
         } else {
-            existing = co_await seq._store.get_compatibility();
+            existing = co_await _store.get_compatibility();
         }
         if (existing == compat) {
             co_return false;
@@ -215,15 +300,12 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
         // ignore
     }
 
-    auto key = config_key{.seq{write_at}, .node{seq._node_id}, .sub{sub}};
-    auto value = config_value{.compat = compat};
-    auto batch = as_record_batch(key, value);
+    batch_builder rb(write_at, sub);
+    rb(
+      config_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
+      config_value{.compat = compat});
 
-    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
-    if (success) {
-        auto applier = consume_to_store(seq._store, seq);
-        co_await applier.apply(write_at, key, value);
-        seq.advance_offset_inner(write_at);
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return true;
     } else {
         // Pass up a None, our caller's cue to retry
@@ -233,95 +315,129 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
 
 ss::future<bool> seq_writer::write_config(
   std::optional<subject> sub, compatibility_level compat) {
-    return sequenced_write([this, sub{std::move(sub)}, compat](
-                             model::offset write_at, seq_writer& seq) {
-        return do_write_config(sub, compat, write_at, seq);
-    });
+    return sequenced_write(
+      [sub{std::move(sub)}, compat](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_config(sub, compat, write_at);
+      });
 }
 
-ss::future<std::optional<bool>> seq_writer::do_delete_config(
-  subject sub, model::offset write_at, seq_writer& seq) {
-    vlog(plog.debug, "delete config sub={} offset={}", sub, write_at);
+ss::future<std::optional<bool>> seq_writer::do_delete_config(subject sub) {
+    vlog(plog.debug, "delete config sub={}", sub);
+
+    co_await check_mutable(sub);
 
     try {
-        co_await seq._store.get_compatibility(sub, default_to_global::no);
+        co_await _store.get_compatibility(sub, default_to_global::no);
     } catch (const exception&) {
         // subject config already blank
         co_return false;
     }
 
-    std::vector<seq_marker> sequences{
-      co_await _store.get_subject_config_written_at(sub)};
+    batch_builder rb{model::offset{0}, sub};
+    rb(co_await _store.get_subject_config_written_at(sub));
 
-    storage::record_batch_builder rb{
-      model::record_batch_type::raft_data, model::offset{0}};
-
-    std::vector<config_key> keys;
-    for (const auto& s : sequences) {
-        vlog(
-          plog.debug,
-          "Deleting config: tombstoning config_key for sub={} at {}",
-          sub,
-          s);
-
-        vassert(
-          s.key_type == seq_marker_key_type::config,
-          "Unexpected key type: {}",
-          s.key_type);
-
-        auto key = config_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
-        keys.push_back(key);
-        rb.add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
     }
-
-    auto ts_batch = std::move(rb).build();
-    kafka::partition_produce_response res
-      = co_await _client.local().produce_record_batch(
-        model::schema_registry_internal_tp, std::move(ts_batch));
-
-    if (res.error_code != kafka::error_code::none) {
-        vlog(
-          plog.error,
-          "Error writing to subject topic: {} {}",
-          res.error_code,
-          res.error_message);
-        throw kafka::exception(res.error_code, *res.error_message);
-    }
-
-    auto applier = consume_to_store(seq._store, seq);
-    auto offset = res.base_offset;
-    for (const auto& k : keys) {
-        co_await applier.apply(offset, k, std::nullopt);
-        seq.advance_offset_inner(offset);
-        ++offset;
-    }
-
-    co_return true;
 }
 
 ss::future<bool> seq_writer::delete_config(subject sub) {
     return sequenced_write(
-      [this, sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
-          return do_delete_config(sub, write_at, seq);
+      [sub{std::move(sub)}](model::offset, seq_writer& seq) {
+          return seq.do_delete_config(sub);
+      });
+}
+
+ss::future<std::optional<bool>> seq_writer::do_write_mode(
+  std::optional<subject> sub, mode m, force f, model::offset write_at) {
+    vlog(
+      plog.debug,
+      "write_mode sub={} mode={} force={} offset={}",
+      sub,
+      to_string_view(m),
+      f,
+      write_at);
+
+    _store.check_mode_mutability(force::no);
+
+    try {
+        // Check for no-op case
+        mode existing = sub ? co_await _store.get_mode(
+                          sub.value(), default_to_global::no)
+                            : co_await _store.get_mode();
+        if (existing == m) {
+            co_return false;
+        }
+    } catch (const exception& e) {
+        if (e.code() != error_code::mode_not_found) {
+            throw;
+        }
+    }
+
+    batch_builder rb(write_at, sub);
+    rb(
+      mode_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
+      mode_value{.mode = m});
+
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
+}
+
+ss::future<bool>
+seq_writer::write_mode(std::optional<subject> sub, mode mode, force f) {
+    return sequenced_write(
+      [sub{std::move(sub)}, mode, f](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_mode(sub, mode, f, write_at);
+      });
+}
+
+ss::future<std::optional<bool>>
+seq_writer::do_delete_mode(subject sub, model::offset write_at) {
+    vlog(plog.debug, "delete mode sub={} offset={}", sub, write_at);
+
+    // Report an error if the mode isn't registered
+    co_await _store.get_mode(sub, default_to_global::no);
+    _store.check_mode_mutability(force::no);
+
+    batch_builder rb{write_at, sub};
+    rb(co_await _store.get_subject_mode_written_at(sub));
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
+}
+
+ss::future<bool> seq_writer::delete_mode(subject sub) {
+    return sequenced_write(
+      [sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
+          return seq.do_delete_mode(sub, write_at);
       });
 }
 
 /// Impermanent delete: update a version with is_deleted=true
 ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
-  subject sub,
-  schema_version version,
-  model::offset write_at,
-  seq_writer& seq) {
-    if (co_await seq._store.is_referenced(sub, version)) {
+  subject sub, schema_version version, model::offset write_at) {
+    co_await check_mutable(sub);
+
+    if (co_await _store.is_referenced(sub, version)) {
         throw as_exception(has_references(sub, version));
     }
 
-    auto s_res = co_await seq._store.get_subject_schema(
+    auto s_res = co_await _store.get_subject_schema(
       sub, version, include_deleted::yes);
     subject_schema ss = std::move(s_res);
 
     auto key = schema_key{
-      .seq{write_at}, .node{seq._node_id}, .sub{sub}, .version{version}};
+      .seq{write_at}, .node{_node_id}, .sub{sub}, .version{version}};
     vlog(plog.debug, "seq_writer::delete_subject_version {}", key);
     auto value = canonical_schema_value{
       .schema{std::move(ss.schema)},
@@ -329,14 +445,17 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
       .id{ss.id},
       .deleted{is_deleted::yes}};
 
-    auto batch = as_record_batch(key, value);
+    batch_builder rb(write_at, sub);
+    rb(std::move(key), std::move(value));
 
-    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
-    if (success) {
-        auto applier = consume_to_store(seq._store, seq);
-        using Tag = decltype(value.schema)::tag;
-        co_await applier.apply<Tag>(write_at, key, value);
-        seq.advance_offset_inner(write_at);
+    {
+        // Clear config if this is a delete of the last version
+        auto vec = co_await _store.get_versions(sub, include_deleted::no);
+        if (vec.size() == 1 && vec.front() == version) {
+            rb(co_await _store.get_subject_config_written_at(sub));
+        }
+    }
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return true;
     } else {
         // Pass up a None, our caller's cue to retry
@@ -346,26 +465,27 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
 
 ss::future<bool>
 seq_writer::delete_subject_version(subject sub, schema_version version) {
-    return sequenced_write([this, sub{std::move(sub)}, version](
-                             model::offset write_at, seq_writer& seq) {
-        return do_delete_subject_version(sub, version, write_at, seq);
-    });
+    return sequenced_write(
+      [sub{std::move(sub)}, version](model::offset write_at, seq_writer& seq) {
+          return seq.do_delete_subject_version(sub, version, write_at);
+      });
 }
 
 ss::future<std::optional<std::vector<schema_version>>>
-seq_writer::do_delete_subject_impermanent(
-  subject sub, model::offset write_at, seq_writer& seq) {
+seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
+    co_await check_mutable(sub);
+
     // Grab the versions before they're gone.
-    auto versions = co_await seq._store.get_versions(sub, include_deleted::no);
+    auto versions = co_await _store.get_versions(sub, include_deleted::no);
 
     // Inspect the subject to see if its already deleted
-    if (co_await seq._store.is_subject_deleted(sub)) {
+    if (co_await _store.is_subject_deleted(sub)) {
         co_return std::make_optional(versions);
     }
 
     auto is_referenced = co_await ssx::parallel_transform(
-      versions.begin(), versions.end(), [&seq, &sub](auto const& ver) {
-          return seq._store.is_referenced(sub, ver);
+      versions.begin(), versions.end(), [this, &sub](auto const& ver) {
+          return _store.is_referenced(sub, ver);
       });
     if (std::any_of(is_referenced.begin(), is_referenced.end(), [](auto v) {
             return v;
@@ -374,16 +494,28 @@ seq_writer::do_delete_subject_impermanent(
     }
 
     // Proceed to write
-    auto key = delete_subject_key{
-      .seq{write_at}, .node{seq._node_id}, .sub{sub}};
-    auto value = delete_subject_value{.sub{sub}};
-    auto batch = as_record_batch(key, value);
+    batch_builder rb{write_at, sub};
+    rb(
+      delete_subject_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
+      delete_subject_value{.sub{sub}});
 
-    auto success = co_await seq.produce_and_check(write_at, std::move(batch));
-    if (success) {
-        auto applier = consume_to_store(seq._store, seq);
-        co_await applier.apply(write_at, key, value);
-        seq.advance_offset_inner(write_at);
+    try {
+        rb(co_await _store.get_subject_mode_written_at(sub));
+    } catch (exception const& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
+    }
+
+    try {
+        rb(co_await _store.get_subject_config_written_at(sub));
+    } catch (exception const& e) {
+        if (e.code() != error_code::subject_not_found) {
+            throw;
+        }
+    }
+
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
         co_return versions;
     } else {
         // Pass up a None, our caller's cue to retry
@@ -395,8 +527,8 @@ ss::future<std::vector<schema_version>>
 seq_writer::delete_subject_impermanent(subject sub) {
     vlog(plog.debug, "delete_subject_impermanent sub={}", sub);
     return sequenced_write(
-      [this, sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
-          return do_delete_subject_impermanent(sub, write_at, seq);
+      [sub{std::move(sub)}](model::offset write_at, seq_writer& seq) {
+          return seq.do_delete_subject_impermanent(sub, write_at);
       });
 }
 
@@ -406,20 +538,24 @@ seq_writer::delete_subject_impermanent(subject sub) {
 /// will hard-delete the whole subject.
 ss::future<std::vector<schema_version>> seq_writer::delete_subject_permanent(
   subject sub, std::optional<schema_version> version) {
-    return container().invoke_on(0, _smp_opts, [sub, version](seq_writer& seq) {
-        return ss::with_semaphore(seq._write_sem, 1, [sub, version, &seq]() {
-            return seq.delete_subject_permanent_inner(sub, version);
-        });
-    });
+    return sequenced_write(
+      [sub{std::move(sub)}, version](model::offset, seq_writer& seq) {
+          return seq.delete_subject_permanent_inner(sub, version);
+      });
 }
 
-ss::future<std::vector<schema_version>>
+ss::future<std::optional<std::vector<schema_version>>>
 seq_writer::delete_subject_permanent_inner(
   subject sub, std::optional<schema_version> version) {
     std::vector<seq_marker> sequences;
+    batch_builder rb{model::offset{0}, sub};
+
     /// Check for whether our victim is already soft-deleted happens
     /// within these store functions (will throw a 404-equivalent if so)
     vlog(plog.debug, "delete_subject_permanent sub={}", sub);
+
+    co_await check_mutable(sub);
+
     if (version.has_value()) {
         // Check version first to see if the version exists
         sequences = co_await _store.get_subject_version_written_at(
@@ -431,81 +567,16 @@ seq_writer::delete_subject_permanent_inner(
 
     // Deleting the subject, or the last version, deletes the subject
     if (!version.has_value() || versions.size() == 1) {
-        sequences = co_await _store.get_subject_written_at(sub);
+        rb(co_await _store.get_subject_written_at(sub));
     }
+    rb(sequences);
 
-    storage::record_batch_builder rb{
-      model::record_batch_type::raft_data, model::offset{0}};
-
-    std::vector<std::variant<schema_key, delete_subject_key, config_key>> keys;
-    for (auto s : sequences) {
-        vlog(
-          plog.debug,
-          "Delete subject_permanent: tombstoning sub={} at {}",
-          sub,
-          s);
-
-        // Assumption: magic is the same as it was when key was
-        // originally read.
-        switch (s.key_type) {
-        case seq_marker_key_type::schema: {
-            auto key = schema_key{
-              .seq{s.seq}, .node{s.node}, .sub{sub}, .version{s.version}};
-            keys.push_back(key);
-            rb.add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
-        } break;
-        case seq_marker_key_type::delete_subject: {
-            auto key = delete_subject_key{
-              .seq{s.seq}, .node{s.node}, .sub{sub}};
-            keys.push_back(key);
-            rb.add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
-        } break;
-        case seq_marker_key_type::config: {
-            auto key = config_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
-            keys.push_back(key);
-            rb.add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
-        } break;
-        default:
-            vassert(false, "Unknown key type");
-        }
+    if (co_await produce_and_apply(std::nullopt, std::move(rb).build())) {
+        co_return versions;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
     }
-
-    // Produce tombstones.  We do not need to check where they landed,
-    // because these can arrive in any order and be safely repeated.
-    auto batch = std::move(rb).build();
-
-    kafka::partition_produce_response res
-      = co_await _client.local().produce_record_batch(
-        model::schema_registry_internal_tp, std::move(batch));
-    if (res.error_code != kafka::error_code::none) {
-        vlog(
-          plog.error,
-          "Error writing to schema topic: {} {}",
-          res.error_code,
-          res.error_message);
-        throw kafka::exception(res.error_code, *res.error_message);
-    }
-
-    // Replay the persisted deletions into our store
-    auto applier = consume_to_store(_store, *this);
-    auto offset = res.base_offset;
-    for (auto k : keys) {
-        co_await ss::visit(
-          k,
-          [&applier, &offset](const schema_key& skey) {
-              using Tag = canonical_schema_definition_tag;
-              return applier.apply<Tag>(offset, skey, std::nullopt);
-          },
-          [&applier, &offset](const delete_subject_key& dkey) {
-              return applier.apply(offset, dkey, std::nullopt);
-          },
-          [&applier, &offset](const config_key& ckey) {
-              return applier.apply(offset, ckey, std::nullopt);
-          });
-        advance_offset_inner(offset);
-        offset++;
-    }
-    co_return versions;
 }
 
 } // namespace pandaproxy::schema_registry

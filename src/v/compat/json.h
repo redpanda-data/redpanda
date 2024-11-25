@@ -19,6 +19,7 @@
 #include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "utils/base64.h"
+#include "utils/json.h"
 
 #include <seastar/net/inet_address.hh>
 
@@ -516,7 +517,7 @@ inline void rjson_serialize(
           ss.rdstate()));
     }
     w.Key("address");
-    rjson_serialize<std::string_view>(w, ss.str());
+    rjson_serialize(w, std::string_view{ss.str()});
     w.EndObject();
 }
 

@@ -17,6 +17,27 @@
 #include "rpc/rpc_utils.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/net/dns.hh>
+
+#include <ares.h>
+
+namespace {
+bool is_dns_failure_error(const std::system_error& e) {
+    if (e.code().category() == ss::net::dns::error_category()) {
+        switch (e.code().value()) {
+        case ARES_ENOTFOUND:
+        case ARES_ENODATA:
+        case ARES_ETIMEOUT:
+        case ARES_ECONNREFUSED:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    return false;
+}
+} // namespace
 
 namespace kafka::client {
 
@@ -50,7 +71,7 @@ ss::future<shared_broker_t> make_broker(
             });
       })
       .handle_exception_type([node_id](const std::system_error& ex) {
-          if (net::is_reconnect_error(ex)) {
+          if (net::is_reconnect_error(ex) || is_dns_failure_error(ex)) {
               return ss::make_exception_future<shared_broker_t>(
                 broker_error(node_id, error_code::network_exception));
           }

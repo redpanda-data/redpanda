@@ -723,7 +723,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 3
+			expVirtualRpk: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false
@@ -815,7 +815,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			expVirtualRpk: `version: 3
+			expVirtualRpk: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false
@@ -857,7 +857,7 @@ cloud_auth:
 		// * admin api is defaulted, using kafka broker ip
 		{
 			name: "rpk.yaml exists",
-			rpkYaml: `version: 3
+			rpkYaml: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false
@@ -914,7 +914,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 3
+			expVirtualRpk: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false
@@ -975,7 +975,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			rpkYaml: `version: 3
+			rpkYaml: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false
@@ -1025,7 +1025,7 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expVirtualRpk: `version: 3
+			expVirtualRpk: `version: 4
 globals:
     prompt: ""
     no_default_cluster: false

@@ -33,6 +33,10 @@ if [ $(uname -m) = "aarch64" ]; then
 fi
 
 ./build_server.sh
+
+# remove added repository for other packages stability
+add-apt-repository -ry ppa:rabbitmq/rabbitmq-erlang
+
 # The following is required because the server attempts to write logs
 # to the `dist/tmp` directory.  This is fine in docker ducktape as the user
 # who kicks it off is root, but in CDT, the user is not root so the server

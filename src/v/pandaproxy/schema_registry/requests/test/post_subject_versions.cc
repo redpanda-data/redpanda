@@ -50,20 +50,22 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
 })"};
     const pps::subject sub{"test_subject"};
     const parse_result expected{
-      {sub, expected_schema_def}, std::nullopt, std::nullopt};
+      {sub, expected_schema_def.share()}, std::nullopt, std::nullopt};
 
-    auto result{ppj::rjson_parse(
+    auto result{ppj::impl::rjson_parse(
       payload.data(), pps::post_subject_versions_request_handler{sub})};
 
     // canonicalisation now requires a sharded_store, for now, minify.
-    // NOLINTBEGIN(bugprone-use-after-move)
+    auto [rsub, unparsed] = std::move(result.def).destructure();
+    auto [def, type, refs] = std::move(unparsed).destructure();
+
     result.def = {
-      std::move(result.def).sub(),
+      std::move(rsub),
       pps::unparsed_schema_definition{
-        ::json::minify(result.def.def().raw()()),
+        pps::unparsed_schema_definition::raw_string{
+          ::json::minify(std::move(def)())},
         pps::schema_type::avro,
-        std::move(result.def).def().refs()}};
-    // NOLINTEND(bugprone-use-after-move)
+        std::move(refs)}};
 
     BOOST_REQUIRE_EQUAL(expected.def, result.def);
     BOOST_REQUIRE_EQUAL(expected.id.has_value(), result.id.has_value());

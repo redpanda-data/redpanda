@@ -1,5 +1,6 @@
 find_package(Hdrhistogram)
 find_package(Base64)
+find_package(unordered_dense REQUIRED)
 v_cc_library(
   NAME utils
   SRCS
@@ -21,6 +22,7 @@ v_cc_library(
     aklomp::base64
     absl::hash
     absl::random_seed_sequences
+    unordered_dense::unordered_dense
     v::bytes
     v::rphashing
     v::json)

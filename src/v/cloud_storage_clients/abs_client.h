@@ -71,7 +71,8 @@ public:
     /// \param name of the container
     /// \param files_only should always be set to true when HNS is enabled and false otherwise
     /// \param prefix prefix of returned blob's names
-    /// \param start_after is always ignored \param max_keys is the max number of returned objects
+    /// \param max_results is the max number of returned objects
+    /// \param marker is the "continuation-token"
     /// \param delimiter used to group common prefixes
     /// \return initialized and signed http header or error
     // clang-format on
@@ -79,8 +80,8 @@ public:
       const bucket_name& name,
       bool files_only,
       std::optional<object_key> prefix,
-      std::optional<object_key> start_after,
-      std::optional<size_t> max_keys,
+      std::optional<size_t> max_results,
+      std::optional<ss::sstring> marker,
       std::optional<char> delimiter = std::nullopt);
 
     /// \brief Init http header for 'Get Account Information' request
@@ -269,9 +270,8 @@ private:
     ss::future<list_bucket_result> do_list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix,
-      std::optional<object_key> start_after,
-      std::optional<size_t> max_keys,
-      std::optional<ss::sstring> continuation_token,
+      std::optional<size_t> max_results,
+      std::optional<ss::sstring> marker,
       ss::lowres_clock::duration timeout,
       std::optional<char> delimiter = std::nullopt,
       std::optional<item_filter> collect_item_if = std::nullopt);

@@ -11,6 +11,7 @@ rp_test(
     validator_tests.cc
     fetch_unit_test.cc
     config_utils_test.cc
+    config_response_utils_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
   LABELS kafka
@@ -55,7 +56,8 @@ set(srcs
   alter_config_test.cc
   produce_consume_test.cc
   group_metadata_serialization_test.cc
-  partition_reassignments_test.cc)
+  partition_reassignments_test.cc
+  replicated_partition_test.cc)
 
 rp_test(
   FIXTURE_TEST

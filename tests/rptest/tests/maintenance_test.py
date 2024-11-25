@@ -29,9 +29,9 @@ class MaintenanceTest(RedpandaTest):
         # Vary partition count relative to num_cpus. This is to ensure that
         # leadership is moved back to a node that exits maintenance.
         num_cpus = self.redpanda.get_node_cpu_count()
-        self.topics = (TopicSpec(partition_count=num_cpus * 3,
+        self.topics = (TopicSpec(partition_count=num_cpus * 5,
                                  replication_factor=3),
-                       TopicSpec(partition_count=num_cpus * 3,
+                       TopicSpec(partition_count=num_cpus * 10,
                                  replication_factor=3))
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -131,8 +131,12 @@ class MaintenanceTest(RedpandaTest):
         """
         self.logger.debug(
             f"Checking that node {node.name} has a leadership role")
+        # In case the node is unlucky and doesn't get any leaders "naturally",
+        # we have to wait for the leadership balancer to do its job. We have to wait
+        # at least 1 minute for it to unmute just restarted nodes and perform another
+        # tick. Wait more than leader_balancer_idle_timeout (2 minutes) just to be sure.
         wait_until(lambda: self._has_leadership_role(node),
-                   timeout_sec=60,
+                   timeout_sec=150,
                    backoff_sec=10)
 
         self.logger.debug(

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/health_monitor_types.h"
 #include "cluster/members_table.h"
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_planner.h"
@@ -27,6 +28,7 @@
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <chrono>
 #include <optional>
@@ -381,9 +383,14 @@ struct partition_balancer_planner_fixture {
               .data_current_size = node_disk.total - node_disk.free,
               .data_reclaimable_size = 0};
             node_report.local_state.set_disk(node_disk);
-            health_report.node_reports.push_back(node_report);
+            if (i == 0) {
+                node_report.topics = topics.copy();
+            }
+            health_report.node_reports.emplace_back(
+              ss::make_lw_shared<cluster::node_health_report>(
+                std::move(node_report)));
         }
-        health_report.node_reports[0].topics = std::move(topics);
+
         return health_report;
     }
 

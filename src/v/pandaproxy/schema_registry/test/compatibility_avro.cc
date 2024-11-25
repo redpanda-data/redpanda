@@ -11,25 +11,51 @@
 
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/test/compatibility_common.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/container/flat_hash_set.h>
+#include <avro/Compiler.hh>
+#include <boost/test/tools/old/interface.hpp>
+
+#include <array>
+
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+
+namespace {
 
 bool check_compatible(
   const pps::canonical_schema_definition& r,
   const pps::canonical_schema_definition& w) {
     pps::sharded_store s;
     return check_compatible(
+             pps::make_avro_schema_definition(
+               s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
+               .get(),
+             pps::make_avro_schema_definition(
+               s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
+               .get())
+      .is_compat;
+}
+
+pps::compatibility_result check_compatible_verbose(
+  const pps::canonical_schema_definition& r,
+  const pps::canonical_schema_definition& w) {
+    pps::sharded_store s;
+    return check_compatible(
       pps::make_avro_schema_definition(
-        s, {pps::subject("r"), {r.raw(), pps::schema_type::avro}})
+        s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
         .get(),
       pps::make_avro_schema_definition(
-        s, {pps::subject("w"), {w.raw(), pps::schema_type::avro}})
-        .get());
+        s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
+        .get(),
+      pps::verbose::yes);
 }
+
+} // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_long, schema_int));
@@ -239,10 +265,11 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
       R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})",
       pps::schema_type::avro};
     pps::sharded_store s;
-    auto valid
-      = pps::make_avro_schema_definition(
-          s, {pps::subject("s2"), {schema2.raw(), pps::schema_type::avro}})
-          .get();
+    auto valid = pps::make_avro_schema_definition(
+                   s,
+                   {pps::subject("s2"),
+                    {schema2.shared_raw(), pps::schema_type::avro}})
+                   .get();
     static_assert(
       std::
         is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
@@ -267,7 +294,8 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
     auto valid = pps::make_avro_schema_definition(
                    s,
                    {pps::subject("s2"),
-                    {avro_metadata_schema.raw(), pps::schema_type::avro}})
+                    {avro_metadata_schema.shared_raw(),
+                     pps::schema_type::avro}})
                    .get();
     static_assert(
       std::
@@ -275,4 +303,268 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
       "schema2 is an avro_schema_definition");
     pps::canonical_schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_avro_alias_resolution_stopgap) {
+    auto writer = avro::compileJsonSchemaFromString(
+      R"({"type":"record","fields":[{"name":"bar","type":"float"}],"name":"foo"})");
+
+    auto reader = avro::compileJsonSchemaFromString(
+      R"({"type":"record","fields":[{"name":"bar","type":"float"}],"name":"foo_renamed","aliases":["foo"]})");
+
+    auto& writer_root = *writer.root();
+    auto& reader_root = *reader.root();
+
+    // This should resolve to true but it currently resolves to false because
+    // the Avro library doesn't fully support handling schema resolution with
+    // aliases yet. When the avro library supports alias resolution this test
+    // will fail and we should then update the compat check to don't report an
+    // incompatibility when the record names are properly aliased.
+    BOOST_CHECK(!writer_root.resolve(reader_root));
+}
+
+namespace {
+
+const auto schema_old = pps::sanitize_avro_schema_definition(
+                          {
+                            R"({
+    "type": "record",
+    "name": "myrecord",
+    "fields": [
+        {
+            "name": "f1",
+            "type": "string"
+        },
+        {
+            "name": "f2",
+            "type": {
+                "name": "nestedRec",
+                "type": "record",
+                "fields": [
+                    {
+                        "name": "nestedF",
+                        "type": "string"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "uF",
+            "type": ["int", "string"]
+        },
+        {
+            "name": "enumF",
+            "type": {
+                "name": "ABorC",
+                "type": "enum",
+                "symbols": ["a", "b", "c"]
+            }
+        },
+        {
+            "name": "fixedF",
+            "type": {
+                "type": "fixed",
+                "name": "fixedT",
+                "size": 1
+            }
+        },
+	      {
+	          "name": "oldUnion",
+	          "type": ["int", "string"]
+	      },
+	      {
+	          "name": "newUnion",
+	          "type": "int"
+	      },
+        {
+            "name": "someList",
+            "type": {
+                "type": "array",
+                "items": "int"
+            }
+        },
+        {
+            "name": "otherEnumF",
+            "type": {
+                "type": "enum",
+                "name": "someEnum1",
+                "symbols" : ["SPADES", "HEARTS", "DIAMONDS", "CLUBS"]
+            }
+        }
+    ]
+})",
+                            pps::schema_type::avro})
+                          .value();
+
+const auto schema_new = pps::sanitize_avro_schema_definition(
+                          {
+                            R"({
+    "type": "record",
+    "name": "myrecord",
+    "fields": [
+        {
+            "name": "f1",
+            "type": "int"
+        },
+        {
+            "name": "f2",
+            "type": {
+                "name": "nestedRec2",
+                "type": "record",
+                "fields": [
+                    {
+                        "name": "broken",
+                        "type": "string"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "uF",
+            "type": ["string"]
+        },
+        {
+            "name": "enumF",
+            "type": {
+                "name": "ABorC",
+                "type": "enum",
+                "symbols": ["a"]
+            }
+        },
+        {
+            "name": "fixedF",
+            "type": {
+                "type": "fixed",
+                "name": "fixedT",
+                "size": 2
+            }
+        },
+        {
+            "name": "oldUnion",
+	          "type": "boolean"
+	      },
+	      {
+	          "name": "newUnion",
+	          "type": ["boolean", "string"]
+	      },
+        {
+            "name": "someList",
+            "type": {
+                "type": "array",
+                "items": "long"
+            }
+        },
+        {
+            "name": "otherEnumF",
+            "type": {
+                "type": "enum",
+                "name": "someEnum2",
+                "aliases": ["someEnum1"],
+                "symbols" : ["SPADES", "HEARTS", "DIAMONDS", "CLUBS"]
+            }
+        }
+    ]
+})",
+                            pps::schema_type::avro})
+                          .value();
+
+using incompatibility = pps::avro_incompatibility;
+
+const absl::flat_hash_set<incompatibility> forward_expected{
+  {"/fields/0/type",
+   incompatibility::Type::type_mismatch,
+   "reader type: STRING not compatible with writer type: INT"},
+  {"/fields/1/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: nestedRec2"},
+  {"/fields/1/type/fields/0",
+   incompatibility::Type::reader_field_missing_default_value,
+   "nestedF"},
+  {"/fields/4/type/size",
+   incompatibility::Type::fixed_size_mismatch,
+   "expected: 2, found: 1"},
+  {"/fields/5/type",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: BOOLEAN"},
+  {"/fields/6/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: BOOLEAN"},
+  {"/fields/6/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: STRING"},
+  {"/fields/7/type/items",
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: LONG"},
+  {"/fields/8/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: someEnum2"},
+};
+const absl::flat_hash_set<incompatibility> backward_expected{
+  {"/fields/0/type",
+   incompatibility::Type::type_mismatch,
+   "reader type: INT not compatible with writer type: STRING"},
+  {"/fields/1/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: nestedRec"},
+  {"/fields/1/type/fields/0",
+   incompatibility::Type::reader_field_missing_default_value,
+   "broken"},
+  {"/fields/2/type/0",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: INT"},
+  {"/fields/3/type/symbols",
+   incompatibility::Type::missing_enum_symbols,
+   "[b, c]"},
+  {"/fields/4/type/size",
+   incompatibility::Type::fixed_size_mismatch,
+   "expected: 1, found: 2"},
+  {"/fields/5/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: BOOLEAN not compatible with writer type: INT"},
+  {"/fields/5/type", /* NOTE: this is more path info than the reference impl */
+   incompatibility::Type::type_mismatch,
+   "reader type: BOOLEAN not compatible with writer type: STRING"},
+  {"/fields/6/type",
+   incompatibility::Type::missing_union_branch,
+   "reader union lacking writer type: INT"},
+  // Note: once Avro supports schema resolution with name aliases, the
+  // incompatibility below should go away
+  {"/fields/8/type/name",
+   incompatibility::Type::name_mismatch,
+   "expected: someEnum1 (alias resolution is not yet fully supported)"},
+};
+
+const auto compat_data = std::to_array<compat_test_data<incompatibility>>({
+  {
+    schema_old.share(),
+    schema_new.share(),
+    forward_expected,
+  },
+  {
+    schema_new.share(),
+    schema_old.share(),
+    backward_expected,
+  },
+});
+
+std::string format_set(const absl::flat_hash_set<ss::sstring>& d) {
+    return fmt::format("{}", fmt::join(d, "\n"));
+}
+
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(test_avro_compat_messages) {
+    for (const auto& cd : compat_data) {
+        auto compat = check_compatible_verbose(cd.reader, cd.writer);
+        absl::flat_hash_set<ss::sstring> errs{
+          compat.messages.begin(), compat.messages.end()};
+        absl::flat_hash_set<ss::sstring> expected{
+          cd.expected.messages.begin(), cd.expected.messages.end()};
+
+        BOOST_CHECK(!compat.is_compat);
+        BOOST_CHECK_EQUAL(errs.size(), expected.size());
+        BOOST_REQUIRE_MESSAGE(
+          errs == expected,
+          fmt::format("{} != {}", format_set(errs), format_set(expected)));
+    }
 }

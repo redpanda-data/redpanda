@@ -57,7 +57,7 @@ struct offset_for_leader_epoch_response final {
           current_request.data.topics.end(),
           std::back_inserter(data.topics),
           [ec](offset_for_leader_topic& o) {
-              std::vector<epoch_end_offset> offsets;
+              chunked_vector<epoch_end_offset> offsets;
               offsets.reserve(o.partitions.size());
               std::transform(
                 o.partitions.begin(),

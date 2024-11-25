@@ -17,6 +17,7 @@
 #include "kafka/server/response.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
@@ -32,7 +33,7 @@ struct partition_data {
 };
 
 using partition_dir_set
-  = absl::flat_hash_map<model::topic, std::vector<partition_data>>;
+  = chunked_hash_map<model::topic, chunked_vector<partition_data>>;
 
 static partition_data describe_partition(cluster::partition& p) {
     auto result = partition_data{
@@ -99,16 +100,22 @@ static partition_dir_set collect_mapper(
  */
 static ss::future<partition_dir_set> collect(
   request_context& ctx,
-  std::optional<std::vector<describable_log_dir_topic>> filter) {
+  std::optional<chunked_vector<describable_log_dir_topic>> filter) {
+    std::optional<std::vector<describable_log_dir_topic>> filter_v;
+    if (filter) {
+        filter_v.emplace(
+          std::make_move_iterator(filter->begin()),
+          std::make_move_iterator(filter->end()));
+    }
     return ctx.partition_manager().map_reduce0(
-      [filter = std::move(filter)](cluster::partition_manager& pm) {
+      [filter{std::move(filter_v)}](cluster::partition_manager& pm) {
           return collect_mapper(pm, filter);
       },
       partition_dir_set{},
       [](partition_dir_set acc, const partition_dir_set& update) {
           for (auto& topic : update) {
               for (auto partition : topic.second) {
-                  acc[topic.first].push_back(partition);
+                  acc[topic.first].push_back(std::move(partition));
               }
           }
           return acc;
@@ -159,9 +166,9 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
 
-        std::vector<describe_log_dirs_partition> local_partitions;
-        std::vector<describe_log_dirs_partition> remote_partitions;
-        for (const auto& i : node.mapped()) {
+        chunked_vector<describe_log_dirs_partition> local_partitions;
+        chunked_vector<describe_log_dirs_partition> remote_partitions;
+        for (const auto& i : node.second) {
             local_partitions.push_back(i.local);
             if (i.remote.has_value()) {
                 remote_partitions.push_back(i.remote.value());
@@ -169,12 +176,12 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
         }
 
         local_results.topics.push_back(describe_log_dirs_topic{
-          .name = node.key(),
+          .name = node.first,
           .partitions = std::move(local_partitions),
         });
         if (!remote_partitions.empty()) {
             remote_results.topics.push_back(describe_log_dirs_topic{
-              .name = std::move(node.key()),
+              .name = std::move(node.first),
               .partitions = std::move(remote_partitions),
             });
         }

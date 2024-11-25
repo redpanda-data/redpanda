@@ -41,7 +41,8 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<rpc::connection_cache>&,
-      ss::sharded<partition_manager>&);
+      ss::sharded<partition_manager>&,
+      ss::sharded<node_status_backend>&);
 
     virtual ss::future<join_node_reply>
     join_node(join_node_request, rpc::streaming_context&) override;
@@ -189,5 +190,6 @@ private:
     ss::sharded<rpc::connection_cache>& _conn_cache;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<plugin_frontend>& _plugin_frontend;
+    ss::sharded<node_status_backend>& _node_status_backend;
 };
 } // namespace cluster

@@ -976,7 +976,7 @@ topics_frontend::partitions_with_lost_majority(
             co_return errc::concurrent_modification_error;
         }
         co_return result;
-    } catch (const topic_table::concurrent_modification_error& e) {
+    } catch (const concurrent_modification_error& e) {
         // state changed while generating the plan, force caller to retry;
         vlog(
           clusterlog.info,
@@ -1089,7 +1089,8 @@ ss::future<std::error_code> topics_frontend::abort_moving_partition_replicas(
 ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
   model::ntp ntp,
   std::vector<model::broker_shard> new_replica_set,
-  model::timeout_clock::time_point tout) {
+  model::timeout_clock::time_point tout,
+  dispatch_to_leader dispatch) {
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
@@ -1097,17 +1098,24 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
         return ss::make_ready_future<std::error_code>(
           errc::no_leader_controller);
     }
-    // optimization: if update is not in progress return early
-    if (!_topics.local().is_update_in_progress(ntp)) {
-        return ss::make_ready_future<std::error_code>(
-          errc::no_update_in_progress);
-    }
+
     // current node is a leader, just replicate
     if (leader == _self) {
+        // optimization: if update is not in progress return early
+        if (!_topics.local().is_update_in_progress(ntp)) {
+            return ss::make_ready_future<std::error_code>(
+              errc::no_update_in_progress);
+        }
+
         finish_moving_partition_replicas_cmd cmd(
           std::move(ntp), std::move(new_replica_set));
 
         return replicate_and_wait(_stm, _as, std::move(cmd), tout);
+    }
+
+    if (!dispatch) {
+        return ss::make_ready_future<std::error_code>(
+          errc::not_leader_controller);
     }
 
     return _connections.local()
@@ -1294,7 +1302,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
     // we only support increasing number of partitions
     if (p_cfg.new_total_partition_count <= tp_cfg->partition_count) {
         co_return make_error_result(
-          p_cfg.tp_ns, errc::topic_invalid_partitions);
+          p_cfg.tp_ns, errc::topic_invalid_partitions_decreased);
     }
     if (_topics.local().is_fully_disabled(p_cfg.tp_ns)) {
         co_return make_error_result(p_cfg.tp_ns, errc::topic_disabled);
@@ -1496,16 +1504,17 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
 
         // This health report is just on the data disk.  If the cache has
         // a separate disk, it is not reflected in the node health.
-        total += node_report.local_state.data_disk.total;
-        free += node_report.local_state.data_disk.free;
+        total += node_report->local_state.data_disk.total;
+        free += node_report->local_state.data_disk.free;
 
         info.node_disk_reports.emplace(
-          node_report.id, node_disk_space(node_report.id, total, total - free));
+          node_report->id,
+          node_disk_space(node_report->id, total, total - free));
     }
 
     for (auto& node_report : health_report.value().node_reports) {
         co_await ss::max_concurrent_for_each(
-          std::move(node_report.topics),
+          std::move(node_report->topics),
           32,
           [&info](const topic_status& status) {
               for (const auto& partition : status.partitions) {

@@ -62,7 +62,7 @@ SEASTAR_THREAD_TEST_CASE(one_level) {
     file2.close().get();
 
     access_time_tracker tracker;
-    auto result = _walker.walk(target_dir.native(), tracker).get();
+    auto result = _walker.walk(target_dir.native(), tracker, 3).get();
 
     auto expect = std::set<std::string>{
       file_path1.native(), file_path2.native()};
@@ -81,6 +81,8 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
 
     ss::recursive_touch_directory((target_dir / "a").native()).get();
     ss::recursive_touch_directory((target_dir / "b" / "c").native()).get();
+    ss::recursive_touch_directory((target_dir / "b" / "c-empty").native())
+      .get();
 
     auto flags = ss::open_flags::wo | ss::open_flags::create
                  | ss::open_flags::exclusive;
@@ -94,10 +96,11 @@ SEASTAR_THREAD_TEST_CASE(three_levels) {
     file3.close().get();
 
     access_time_tracker tracker;
-    auto result = _walker.walk(target_dir.native(), tracker).get();
+    auto result = _walker.walk(target_dir.native(), tracker, 3).get();
 
     BOOST_REQUIRE_EQUAL(result.cache_size, 0);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 3);
+    BOOST_REQUIRE_EQUAL(result.empty_dirs.size(), 1);
 
     auto expect = std::set<std::string>{
       file_path1.native(), file_path2.native(), file_path3.native()};
@@ -115,7 +118,7 @@ SEASTAR_THREAD_TEST_CASE(no_files) {
     ss::recursive_touch_directory(dir2.native()).get();
 
     access_time_tracker tracker;
-    auto result = _walker.walk(target_dir.native(), tracker).get();
+    auto result = _walker.walk(target_dir.native(), tracker, 3).get();
 
     BOOST_REQUIRE_EQUAL(result.cache_size, 0);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 0);
@@ -127,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(empty_dir) {
     const std::filesystem::path target_dir = tmpdir.get_path();
 
     access_time_tracker tracker;
-    auto result = _walker.walk(target_dir.native(), tracker).get();
+    auto result = _walker.walk(target_dir.native(), tracker, 3).get();
 
     BOOST_REQUIRE_EQUAL(result.cache_size, 0);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 0);
@@ -181,6 +184,7 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
                     .walk(
                       target_dir.native(),
                       tracker,
+                      3,
                       [](std::string_view path) {
                           return !(
                             std::string_view(path).ends_with(".tx")

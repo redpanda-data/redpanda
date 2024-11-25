@@ -32,7 +32,7 @@
 #include <absl/container/node_hash_map.h>
 
 #include <cstdint>
-#include <deque>
+#include <optional>
 #include <ostream>
 
 namespace cluster {
@@ -207,6 +207,11 @@ public:
         initial_retention_local_target_bytes,
       config::binding<std::optional<std::chrono::milliseconds>>
         initial_retention_local_target_ms,
+      config::binding<std::optional<size_t>>
+        retention_local_target_bytes_default,
+      config::binding<std::chrono::milliseconds>
+        retention_local_target_ms_default,
+      config::binding<bool> retention_local_strict,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -400,6 +405,7 @@ private:
     bool should_skip(const model::ntp&) const;
 
     std::optional<model::offset> calculate_learner_initial_offset(
+      reconfiguration_policy policy,
       const ss::lw_shared_ptr<partition>& partition) const;
 
     ss::sharded<topic_table>& _topics;
@@ -417,6 +423,11 @@ private:
       _initial_retention_local_target_bytes;
     config::binding<std::optional<std::chrono::milliseconds>>
       _initial_retention_local_target_ms;
+    config::binding<std::optional<size_t>>
+      _retention_local_target_bytes_default;
+    config::binding<std::chrono::milliseconds>
+      _retention_local_target_ms_default;
+    config::binding<bool> _retention_local_strict;
     ss::sharded<ss::abort_source>& _as;
 
     absl::btree_map<model::ntp, ntp_reconciliation_state> _states;

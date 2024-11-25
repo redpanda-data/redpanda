@@ -415,7 +415,9 @@ struct configuration final : public config_store {
     bounded_property<std::optional<double>, numeric_bounds>
       cloud_storage_cache_size_percent;
     property<uint32_t> cloud_storage_cache_max_objects;
+    property<uint32_t> cloud_storage_cache_trim_carryover_bytes;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
+    bounded_property<uint16_t> cloud_storage_cache_trim_walk_concurrency;
     property<std::optional<uint32_t>>
       cloud_storage_max_segment_readers_per_shard;
     property<std::optional<uint32_t>>
@@ -431,6 +433,10 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    bounded_property<std::optional<double>, numeric_bounds>
+      cloud_storage_cache_trim_threshold_percent_size;
+    bounded_property<std::optional<double>, numeric_bounds>
+      cloud_storage_cache_trim_threshold_percent_objects;
 
     one_or_many_property<ss::sstring> superusers;
 
@@ -448,6 +454,7 @@ struct configuration final : public config_store {
     property<size_t> kafka_qdc_max_depth;
     property<std::chrono::milliseconds> kafka_qdc_depth_update_ms;
     property<size_t> zstd_decompress_workspace_bytes;
+    property<bool> lz4_decompress_reusable_buffers_disabled;
     one_or_many_property<ss::sstring> full_raft_configuration_recovery_pattern;
     property<bool> enable_auto_rebalance_on_node_add;
 
@@ -479,6 +486,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     bounded_property<size_t> storage_min_free_bytes;
     property<bool> storage_strict_data_init;
+    property<std::chrono::milliseconds> alive_timeout_ms;
 
     // memory related settings
     property<bool> memory_abort_on_alloc_failure;
@@ -542,6 +550,8 @@ struct configuration final : public config_store {
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
+    property<bool> schema_registry_normalize_on_startup;
+
     bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
     property<size_t> kafka_memory_batch_size_estimate_for_fetch;
     // debug controls
@@ -557,6 +567,9 @@ struct configuration final : public config_store {
 
     // HTTP Authentication
     property<std::vector<ss::sstring>> http_authentication;
+
+    // temporary - to be deprecated
+    property<bool> unsafe_enable_consumer_offsets_delete_retention;
 
     configuration();
 

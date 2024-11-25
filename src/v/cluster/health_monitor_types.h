@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "reflection/adl.h"
+#include "serde/async.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/chunked_fifo.hh>
@@ -28,6 +29,7 @@
 
 namespace cluster {
 
+static constexpr ss::shard_id health_monitor_backend_shard = 0;
 /**
  * Health reports
  */
@@ -44,15 +46,40 @@ using application_version = named_type<ss::sstring, struct version_number_tag>;
 struct node_state
   : serde::envelope<node_state, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
+    node_state(
+      model::node_id id,
+      model::membership_state membership_state,
+      alive is_alive);
 
-    model::node_id id;
-    model::membership_state membership_state;
-    alive is_alive;
+    node_state() = default;
+    node_state(const node_state&) = default;
+    node_state(node_state&&) noexcept = default;
+    node_state& operator=(const node_state&) = default;
+    node_state& operator=(node_state&&) noexcept = default;
+    ~node_state() noexcept = default;
+
+    model::node_id id() const { return _id; }
+
+    model::membership_state membership_state() const {
+        return _membership_state;
+    }
+    // clang-format off
+    [[deprecated("please use health_monitor_frontend::is_alive() to query for "
+                 "liveness")]] 
+    alive is_alive() const {
+        return _is_alive;
+    }
+    // clang-format on
     friend std::ostream& operator<<(std::ostream&, const node_state&);
 
     friend bool operator==(const node_state&, const node_state&) = default;
 
-    auto serde_fields() { return std::tie(id, membership_state, is_alive); }
+    auto serde_fields() { return std::tie(_id, _membership_state, _is_alive); }
+
+private:
+    model::node_id _id;
+    model::membership_state _membership_state;
+    alive _is_alive;
 };
 
 struct partition_status
@@ -190,6 +217,8 @@ struct node_health_report
     operator==(const node_health_report& a, const node_health_report& b);
 };
 
+using node_health_report_ptr
+  = ss::foreign_ptr<ss::lw_shared_ptr<const node_health_report>>;
 struct cluster_health_report
   : serde::envelope<
       cluster_health_report,
@@ -202,7 +231,7 @@ struct cluster_health_report
 
     // node reports are node specific information collected directly on a
     // node
-    std::vector<node_health_report> node_reports;
+    std::vector<node_health_report_ptr> node_reports;
 
     // cluster-wide cached information about total cloud storage usage
     std::optional<size_t> bytes_in_cloud_storage;
@@ -213,9 +242,81 @@ struct cluster_health_report
     operator==(const cluster_health_report&, const cluster_health_report&)
       = default;
 
-    auto serde_fields() {
-        return std::tie(
-          raft0_leader, node_states, node_reports, bytes_in_cloud_storage);
+    cluster_health_report copy() const;
+
+    ss::future<> serde_async_write(iobuf& out) {
+        using serde::write;
+        using serde::write_async;
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, raft0_leader);
+        write(out, node_states);
+        write(out, static_cast<serde::serde_size_t>(node_reports.size()));
+        for (auto& nr : node_reports) {
+            co_await write_async(out, *nr);
+        }
+        write(out, bytes_in_cloud_storage);
+    }
+
+    ss::future<> serde_async_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_async_nested;
+        using serde::read_nested;
+        raft0_leader = read_nested<std::optional<model::node_id>>(
+          in, h._bytes_left_limit);
+        node_states = read_nested<std::vector<node_state>>(
+          in, h._bytes_left_limit);
+        const auto sz = read_nested<serde::serde_size_t>(
+          in, h._bytes_left_limit);
+        node_reports.reserve(sz);
+        for (auto i = 0U; i < sz; ++i) {
+            auto r = co_await read_async_nested<node_health_report>(
+              in, h._bytes_left_limit);
+            node_reports.emplace_back(
+              ss::make_lw_shared<node_health_report>(std::move(r)));
+        }
+        bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
+          in, h._bytes_left_limit);
+
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
+        }
+    }
+    void serde_write(iobuf& out) {
+        using serde::write;
+
+        // the current version decodes into the decoded version and is used in
+        // request handling--that is, it is used at layer above serialization so
+        // without further changes we'll need to preserve that behavior.
+        write(out, raft0_leader);
+        write(out, node_states);
+        write(out, static_cast<serde::serde_size_t>(node_reports.size()));
+        for (auto& nr : node_reports) {
+            write(out, *nr);
+        }
+        write(out, bytes_in_cloud_storage);
+    }
+
+    void serde_read(iobuf_parser& in, const serde::header& h) {
+        using serde::read_nested;
+        raft0_leader = read_nested<std::optional<model::node_id>>(
+          in, h._bytes_left_limit);
+        node_states = read_nested<std::vector<node_state>>(
+          in, h._bytes_left_limit);
+        const auto sz = read_nested<serde::serde_size_t>(
+          in, h._bytes_left_limit);
+        node_reports.reserve(sz);
+        for (auto i = 0U; i < sz; ++i) {
+            auto r = read_nested<node_health_report>(in, h._bytes_left_limit);
+            node_reports.emplace_back(
+              ss::make_lw_shared<node_health_report>(std::move(r)));
+        }
+        bytes_in_cloud_storage = read_nested<std::optional<size_t>>(
+          in, h._bytes_left_limit);
+
+        if (in.bytes_left() > h._bytes_left_limit) {
+            in.skip(in.bytes_left() - h._bytes_left_limit);
+        }
     }
 };
 
@@ -250,6 +351,9 @@ struct cluster_health_overview {
     std::vector<model::ntp> under_replicated_partitions;
     size_t under_replicated_count{};
     std::optional<size_t> bytes_in_cloud_storage;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const cluster_health_overview&);
 };
 
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;
@@ -323,23 +427,16 @@ using force_refresh = ss::bool_class<struct hm_force_refresh_tag>;
  * RPC requests
  */
 
-struct get_node_health_request
-  : serde::envelope<
+class get_node_health_request
+  : public serde::envelope<
       get_node_health_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
+public:
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t initial_version = 0;
-    // version -1: included revision id in partition status
-    static constexpr int8_t revision_id_version = -1;
-    // version -2: included size_bytes in partition status
-    static constexpr int8_t size_bytes_version = -2;
-
-    static constexpr int8_t current_version = size_bytes_version;
-
-    node_report_filter filter;
-    // this field is not serialized
-    int8_t decoded_version = current_version;
+    get_node_health_request() = default;
+    explicit get_node_health_request(model::node_id target_node_id)
+      : _target_node_id(target_node_id) {}
 
     friend bool
     operator==(const get_node_health_request&, const get_node_health_request&)
@@ -348,7 +445,19 @@ struct get_node_health_request
     friend std::ostream&
     operator<<(std::ostream&, const get_node_health_request&);
 
-    auto serde_fields() { return std::tie(filter); }
+    auto serde_fields() { return std::tie(_filter, _target_node_id); }
+    static constexpr model::node_id node_id_not_set{-1};
+
+    model::node_id get_target_node_id() const { return _target_node_id; }
+
+private:
+    // default value for backward compatibility
+    model::node_id _target_node_id = node_id_not_set;
+    /**
+     * This field is no longer used, as it never was. It was made private on
+     * purpose
+     */
+    node_report_filter _filter;
 };
 
 struct get_node_health_reply
@@ -357,7 +466,6 @@ struct get_node_health_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
     std::optional<node_health_report> report;
@@ -434,6 +542,8 @@ struct get_cluster_health_reply
 
     friend std::ostream&
     operator<<(std::ostream&, const get_cluster_health_reply&);
+
+    get_cluster_health_reply copy() const;
 
     auto serde_fields() { return std::tie(error, report); }
 };

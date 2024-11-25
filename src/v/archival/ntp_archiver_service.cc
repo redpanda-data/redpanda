@@ -55,6 +55,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -225,9 +226,9 @@ ntp_archiver::ntp_archiver(
   , _next_housekeeping(_housekeeping_jitter())
   , _feature_table(parent.feature_table())
   , _local_segment_merger(
-      maybe_make_adjacent_segment_merger(*this, parent.log()->config()))
+      maybe_make_adjacent_segment_merger(*this, _parent.log()->config()))
   , _scrubber(maybe_make_scrubber(
-      *this, _remote, _feature_table.local(), parent.log()->config()))
+      *this, _remote, _feature_table.local(), _parent.log()->config()))
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
@@ -237,6 +238,13 @@ ntp_archiver::ntp_archiver(
           _housekeeping_interval(), housekeeping_jit};
         _next_housekeeping = _housekeeping_jitter();
     });
+
+    if (_local_segment_merger) {
+        _local_segment_merger->set_enabled(false);
+    }
+    if (_scrubber) {
+        _scrubber->set_enabled(false);
+    }
 
     _start_term = _parent.term();
     // Override bucket for read-replica
@@ -248,7 +256,7 @@ ntp_archiver::ntp_archiver(
       archival_log.debug,
       "created ntp_archiver {} in term {}",
       _ntp,
-      _start_term);
+      _parent.term());
 }
 
 const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
@@ -260,20 +268,6 @@ const cloud_storage::partition_manifest& ntp_archiver::manifest() const {
 }
 
 ss::future<> ntp_archiver::start() {
-    // Pre-sync the ntp_archiver to make sure that the adjacent segment merger
-    // can only see up to date manifest.
-    auto sync_timeout = config::shard_local_cfg()
-                          .cloud_storage_metadata_sync_timeout_ms.value();
-    co_await _parent.archival_meta_stm()->sync(sync_timeout);
-
-    bool is_leader = _parent.is_leader();
-    if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(is_leader);
-    }
-    if (_scrubber) {
-        _scrubber->set_enabled(is_leader);
-    }
-
     if (_parent.get_ntp_config().is_read_replica_mode_enabled()) {
         ssx::spawn_with_gate(_gate, [this] {
             return sync_manifest_until_abort().then([this] {
@@ -314,13 +308,6 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
       _parent.raft()->self().id());
     if (is_leader) {
         _leader_cond.signal();
-    }
-    if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(is_leader);
-    }
-
-    if (_scrubber) {
-        _scrubber->set_enabled(is_leader);
     }
 }
 
@@ -367,7 +354,36 @@ ss::future<> ntp_archiver::upload_until_abort() {
         if (!is_synced) {
             continue;
         }
+
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
+        if (!may_begin_uploads()) {
+            continue;
+        }
+
+        if (_local_segment_merger) {
+            vlog(
+              _rtclog.debug,
+              "Enable adjacent segment merger in term {}",
+              _start_term);
+            _local_segment_merger->set_enabled(true);
+        }
+        if (_scrubber) {
+            vlog(_rtclog.debug, "Enable scrubber in term {}", _start_term);
+            _scrubber->set_enabled(true);
+        }
+        auto disable_hk_jobs = ss::defer([this] {
+            if (_local_segment_merger) {
+                vlog(
+                  _rtclog.debug,
+                  "Disable adjacent segment merger in term {}",
+                  _start_term);
+                _local_segment_merger->set_enabled(false);
+            }
+            if (_scrubber) {
+                vlog(_rtclog.debug, "Disable scrubber in term {}", _start_term);
+                _scrubber->set_enabled(false);
+            }
+        });
 
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group,
@@ -501,7 +517,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 
     try {
         retry_chain_node fib(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->cloud_storage_initial_backoff,
           &_rtcnode);
         retry_chain_logger ctxlog(archival_log, fib);
@@ -913,7 +929,7 @@ ss::future<
 ntp_archiver::download_manifest() {
     auto guard = _gate.hold();
     retry_chain_node fib(
-      _conf->manifest_upload_timeout,
+      _conf->manifest_upload_timeout(),
       _conf->cloud_storage_initial_backoff,
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
@@ -1067,7 +1083,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
-      _conf->manifest_upload_timeout,
+      _conf->manifest_upload_timeout(),
       _conf->cloud_storage_initial_backoff,
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
@@ -1541,7 +1557,7 @@ ntp_archiver::do_schedule_single_upload(
 ss::future<ntp_archiver::scheduled_upload>
 ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto start_upload_offset = upload_ctx.start_offset;
-    auto last_stable_offset = upload_ctx.last_offset;
+    auto last_stable_offset = upload_ctx.end_offset_exclusive;
 
     auto log = _parent.log();
 
@@ -1616,7 +1632,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 }
 
 ss::future<std::vector<ntp_archiver::scheduled_upload>>
-ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
+ntp_archiver::schedule_uploads(model::offset max_offset_exclusive) {
     // We have to increment last offset to guarantee progress.
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
@@ -1640,7 +1656,7 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     params.push_back({
       .upload_kind = segment_upload_kind::non_compacted,
       .start_offset = start_upload_offset,
-      .last_offset = last_stable_offset,
+      .end_offset_exclusive = max_offset_exclusive,
       .allow_reuploads = allow_reuploads_t::no,
       .archiver_term = _start_term,
     });
@@ -1651,7 +1667,7 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
         params.push_back({
           .upload_kind = segment_upload_kind::compacted,
           .start_offset = compacted_segments_upload_start,
-          .last_offset = model::offset::max(),
+          .end_offset_exclusive = model::offset::max(),
           .allow_reuploads = allow_reuploads_t::yes,
           .archiver_term = _start_term,
         });
@@ -1672,7 +1688,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
               "offset: {}, last offset: {}, uploads remaining: {}",
               ctx.upload_kind,
               ctx.start_offset,
-              ctx.last_offset,
+              ctx.end_offset_exclusive,
               uploads_remaining);
             break;
         }
@@ -1682,13 +1698,13 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
           "scheduling uploads, start offset: {}, last offset: {}, upload kind: "
           "{}, uploads remaining: {}",
           ctx.start_offset,
-          ctx.last_offset,
+          ctx.end_offset_exclusive,
           ctx.upload_kind,
           uploads_remaining);
 
         // this metric is only relevant for non compacted uploads.
         if (ctx.upload_kind == segment_upload_kind::non_compacted) {
-            _probe->upload_lag(ctx.last_offset - ctx.start_offset);
+            _probe->upload_lag(ctx.end_offset_exclusive - ctx.start_offset);
         }
 
         std::exception_ptr ep;
@@ -1898,7 +1914,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           _ntp.path());
 
         auto deadline = ss::lowres_clock::now()
-                        + _conf->manifest_upload_timeout;
+                        + _conf->manifest_upload_timeout();
 
         std::optional<model::offset> manifest_clean_offset;
         if (
@@ -2024,15 +2040,30 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
       .compacted_upload_result = compacted_result};
 }
 
+model::offset ntp_archiver::max_uploadable_offset_exclusive() const {
+    // We impose an additional (LSO) constraint on the uploadable offset to
+    // as we need to have a complete index of aborted transactions if any
+    // before we can upload a segment.
+    return std::min(
+      _parent.last_stable_offset(),
+      model::next_offset(_parent.committed_offset()));
+}
+
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
-  std::optional<model::offset> lso_override) {
-    vlog(_rtclog.debug, "Uploading next candidates called for {}", _ntp);
-    auto last_stable_offset = lso_override ? *lso_override
-                                           : _parent.last_stable_offset();
+  std::optional<model::offset> unsafe_max_offset_override_exclusive) {
+    auto max_offset_exclusive = unsafe_max_offset_override_exclusive
+                                  ? *unsafe_max_offset_override_exclusive
+                                  : max_uploadable_offset_exclusive();
+    vlog(
+      _rtclog.debug,
+      "Uploading next candidates called for {} with max_offset_exclusive={}",
+      _ntp,
+      max_offset_exclusive);
     ss::gate::holder holder(_gate);
     try {
         auto units = co_await ss::get_units(_mutex, 1, _as);
-        auto scheduled_uploads = co_await schedule_uploads(last_stable_offset);
+        auto scheduled_uploads = co_await schedule_uploads(
+          max_offset_exclusive);
         co_return co_await wait_all_scheduled_uploads(
           std::move(scheduled_uploads));
     } catch (const ss::gate_closed_exception&) {
@@ -2072,7 +2103,7 @@ ntp_archiver::maybe_truncate_manifest() {
     const auto& m = manifest();
     for (const auto& meta : m) {
         retry_chain_node fib(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff,
           &rtc);
         auto sname = cloud_storage::generate_local_segment_name(
@@ -2101,12 +2132,12 @@ ntp_archiver::maybe_truncate_manifest() {
           "manifest, start offset before cleanup: {}",
           manifest().get_start_offset());
         retry_chain_node rc_node(
-          _conf->manifest_upload_timeout,
+          _conf->manifest_upload_timeout(),
           _conf->upload_loop_initial_backoff,
           &rtc);
         auto error = co_await _parent.archival_meta_stm()->truncate(
           adjusted_start_offset,
-          ss::lowres_clock::now() + _conf->manifest_upload_timeout,
+          ss::lowres_clock::now() + _conf->manifest_upload_timeout(),
           _as);
         if (error != cluster::errc::success) {
             vlog(
@@ -2187,6 +2218,10 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 
     const auto& ntp_conf = _parent.get_ntp_config();
+    if (!ntp_conf.is_collectable()) {
+        vlog(_rtclog.trace, "NTP is not collectable");
+        co_return;
+    }
     std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
     std::optional<std::chrono::milliseconds> retention_ms
       = ntp_conf.retention_duration();
@@ -3005,7 +3040,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
           features::feature::cloud_metadata_cluster_recovery)
           ? _parent.highest_producer_id()
           : model::producer_id{};
-    auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
+    auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout();
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta},
       std::nullopt,

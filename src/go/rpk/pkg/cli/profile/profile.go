@@ -58,7 +58,7 @@ your configuration in one place.
 // ValidProfiles is a cobra.ValidArgsFunction that returns the names of
 // existing profiles.
 func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
@@ -87,7 +87,7 @@ func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 var ErrNoCloudClusters = errors.New("no cloud clusters available")
 
 // RpkCloudProfileName is the default profile name used when a user creates a
-// cloud cluster profile with no name, or
+// cloud cluster profile with no name.
 const RpkCloudProfileName = "rpk-cloud"
 
 // ProfileExistsError is returned from CreateFlow if trying to create a profile

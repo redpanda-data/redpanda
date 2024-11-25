@@ -64,6 +64,7 @@
 #include "cluster/tx_topic_manager.h"
 #include "cluster/types.h"
 #include "compression/async_stream_zstd.h"
+#include "compression/lz4_decompression_buffers.h"
 #include "compression/stream_zstd.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -134,6 +135,7 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
+#include <google/protobuf/stubs/logging.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
@@ -513,6 +515,12 @@ void application::initialize(
     _cpu_profiler.invoke_on_all(&resources::cpu_profiler::start).get();
 
     /*
+     * Disable the logger for protobuf; some interfaces don't allow a pluggable
+     * error collector.
+     */
+    google::protobuf::SetLogHandler(nullptr);
+
+    /*
      * allocate per-core zstd decompression workspace and per-core
      * async_stream_zstd workspaces. it can be several megabytes in size, so do
      * it before memory becomes fragmented.
@@ -525,6 +533,11 @@ void application::initialize(
 
         compression::initialize_async_stream_zstd(
           config::shard_local_cfg().zstd_decompress_workspace_bytes());
+
+        compression::init_lz4_decompression_buffers(
+          compression::lz4_decompression_buffers::bufsize,
+          compression::lz4_decompression_buffers::min_threshold,
+          config::shard_local_cfg().lz4_decompress_reusable_buffers_disabled());
     }).get0();
 
     if (config::shard_local_cfg().enable_pid_file()) {
@@ -1627,6 +1640,10 @@ void application::wire_up_redpanda_services(
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
                 .cloud_storage_cache_max_objects.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_trim_walk_concurrency.bind();
           }))
           .get();
 
@@ -2599,8 +2616,8 @@ void application::start_runtime_services(
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
             std::ref(_connection_cache),
-            std::ref(controller->get_partition_manager())));
-
+            std::ref(controller->get_partition_manager()),
+            std::ref(node_status_backend)));
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(
               sched_groups.cluster_sg(),

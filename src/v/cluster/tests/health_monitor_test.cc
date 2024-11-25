@@ -9,24 +9,19 @@
 
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
-#include "cluster/metadata_cache.h"
 #include "cluster/node/types.h"
-#include "cluster/shard_table.h"
-#include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "cluster/tests/health_monitor_test_utils.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
-#include "net/unresolved_address.h"
-#include "outcome.h"
-#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/when_all.hh>
 
 #include <boost/test/tools/interface.hpp>
 #include <boost/test/tools/old/interface.hpp>
@@ -41,13 +36,13 @@
 static cluster::cluster_report_filter get_all{};
 
 void check_reports_the_same(
-  std::vector<cluster::node_health_report>& lhs,
-  std::vector<cluster::node_health_report>& rhs) {
+  std::vector<cluster::node_health_report_ptr>& lhs,
+  std::vector<cluster::node_health_report_ptr>& rhs) {
     BOOST_TEST_REQUIRE(lhs.size() == rhs.size());
     auto by_id = [](
-                   const cluster::node_health_report& lr,
-                   const cluster::node_health_report& rr) {
-        return lr.id < rr.id;
+                   const cluster::node_health_report_ptr& lr,
+                   const cluster::node_health_report_ptr& rr) {
+        return lr->id < rr->id;
     };
     std::sort(lhs.begin(), lhs.end(), by_id);
     std::sort(rhs.begin(), rhs.end(), by_id);
@@ -56,30 +51,38 @@ void check_reports_the_same(
         auto& lr = lhs[i];
         auto& rr = rhs[i];
         BOOST_TEST_REQUIRE(
-          lr.local_state.redpanda_version == rr.local_state.redpanda_version);
-        BOOST_TEST_REQUIRE(std::equal(
-          lr.topics.cbegin(),
-          lr.topics.cend(),
-          rr.topics.cbegin(),
-          rr.topics.cend()));
+          lr->local_state.redpanda_version == rr->local_state.redpanda_version);
+        BOOST_REQUIRE_EQUAL(lr->topics.size(), rr->topics.size());
+        for (auto i = 0; i < lr->topics.size(); ++i) {
+            BOOST_REQUIRE_EQUAL(lr->topics[i].tp_ns, rr->topics[i].tp_ns);
+            auto& l_partitions = lr->topics[i].partitions;
+            auto& r_partitions = rr->topics[i].partitions;
+            BOOST_REQUIRE_EQUAL(l_partitions.size(), r_partitions.size());
+            for (auto p = 0; p < l_partitions.size(); ++p) {
+                auto& l_p = l_partitions[p];
+                auto& r_p = r_partitions[p];
+                BOOST_REQUIRE_EQUAL(l_p.id, r_p.id);
+                BOOST_REQUIRE_EQUAL(l_p.leader_id, r_p.leader_id);
+                BOOST_REQUIRE_EQUAL(l_p.term, r_p.term);
+                BOOST_REQUIRE_EQUAL(l_p.revision_id, r_p.revision_id);
+            }
+        }
+
         BOOST_TEST_REQUIRE(
-          lr.local_state.disks().size() == rr.local_state.disks().size());
-        for (auto i = 0; i < lr.local_state.disks().size(); ++i) {
+          lr->local_state.disks().size() == rr->local_state.disks().size());
+        for (auto i = 0; i < lr->local_state.disks().size(); ++i) {
             BOOST_REQUIRE_EQUAL(
-              lr.local_state.disks().at(i).alert,
-              rr.local_state.disks().at(i).alert);
+              lr->local_state.disks().at(i).alert,
+              rr->local_state.disks().at(i).alert);
             BOOST_REQUIRE_EQUAL(
-              lr.local_state.disks().at(i).free,
-              rr.local_state.disks().at(i).free);
+              lr->local_state.disks().at(i).path,
+              rr->local_state.disks().at(i).path);
             BOOST_REQUIRE_EQUAL(
-              lr.local_state.disks().at(i).path,
-              rr.local_state.disks().at(i).path);
-            BOOST_REQUIRE_EQUAL(
-              lr.local_state.disks().at(i).total,
-              rr.local_state.disks().at(i).total);
+              lr->local_state.disks().at(i).total,
+              rr->local_state.disks().at(i).total);
         }
         BOOST_TEST_REQUIRE(
-          lr.local_state.get_disk_alert() == rr.local_state.get_disk_alert());
+          lr->local_state.get_disk_alert() == rr->local_state.get_disk_alert());
     }
 }
 
@@ -90,15 +93,14 @@ void check_states_the_same(
 
     auto by_id = [](
                    const cluster::node_state& lr,
-                   const cluster::node_state& rr) { return lr.id < rr.id; };
+                   const cluster::node_state& rr) { return lr.id() < rr.id(); };
     std::sort(lhs.begin(), lhs.end(), by_id);
     std::sort(rhs.begin(), rhs.end(), by_id);
 
     for (auto i = 0; i < lhs.size(); ++i) {
         auto& lr = lhs[i];
         auto& rr = rhs[i];
-        BOOST_TEST_REQUIRE(lr.is_alive == rr.is_alive);
-        BOOST_TEST_REQUIRE(lr.membership_state == rr.membership_state);
+        BOOST_TEST_REQUIRE(lr.membership_state() == rr.membership_state());
     }
 }
 
@@ -146,9 +148,9 @@ FIXTURE_TEST(data_are_consistent_across_nodes, cluster_test_fixture) {
     BOOST_TEST_REQUIRE(r_2.has_value());
     BOOST_TEST_REQUIRE(r_3.has_value());
 
-    auto report_1 = r_1.value();
-    auto report_2 = r_2.value();
-    auto report_3 = r_3.value();
+    auto report_1 = std::move(r_1.value());
+    auto report_2 = std::move(r_2.value());
+    auto report_3 = std::move(r_3.value());
     BOOST_TEST_REQUIRE(report_1.raft0_leader == report_2.raft0_leader);
     BOOST_TEST_REQUIRE(report_2.raft0_leader == report_3.raft0_leader);
 
@@ -288,28 +290,7 @@ FIXTURE_TEST(test_ntp_filter, cluster_test_fixture) {
                          ntp(model::kafka_internal_namespace, "internal-1", 1),
                          ntp(model::redpanda_ns, "controller", 0),
                        },
-                       report.value().node_reports.begin()->topics);
-          });
-    }).get();
-
-    // check filtering in node report
-    tests::cooperative_spin_wait_with_timeout(10s, [&] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .collect_node_health(f_1.node_report_filter)
-          .then([](result<cluster::node_health_report> report) {
-              return report.has_value()
-                     && contains_exactly_ntp_leaders(
-                       g_seastar_test_log,
-                       {
-                         ntp(model::kafka_namespace, "tp-1", 0),
-                         ntp(model::kafka_namespace, "tp-1", 2),
-                         ntp(model::kafka_namespace, "tp-2", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 0),
-                         ntp(model::kafka_internal_namespace, "internal-1", 1),
-                         ntp(model::redpanda_ns, "controller", 0),
-                       },
-                       report.value().topics);
+                       (*report.value().node_reports.begin())->topics);
           });
     }).get();
 }
@@ -342,25 +323,9 @@ FIXTURE_TEST(test_alive_status, cluster_test_fixture) {
 
     // wait until the node will be reported as not alive
     tests::cooperative_spin_wait_with_timeout(10s, [&n1] {
-        return n1->controller->get_health_monitor()
-          .local()
-          .get_cluster_health(
-            get_all, cluster::force_refresh::yes, model::no_timeout)
-          .then([](result<cluster::cluster_health_report> res) {
-              if (!res) {
-                  return false;
-              }
-              if (res.value().node_reports.empty()) {
-                  return false;
-              }
-              auto it = std::find_if(
-                res.value().node_states.begin(),
-                res.value().node_states.end(),
-                [](cluster::node_state& s) {
-                    return s.id == model::node_id(1);
-                });
-              return it->is_alive == cluster::alive::no;
-          });
+        return n1->controller->get_health_monitor().local().is_alive(
+                 model::node_id(1))
+               == cluster::alive::no;
     }).get();
 }
 
@@ -419,7 +384,8 @@ struct node_and_status {
 auto make_reports(const std::vector<node_and_status>& statuses) {
     health_report_accessor::report_cache_t ret;
     for (auto& s : statuses) {
-        ret[node_id{s.nid}] = make_nhr(s.nid, s.statuses);
+        ret[node_id{s.nid}] = ss::make_lw_shared<node_health_report>(
+          make_nhr(s.nid, s.statuses));
     }
     return ret;
 };
@@ -468,7 +434,8 @@ FIXTURE_TEST(test_aggregate, health_report_unit) {
     model::ntp ntp1_b{model::kafka_namespace, topic_b, 1};
     model::ntp ntp2_b{model::kafka_namespace, topic_b, 2};
 
-    report_cache_t empty_reports{{model::node_id(0), {}}};
+    report_cache_t empty_reports{
+      {model::node_id(0), ss::make_lw_shared<node_health_report>()}};
 
     {
         // empty input, empty report
@@ -555,7 +522,8 @@ FIXTURE_TEST(test_report_truncation, health_report_unit) {
         }
 
         health_report_accessor::report_cache_t reports;
-        reports[model::node_id(0)] = make_nhr(0, statuses);
+        reports[model::node_id(0)] = ss::make_lw_shared<node_health_report>(
+          make_nhr(0, statuses));
 
         auto result = aggregate(reports);
 
@@ -585,4 +553,20 @@ FIXTURE_TEST(test_report_truncation, health_report_unit) {
 
     test_unhealthy(max_count + 1, LEADERLESS);
     test_unhealthy(max_count + 1, URP);
+}
+
+FIXTURE_TEST(
+  test_requesting_collection_at_the_same_time, cluster_test_fixture) {
+    auto n1 = create_node_application(model::node_id{0});
+    /**
+     * Request reports
+     */
+    auto f_h_1
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+    auto f_h_2
+      = n1->controller->get_health_monitor().local().get_current_node_health();
+
+    auto results = ss::when_all(std::move(f_h_1), std::move(f_h_2)).get();
+    BOOST_REQUIRE(
+      std::get<0>(results).get().value() == std::get<1>(results).get().value());
 }

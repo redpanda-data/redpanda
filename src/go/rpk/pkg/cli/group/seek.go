@@ -85,7 +85,7 @@ Seek group G to the beginning of a topic it was not previously consuming:
     rpk group seek G --to start --topics foo --allow-new-topics
 `,
 		Args: cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

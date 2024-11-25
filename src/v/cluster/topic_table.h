@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/limits.h"
 #include "model/metadata.h"
+#include "utils/chunked_hash_map.h"
 #include "utils/contiguous_range_map.h"
 #include "utils/expiring_promise.h"
 #include "utils/stable_iterator_adaptor.h"
@@ -97,21 +98,17 @@ public:
     //   * partition::get_revision_id()
     //   * raft::group_configuration::revision_id()
 
-    class concurrent_modification_error final : public std::exception {
+    class concurrent_modification_error final
+      : public ::concurrent_modification_error {
     public:
         concurrent_modification_error(
           model::revision_id initial_revision,
           model::revision_id current_revision)
-          : _msg(ssx::sformat(
-            "Topic table was modified by concurrent fiber. (initial_revision: "
-            "{}, current_revision: {}) ",
+          : ::concurrent_modification_error(ssx::sformat(
+            "Topic table was modified by concurrent fiber. "
+            "(initial_revision: {}, current_revision: {}) ",
             initial_revision,
             current_revision)) {}
-
-        const char* what() const noexcept final { return _msg.c_str(); }
-
-    private:
-        ss::sstring _msg;
     };
 
     class in_progress_update {
@@ -241,7 +238,7 @@ public:
 
     using delta = topic_table_delta;
 
-    using underlying_t = absl::node_hash_map<
+    using underlying_t = chunked_hash_map<
       model::topic_namespace,
       topic_metadata_item,
       model::topic_namespace_hash,
@@ -253,7 +250,7 @@ public:
       nt_revision_hash,
       nt_revision_eq>;
 
-    using disabled_partitions_t = absl::node_hash_map<
+    using disabled_partitions_t = chunked_hash_map<
       model::topic_namespace,
       topic_disabled_partitions_set,
       model::topic_namespace_hash,
@@ -626,8 +623,13 @@ private:
 
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
-    // Monotonic counter that is bumped for every addition/deletion to topics
-    // map. Unlike other revisions this does not correspond to the command
+
+    // Monotonic counter that is bumped each time _topics, _disabled_partitions,
+    // or _updates_in_progress are modified in a way that makes iteration over
+    // them unsafe (i.e. invalidates iterators or references, including
+    // for nested collections like partition sets and replica sets).
+    //
+    // Unlike other revisions this does not correspond to the command
     // revision that updated the map.
     model::revision_id _topics_map_revision{0};
 

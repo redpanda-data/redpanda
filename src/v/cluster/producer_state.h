@@ -42,7 +42,8 @@ using producer_ptr = ss::lw_shared_ptr<producer_state>;
 // right after set_value(), this is an implementation quirk, be
 // mindful of that behavior when using it. We have a test for
 // it in expiring_promise_test
-using result_promise_t = ss::shared_promise<result<kafka_result>>;
+using request_result_t = result<kafka_result>;
+using result_promise_t = ss::shared_promise<request_result_t>;
 using request_ptr = ss::lw_shared_ptr<request>;
 using seq_t = int32_t;
 
@@ -51,6 +52,8 @@ enum class request_state : uint8_t {
     in_progress = 1,
     completed = 2
 };
+
+std::ostream& operator<<(std::ostream&, request_state);
 
 /// A request for a given sequence range, both inclusive.
 /// The sequence numbers are stamped by the client and are a part
@@ -69,22 +72,15 @@ public:
         }
     }
 
-    template<class ValueType>
-    void set_value(ValueType&& value) {
-        vassert(
-          _state <= request_state::in_progress && !_result.available(),
-          "unexpected request state during set: state: {}, result available: "
-          "{}",
-          static_cast<std::underlying_type_t<request_state>>(_state),
-          _result.available());
-        _result.set_value(std::forward<ValueType>(value));
-        _state = request_state::completed;
-    }
+    void set_value(request_result_t::value_type);
+    void set_error(request_result_t::error_type);
     void mark_request_in_progress() { _state = request_state::in_progress; }
     request_state state() const { return _state; }
     result_promise_t::future_type result() const;
 
     bool operator==(const request&) const;
+
+    friend std::ostream& operator<<(std::ostream&, const request&);
 
 private:
     request_state _state{request_state::initialized};
@@ -180,24 +176,21 @@ public:
     ///   considering candidates for eviction.
     template<AcceptsUnits AsyncFunc>
     auto run_with_lock(AsyncFunc&& func) {
-        return ss::with_gate(
-          _gate, [this, func = std::forward<AsyncFunc>(func)]() mutable {
-              return _op_lock.get_units().then(
-                [this, f = std::forward<AsyncFunc>(func)](auto units) {
-                    unlink_self();
-                    _ops_in_progress++;
-                    return ss::futurize_invoke(f, std::move(units))
-                      .then_wrapped([this](auto result) {
-                          _ops_in_progress--;
-                          link_self();
-                          return result;
-                      });
+        return _op_lock.get_units().then(
+          [this, f = std::forward<AsyncFunc>(func)](auto units) {
+              unlink_self();
+              _ops_in_progress++;
+              return ss::futurize_invoke(f, std::move(units))
+                .then_wrapped([this](auto result) {
+                    _ops_in_progress--;
+                    link_self();
+                    return result;
                 });
           });
     }
 
-    ss::future<> shutdown_input();
-    ss::future<> evict();
+    void shutdown_input();
+    void evict();
     bool is_evicted() const { return _evicted; }
 
     /* reset sequences resets the tracking state and skips the sequence
@@ -233,6 +226,8 @@ private:
     void link_self();
     void unlink_self();
 
+    void do_shutdown_input();
+
     std::chrono::milliseconds ms_since_last_update() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           ss::lowres_system_clock::now() - _last_updated_ts);
@@ -251,7 +246,6 @@ private:
     // Used to evict stale producers.
     ss::lowres_system_clock::time_point _last_updated_ts;
     intrusive_list_hook _hook;
-    ss::gate _gate;
     // function hook called on eviction
     bool _evicted = false;
     size_t _ops_in_progress = 0;

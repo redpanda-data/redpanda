@@ -8,15 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "pandaproxy/error.h"
-#include "pandaproxy/json/error.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/test/avro_payloads.h"
 #include "pandaproxy/schema_registry/test/client_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
-
-#include <array>
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
@@ -26,8 +23,8 @@ struct request {
     pps::canonical_schema schema;
 };
 
-void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w, const request& r) {
+template<typename Buffer>
+void rjson_serialize(::json::iobuf_writer<Buffer>& w, const request& r) {
     w.StartObject();
     w.Key("schema");
     ::json::rjson_serialize(w, r.schema.def().raw());
@@ -569,7 +566,7 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post company schema (expect schema_id=1)");
     auto res = post_schema(
-      client, company_req.schema.sub(), ppj::rjson_serialize(company_req));
+      client, company_req.schema.sub(), ppj::rjson_serialize_str(company_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),
@@ -577,7 +574,9 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     info("Post employee schema (expect schema_id=2)");
     res = post_schema(
-      client, employee_req.schema.sub(), ppj::rjson_serialize(employee_req));
+      client,
+      employee_req.schema.sub(),
+      ppj::rjson_serialize_str(employee_req));
     BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
     BOOST_REQUIRE_EQUAL(
       res.headers.at(boost::beast::http::field::content_type),

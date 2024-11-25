@@ -85,6 +85,12 @@ namespace storage {
  * from normal cluster operation (leadershp movement) and this cost is not
  * driven / constrained by historical reads. Similarly for transactions and
  * idempotence. Controller topic should space can be managed by snapshots.
+ *
+ * Note on unsafe_enable_consumer_offsets_delete_retention: This a special
+ * configuration some select users can use to enable retention on CO topic
+ * because the compaction logic is ineffective and they would like to use
+ * retention as a stop gap until that is fixed. This configuration will be
+ * deprecated once we fix the compaction gaps.
  */
 bool deletion_exempt(const model::ntp& ntp) {
     bool is_internal_namespace = ntp.ns() == model::redpanda_ns
@@ -96,7 +102,7 @@ bool deletion_exempt(const model::ntp& ntp) {
                                    && ntp.tp.topic
                                         == model::kafka_consumer_offsets_nt.tp;
     return (!is_tx_manager_ntp && is_internal_namespace)
-           || is_consumer_offsets_ntp;
+           || (is_consumer_offsets_ntp && !config::shard_local_cfg().unsafe_enable_consumer_offsets_delete_retention());
 }
 
 disk_log_impl::disk_log_impl(
@@ -1761,7 +1767,8 @@ disk_log_impl::make_reader(timequery_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
-          auto start_offset = _start_offset;
+          auto start_offset = cfg.min_offset;
+
           if (!lease->range.empty()) {
               const ss::lw_shared_ptr<segment>& segment = *lease->range.begin();
               std::optional<segment_index::entry> index_entry = std::nullopt;
@@ -1876,7 +1883,8 @@ disk_log_impl::timequery(timequery_config cfg) {
               if (
                 !batches.empty()
                 && batches.front().header().max_timestamp >= cfg.time) {
-                  return ret_t(batch_timequery(batches.front(), cfg.time));
+                  return ret_t(batch_timequery(
+                    batches.front(), cfg.min_offset, cfg.time, cfg.max_offset));
               }
               return ret_t();
           });
@@ -1924,7 +1932,11 @@ ss::future<>
 disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
+          // base_offset check is for the case of an empty segment
+          // (where dirty = base - 1). We don't want to remove it because
+          // batches may be concurrently appended to it and we should keep them.
           return _segs.empty()
+                 || _segs.front()->offsets().base_offset >= cfg.start_offset
                  || _segs.front()->offsets().dirty_offset >= cfg.start_offset;
       },
       [this] {
@@ -1964,6 +1976,8 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
      * whose max offset falls below the new starting offset.
      */
     {
+        ssx::semaphore_units seg_rewrite_units
+          = co_await _segment_rewrite_lock.get_units();
         auto cache_lock = co_await _readers_cache->evict_prefix_truncate(
           cfg.start_offset);
         co_await remove_prefix_full_segments(cfg);

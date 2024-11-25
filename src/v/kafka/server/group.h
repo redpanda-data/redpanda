@@ -28,6 +28,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 #include "utils/rwlock.h"
 
@@ -350,13 +351,24 @@ public:
      * \returns join response promise set at the end of the join phase.
      */
     ss::future<join_group_response> update_member(
-      member_ptr member, std::vector<member_protocol>&& new_protocols);
+      member_ptr member,
+      chunked_vector<member_protocol>&& new_protocols,
+      const std::optional<kafka::client_id>& new_client_id,
+      const kafka::client_host& new_client_host,
+      std::chrono::milliseconds new_session_timeout,
+      std::chrono::milliseconds new_rebalance_timeout);
+
     /**
      * Same as update_member but without returning the join promise. Used when
      * reverting member state after failed group checkpoint
      */
     void update_member_no_join(
-      member_ptr member, std::vector<member_protocol>&& new_protocols);
+      member_ptr member,
+      chunked_vector<member_protocol>&& new_protocols,
+      const std::optional<kafka::client_id>& new_client_id,
+      const kafka::client_host& new_client_host,
+      std::chrono::milliseconds new_session_timeout,
+      std::chrono::milliseconds new_rebalance_timeout);
 
     /**
      * \brief Get the timeout duration for rebalancing.
@@ -376,7 +388,7 @@ public:
      *
      * Caller must ensure that the group's protocol is set.
      */
-    std::vector<join_group_response_member> member_metadata() const;
+    chunked_vector<join_group_response_member> member_metadata() const;
 
     /**
      * \brief Add empty assignments for missing group members.
@@ -644,7 +656,7 @@ public:
 
     // remove offsets associated with topic partitions
     ss::future<>
-    remove_topic_partitions(const std::vector<model::topic_partition>& tps);
+    remove_topic_partitions(const chunked_vector<model::topic_partition>& tps);
 
     const ss::lw_shared_ptr<cluster::partition> partition() const {
         return _partition;

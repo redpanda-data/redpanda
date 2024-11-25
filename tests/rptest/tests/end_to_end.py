@@ -79,6 +79,7 @@ class EndToEndTest(Test):
 
     def start_redpanda(self,
                        num_nodes=1,
+                       num_started_nodes=None,
                        extra_rp_conf=None,
                        si_settings=None,
                        environment=None,
@@ -122,7 +123,11 @@ class EndToEndTest(Test):
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
 
-        self.redpanda.start(auto_assign_node_id=new_bootstrap,
+        started_nodes = None
+        if num_started_nodes is not None:
+            started_nodes = self.redpanda.nodes[:num_started_nodes]
+        self.redpanda.start(nodes=started_nodes,
+                            auto_assign_node_id=new_bootstrap,
                             omit_seeds_on_idx_one=not new_bootstrap)
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the

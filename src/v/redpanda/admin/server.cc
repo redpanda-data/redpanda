@@ -105,6 +105,7 @@
 #include "ssx/sformat.h"
 #include "transform/api.h"
 #include "utils/fragmented_vector.h"
+#include "utils/lw_shared_container.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
@@ -158,11 +159,11 @@
 #include <system_error>
 #include <type_traits>
 #include <unordered_map>
+#include <vector>
 
 using namespace std::chrono_literals;
 
 using admin::apply_validator;
-using admin::lw_shared_container;
 
 ss::logger adminlog{"admin_api_server"};
 
@@ -475,7 +476,7 @@ get_integer_query_param(const ss::http::request& req, std::string_view name) {
 
     const ss::sstring& str_param = req.query_parameters.at(key);
     try {
-        return std::stoi(str_param);
+        return std::stoull(str_param);
     } catch (const std::invalid_argument&) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Parameter {} must be an integer", name));
@@ -687,11 +688,17 @@ void admin_server::log_exception(
 void admin_server::rearm_log_level_timer() {
     _log_level_timer.cancel();
 
-    auto next = std::min_element(
-      _log_level_resets.begin(), _log_level_resets.end());
+    if (_log_level_resets.empty()) {
+        return;
+    }
 
-    if (next != _log_level_resets.end() && next->second.expires.has_value()) {
-        _log_level_timer.arm(next->second.expires.value());
+    auto reset_values = _log_level_resets | std::views::values;
+    auto& lvl_rst = *std::ranges::min_element(
+      reset_values, std::less<>{}, [](level_reset const& l) {
+          return l.expires.value_or(ss::timer<>::clock::time_point::max());
+      });
+    if (lvl_rst.expires.has_value()) {
+        _log_level_timer.arm(lvl_rst.expires.value());
     }
 }
 
@@ -943,10 +950,11 @@ get_brokers(cluster::controller* const controller) {
               }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
+              b.is_alive = controller->get_health_monitor().local().is_alive(id)
+                           == cluster::alive::yes;
 
               // These fields are defaults that will be overwritten with
               // data from the health report.
-              b.is_alive = true;
               b.maintenance_status = fill_maintenance_status(nm.state);
               b.internal_rpc_address = nm.broker.rpc_address().host();
               b.internal_rpc_port = nm.broker.rpc_address().port();
@@ -955,43 +963,32 @@ get_brokers(cluster::controller* const controller) {
           }
 
           // Enrich the broker information with data from the health report.
-          for (auto& ns : h_report.value().node_states) {
-              auto it = broker_map.find(ns.id);
+          for (auto& node_report : h_report.value().node_reports) {
+              auto it = broker_map.find(node_report->id);
               if (it == broker_map.end()) {
                   continue;
               }
 
-              it->second.is_alive = static_cast<bool>(ns.is_alive);
+              it->second.version = node_report->local_state.redpanda_version;
+              it->second.recovery_mode_enabled
+                = node_report->local_state.recovery_mode_enabled;
+              auto nm = members_table.get_node_metadata_ref(node_report->id);
+              if (nm && node_report->drain_status) {
+                  it->second.maintenance_status = fill_maintenance_status(
+                    nm.value().get().state, node_report->drain_status.value());
+              }
 
-              auto r_it = std::find_if(
-                h_report.value().node_reports.begin(),
-                h_report.value().node_reports.end(),
-                [id = ns.id](const cluster::node_health_report& nhr) {
-                    return nhr.id == id;
-                });
-
-              if (r_it != h_report.value().node_reports.end()) {
-                  it->second.version = r_it->local_state.redpanda_version;
-                  it->second.recovery_mode_enabled
-                    = r_it->local_state.recovery_mode_enabled;
-                  auto nm = members_table.get_node_metadata_ref(r_it->id);
-                  if (nm && r_it->drain_status) {
-                      it->second.maintenance_status = fill_maintenance_status(
-                        nm.value().get().state, r_it->drain_status.value());
-                  }
-
-                  auto add_disk = [&ds_list = it->second.disk_space](
-                                    const storage::disk& ds) {
-                      ss::httpd::broker_json::disk_space_info dsi;
-                      dsi.path = ds.path;
-                      dsi.free = ds.free;
-                      dsi.total = ds.total;
-                      ds_list.push(dsi);
-                  };
-                  add_disk(r_it->local_state.data_disk);
-                  if (!r_it->local_state.shared_disk()) {
-                      add_disk(r_it->local_state.get_cache_disk());
-                  }
+              auto add_disk =
+                [&ds_list = it->second.disk_space](const storage::disk& ds) {
+                    ss::httpd::broker_json::disk_space_info dsi;
+                    dsi.path = ds.path;
+                    dsi.free = ds.free;
+                    dsi.total = ds.total;
+                    ds_list.push(dsi);
+                };
+              add_disk(node_report->local_state.data_disk);
+              if (!node_report->local_state.shared_disk()) {
+                  add_disk(node_report->local_state.get_cache_disk());
               }
           }
 
@@ -1157,6 +1154,7 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::disconnected_endpoint:
         case rpc::errc::exponential_backoff:
         case rpc::errc::shutting_down:
+        case rpc::errc::service_unavailable:
         case rpc::errc::missing_node_rpc_client:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
@@ -1439,17 +1437,20 @@ void admin_server::register_config_routes() {
 
           ss::global_logger_registry().set_logger_level(name, new_level);
 
-          // expires=0 is same as not specifying it at all
-          if (expires_v / 1s > 0) {
-              auto when = ss::timer<>::clock::now() + expires_v;
-              auto res = _log_level_resets.try_emplace(name, cur_level, when);
-              if (!res.second) {
-                  res.first->second.expires = when;
+          auto when = [&]() -> std::optional<level_reset::time_point> {
+              // expires=0 is same as not specifying it at all
+              if (expires_v / 1s > 0) {
+                  return ss::timer<>::clock::now() + expires_v;
+              } else {
+                  // new log level never expires, but we still want an entry in
+                  // the resets map as a record of the default
+                  return std::nullopt;
               }
-          } else {
-              // new log level never expires, but we still want an entry in the
-              // resets map as a record of the default
-              _log_level_resets.try_emplace(name, cur_level, std::nullopt);
+          }();
+
+          auto res = _log_level_resets.try_emplace(name, cur_level, when);
+          if (!res.second) {
+              res.first->second.expires = when;
           }
 
           rsp.expiration = expires_v / 1s;
@@ -2296,6 +2297,24 @@ admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
     co_return ret;
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_broker_uuids_handler() {
+    auto mappings = co_await _controller->get_members_manager().invoke_on(
+      cluster::controller_stm_shard, [](cluster::members_manager& mm) {
+          std::vector<ss::httpd::broker_json::broker_uuid_mapping> ret;
+          const auto& uuid_map = mm.get_id_by_uuid_map();
+          ret.reserve(uuid_map.size());
+          for (const auto& [uuid, id] : mm.get_id_by_uuid_map()) {
+              ss::httpd::broker_json::broker_uuid_mapping mapping;
+              mapping.node_id = id();
+              mapping.uuid = ssx::sformat("{}", uuid);
+              ret.push_back(mapping);
+          }
+          return ret;
+      });
+    co_return ss::json::json_return_type(std::move(mappings));
+}
+
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
   std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
@@ -2456,6 +2475,11 @@ void admin_server::register_broker_routes() {
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
                 return ss::json::json_return_type(std::move(brokers));
             });
+      });
+    register_route<user>(
+      ss::httpd::broker_json::get_broker_uuids,
+      [this](std::unique_ptr<ss::http::request>) {
+          return get_broker_uuids_handler();
       });
 
     register_route<user>(
@@ -4018,7 +4042,7 @@ admin_server::delete_cloud_storage_lifecycle(
     model::initial_revision_id revision;
     try {
         revision = model::initial_revision_id(
-          std::stoi(req->param["revision"]));
+          std::stoll(req->param["revision"]));
     } catch (...) {
         throw ss::httpd::bad_param_exception(fmt::format(
           "Revision id must be an integer: {}", req->param["revision"]));
@@ -4037,13 +4061,13 @@ admin_server::delete_cloud_storage_lifecycle(
 ss::future<ss::json::json_return_type>
 admin_server::post_cloud_storage_cache_trim(
   std::unique_ptr<ss::http::request> req) {
-    auto size_limit = get_integer_query_param(*req, "objects");
-    auto bytes_limit = static_cast<std::optional<size_t>>(
+    auto max_objects = get_integer_query_param(*req, "objects");
+    auto max_bytes = static_cast<std::optional<size_t>>(
       get_integer_query_param(*req, "bytes"));
 
     co_await _cloud_storage_cache.invoke_on(
-      ss::shard_id{0}, [size_limit, bytes_limit](auto& c) {
-          return c.trim_manually(size_limit, bytes_limit);
+      ss::shard_id{0}, [max_objects, max_bytes](auto& c) {
+          return c.trim_manually(max_bytes, max_objects);
       });
 
     co_return ss::json::json_return_type(ss::json::json_void());

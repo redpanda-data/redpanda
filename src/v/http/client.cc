@@ -14,6 +14,7 @@
 #include "bytes/scattered_message.h"
 #include "config/base_property.h"
 #include "http/logger.h"
+#include "likely.h"
 #include "ssx/sformat.h"
 #include "vlog.h"
 
@@ -82,6 +83,11 @@ void client::check() const {
 
 ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
+    if (unlikely(_stopped)) {
+        std::runtime_error err("client is stopped");
+        return ss::make_exception_future<client::request_response_t>(err);
+    }
+
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
@@ -122,19 +128,24 @@ ss::future<client::request_response_t> client::make_request(
           return ss::make_ready_future<request_response_t>(
             std::make_tuple(req, res));
       })
-      .handle_exception_type([this](ss::tls::verification_error err) {
-          return stop().then([err = std::move(err)] {
-              return ss::make_exception_future<client::request_response_t>(err);
-          });
+      .handle_exception_type([this, ctxlog](ss::tls::verification_error err) {
+          vlog(ctxlog.warn, "make_request tls verification error {}", err);
+          shutdown();
+          return ss::make_exception_future<client::request_response_t>(err);
       });
 }
 
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
+    if (unlikely(_stopped)) {
+        throw std::runtime_error("client is stopped");
+    }
     vlog(
       ctxlog.debug,
-      "about to start connecting, {}, is-closed {}",
+      "about to start connecting, is_valid: {}, connect gate closed: {}, "
+      "dispatch gate closed: {}",
       is_valid(),
+      _connect_gate.is_closed(),
       _dispatch_gate.is_closed());
     auto current = ss::lowres_clock::now();
     const auto deadline = current + timeout;
@@ -172,6 +183,13 @@ ss::future<reconnect_result_t> client::get_connected(
 }
 
 ss::future<> client::stop() {
+    if (_stopped) {
+        // Prevent double call to stop() as constructs such as with_client()
+        // will unconditionally call stop(), while exception handlers in this
+        // file may also call stop()
+        co_return;
+    }
+    _stopped = true;
     co_await _connect_gate.close();
     // Can safely stop base_transport
     co_return co_await base_transport::stop();
@@ -251,8 +269,6 @@ iobuf_to_constbufseq(const iobuf& iobuf) {
     }
     return seq;
 }
-
-ss::future<> client::response_stream::shutdown() { return _client->stop(); }
 
 /// Return failed future if ec is set, otherwise return future in ready state
 static ss::future<iobuf>
@@ -362,8 +378,9 @@ ss::future<iobuf> client::response_stream::recv_some() {
       })
       .handle_exception_type([this](const ss::tls::verification_error& err) {
           _client->_probe->register_transport_error();
-          return _client->stop().then(
-            [err] { return ss::make_exception_future<iobuf>(err); });
+          vlog(_ctxlog.warn, "receive tls verification error {}", err);
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(err);
       })
       .handle_exception_type([this](const boost::system::system_error& ec) {
           vlog(_ctxlog.warn, "receive error {}", ec);
@@ -459,8 +476,9 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
             })
             .handle_exception_type(
               [this](const ss::tls::verification_error& err) {
-                  return _client->stop().then(
-                    [err] { return ss::make_exception_future<>(err); });
+                  vlog(_ctxlog.warn, "send tls verification error {}", err);
+                  _client->shutdown();
+                  return ss::make_exception_future<>(err);
               })
             .handle_exception_type([this](const std::system_error& ec) {
                 // Things like EPIPE, ERESET.  This happens routinely

@@ -162,6 +162,15 @@ val_type parse_val_type(iobuf_parser_base* parser) {
     }
 }
 
+val_type parse_ref_type(iobuf_parser_base* parser) {
+    auto reftype = parse_val_type(parser);
+    if (reftype != val_type::externref && reftype != val_type::funcref) {
+        throw parse_exception(
+          fmt::format("invalid reftype: {}", uint8_t(reftype)));
+    }
+    return reftype;
+}
+
 ss::sstring parse_name(iobuf_parser_base* parser) {
     auto str_len = leb128::decode<uint32_t>(parser);
     if (str_len > max_name_length) {
@@ -191,8 +200,8 @@ parse_signature_types(iobuf_parser_base* parser, size_t max) {
 
 function_signature parse_signature(iobuf_parser_base* parser) {
     auto magic = parser->consume_type<uint8_t>();
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-    if (magic != 0x60) {
+    constexpr uint8_t signature_start_magic_byte = 0x60;
+    if (magic != signature_start_magic_byte) {
         throw parse_exception(
           fmt::format("function type magic mismatch: {}", magic));
     }
@@ -215,11 +224,7 @@ declaration::limits parse_limits(iobuf_parser_base* parser) {
 }
 
 declaration::table parse_table_type(iobuf_parser_base* parser) {
-    auto reftype = parse_val_type(parser);
-    if (reftype != val_type::externref && reftype != val_type::funcref) {
-        throw parse_exception(
-          fmt::format("invalid tabletype type: {}", uint8_t(reftype)));
-    }
+    auto reftype = parse_ref_type(parser);
     auto limits = parse_limits(parser);
     return {.reftype = reftype, .limits = limits};
 }
@@ -232,6 +237,45 @@ declaration::global parse_global_type(iobuf_parser_base* parser) {
     auto valtype = parse_val_type(parser);
     auto mut = parser->read_bool();
     return {.valtype = valtype, .is_mutable = bool(mut)};
+}
+
+void skip_global_constexpr(iobuf_parser_base* parser) {
+    enum class op : uint8_t {
+        global_get = 0x23,
+        i32_const = 0x41,
+        i64_const = 0x42,
+        f32_const = 0x43,
+        f64_const = 0x44,
+        ref_null = 0xD0,
+    };
+    auto opcode = parser->consume_type<op>();
+    switch (opcode) {
+    case op::global_get:
+    case op::i32_const:
+        std::ignore = leb128::decode<uint32_t>(parser);
+        break;
+    case op::i64_const:
+        std::ignore = leb128::decode<uint64_t>(parser);
+        break;
+    case op::f32_const:
+        std::ignore = parser->consume_type<float>();
+        break;
+    case op::f64_const:
+        std::ignore = parser->consume_type<double>();
+        break;
+    case op::ref_null:
+        std::ignore = parse_ref_type(parser);
+        break;
+    default:
+        throw parse_exception(fmt::format(
+          "unimplemented global opcode: {}", static_cast<uint8_t>(opcode)));
+    }
+    auto end = parser->consume_type<uint8_t>();
+    constexpr uint8_t end_expression_marker = 0x0B;
+    if (end != end_expression_marker) {
+        throw parse_exception(
+          fmt::format("expected end of global initalizer, got: {}", end));
+    }
 }
 
 class module_extractor {
@@ -298,38 +342,52 @@ private:
         }
         // The size of this section
         auto size = leb128::decode<uint32_t>(_parser);
-        // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers)
-        switch (id) {
-        case 0x00: // Custom section
+        enum class section : uint8_t {
+            custom = 0x00,
+            type = 0x01,
+            import = 0x02,
+            function = 0x03,
+            table = 0x04,
+            memory = 0x05,
+            global = 0x06,
+            exprt = 0x07, // export
+            start = 0x08,
+            element = 0x09,
+            data_count = 0x0C,
+            code = 0x0A,
+            data = 0x0B,
+        };
+        switch (static_cast<section>(id)) {
+        case section::custom:
             // Skip over custom sections
             _parser->skip(size);
             break;
-        case 0x01: // type section
+        case section::type:
             parse_signature_section();
             break;
-        case 0x02: // import section
+        case section::import:
             parse_import_section();
             break;
-        case 0x03: // function section
+        case section::function:
             parse_function_decl_section();
             break;
-        case 0x04: // table section
+        case section::table:
             parse_table_section();
             break;
-        case 0x05: // memory section
+        case section::memory:
             parse_memories_section();
             break;
-        case 0x06: // global section
+        case section::global:
             parse_globals_section();
             break;
-        case 0x07: // export section
+        case section::exprt:
             parse_export_section();
             break;
-        case 0x08: // start section
-        case 0x09: // element section
-        case 0x0C: // data count section
-        case 0x0A: // code section
-        case 0x0B: // data section
+        case section::start:
+        case section::element:
+        case section::data_count:
+        case section::code:
+        case section::data:
             // Since we don't need the information from these sections at the
             // moment, we can skip them.
             _parser->skip(size);
@@ -337,7 +395,6 @@ private:
         default:
             throw parse_exception(fmt::format("unknown section id: {}", id));
         }
-        // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
     }
 
     void parse_signature_section() {
@@ -457,21 +514,8 @@ private:
         _globals.reserve(vector_size);
         for (uint32_t i = 0; i < vector_size; ++i) {
             _globals.push_back(parse_global_type(_parser));
-            // We currently don't care about the global constexpr, so just skip
-            // it (the end is delimited by 0x0B)
-            skip_global_constexpr();
+            skip_global_constexpr(_parser);
         }
-    }
-
-    void skip_global_constexpr() {
-        constexpr int max_constexpr_bytes = 64;
-        for (int i = 0; i < max_constexpr_bytes; ++i) {
-            // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
-            if (_parser->consume_type<uint8_t>() == 0x0b) {
-                return;
-            }
-        }
-        throw parse_exception("unexpectedly large global constexpr");
     }
 
     void parse_export_section() {

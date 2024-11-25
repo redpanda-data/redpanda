@@ -20,6 +20,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
+#include "net/connection.h"
 #include "ssx/future-util.h"
 #include "ssx/watchdog.h"
 #include "storage/log_reader.h"
@@ -402,69 +404,58 @@ public:
                   "{}",
                   _seg_reader->config());
 
-                try {
-                    auto result = co_await _seg_reader->read_some(
-                      deadline, *_ot_state);
-                    throw_on_external_abort();
+                auto result = co_await _seg_reader->read_some(
+                  deadline, *_ot_state);
+                throw_on_external_abort();
 
-                    if (!result) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Error while reading from stream '{}'",
-                          result.error());
-                        co_await set_end_of_stream();
-                        throw std::system_error(result.error());
-                    }
-                    data_t d = std::move(result.value());
-                    for (const auto& batch : d) {
-                        _partition->_probe.add_bytes_read(
-                          batch.header().size_bytes);
-                        _partition->_probe.add_records_read(
-                          batch.record_count());
-                    }
-                    if (
-                      _first_produced_offset == model::offset{} && !d.empty()) {
-                        _first_produced_offset = d.front().base_offset();
-                    }
-                    co_return storage_t{std::move(d)};
-                } catch (const stuck_reader_exception& ex) {
-                    throw_on_external_abort();
+                if (!result) {
                     vlog(
-                      _ctxlog.warn,
-                      "stuck reader: current rp offset: {}, max rp offset: {}",
-                      ex.rp_offset,
-                      _seg_reader->max_rp_offset());
-
-                    // If the reader is stuck because of a mismatch between
-                    // segment data and manifest entry, set reader to EOF and
-                    // try to reset reader on the next loop iteration. We only
-                    // do this when the reader has not reached eof. For example,
-                    // the segment ends at offset 10 but the manifest has max
-                    // offset at 11 for the segment, with offset 11 actually
-                    // present in the next segment. When the reader is stuck,
-                    // the current offset will be 10 which we will not be able
-                    // to read from. Switching to the next segment should enable
-                    // reads to proceed.
-                    if (
-                      model::next_offset(ex.rp_offset)
-                        >= _next_segment_base_offset
-                      && !_seg_reader->is_eof()) {
-                        vlog(
-                          _ctxlog.info,
-                          "mismatch between current segment end and manifest "
-                          "data: current rp offset {}, manifest max rp offset "
-                          "{}, next segment base offset {}, reader is EOF: {}. "
-                          "set EOF on reader and try to "
-                          "reset",
-                          ex.rp_offset,
-                          _seg_reader->max_rp_offset(),
-                          _next_segment_base_offset,
-                          _seg_reader->is_eof());
-                        _seg_reader->set_eof();
-                        continue;
-                    }
-                    throw;
+                      _ctxlog.debug,
+                      "Error while reading from stream '{}'",
+                      result.error());
+                    co_await set_end_of_stream();
+                    throw std::system_error(result.error());
                 }
+                data_t d = std::move(result.value());
+                for (const auto& batch : d) {
+                    _partition->_probe.add_bytes_read(
+                      batch.header().size_bytes);
+                    _partition->_probe.add_records_read(batch.record_count());
+                }
+                if (_first_produced_offset == model::offset{} && !d.empty()) {
+                    _first_produced_offset = d.front().base_offset();
+                } else {
+                    auto current_ko = _ot_state->from_log_offset(
+                      _seg_reader->current_rp_offset());
+                    vlog(
+                      _ctxlog.debug,
+                      "No results, current rp offset: {}, current kafka "
+                      "offset: {}, max rp offset: "
+                      "{}",
+                      _seg_reader->current_rp_offset(),
+                      current_ko,
+                      _seg_reader->config().max_offset);
+                    if (current_ko > _seg_reader->config().max_offset) {
+                        // Reader overshoot the offset. If we will not reset
+                        // the stream the loop inside the
+                        // record_batch_reader will keep calling this method
+                        // again and again. We will be returning empty
+                        // result every time because the current offset
+                        // overshoot the max allowed offset. Resetting the
+                        // segment reader fixes the issue.
+                        //
+                        // We can get into the situation when the current
+                        // reader returns empty result in several cases:
+                        // - we reached max_offset (covered here)
+                        // - we reached end of stream (covered above right
+                        //   after the 'read_some' call)
+                        //
+                        // If we reached max-bytes then the result won't be
+                        // empty. It will have at least one record batch.
+                        co_await set_end_of_stream();
+                    }
+                }
+                co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -522,7 +513,10 @@ private:
 
         async_view_search_query_t query;
         if (config.first_timestamp.has_value()) {
-            query = config.first_timestamp.value();
+            query = async_view_timestamp_query(
+              model::offset_cast(config.start_offset),
+              config.first_timestamp.value(),
+              model::offset_cast(config.max_offset));
         } else {
             // NOTE: config.start_offset actually contains kafka offset
             // stored using model::offset type.
@@ -535,66 +529,72 @@ private:
                 co_return;
             }
 
-            if (
-              cur.error() == error_outcome::out_of_range
-              && ss::visit(
-                query,
-                [&](model::offset) { return false; },
-                [&](kafka::offset query_offset) {
-                    // Special case queries below the start offset of the log.
-                    // The start offset may have advanced while the request was
-                    // in progress. This is expected, so log at debug level.
-                    const auto log_start_offset
-                      = _partition->_manifest_view->stm_manifest()
-                          .full_log_start_kafka_offset();
+            // Out of range queries are unexpected. The caller must take care
+            // to send only valid queries to remote_partition. I.e. the fetch
+            // handler does such validation. Similar validation is done inside
+            // remote partition.
+            //
+            // Out of range at this point is due to a race condition or due to
+            // a bug. In both cases the only valid action is to throw an
+            // exception and let the caller deal with it. If the caller doesn't
+            // handle it it leads to a closed kafka connection which the
+            // end clients retry.
+            if (cur.error() == error_outcome::out_of_range) {
+                ss::visit(
+                  query,
+                  [&](model::offset) {
+                      vassert(
+                        false,
+                        "Unreachable code. Remote partition doesn't know how "
+                        "to "
+                        "handle model::offset queries.");
+                  },
+                  [&](kafka::offset query_offset) {
+                      // Bug or retention racing with the query.
+                      const auto log_start_offset
+                        = _partition->_manifest_view->stm_manifest()
+                            .full_log_start_kafka_offset();
 
-                    if (log_start_offset && query_offset < *log_start_offset) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest query below the log's start Kafka offset: "
-                          "{} < {}",
-                          query_offset(),
-                          log_start_offset.value()());
-                        return true;
-                    }
-                    return false;
-                },
-                [&](model::timestamp query_ts) {
-                    // Special case, it can happen when a timequery falls below
-                    // the clean offset. Caused when the query races with
-                    // retention/gc. log a warning, since the kafka client can
-                    // handle a failed query
-                    auto const& spillovers = _partition->_manifest_view
-                                               ->stm_manifest()
-                                               .get_spillover_map();
-                    if (
-                      spillovers.empty()
-                      || spillovers.get_max_timestamp_column()
-                             .last_value()
-                             .value_or(model::timestamp::max()())
-                           >= query_ts()) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest query raced with retention and the result "
-                          "is below the clean/start offset for {}",
-                          query_ts);
-                        return true;
-                    }
+                      if (
+                        log_start_offset && query_offset < *log_start_offset) {
+                          vlog(
+                            _ctxlog.warn,
+                            "Manifest query below the log's start Kafka "
+                            "offset: "
+                            "{} < {}",
+                            query_offset(),
+                            log_start_offset.value()());
+                      }
+                  },
+                  [&](const async_view_timestamp_query& query_ts) {
+                      // Special case, it can happen when a timequery falls
+                      // below the clean offset. Caused when the query races
+                      // with retention/gc.
+                      auto const& spillovers = _partition->_manifest_view
+                                                 ->stm_manifest()
+                                                 .get_spillover_map();
 
-                    // query was not meant for archive region. fallthrough and
-                    // log an error
-                    return false;
-                })) {
-                // error was handled
-                co_return;
+                      bool timestamp_inside_spillover
+                        = query_ts.ts()
+                          <= spillovers.get_max_timestamp_column()
+                               .last_value()
+                               .value_or(model::timestamp::min()());
+
+                      if (timestamp_inside_spillover) {
+                          vlog(
+                            _ctxlog.debug,
+                            "Manifest query raced with retention and the "
+                            "result "
+                            "is below the clean/start offset for {}",
+                            query_ts);
+                      }
+                  });
             }
 
-            vlog(
-              _ctxlog.error,
+            throw std::runtime_error(fmt::format(
               "Failed to query spillover manifests: {}, query: {}",
               cur.error(),
-              query);
-            co_return;
+              query));
         }
         _view_cursor = std::move(cur.value());
         co_await _view_cursor->with_manifest(
@@ -824,8 +824,13 @@ private:
     /// Transition reader to the completed state. Stop tracking state in
     /// the 'remote_partition'
     ss::future<> set_end_of_stream() {
-        co_await _seg_reader->stop();
-        _seg_reader = {};
+        if (!_seg_reader) {
+            co_return;
+        }
+        // It's critical that we swap out the reader before calling stop().
+        // Otherwise, another fiber may swap it out while we're stopping!
+        auto reader = std::move(_seg_reader);
+        co_await reader->stop();
     }
 
     retry_chain_node _rtc;
@@ -1207,11 +1212,13 @@ remote_partition::timequery(storage::timequery_config cfg) {
         co_return std::nullopt;
     }
 
-    auto start_offset = stm_manifest.full_log_start_kafka_offset().value();
+    auto start_offset = std::max(
+      cfg.min_offset,
+      kafka::offset_cast(stm_manifest.full_log_start_kafka_offset().value()));
 
     // Synthesize a log_reader_config from our timequery_config
     storage::log_reader_config config(
-      kafka::offset_cast(start_offset),
+      start_offset,
       cfg.max_offset,
       0,
       2048, // We just need one record batch
@@ -1234,7 +1241,8 @@ remote_partition::timequery(storage::timequery_config cfg) {
     vlog(_ctxlog.debug, "timequery: {} batches", batches.size());
 
     if (batches.size()) {
-        co_return storage::batch_timequery(*(batches.begin()), cfg.time);
+        co_return storage::batch_timequery(
+          *(batches.begin()), cfg.min_offset, cfg.time, cfg.max_offset);
     } else {
         co_return std::nullopt;
     }

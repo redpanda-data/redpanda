@@ -78,6 +78,8 @@ private:
         std::unique_ptr<result<vote_reply>> value;
     };
 
+    void fail_election();
+
     friend std::ostream& operator<<(std::ostream&, const vmeta&);
 
     ss::future<> do_vote();

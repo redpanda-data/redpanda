@@ -96,7 +96,7 @@ public:
         ss::sstring etag;
     };
     struct list_bucket_result {
-        bool is_truncated;
+        bool is_truncated = false;
         ss::sstring prefix;
         ss::sstring next_continuation_token;
         std::vector<list_bucket_item> contents;

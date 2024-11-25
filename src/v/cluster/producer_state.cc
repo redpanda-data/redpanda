@@ -17,8 +17,42 @@
 
 namespace cluster {
 
+std::ostream& operator<<(std::ostream& os, request_state state) {
+    switch (state) {
+    case request_state::initialized:
+        return os << "initialized";
+    case request_state::in_progress:
+        return os << "in_progress";
+    case request_state::completed:
+        return os << "completed";
+    }
+}
+
 result_promise_t::future_type request::result() const {
     return _result.get_shared_future();
+}
+
+void request::set_value(request_result_t::value_type value) {
+    vassert(
+      _state <= request_state::in_progress && !_result.available(),
+      "unexpected request state during result set: {}",
+      *this);
+    _result.set_value(value);
+    _state = request_state::completed;
+}
+
+void request::set_error(request_result_t::error_type error) {
+    // This is idempotent as different fibers can mark the result error
+    // at different times in some edge cases.
+    if (_state != request_state::completed) {
+        _result.set_value(error);
+        _state = request_state::completed;
+        return;
+    }
+    vassert(
+      _result.available() && result().get0().has_error(),
+      "Invalid result state, expected to be available and errored out: {}",
+      *this);
 }
 
 bool request::operator==(const request& other) const {
@@ -109,7 +143,7 @@ result<request_ptr> requests::try_emplace(
         // checks for sequence tracking.
         while (!_inflight_requests.empty()) {
             if (!_inflight_requests.front()->has_completed()) {
-                _inflight_requests.front()->set_value(errc::timeout);
+                _inflight_requests.front()->set_error(errc::timeout);
             }
             _inflight_requests.pop_front();
         }
@@ -123,7 +157,7 @@ result<request_ptr> requests::try_emplace(
             if (!_inflight_requests.front()->has_completed()) {
                 // Here we know for sure the term change, these in flight
                 // requests are going to fail anyway, mark them so.
-                _inflight_requests.front()->set_value(errc::timeout);
+                _inflight_requests.front()->set_error(errc::timeout);
             }
             _inflight_requests.pop_front();
         }
@@ -204,7 +238,7 @@ bool requests::stm_apply(
 void requests::shutdown() {
     for (auto& request : _inflight_requests) {
         if (!request->has_completed()) {
-            request->_result.set_value(errc::shutting_down);
+            request->set_error(errc::shutting_down);
         }
     }
     _inflight_requests.clear();
@@ -237,6 +271,18 @@ bool producer_state::operator==(const producer_state& other) const {
            && _evicted == other._evicted && _requests == other._requests;
 }
 
+std::ostream& operator<<(std::ostream& o, const request& request) {
+    fmt::print(
+      o,
+      "{{ first: {}, last: {}, term: {}, result_available: {}, state: {} }}",
+      request._first_sequence,
+      request._last_sequence,
+      request._term,
+      request._result.available(),
+      request._state);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const requests& requests) {
     fmt::print(
       o,
@@ -259,26 +305,30 @@ std::ostream& operator<<(std::ostream& o, const producer_state& state) {
     return o;
 }
 
-ss::future<> producer_state::shutdown_input() {
-    if (_evicted) {
-        return ss::now();
-    }
+void producer_state::do_shutdown_input() {
+    // linked hook ensures no task in progress.
+    vassert(
+      _hook.is_linked(), "unexpected state, producer {} unlinked.", *this);
+    deregister_self();
     _op_lock.broken();
-    return _gate.close().then([this] { _requests.shutdown(); });
+    _requests.shutdown();
 }
 
-ss::future<> producer_state::evict() {
+void producer_state::shutdown_input() {
     if (_evicted) {
-        return ss::now();
+        return;
+    }
+    do_shutdown_input();
+}
+
+void producer_state::evict() {
+    if (_evicted) {
+        return;
     }
     vlog(clusterlog.debug, "evicting producer: {}", *this);
     _evicted = true;
-    vassert(_hook.is_linked(), "unexpected state, producer unlinked.");
-    unlink_self();
-    return shutdown_input().then_wrapped([this](auto result) {
-        _post_eviction_hook();
-        return result;
-    });
+    do_shutdown_input();
+    _post_eviction_hook();
 }
 
 void producer_state::register_self() {
@@ -320,13 +370,26 @@ result<request_ptr> producer_state::try_emplace_request(
       current_term,
       reset,
       _requests);
-    return _requests.try_emplace(
+
+    auto result = _requests.try_emplace(
       bid.first_seq, bid.last_seq, current_term, reset);
+
+    if (unlikely(result.has_error())) {
+        vlog(
+          clusterlog.warn,
+          "[{}] error {} processing request {}, term: {}, reset: {}",
+          *this,
+          result.error(),
+          bid,
+          current_term,
+          reset);
+    }
+    return result;
 }
 
 void producer_state::update(
   const model::batch_identity& bid, kafka::offset offset) {
-    if (_gate.is_closed()) {
+    if (_evicted) {
         return;
     }
     bool relink_producer = _requests.stm_apply(bid, offset);

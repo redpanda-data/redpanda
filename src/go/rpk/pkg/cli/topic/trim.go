@@ -48,7 +48,7 @@ within the segment before the requested offset can no longer be read.
 The --offset/-o flag allows you to indicate which index you want to set the
 partition's low watermark (start offset) to. It can be a single integer value
 denoting the offset or a timestamp if you prefix the offset with an '@'. You may
-select which partition you want to trim the offset from with the --partition/-p
+select which partition you want to trim the offset from with the --partitions/-p
 flag.
 
 The --from-file option allows to trim the offsets specified in a text file with
@@ -61,7 +61,7 @@ or the equivalent keyed JSON/YAML file.
 EXAMPLES
 
 Trim records in 'foo' topic to offset 120 in partition 1
-    rpk topic trim-prefix foo --offset 120 --partition 1
+    rpk topic trim-prefix foo --offset 120 --partitions 1
 
 Trim records in all partitions of topic foo previous to an specific timestamp
     rpk topic trim-prefix foo -o "@1622505600"

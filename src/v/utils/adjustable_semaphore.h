@@ -90,6 +90,14 @@ public:
         return ss::get_units(_sem, units, as);
     }
 
+    /**
+     * Attempts to immediately get units from the semaphore, returning
+     * std::nullopt if no units exist.
+     */
+    std::optional<ssx::semaphore_units> try_get_units(size_t units) {
+        return ss::try_get_units(_sem, units);
+    }
+
     size_t current() const noexcept { return _sem.current(); }
     ssize_t available_units() const noexcept { return _sem.available_units(); }
 

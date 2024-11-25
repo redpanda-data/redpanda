@@ -16,6 +16,7 @@
 #include "kafka/server/handlers/topics/validators.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <boost/container/flat_map.hpp>
 
@@ -43,7 +44,7 @@ concept TopicResultIterator
 template<typename T>
 requires TopicRequestItem<T>
 creatable_topic_result
-generate_error(T item, error_code code, const ss::sstring& msg) {
+generate_error(const T& item, error_code code, const ss::sstring& msg) {
     return creatable_topic_result{
       .name = item.name,
       .error_code = code,
@@ -54,7 +55,7 @@ generate_error(T item, error_code code, const ss::sstring& msg) {
 /// Generates successfull creatable_topic_result for single topic request item
 template<typename T>
 requires TopicRequestItem<T>
-creatable_topic_result generate_successfull_result(T item) {
+creatable_topic_result generate_successfull_result(const T& item) {
     return creatable_topic_result{
       .name = item.name, .error_code = error_code::none};
 }
@@ -110,7 +111,7 @@ Iter validate_requests_range(
 // Kafka protocol error message
 void append_cluster_results(
   const std::vector<cluster::topic_result>&,
-  std::vector<creatable_topic_result>&);
+  chunked_vector<creatable_topic_result>&);
 
 // Converts objects representing KafkaAPI message to objects consumed
 // by cluster::controller API

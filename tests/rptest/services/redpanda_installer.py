@@ -26,12 +26,20 @@ from ducktape.utils.util import wait_until
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
 # strict variant of VERSION_RE that only matches "vX.Y.Z" strings
 STRICT_VERSION_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
+RELEASES_CACHE_FILE_PARENT = "/tmp/ducktape_cache"
+RELEASES_CACHE_FILE = f"{RELEASES_CACHE_FILE_PARENT}/redpanda_releases.json"
 RELEASES_CACHE_FILE_TTL = timedelta(minutes=30)
 
 # environment variable to pass to ducktape the list of released versions.
 # It's a ":"-separated list of versions, e.g.: v23.2.1:v23.1.12:v23.1.11
 RP_GIT_RELEASED_VERSIONS = "RP_GIT_RELEASED_VERSIONS"
+
+REDPANDA_INSTALLER_HEAD_TAG = "head"
+
+RedpandaVersionTriple = tuple[int, int, int]
+RedpandaVersionLine = tuple[int, int]
+RedpandaVersion = typing.Literal[
+    'head'] | RedpandaVersionLine | RedpandaVersionTriple
 
 
 def wait_for_num_versions(redpanda, num_versions):
@@ -76,6 +84,14 @@ def ver_string(int_tuple):
     return f"v{'.'.join(str(i) for i in int_tuple)}"
 
 
+def ver_triple(version_line: RedpandaVersionLine) -> RedpandaVersionTriple:
+    """
+    Converts "v24.1.0-dev-1940-g8ae241e966 - 8ae241e966bd3d5811951a176fc40a7a77ce2a0c" into (24, 1, 0)
+    """
+    matches = VERSION_RE.findall(version_line)
+    return RedpandaVersionTriple(int_tuple(matches[0]))
+
+
 class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
@@ -96,14 +112,6 @@ class InstallOptions:
         # cluster on an older version, e.g. to simulate a mixed-version
         # environment.
         self.num_to_upgrade = num_to_upgrade
-
-
-REDPANDA_INSTALLER_HEAD_TAG = "head"
-
-RedpandaVersionTriple = tuple[int, int, int]
-RedpandaVersionLine = tuple[int, int]
-RedpandaVersion = typing.Literal[
-    'head'] | RedpandaVersionLine | RedpandaVersionTriple
 
 
 class RedpandaInstaller:
@@ -307,14 +315,14 @@ class RedpandaInstaller:
         # use it to get older versions relative to the head version.
         # NOTE: installing this version may not yield the same binaries being
         # as 'head', e.g. if an unreleased source is checked out.
-        self._head_version: RedpandaVersionTriple = int_tuple(
-            VERSION_RE.findall(initial_version)[0])
+        self._head_version: RedpandaVersionTriple = ver_triple(initial_version)
 
         self._started = True
 
     def _released_versions_json(self):
         def get_cached_data():
             try:
+                os.makedirs(RELEASES_CACHE_FILE_PARENT, exist_ok=True)
                 st = os.stat(RELEASES_CACHE_FILE)
                 mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
                 if datetime.now(
@@ -677,7 +685,7 @@ class RedpandaInstaller:
         version_root = self.root_for_version(version)
 
         tgz = "redpanda.tar.gz"
-        cmd = f"curl -fsSL {self._version_package_url(version)} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
+        cmd = f"curl -fsSL {self._version_package_url(version)} --retry 3 --retry-connrefused --retry-delay 2 --create-dir -o {version_root}/{tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
         return node.account.ssh_capture(cmd)
 
     def reset_current_install(self, nodes):

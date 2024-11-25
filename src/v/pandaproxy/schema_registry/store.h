@@ -15,6 +15,7 @@
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/fragmented_vector.h"
 
 #include <absl/algorithm/container.h>
 #include <absl/container/btree_map.h>
@@ -59,6 +60,11 @@ class store {
 public:
     using schema_id_set = absl::btree_set<schema_id>;
 
+    explicit store() = default;
+
+    explicit store(is_mutable mut)
+      : _mutable(mut) {}
+
     struct insert_result {
         schema_version version;
         schema_id id;
@@ -72,9 +78,9 @@ public:
     ///
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(canonical_schema schema) {
-        auto id = insert_schema(std::move(schema).def()).id;
-        // NOLINTNEXTLINE(bugprone-use-after-move)
-        auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
+        auto [sub, def] = std::move(schema).destructure();
+        auto id = insert_schema(std::move(def)).id;
+        auto [version, inserted] = insert_subject(std::move(sub), id);
         return {version, id, inserted};
     }
 
@@ -85,7 +91,7 @@ public:
         if (it == _schemas.end()) {
             return not_found(id);
         }
-        return {it->second.definition};
+        return {it->second.definition.copy()};
     }
 
     ///\brief Return the id of the schema, if it already exists.
@@ -101,8 +107,8 @@ public:
     }
 
     ///\brief Return a list of subject-versions for the shema id.
-    std::vector<subject_version> get_schema_subject_versions(schema_id id) {
-        std::vector<subject_version> svs;
+    chunked_vector<subject_version> get_schema_subject_versions(schema_id id) {
+        chunked_vector<subject_version> svs;
         for (const auto& s : _subjects) {
             for (const auto& vs : s.second.versions) {
                 if (vs.id == id && !vs.deleted) {
@@ -114,9 +120,9 @@ public:
     }
 
     ///\brief Return a list of subjects for the schema id.
-    std::vector<subject>
+    chunked_vector<subject>
     get_schema_subjects(schema_id id, include_deleted inc_del) {
-        std::vector<subject> subs;
+        chunked_vector<subject> subs;
         for (const auto& s : _subjects) {
             if (absl::c_any_of(
                   s.second.versions, [id, inc_del](const auto& vs) {
@@ -170,20 +176,33 @@ public:
     }
 
     ///\brief Return a list of subjects.
-    std::vector<subject> get_subjects(include_deleted inc_del) const {
-        std::vector<subject> res;
+    chunked_vector<subject> get_subjects(
+      include_deleted inc_del,
+      const std::optional<ss::sstring>& subject_prefix = std::nullopt) const {
+        chunked_vector<subject> res;
         res.reserve(_subjects.size());
         for (const auto& sub : _subjects) {
             if (inc_del || !sub.second.deleted) {
                 auto has_version = absl::c_any_of(
                   sub.second.versions,
                   [inc_del](auto const& v) { return inc_del || !v.deleted; });
-                if (has_version) {
+                if (
+                  has_version
+                  && sub.first().starts_with(subject_prefix.value_or(""))) {
                     res.push_back(sub.first);
                 }
             }
         }
         return res;
+    }
+
+    ///\brief Return if there are subjects.
+    bool has_subjects(include_deleted inc_del) const {
+        return absl::c_any_of(_subjects, [inc_del](auto const& sub) {
+            return absl::c_any_of(
+              sub.second.versions,
+              [inc_del](auto const& v) { return inc_del || !v.deleted; });
+        });
     }
 
     ///\brief Return a list of versions and associated schema_id.
@@ -274,6 +293,34 @@ public:
         return result;
     }
 
+    /// \brief Return the seq_marker write history of a subject, but only
+    /// mode_keys
+    ///
+    /// \return A vector (possibly empty)
+    result<std::vector<seq_marker>>
+    get_subject_mode_written_at(const subject& sub) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+
+        // This should never happen (how can a record get into the
+        // store without an originating sequenced record?), but return
+        // an error instead of vasserting out.
+        if (sub_it->second.written_at.empty()) {
+            return not_found(sub);
+        }
+
+        std::vector<seq_marker> result;
+        std::copy_if(
+          sub_it->second.written_at.begin(),
+          sub_it->second.written_at.end(),
+          std::back_inserter(result),
+          [](const auto& sm) {
+              return sm.key_type == seq_marker_key_type::mode;
+          });
+
+        return result;
+    }
+
     /// \brief Return the seq_marker write history of a version.
     ///
     /// \return A vector with at least one element
@@ -341,7 +388,14 @@ public:
     result<std::vector<subject_version_entry>>
     get_version_ids(const subject& sub, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
-        return sub_it->second.versions;
+        std::vector<subject_version_entry> res;
+        absl::c_copy_if(
+          sub_it->second.versions,
+          std::back_inserter(res),
+          [inc_del](const subject_version_entry& e) {
+              return inc_del || !e.deleted;
+          });
+        return {std::move(res)};
     }
 
     ///\brief Return whether this subject has a version that references the
@@ -350,8 +404,8 @@ public:
       const subject& sub, schema_id id, include_deleted inc_del) const {
         auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
         const auto& vs = sub_it->second.versions;
-        return std::any_of(vs.cbegin(), vs.cend(), [id](const auto& entry) {
-            return entry.id == id;
+        return absl::c_any_of(vs, [id, inc_del](const auto& entry) {
+            return entry.id == id && (inc_del || !entry.deleted);
         });
     }
 
@@ -379,11 +433,13 @@ public:
         return has_ids;
     }
 
-    bool subject_versions_has_any_of(const schema_id_set& ids) {
-        return absl::c_any_of(_subjects, [&ids](const auto& s) {
-            return absl::c_any_of(s.second.versions, [&ids, &s](const auto& v) {
-                return !s.second.deleted && ids.contains(v.id);
-            });
+    bool subject_versions_has_any_of(
+      const schema_id_set& ids, include_deleted inc_del) {
+        return absl::c_any_of(_subjects, [&ids, inc_del](const auto& s) {
+            return absl::c_any_of(
+              s.second.versions, [&ids, &s, inc_del](const auto& v) {
+                  return (inc_del || !s.second.deleted) && ids.contains(v.id);
+              });
         });
     }
 
@@ -464,6 +520,46 @@ public:
         return true;
     }
 
+    ///\brief Get the global mode.
+    result<mode> get_mode() const { return _mode; }
+
+    ///\brief Get the mode for a subject, or fallback to global.
+    result<mode>
+    get_mode(const subject& sub, default_to_global fallback) const {
+        auto sub_it = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it && (sub_it.assume_value())->second.mode.has_value()) {
+            return (sub_it.assume_value())->second.mode.value();
+        } else if (fallback) {
+            return _mode;
+        }
+        return mode_not_found(sub);
+    }
+
+    ///\brief Set the global mode.
+    result<bool> set_mode(mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        return std::exchange(_mode, m) != m;
+    }
+
+    ///\brief Set the mode for a subject.
+    result<bool>
+    set_mode(seq_marker marker, const subject& sub, mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto& sub_entry = _subjects[sub];
+        sub_entry.written_at.push_back(marker);
+        return std::exchange(sub_entry.mode, m) != m;
+    }
+
+    ///\brief Clear the mode for a subject.
+    result<bool>
+    clear_mode(const seq_marker& marker, const subject& sub, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+        std::erase(sub_it->second.written_at, marker);
+        return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
+    }
+
     ///\brief Get the global compatibility level.
     result<compatibility_level> get_compatibility() const {
         return _compatibility;
@@ -536,6 +632,8 @@ public:
           .second;
     }
 
+    void delete_schema(schema_id id) { _schemas.erase(id); }
+
     struct insert_subject_result {
         schema_version version;
         bool inserted;
@@ -599,6 +697,16 @@ public:
         return !found;
     }
 
+    //// \brief Return error if the store is not mutable
+    result<void> check_mode_mutability(force f) const {
+        if (!_mutable && !f) {
+            return error_info{
+              error_code::subject_version_operation_not_permitted,
+              "Mode changes are not allowed"};
+        }
+        return outcome::success();
+    }
+
 private:
     struct schema_entry {
         explicit schema_entry(canonical_schema_definition definition)
@@ -609,6 +717,7 @@ private:
 
     struct subject_entry {
         std::optional<compatibility_level> compatibility;
+        std::optional<mode> mode;
         std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
@@ -673,6 +782,8 @@ private:
     schema_map _schemas;
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
+    mode _mode{mode::read_write};
+    is_mutable _mutable{is_mutable::no};
 };
 
 } // namespace pandaproxy::schema_registry

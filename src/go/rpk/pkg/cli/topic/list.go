@@ -49,7 +49,7 @@ as such, specifying both -i and -r will exit with failure.
 Lastly, --detailed flag (-d) opts in to printing extra per-partition
 information.
 `,
-		Run: func(cmd *cobra.Command, topics []string) {
+		Run: func(_ *cobra.Command, topics []string) {
 			// The purpose of the regex flag really is for users to
 			// know what topics they will delete when using regex.
 			// We forbid deleting internal topics (redpanda

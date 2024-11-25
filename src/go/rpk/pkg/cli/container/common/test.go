@@ -13,6 +13,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/docker/docker/api/types/image"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
@@ -26,13 +28,13 @@ type MockClient struct {
 	MockImagePull func(
 		ctx context.Context,
 		ref string,
-		options types.ImagePullOptions,
+		options image.PullOptions,
 	) (io.ReadCloser, error)
 
 	MockImageList func(
 		ctx context.Context,
-		options types.ImageListOptions,
-	) ([]types.ImageSummary, error)
+		options image.ListOptions,
+	) ([]image.Summary, error)
 
 	MockContainerCreate func(
 		ctx context.Context,
@@ -46,7 +48,7 @@ type MockClient struct {
 	MockContainerStart func(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerStartOptions,
+		options container.StartOptions,
 	) error
 
 	MockContainerStop func(
@@ -57,7 +59,7 @@ type MockClient struct {
 
 	MockContainerList func(
 		ctx context.Context,
-		options types.ContainerListOptions,
+		options container.ListOptions,
 	) ([]types.Container, error)
 
 	MockContainerInspect func(
@@ -68,14 +70,14 @@ type MockClient struct {
 	MockContainerRemove func(
 		ctx context.Context,
 		containerID string,
-		options types.ContainerRemoveOptions,
+		options container.RemoveOptions,
 	) error
 
 	MockNetworkCreate func(
 		ctx context.Context,
 		name string,
-		options types.NetworkCreate,
-	) (types.NetworkCreateResponse, error)
+		options network.CreateOptions,
+	) (network.CreateResponse, error)
 
 	MockNetworkRemove func(
 		ctx context.Context,
@@ -84,14 +86,14 @@ type MockClient struct {
 
 	MockNetworkList func(
 		ctx context.Context,
-		options types.NetworkListOptions,
-	) ([]types.NetworkResource, error)
+		options network.ListOptions,
+	) ([]network.Inspect, error)
 
 	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
-		options types.NetworkInspectOptions,
-	) (types.NetworkResource, error)
+		options network.InspectOptions,
+	) (network.Inspect, error)
 
 	MockIsErrNotFound func(err error) bool
 
@@ -127,7 +129,7 @@ func (c *MockClient) ContainerCreate(
 }
 
 func (c *MockClient) ImagePull(
-	ctx context.Context, ref string, options types.ImagePullOptions,
+	ctx context.Context, ref string, options image.PullOptions,
 ) (io.ReadCloser, error) {
 	if c.MockImagePull != nil {
 		return c.MockImagePull(ctx, ref, options)
@@ -136,16 +138,16 @@ func (c *MockClient) ImagePull(
 }
 
 func (c *MockClient) ImageList(
-	ctx context.Context, options types.ImageListOptions,
-) ([]types.ImageSummary, error) {
+	ctx context.Context, options image.ListOptions,
+) ([]image.Summary, error) {
 	if c.MockImageList != nil {
 		return c.MockImageList(ctx, options)
 	}
-	return []types.ImageSummary{}, nil
+	return []image.Summary{}, nil
 }
 
 func (c *MockClient) ContainerStart(
-	ctx context.Context, containerID string, options types.ContainerStartOptions,
+	ctx context.Context, containerID string, options container.StartOptions,
 ) error {
 	if c.MockContainerStart != nil {
 		return c.MockContainerStart(
@@ -165,7 +167,7 @@ func (c *MockClient) ContainerStop(
 }
 
 func (c *MockClient) ContainerList(
-	ctx context.Context, options types.ContainerListOptions,
+	ctx context.Context, options container.ListOptions,
 ) ([]types.Container, error) {
 	if c.MockContainerList != nil {
 		return c.MockContainerList(ctx, options)
@@ -183,7 +185,7 @@ func (c *MockClient) ContainerInspect(
 }
 
 func (c *MockClient) ContainerRemove(
-	ctx context.Context, containerID string, options types.ContainerRemoveOptions,
+	ctx context.Context, containerID string, options container.RemoveOptions,
 ) error {
 	if c.MockContainerRemove != nil {
 		return c.MockContainerRemove(ctx, containerID, options)
@@ -192,12 +194,12 @@ func (c *MockClient) ContainerRemove(
 }
 
 func (c *MockClient) NetworkCreate(
-	ctx context.Context, name string, options types.NetworkCreate,
-) (types.NetworkCreateResponse, error) {
+	ctx context.Context, name string, options network.CreateOptions,
+) (network.CreateResponse, error) {
 	if c.MockNetworkCreate != nil {
 		return c.MockNetworkCreate(ctx, name, options)
 	}
-	return types.NetworkCreateResponse{}, nil
+	return network.CreateResponse{}, nil
 }
 
 func (c *MockClient) NetworkRemove(ctx context.Context, name string) error {
@@ -208,21 +210,21 @@ func (c *MockClient) NetworkRemove(ctx context.Context, name string) error {
 }
 
 func (c *MockClient) NetworkList(
-	ctx context.Context, options types.NetworkListOptions,
-) ([]types.NetworkResource, error) {
+	ctx context.Context, options network.ListOptions,
+) ([]network.Inspect, error) {
 	if c.MockNetworkList != nil {
 		return c.MockNetworkList(ctx, options)
 	}
-	return []types.NetworkResource{}, nil
+	return []network.Inspect{}, nil
 }
 
 func (c *MockClient) NetworkInspect(
-	ctx context.Context, networkID string, options types.NetworkInspectOptions,
-) (types.NetworkResource, error) {
+	ctx context.Context, networkID string, options network.InspectOptions,
+) (network.Inspect, error) {
 	if c.MockNetworkInspect != nil {
 		return c.MockNetworkInspect(ctx, networkID, options)
 	}
-	return types.NetworkResource{}, nil
+	return network.Inspect{}, nil
 }
 
 func (c *MockClient) IsErrNotFound(err error) bool {

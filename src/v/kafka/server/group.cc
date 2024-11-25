@@ -124,7 +124,7 @@ group::group(
           std::move(m),
           id,
           _protocol_type.value(),
-          std::vector<kafka::member_protocol>{member_protocol{
+          chunked_vector<kafka::member_protocol>{member_protocol{
             .name = _protocol.value_or(protocol_name("")),
             .metadata = iobuf_to_bytes(m.subscription),
           }});
@@ -287,13 +287,20 @@ ss::future<join_group_response> group::add_member(member_ptr member) {
 }
 
 void group::update_member_no_join(
-  member_ptr member, std::vector<member_protocol>&& new_protocols) {
+  member_ptr member,
+  chunked_vector<member_protocol>&& new_protocols,
+  const std::optional<kafka::client_id>& new_client_id,
+  const kafka::client_host& new_client_host,
+  std::chrono::milliseconds new_session_timeout,
+  std::chrono::milliseconds new_rebalance_timeout) {
     vlog(
       _ctxlog.trace,
-      "Updating {}joining member {} with protocols {}",
+      "Updating {}joining member {} with protocols {} and timeouts {}/{}",
       member->is_joining() ? "" : "non-",
       member,
-      new_protocols);
+      new_protocols,
+      new_session_timeout,
+      new_rebalance_timeout);
 
     /*
      * before updating the member, subtract its existing protocols from
@@ -313,11 +320,29 @@ void group::update_member_no_join(
     for (auto& p : member->protocols()) {
         _supported_protocols[p.name]++;
     }
+
+    if (new_client_id) {
+        member->replace_client_id(*new_client_id);
+    }
+    member->replace_client_host(new_client_host);
+    member->replace_session_timeout(new_session_timeout);
+    member->replace_rebalance_timeout(new_rebalance_timeout);
 }
 
 ss::future<join_group_response> group::update_member(
-  member_ptr member, std::vector<member_protocol>&& new_protocols) {
-    update_member_no_join(member, std::move(new_protocols));
+  member_ptr member,
+  chunked_vector<member_protocol>&& new_protocols,
+  const std::optional<kafka::client_id>& new_client_id,
+  const kafka::client_host& new_client_host,
+  std::chrono::milliseconds new_session_timeout,
+  std::chrono::milliseconds new_rebalance_timeout) {
+    update_member_no_join(
+      member,
+      std::move(new_protocols),
+      new_client_id,
+      new_client_host,
+      new_session_timeout,
+      new_rebalance_timeout);
 
     if (!member->is_joining()) {
         _num_members_joining++;
@@ -343,7 +368,7 @@ group::duration_type group::rebalance_timeout() const {
     }
 }
 
-std::vector<member_config> group::member_metadata() const {
+chunked_vector<member_config> group::member_metadata() const {
     if (
       in_state(group_state::dead)
       || in_state(group_state::preparing_rebalance)) {
@@ -355,7 +380,7 @@ std::vector<member_config> group::member_metadata() const {
           fmt::format("invalid group state: {}", _state));
     }
 
-    std::vector<member_config> out;
+    chunked_vector<member_config> out;
     std::transform(
       std::cbegin(_members),
       std::cend(_members),
@@ -623,8 +648,24 @@ group::join_group_stages group::update_static_member_and_rebalance(
      * with new member id.</kafka>
      */
     schedule_next_heartbeat_expiration(member);
-    auto f = update_member(member, r.native_member_protocols());
-    auto old_protocols = _members.at(new_member_id)->protocols();
+
+    kafka::client_id old_client_id = member->client_id();
+    kafka::client_host old_client_host = member->client_host();
+    auto old_session_timeout
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        member->session_timeout());
+    auto old_rebalance_timeout
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        member->rebalance_timeout());
+
+    auto f = update_member(
+      member,
+      r.native_member_protocols(),
+      r.client_id,
+      r.client_host,
+      r.data.session_timeout_ms,
+      r.data.rebalance_timeout_ms);
+    auto old_protocols = _members.at(new_member_id)->protocols().copy();
     switch (state()) {
     case group_state::stable: {
         auto next_gen_protocol = select_protocol();
@@ -642,7 +683,11 @@ group::join_group_stages group::update_static_member_and_rebalance(
                          instance_id = *r.data.group_instance_id,
                          new_member_id = std::move(new_member_id),
                          old_member_id = std::move(old_member_id),
-                         old_protocols = std::move(old_protocols)](
+                         old_protocols = std::move(old_protocols),
+                         old_client_id = std::move(old_client_id),
+                         old_client_host = std::move(old_client_host),
+                         old_session_timeout = old_session_timeout,
+                         old_rebalance_timeout = old_rebalance_timeout](
                           result<raft::replicate_result> result) mutable {
                       if (!result) {
                           vlog(
@@ -655,7 +700,12 @@ group::join_group_stages group::update_static_member_and_rebalance(
                           auto member = replace_static_member(
                             instance_id, new_member_id, old_member_id);
                           update_member_no_join(
-                            member, std::move(old_protocols));
+                            member,
+                            std::move(old_protocols),
+                            old_client_id,
+                            old_client_host,
+                            old_session_timeout,
+                            old_rebalance_timeout);
                           schedule_next_heartbeat_expiration(member);
                           try_finish_joining_member(
                             member,
@@ -666,7 +716,7 @@ group::join_group_stages group::update_static_member_and_rebalance(
                       }
                       // leader    -> member metadata
                       // followers -> []
-                      std::vector<member_config> md;
+                      chunked_vector<member_config> md;
                       if (is_leader(new_member_id)) {
                           md = member_metadata();
                       }
@@ -832,7 +882,7 @@ group::join_group_known_member(join_group_request&& r) {
             // generation.</kafka>
 
             // the leader receives group member metadata
-            std::vector<member_config> members;
+            chunked_vector<member_config> members;
             if (is_leader(r.data.member_id)) {
                 members = member_metadata();
             }
@@ -963,7 +1013,12 @@ group::join_group_stages group::add_member_and_rebalance(
 group::join_group_stages
 group::update_member_and_rebalance(member_ptr member, join_group_request&& r) {
     auto response = update_member(
-      std::move(member), r.native_member_protocols());
+      std::move(member),
+      r.native_member_protocols(),
+      r.client_id,
+      r.client_host,
+      r.data.session_timeout_ms,
+      r.data.rebalance_timeout_ms);
     try_prepare_rebalance();
     return join_group_stages(std::move(response));
 }
@@ -1133,7 +1188,7 @@ void group::complete_join() {
 
                   // leader    -> member metadata
                   // followers -> []
-                  std::vector<member_config> md;
+                  chunked_vector<member_config> md;
                   if (is_leader(member->id())) {
                       md = member_metadata();
                   }
@@ -2684,9 +2739,9 @@ ss::future<error_code> group::remove() {
     co_return error_code::none;
 }
 
-ss::future<>
-group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
-    std::vector<std::pair<model::topic_partition, offset_metadata>> removed;
+ss::future<> group::remove_topic_partitions(
+  const chunked_vector<model::topic_partition>& tps) {
+    chunked_vector<std::pair<model::topic_partition, offset_metadata>> removed;
     for (const auto& tp : tps) {
         _pending_offset_commits.erase(tp);
         if (auto offset = _offsets.extract(tp); offset) {

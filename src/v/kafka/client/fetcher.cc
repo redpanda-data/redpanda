@@ -18,6 +18,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"
+#include "utils/fragmented_vector.h"
 
 namespace kafka::client {
 
@@ -27,14 +28,14 @@ fetch_request make_fetch_request(
   int32_t min_bytes,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
-    std::vector<fetch_request::partition> partitions;
+    chunked_vector<fetch_request::partition> partitions;
     partitions.push_back(fetch_request::partition{
       .partition_index{tp.partition},
       .current_leader_epoch = kafka::invalid_leader_epoch,
       .fetch_offset{offset},
       .log_start_offset{model::offset{-1}},
       .max_bytes = max_bytes});
-    std::vector<fetch_request::topic> topics;
+    chunked_vector<fetch_request::topic> topics;
     topics.push_back(fetch_request::topic{
       .name{tp.topic}, .fetch_partitions{std::move(partitions)}});
 
@@ -79,7 +80,7 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     responses.push_back(std::move(pr));
     auto response = fetch_response::partition{.name = tp.topic};
     response.partitions = std::move(responses);
-    std::vector<fetch_response::partition> parts;
+    chunked_vector<fetch_response::partition> parts;
     parts.push_back(std::move(response));
     return fetch_response{
       .data = {

@@ -50,7 +50,7 @@ will create two topics, foo and bar, each with 20 partitions, 3 replicas, and
 the cleanup.policy=compact config option set.
 `,
 
-		Run: func(cmd *cobra.Command, topics []string) {
+		Run: func(_ *cobra.Command, topics []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 

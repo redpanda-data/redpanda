@@ -248,9 +248,10 @@ ss::future<> remote_segment::stop() {
         vlog(cst_log.error, "remote_segment {} stop operation stuck", path);
     });
 
-    vlog(_ctxlog.debug, "remote segment stop");
+    vlog(_ctxlog.debug, "remote segment stop: gate closing");
     _bg_cvar.broken();
     co_await _gate.close();
+    vlog(_ctxlog.debug, "remote segment stop: gate closed");
     if (_data_file) {
         co_await _data_file.close().handle_exception(
           [this](std::exception_ptr err) {
@@ -260,7 +261,9 @@ ss::future<> remote_segment::stop() {
     }
 
     if (_chunks_api) {
+        vlog(_ctxlog.debug, "waiting for chunk api to stop");
         co_await _chunks_api->stop();
+        vlog(_ctxlog.debug, "chunk api stopped");
     }
     _stopped = true;
 }
@@ -765,10 +768,24 @@ void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
         p.set_exception(err);
         _wait_list.pop_front();
     }
+
+    fragmented_vector<chunk_request> chunk_waiters;
+    chunk_waiters.swap(_chunk_waiters);
+    for (auto& w : chunk_waiters) {
+        w.promise.set_exception(err);
+    }
 };
 
 bool remote_segment::is_legacy_mode_engaged() const {
     return _fallback_mode || _sname_format <= segment_name_format::v2;
+}
+
+void remote_segment::switch_to_legacy_mode() {
+    _fallback_mode = fallback_mode::yes;
+    for (auto& waiter : _chunk_waiters) {
+        waiter.promise.set_exception(
+          std::runtime_error{"chunk download aborted"});
+    }
 }
 
 bool remote_segment::is_state_materialized() const {
@@ -805,8 +822,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
 
     while (!_gate.is_closed()) {
         try {
-            co_await _bg_cvar.wait(
-              [this] { return !_wait_list.empty() || _gate.is_closed(); });
+            co_await _bg_cvar.wait([this] {
+                return !_wait_list.empty() || !_chunk_waiters.empty()
+                       || _gate.is_closed();
+            });
 
             if (is_legacy_mode_engaged()) {
                 vlog(
@@ -865,6 +884,18 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 }
                 _wait_list.pop_front();
             }
+
+            // Only download chunks if we are not in legacy mode and the index
+            // is available.
+            if (
+              !is_legacy_mode_engaged() && is_state_materialized()
+              && !_chunk_waiters.empty()) {
+                vlog(
+                  _ctxlog.debug,
+                  "Processing {} chunk download request(s)",
+                  _chunk_waiters.size());
+                co_await service_chunk_requests();
+            }
         } catch (...) {
             const auto err = std::current_exception();
             set_waiter_errors(err);
@@ -881,8 +912,82 @@ ss::future<> remote_segment::run_hydrate_bg() {
     _hydration_loop_running = false;
 }
 
-namespace {
+ss::future<> remote_segment::service_chunk_requests() {
+    fragmented_vector<ss::future<ss::file>> chunk_op_results;
+    chunk_op_results.reserve(_chunk_waiters.size());
 
+    fragmented_vector<chunk_request> requests;
+    requests.swap(_chunk_waiters);
+
+    std::ranges::transform(
+      requests,
+      std::back_inserter(chunk_op_results),
+      [this](const auto& request) {
+          vlog(
+            _ctxlog.debug,
+            "Downloading chunk {} with prefetch {}",
+            request.start,
+            request.prefetch);
+          return hydrate_and_materialize_chunk(
+            {request.start, request.prefetch});
+      });
+
+    auto results = co_await ss::when_all(
+      chunk_op_results.begin(), chunk_op_results.end());
+
+    for (size_t i = 0; i < results.size(); ++i) {
+        auto request = std::move(requests[i]);
+        auto current_result = std::move(results[i]);
+
+        ss::file materialized_handle;
+        std::exception_ptr err;
+
+        if (current_result.failed()) {
+            err = current_result.get_exception();
+        } else {
+            materialized_handle = current_result.get();
+        }
+
+        // Materialization may fail due to cache eviction. In this case the
+        // materialized handle is default initialized. Re-queue waiter which
+        // will be processed again on the next iteration of run_hydrate_bg loop.
+        // Continue with other requests in queue.
+        if (!err && !materialized_handle) {
+            vlog(
+              _ctxlog.debug,
+              "Failed to materialize chunk start {}, retrying",
+              request.start);
+            _chunk_waiters.emplace_back(std::move(request));
+            continue;
+        }
+
+        if (err) {
+            request.promise.set_exception(err);
+        } else {
+            request.promise.set_value(materialized_handle);
+        }
+    }
+}
+
+ss::future<ss::file> remote_segment::hydrate_and_materialize_chunk(
+  start_and_prefetch_t start_and_prefetch) {
+    auto [chunk_start, prefetch] = start_and_prefetch;
+    vlog(_ctxlog.debug, "Hydrating chunk {}", chunk_start);
+    co_await hydrate_chunk({_chunks_api->chunk_map(), prefetch, chunk_start});
+    vlog(_ctxlog.debug, "Materializing chunk {}", chunk_start);
+    co_return co_await materialize_chunk(chunk_start);
+}
+
+ss::future<ss::file> remote_segment::download_chunk(
+  chunk_start_offset_t chunk_start, uint16_t prefetch) {
+    ss::promise<ss::file> p;
+    auto fut = p.get_future();
+    _chunk_waiters.push_back({chunk_start, prefetch, std::move(p)});
+    _bg_cvar.signal();
+    return fut;
+}
+
+namespace {
 void log_hydration_abort_cause(
   const retry_chain_logger& logger,
   const ss::lowres_clock::time_point& deadline,
@@ -890,8 +995,8 @@ void log_hydration_abort_cause(
     if (ss::lowres_clock::now() > deadline) {
         vlog(logger.warn, "timed out while waiting for hydration");
     } else if (as.has_value() && as->get().abort_requested()) {
-        // TODO it might be useful to be able to log the client info here from
-        // log reader config.
+        // TODO it might be useful to be able to log the client info here
+        // from log reader config.
         vlog(logger.debug, "consumer disconnected during hydration");
     }
 }
@@ -929,7 +1034,7 @@ ss::future<> remote_segment::do_hydrate(
                   "failed to download index with error [{}], switching to "
                   "fallback mode and retrying hydration.",
                   ex);
-                _fallback_mode = fallback_mode::yes;
+                switch_to_legacy_mode();
                 return do_hydrate(as, deadline).then([] {
                     // This is an empty file to match the type returned by
                     // `fut`. The result is discarded immediately so it is

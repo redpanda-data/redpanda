@@ -27,7 +27,7 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		
 This command fetches the status of the process of restoring topics from the 
 archival bucket.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)

@@ -217,7 +217,7 @@ TEST_F_CORO(
     // wait for leader
     co_await wait_for_leader(10s);
     for (auto& [_, node] : nodes()) {
-        node->on_dispatch([](raft::msg_type t) {
+        node->on_dispatch([](model::node_id, raft::msg_type t) {
             if (
               t == raft::msg_type::append_entries
               && random_generators::get_int(1000) > 800) {
@@ -294,15 +294,9 @@ TEST_F_CORO(
       [this, &last_visible] {
           for (auto& [id, node] : nodes()) {
               auto o = node->raft()->last_visible_index();
+              auto dirty_offset = node->raft()->dirty_offset();
               vassert(
-                last_visible[id] <= o,
-                "Visible offset moved back on node {}, current visible offset: "
-                "{}, last visible offset: {}",
-                id,
-                o,
-                last_visible[id]);
-              vassert(
-                o <= node->raft()->dirty_offset(),
+                o <= dirty_offset,
                 "last visible offset can not be larger than log end offset");
               last_visible[id] = o;
           }

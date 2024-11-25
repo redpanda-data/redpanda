@@ -216,21 +216,24 @@ template<>
 long create_default_and_non_default_data(
   decltype(create_topics_response::data)& non_default_data,
   decltype(create_topics_response::data)& default_data) {
+    auto make_topic_result = [](kafka::error_code ec) {
+        return creatable_topic_result{
+          model::topic{"topic1"},
+          {},
+          kafka::error_code{1},
+          "test_error_message",
+          3,
+          16,
+          std::nullopt,
+          ec};
+    };
+
     non_default_data.throttle_time_ms = std::chrono::milliseconds(1000);
+    non_default_data.topics.emplace_back(
+      make_topic_result(kafka::error_code{2}));
 
-    non_default_data.topics.emplace_back(creatable_topic_result{
-      model::topic{"topic1"},
-      {},
-      kafka::error_code{1},
-      "test_error_message",
-      3,
-      16,
-      std::nullopt,
-      kafka::error_code{2}});
-
-    default_data = non_default_data;
-
-    default_data.topics.at(0).topic_config_error_code = kafka::error_code{0};
+    default_data.throttle_time_ms = std::chrono::milliseconds(1000);
+    default_data.topics.emplace_back(make_topic_result(kafka::error_code{0}));
 
     // int16 (2 bytes) + tag (2 bytes)
     return 4;
@@ -241,7 +244,15 @@ long create_default_and_non_default_data(
   decltype(api_versions_response::data)& non_default_data,
   decltype(api_versions_response::data)& default_data) {
     non_default_data.finalized_features_epoch = 0;
-    default_data = non_default_data;
+    default_data = {
+      .error_code = non_default_data.error_code,
+      .api_keys = non_default_data.api_keys.copy(),
+      .throttle_time_ms = non_default_data.throttle_time_ms,
+      .supported_features = non_default_data.supported_features.copy(),
+      .finalized_features_epoch = non_default_data.finalized_features_epoch,
+      .finalized_features = non_default_data.finalized_features.copy(),
+      .unknown_tags = non_default_data.unknown_tags,
+    };
     default_data.finalized_features_epoch = -1;
 
     // int64 (8 bytes) + tag (2 bytes)

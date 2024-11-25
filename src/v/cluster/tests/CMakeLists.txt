@@ -65,8 +65,7 @@ set(srcs
         ephemeral_credential_test.cc
         health_monitor_test.cc
         metadata_dissemination_test.cc
-        replicas_rebalancing_tests.cc
-        tx_topic_test.cc)
+        replicas_rebalancing_tests.cc)
 
 foreach(cluster_test_src ${srcs})
     get_filename_component(test_name ${cluster_test_src} NAME_WE)
@@ -131,6 +130,19 @@ rp_test(
 )
 
 rp_test(
+  FIXTURE_TEST
+  BINARY_NAME tx_coordinator
+  SOURCES
+    tx_topic_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES
+    v::seastar_testing_main
+    v::application
+  ARGS "-- -c 1"
+  LABELS cluster
+)
+
+rp_test(
   UNIT_TEST
   GTEST
   BINARY_NAME plugin_test
@@ -167,5 +179,13 @@ rp_test(
     v::gtest_main
     v::cluster
   ARGS "-- -c 1"
+  LABELS cluster
+)
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME health_monitor
+  SOURCES health_monitor_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::cluster
   LABELS cluster
 )

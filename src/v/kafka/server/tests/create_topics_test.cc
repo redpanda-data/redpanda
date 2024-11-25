@@ -9,9 +9,11 @@
 
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
@@ -135,8 +137,10 @@ public:
             /// Server should return default configs
             BOOST_TEST(topic_res.configs, "empty config response");
             auto cfg_map = config_map(*topic_res.configs);
-            const auto default_topic_properties = kafka::from_cluster_type(
-              app.metadata_cache.local().get_default_properties());
+            const auto default_topic_properties = config_map(
+              kafka::report_topic_configs(
+                app.metadata_cache.local(),
+                app.metadata_cache.local().get_default_properties()));
             BOOST_TEST(
               cfg_map == default_topic_properties,
               "incorrect default properties");
@@ -153,8 +157,9 @@ public:
         auto cfg = app.metadata_cache.local().get_topic_cfg(
           model::topic_namespace_view{model::kafka_namespace, topic_res.name});
         BOOST_TEST(cfg, "missing topic config");
-        auto config_map = kafka::from_cluster_type(cfg->properties);
-        BOOST_TEST(config_map == resp_cfgs, "configs didn't match");
+        auto cfg_map = config_map(kafka::report_topic_configs(
+          app.metadata_cache.local(), cfg->properties));
+        BOOST_TEST(cfg_map == resp_cfgs, "configs didn't match");
         BOOST_CHECK_EQUAL(
           topic_res.topic_config_error_code, kafka::error_code::none);
     }
@@ -166,11 +171,12 @@ public:
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
         metadata_req.data.topics
-          = std::make_optional<std::vector<kafka::metadata_request_topic>>();
+          = std::make_optional<chunked_vector<kafka::metadata_request_topic>>();
         metadata_req.data.topics->push_back(
           kafka::metadata_request_topic{request_topic.name});
         auto metadata_resp
-          = client.dispatch(metadata_req, kafka::api_version(1)).get0();
+          = client.dispatch(std::move(metadata_req), kafka::api_version(1))
+              .get0();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(

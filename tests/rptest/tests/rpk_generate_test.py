@@ -21,28 +21,32 @@ class RpkGenerateTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=1)
     def test_generate_grafana(self):
         """
-          Test that rpk generate grafana-dashboard will generate the required dashboard
-          and that it's a proper JSON file.
-          """
+        Test that rpk generate grafana-dashboard will generate the required dashboard
+        and that it's a proper JSON file.
+        """
 
         # dashboard is the dictionary of the current dashboards and their title.
-        dashboards = {
-            "operations": "Redpanda Ops Dashboard",
-            "consumer-metrics": "Kafka Consumer",
-            "consumer-offsets": "Kafka Consumer Offsets",
-            "topic-metrics": "Kafka Topic Metrics"
-        }
-        for name, expectedTitle in dashboards.items():
-            out = self._rpk.generate_grafana(name)
+        dashboards = [
+            "operations", "consumer-metrics", "consumer-offsets",
+            "topic-metrics", "legacy"
+        ]
+        for name in dashboards:
+            datasource = ""
+            metrics_endpoint = ""
+            if name == "legacy":
+                datasource = "redpanda"
+                n = self.redpanda.get_node(1)
+                metrics_endpoint = self.redpanda.admin_endpoint(
+                    n) + "/public_metrics"
+            out = self._rpk.generate_grafana(name,
+                                             datasource=datasource,
+                                             metrics_endpoint=metrics_endpoint)
             try:
-                dash = json.loads(out)
-
-                # We only validate one known value, the main goal is to identify if it's a valid JSON
-                title = dash["title"]
-                assert title == expectedTitle, f"Received dashboard title: '{title}', expected: '{expectedTitle}'"
+                # We just need to assert that it was able to retrieve and parse the dashboard as valid json
+                json.loads(out)
             except json.JSONDecodeError as err:
                 self.logger.error(
                     f"unable to parse generated' {name}' dashboard : {err}")

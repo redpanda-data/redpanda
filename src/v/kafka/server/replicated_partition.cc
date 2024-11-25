@@ -247,43 +247,7 @@ ss::future<std::optional<storage::timequery_result>>
 replicated_partition::timequery(storage::timequery_config cfg) {
     // cluster::partition::timequery returns a result in Kafka offsets,
     // no further offset translation is required here.
-    auto res = co_await _partition->timequery(cfg);
-    if (!res.has_value()) {
-        co_return std::nullopt;
-    }
-    const auto kafka_start_override = _partition->kafka_start_offset_override();
-    if (
-      !kafka_start_override.has_value()
-      || kafka_start_override.value() <= res.value().offset) {
-        // The start override doesn't affect the result of the timequery.
-        co_return res;
-    }
-    vlog(
-      klog.debug,
-      "{} timequery result {} clamped by start override, fetching result at "
-      "start {}",
-      ntp(),
-      res->offset,
-      kafka_start_override.value());
-    storage::log_reader_config config(
-      kafka_start_override.value(),
-      cfg.max_offset,
-      0,
-      2048, // We just need one record batch
-      cfg.prio,
-      cfg.type_filter,
-      std::nullopt, // No timestamp, just use the offset
-      cfg.abort_source);
-    auto translating_reader = co_await make_reader(config, std::nullopt);
-    auto ot_state = std::move(translating_reader.ot_state);
-    model::record_batch_reader::storage_t data
-      = co_await model::consume_reader_to_memory(
-        std::move(translating_reader.reader), model::no_timeout);
-    auto& batches = std::get<model::record_batch_reader::data_t>(data);
-    if (batches.empty()) {
-        co_return std::nullopt;
-    }
-    co_return storage::batch_timequery(*(batches.begin()), cfg.time);
+    return _partition->timequery(cfg);
 }
 
 ss::future<result<model::offset>> replicated_partition::replicate(
@@ -473,13 +437,10 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
     if (reading_from_follower && !_partition->is_leader()) {
         auto ec = error_code::none;
 
-        const std::pair<model::offset, model::offset> bounds = std::minmax(
+        const auto available_to_read = std::min(
           leader_high_watermark(), log_end_offset());
-        const auto effective_log_end_offset = bounds.second;
-        const auto available_to_read = bounds.first;
-        if (
-          fetch_offset < start_offset()
-          || fetch_offset > effective_log_end_offset) {
+
+        if (fetch_offset < start_offset()) {
             ec = error_code::offset_out_of_range;
         } else if (fetch_offset > available_to_read) {
             /**

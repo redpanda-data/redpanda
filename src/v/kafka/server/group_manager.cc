@@ -34,6 +34,7 @@
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -454,17 +455,17 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
 }
 
 ss::future<> group_manager::cleanup_removed_topic_partitions(
-  const std::vector<model::topic_partition>& tps) {
+  const chunked_vector<model::topic_partition>& tps) {
     // operate on a light-weight copy of group pointers to avoid iterating over
     // the main index which is subject to concurrent modification.
-    std::vector<group_ptr> groups;
+    chunked_vector<group_ptr> groups;
     groups.reserve(_groups.size());
     for (auto& group : _groups) {
         groups.push_back(group.second);
     }
 
     return ss::do_with(
-      std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
+      std::move(groups), [this, &tps](chunked_vector<group_ptr>& groups) {
           return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
               return group->remove_topic_partitions(tps).then(
                 [this, g = group] {
@@ -492,7 +493,7 @@ void group_manager::handle_topic_delta(
   cluster::topic_table::delta_range_t deltas) {
     // topic-partition deletions in the kafka namespace are the only deltas that
     // are relevant to the group manager
-    std::vector<model::topic_partition> tps;
+    chunked_vector<model::topic_partition> tps;
     for (const auto& delta : deltas) {
         if (
           delta.type == cluster::topic_table_delta_type::removed
@@ -511,7 +512,7 @@ void group_manager::handle_topic_delta(
           [this, tps = std::move(tps)]() mutable {
               return ss::do_with(
                 std::move(tps),
-                [this](const std::vector<model::topic_partition>& tps) {
+                [this](const chunked_vector<model::topic_partition>& tps) {
                     return cleanup_removed_topic_partitions(tps);
                 });
           })
@@ -838,16 +839,31 @@ ss::future<> group_manager::handle_partition_leader_change(
                   std::nullopt,
                   std::nullopt,
                   std::nullopt);
-
+                auto expected_to_read = model::prev_offset(
+                  p->partition->high_watermark());
                 return p->partition->make_reader(reader_config)
-                  .then([this, term, p, timeout](
+                  .then([this, term, p, timeout, expected_to_read](
                           model::record_batch_reader reader) {
                       return std::move(reader)
                         .consume(
                           group_recovery_consumer(_serializer_factory(), p->as),
                           timeout)
-                        .then([this, term, p](
+                        .then([this, term, p, expected_to_read](
                                 group_recovery_consumer_state state) {
+                            if (state.last_read_offset < expected_to_read) {
+                                vlog(
+                                  klog.error,
+                                  "error recovering group state from {}. "
+                                  "Expected to read up to {} but last offset "
+                                  "consumed is equal to {}",
+                                  p->partition->ntp(),
+                                  expected_to_read,
+                                  state.last_read_offset);
+                                // force step down to allow other node to
+                                // recover group
+                                return p->partition->raft()->step_down(
+                                  "unable to recover group, short read");
+                            }
                             // avoid trying to recover if we stopped the
                             // reader because an abort was requested
                             if (p->as.abort_requested()) {
@@ -940,6 +956,7 @@ ss::future<> group_manager::do_recover_group(
                 .log_offset = meta.log_offset,
                 .offset = meta.metadata.offset,
                 .metadata = meta.metadata.metadata,
+                .committed_leader_epoch = meta.metadata.leader_epoch,
                 .commit_timestamp = meta.metadata.commit_timestamp,
                 .expiry_timestamp = expiry_timestamp,
                 .non_reclaimable = meta.metadata.non_reclaimable,
@@ -1236,7 +1253,11 @@ group_manager::leave_group(leave_group_request&& r) {
 ss::future<txn_offset_commit_response>
 group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock->try_read_lock()) {
+    if (!p || !p->partition->is_leader()) {
+        return ss::make_ready_future<txn_offset_commit_response>(
+          txn_offset_commit_response(r, error_code::not_coordinator));
+    }
+    if (!p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1287,7 +1308,11 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
 ss::future<cluster::commit_group_tx_reply>
 group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock->try_read_lock()) {
+    if (!p || !p->partition->is_leader()) {
+        return ss::make_ready_future<cluster::commit_group_tx_reply>(
+          make_commit_tx_reply(cluster::tx_errc::not_coordinator));
+    }
+    if (!p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1326,7 +1351,11 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
 ss::future<cluster::begin_group_tx_reply>
 group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock->try_read_lock()) {
+    if (!p || !p->partition->is_leader()) {
+        return ss::make_ready_future<cluster::begin_group_tx_reply>(
+          make_begin_tx_reply(cluster::tx_errc::not_coordinator));
+    }
+    if (!p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1374,7 +1403,11 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
 ss::future<cluster::abort_group_tx_reply>
 group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock->try_read_lock()) {
+    if (!p || !p->partition->is_leader()) {
+        return ss::make_ready_future<cluster::abort_group_tx_reply>(
+          make_abort_tx_reply(cluster::tx_errc::not_coordinator));
+    }
+    if (!p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1499,9 +1532,10 @@ group_manager::offset_delete(offset_delete_request&& r) {
         deleted_offsets_set.insert(std::move(tp));
     }
 
-    absl::
-      flat_hash_map<model::topic, std::vector<offset_delete_response_partition>>
-        response_data;
+    absl::flat_hash_map<
+      model::topic,
+      chunked_vector<offset_delete_response_partition>>
+      response_data;
     for (const auto& tp : requested_deletions) {
         auto error = kafka::error_code::none;
         if (!deleted_offsets_set.contains(tp)) {

@@ -200,6 +200,7 @@ struct scan_result {
 /// Similar to prev function but uses timequery
 scan_result scan_remote_partition(
   cloud_storage_fixture& imposter,
+  model::offset min,
   model::timestamp timestamp,
   model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
@@ -217,5 +218,15 @@ std::vector<in_memory_segment> replace_segments(
   model::offset base_offset,
   model::offset_delta base_delta,
   const std::vector<std::vector<batch_t>>& batches);
+
+/// Read batches by one using max_bytes=1 and set max_offset to closes
+/// value in the 'possible_lso_values' list.
+std::vector<model::record_batch_header>
+scan_remote_partition_incrementally_with_closest_lso(
+  cloud_storage_fixture& imposter,
+  model::offset base,
+  model::offset max,
+  size_t maybe_max_segments,
+  size_t maybe_max_readers);
 
 } // namespace cloud_storage

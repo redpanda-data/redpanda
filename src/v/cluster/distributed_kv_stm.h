@@ -78,6 +78,7 @@ requires std::is_trivially_copyable_v<Key>
          && std::is_trivially_copyable_v<Value>
 class distributed_kv_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr const char* name = "distributed_kv_stm";
     explicit distributed_kv_stm(
       size_t max_partitions, ss::logger& logger, raft::consensus* raft)
       : persisted_stm<>("distributed_kv_stm.snapshot", logger, raft)
@@ -119,7 +120,7 @@ public:
     ss::future<> apply_local_snapshot(
       raft::stm_snapshot_header header, iobuf&& bytes) override {
         auto holder = _gate.hold();
-        auto units = _snapshot_lock.hold_write_lock();
+        auto units = co_await _snapshot_lock.hold_write_lock();
 
         iobuf_parser parser(std::move(bytes));
         auto snap = co_await serde::read_async<snapshot>(parser);
@@ -136,7 +137,7 @@ public:
 
     ss::future<raft::stm_snapshot> take_local_snapshot() override {
         auto holder = _gate.hold();
-        auto units = _snapshot_lock.hold_write_lock();
+        auto units = co_await _snapshot_lock.hold_write_lock();
         auto last_applied = last_applied_offset();
         snapshot result;
         if (_is_routing_partition) {
@@ -156,7 +157,6 @@ public:
         co_return;
     }
 
-    std::string_view get_name() const final { return "distributed_kv_stm"; }
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 

@@ -25,19 +25,19 @@ namespace pps = pp::schema_registry;
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
-    store.start(ss::default_smp_service_group()).get();
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
 
     const pps::schema_version ver1{1};
 
     // Insert simple
     auto referenced_schema = pps::canonical_schema{
-      pps::subject{"simple.proto"}, simple};
+      pps::subject{"simple.proto"}, simple.share()};
     store
       .upsert(
         pps::seq_marker{
           std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
-        referenced_schema,
+        referenced_schema.share(),
         pps::schema_id{1},
         ver1,
         pps::is_deleted::no)
@@ -45,13 +45,13 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
     // Insert referenced
     auto importing_schema = pps::canonical_schema{
-      pps::subject{"imported.proto"}, imported};
+      pps::subject{"imported.proto"}, imported.share()};
 
     store
       .upsert(
         pps::seq_marker{
           std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
-        importing_schema,
+        importing_schema.share(),
         pps::schema_id{2},
         ver1,
         pps::is_deleted::no)
@@ -79,7 +79,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       .upsert(
         pps::seq_marker{
           std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
-        importing_schema,
+        importing_schema.share(),
         pps::schema_id{2},
         ver1,
         pps::is_deleted::yes)
@@ -97,7 +97,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
     pps::sharded_store store;
-    store.start(ss::default_smp_service_group()).get();
+    store.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
 
     pps::unparsed_schema array_unsanitized{
@@ -116,18 +116,18 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
 
     // Insert an unsorted schema "onto the topic".
     auto referenced_schema = pps::canonical_schema{
-      pps::subject{"simple.proto"}, simple};
+      pps::subject{"simple.proto"}, simple.share()};
     store
       .upsert(
         pps::seq_marker{
           std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
-        array_unsanitized,
+        array_unsanitized.share(),
         pps::schema_id{1},
         ver1,
         pps::is_deleted::no)
       .get();
 
-    auto res = store.has_schema(array_sanitized).get();
+    auto res = store.has_schema(array_sanitized.share()).get();
     BOOST_REQUIRE_EQUAL(res.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(res.version, ver1);
 }

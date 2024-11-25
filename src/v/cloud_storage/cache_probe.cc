@@ -103,6 +103,11 @@ cache_probe::cache_probe() {
                     "trim and had to fall back to a slower exhaustive trim."))
                   .aggregate(aggregate_labels),
                 sm::make_counter(
+                  "carryover_trims",
+                  [this] { return _carryover_trims; },
+                  sm::description("Number of times we invoked carryover trim."))
+                  .aggregate(aggregate_labels),
+                sm::make_counter(
                   "failed_trims",
                   [this] { return _failed_trims; },
                   sm::description(

@@ -48,7 +48,10 @@ struct test_data {
     std::vector<module_import> imports;
 };
 
-void PrintTo(const test_data& d, std::ostream* os) { *os << d.wat; }
+void PrintTo(const test_data& d, std::ostream* os) {
+    constexpr size_t max_len = 128;
+    *os << d.wat.substr(0, std::min(d.wat.size(), max_len));
+}
 
 class ParserTest : public testing::TestWithParam<test_data> {};
 
@@ -363,6 +366,41 @@ INSTANTIATE_TEST_SUITE_P(
 (module
   (memory 1)
   (data (i32.const 0) "a")
+)
+)WAT",
+        .exports = {},
+        .imports = {},
+      },
+      {
+        .wat = R"WAT(
+(module
+  (global (;0;) (mut i32) (i32.const 306464))
+  (global (;1;) i32 (i32.const 0))
+  (global (;2;) i32 (i32.const 239492))
+  (global (;3;) i32 (i32.const 448))
+  (global (;4;) i32 (i32.const 1))
+  (global (;5;) i32 (i32.const 193520))
+  (global (;6;) i32 (i32.const 449))
+  (global (;7;) i32 (i32.const 234008))
+  (global (;8;) i32 (i32.const 233968))
+  (global (;9;) i32 (i32.const 233868))
+
+  (global $a i32 (i32.const -2))
+  (global (;3;) f32 (f32.const -3))
+  (global (;4;) f64 (f64.const -4))
+  (global $b i64 (i64.const -5))
+
+  (global $x (mut i32) (i32.const -12))
+  (global (;7;) (mut f32) (f32.const -13))
+  (global (;8;) (mut f64) (f64.const -14))
+  (global $y (mut i64) (i64.const -15))
+
+  (global $z1 i32 (global.get 0))
+  (global $z2 i64 (global.get 1))
+
+  (global $r externref (ref.null extern))
+  (global $mr (mut externref) (ref.null extern))
+  (global funcref (ref.null func))
 )
 )WAT",
         .exports = {},

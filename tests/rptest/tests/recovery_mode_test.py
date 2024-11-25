@@ -444,7 +444,9 @@ class DisablingPartitionsTest(RedpandaTest):
             ts = topics if topic is None else [topic]
             ret = dict()
             for topic in ts:
+                self.logger.info(f"describing {topic}")
                 for p in rpk.describe_topic(topic):
+                    self.logger.info(f"returned partition {p.high_watermark}")
                     ret[f"{topic}/{p.id}"] = p.high_watermark
             return ret
 
@@ -513,10 +515,32 @@ class DisablingPartitionsTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self.redpanda.wait_for_membership(first_start=False)
 
+        def all_have_leaders():
+            for n in self.redpanda.started_nodes():
+                all_partitions_have_leaders = all([
+                    partition['leader'] != -1
+                    for partition in admin.get_partitions(node=n)
+                ])
+                if not all_partitions_have_leaders:
+                    return False
+            return True
+
+        wait_until(
+            all_have_leaders,
+            30,
+            backoff_sec=1,
+            err_msg="Failed waiting for partition leadership to stabilize")
+
         # test that partitions are still disabled after restart
 
         assert all_disabled_shut_down()
 
+        def hw_is_present():
+            hwms = get_hwms()
+            return "mytopic1/0" in hwms
+
+        wait_until(hw_is_present, 30, 1, "high watermark is not present")
+        self.logger.info(f"current hw: {get_hwms()}, hwms3: {hwms3}")
         assert get_hwms() == hwms3
 
         self.logger.info("enabling partitions back")

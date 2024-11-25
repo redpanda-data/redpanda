@@ -45,7 +45,7 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
       std::chrono::duration_cast<std::chrono::milliseconds>(
         cfg.segment_upload_timeout),
       std::chrono::duration_cast<std::chrono::milliseconds>(
-        cfg.manifest_upload_timeout),
+        cfg.manifest_upload_timeout()),
       cfg.time_limit);
     return o;
 }
@@ -97,7 +97,7 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
           .cloud_storage_segment_upload_timeout_ms.value(),
       .manifest_upload_timeout
       = config::shard_local_cfg()
-          .cloud_storage_manifest_upload_timeout_ms.value(),
+          .cloud_storage_manifest_upload_timeout_ms.bind(),
       .garbage_collect_timeout
       = config::shard_local_cfg()
           .cloud_storage_garbage_collect_timeout_ms.value(),

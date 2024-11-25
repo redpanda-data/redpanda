@@ -49,7 +49,7 @@ public:
     create_schema(ppsr::unparsed_schema schema) override {
         auto [reader, writer] = co_await service();
         co_await writer->read_sync();
-        auto parsed = co_await reader->make_canonical_schema(schema);
+        auto parsed = co_await reader->make_canonical_schema(std::move(schema));
         co_return co_await writer->write_subject_version(
           {.schema = std::move(parsed)});
     }

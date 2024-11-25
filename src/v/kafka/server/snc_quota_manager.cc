@@ -346,13 +346,12 @@ void snc_quota_manager::get_or_create_quota_context(
     }
 }
 
-snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
-  snc_quota_context& ctx, const clock::time_point now) const {
+snc_quota_manager::delays_t
+snc_quota_manager::get_shard_delays(const snc_quota_context& ctx) const {
     delays_t res;
 
-    // force throttle whatever the client did not do on its side
-    if (now < ctx._throttled_until) {
-        res.enforce = ctx._throttled_until - now;
+    if (ctx._exempt) {
+        return res;
     }
 
     // throttling delay the connection should be requested to throttle
@@ -367,7 +366,6 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
           _max_kafka_throttle_delay(),
           std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
     }
-    ctx._throttled_until = now + res.request;
 
     _probe.record_throttle_time(
       std::chrono::duration_cast<std::chrono::microseconds>(res.request));
@@ -376,7 +374,7 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
 }
 
 void snc_quota_manager::record_request_receive(
-  snc_quota_context& ctx,
+  const snc_quota_context& ctx,
   const size_t request_size,
   const clock::time_point now) noexcept {
     if (ctx._exempt) {
@@ -393,7 +391,7 @@ void snc_quota_manager::record_request_receive(
 }
 
 void snc_quota_manager::record_request_intake(
-  snc_quota_context& ctx, const size_t request_size) noexcept {
+  const snc_quota_context& ctx, const size_t request_size) noexcept {
     if (ctx._exempt) {
         return;
     }
@@ -401,7 +399,7 @@ void snc_quota_manager::record_request_intake(
 }
 
 void snc_quota_manager::record_response(
-  snc_quota_context& ctx,
+  const snc_quota_context& ctx,
   const size_t request_size,
   const clock::time_point now) noexcept {
     if (ctx._exempt) {

@@ -94,7 +94,22 @@ class NodeFolderDeletionTest(PreallocNodesTest):
         wait_until(lambda: producer.produce_status.acked > 200000,
                    timeout_sec=120,
                    backoff_sec=0.5)
+
         admin = Admin(self.redpanda)
+
+        # validate that the node with deleted folder is recognized as offline
+        def removed_node_is_reported_offline():
+            cluster_health = admin.get_cluster_health_overview()
+            return id in cluster_health['nodes_down']
+
+        wait_until(
+            removed_node_is_reported_offline,
+            timeout_sec=20,
+            backoff_sec=0.5,
+            err_msg=
+            f"Node {id} is expected to be marked as offline as it was replaced by new node"
+        )
+
         # decommission a node that has been cleared
         admin.decommission_broker(id)
         waiter = NodeDecommissionWaiter(self.redpanda,

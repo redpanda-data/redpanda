@@ -90,3 +90,6 @@ class RpkProducer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("rpk", clean_shutdown=False)
+
+    def clean_node(self, node):
+        pass

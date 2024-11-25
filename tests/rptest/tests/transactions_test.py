@@ -21,7 +21,9 @@ import uuid
 import random
 
 from ducktape.utils.util import wait_until
+from ducktape.errors import TimeoutError
 
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, SecurityConfig, SaslCredentials
@@ -102,6 +104,37 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         self.max_records = 100
         self.admin = Admin(self.redpanda)
 
+    def wait_for_eviction(self, max_concurrent_producer_ids, num_to_evict):
+        samples = [
+            "idempotency_pid_cache_size",
+            "producer_state_manager_evicted_producers"
+        ]
+        brokers = self.redpanda.started_nodes()
+        metrics = self.redpanda.metrics_samples(samples, brokers)
+        producers_per_node = defaultdict(int)
+        evicted_per_node = defaultdict(int)
+        for pattern, metric in metrics.items():
+            for m in metric.samples:
+                id = self.redpanda.node_id(m.node)
+                if pattern == "idempotency_pid_cache_size":
+                    producers_per_node[id] += int(m.value)
+                elif pattern == "producer_state_manager_evicted_producers":
+                    evicted_per_node[id] += int(m.value)
+
+        self.redpanda.logger.debug(f"active producers: {producers_per_node}")
+        self.redpanda.logger.debug(f"evicted producers: {evicted_per_node}")
+
+        remaining_match = all([
+            num == max_concurrent_producer_ids
+            for num in producers_per_node.values()
+        ])
+
+        evicted_match = all(
+            [val == num_to_evict for val in evicted_per_node.values()])
+
+        return len(producers_per_node) == len(
+            brokers) and remaining_match and evicted_match
+
     @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
@@ -130,7 +163,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -149,7 +181,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         consumer1 = ck.Consumer({
@@ -214,6 +245,12 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                 ), f'Records value does not match from input {consumed_from_input_topic[index_from_input].value()}, from output {record.value()}'
                 index_from_input += 1
 
+        log_viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.started_nodes():
+            records = log_viewer.read_kafka_records(node=node,
+                                                    topic=self.input_t.name)
+            self.logger.info(f"Read {len(records)} from node {node.name}")
+
     @cluster(num_nodes=3)
     def rejoin_member_test(self):
         self.generate_data(self.input_t, self.max_records)
@@ -221,7 +258,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         group_name = "test"
@@ -279,7 +315,6 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         group_name = "test"
@@ -325,6 +360,49 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             assert kafka_error.code() == ck.cimpl.KafkaError.FENCED_INSTANCE_ID
 
         producer.abort_transaction()
+
+    @cluster(num_nodes=3)
+    def transaction_id_expiration_test(self):
+        admin = Admin(self.redpanda)
+        rpk = RpkTool(self.redpanda)
+        # Create an open transaction.
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 3600000,  # to avoid timing out
+        })
+        producer.init_transactions()
+        producer.begin_transaction()
+        producer.produce(self.output_t.name, "x", "y")
+        producer.flush()
+
+        # Default transactional id expiration is 7d, so the transaction
+        # should be hung.
+        def no_running_transactions():
+            return len(admin.get_all_transactions()) == 0
+
+        wait_timeout_s = 20
+        try:
+            wait_until(no_running_transactions,
+                       timeout_sec=wait_timeout_s,
+                       backoff_sec=2,
+                       err_msg="Transactions still running")
+            assert False, "No running transactions found."
+        except TimeoutError as e:
+            assert "Transactions still running" in str(e)
+
+        # transaction should be aborted.
+        rpk.cluster_config_set("transactional_id_expiration_ms", 5000)
+        wait_until(no_running_transactions,
+                   timeout_sec=wait_timeout_s,
+                   backoff_sec=2,
+                   err_msg="Transactions still running")
+
+        try:
+            producer.commit_transaction()
+            assert False, "transaction should have been aborted by now."
+        except ck.KafkaException:
+            pass
 
     @cluster(num_nodes=3)
     def expired_tx_test(self):
@@ -718,6 +796,43 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
         ])
 
     @cluster(num_nodes=3)
+    def check_progress_after_fencing_test(self):
+        """Checks that a fencing producer makes progress after fenced producers are evicted."""
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+
+        topic_name = self.topics[0].name
+
+        # create a pid, do not commit/abort transaction.
+        producer.init_transactions()
+        producer.begin_transaction()
+        producer.produce(topic_name, "0", "0", 0, self.on_delivery)
+        producer.flush()
+
+        # fence the above pid with another producer
+        producer0 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test',
+            'transaction.timeout.ms': 100000,
+        })
+        producer0.init_transactions()
+        producer0.begin_transaction()
+        producer0.produce(topic_name, "0", "0", 0, self.on_delivery)
+
+        max_concurrent_pids = 1
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("max_concurrent_producer_ids",
+                               str(max_concurrent_pids))
+
+        self.wait_for_eviction(max_concurrent_pids, 1)
+
+        producer0.commit_transaction()
+
+    @cluster(num_nodes=3)
     def check_pids_overflow_test(self):
         rpk = RpkTool(self.redpanda)
         max_concurrent_producer_ids = 10
@@ -756,41 +871,8 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         evicted_count = max_producers - max_concurrent_producer_ids
 
-        # Wait until eviction kicks in.
-        def wait_for_eviction():
-            samples = [
-                "idempotency_pid_cache_size",
-                "producer_state_manager_evicted_producers"
-            ]
-            brokers = self.redpanda.started_nodes()
-            metrics = self.redpanda.metrics_samples(samples, brokers)
-            producers_per_node = defaultdict(int)
-            evicted_per_node = defaultdict(int)
-            for pattern, metric in metrics.items():
-                for m in metric.samples:
-                    id = self.redpanda.node_id(m.node)
-                    if pattern == "idempotency_pid_cache_size":
-                        producers_per_node[id] += int(m.value)
-                    elif pattern == "producer_state_manager_evicted_producers":
-                        evicted_per_node[id] += int(m.value)
-
-            self.redpanda.logger.debug(
-                f"active producers: {producers_per_node}")
-            self.redpanda.logger.debug(
-                f"evicted producers: {evicted_per_node}")
-
-            remaining_match = all([
-                num == max_concurrent_producer_ids
-                for num in producers_per_node.values()
-            ])
-
-            evicted_match = all(
-                [val == evicted_count for val in evicted_per_node.values()])
-
-            return len(producers_per_node) == len(
-                brokers) and remaining_match and evicted_match
-
-        wait_until(wait_for_eviction,
+        wait_until(lambda: self.wait_for_eviction(max_concurrent_producer_ids,
+                                                  evicted_count),
                    timeout_sec=30,
                    backoff_sec=2,
                    err_msg="Producers not evicted in time")
@@ -844,6 +926,105 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
             num_consumed += len(records)
 
         assert num_consumed == should_be_consumed
+
+
+class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
+    topics = (TopicSpec(partition_count=1, replication_factor=3),
+              TopicSpec(partition_count=1, replication_factor=3))
+
+    def __init__(self, test_context):
+        extra_rp_conf = {
+            'unsafe_enable_consumer_offsets_delete_retention': True,
+            'group_topic_partitions': 1,  # to reduce log noise
+            'log_segment_size_min': 99,
+            # to be able to make changes to CO
+            'kafka_nodelete_topics': [],
+            'kafka_noproduce_topics': [],
+        }
+        super(TransactionsStreamsTest,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf=extra_rp_conf)
+        self.input_t = self.topics[0]
+        self.output_t = self.topics[1]
+
+    def setup_consumer_offsets(self, rpk: RpkTool):
+        # initialize consumer groups topic
+        rpk.consume(topic=self.input_t.name, n=1, group="test-group")
+        topic = "__consumer_offsets"
+        # Aggressive roll settings to clear multiple small segments
+        rpk.alter_topic_config(topic, TopicSpec.PROPERTY_CLEANUP_POLICY,
+                               TopicSpec.CLEANUP_DELETE)
+        rpk.alter_topic_config(topic, TopicSpec.PROPERTY_SEGMENT_SIZE, 100)
+
+    @cluster(num_nodes=3)
+    def consumer_offsets_retention_test(self):
+        """Ensure consumer offsets replays correctly after transactional offset commits"""
+        input_records = 10000
+        self.generate_data(self.input_t, input_records)
+        rpk = RpkTool(self.redpanda)
+        self.setup_consumer_offsets(rpk)
+        # Populate consumer offsets with transactional offset commits/aborts
+        producer_conf = {
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'streams',
+        }
+        producer = ck.Producer(producer_conf)
+        consumer_conf = {
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': "test",
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+        }
+        consumer = ck.Consumer(consumer_conf)
+        consumer.subscribe([self.input_t])
+
+        producer.init_transactions()
+        consumed = 0
+        while consumed != input_records:
+            records = self.consume(consumer)
+            producer.begin_transaction()
+            for record in records:
+                producer.produce(self.output_t.name,
+                                 record.value(),
+                                 record.key(),
+                                 on_delivery=self.on_delivery)
+
+            producer.send_offsets_to_transaction(
+                consumer.position(consumer.assignment()),
+                consumer.consumer_group_metadata())
+
+            producer.flush()
+
+            if random.randint(0, 9) < 5:
+                producer.commit_transaction()
+            else:
+                producer.abort_transaction()
+            consumed += len(records)
+
+        admin = Admin(self.redpanda)
+        co_topic = "__consumer_offsets"
+
+        def get_offsets():
+            topic_info = list(rpk.describe_topic(co_topic))[0]
+            assert topic_info
+            return (topic_info.start_offset, topic_info.high_watermark)
+
+        # trim prefix, change leadership and validate the log is replayed successfully on
+        # the new leader.
+        attempts = 30
+        truncate_offset = 100
+        while attempts > 0:
+            (start, end) = get_offsets()
+            self.redpanda.logger.debug(f"Current offsets: {start} - {end}")
+            if truncate_offset > end:
+                break
+            rpk.trim_prefix(co_topic, truncate_offset, partitions=[0])
+            admin.partition_transfer_leadership("kafka", co_topic, partition=0)
+            admin.await_stable_leader(topic=co_topic,
+                                      replication=3,
+                                      timeout_s=30)
+            truncate_offset += 200
+            attempts = attempts - 1
 
 
 @contextmanager
@@ -966,7 +1147,6 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         producer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         }
 
         user = self.USER_1
@@ -995,7 +1175,6 @@ class TransactionsAuthorizationTest(RedpandaTest, TransactionsMixin):
         producer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         }
         consumer_cfg = {
             'bootstrap.servers': self.redpanda.brokers(),
@@ -1181,7 +1360,6 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -1204,7 +1382,6 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         producer = ck.Producer({
             'bootstrap.servers': self.redpanda.brokers(),
             'transactional.id': '0',
-            'transaction.timeout.ms': 10000,
         })
 
         producer.init_transactions()
@@ -1286,7 +1463,6 @@ class TxUpgradeTest(RedpandaTest):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': self._tx_id(i),
-                'transaction.timeout.ms': 10000,
             })
             producer.init_transactions()
             producer.begin_transaction()

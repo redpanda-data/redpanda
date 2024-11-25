@@ -30,9 +30,9 @@ assignment_plan::encode(const assignments::value_type& m) const {
       .member_id = m.first, .assignment = iobuf_to_bytes(assignments_buf)};
 };
 
-std::vector<sync_group_request_assignment>
+chunked_vector<sync_group_request_assignment>
 assignment_plan::encode(const assignments& assignments) const {
-    std::vector<sync_group_request_assignment> result;
+    chunked_vector<sync_group_request_assignment> result;
     result.reserve(assignments.size());
     for (const auto& m : assignments) {
         result.push_back(encode(m));
@@ -58,8 +58,8 @@ assignment assignment_plan::decode(const bytes& b) const {
 }
 
 assignments assignment_range::plan(
-  const std::vector<member_id>& members,
-  const std::vector<metadata_response::topic>& topics) {
+  const chunked_vector<member_id>& members,
+  const chunked_vector<metadata_response::topic>& topics) {
     assignments assignments;
     for (auto const& t : topics) {
         auto [len, rem] = std::ldiv(t.partitions.size(), members.size());
@@ -96,7 +96,7 @@ make_assignment_plan(const protocol_name& protocol_name) {
 }
 
 join_group_request_protocol make_join_group_request_protocol_range(
-  const std::vector<model::topic>& topics) {
+  const chunked_vector<model::topic>& topics) {
     iobuf metadata;
     protocol::encoder writer(metadata);
     writer.write_array(
@@ -109,8 +109,8 @@ join_group_request_protocol make_join_group_request_protocol_range(
       .name{protocol_name{"range"}}, .metadata{iobuf_to_bytes(metadata)}};
 }
 
-std::vector<join_group_request_protocol>
-make_join_group_request_protocols(const std::vector<model::topic>& topics) {
+chunked_vector<join_group_request_protocol>
+make_join_group_request_protocols(const chunked_vector<model::topic>& topics) {
     // When this is extended, create them in order of preference
     return {make_join_group_request_protocol_range(topics)};
 }

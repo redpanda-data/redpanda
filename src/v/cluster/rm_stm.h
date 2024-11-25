@@ -64,6 +64,7 @@ namespace cluster {
  */
 class rm_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr const char* name = "rm_stm";
     using clock_type = ss::lowres_clock;
     using time_point_type = clock_type::time_point;
     using duration_type = clock_type::duration;
@@ -261,7 +262,6 @@ public:
 
     uint64_t get_local_snapshot_size() const override;
 
-    std::string_view get_name() const final { return "rm_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
     const producers_t& get_producers() const { return _producers; }
@@ -360,6 +360,8 @@ private:
     void try_arm(time_point_type);
 
     ss::future<std::error_code> do_mark_expired(model::producer_identity pid);
+
+    absl::btree_set<model::producer_identity> get_expired_producers() const;
 
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;
@@ -481,25 +483,8 @@ private:
           expiration_info>
           expiration;
 
-        void forget(const model::producer_identity& pid) {
-            fence_pid_epoch.erase(pid.get_id());
-            ongoing_map.erase(pid);
-            prepared.erase(pid);
-            current_txes.erase(pid);
-            expiration.erase(pid);
-        }
-
-        void reset() {
-            fence_pid_epoch.clear();
-            ongoing_map.clear();
-            ongoing_set.clear();
-            prepared.clear();
-            current_txes.clear();
-            expiration.clear();
-            aborted.clear();
-            abort_indexes.clear();
-            last_abort_snapshot = {model::offset(-1)};
-        }
+        void forget(const model::producer_identity& pid);
+        void reset();
     };
 
     struct mem_state {

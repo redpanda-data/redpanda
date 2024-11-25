@@ -26,6 +26,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
+	dataplanev1alpha1 "github.com/redpanda-data/redpanda/src/go/rpk/proto/gen/go/redpanda/api/dataplane/v1alpha1"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +37,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var file string
 
 	cmd := &cobra.Command{
-		Use:   "deploy [WASM]",
+		Use:   "deploy",
 		Short: "Deploy a transform",
 		Long: `Deploy a transform.
 
@@ -59,12 +61,10 @@ The --var flag can be repeated to specify multiple variables like so:
   rpk transform deploy --var FOO=BAR --var FIZZ=BUZZ
 `,
 		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
-
-			api, err := adminapi.NewClient(fs, p)
-			out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+			config.CheckExitServerlessAdmin(p)
 
 			cfg := fc.ToProjectConfig()
 
@@ -110,16 +110,33 @@ The --var flag can be repeated to specify multiple variables like so:
 				Status:       nil,
 				Environment:  mapToEnvVars(cfg.Env),
 			}
-			err = api.DeployWasmTransform(cmd.Context(), t, wasm)
-			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
-				if he.Response.StatusCode == 400 {
-					body, bodyErr := he.DecodeGenericErrorBody()
-					if bodyErr == nil {
-						out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+			if p.FromCloud && !p.CloudCluster.IsServerless() {
+				url, err := p.CloudCluster.CheckClusterURL()
+				out.MaybeDie(err, "unable to get cluster information: %v", err)
+
+				cl, err := publicapi.NewDataPlaneClientSet(url, p.CurrentAuth().AuthToken)
+				out.MaybeDie(err, "unable to initialize cloud client: %v", err)
+
+				err = cl.Transform.DeployTransform(cmd.Context(), publicapi.DeployTransformRequest{
+					Metadata:   adminAPIToDataplaneMetadata(t),
+					WasmBinary: wasm,
+				})
+				out.MaybeDie(err, "unable to deploy transform to Cloud Cluster: %v", err)
+			} else {
+				api, err := adminapi.NewClient(fs, p)
+				out.MaybeDie(err, "unable to initialize admin api client: %v", err)
+
+				err = api.DeployWasmTransform(cmd.Context(), t, wasm)
+				if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
+					if he.Response.StatusCode == 400 {
+						body, bodyErr := he.DecodeGenericErrorBody()
+						if bodyErr == nil {
+							out.Die("unable to deploy transform %s: %s", cfg.Name, body.Message)
+						}
 					}
 				}
+				out.MaybeDie(err, "unable to deploy transform %s: %v", cfg.Name, err)
 			}
-			out.MaybeDie(err, "unable to deploy transform %s: %v", cfg.Name, err)
 
 			fmt.Printf("transform %q deployed.\n", cfg.Name)
 		},
@@ -219,7 +236,7 @@ func mergeProjectConfigs(lhs project.Config, rhs project.Config) (out project.Co
 
 // isEmptyProjectConfig checks if a project config is completely empty.
 func isEmptyProjectConfig(cfg project.Config) bool {
-	return cfg.Name == "" && cfg.InputTopic == "" && cfg.OutputTopic == "" && (cfg.Env == nil || len(cfg.Env) == 0)
+	return cfg.Name == "" && cfg.InputTopic == "" && cfg.OutputTopic == "" && len(cfg.Env) == 0
 }
 
 // validateProjectConfig validates the merged command line and file configurations.
@@ -278,4 +295,20 @@ func mapToEnvVars(env map[string]string) (vars []adminapi.EnvironmentVariable) {
 		})
 	}
 	return
+}
+
+func adminAPIToDataplaneMetadata(m adminapi.TransformMetadata) *dataplanev1alpha1.DeployTransformRequest {
+	var envs []*dataplanev1alpha1.TransformMetadata_EnvironmentVariable
+	for _, e := range m.Environment {
+		envs = append(envs, &dataplanev1alpha1.TransformMetadata_EnvironmentVariable{
+			Key:   e.Key,
+			Value: e.Value,
+		})
+	}
+	return &dataplanev1alpha1.DeployTransformRequest{
+		Name:                 m.Name,
+		InputTopicName:       m.InputTopic,
+		OutputTopicNames:     m.OutputTopics,
+		EnvironmentVariables: envs,
+	}
 }

@@ -14,13 +14,15 @@ import string
 
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import ResourceSettings
+from rptest.services.redpanda import ResourceSettings, LoggingConfig
 from kafka import KafkaProducer, KafkaConsumer, TopicPartition
 from rptest.clients.kcl import RawKCL, KclCreateTopicsRequestTopic, \
     KclCreatePartitionsRequestTopic
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+
+GB = 1_000_000_000
 
 
 class ClusterQuotaPartitionMutationTest(RedpandaTest):
@@ -111,7 +113,7 @@ class ClusterRateQuotaTest(RedpandaTest):
     """
     Ducktape tests for rate quota
     """
-    topics = (TopicSpec(), )
+    topics = (TopicSpec(replication_factor=1, max_message_bytes=1 * GB), )
 
     def __init__(self, *args, **kwargs):
         self.max_throttle_time = 10
@@ -131,8 +133,9 @@ class ClusterRateQuotaTest(RedpandaTest):
             self.target_default_quota_byte_rate,
         }
         super().__init__(*args,
-                         num_brokers=3,
                          extra_rp_conf=additional_options,
+                         log_config=LoggingConfig(
+                             'info', logger_levels={'kafka': 'trace'}),
                          resource_settings=ResourceSettings(num_cpus=1),
                          **kwargs)
         self.rpk = RpkTool(self.redpanda)
@@ -148,11 +151,16 @@ class ClusterRateQuotaTest(RedpandaTest):
         self.msg = "".join(
             random.choice(string.ascii_lowercase)
             for _ in range(self.message_size))
+        # A single large message that goes above the default produce/fetch quota
+        self.large_msg = "".join(
+            random.choice(string.ascii_lowercase)
+            for _ in range(self.target_default_quota_byte_rate * 11))
 
-    def check_producer_throttled(self, producer):
+    def check_producer_throttled(self, producer, ignore_max_throttle=False):
         throttle_ms = producer.metrics(
         )["producer-metrics"]["produce-throttle-time-max"]
-        assert throttle_ms > 0 and throttle_ms <= self.max_throttle_time
+        assert throttle_ms > 0 and (ignore_max_throttle
+                                    or throttle_ms <= self.max_throttle_time)
 
     def check_producer_not_throttled(self, producer):
         throttle_ms = producer.metrics(
@@ -169,12 +177,13 @@ class ClusterRateQuotaTest(RedpandaTest):
         )["consumer-fetch-manager-metrics"]["fetch-throttle-time-max"]
         assert throttle_ms == 0
 
-    def produce(self, producer, amount):
+    def produce(self, producer, amount, message=None, timeout=1):
+        msg = message if message else self.msg
         response_futures = [
-            producer.send(self.topic, self.msg) for _ in range(amount)
+            producer.send(self.topic, msg) for _ in range(amount)
         ]
         for f in response_futures:
-            f.get(1)
+            f.get(timeout=timeout)
 
     def fetch(self, consumer, messages_amount, timeout_sec=300):
         deadline = datetime.datetime.now() + datetime.timedelta(
@@ -494,3 +503,77 @@ class ClusterRateQuotaTest(RedpandaTest):
         # Produce must not be throttled
         self.produce(producer, 10)
         self.check_producer_not_throttled(producer)
+
+    def _throttling_enforced_broker_side(self):
+        return self.redpanda.search_log_all("enforcing throttling delay of")
+
+    @cluster(num_nodes=1)
+    def test_throttling_ms_enforcement_is_per_connection(self):
+        # Start with a cluster that has a produce quota (see class configs)
+        self.init_test_data()
+
+        # Set the max throttling delay to something larger to give us a chance
+        # to send a request before the throttling delay from the previous
+        # request expires
+        self.redpanda.set_cluster_config(
+            {"max_kafka_throttle_delay_ms": "1000"})
+
+        # Create two producers sharing a client.id
+        def make_producer():
+            return KafkaProducer(
+                acks="all",
+                bootstrap_servers=self.leader_node,
+                value_serializer=str.encode,
+                retries=1,
+                client_id="shared_client_id",
+                max_request_size=1 * GB,
+                max_in_flight_requests_per_connection=1,
+            )
+
+        producer1 = make_producer()
+        producer2 = make_producer()
+        consumer = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.leader_node,
+            client_id="shared_client_id",
+            consumer_timeout_ms=1000,
+            max_partition_fetch_bytes=self.max_partition_fetch_bytes,
+            auto_offset_reset='earliest',
+            enable_auto_commit=False)
+
+        # Produce above the produce quota limit
+        self.produce(producer1, 1, self.large_msg)
+        self.check_producer_throttled(producer1, ignore_max_throttle=True)
+
+        assert not self._throttling_enforced_broker_side(), \
+            f"On the first request, the throttling delay should not be enforced"
+
+        # Now check that another producer is throttled through throttle_ms but
+        # the delay is not enforced broker-side initially
+        self.produce(producer2, 1, self.msg)
+        self.check_producer_throttled(producer2, ignore_max_throttle=True)
+
+        assert not self._throttling_enforced_broker_side(), \
+            f"On the first request, the throttling delay should not be enforced"
+
+        # Also check that non-produce requests are not throttled either
+        self.fetch(consumer, 1)
+        self.check_consumer_not_throttled(consumer)
+
+        assert not self._throttling_enforced_broker_side(), \
+            f"Non-produce requests should not be throttled either"
+
+        # Wait for logs to propagate
+        time.sleep(5)
+        assert not self._throttling_enforced_broker_side(), \
+            f"No broker-side throttling should happen up until this point"
+
+        # Because the python client doesn't seem to enforce the quota
+        # client-side, it is going to be enforced broker-side
+        self.produce(producer1, 3, self.large_msg, timeout=10)
+        self.check_producer_throttled(producer1, ignore_max_throttle=True)
+        wait_until(
+            self._throttling_enforced_broker_side,
+            timeout_sec=10,
+            err_msg="Subsequent messages should be throttled broker-side",
+        )

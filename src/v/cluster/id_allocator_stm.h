@@ -34,6 +34,8 @@ namespace cluster {
 
 class id_allocator_stm final : public raft::persisted_stm<> {
 public:
+    static constexpr const char* name = "id_allocator_stm";
+
     struct stm_allocation_result {
         int64_t id;
         raft::errc raft_status{raft::errc::success};
@@ -47,7 +49,6 @@ public:
     ss::future<stm_allocation_result>
     allocate_id(model::timeout_clock::duration timeout);
 
-    std::string_view get_name() const final { return "id_allocator_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
     ss::future<stm_allocation_result>

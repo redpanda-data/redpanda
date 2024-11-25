@@ -20,6 +20,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/when_all.hh>
@@ -93,7 +94,7 @@ ss::future<> fill_info_about_tx(
 ss::future<> fill_info_about_transactions(
   cluster::tx_gateway_frontend& tx_frontend,
   describe_transactions_response& response,
-  std::vector<kafka::transactional_id> tx_ids) {
+  chunked_vector<kafka::transactional_id> tx_ids) {
     return ss::max_concurrent_for_each(
       tx_ids, 32, [&response, &tx_frontend](const auto tx_id) -> ss::future<> {
           return fill_info_about_tx(tx_frontend, response, tx_id);
@@ -137,8 +138,7 @@ ss::future<response_ptr> describe_transactions_handler::handle(
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.transactional_ids.end()));
 
-    request.data.transactional_ids.erase(
-      unauthorized_it, request.data.transactional_ids.end());
+    request.data.transactional_ids.erase_to_end(unauthorized_it);
 
     auto& tx_frontend = ctx.tx_gateway_frontend();
     co_await fill_info_about_transactions(

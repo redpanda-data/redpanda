@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
+#include "cluster/producer_state_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_utils.h"
 #include "kafka/protocol/wire.h"
@@ -247,6 +248,29 @@ rm_stm::parse_tx_control_batch(const model::record_batch& b) {
     return parse_control_batch(b);
 }
 
+void rm_stm::log_state::forget(const model::producer_identity& pid) {
+    auto it = fence_pid_epoch.find(pid.get_id());
+    if (it != fence_pid_epoch.end() && it->second == pid.get_epoch()) {
+        fence_pid_epoch.erase(pid.get_id());
+    }
+    ongoing_map.erase(pid);
+    prepared.erase(pid);
+    current_txes.erase(pid);
+    expiration.erase(pid);
+}
+
+void rm_stm::log_state::reset() {
+    fence_pid_epoch.clear();
+    ongoing_map.clear();
+    ongoing_set.clear();
+    prepared.clear();
+    current_txes.clear();
+    expiration.clear();
+    aborted.clear();
+    abort_indexes.clear();
+    last_abort_snapshot = {model::offset(-1)};
+}
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -363,12 +387,11 @@ void rm_stm::cleanup_producer_state(model::producer_identity pid) {
 };
 
 ss::future<> rm_stm::reset_producers() {
-    co_await ss::max_concurrent_for_each(
-      _producers.begin(), _producers.end(), 32, [](auto& it) {
-          auto& producer = it.second;
-          return producer->shutdown_input().discard_result();
-      });
+    for (auto& [_, producer] : _producers) {
+        producer->shutdown_input();
+    }
     _producers.clear();
+    co_return;
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -1108,6 +1131,8 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_transactional_replicate(
           bid.first_seq,
           bid.last_seq);
         if (result.error() == errc::sequence_out_of_order) {
+            // no need to hold while the barrier is in progress.
+            units.return_all();
             auto barrier = co_await _raft->linearizable_barrier();
             if (!barrier) {
                 co_return errc::not_leader;
@@ -1174,7 +1199,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
     auto expiration_it = _log_state.expiration.find(bid.pid);
     if (expiration_it == _log_state.expiration.end()) {
         vlog(_ctx_log.warn, "Can not find expiration info for pid:{}", bid.pid);
-        req_ptr->set_value(errc::generic_tx_error);
+        req_ptr->set_error(errc::generic_tx_error);
         co_return errc::generic_tx_error;
     }
     expiration_it->second.last_update = clock_type::now();
@@ -1194,7 +1219,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
-        req_ptr->set_value(r.error());
+        req_ptr->set_error(r.error());
         co_return r.error();
     }
     if (!co_await wait_no_throw(
@@ -1204,7 +1229,7 @@ ss::future<result<kafka_result>> rm_stm::do_transactional_replicate(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        req_ptr->set_value(errc::timeout);
+        req_ptr->set_error(errc::timeout);
         co_return tx_errc::timeout;
     }
     _mem_state.estimated.erase(bid.pid);
@@ -1257,6 +1282,10 @@ ss::future<result<kafka_result>> rm_stm::do_sync_and_idempotent_replicate(
           bid.first_seq,
           bid.last_seq);
         if (result.error() == errc::sequence_out_of_order) {
+            // release the lock so it is not held for the duration of the
+            // barrier, other requests can make progress if they are
+            // in the right sequence.
+            units.return_all();
             // Ensure we are actually the leader and request didn't
             // ooosn on a stale state. If we are not the leader return
             // a retryable error code to the client.
@@ -1286,7 +1315,6 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued,
   ssx::semaphore_units& units) {
-    using ret_t = result<kafka_result>;
     auto request = producer->try_emplace_request(bid, synced_term);
     if (!request) {
         co_return request.error();
@@ -1306,7 +1334,7 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
           _ctx_log.warn,
           "replication failed, request enqueue returned error: {}",
           req_enqueued.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     units.return_all();
@@ -1316,13 +1344,13 @@ ss::future<result<kafka_result>> rm_stm::do_idempotent_replicate(
     if (replicated.failed()) {
         vlog(
           _ctx_log.warn, "replication failed: {}", replicated.get_exception());
-        req_ptr->set_value<ret_t>(errc::replication_error);
+        req_ptr->set_error(errc::replication_error);
         co_return errc::replication_error;
     }
     auto result = replicated.get0();
     if (result.has_error()) {
         vlog(_ctx_log.warn, "replication failed: {}", result.error());
-        req_ptr->set_value<ret_t>(result.error());
+        req_ptr->set_error(result.error());
         co_return result.error();
     }
     // translate to kafka offset.
@@ -1540,32 +1568,41 @@ void rm_stm::abort_old_txes() {
     });
 }
 
+absl::btree_set<model::producer_identity>
+rm_stm::get_expired_producers() const {
+    absl::btree_set<model::producer_identity> expired;
+    auto maybe_add_to_expired = [&](const auto& pid) {
+        if (expired.contains(pid)) {
+            return;
+        }
+        auto it = _log_state.expiration.find(pid);
+        if (
+          it != _log_state.expiration.end()
+          && it->second.is_expired(clock_type::now())) {
+            expired.insert(pid);
+        }
+    };
+    for (auto& [pid, _] : _mem_state.estimated) {
+        maybe_add_to_expired(pid);
+    }
+    for (auto& [pid, _] : _mem_state.tx_start) {
+        maybe_add_to_expired(pid);
+    }
+    for (auto& [id, epoch] : _log_state.fence_pid_epoch) {
+        maybe_add_to_expired(model::producer_identity{id, epoch});
+    }
+    for (auto& [pid, _] : _log_state.ongoing_map) {
+        maybe_add_to_expired(pid);
+    }
+    return expired;
+}
+
 ss::future<> rm_stm::do_abort_old_txes() {
     if (!co_await sync(_sync_timeout)) {
         co_return;
     }
 
-    fragmented_vector<model::producer_identity> pids;
-    for (auto& [k, _] : _mem_state.estimated) {
-        pids.push_back(k);
-    }
-    for (auto& [k, _] : _mem_state.tx_start) {
-        pids.push_back(k);
-    }
-    for (auto& [k, _] : _log_state.ongoing_map) {
-        pids.push_back(k);
-    }
-    absl::btree_set<model::producer_identity> expired;
-    for (auto pid : pids) {
-        auto expiration_it = _log_state.expiration.find(pid);
-        if (expiration_it != _log_state.expiration.end()) {
-            if (!expiration_it->second.is_expired(clock_type::now())) {
-                continue;
-            }
-        }
-        expired.insert(pid);
-    }
-
+    auto expired = get_expired_producers();
     for (auto pid : expired) {
         co_await try_abort_old_tx(pid);
     }
@@ -2029,13 +2066,16 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     for (auto& entry : data.fenced) {
         _log_state.fence_pid_epoch.emplace(entry.get_id(), entry.get_epoch());
     }
+    data.fenced.clear();
     for (auto& entry : data.ongoing) {
         _log_state.ongoing_map.emplace(entry.pid, entry);
         _log_state.ongoing_set.insert(entry.first);
     }
+    data.ongoing.clear();
     for (auto& entry : data.prepared) {
         _log_state.prepared.emplace(entry.pid, entry);
     }
+    data.prepared.clear();
     for (auto it = std::make_move_iterator(data.aborted.begin());
          it != std::make_move_iterator(data.aborted.end());
          it++) {
@@ -2071,6 +2111,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             [this, pid] { cleanup_producer_state(pid); },
             std::move(entry)));
     }
+    data.producers.clear();
 
     abort_index last{.last = model::offset(-1)};
     for (auto& entry : _log_state.abort_indexes) {
@@ -2089,6 +2130,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         _log_state.current_txes.emplace(
           entry.pid, tx_data{entry.tx_seq, entry.tm});
     }
+    data.tx_data.clear();
 
     for (auto& entry : data.expiration) {
         _log_state.expiration.emplace(

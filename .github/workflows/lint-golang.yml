@@ -27,10 +27,10 @@ jobs:
         go-version: stable
 
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v6
       with:
         version: latest
-        args: --timeout 5m
+        args: --timeout 10m --verbose
         working-directory: src/go/rpk/
 
     - name: Install gofumpt
@@ -43,7 +43,7 @@ jobs:
 
     - name: Run gofumpt
       run: |
-        find src/go -type f -not -name '*.pb.go' -not -name 'zz*' -name '*.go' | xargs -n1 "$HOME/.local/bin/gofumpt" -w -lang=1.20
+        find src/go -type f  -not -name '*.connect.go' -not -name '*.pb.go' -not -name 'zz*' -name '*.go' | xargs -n1 "$HOME/.local/bin/gofumpt" -w -lang=1.20
         git diff --exit-code
 
     - name: go mod tidy (rpk)

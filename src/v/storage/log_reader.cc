@@ -10,6 +10,8 @@
 #include "storage/log_reader.h"
 
 #include "bytes/iobuf.h"
+#include "model/fundamental.h"
+#include "model/offset_interval.h"
 #include "model/record.h"
 #include "storage/logger.h"
 #include "storage/parser_errc.h"
@@ -22,7 +24,10 @@
 
 #include <fmt/ostream.h>
 
+#include <exception>
+
 namespace storage {
+
 using records_t = ss::circular_buffer<model::record_batch>;
 
 batch_consumer::consume_result skipping_consumer::accept_batch_start(
@@ -276,88 +281,98 @@ ss::future<> log_reader::find_next_valid_iterator() {
 
 ss::future<log_reader::storage_t>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
-    if (is_done()) {
-        // must keep this function because, the segment might not be done
-        // but offsets might have exceeded the read
-        set_end_of_stream();
-        return _iterator.close().then(
-          [] { return ss::make_ready_future<storage_t>(); });
-    }
-    if (_last_base == _config.start_offset) {
-        set_end_of_stream();
-        return _iterator.close().then(
-          [] { return ss::make_ready_future<storage_t>(); });
-    }
-    /**
-     * We do not want to close the reader if we stopped because requested range
-     * was read. This way we make it possible to reset configuration and reuse
-     * underlying file input stream.
-     */
-    if (
-      _config.start_offset > _config.max_offset
-      || _config.bytes_consumed > _config.max_bytes || _config.over_budget) {
-        set_end_of_stream();
-        return ss::make_ready_future<storage_t>();
-    }
-    _last_base = _config.start_offset;
-    ss::future<> fut = find_next_valid_iterator();
-    if (is_end_of_stream()) {
-        return fut.then([] { return ss::make_ready_future<storage_t>(); });
-    }
-    return fut
-      .then([this, timeout] { return _iterator.reader->read_some(timeout); })
-      .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
-          if (!recs) {
-              set_end_of_stream();
+    while (true) {
+        if (is_done()) {
+            // must keep this function because, the segment might not be done
+            // but offsets might have exceeded the read
+            set_end_of_stream();
+            co_await _iterator.close();
+            co_return log_reader::storage_t{};
+        }
+        if (_last_base == _config.start_offset) {
+            set_end_of_stream();
+            co_await _iterator.close();
+            co_return log_reader::storage_t{};
+        }
+        /**
+         * We do not want to close the reader if we stopped because requested
+         * range was read. This way we make it possible to reset configuration
+         * and reuse underlying file input stream.
+         */
+        if (
+          _config.start_offset > _config.max_offset
+          || _config.bytes_consumed > _config.max_bytes
+          || _config.over_budget) {
+            set_end_of_stream();
+            co_return log_reader::storage_t{};
+        }
+        _last_base = _config.start_offset;
+        ss::future<> fut = find_next_valid_iterator();
+        if (is_end_of_stream()) {
+            co_await std::move(fut);
+            co_return log_reader::storage_t{};
+        }
+        std::exception_ptr e;
+        try {
+            co_await std::move(fut);
+            auto recs = co_await _iterator.reader->read_some(timeout);
+            if (!recs) {
+                set_end_of_stream();
 
-              if (!_lease->range.empty()) {
-                  // Readers do not know their ntp directly: discover
-                  // it by checking the segments in our lease
-                  auto seg_ptr = *(_lease->range.begin());
-                  vlog(
-                    stlog.info,
-                    "stopped reading stream[{}]: {}",
-                    seg_ptr->path().get_ntp(),
-                    recs.error().message());
-              } else {
-                  // Leases should always have a segment, but this is
-                  // not a strict invariant at present, so handle the
-                  // empty case.
-                  vlog(
-                    stlog.info,
-                    "stopped reading stream: {}",
-                    recs.error().message());
-              }
+                if (!_lease->range.empty()) {
+                    // Readers do not know their ntp directly: discover
+                    // it by checking the segments in our lease
+                    auto seg_ptr = *(_lease->range.begin());
+                    vlog(
+                      stlog.info,
+                      "stopped reading stream[{}]: {}",
+                      seg_ptr->path().get_ntp(),
+                      recs.error().message());
+                } else {
+                    // Leases should always have a segment, but this is
+                    // not a strict invariant at present, so handle the
+                    // empty case.
+                    vlog(
+                      stlog.info,
+                      "stopped reading stream: {}",
+                      recs.error().message());
+                }
 
-              auto const batch_parse_err
-                = recs.error() == parser_errc::header_only_crc_missmatch
-                  || recs.error() == parser_errc::input_stream_not_enough_bytes;
+                auto const batch_parse_err
+                  = recs.error() == parser_errc::header_only_crc_missmatch
+                    || recs.error()
+                         == parser_errc::input_stream_not_enough_bytes;
 
-              if (batch_parse_err) {
-                  _probe.batch_parse_error();
-              }
-              return _iterator.close().then(
-                [] { return ss::make_ready_future<storage_t>(); });
-          }
-          if (recs.value().empty()) {
-              /*
-               * if no records are returned it may be the case that all of the
-               * batches in the segment were skipped (e.g. all control batches).
-               * thus, returning no records does not imply end of stream.
-               * instead, we recurse which will advance the iterator and check
-               * end of stream.
-               */
-              return do_load_slice(timeout);
-          }
-          _probe.add_batches_read(recs.value().size());
-          return ss::make_ready_future<storage_t>(std::move(recs.value()));
-      })
-      .handle_exception([this](std::exception_ptr e) {
-          set_end_of_stream();
-          _probe.batch_parse_error();
-          return _iterator.close().then(
-            [e] { return ss::make_exception_future<storage_t>(e); });
-      });
+                if (batch_parse_err) {
+                    _probe.batch_parse_error();
+                }
+                co_await _iterator.close();
+                co_return log_reader::storage_t{};
+            }
+            if (recs.value().empty()) {
+                /*
+                 * if no records are returned it may be the case that all of the
+                 * batches in the segment were skipped (e.g. all control
+                 * batches). thus, returning no records does not imply end of
+                 * stream. instead, we continue which will advance the iterator
+                 * and check end of stream.
+                 */
+                continue;
+            }
+            _probe.add_batches_read(recs.value().size());
+
+            auto& batches = recs.value();
+            co_return std::move(batches);
+        } catch (...) {
+            e = std::current_exception();
+            set_end_of_stream();
+            _probe.batch_parse_error();
+        }
+        // Non-exceptional cases should have continued or early-returned above.
+        vassert(e, "Expected exception");
+        co_await _iterator.close();
+        std::rethrow_exception(e);
+    }
 }
 
 static inline bool is_finished_offset(segment_set& s, model::offset o) {
@@ -378,23 +393,28 @@ bool log_reader::is_done() {
            || is_finished_offset(_lease->range, _config.start_offset);
 }
 
-timequery_result
-batch_timequery(const model::record_batch& b, model::timestamp t) {
+timequery_result batch_timequery(
+  const model::record_batch& b,
+  model::offset min_offset,
+  model::timestamp t,
+  model::offset max_offset) {
+    auto query_interval = model::bounded_offset_interval::checked(
+      min_offset, max_offset);
+
     // If the timestamp matches something mid-batch, then
     // parse into the batch far enough to find it: this
     // happens when we had CreateTime input, such that
     // records in the batch have different timestamps.
     model::offset result_o = b.base_offset();
     model::timestamp result_t = b.header().first_timestamp;
-    if (b.header().first_timestamp < t && !b.compressed()) {
+    if (!b.compressed()) {
         b.for_each_record(
-          [&result_o, &result_t, t, &b](
+          [&result_o, &result_t, &b, query_interval, t](
             const model::record& r) -> ss::stop_iteration {
+              auto record_o = model::offset{r.offset_delta()} + b.base_offset();
               auto record_t = model::timestamp(
                 b.header().first_timestamp() + r.timestamp_delta());
-              if (record_t >= t) {
-                  auto record_o = model::offset{r.offset_delta()}
-                                  + b.base_offset();
+              if (record_t >= t && query_interval.contains(record_o)) {
                   result_o = record_o;
                   result_t = record_t;
                   return ss::stop_iteration::yes;

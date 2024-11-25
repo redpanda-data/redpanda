@@ -132,6 +132,7 @@ schema_registry:
     {% endif %}
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+  mode_mutability: {{ schema_registry_config.mode_mutability }}
 
   {% if schema_registry_config.truststore_file is not none %}
   schema_registry_api_tls:

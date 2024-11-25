@@ -52,6 +52,18 @@ group_manager::group_manager(
       _configuration.heartbeat_interval)
   , _feature_table(feature_table.local())
   , _flush_timer_jitter(_configuration.flush_timer_interval_ms)
+  // we use a reasonable default not to bloat the configuration properties
+  , _metric_collection_interval(5s)
+  , _metrics_timer([this] {
+      try {
+          collect_learner_metrics();
+      } catch (...) {
+          vlog(
+            raftlog.error,
+            "failed to collect learner metrics - {}",
+            std::current_exception());
+      }
+  })
   , _is_ready(false) {
     _flush_timer.set_callback([this] {
         ssx::spawn_with_gate(_gate, [this] {
@@ -70,9 +82,13 @@ ss::future<> group_manager::start() {
     co_await _heartbeats.start();
     co_await _recovery_scheduler.start();
     _flush_timer.arm(_flush_timer_jitter());
+    _metrics_timer.arm_periodic(_metric_collection_interval);
 }
 
 ss::future<> group_manager::stop() {
+    _metrics.clear();
+    _public_metrics.clear();
+    _metrics_timer.cancel();
     auto f = _gate.close();
     _flush_timer.cancel();
 
@@ -225,9 +241,22 @@ void group_manager::setup_metrics() {
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
       {sm::make_gauge(
-        "group_count",
-        [this] { return _groups.size(); },
-        sm::description("Number of raft groups"))});
+         "group_count",
+         [this] { return _groups.size(); },
+         sm::description("Number of raft groups")),
+       sm::make_gauge(
+         "learners_gap_bytes",
+         [this] { return _learners_gap_bytes; },
+         sm::description(
+           "Total numbers of bytes that must be delivered to learners"))});
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_gauge(
+        "learners_gap_bytes",
+        [this] { return _learners_gap_bytes; },
+        sm::description(
+          "Total numbers of bytes that must be delivered to learners"))});
 }
 
 ss::future<> group_manager::flush_groups() {
@@ -248,4 +277,13 @@ ss::future<> group_manager::flush_groups() {
           return ss::now();
       });
 }
+void group_manager::collect_learner_metrics() {
+    // we can use a synchronous loop here as the number of raft groups per core
+    // is limited.
+    _learners_gap_bytes = 0;
+    for (const auto& group : _groups) {
+        _learners_gap_bytes += group->bytes_to_deliver_to_learners();
+    }
+}
+
 } // namespace raft

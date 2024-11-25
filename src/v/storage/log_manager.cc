@@ -174,7 +174,7 @@ ss::future<> log_manager::start() {
                    .log_disable_housekeeping_for_tests.value())) {
         co_return;
     }
-    ssx::spawn_with_gate(_open_gate, [this] { return housekeeping(); });
+    ssx::spawn_with_gate(_gate, [this] { return housekeeping(); });
     co_return;
 }
 
@@ -182,7 +182,7 @@ ss::future<> log_manager::stop() {
     _abort_source.request_abort();
     _housekeeping_sem.broken();
 
-    co_await _open_gate.close();
+    co_await _gate.close();
     co_await ss::coroutine::parallel_for_each(
       _logs, [this](logs_type::value_type& entry) {
           return clean_close(entry.second->handle);
@@ -287,7 +287,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 }
 
 ss::future<> log_manager::housekeeping() {
-    while (!_open_gate.is_closed()) {
+    while (!_gate.is_closed()) {
         try {
             co_await housekeeping_loop();
         } catch (...) {
@@ -452,7 +452,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   size_t read_buf_size,
   unsigned read_ahead,
   record_version_type version) {
-    auto gate_holder = _open_gate.hold();
+    auto gate_holder = _gate.hold();
 
     auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(ntp.ntp());
 
@@ -482,7 +482,7 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
 }
 
 ss::future<ss::shared_ptr<log>> log_manager::manage(ntp_config cfg) {
-    auto gate = _open_gate.hold();
+    auto gate = _gate.hold();
 
     auto units = co_await _resources.get_recovery_units();
     co_return co_await do_manage(std::move(cfg));
@@ -554,7 +554,7 @@ ss::future<ss::shared_ptr<log>> log_manager::do_manage(ntp_config cfg) {
 
 ss::future<> log_manager::shutdown(model::ntp ntp) {
     vlog(stlog.debug, "Asked to shutdown: {}", ntp);
-    auto gate = _open_gate.hold();
+    auto gate = _gate.hold();
     auto handle = _logs.extract(ntp);
     if (handle.empty()) {
         co_return;
@@ -565,7 +565,7 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    auto g = _open_gate.hold();
+    auto g = _gate.hold();
     auto handle = _logs.extract(ntp);
     _resources.update_partition_count(_logs.size());
     if (handle.empty()) {
@@ -652,12 +652,16 @@ ss::future<> log_manager::remove_orphan_files(
   absl::flat_hash_set<model::ns> namespaces,
   ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>
     orphan_filter) {
+    auto holder = _gate.hold();
     auto data_directory_exist = co_await ss::file_exists(data_directory_path);
     if (!data_directory_exist) {
         co_return;
     }
 
     for (const auto& ns : namespaces) {
+        if (_gate.is_closed()) {
+            co_return;
+        }
         auto namespace_directory = std::filesystem::path(data_directory_path)
                                    / std::filesystem::path(ss::sstring(ns));
         auto namespace_directory_exist = co_await ss::file_exists(
@@ -824,7 +828,7 @@ void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
 }
 
 void log_manager::trigger_gc() {
-    ssx::spawn_with_gate(_open_gate, [this] {
+    ssx::spawn_with_gate(_gate, [this] {
         return ss::sleep_abortable(
                  _trigger_gc_jitter.next_duration(), _abort_source)
           .then([this] {

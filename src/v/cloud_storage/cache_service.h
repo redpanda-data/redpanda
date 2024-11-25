@@ -24,8 +24,11 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/thread.hh>
 
 #include <filesystem>
+#include <iterator>
+#include <optional>
 #include <set>
 #include <string_view>
 
@@ -108,7 +111,8 @@ public:
       config::binding<double>,
       config::binding<uint64_t>,
       config::binding<std::optional<double>>,
-      config::binding<uint32_t>) noexcept;
+      config::binding<uint32_t>,
+      config::binding<uint16_t>) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
@@ -177,6 +181,10 @@ public:
 
     uint64_t get_usage_bytes() { return _current_cache_size; }
 
+    uint64_t get_max_bytes() { return _max_bytes; }
+
+    uint64_t get_max_objects() { return _max_objects(); }
+
     /// Administrative trim, that specifies its own limits instead of using
     /// the configured limits (skips throttling, and can e.g. trim to zero bytes
     /// if they want to)
@@ -230,7 +238,16 @@ private:
     std::optional<std::chrono::milliseconds> get_trim_delay() const;
 
     /// Invoke trim, waiting if not enough time passed since the last trim
-    ss::future<> trim_throttled();
+    ss::future<> trim_throttled_unlocked(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    // Take the cleanup semaphore before calling trim_throttled
+    ss::future<> trim_throttled(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
+
+    void maybe_background_trim();
 
     /// Whether an objects path makes it impervious to pinning, like
     /// the access time tracker.
@@ -253,6 +270,10 @@ private:
     /// (only runs on shard 0)
     ss::future<> do_reserve_space(uint64_t, size_t);
 
+    /// Trim cache using results from the previous recursive directory walk
+    ss::future<trim_result>
+    trim_carryover(uint64_t delete_bytes, uint64_t delete_objects);
+
     /// Return true if the sum of used space and reserved space is far enough
     /// below max size to accommodate a new reservation of `bytes`
     /// (only runs on shard 0)
@@ -273,6 +294,11 @@ private:
     /// update.
     void set_block_puts(bool);
 
+    /// Remove segment or chunk subdirectory with all its auxilary files (tx,
+    /// index)
+    ss::future<cache::trim_result>
+    remove_segment_full(const file_list_item& file_stat);
+
     std::filesystem::path _cache_dir;
     size_t _disk_size;
     config::binding<double> _disk_reservation;
@@ -280,6 +306,7 @@ private:
     config::binding<std::optional<double>> _max_percent;
     uint64_t _max_bytes;
     config::binding<uint32_t> _max_objects;
+    config::binding<uint16_t> _walk_concurrency;
     void update_max_bytes();
 
     ss::abort_source _as;
@@ -337,6 +364,9 @@ private:
     ss::condition_variable _block_puts_cond;
 
     friend class cache_test_fixture;
+
+    // List of probable deletion candidates from the last trim.
+    std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
 };
 
 } // namespace cloud_storage

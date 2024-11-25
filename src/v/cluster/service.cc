@@ -21,6 +21,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/node_status_backend.h"
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/security_frontend.h"
@@ -56,7 +57,8 @@ service::service(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<rpc::connection_cache>& conn_cache,
-  ss::sharded<partition_manager>& partition_manager)
+  ss::sharded<partition_manager>& partition_manager,
+  ss::sharded<node_status_backend>& node_status_backend)
   : controller_service(sg, ssg)
   , _controller(controller)
   , _topics_frontend(tf)
@@ -72,7 +74,8 @@ service::service(
   , _hm_frontend(hm_frontend)
   , _conn_cache(conn_cache)
   , _partition_manager(partition_manager)
-  , _plugin_frontend(pf) {}
+  , _plugin_frontend(pf)
+  , _node_status_backend(node_status_backend) {}
 
 ss::future<join_node_reply>
 service::join_node(join_node_request req, rpc::streaming_context&) {
@@ -211,7 +214,9 @@ service::do_finish_partition_update(finish_partition_update_request req) {
         req.ntp,
         req.new_replica_set,
         config::shard_local_cfg().replicate_append_timeout_ms()
-          + model::timeout_clock::now());
+          + model::timeout_clock::now(),
+        topics_frontend::dispatch_to_leader::no);
+
     finish_partition_update_reply reply{.result = errc::success};
     if (ec) {
         if (ec.category() == cluster::error_category()) {
@@ -381,6 +386,10 @@ service::hello(hello_request req, rpc::streaming_context&) {
               cache.get(peer)->reset_backoff();
           }
       });
+    co_await _node_status_backend.invoke_on(
+      0, [peer = req.peer](node_status_backend& backend) {
+          backend.reset_node_backoff(peer);
+      });
     co_return hello_reply{.error = errc::success};
 }
 
@@ -500,46 +509,30 @@ ss::future<get_cluster_health_reply> service::get_cluster_health_report(
       });
 }
 
-namespace {
-void clear_partition_revisions(node_health_report& report) {
-    for (auto& t : report.topics) {
-        for (auto& p : t.partitions) {
-            p.revision_id = model::revision_id{};
-        }
-    }
-}
-
-void clear_partition_sizes(node_health_report& report) {
-    for (auto& t : report.topics) {
-        for (auto& p : t.partitions) {
-            p.size_bytes = partition_status::invalid_size_bytes;
-        }
-    }
-}
-} // namespace
-
 ss::future<get_node_health_reply>
 service::do_collect_node_health_report(get_node_health_request req) {
-    auto res = co_await _hm_frontend.local().collect_node_health(
-      std::move(req.filter));
+    // validate if the receiving node is the one that that the request is
+    // addressed to
+    if (
+      req.get_target_node_id() != get_node_health_request::node_id_not_set
+      && req.get_target_node_id() != _controller->self()) {
+        vlog(
+          clusterlog.debug,
+          "Received a get_node_health request addressed to different node. "
+          "Requested node id: {}, current node id: {}",
+          req.get_target_node_id(),
+          _controller->self());
+        co_return get_node_health_reply{.error = errc::invalid_target_node_id};
+    }
+
+    auto res = co_await _hm_frontend.local().get_current_node_health();
     if (res.has_error()) {
         co_return get_node_health_reply{
           .error = map_health_monitor_error_code(res.error())};
     }
-    auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old versioned redpanda
-    // nodes
-    if (req.decoded_version > get_node_health_request::revision_id_version) {
-        clear_partition_revisions(report);
-    }
-    // clear all partition sizes to prevent sending them to old versioned
-    // redpanda nodes
-    if (req.decoded_version > get_node_health_request::size_bytes_version) {
-        clear_partition_sizes(report);
-    }
     co_return get_node_health_reply{
       .error = errc::success,
-      .report = std::move(report),
+      .report = std::move(res.value()),
     };
 }
 
@@ -555,21 +548,7 @@ service::do_get_cluster_health_report(get_cluster_health_request req) {
           .error = map_health_monitor_error_code(res.error())};
     }
     auto report = std::move(res.value());
-    // clear all revision ids to prevent sending them to old versioned redpanda
-    // nodes
-    if (req.decoded_version > get_cluster_health_request::revision_id_version) {
-        for (auto& r : report.node_reports) {
-            clear_partition_revisions(r);
-        }
-    }
 
-    // clear all partition sizes to prevent sending them to old versioned
-    // redpanda nodes
-    if (req.decoded_version > get_cluster_health_request::size_bytes_version) {
-        for (auto& r : report.node_reports) {
-            clear_partition_sizes(r);
-        }
-    }
     co_return get_cluster_health_reply{
       .error = errc::success,
       .report = std::move(report),

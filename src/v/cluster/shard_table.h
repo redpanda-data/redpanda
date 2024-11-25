@@ -16,6 +16,7 @@
 #include "model/ktp.h"
 #include "raft/types.h"
 #include "seastarx.h"
+#include "utils/chunked_hash_map.h"
 
 #include <seastar/core/reactor.hh> // shard_id
 
@@ -153,13 +154,13 @@ private:
      */
 
     // kafka index
-    absl::node_hash_map<
+    chunked_hash_map<
       model::ntp,
       shard_revision,
       model::ktp_hash_eq,
       model::ktp_hash_eq>
       _ntp_idx;
     // raft index
-    absl::node_hash_map<raft::group_id, shard_revision> _group_idx;
+    chunked_hash_map<raft::group_id, shard_revision> _group_idx;
 };
 } // namespace cluster

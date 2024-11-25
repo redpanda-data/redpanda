@@ -139,6 +139,10 @@ CHAOS_LOG_ALLOW_LIST = [
     re.compile(
         "cluster - .*exception while executing partition operation:.*std::exception \(std::exception\)"
     ),
+    # Failure to handle an internal RPC because the RPC server already handles connections but doesn't yet handle this method. This can happen while the node is still starting up/restarting.
+    # e.g. "admin_api_server - server.cc:655 - [_anonymous] exception intercepted - url: [http://ip-172-31-9-208:9644/v1/brokers/7/decommission] http_return_status[500] reason - seastar::httpd::server_error_exception (Unexpected error: rpc::errc::method_not_found)"
+    re.compile(
+        "admin_api_server - .*Unexpected error: rpc::errc::method_not_found")
 ]
 
 # Log errors emitted by refresh credentials system when cloud storage is enabled with IAM roles
@@ -411,7 +415,8 @@ class SISettings:
                  retention_local_strict=True,
                  cloud_storage_max_throughput_per_shard: Optional[int] = None,
                  cloud_storage_signature_version: str = "s3v4",
-                 before_call_headers: Optional[dict[str, Any]] = None):
+                 before_call_headers: Optional[dict[str, Any]] = None,
+                 skip_end_of_test_scrubbing: bool = False):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -465,6 +470,12 @@ class SISettings:
         self.cloud_storage_max_throughput_per_shard = cloud_storage_max_throughput_per_shard
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
+
+        # Allow disabling end of test scrubbing.
+        # It takes a long time with lots of segments i.e. as created in scale
+        # tests. Should figure out how to re-enable it, or consider using
+        # redpanda's built-in scrubbing capabilities.
+        self.skip_end_of_test_scrubbing = skip_end_of_test_scrubbing
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -802,6 +813,8 @@ class PandaproxyConfig(TlsConfig):
 class SchemaRegistryConfig(TlsConfig):
     SR_TLS_CLIENT_KEY_FILE = "/etc/redpanda/sr_client.key"
     SR_TLS_CLIENT_CRT_FILE = "/etc/redpanda/sr_client.crt"
+
+    mode_mutability = False
 
     def __init__(self):
         super(SchemaRegistryConfig, self).__init__()
@@ -2649,6 +2662,11 @@ class RedpandaService(RedpandaServiceBase):
             return False
 
         crashes = []
+        # We log long encoded AWS/GCP headers that occasionally have 'SEGV' in
+        # them by chance
+        cloud_header_strings = [
+            'x-amz-id', 'x-amz-request', 'x-guploader-uploadid'
+        ]
         for node in self.nodes:
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
@@ -2657,9 +2675,8 @@ class RedpandaService(RedpandaServiceBase):
             for line in node.account.ssh_capture(
                     f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
-                if 'SEGV' in line and ('x-amz-id' in line
-                                       or 'x-amz-request' in line):
-                    # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
+                if 'SEGV' in line and any(
+                    [h in line.lower() for h in cloud_header_strings]):
                     continue
 
                 if is_allowed_log_line(line):

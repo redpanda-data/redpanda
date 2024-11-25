@@ -16,6 +16,7 @@
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 #include "units.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
@@ -30,7 +31,7 @@ public:
     public:
         item(
           size_t record_count,
-          std::vector<model::record_batch> batches,
+          chunked_vector<model::record_batch> batches,
           ssx::semaphore_units u,
           std::optional<model::term_id> expected_term,
           consistency_level c_lvl,
@@ -97,7 +98,7 @@ public:
             }
         }
         size_t _record_count;
-        std::vector<model::record_batch> _data;
+        chunked_vector<model::record_batch> _data;
         ssx::semaphore_units _units;
         std::optional<model::term_id> _expected_term;
         // consistency level is stored to distinguish when an item promise
@@ -146,7 +147,7 @@ private:
 
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
       std::optional<model::term_id>,
-      ss::circular_buffer<model::record_batch>,
+      chunked_vector<model::record_batch>,
       size_t,
       consistency_level,
       std::optional<std::chrono::milliseconds>);

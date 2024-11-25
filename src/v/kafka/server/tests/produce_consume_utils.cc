@@ -14,6 +14,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
+#include "utils/fragmented_vector.h"
 #include "vlog.h"
 
 #include <seastar/util/log.hh>
@@ -37,7 +38,7 @@ kafka_produce_transport::produce(
     kafka::produce_request::topic tp;
     tp.name = topic_name;
     tp.partitions = produce_partition_requests(records_per_partition, ts);
-    std::vector<kafka::produce_request::topic> topics;
+    chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(std::move(tp));
     kafka::produce_request req(std::nullopt, -1, std::move(topics));
     req.data.timeout_ms = std::chrono::seconds(10);
@@ -60,11 +61,11 @@ kafka_produce_transport::produce(
     co_return ret;
 }
 
-std::vector<kafka::partition_produce_data>
+chunked_vector<kafka::partition_produce_data>
 kafka_produce_transport::produce_partition_requests(
   const pid_to_kvs_map_t& records_per_partition,
   std::optional<model::timestamp> ts) {
-    std::vector<kafka::partition_produce_data> ret;
+    chunked_vector<kafka::partition_produce_data> ret;
     ret.reserve(records_per_partition.size());
     for (const auto& [pid, records] : records_per_partition) {
         storage::record_batch_builder builder(

@@ -131,11 +131,11 @@ type DebugPartition struct {
 	Replicas []ReplicaState `json:"replicas"`
 }
 
-func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIds []int, params []any) (string, error) {
+func (a *AdminAPI) StartSelfTest(ctx context.Context, nodeIDs []int, params []any) (string, error) {
 	var testID string
 	body := SelfTestRequest{
 		Tests: params,
-		Nodes: nodeIds,
+		Nodes: nodeIDs,
 	}
 	err := a.sendToLeader(ctx,
 		http.MethodPost,

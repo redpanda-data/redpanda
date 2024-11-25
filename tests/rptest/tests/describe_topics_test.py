@@ -76,8 +76,7 @@ class DescribeTopicsTest(RedpandaTest):
             "cleanup.policy":
             ConfigProperty(config_type="STRING",
                            value="DELETE",
-                           doc_string="Default topic cleanup policy",
-                           source_type="DYNAMIC_TOPIC_CONFIG"),
+                           doc_string="Default topic cleanup policy"),
             "compression.type":
             ConfigProperty(config_type="STRING",
                            value="producer",

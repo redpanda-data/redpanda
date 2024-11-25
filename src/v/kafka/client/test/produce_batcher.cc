@@ -73,8 +73,8 @@ struct produce_batcher_context {
               std::vector<model::offset> offsets;
               offsets.reserve(results.size());
               std::transform(
-                results.begin(),
-                results.end(),
+                std::make_move_iterator(results.begin()),
+                std::make_move_iterator(results.end()),
                 std::back_inserter(offsets),
                 [](kafka::produce_response::partition p) {
                     return p.base_offset;

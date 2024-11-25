@@ -179,6 +179,9 @@ private:
     config::binding<std::optional<size_t>> _relative_throughput;
     bool _throttling_disabled{false};
     std::optional<size_t> _device_throughput;
+    config::binding<uint32_t> _cache_carryover_bytes;
+    // Memory reserved for cache carryover mechanism
+    std::optional<ssx::semaphore_units> _carryover_units;
 };
 
 } // namespace cloud_storage

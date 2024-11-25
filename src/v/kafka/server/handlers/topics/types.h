@@ -14,9 +14,11 @@
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/handlers/configs/config_response_utils.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "utils/absl_sstring_hash.h"
+#include "utils/fragmented_vector.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
@@ -137,7 +139,10 @@ struct topic_op_result {
 
 inline creatable_topic_result
 from_cluster_topic_result(const cluster::topic_result& err) {
-    return {.name = err.tp_ns.tp, .error_code = map_topic_error_code(err.ec)};
+    return {
+      .name = err.tp_ns.tp,
+      .error_code = map_topic_error_code(err.ec),
+      .error_message = cluster::make_error_code(err.ec).message()};
 }
 
 config_map_t config_map(const std::vector<createable_topic_config>& config);
@@ -146,5 +151,8 @@ config_map_t config_map(const std::vector<creatable_topic_configs>& config);
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
-config_map_t from_cluster_type(const cluster::topic_properties&);
+std::vector<kafka::creatable_topic_configs> report_topic_configs(
+  const cluster::metadata_cache& metadata_cache,
+  const cluster::topic_properties& topic_properties);
+
 } // namespace kafka

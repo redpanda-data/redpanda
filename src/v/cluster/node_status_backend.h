@@ -60,6 +60,11 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    /**
+     * Resets node connection backoff. This method is called when current node
+     * receives hello request.
+     */
+    void reset_node_backoff(model::node_id id);
 
 private:
     ss::future<> drain_notifications_queue();
@@ -71,7 +76,8 @@ private:
     ss::future<> collect_and_store_updates();
     ss::future<std::vector<node_status>> collect_updates_from_peers();
 
-    result<node_status> process_reply(result<node_status_reply>);
+    result<node_status> process_reply(
+      model::node_id target_node_id, result<node_status_reply> reply);
     ss::future<node_status_reply> process_request(node_status_request);
 
     ss::future<result<node_status>>

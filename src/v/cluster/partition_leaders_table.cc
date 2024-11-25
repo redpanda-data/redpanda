@@ -88,9 +88,9 @@ void partition_leaders_table::update_partition_leader(
 }
 
 ss::future<> partition_leaders_table::update_with_node_report(
-  const node_health_report& node_report) {
+  const node_health_report_ptr& node_report) {
     ssx::async_counter counter;
-    for (const auto& topic : node_report.topics) {
+    for (const auto& topic : node_report->topics) {
         /**
          * Here we minimize the number of topic table and topic map lookups by
          * doing it only once for each topic.

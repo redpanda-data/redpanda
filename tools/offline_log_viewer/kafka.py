@@ -47,6 +47,14 @@ def read_cloud_storage_segment_meta(rdr):
     return rdr.read_envelope(spec, max_version=3)
 
 
+def get_control_record_type(key):
+    rdr = Reader(BytesIO(key))
+    rdr.skip(2)  # skip the 16bit version.
+    # Encoded as big endian
+    type_rdr = Reader(BytesIO(struct.pack(">h", rdr.read_int16())))
+    return KafkaControlRecordType(type_rdr.read_int16()).name
+
+
 def decode_archival_metadata_command(kr, vr):
     key = kr.read_int8()
     if key == ArchivalMetadataCommand.add_segment:
@@ -82,7 +90,7 @@ def decode_record(batch, header, record):
     is_ctrl = attrs["control_batch"]
     is_tx_ctrl = is_txn and is_ctrl
     if is_tx_ctrl:
-        record_dict["type"] = self.get_control_record_type(record.key)
+        record_dict["type"] = get_control_record_type(record.key)
 
     kr = Reader(BytesIO(record.key))
     vr = Reader(BytesIO(record.value))
@@ -102,14 +110,7 @@ class KafkaLog:
         self.ntp = ntp
         self.headers_only = headers_only
 
-    def get_control_record_type(self, key):
-        rdr = Reader(BytesIO(key))
-        rdr.skip(2)  # skip the 16bit version.
-        # Encoded as big endian
-        type_rdr = Reader(BytesIO(struct.pack(">h", rdr.read_int16())))
-        return KafkaControlRecordType(type_rdr.read_int16()).name
-
-    def decode(self):
+    def __iter__(self):
         self.results = []
         for batch in self.batches():
             header = batch.header_dict()

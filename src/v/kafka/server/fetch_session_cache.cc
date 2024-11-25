@@ -2,6 +2,7 @@
 
 #include "config/configuration.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/server/fetch_session.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -14,18 +15,6 @@
 
 namespace kafka {
 
-static fetch_session_partition make_fetch_partition(
-  const model::topic& tp, const fetch_request::partition& p) {
-    return fetch_session_partition{
-      .topic_partition = {tp, p.partition_index},
-      .max_bytes = p.max_bytes,
-      .fetch_offset = p.fetch_offset,
-      .high_watermark = model::offset(-1),
-      .last_stable_offset = model::offset(-1),
-      .current_leader_epoch = p.current_leader_epoch,
-    };
-}
-
 void update_fetch_session(fetch_session& session, const fetch_request& req) {
     for (auto it = req.cbegin(); it != req.cend(); ++it) {
         auto& topic = *it->topic;
@@ -36,9 +25,11 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
             s_it != session.partitions().end()) {
             s_it->second->partition.max_bytes = partition.max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
+            s_it->second->partition.current_leader_epoch
+              = partition.current_leader_epoch;
         } else {
             session.partitions().emplace(
-              make_fetch_partition(topic.name, partition));
+              fetch_session_partition(topic.name, partition));
         }
     }
 

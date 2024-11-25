@@ -23,7 +23,9 @@ make_avro_schema_definition(sharded_store& store, canonical_schema schema);
 result<canonical_schema_definition>
 sanitize_avro_schema_definition(unparsed_schema_definition def);
 
-bool check_compatible(
-  const avro_schema_definition& reader, const avro_schema_definition& writer);
+compatibility_result check_compatible(
+  const avro_schema_definition& reader,
+  const avro_schema_definition& writer,
+  verbose is_verbose = verbose::no);
 
 } // namespace pandaproxy::schema_registry

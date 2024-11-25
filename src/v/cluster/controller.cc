@@ -31,6 +31,7 @@
 #include "cluster/feature_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/health_manager.h"
+#include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/members_backend.h"
@@ -413,6 +414,17 @@ ss::future<> controller::start(
                 return config::shard_local_cfg()
                   .initial_retention_local_target_ms_default.bind();
             }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .retention_local_target_bytes_default.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .retention_local_target_ms_default.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg().retention_local_strict.bind();
+            }),
             std::ref(_as));
       })
       .then(
@@ -577,7 +589,14 @@ ss::future<> controller::start(
             std::ref(_partition_leaders),
             std::ref(_tp_state));
       })
-      .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
+      .then([this] {
+          return _hm_frontend.start(
+            std::ref(_hm_backend),
+            std::ref(_node_status_table),
+            ss::sharded_parameter([]() {
+                return config::shard_local_cfg().alive_timeout_ms.bind();
+            }));
+      })
       .then([this] {
           return _hm_frontend.invoke_on_all(&health_monitor_frontend::start);
       })

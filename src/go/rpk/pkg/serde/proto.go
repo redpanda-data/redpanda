@@ -66,7 +66,7 @@ func newProtoEncoder(compiledFiles linker.Files, protoFQN string, schemaID int) 
 	}, nil
 }
 
-// newProtoDecoder will generate a deserializar function that decodes a record
+// newProtoDecoder will generate a deserializer function that decodes a record
 // with the given schema. The generated function expects the record to contain
 // the index of the message (schema ID should already be stripped away) in the
 // first bytes of the record.

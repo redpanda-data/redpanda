@@ -11,13 +11,26 @@
 #include "cloud_storage/cache_service.h"
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller.h"
+#include "cluster/controller_stm.h"
+#include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/types.h"
+#include "config/configuration.h"
+#include "config/node_config.h"
+#include "json/validator.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
+#include "resource_mgmt/cpu_profiler.h"
+#include "serde/rw/rw.h"
+#include "storage/kvstore.h"
+#include "utils/lw_shared_container.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/json/json_elements.hh>
 
 namespace {
@@ -237,7 +250,7 @@ void admin_server::register_debug_routes() {
           auto leaders_info = _metadata_cache.local().get_leaders();
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::stream_range_as_array(
-              admin::lw_shared_container(std::move(leaders_info)),
+              lw_shared_container(std::move(leaders_info)),
               [](const auto& leader_info) {
                   result_t info;
                   info.ns = leader_info.tp_ns.ns;
@@ -450,7 +463,22 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::http::request> request) {
           return put_disk_stat_handler(std::move(request));
       });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::override_broker_uuid,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return override_node_uuid_handler(std::move(req));
+      });
+    register_route<user>(
+      ss::httpd::debug_json::get_broker_uuid,
+      [this](std::unique_ptr<ss::http::request>)
+        -> ss::future<ss::json::json_return_type> {
+          return get_node_uuid_handler();
+      });
 }
+
+using admin::apply_validator;
 
 ss::future<ss::json::json_return_type>
 admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
@@ -477,23 +505,23 @@ admin_server::cpu_profile_handler(std::unique_ptr<ss::http::request> req) {
 
     auto profiles = co_await _cpu_profiler.local().results(shard_id);
 
-    std::vector<ss::httpd::debug_json::cpu_profile_shard_samples> response{
-      profiles.size()};
-    for (size_t i = 0; i < profiles.size(); i++) {
-        response[i].shard_id = profiles[i].shard;
-        response[i].dropped_samples = profiles[i].dropped_samples;
-
-        for (auto& sample : profiles[i].samples) {
-            ss::httpd::debug_json::cpu_profile_sample s;
-            s.occurrences = sample.occurrences;
-            s.user_backtrace = sample.user_backtrace;
-
-            response[i].samples.push(s);
-        }
-    }
-
     co_return co_await ss::make_ready_future<ss::json::json_return_type>(
-      std::move(response));
+      ss::json::stream_range_as_array(
+        lw_shared_container(std::move(profiles)),
+        [](const resources::cpu_profiler::shard_samples& profile) {
+            ss::httpd::debug_json::cpu_profile_shard_samples ret;
+            ret.shard_id = profile.shard;
+            ret.dropped_samples = profile.dropped_samples;
+
+            for (auto& sample : profile.samples) {
+                ss::httpd::debug_json::cpu_profile_sample s;
+                s.occurrences = sample.occurrences;
+                s.user_backtrace = sample.user_backtrace;
+
+                ret.samples.push(s);
+            }
+            return ret;
+        }));
 }
 
 ss::future<ss::json::json_return_type>
@@ -741,4 +769,131 @@ admin_server::get_partition_state_handler(
         response.replicas.push(std::move(replica));
     }
     co_return ss::json::json_return_type(std::move(response));
+}
+
+ss::future<ss::json::json_return_type> admin_server::get_node_uuid_handler() {
+    ss::httpd::debug_json::broker_uuid uuid;
+    uuid.node_uuid = ssx::sformat(
+      "{}", _controller->get_storage().local().node_uuid());
+
+    if (config::node().node_id().has_value()) {
+        uuid.node_id = config::node().node_id().value();
+    }
+
+    co_return ss::json::json_return_type(std::move(uuid));
+}
+
+static json::validator make_broker_id_override_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "current_node_uuid": {
+            "type": "string"
+        },
+        "new_node_uuid": {
+            "type": "string"
+        },
+        "new_node_id": {
+          "type" : "integer"
+        }
+    },
+    "additionalProperties": false,
+    "required": ["current_node_uuid", "new_node_id","new_node_uuid"]
+})";
+    return json::validator(schema);
+}
+
+namespace {
+ss::future<> override_id_and_uuid(
+  storage::kvstore& kvs, model::node_uuid uuid, model::node_id id) {
+    static const bytes node_uuid_key = "node_uuid";
+    co_await kvs.put(
+      storage::kvstore::key_space::controller,
+      node_uuid_key,
+      serde::to_iobuf(uuid));
+    auto invariants_iobuf = kvs.get(
+      storage::kvstore::key_space::controller,
+      cluster::controller::invariants_key);
+    if (invariants_iobuf) {
+        auto invariants
+          = reflection::from_iobuf<cluster::configuration_invariants>(
+            std::move(invariants_iobuf.value()));
+        invariants.node_id = id;
+
+        co_await kvs.put(
+          storage::kvstore::key_space::controller,
+          cluster::controller::invariants_key,
+          reflection::to_iobuf(std::move(invariants)));
+    }
+}
+} // namespace
+
+ss::future<ss::json::json_return_type> admin_server::override_node_uuid_handler(
+  std::unique_ptr<ss::http::request> req) {
+    static thread_local auto override_id_validator(
+      make_broker_id_override_validator());
+    const auto doc = co_await parse_json_body(req.get());
+    /**
+     * Validate the request body
+     */
+    using admin::apply_validator;
+    apply_validator(override_id_validator, doc);
+    /**
+     * Validate if current UUID matches this node UUID, if not request an error
+     * is returned as the request may have been sent to incorrect node
+     */
+    model::node_uuid current_uuid;
+    try {
+        current_uuid = model::node_uuid(
+          uuid_t::from_string(doc["current_node_uuid"].GetString()));
+    } catch (const std::runtime_error& e) {
+        throw ss::httpd::bad_request_exception(ssx::sformat(
+          "failed parsing current_node_uuid: {} - {}",
+          doc["current_node_uuid"].GetString(),
+          e.what()));
+    }
+    auto& storage = _controller->get_storage().local();
+    if (storage.node_uuid() != current_uuid) {
+        throw ss::httpd::bad_request_exception(ssx::sformat(
+          "Requested current node UUID: {} does not match node UUID: {}",
+          storage.node_uuid(),
+          current_uuid));
+    }
+    model::node_uuid new_node_uuid;
+    try {
+        new_node_uuid = model::node_uuid(
+          uuid_t::from_string(doc["new_node_uuid"].GetString()));
+    } catch (const std::runtime_error& e) {
+        throw ss::httpd::bad_request_exception(ssx::sformat(
+          "failed parsing new_node_uuid: {} - {}",
+          doc["new_node_uuid"].GetString(),
+          e.what()));
+    }
+    model::node_id new_node_id;
+    try {
+        new_node_id = model::node_id(doc["new_node_id"].GetInt());
+        if (new_node_id < model::node_id{0}) {
+            throw ss::httpd::bad_request_exception(
+              "node_id must not be negative");
+        }
+    } catch (const std::runtime_error& e) {
+        throw ss::httpd::bad_request_exception(
+          ssx::sformat("failed parsing new node_id: {}", e.what()));
+    }
+
+    vlog(
+      adminlog.warn,
+      "Requested to override node id with new node id: {} and UUID: {}",
+      new_node_id,
+      new_node_uuid);
+
+    co_await _controller->get_storage().invoke_on(
+      cluster::controller_stm_shard,
+      [new_node_uuid, new_node_id](storage::api& local_storage) {
+          return override_id_and_uuid(
+            local_storage.kvs(), new_node_uuid, new_node_id);
+      });
+
+    co_return ss::json::json_return_type(ss::json::json_void());
 }

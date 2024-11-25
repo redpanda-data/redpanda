@@ -360,7 +360,7 @@ controller_api::get_partitions_reconfiguration_state(
     auto& report = result.value();
 
     for (auto& node_report : report.node_reports) {
-        for (auto& tp : node_report.topics) {
+        for (auto& tp : node_report->topics) {
             for (auto& p : tp.partitions) {
                 model::ntp ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id);
                 auto it = states.find(ntp);
@@ -368,11 +368,11 @@ controller_api::get_partitions_reconfiguration_state(
                     continue;
                 }
 
-                if (p.leader_id == node_report.id) {
+                if (p.leader_id == node_report->id) {
                     it->second.current_partition_size = p.size_bytes;
                 }
                 const auto moving_to = moving_to_node(
-                  node_report.id,
+                  node_report->id,
                   it->second.previous_assignment,
                   it->second.current_assignment);
 
@@ -380,7 +380,7 @@ controller_api::get_partitions_reconfiguration_state(
                 if (moving_to) {
                     it->second.already_transferred_bytes.emplace_back(
                       replica_bytes{
-                        .node = node_report.id, .bytes = p.size_bytes});
+                        .node = node_report->id, .bytes = p.size_bytes});
                 }
 
                 co_await ss::maybe_yield();

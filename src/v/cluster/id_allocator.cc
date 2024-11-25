@@ -31,15 +31,15 @@ id_allocator::allocate_id(allocate_id_request req, rpc::streaming_context&) {
     auto timeout = req.timeout;
     return _id_allocator_frontend.local()
       .allocator_router()
-      .allocate_router::process_or_dispatch(
-        std::move(req), model::id_allocator_ntp, timeout);
+      .find_shard_and_process(std::move(req), model::id_allocator_ntp, timeout);
 }
 
 ss::future<reset_id_allocator_reply> id_allocator::reset_id_allocator(
   reset_id_allocator_request req, rpc::streaming_context&) {
     auto timeout = req.timeout;
-    return _id_allocator_frontend.local().id_reset_router().process_or_dispatch(
-      std::move(req), model::id_allocator_ntp, timeout);
+    return _id_allocator_frontend.local()
+      .id_reset_router()
+      .find_shard_and_process(std::move(req), model::id_allocator_ntp, timeout);
 }
 
 } // namespace cluster

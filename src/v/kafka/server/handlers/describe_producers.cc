@@ -144,7 +144,7 @@ describe_producers_handler::handle(request_context ctx, ss::smp_service_group) {
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
 
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.erase_to_end(unauthorized_it);
 
     for (const auto& topic : request.data.topics) {
         topic_response topic_resp;

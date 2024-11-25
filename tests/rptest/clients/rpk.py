@@ -355,14 +355,15 @@ class RpkTool:
         if not status_line.endswith("OK"):
             raise RpkException(f"Bad status: '{status_line}'")
 
-    def sasl_allow_principal(self,
-                             principal,
-                             operations,
-                             resource,
-                             resource_name,
-                             username: Optional[str] = None,
-                             password: Optional[str] = None,
-                             mechanism: Optional[str] = None):
+    def _sasl_set_principal_access(self,
+                                   principal,
+                                   operations,
+                                   resource,
+                                   resource_name,
+                                   username: Optional[str] = None,
+                                   password: Optional[str] = None,
+                                   mechanism: Optional[str] = None,
+                                   deny=False):
 
         username = username if username is not None else self._username
         password = password if password is not None else self._password
@@ -377,13 +378,21 @@ class RpkTool:
         else:
             raise Exception(f"unknown resource: {resource}")
 
+        perm = '--allow-principal' if not deny else '--deny-principal'
+
         cmd = [
-            "acl", "create", "--allow-principal", principal, "--operation",
+            "acl", "create", perm, principal, "--operation",
             ",".join(operations), resource, resource_name, "--brokers",
             self._redpanda.brokers(), "--user", username, "--password",
             password, "--sasl-mechanism", mechanism
         ] + self._tls_settings()
         return self._run(cmd)
+
+    def sasl_allow_principal(self, *args, **kwargs):
+        return self._sasl_set_principal_access(*args, **kwargs, deny=False)
+
+    def sasl_deny_principal(self, *args, **kwargs):
+        return self._sasl_set_principal_access(*args, **kwargs, deny=True)
 
     def allow_principal(self, principal, operations, resource, resource_name):
         if resource == "topic":
@@ -470,10 +479,11 @@ class RpkTool:
 
         return self._run(cmd)
 
-    def sasl_update_user(self, user, new_password):
+    def sasl_update_user(self, user, new_password, new_mechanism):
         cmd = [
             "acl", "user", "update", user, "--new-password", new_password,
-            "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+            "--mechanism", new_mechanism, "-X",
+            "admin.hosts=" + self._redpanda.admin_endpoints()
         ]
         return self._run(cmd)
 
@@ -1090,7 +1100,6 @@ class RpkTool:
         self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
-            self._redpanda.logger.error(stderror)
             raise RpkException(
                 'command %s returned %d, output: %s' %
                 (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
@@ -1392,12 +1401,17 @@ class RpkTool:
         # Retry if NOT_COORDINATOR is observed when command exits 1
         return try_offset_delete(retries=5)
 
-    def generate_grafana(self, dashboard):
-
+    def generate_grafana(self, dashboard, datasource="", metrics_endpoint=""):
         cmd = [
             self._rpk_binary(), "generate", "grafana-dashboard", "--dashboard",
-            dashboard
+            dashboard, "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
         ]
+
+        if datasource != "":
+            cmd += ["--datasource", datasource]
+
+        if metrics_endpoint != "":
+            cmd += ["--metrics-endpoint", metrics_endpoint]
 
         return self._execute(cmd)
 

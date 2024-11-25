@@ -35,7 +35,7 @@ func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command starts the process of restoring topics from the archival bucket.
 If the wait flag (--wait/-w) is set, the command will poll the status of the
 recovery process until it's finished.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 			config.CheckExitCloudAdmin(p)

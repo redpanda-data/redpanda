@@ -744,7 +744,7 @@ configuration::configuration()
       "transactional_id_expiration_ms",
       "Producer ids are expired once this time has elapsed after the last "
       "write with the given producer id.",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       10080min)
   , max_concurrent_producer_ids(
       *this,
@@ -1553,7 +1553,7 @@ configuration::configuration()
       *this,
       "cloud_storage_enabled",
       "Enable archival storage",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       false)
   , cloud_storage_enable_remote_read(
       *this,
@@ -2272,6 +2272,18 @@ configuration::configuration()
       // Enough for a >1TiB cache of 16MiB objects.  Decrease this in case
       // of issues with trim performance.
       100000)
+  , cloud_storage_cache_trim_carryover_bytes(
+      *this,
+      "cloud_storage_cache_trim_carryover_bytes",
+      "The cache performs a recursive directory inspection during the cache "
+      "trim. The information obtained during the inspection can be carried "
+      "over to the next trim operation. This parameter sets a limit on the "
+      "memory occupied by objects that can be carried over from one trim to "
+      "next, and allows cache to quickly unblock readers before starting the "
+      "directory inspection.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      // This roughly translates to around 1000 carryover file names
+      256_KiB)
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",
@@ -2281,6 +2293,16 @@ configuration::configuration()
       "elapsed",
       {.visibility = visibility::tunable},
       5s)
+  , cloud_storage_cache_trim_walk_concurrency(
+      *this,
+      "cloud_storage_cache_trim_walk_concurrency",
+      "The maximum number of concurrent tasks launched for directory walk "
+      "during cache trimming. A higher number allows cache trimming to run "
+      "faster but can cause latency spikes due to increased pressure on I/O "
+      "subsystem and syscall threads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1,
+      {.min = 1, .max = 1000})
   , cloud_storage_max_segment_readers_per_shard(
       *this,
       "cloud_storage_max_segment_readers_per_shard",
@@ -2374,6 +2396,24 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_cache_trim_threshold_percent_size(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_size",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "cache size. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
+  , cloud_storage_cache_trim_threshold_percent_objects(
+      *this,
+      "cloud_storage_cache_trim_threshold_percent_objects",
+      "Trim is triggered when the cache reaches this percent of the maximum "
+      "object count. If this is unset, the default behavior"
+      "is to start trim when the cache is about 100\% full.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1.0, .max = 100.0})
   , superusers(
       *this,
       "superusers",
@@ -2446,6 +2486,12 @@ configuration::configuration()
       "Size of the zstd decompression workspace",
       {.visibility = visibility::tunable},
       8_MiB)
+  , lz4_decompress_reusable_buffers_disabled(
+      *this,
+      "lz4_decompress_reusable_buffers_disabled",
+      "Disable reusable preallocated buffers for LZ4 decompression",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , full_raft_configuration_recovery_pattern(
       *this,
       "full_raft_configuration_recovery_pattern",
@@ -2625,6 +2671,13 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , alive_timeout_ms(
+      *this,
+      "alive_timeout_ms",
+      "Time from the last node status heartbeat after which a node will be "
+      "considered offline and not alive",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5s)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",
@@ -2816,7 +2869,7 @@ configuration::configuration()
       "milliseconds. Value of 0 disables the balancer and makes all the "
       "throughput quotas immutable.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      750ms,
+      0ms,
       {.min = 0ms})
   , kafka_quota_balancer_min_shard_throughput_ratio(
       *this,
@@ -2904,6 +2957,12 @@ configuration::configuration()
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128)
+  , schema_registry_normalize_on_startup(
+      *this,
+      "schema_registry_normalize_on_startup",
+      "Normalize schemas as they are read from the topic on startup.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false)
   , kafka_memory_share_for_fetch(
       *this,
       "kafka_memory_share_for_fetch",
@@ -2982,7 +3041,15 @@ configuration::configuration()
       "are allowed.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"BASIC"},
-      validate_http_authn_mechanisms) {}
+      validate_http_authn_mechanisms)
+  , unsafe_enable_consumer_offsets_delete_retention(
+      *this,
+      "unsafe_enable_consumer_offsets_delete_retention",
+      "Enables delete retention of consumer offsets topic. This is an "
+      "internal-only configuration and should be enabled only after consulting "
+      "with Redpanda Support or engineers.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      false) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

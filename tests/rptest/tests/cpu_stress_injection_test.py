@@ -9,7 +9,20 @@
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
+
+
+def stop_stress(admin: Admin, node: ClusterNode):
+    """
+    Sends a request to the admin endpoint to stop stress fibers, returning True
+    if successful and False if there was an error.
+    """
+    try:
+        admin.stress_fiber_stop(node)
+    except:
+        return False
+    return True
 
 
 class CpuStressInjectionTest(RedpandaTest):
@@ -31,16 +44,23 @@ class CpuStressInjectionTest(RedpandaTest):
         """
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
-        admin.stress_fiber_start(node,
-                                 10,
-                                 min_ms_per_scheduling_point=30,
-                                 max_ms_per_scheduling_point=300)
+        try:
+            admin.stress_fiber_start(node,
+                                     10,
+                                     min_ms_per_scheduling_point=30,
+                                     max_ms_per_scheduling_point=300)
+        except:
+            # Ignore errors, since the HTTP endpoint may be stalled behind a
+            # fiber.
+            pass
 
         try:
             wait_until(self.has_reactor_stalls, timeout_sec=10, backoff_sec=1)
             assert self.has_started_stress()
         finally:
-            admin.stress_fiber_stop(node)
+            wait_until(lambda: stop_stress(admin, node),
+                       timeout_sec=30,
+                       backoff_sec=1)
 
     @cluster(num_nodes=1)
     def test_stress_fibers_spins(self):
@@ -49,10 +69,15 @@ class CpuStressInjectionTest(RedpandaTest):
         """
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
-        admin.stress_fiber_start(node,
-                                 10,
-                                 min_spins_per_scheduling_point=1000,
-                                 max_spins_per_scheduling_point=100000)
+        try:
+            admin.stress_fiber_start(node,
+                                     10,
+                                     min_spins_per_scheduling_point=1000,
+                                     max_spins_per_scheduling_point=100000)
+        except:
+            # Ignore errors, since the HTTP endpoint may be stalled behind a
+            # fiber.
+            pass
 
         try:
             # A test that relies on counting some number of cycles is subject
@@ -60,7 +85,9 @@ class CpuStressInjectionTest(RedpandaTest):
             # reactor stalls, just look that we started stress fibers.
             wait_until(self.has_started_stress, timeout_sec=10, backoff_sec=1)
         finally:
-            admin.stress_fiber_stop(node)
+            wait_until(lambda: stop_stress(admin, node),
+                       timeout_sec=30,
+                       backoff_sec=1)
 
     @cluster(num_nodes=1)
     def test_misconfigured_stress_fibers(self):

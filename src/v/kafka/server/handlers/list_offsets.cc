@@ -19,8 +19,11 @@
 #include "kafka/server/replicated_partition.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "model/fundamental.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/when_all.h"
+#include "utils/fragmented_vector.h"
 
 namespace kafka {
 
@@ -128,9 +131,22 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           offset,
           kafka_partition->leader_epoch());
     }
+    auto min_offset = kafka_partition->start_offset();
+    auto max_offset = model::prev_offset(offset);
+
+    // Empty partition.
+    if (max_offset < min_offset) {
+        co_return list_offsets_response::make_partition(
+          ktp.get_partition(),
+          model::timestamp(-1),
+          model::offset(-1),
+          kafka_partition->leader_epoch());
+    }
+
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
+      min_offset,
       timestamp,
-      offset,
+      max_offset,
       kafka_read_priority(),
       {model::record_batch_type::raft_data},
       octx.rctx.abort_source().local()});
@@ -178,7 +194,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
 
 static ss::future<list_offset_topic_response>
 list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
-    std::vector<ss::future<list_offset_partition_response>> partitions;
+    chunked_vector<ss::future<list_offset_partition_response>> partitions;
     partitions.reserve(topic.partitions.size());
 
     const auto* disabled_set
@@ -217,19 +233,22 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
         partitions.push_back(std::move(pr));
     }
 
-    return when_all_succeed(partitions.begin(), partitions.end())
+    return ssx::when_all_succeed<
+             chunked_vector<list_offset_partition_response>>(
+             std::move(partitions))
       .then([name = std::move(topic.name)](
-              std::vector<list_offset_partition_response> parts) mutable {
+              chunked_vector<list_offset_partition_response> parts) mutable {
           return list_offset_topic_response{
             .name = std::move(name),
-            .partitions = std::move(parts),
-          };
+            .partitions = chunked_vector<list_offset_partition_response>{
+              std::make_move_iterator(parts.begin()),
+              std::make_move_iterator(parts.end())}};
       });
 }
 
-static std::vector<ss::future<list_offset_topic_response>>
+static chunked_vector<ss::future<list_offset_topic_response>>
 list_offsets_topics(list_offsets_ctx& octx) {
-    std::vector<ss::future<list_offset_topic_response>> topics;
+    chunked_vector<ss::future<list_offset_topic_response>> topics;
     topics.reserve(octx.request.data.topics.size());
 
     for (auto& topic : octx.request.data.topics) {
@@ -247,7 +266,7 @@ static void handle_unauthorized(list_offsets_ctx& octx) {
     octx.response.data.topics.reserve(
       octx.response.data.topics.size() + octx.unauthorized_topics.size());
     for (auto& topic : octx.unauthorized_topics) {
-        std::vector<list_offset_partition_response> partitions;
+        chunked_vector<list_offset_partition_response> partitions;
         partitions.reserve(topic.partitions.size());
         for (auto& partition : topic.partitions) {
             partitions.push_back(list_offset_partition_response(
@@ -274,7 +293,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         list_offsets_response response;
         response.data.topics.reserve(request.data.topics.size());
         for (const auto& t : request.data.topics) {
-            std::vector<list_offset_partition_response> partitions;
+            chunked_vector<list_offset_partition_response> partitions;
             partitions.reserve(t.partitions.size());
             for (const auto& p : t.partitions) {
                 partitions.push_back(list_offsets_response::make_partition(
@@ -300,7 +319,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           request.data.topics.end(),
           std::back_inserter(resp.data.topics),
           [](const list_offset_topic& t) {
-              std::vector<list_offset_partition_response> resp;
+              chunked_vector<list_offset_partition_response> resp;
               resp.reserve(t.partitions.size());
               for (const auto& p : t.partitions) {
                   resp.emplace_back(list_offset_partition_response{
@@ -318,16 +337,19 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       std::make_move_iterator(unauthorized_it),
       std::make_move_iterator(request.data.topics.end()));
 
-    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+    request.data.topics.erase_to_end(unauthorized_it);
 
     list_offsets_ctx octx(
       std::move(ctx), std::move(request), ssg, std::move(unauthorized_topics));
 
     return ss::do_with(std::move(octx), [](list_offsets_ctx& octx) {
         auto topics = list_offsets_topics(octx);
-        return when_all_succeed(topics.begin(), topics.end())
-          .then([&octx](std::vector<list_offset_topic_response> topics) {
-              octx.response.data.topics = std::move(topics);
+        return ssx::when_all_succeed<
+                 chunked_vector<list_offset_topic_response>>(std::move(topics))
+          .then([&octx](chunked_vector<list_offset_topic_response> topics) {
+              octx.response.data.topics = {
+                std::make_move_iterator(topics.begin()),
+                std::make_move_iterator(topics.end())};
               handle_unauthorized(octx);
               return octx.rctx.respond(std::move(octx.response));
           });

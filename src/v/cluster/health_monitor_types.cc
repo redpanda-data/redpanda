@@ -20,12 +20,15 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <fmt/ostream.h>
 
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <optional>
 
 namespace cluster {
 
@@ -56,12 +59,18 @@ bool partitions_filter::matches(
     return false;
 }
 
+node_state::node_state(
+  model::node_id id, model::membership_state membership_state, alive is_alive)
+  : _id(id)
+  , _membership_state(membership_state)
+  , _is_alive(is_alive) {}
+
 std::ostream& operator<<(std::ostream& o, const node_state& s) {
     fmt::print(
       o,
       "{{membership_state: {}, is_alive: {}}}",
-      s.membership_state,
-      s.is_alive);
+      s._membership_state,
+      s._is_alive);
     return o;
 }
 
@@ -188,8 +197,34 @@ bool operator==(const topic_status& a, const topic_status& b) {
              b.partitions.cend());
 }
 
+cluster_health_report cluster_health_report::copy() const {
+    cluster_health_report r;
+    r.raft0_leader = raft0_leader;
+    r.node_states = node_states;
+    r.bytes_in_cloud_storage = bytes_in_cloud_storage;
+    r.node_reports.reserve(node_reports.size());
+    for (auto& nr : node_reports) {
+        node_health_report nr_copy;
+        nr_copy.id = nr->id;
+        nr_copy.drain_status = nr->drain_status;
+        nr_copy.topics = nr->topics.copy();
+        nr_copy.local_state = nr->local_state;
+
+        r.node_reports.emplace_back(ss::make_lw_shared(std::move(nr_copy)));
+    }
+    return r;
+}
+
+get_cluster_health_reply get_cluster_health_reply::copy() const {
+    get_cluster_health_reply reply{.error = error};
+    if (report.has_value()) {
+        reply.report = report->copy();
+    }
+    return reply;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
-    fmt::print(o, "{{topic: {}, leaders: {}}}", tl.tp_ns, tl.partitions);
+    fmt::print(o, "{{topic: {}, partitions: {}}}", tl.tp_ns, tl.partitions);
     return o;
 }
 
@@ -232,8 +267,7 @@ std::ostream& operator<<(std::ostream& o, const partitions_filter& filter) {
 }
 
 std::ostream& operator<<(std::ostream& o, const get_node_health_request& r) {
-    fmt::print(
-      o, "{{filter: {}, current_version: {}}}", r.filter, r.current_version);
+    fmt::print(o, "{{target_node_id: {}}}", r.get_target_node_id());
     return o;
 }
 
@@ -254,6 +288,26 @@ std::ostream& operator<<(std::ostream& o, const get_cluster_health_request& r) {
 
 std::ostream& operator<<(std::ostream& o, const get_cluster_health_reply& r) {
     fmt::print(o, "{{error: {}, report: {}}}", r.error, r.report);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const cluster_health_overview& ho) {
+    fmt::print(
+      o,
+      "{{controller_id: {}, nodes: {}, unhealthy_reasons: {}, nodes_down: {}, "
+      "nodes_in_recovery_mode: {}, bytes_in_cloud_storage: {}, "
+      "leaderless_count: {}, under_replicated_count: {}, "
+      "leaderless_partitions: {}, under_replicated_partitions: {}}}",
+      ho.controller_id,
+      ho.all_nodes,
+      ho.unhealthy_reasons,
+      ho.nodes_down,
+      ho.nodes_in_recovery_mode,
+      ho.bytes_in_cloud_storage,
+      ho.leaderless_count,
+      ho.under_replicated_count,
+      ho.leaderless_partitions,
+      ho.under_replicated_partitions);
     return o;
 }
 

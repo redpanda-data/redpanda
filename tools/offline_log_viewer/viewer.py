@@ -68,8 +68,10 @@ def print_kafka(store, topic, headers_only):
 
             logger.info(f'topic: {ntp.topic}, partition: {ntp.partition}')
             log = KafkaLog(ntp, headers_only=headers_only)
-            for result in log.decode():
-                logger.info(json.dumps(result, indent=2))
+            json_iter = json.JSONEncoder(indent=2).iterencode(
+                SerializableGenerator(log))
+            for record in json_iter:
+                print(record, end='')
 
 
 def print_groups(store):

@@ -211,7 +211,7 @@ std::error_code partition_allocator::check_cluster_limits(
           create_count,
           proposed_total_partitions,
           effective_cpu_count * _partitions_per_shard());
-        return errc::topic_invalid_partitions;
+        return errc::topic_invalid_partitions_core_limit;
     }
 
     // Refuse to create partitions that would violate the configured
@@ -232,7 +232,7 @@ std::error_code partition_allocator::check_cluster_limits(
               create_count,
               proposed_total_partitions,
               memory_limit);
-            return errc::topic_invalid_partitions;
+            return errc::topic_invalid_partitions_memory_limit;
         }
     }
 
@@ -254,7 +254,7 @@ std::error_code partition_allocator::check_cluster_limits(
                       create_count,
                       proposed_total_partitions,
                       fds_limit);
-                    return errc::topic_invalid_partitions;
+                    return errc::topic_invalid_partitions_fd_limit;
                 }
             }
         } else {

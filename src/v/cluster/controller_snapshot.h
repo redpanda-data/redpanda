@@ -19,6 +19,7 @@
 #include "security/types.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "utils/chunked_hash_map.h"
 #include "utils/fragmented_vector.h"
 
 #include <absl/container/btree_map.h>
@@ -166,8 +167,8 @@ struct topics_t
       : public serde::
           envelope<topic_t, serde::version<1>, serde::compat_version<0>> {
         topic_metadata_fields metadata;
-        absl::node_hash_map<model::partition_id, partition_t> partitions;
-        absl::node_hash_map<model::partition_id, update_t> updates;
+        chunked_hash_map<model::partition_id, partition_t> partitions;
+        chunked_hash_map<model::partition_id, update_t> updates;
         std::optional<topic_disabled_partitions_set> disabled_set;
 
         friend bool operator==(const topic_t&, const topic_t&) = default;
@@ -176,7 +177,7 @@ struct topics_t
         ss::future<> serde_async_read(iobuf_parser&, serde::header const);
     };
 
-    absl::node_hash_map<model::topic_namespace, topic_t> topics;
+    chunked_hash_map<model::topic_namespace, topic_t> topics;
     raft::group_id highest_group_id;
 
     absl::node_hash_map<

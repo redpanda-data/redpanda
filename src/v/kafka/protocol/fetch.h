@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 
@@ -92,8 +93,9 @@ struct fetch_request final {
      */
     class const_iterator {
     public:
-        using const_topic_iterator = std::vector<topic>::const_iterator;
-        using const_partition_iterator = std::vector<partition>::const_iterator;
+        using const_topic_iterator = chunked_vector<topic>::const_iterator;
+        using const_partition_iterator
+          = chunked_vector<partition>::const_iterator;
 
         struct value_type {
             bool new_topic;
@@ -211,7 +213,7 @@ struct fetch_response final {
      */
     class iterator {
     public:
-        using partition_iterator = std::vector<partition>::iterator;
+        using partition_iterator = chunked_vector<partition>::iterator;
         using partition_response_iterator
           = small_fragment_vector<partition_response>::iterator;
 

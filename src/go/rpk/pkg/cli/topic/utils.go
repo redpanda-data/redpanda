@@ -12,9 +12,9 @@ package topic
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
@@ -57,39 +57,5 @@ func regexTopics(adm *kadm.Client, expressions []string) ([]string, error) {
 		return nil, fmt.Errorf("unable to list topics: %w", err)
 	}
 
-	return regexListedTopics(topics.Names(), expressions)
-}
-
-func regexListedTopics(topics, expressions []string) ([]string, error) {
-	var compiled []*regexp.Regexp
-	for _, expression := range expressions {
-		if !strings.HasPrefix(expression, "^") {
-			expression = "^" + expression
-		}
-		if !strings.HasSuffix(expression, "$") {
-			expression += "$"
-		}
-		re, err := regexp.Compile(expression)
-		if err != nil {
-			return nil, fmt.Errorf("unable to compile regex %q: %w", expression, err)
-		}
-		compiled = append(compiled, re)
-	}
-
-	var matched []string
-	for _, re := range compiled {
-		remaining := topics[:0]
-		for _, t := range topics {
-			if re.MatchString(t) {
-				matched = append(matched, t)
-			} else {
-				remaining = append(remaining, t)
-			}
-		}
-		topics = remaining
-		if len(topics) == 0 {
-			break
-		}
-	}
-	return matched, nil
+	return utils.RegexListedItems(topics.Names(), expressions)
 }

@@ -79,6 +79,7 @@ fedora_deps=(
   lld
   llvm
   lz4-devel
+  lz4-static
   ninja-build
   numactl-devel
   procps

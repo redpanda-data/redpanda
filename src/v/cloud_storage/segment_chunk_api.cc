@@ -12,6 +12,7 @@
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/remote_segment.h"
+#include "ssx/watchdog.h"
 
 namespace {
 constexpr auto cache_backoff_duration = 5s;
@@ -110,24 +111,6 @@ bool segment_chunks::downloads_in_progress() const {
     });
 }
 
-ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
-    auto g = _gate.hold();
-    vassert(_started, "chunk API is not started");
-
-    auto it = _chunks.find(chunk_start);
-    std::optional<chunk_start_offset_t> chunk_end = std::nullopt;
-    if (auto next = std::next(it); next != _chunks.end()) {
-        chunk_end = next->first - 1;
-    }
-
-    const auto prefetch = prefetch_override.value_or(
-      config::shard_local_cfg().cloud_storage_chunk_prefetch);
-    co_await _segment.hydrate_chunk(
-      segment_chunk_range{_chunks, prefetch, chunk_start});
-    co_return co_await _segment.materialize_chunk(chunk_start);
-}
-
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
   chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     auto g = _gate.hold();
@@ -140,6 +123,12 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
 
     auto& chunk = _chunks[chunk_start];
     auto curr_state = chunk.current_state;
+
+    vlog(
+      _ctxlog.debug,
+      "hydrate_chunk for {}, current state: {}",
+      chunk_start,
+      curr_state);
     if (curr_state == chunk_state::hydrated) {
         vassert(
           chunk.handle,
@@ -151,6 +140,11 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
     // If a download is already in progress, subsequent callers to hydrate are
     // added to a wait list, and notified when the download finishes.
     if (curr_state == chunk_state::download_in_progress) {
+        vlog(
+          _ctxlog.debug,
+          "adding waitor for {}, waiters before: {}",
+          chunk_start,
+          chunk.waiters.size());
         co_return co_await add_waiter_to_chunk(chunk_start, chunk);
     }
 
@@ -158,24 +152,27 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
     try {
         chunk.current_state = chunk_state::download_in_progress;
 
-        // Keep retrying if materialization fails.
-        bool done = false;
-        while (!done) {
-            auto handle = co_await do_hydrate_and_materialize(
-              chunk_start, prefetch_override);
-            if (handle) {
-                done = true;
-                chunk.handle = ss::make_lw_shared(std::move(handle));
-            } else {
-                vlog(
-                  _ctxlog.trace,
-                  "do_hydrate_and_materialize failed for chunk start offset {}",
-                  chunk_start);
-                co_await ss::sleep_abortable(
-                  _cache_backoff_jitter.next_jitter_duration(), _as);
-            }
-        }
+        watchdog wd(
+          300s, [path = _segment.get_segment_path(), start = chunk_start] {
+              vlog(
+                cst_log.error,
+                "Stuck during do_hydrate_and_materialize for segment path: {}, "
+                "chunk start: {}",
+                path(),
+                start);
+          });
+
+        auto handle = co_await _segment.download_chunk(
+          chunk_start,
+          prefetch_override.value_or(
+            config::shard_local_cfg().cloud_storage_chunk_prefetch));
+        chunk.handle = ss::make_lw_shared(std::move(handle));
     } catch (const std::exception& ex) {
+        vlog(
+          _ctxlog.debug,
+          "Failed to hydrate chunk start {}, error: {}",
+          chunk_start,
+          ex.what());
         chunk.current_state = chunk_state::not_available;
         while (!chunk.waiters.empty()) {
             chunk.waiters.front().set_to_current_exception();

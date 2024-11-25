@@ -313,11 +313,14 @@ inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::node_state& f) {
     w.StartObject();
     w.Key("id");
-    rjson_serialize(w, f.id);
+    rjson_serialize(w, f.id());
     w.Key("membership_state");
-    rjson_serialize(w, f.membership_state);
+    rjson_serialize(w, f.membership_state());
     w.Key("is_alive");
-    rjson_serialize(w, f.is_alive);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    rjson_serialize(w, f.is_alive());
+#pragma clang diagnostic pop
     w.EndObject();
 }
 
@@ -330,7 +333,11 @@ inline void rjson_serialize(
     w.Key("node_states");
     rjson_serialize(w, f.node_states);
     w.Key("node_reports");
-    rjson_serialize(w, f.node_reports);
+    w.StartArray();
+    for (auto& r : f.node_reports) {
+        rjson_serialize(w, *r);
+    }
+    w.EndArray();
     w.EndObject();
 }
 
@@ -449,20 +456,29 @@ inline void read_value(json::Value const& rd, cluster::node_state& obj) {
     read_member(rd, "membership_state", membership_state);
     read_member(rd, "is_alive", is_alive);
 
-    obj = cluster::node_state{{}, id, membership_state, is_alive};
+    obj = cluster::node_state(id, membership_state, is_alive);
 }
 
 inline void
 read_value(json::Value const& rd, cluster::cluster_health_report& obj) {
     std::optional<model::node_id> raft0_leader;
     std::vector<cluster::node_state> node_states;
-    std::vector<cluster::node_health_report> node_reports;
+    std::vector<cluster::node_health_report_ptr> node_reports;
 
     read_member(rd, "raft0_leader", raft0_leader);
     read_member(rd, "node_states", node_states);
-    read_member(rd, "node_reports", node_reports);
+    auto reports_v = rd.FindMember("node_reports");
+    if (reports_v != rd.MemberEnd()) {
+        for (auto const& e : reports_v->value.GetArray()) {
+            cluster::node_health_report report;
+            read_value(e, report);
+            node_reports.emplace_back(
+              ss::make_lw_shared<cluster::node_health_report>(
+                std::move(report)));
+        }
+    }
     obj = cluster::cluster_health_report{
-      {}, raft0_leader, node_states, node_reports};
+      {}, raft0_leader, node_states, std::move(node_reports)};
 }
 
 inline void
