@@ -159,7 +159,9 @@ service::purged_topic(purged_topic_request r, rpc::streaming_context&) {
              get_scheduling_group(),
              [this, r = std::move(r)]() mutable {
                  return _topics_frontend.local().do_purged_topic(
-                   std::move(r.topic), model::timeout_clock::now() + r.timeout);
+                   std::move(r.topic),
+                   r.domain,
+                   model::timeout_clock::now() + r.timeout);
              })
       .then(
         [](topic_result res) { return purged_topic_reply(std::move(res)); });

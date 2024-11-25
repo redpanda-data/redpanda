@@ -89,6 +89,13 @@ std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
         return o << "schema_manager::errc::shutting_down";
     }
 }
+
+ss::future<checked<std::nullopt_t, schema_manager::errc>>
+simple_schema_manager::ensure_table_schema(
+  const model::topic&, const iceberg::struct_type&) {
+    co_return std::nullopt;
+}
+
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 simple_schema_manager::get_registered_ids(
   const model::topic&, iceberg::struct_type& desired_type) {
@@ -103,29 +110,33 @@ simple_schema_manager::get_registered_ids(
 }
 
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
-catalog_schema_manager::get_registered_ids(
-  const model::topic& topic, iceberg::struct_type& dest_type) {
+catalog_schema_manager::ensure_table_schema(
+  const model::topic& topic, const iceberg::struct_type& desired_type) {
     auto table_id = table_id_for_topic(topic);
     auto load_res = co_await catalog_.load_or_create_table(
-      table_id, dest_type, hour_partition_spec());
+      table_id, desired_type, hour_partition_spec());
     if (load_res.has_error()) {
         co_return log_and_convert_catalog_err(
           load_res.error(), fmt::format("Error loading table {}", table_id));
     }
+
+    // Check schema compatibility
+    auto type_copy = desired_type.copy();
     auto get_res = get_ids_from_table_meta(
-      table_id, load_res.value(), dest_type);
+      table_id, load_res.value(), type_copy);
     if (get_res.has_error()) {
         co_return get_res.error();
     }
     if (get_res.value()) {
-        // Success! We got all the field IDs.
+        // Success! Schema already matches what we need.
         co_return std::nullopt;
     }
+
     // The current table schema is a prefix of the desired schema. Add the
     // schema to the table.
     iceberg::transaction txn(std::move(load_res.value()));
     auto update_res = co_await txn.set_schema(iceberg::schema{
-      .schema_struct = dest_type.copy(),
+      .schema_struct = desired_type.copy(),
       .schema_id = iceberg::schema::unassigned_id,
       .identifier_field_ids = {},
     });
@@ -151,21 +162,29 @@ catalog_schema_manager::get_registered_ids(
           fmt::format(
             "Error while committing schema update to table {}", table_id));
     }
-    load_res = co_await catalog_.load_table(table_id);
+    co_return std::nullopt;
+}
+
+ss::future<checked<std::nullopt_t, schema_manager::errc>>
+catalog_schema_manager::get_registered_ids(
+  const model::topic& topic, iceberg::struct_type& dest_type) {
+    auto table_id = table_id_for_topic(topic);
+    auto load_res = co_await catalog_.load_table(table_id);
     if (load_res.has_error()) {
         co_return log_and_convert_catalog_err(
           load_res.error(),
           fmt::format(
             "Error while reloading table {} after schema update", table_id));
     }
-    get_res = get_ids_from_table_meta(table_id, load_res.value(), dest_type);
+    auto get_res = get_ids_from_table_meta(
+      table_id, load_res.value(), dest_type);
     if (get_res.has_error()) {
         co_return get_res.error();
     }
     if (!get_res.value()) {
         vlog(
           datalake_log.warn,
-          "Failed to fill field IDs after adding schema to table {}",
+          "expected to successfully fill field IDs for table {}",
           table_id);
         co_return errc::failed;
     }
@@ -204,7 +223,7 @@ catalog_schema_manager::get_ids_from_table_meta(
 }
 
 iceberg::table_identifier
-catalog_schema_manager::table_id_for_topic(const model::topic& t) const {
+schema_manager::table_id_for_topic(const model::topic& t) const {
     return iceberg::table_identifier{
       // TODO: namespace as a topic property? Keep it in the table metadata?
       .ns = {"redpanda"},

@@ -1205,7 +1205,7 @@ partition::unsafe_reset_remote_partition_manifest_from_json(iobuf json_buf) {
 
     // Deserialise provided manifest
     cloud_storage::partition_manifest req_m{
-      _raft->ntp(), _raft->log_config().get_initial_revision()};
+      _raft->ntp(), _raft->log_config().get_remote_revision()};
     req_m.update_with_json(std::move(json_buf));
 
     co_await replicate_unsafe_reset(std::move(req_m));
@@ -1292,7 +1292,7 @@ partition::fetch_latest_cloud_offset_from_manifest(
         co_return errc::invalid_partition_operation;
     }
 
-    const auto initial_rev = _raft->log_config().get_initial_revision();
+    const auto initial_rev = _raft->log_config().get_remote_revision();
     const auto bucket = [this]() {
         if (is_read_replica_mode_enabled()) {
             return get_read_replica_bucket();
@@ -1338,7 +1338,7 @@ partition::fetch_latest_cloud_offset_from_manifest(
 
 ss::future<>
 partition::do_unsafe_reset_remote_partition_manifest_from_cloud(bool force) {
-    const auto initial_rev = _raft->log_config().get_initial_revision();
+    const auto initial_rev = _raft->log_config().get_remote_revision();
     const auto bucket = [this]() {
         if (is_read_replica_mode_enabled()) {
             return get_read_replica_bucket();
@@ -1645,6 +1645,10 @@ model::revision_id partition::get_revision_id() const {
 }
 model::revision_id partition::get_log_revision_id() const {
     return _raft->log_config().get_revision();
+}
+
+model::revision_id partition::get_topic_revision_id() const {
+    return _raft->log_config().get_topic_revision();
 }
 
 std::optional<model::node_id> partition::get_leader_id() const {

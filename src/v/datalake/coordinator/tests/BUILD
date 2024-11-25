@@ -11,6 +11,7 @@ redpanda_test_cc_library(
     include_prefix = "datalake/coordinator/tests",
     deps = [
         "//src/v/container:fragmented_vector",
+        "//src/v/datalake:table_creator",
         "//src/v/datalake/coordinator:file_committer",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:translated_offset_range",
@@ -28,6 +29,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":state_test_utils",
+        "//src/v/cluster",
         "//src/v/config",
         "//src/v/datalake:logger",
         "//src/v/datalake/coordinator",
@@ -100,6 +102,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         ":state_test_utils",
+        "//src/v/cluster",
         "//src/v/datalake/coordinator",
         "//src/v/datalake/coordinator:stm",
         "//src/v/raft/tests:stm_test_fixture",

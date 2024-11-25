@@ -38,16 +38,19 @@ translation_task::translation_task(
   cloud_data_io& cloud_io,
   schema_manager& schema_mgr,
   type_resolver& type_resolver,
-  record_translator& record_translator)
+  record_translator& record_translator,
+  table_creator& table_creator)
   : _cloud_io(&cloud_io)
   , _schema_mgr(&schema_mgr)
   , _type_resolver(&type_resolver)
-  , _record_translator(&record_translator) {}
+  , _record_translator(&record_translator)
+  , _table_creator(&table_creator) {}
 
 ss::future<
   checked<coordinator::translated_offset_range, translation_task::errc>>
 translation_task::translate(
   const model::ntp& ntp,
+  model::revision_id topic_revision,
   std::unique_ptr<parquet_file_writer_factory> writer_factory,
   model::record_batch_reader reader,
   const remote_path& remote_path_prefix,
@@ -55,10 +58,12 @@ translation_task::translate(
   lazy_abort_source& lazy_as) {
     record_multiplexer mux(
       ntp,
+      topic_revision,
       std::move(writer_factory),
       *_schema_mgr,
       *_type_resolver,
-      *_record_translator);
+      *_record_translator,
+      *_table_creator);
     // Write local files
     auto mux_result = co_await std::move(reader).consume(
       std::move(mux), _read_timeout + model::timeout_clock::now());

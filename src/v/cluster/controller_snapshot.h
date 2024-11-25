@@ -119,7 +119,7 @@ struct config_t
 
 struct topics_t
   : public serde::
-      envelope<topics_t, serde::version<1>, serde::compat_version<0>> {
+      envelope<topics_t, serde::version<2>, serde::compat_version<0>> {
     // NOTE: layout here is a bit different than in the topic table because it
     // allows more compact storage and more convenient generation of controller
     // backend deltas when applying the snapshot.
@@ -192,6 +192,13 @@ struct topics_t
       lifecycle_markers;
 
     force_recoverable_partitions_t partitions_to_force_recover;
+
+    chunked_hash_map<
+      model::topic_namespace,
+      nt_iceberg_tombstone,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>
+      iceberg_tombstones;
 
     friend bool operator==(const topics_t&, const topics_t&) = default;
 

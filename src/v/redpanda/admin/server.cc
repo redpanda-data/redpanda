@@ -4328,7 +4328,8 @@ admin_server::delete_cloud_storage_lifecycle(
     cluster::nt_revision ntr{
       .nt = model::topic_namespace(model::kafka_namespace, model::topic{topic}),
       .initial_revision_id = revision};
-    auto r = co_await tp_frontend.local().purged_topic(ntr, 5s);
+    auto r = co_await tp_frontend.local().purged_topic(
+      ntr, cluster::topic_purge_domain::cloud_storage, 5s);
     co_await throw_on_error(*req, r.ec, model::controller_ntp);
 
     co_return ss::json::json_return_type(ss::json::json_void());

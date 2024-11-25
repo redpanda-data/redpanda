@@ -37,7 +37,28 @@ std::ostream& operator<<(std::ostream& o, const errc& errc) {
     case errc::concurrent_requests:
         o << "errc::concurrent_requests";
         break;
+    case errc::revision_mismatch:
+        o << "errc::revision_mismatch";
+        break;
+    case errc::incompatible_schema:
+        o << "errc::incompatible_schema";
+        break;
+    case errc::failed:
+        o << "errc::failed";
+        break;
     }
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const ensure_table_exists_reply& r) {
+    fmt::print(o, "{{errc: {}}}", r.errc);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const ensure_table_exists_request& r) {
+    fmt::print(
+      o, "{{topic: {}, topic_revision: {}}}", r.topic, r.topic_revision);
     return o;
 }
 
@@ -51,8 +72,9 @@ std::ostream&
 operator<<(std::ostream& o, const add_translated_data_files_request& request) {
     fmt::print(
       o,
-      "{{partition: {}, files: {}, translation term: {}}}",
+      "{{partition: {}, topic_revision: {}, files: {}, translation term: {}}}",
       request.tp,
+      request.topic_revision,
       request.ranges,
       request.translator_term);
     return o;
@@ -67,7 +89,11 @@ operator<<(std::ostream& o, const fetch_latest_translated_offset_reply& reply) {
 
 std::ostream& operator<<(
   std::ostream& o, const fetch_latest_translated_offset_request& request) {
-    fmt::print(o, "{{partition: {}}}", request.tp);
+    fmt::print(
+      o,
+      "{{partition: {}, topic_revision: {}}}",
+      request.tp,
+      request.topic_revision);
     return o;
 }
 } // namespace datalake::coordinator

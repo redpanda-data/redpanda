@@ -20,6 +20,7 @@
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_translator.h"
 #include "datalake/serde_parquet_writer.h"
+#include "datalake/table_creator.h"
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
@@ -76,6 +77,36 @@ ss::futurize_t<FuncRet> retry_with_backoff(
     }
 }
 
+// Creates or alters the table by delegating to the coordinator.
+class coordinator_table_creator : public table_creator {
+public:
+    explicit coordinator_table_creator(coordinator::frontend& fe)
+      : coordinator_fe_(fe) {}
+
+    ss::future<checked<std::nullopt_t, errc>> ensure_table(
+      const model::topic& topic,
+      model::revision_id topic_revision,
+      record_schema_components comps) const final {
+        auto ensure_res = co_await coordinator_fe_.ensure_table_exists(
+          coordinator::ensure_table_exists_request{
+            topic,
+            topic_revision,
+            comps,
+          });
+        switch (ensure_res.errc) {
+        case coordinator::errc::ok:
+            co_return std::nullopt;
+        case coordinator::errc::incompatible_schema:
+            co_return errc::incompatible_schema;
+        default:
+            co_return errc::failed;
+        }
+    }
+
+private:
+    coordinator::frontend& coordinator_fe_;
+};
+
 } // namespace
 
 static constexpr std::chrono::milliseconds translation_jitter{500};
@@ -105,6 +136,8 @@ partition_translator::partition_translator(
   , _schema_mgr(schema_mgr)
   , _type_resolver(std::move(type_resolver))
   , _record_translator(std::move(record_translator))
+  , _table_creator(
+      std::make_unique<coordinator_table_creator>(_frontend->local()))
   , _partition_proxy(std::make_unique<kafka::partition_proxy>(
       kafka::make_partition_proxy(_partition)))
   , _jitter{translation_interval, translation_jitter}
@@ -187,7 +220,11 @@ partition_translator::do_translation_for_range(
       ss::make_shared<serde_parquet_writer_factory>());
 
     auto task = translation_task{
-      **_cloud_io, *_schema_mgr, *_type_resolver, *_record_translator};
+      **_cloud_io,
+      *_schema_mgr,
+      *_type_resolver,
+      *_record_translator,
+      *_table_creator};
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_file_path_prefix, ntp.path(), _term)};
@@ -197,6 +234,7 @@ partition_translator::do_translation_for_range(
     }};
     auto result = co_await task.translate(
       ntp,
+      _partition->get_topic_revision_id(),
       std::move(writer_factory),
       std::move(rdr),
       remote_path_prefix,
@@ -311,10 +349,13 @@ partition_translator::checkpoint_translated_data(
         translated_range.start_offset = reader_begin_offset;
     }
     auto last_offset = translated_range.last_offset;
-    coordinator::add_translated_data_files_request request;
-    request.tp = _partition->ntp().tp;
-    request.translator_term = _term;
-    request.ranges.emplace_back(std::move(translated_range));
+    chunked_vector<coordinator::translated_offset_range> ranges;
+    ranges.push_back(std::move(translated_range));
+    coordinator::add_translated_data_files_request request{
+      _partition->ntp().tp,
+      _partition->get_topic_revision_id(),
+      std::move(ranges),
+      _term};
     vlog(_logger.trace, "Adding translated data file, request: {}", request);
     auto result = co_await retry_with_backoff(
       rcn,
@@ -334,6 +375,7 @@ ss::future<std::optional<kafka::offset>>
 partition_translator::reconcile_with_coordinator() {
     auto request = coordinator::fetch_latest_translated_offset_request{};
     request.tp = _partition->ntp().tp;
+    request.topic_revision = _partition->get_topic_revision_id();
     vlog(_logger.trace, "fetch_latest_translated_offset, request: {}", request);
     auto resp = co_await _frontend->local().fetch_latest_translated_offset(
       request);

@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#pragma once
+
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
@@ -45,6 +47,9 @@ public:
       ss::sharded<::rpc::connection_cache>*);
 
     ss::future<> stop();
+
+    ss::future<ensure_table_exists_reply> ensure_table_exists(
+      ensure_table_exists_request, local_only = local_only::no);
 
     ss::future<add_translated_data_files_reply> add_translated_data_files(
       add_translated_data_files_request, local_only = local_only::no);
@@ -84,6 +89,11 @@ private:
      */
     std::optional<model::partition_id>
     coordinator_partition(const model::topic&) const;
+
+    ss::future<ensure_table_exists_reply> ensure_table_exists_locally(
+      ensure_table_exists_request,
+      const model::ntp& coordinator_partition,
+      ss::shard_id);
 
     ss::future<add_translated_data_files_reply>
     add_translated_data_files_locally(

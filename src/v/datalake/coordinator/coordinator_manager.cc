@@ -10,15 +10,19 @@
 #include "datalake/coordinator/coordinator_manager.h"
 
 #include "cluster/partition_manager.h"
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
+#include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/catalog_factory.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/logger.h"
-#include "iceberg/filesystem_catalog.h"
+#include "datalake/record_schema_resolver.h"
+#include "datalake/table_creator.h"
 #include "iceberg/manifest_io.h"
 #include "model/fundamental.h"
+#include "schema/registry.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -28,17 +32,30 @@ coordinator_manager::coordinator_manager(
   model::node_id self,
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<cluster::topic_table>& topics,
+  ss::sharded<cluster::topics_frontend>& topics_fe,
+  pandaproxy::schema_registry::api* sr_api,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
   cloud_storage_clients::bucket_name bucket)
   : self_(self)
   , gm_(gm.local())
   , pm_(pm.local())
+  , topics_(topics.local())
+  , topics_fe_(topics_fe)
+  , schema_registry_(schema::registry::make_default(sr_api))
   , manifest_io_(io.local(), bucket)
-  , catalog_factory_(std::move(catalog_factory)) {}
+  , catalog_factory_(std::move(catalog_factory))
+  , type_resolver_(
+      std::make_unique<record_schema_resolver>(*schema_registry_)) {}
+
+coordinator_manager::~coordinator_manager() = default;
 
 ss::future<> coordinator_manager::start() {
     catalog_ = co_await catalog_factory_->create_catalog();
+    schema_mgr_ = std::make_unique<catalog_schema_manager>(*catalog_);
+    table_creator_ = std::make_unique<direct_table_creator>(
+      *type_resolver_, *schema_mgr_);
     file_committer_ = std::make_unique<iceberg_file_committer>(
       *catalog_, manifest_io_);
 
@@ -102,6 +119,11 @@ void coordinator_manager::start_managing(cluster::partition& p) {
     }
     auto crd = ss::make_lw_shared<coordinator>(
       std::move(stm),
+      topics_,
+      *table_creator_,
+      [this](const model::topic& t, model::revision_id rev) {
+          return remove_tombstone(t, rev);
+      },
       *file_committer_,
       config::shard_local_cfg().iceberg_catalog_commit_interval_ms.bind());
     if (p.is_leader()) {
@@ -155,6 +177,34 @@ void coordinator_manager::notify_leadership_change(
         return;
     }
     crd->notify_leadership(leader_id);
+}
+
+ss::future<checked<std::nullopt_t, coordinator::errc>>
+coordinator_manager::remove_tombstone(
+  const model::topic& topic, model::revision_id rev) {
+    auto topic_res = co_await topics_fe_.local().purged_topic(
+      cluster::nt_revision{
+        .nt = model::topic_namespace{model::kafka_namespace, topic},
+        .initial_revision_id = model::initial_revision_id{rev}},
+      cluster::topic_purge_domain::iceberg,
+      5s);
+    switch (topic_res.ec) {
+    case cluster::errc::success:
+    case cluster::errc::topic_not_exists:
+        co_return std::nullopt;
+    case cluster::errc::shutting_down:
+        co_return coordinator::errc::shutting_down;
+    case cluster::errc::timeout:
+        co_return coordinator::errc::timedout;
+    default:
+        vlog(
+          datalake_log.warn,
+          "failed to remove iceberg tombstone, topic {}, rev {}: {}",
+          topic,
+          rev,
+          topic_res.ec);
+        co_return coordinator::errc::failed;
+    }
 }
 
 } // namespace datalake::coordinator

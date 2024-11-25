@@ -24,6 +24,7 @@ namespace datalake::coordinator {
 enum class update_key : uint8_t {
     add_files = 0,
     mark_files_committed = 1,
+    topic_lifecycle_update = 2,
 };
 std::ostream& operator<<(std::ostream&, const update_key&);
 
@@ -37,15 +38,16 @@ struct add_files_update
     static checked<add_files_update, stm_update_error> build(
       const topics_state&,
       const model::topic_partition&,
+      model::revision_id topic_revision,
       chunked_vector<translated_offset_range>);
-    auto serde_fields() { return std::tie(tp, entries); }
+    auto serde_fields() { return std::tie(tp, topic_revision, entries); }
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error>
     apply(topics_state&, model::offset);
 
     model::topic_partition tp;
-
+    model::revision_id topic_revision;
     // Expected to be ordered from lowest offset to highest offset.
     chunked_vector<translated_offset_range> entries;
 };
@@ -57,18 +59,42 @@ struct mark_files_committed_update
       serde::version<0>,
       serde::compat_version<0>> {
     static constexpr auto key{update_key::mark_files_committed};
-    static checked<mark_files_committed_update, stm_update_error>
-    build(const topics_state&, const model::topic_partition&, kafka::offset);
-    auto serde_fields() { return std::tie(tp, new_committed); }
+    static checked<mark_files_committed_update, stm_update_error> build(
+      const topics_state&,
+      const model::topic_partition&,
+      model::revision_id topic_revision,
+      kafka::offset);
+    auto serde_fields() { return std::tie(tp, topic_revision, new_committed); }
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
 
     model::topic_partition tp;
+    model::revision_id topic_revision;
 
     // All pending entries whose offset range falls entirely below this offset
     // (inclusive) should be removed.
     kafka::offset new_committed;
+};
+
+// An update to change topic lifecycle state after it has been deleted.
+struct topic_lifecycle_update
+  : public serde::envelope<
+      topic_lifecycle_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    static constexpr auto key{update_key::topic_lifecycle_update};
+    auto serde_fields() { return std::tie(topic, revision, new_state); }
+
+    // returns true if the update actually changes anything
+    checked<bool, stm_update_error> can_apply(const topics_state&);
+    checked<bool, stm_update_error> apply(topics_state&);
+
+    friend std::ostream& operator<<(std::ostream&, topic_lifecycle_update);
+
+    model::topic topic;
+    model::revision_id revision;
+    topic_state::lifecycle_state_t new_state;
 };
 
 } // namespace datalake::coordinator

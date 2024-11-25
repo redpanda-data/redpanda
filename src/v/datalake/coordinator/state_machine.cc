@@ -23,11 +23,12 @@
 namespace datalake::coordinator {
 
 namespace {
+template<typename Res>
 void maybe_log_update_error(
   prefix_logger& log,
   update_key key,
   model::offset o,
-  const checked<std::nullopt_t, stm_update_error>& r) {
+  const checked<Res, stm_update_error>& r) {
     if (r.has_value()) {
         return;
     }
@@ -120,6 +121,13 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
               = co_await serde::read_async<mark_files_committed_update>(val_p);
             vlog(
               _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
+            auto res = update.apply(state_);
+            maybe_log_update_error(_log, key, o, res);
+            continue;
+        }
+        case update_key::topic_lifecycle_update: {
+            auto update = serde::read<topic_lifecycle_update>(val_p);
+            vlog(_log.debug, "Applying {} from offset {}: {}", key, o, update);
             auto res = update.apply(state_);
             maybe_log_update_error(_log, key, o, res);
             continue;

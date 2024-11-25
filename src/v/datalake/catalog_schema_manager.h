@@ -28,14 +28,22 @@ public:
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
 
+    virtual ss::future<checked<std::nullopt_t, errc>> ensure_table_schema(
+      const model::topic&, const iceberg::struct_type& desired_type)
+      = 0;
     virtual ss::future<checked<std::nullopt_t, errc>>
     get_registered_ids(const model::topic&, iceberg::struct_type& desired_type)
       = 0;
     virtual ~schema_manager() = default;
+
+    iceberg::table_identifier table_id_for_topic(const model::topic& t) const;
 };
 
 class simple_schema_manager : public schema_manager {
 public:
+    ss::future<checked<std::nullopt_t, schema_manager::errc>>
+    ensure_table_schema(
+      const model::topic&, const iceberg::struct_type& desired_type) override;
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     get_registered_ids(
       const model::topic&, iceberg::struct_type& desired_type) override;
@@ -50,20 +58,21 @@ public:
     explicit catalog_schema_manager(iceberg::catalog& catalog)
       : catalog_(catalog) {}
 
+    // Create the table with a desired schema, or, if the table exists and its
+    // current schema doesn't include all of the fields (e.g. we are going from
+    // the schemaless schema to a schema containing user fields), the table's
+    // schema is updated to the desired type.
+    ss::future<checked<std::nullopt_t, schema_manager::errc>>
+    ensure_table_schema(
+      const model::topic&, const iceberg::struct_type& desired_type) override;
+
     // Loads the table metadata for the given topic and fills the field IDs of
     // the given type with those in the current schema.
-    //
-    // If the table's current schema doesn't include all of the fields (e.g. we
-    // are going from the schemaless schema to a schema containing user
-    // fields), the table's schema is updated to the desired type, and then the
-    // fill is attempted again.
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     get_registered_ids(
       const model::topic&, iceberg::struct_type& desired_type) override;
 
 private:
-    iceberg::table_identifier table_id_for_topic(const model::topic& t) const;
-
     // Attempts to fill the field ids in the given type with those from the
     // current schema of the given table metadata.
     //

@@ -47,6 +47,7 @@ v_cc_library(
     values_protobuf.cc
     base_types.cc
     cloud_data_io.cc
+    table_creator.cc
     translation_task.cc
     schema_parquet.cc
     values_parquet.cc

@@ -17,51 +17,40 @@
 static ss::logger logger{"datalake-test-logger"};
 namespace datalake::tests {
 
-class datalake_cluster_test_fixture : public archiver_cluster_fixture {
+class datalake_cluster_test_fixture
+  : public cluster_test_fixture
+  , public s3_imposter_fixture {
 public:
-    datalake_cluster_test_fixture()
-      : archiver_cluster_fixture() {
-        listen();
-    }
+    datalake_cluster_test_fixture() { set_expectations_and_listen({}); }
 
     ~datalake_cluster_test_fixture() {
-        for (auto& [id, _] : apps) {
+        for (auto id : instance_ids()) {
             remove_node_application(id);
         }
     }
 
-    fixture_ptr make_redpanda_fixture(
-      model::node_id node_id,
-      int16_t kafka_port,
-      int16_t rpc_port,
-      int16_t proxy_port,
-      int16_t schema_reg_port,
-      std::vector<config::seed_server> seeds,
-      configure_node_id use_node_id,
-      empty_seed_starts_cluster empty_seed_starts_cluster_val,
-      std::optional<cloud_storage_clients::s3_configuration> s3_config,
-      std::optional<archival::configuration> archival_cfg,
-      std::optional<cloud_storage::configuration> cloud_cfg,
-      bool enable_legacy_upload_mode) override {
-        return std::make_unique<redpanda_thread_fixture>(
-          node_id,
-          kafka_port,
-          rpc_port,
-          proxy_port,
-          schema_reg_port,
-          seeds,
-          ssx::sformat("{}.{}", _base_dir, node_id()),
-          _sgroups,
-          true,
-          s3_config,
-          archival_cfg,
-          cloud_cfg,
-          use_node_id,
-          empty_seed_starts_cluster_val,
-          std::nullopt,
+    void add_node() {
+        static constexpr int kafka_port_base = 9092;
+        static constexpr int rpc_port_base = 11000;
+        static constexpr int proxy_port_base = 8082;
+        static constexpr int schema_reg_port_base = 8081;
+
+        auto [s3_conf, a_conf, cs_conf] = get_cloud_storage_configurations(
+          httpd_host_name, httpd_port_number());
+
+        create_node_application(
+          next_node_id(),
+          kafka_port_base,
+          rpc_port_base,
+          proxy_port_base,
+          schema_reg_port_base,
+          configure_node_id::yes,
+          empty_seed_starts_cluster::yes,
+          s3_conf,
+          std::move(*a_conf),
+          cs_conf,
           false,
-          enable_legacy_upload_mode,
-          /* iceberg */ true);
+          /*iceberg_enabled=*/true);
     }
 
     ss::future<> create_iceberg_topic(
@@ -125,12 +114,14 @@ public:
         if (!partition) {
             throw std::runtime_error("leader not found during validation");
         }
+        auto topic_revision = partition->get_topic_revision_id();
         const auto& ot = partition->get_offset_translator_state();
         auto max_offset = kafka::prev_offset(model::offset_cast(
           ot->from_log_offset(partition->last_stable_offset())));
         auto& fe = coordinator_frontend(fixture->app.controller->self());
         coordinator::fetch_latest_translated_offset_request request;
         request.tp = ntp.tp;
+        request.topic_revision = topic_revision;
         vlog(logger.info, "Waiting for last added offet: {}", max_offset);
         co_await ::tests::cooperative_spin_wait_with_timeout(20s, [&] {
             return fe.local().fetch_latest_translated_offset(request).then(

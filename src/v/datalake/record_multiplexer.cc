@@ -15,6 +15,7 @@
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/table_creator.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
 
@@ -24,16 +25,20 @@ namespace datalake {
 
 record_multiplexer::record_multiplexer(
   const model::ntp& ntp,
+  model::revision_id topic_revision,
   std::unique_ptr<parquet_file_writer_factory> writer_factory,
   schema_manager& schema_mgr,
   type_resolver& type_resolver,
-  record_translator& record_translator)
+  record_translator& record_translator,
+  table_creator& table_creator)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
+  , _topic_revision(topic_revision)
   , _writer_factory{std::move(writer_factory)}
   , _schema_mgr(schema_mgr)
   , _type_resolver(type_resolver)
-  , _record_translator(record_translator) {}
+  , _record_translator(record_translator)
+  , _table_creator(table_creator) {}
 
 ss::future<ss::stop_iteration>
 record_multiplexer::operator()(model::record_batch batch) {
@@ -115,12 +120,12 @@ record_multiplexer::operator()(model::record_batch batch) {
           std::move(val_type_res.value().type));
         auto writer_iter = _writers.find(record_type.comps);
         if (writer_iter == _writers.end()) {
-            auto get_ids_res = co_await _schema_mgr.get_registered_ids(
-              _ntp.tp.topic, record_type.type);
-            if (get_ids_res.has_error()) {
-                auto e = get_ids_res.error();
+            auto ensure_res = co_await _table_creator.ensure_table(
+              _ntp.tp.topic, _topic_revision, record_type.comps);
+            if (ensure_res.has_error()) {
+                auto e = ensure_res.error();
                 switch (e) {
-                case schema_manager::errc::not_supported: {
+                case table_creator::errc::incompatible_schema: {
                     auto invalid_res = co_await handle_invalid_record(
                       offset,
                       record.share_key(),
@@ -133,17 +138,37 @@ record_multiplexer::operator()(model::record_batch batch) {
                     }
                     continue;
                 }
+                case table_creator::errc::failed:
+                    vlog(
+                      _log.warn,
+                      "Error ensuring table schema for record {}",
+                      offset);
+                    [[fallthrough]];
+                case table_creator::errc::shutting_down:
+                    _error = writer_error::parquet_conversion_error;
+                }
+                co_return ss::stop_iteration::yes;
+            }
+
+            auto get_ids_res = co_await _schema_mgr.get_registered_ids(
+              _ntp.tp.topic, record_type.type);
+            if (get_ids_res.has_error()) {
+                auto e = get_ids_res.error();
+                switch (e) {
+                case schema_manager::errc::not_supported:
                 case schema_manager::errc::failed:
-                case schema_manager::errc::shutting_down:
                     vlog(
                       _log.warn,
                       "Error getting field IDs for record {}: {}",
                       offset,
                       get_ids_res.error());
+                    [[fallthrough]];
+                case schema_manager::errc::shutting_down:
                     _error = writer_error::parquet_conversion_error;
                 }
                 co_return ss::stop_iteration::yes;
             }
+
             auto [iter, _] = _writers.emplace(
               record_type.comps,
               std::make_unique<partitioning_writer>(
@@ -237,6 +262,17 @@ record_multiplexer::handle_invalid_record(
     // TODO: maybe this should be a writer specific for a dead-letter queue.
     auto writer_iter = _writers.find(record_type.comps);
     if (writer_iter == _writers.end()) {
+        auto ensure_res = co_await _table_creator.ensure_table(
+          _ntp.tp.topic, _topic_revision, record_type.comps);
+        if (ensure_res.has_error()) {
+            vlog(
+              _log.warn,
+              "Error ensuring table schema for binary record {}: {}",
+              offset,
+              ensure_res.error());
+            co_return writer_error::parquet_conversion_error;
+        }
+
         auto get_ids_res = co_await _schema_mgr.get_registered_ids(
           _ntp.tp.topic, record_type.type);
         if (get_ids_res.has_error()) {

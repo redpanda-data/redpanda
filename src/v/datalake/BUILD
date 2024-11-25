@@ -342,6 +342,7 @@ redpanda_cc_library(
         ":logger",
         ":record_schema_resolver",
         ":record_translator",
+        ":table_creator",
         "//src/v/base",
         "//src/v/storage:parser_utils",
         "//src/v/utils:prefix_logger",
@@ -351,6 +352,7 @@ redpanda_cc_library(
     deps = [
         ":partitioning_writer",
         ":schema_identifier",
+        ":types",
         ":writer",
         "//src/v/container:chunked_hash_map",
         "//src/v/model",
@@ -530,5 +532,24 @@ redpanda_cc_library(
         "//src/v/iceberg:values",
         "//src/v/serde/parquet:writer",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_creator",
+    srcs = [
+        "table_creator.cc",
+    ],
+    hdrs = [
+        "table_creator.h",
+    ],
+    implementation_deps = [
+        ":record_translator",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":catalog_schema_manager",
+        ":record_schema_resolver",
     ],
 )

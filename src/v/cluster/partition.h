@@ -191,6 +191,7 @@ public:
 
     model::revision_id get_revision_id() const;
     model::revision_id get_log_revision_id() const;
+    model::revision_id get_topic_revision_id() const;
 
     std::optional<model::node_id> get_leader_id() const;
 

@@ -92,12 +92,12 @@ public:
     ss::future<std::vector<topic_result>> dispatch_delete_topics(
       std::vector<model::topic_namespace>, std::chrono::milliseconds);
     // May be called on any node
-    ss::future<topic_result>
-      purged_topic(nt_revision, model::timeout_clock::duration);
+    ss::future<topic_result> purged_topic(
+      nt_revision, topic_purge_domain, model::timeout_clock::duration);
 
     // May only be called on leader
-    ss::future<topic_result>
-      do_purged_topic(nt_revision, model::timeout_clock::time_point);
+    ss::future<topic_result> do_purged_topic(
+      nt_revision, topic_purge_domain, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> autocreate_topics(
       topic_configuration_vector, model::timeout_clock::duration);
@@ -250,7 +250,10 @@ private:
       model::timeout_clock::duration);
 
     ss::future<topic_result> dispatch_purged_topic_to_leader(
-      model::node_id, nt_revision, model::timeout_clock::duration);
+      model::node_id,
+      nt_revision,
+      topic_purge_domain,
+      model::timeout_clock::duration);
 
     ss::future<std::error_code> do_update_replication_factor(
       topic_properties_update&, model::timeout_clock::time_point);
