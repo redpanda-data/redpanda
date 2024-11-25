@@ -1101,8 +1101,9 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
             r = fn()
             if not r and time.time() > t_initial + grace_period:
                 # Check the cluster is up before waiting + retrying
-                assert self.all_up() or getattr(self, '_tolerate_crashes',
-                                                False)
+                assert self.all_up() or getattr(
+                    self, '_tolerate_crashes', False) or getattr(
+                        self, 'tolerate_not_running', 0) > 0
             return r
 
         wait_until(wrapped,
@@ -2518,6 +2519,13 @@ class RedpandaService(RedpandaServiceBase):
         self._schema_registry_config = schema_registry_config
         self._audit_log_config = audit_log_config
         self._failure_injection_enabled = False
+        # Tolerate redpanda nodes not running during health checks. This is
+        # useful when running i.e. with node_operations.FailureInjectorBackgroundThread
+        # which can kill redpanda nodes.
+        # This is a number to allow multiple callers to set it.
+        self.tolerate_not_running = 0
+        # Do not fail test on crashes including asserts. This is useful when
+        # running with redpanda's fault injection enabled.
         self._tolerate_crashes = False
         self._rpk_node_config = rpk_node_config
 
