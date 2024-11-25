@@ -69,6 +69,9 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
                         cloud_storage.AWSInstanceMetadataCredentials):
             extra_conf = self.dict_to_conf({"fs.native-s3.enabled": True})
         elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            extra_conf = self.dict_to_conf({"fs.native-gcs.enabled": True})
+        elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
             extra_conf = self.dict_to_conf({
                 "fs.native-azure.enabled":
