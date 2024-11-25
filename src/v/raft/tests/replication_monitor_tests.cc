@@ -32,7 +32,7 @@ auto populate_waiters(
     auto& replication_monitor = raft->get_replication_monitor();
     auto log_offsets = raft->log()->offsets();
     auto base = log_offsets.dirty_offset;
-    for (auto i = 0; i < waiters; i++) {
+    for (size_t i = 0; i < waiters; i++) {
         auto offset = base + model::offset_delta(i + 1);
         storage::append_result wait_for{
           .append_time = storage::log_clock::now(),
@@ -62,7 +62,7 @@ TEST_P_CORO(monitor_test_fixture, replication_monitor_wait) {
     co_await ss::sleep(500ms);
     ASSERT_FALSE_CORO(all.available());
 
-    for (auto i = 0; i < num_waiters(); i++) {
+    for (size_t i = 0; i < num_waiters(); i++) {
         auto result = co_await raft->replicate(
           make_batches({{"k", "v"}}),
           replicate_options{raft::consistency_level::quorum_ack});
@@ -73,7 +73,7 @@ TEST_P_CORO(monitor_test_fixture, replication_monitor_wait) {
       2s, [&] { return all.available() && !all.failed(); });
 
     auto result = all.get();
-    for (auto i = 0; i < num_waiters(); i++) {
+    for (size_t i = 0; i < num_waiters(); i++) {
         ASSERT_EQ_CORO(result.at(i), errc::success);
     }
 }
@@ -98,7 +98,7 @@ TEST_P_CORO(monitor_test_fixture, truncation_detection) {
 
     std::vector<ss::future<result<replicate_result>>> replicate_f;
     replicate_f.reserve(num_waiters());
-    for (auto i = 0; i < num_waiters(); i++) {
+    for (size_t i = 0; i < num_waiters(); i++) {
         replicate_f.push_back(raft->replicate(
           make_batches({{"k", "v"}}),
           replicate_options{raft::consistency_level::quorum_ack}));
@@ -115,7 +115,7 @@ TEST_P_CORO(monitor_test_fixture, truncation_detection) {
       2s, [&] { return all.available() && !all.failed(); });
 
     auto result = all.get();
-    for (auto i = 0; i < num_waiters(); i++) {
+    for (size_t i = 0; i < num_waiters(); i++) {
         ASSERT_EQ_CORO(result.at(i), errc::replicated_entry_truncated);
     }
 }

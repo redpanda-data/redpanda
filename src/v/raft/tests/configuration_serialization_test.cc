@@ -21,7 +21,6 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
-#include <bits/stdint-uintn.h>
 #include <boost/test/tools/old/interface.hpp>
 
 #include <iterator>

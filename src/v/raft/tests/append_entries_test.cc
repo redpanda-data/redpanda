@@ -838,7 +838,7 @@ struct request_ordering_test_fixture : public raft_test_fixture {
     }
 
     ss::future<> replicate_indexed_batches(
-      consensus_ptr c, int count, raft::consistency_level consistency) {
+      consensus_ptr c, int, raft::consistency_level consistency) {
         std::vector<ss::future<result<raft::replicate_result>>> results;
         for (int32_t i = 0; i < 20; ++i) {
             auto r = c->replicate_in_stages(

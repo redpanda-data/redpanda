@@ -102,7 +102,7 @@ redpanda_cc_gtest(
         ":state_test_utils",
         "//src/v/datalake/coordinator",
         "//src/v/datalake/coordinator:stm",
-        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/raft/tests:stm_test_fixture",
         "//src/v/storage",
         "@googletest//:gtest",
         "@seastar",
