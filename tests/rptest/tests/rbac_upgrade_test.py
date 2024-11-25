@@ -41,10 +41,6 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         self.installer.install(self.redpanda.nodes, (23, 3))
         super().setUp()
 
-    def _has_license_nag(self):
-        return self.redpanda.search_log_any(
-            "license is required to use enterprise features")
-
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @skip_fips_mode  # See NOTE below
     def test_rbac_migration(self):
@@ -84,4 +80,4 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         # NOTE: This assertion will FAIL if running in FIPS mode because
         # being in FIPS mode will trigger the license nag
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
-        assert not self._has_license_nag()
+        assert not self.redpanda.has_license_nag()

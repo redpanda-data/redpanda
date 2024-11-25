@@ -616,6 +616,9 @@ redpanda_cc_library(
         "types.h",
         "version.h",
     ],
+    implementation_deps = [
+        "//src/v/features:enterprise_feature_messages",
+    ],
     include_prefix = "cluster",
     visibility = ["//visibility:public"],
     deps = [

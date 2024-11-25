@@ -101,8 +101,7 @@ class LicenseWorkload(PWorkload):
                 return PWorkload.NOT_DONE
 
             # check for License nag in the log
-            assert self.ctx.redpanda.search_log_any(
-                "license is required to use enterprise features"
+            assert self.ctx.redpanda.has_license_nag(
             ), "License nag log not found"
 
             # Install license

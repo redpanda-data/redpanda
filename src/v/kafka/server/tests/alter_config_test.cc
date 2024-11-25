@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 #include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
+#include "features/enterprise_feature_messages.h"
 #include "kafka/protocol/alter_configs.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/describe_configs.h"
@@ -1502,7 +1503,7 @@ FIXTURE_TEST(test_unlicensed_alter_configs, alter_config_test_fixture) {
             if (expected == failure) {
                 BOOST_CHECK(
                   resp.data.responses[0].error_message.value_or("").contains(
-                    "An enterprise license is required"));
+                    features::enterprise_error_message::required));
             }
         }
 

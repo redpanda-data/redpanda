@@ -25,6 +25,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "container/fragmented_vector.h"
+#include "features/enterprise_feature_messages.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/rpc_client_protocol.h"
@@ -465,12 +466,7 @@ bool leader_balancer::leadership_pinning_enabled() const {
             vlog(
               clusterlog.warn,
               "{}",
-              "A Redpanda Enterprise Edition license is required to use the "
-              "enterprise feature \"leadership pinning\". This feature is "
-              "disabled. The values of the cluster property \"{}\" and the "
-              "topic property \"redpanda.leaders.preference\" are being "
-              "ignored.",
-              config::shard_local_cfg().default_leaders_preference.name());
+              features::enterprise_error_message::default_leaders_preference());
         }
         return false;
     }

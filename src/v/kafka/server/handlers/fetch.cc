@@ -16,6 +16,7 @@
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "features/enterprise_feature_messages.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/batch_consumer.h"
@@ -1364,8 +1365,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
                     klog,
                     ss::log_level::warn,
                     rate,
-                    "An enterprise license is required to consume the "
-                    "audit log topic");
+                    "{}",
+                    features::enterprise_error_message::audit_log_fetch());
                   resp_it->set(make_partition_response_error(
                     fp.topic_partition.get_partition(),
                     error_code::unknown_server_error));

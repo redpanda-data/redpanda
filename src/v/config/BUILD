@@ -48,6 +48,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:intrusive",
+        "//src/v/features:enterprise_feature_messages",
         "//src/v/json",
         "//src/v/model",
         "//src/v/pandaproxy:config",

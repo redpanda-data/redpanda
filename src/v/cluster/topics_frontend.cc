@@ -34,6 +34,7 @@
 #include "config/configuration.h"
 #include "config/leaders_preference.h"
 #include "data_migration_types.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "fwd.h"
 #include "model/errc.h"
@@ -428,8 +429,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
                 && is_user_topic(update.tp_ns)) {
                   if (auto f = get_enterprise_features(_metadata_cache, update);
                       !f.empty()) {
-                      auto msg = ssx::sformat(
-                        "An enterprise license is required to enable {}.", f);
+                      auto msg
+                        = features::enterprise_error_message::topic_property(f);
                       vlog(clusterlog.warn, "{}", msg);
                       return ss::make_ready_future<topic_result>(topic_result(
                         update.tp_ns,
@@ -609,8 +610,7 @@ topic_result topics_frontend::validate_topic_configuration(
       && is_user_topic(assignable_config.cfg.tp_ns)) {
         if (auto f = get_enterprise_features(assignable_config.cfg);
             !f.empty()) {
-            auto msg = ssx::sformat(
-              "An enterprise license is required to enable {}.", f);
+            auto msg = features::enterprise_error_message::topic_property(f);
             vlog(clusterlog.warn, "{}", msg);
             return make_result(errc::topic_invalid_config, std::move(msg));
         }
@@ -1635,9 +1635,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     if (_features.local().should_sanction() && is_user_topic(tp_cfg->tp_ns)) {
         if (auto f = get_enterprise_features(*tp_cfg); !f.empty()) {
-            auto msg = ssx::sformat(
-              "An enterprise license is required to create partitions with {}.",
-              f);
+            auto msg = features::enterprise_error_message::create_partition(f);
             vlog(clusterlog.warn, "{}", msg);
             co_return make_error_result(
               p_cfg.tp_ns, errc::topic_invalid_config, std::move(msg));

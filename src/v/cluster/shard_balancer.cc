@@ -14,6 +14,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "config/node_config.h"
+#include "features/enterprise_feature_messages.h"
 #include "features/enterprise_features.h"
 #include "random/generators.h"
 #include "ssx/async_algorithm.h"
@@ -469,9 +470,8 @@ void shard_balancer::maybe_assign(
         if (is_sanctioned) {
             vlog(
               clusterlog.warn,
-              "A Redpanda Enterprise Edition license is required to use "
-              "enterprise feature \"core_balancing_continuous\". "
-              "This property is being ignored.");
+              "{}",
+              features::enterprise_error_message::core_balancing_continuous());
         }
 
         if (
