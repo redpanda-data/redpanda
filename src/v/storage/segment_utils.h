@@ -284,7 +284,7 @@ bool may_have_removable_tombstones(
 // Also potentially issues a call to seg->index()->flush(), if the
 // `clean_compact_timestamp` was set in the index.
 ss::future<> mark_segment_as_finished_window_compaction(
-  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp);
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp, probe& pb);
 
 template<typename Func>
 auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
