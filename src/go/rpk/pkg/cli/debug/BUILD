@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/cli/debug/bundle",
+        "//src/go/rpk/pkg/cli/debug/remotebundle",
         "//src/go/rpk/pkg/config",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
