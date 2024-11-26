@@ -64,6 +64,23 @@ dependencies {
 
   implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
   implementation 'org.postgresql:postgresql:42.7.4'
+
+  // Support for gs:// URIs when running with Hadoop FileSystem catalog.
+  implementation "com.google.cloud.bigdataoss:gcs-connector:3.0.0"
+  implementation "com.google.cloud.bigdataoss:gcsio:3.0.0"
+  implementation "com.google.cloud.bigdataoss:util-hadoop:3.0.0"
+  implementation "com.google.cloud.bigdataoss:util:3.0.0"
+
+  // Adding the bigdataoss dependencies to support GCS results in messed
+  // dependency tree and failures to resolve some methods caused by
+  // incompatible versions. I.e. we are missing `com.google.cloud.ServiceOptions.getUniverseDomain`.
+  // Adding explicit dependency to the first version which adds this method
+  // solves the problem.
+  implementation 'com.google.cloud:google-cloud-core:2.31.0'
+
+  // The gcs-connector complains about missing protobuf-java classes.
+  // Adding the dependency here to make it work.
+  implementation "com.google.protobuf:protobuf-java:3.23.2"
 }
 
 jar {
