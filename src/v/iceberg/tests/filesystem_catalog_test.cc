@@ -170,3 +170,77 @@ TEST_F(FileSystemCatalogTest, TestCommit) {
     ASSERT_FALSE(hint_exists_res.has_error());
     ASSERT_FALSE(hint_exists_res.value());
 }
+
+TEST_F(FileSystemCatalogTest, TestDrop) {
+    const table_identifier id{.ns = {"ns"}, .table = "table"};
+
+    // Try dropping a non-existent table
+    {
+        auto res = catalog.drop_table(id, /*purge=*/true).get();
+        ASSERT_TRUE(res.has_error());
+        ASSERT_EQ(res.error(), catalog::errc::not_found);
+    }
+
+    // Create a table and do a metadata update
+    {
+        auto create_res
+          = catalog.create_table(id, schema{}, partition_spec{}).get();
+        ASSERT_FALSE(create_res.has_error());
+
+        transaction txn(std::move(create_res.value()));
+        auto set_schema_res = txn
+                                .set_schema(schema{
+                                  .schema_struct = std::get<struct_type>(
+                                    test_nested_schema_type()),
+                                  .schema_id = schema::id_t{1},
+                                  .identifier_field_ids = {},
+                                })
+                                .get();
+        ASSERT_FALSE(set_schema_res.has_error());
+        auto tx_res = catalog.commit_txn(id, std::move(txn)).get();
+        ASSERT_FALSE(tx_res.has_error());
+    }
+
+    table_io io(remote(), bucket_name);
+    const auto v1_meta_path = table_metadata_path{
+      "test/ns/table/metadata/v1.metadata.json"};
+    const auto vhint_path = version_hint_path{
+      "test/ns/table/metadata/version-hint.text"};
+
+    // check the metadata files are there
+    {
+        auto meta_res = io.download_table_meta(v1_meta_path).get();
+        ASSERT_FALSE(meta_res.has_error());
+        auto vhint_res = io.download_version_hint(vhint_path).get();
+        ASSERT_FALSE(vhint_res.has_error());
+    }
+
+    // drop the table
+    {
+        auto res = catalog.drop_table(id, /*purge=*/true).get();
+        ASSERT_FALSE(res.has_error());
+    }
+
+    // check that the table is indeed deleted
+    {
+        auto load_res = catalog.load_table(id).get();
+        ASSERT_TRUE(load_res.has_error());
+        ASSERT_EQ(load_res.error(), catalog::errc::not_found);
+
+        auto meta_res = io.download_table_meta(v1_meta_path).get();
+        ASSERT_TRUE(meta_res.has_error());
+        EXPECT_EQ(meta_res.error(), metadata_io::errc::failed);
+
+        auto vhint_res = io.download_version_hint(vhint_path).get();
+        ASSERT_TRUE(vhint_res.has_error());
+        EXPECT_EQ(vhint_res.error(), metadata_io::errc::failed);
+    }
+
+    // check that we can create another instance of the same table
+    {
+        auto create_res
+          = catalog.create_table(id, schema{}, partition_spec{}).get();
+        ASSERT_FALSE(create_res.has_error());
+        ASSERT_EQ(create_res.value().last_sequence_number, sequence_number{0});
+    }
+}
