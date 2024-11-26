@@ -356,12 +356,12 @@ coordinator::sync_add_files(
     if (repl_res.has_error()) {
         co_return convert_stm_errc(repl_res.error());
     }
-
+    // query the STM once again after the scheduling point
+    topic_it = stm_->state().topic_to_state.find(tp.topic);
     // Check that the resulting state matches that expected by the caller.
     // NOTE: a mismatch here just means there was a race to update the STM, and
     // this should be handled by callers.
     // TODO: would be nice to encapsulate this in some update validator.
-
     if (
       topic_it == stm_->state().topic_to_state.end()
       || topic_it->second.revision != topic_revision) {
