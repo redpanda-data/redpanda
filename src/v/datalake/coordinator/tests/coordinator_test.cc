@@ -116,7 +116,7 @@ ss::future<> file_adder_loop(
     while (!done) {
         co_await random_sleep_ms(30);
         vlog(datalake::datalake_log.debug, "[{}] getting last added", id);
-        auto last_res = co_await n.crd.sync_get_last_added_offset(
+        auto last_res = co_await n.crd.sync_get_last_added_offsets(
           tp, topic_rev);
         if (last_res.has_error()) {
             continue;
@@ -126,7 +126,7 @@ ss::future<> file_adder_loop(
         if (ensure_res.has_error()) {
             continue;
         }
-        auto cur_last_opt = last_res.value();
+        auto cur_last_opt = last_res.value().last_added_offset;
         while (true) {
             co_await random_sleep_ms(30);
             if (cur_last_opt && cur_last_opt.value()() == last_offset) {
@@ -402,14 +402,14 @@ TEST_F(CoordinatorTest, TestLastAddedHappyPath) {
         ASSERT_FALSE(add_res.has_error()) << add_res.error();
     }
 
-    auto last_res = leader.crd.sync_get_last_added_offset(tp00, rev).get();
+    auto last_res = leader.crd.sync_get_last_added_offsets(tp00, rev).get();
     ASSERT_FALSE(last_res.has_error()) << last_res.error();
-    ASSERT_TRUE(last_res.value().has_value());
-    ASSERT_EQ(400, last_res.value().value()());
+    ASSERT_TRUE(last_res.value().last_added_offset.has_value());
+    ASSERT_EQ(400, last_res.value().last_added_offset.value()());
 
-    last_res = leader.crd.sync_get_last_added_offset(tp01, rev).get();
+    last_res = leader.crd.sync_get_last_added_offsets(tp01, rev).get();
     ASSERT_FALSE(last_res.has_error()) << last_res.error();
-    ASSERT_FALSE(last_res.value().has_value());
+    ASSERT_FALSE(last_res.value().last_added_offset.has_value());
 }
 
 TEST_F(CoordinatorTest, TestNotLeader) {
@@ -435,7 +435,7 @@ TEST_F(CoordinatorTest, TestNotLeader) {
     ASSERT_TRUE(add_res.has_error());
     EXPECT_EQ(coordinator::errc::not_leader, add_res.error());
 
-    auto last_res = non_leader.crd.sync_get_last_added_offset(tp00, rev).get();
+    auto last_res = non_leader.crd.sync_get_last_added_offsets(tp00, rev).get();
     ASSERT_TRUE(last_res.has_error()) << last_res.error();
     EXPECT_EQ(coordinator::errc::not_leader, last_res.error());
 }

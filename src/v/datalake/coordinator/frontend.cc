@@ -80,12 +80,14 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     if (!crd) {
         co_return fetch_latest_translated_offset_reply{errc::not_leader};
     }
-    auto ret = co_await crd->sync_get_last_added_offset(
+    auto ret = co_await crd->sync_get_last_added_offsets(
       req.tp, req.topic_revision);
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
-    co_return fetch_latest_translated_offset_reply{ret.value()};
+    auto& val = ret.value();
+    co_return fetch_latest_translated_offset_reply{
+      val.last_added_offset, val.last_committed_offset};
 }
 } // namespace
 

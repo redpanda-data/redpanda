@@ -65,8 +65,11 @@ public:
       model::revision_id topic_revision,
       chunked_vector<translated_offset_range>);
 
-    ss::future<checked<std::optional<kafka::offset>, errc>>
-    sync_get_last_added_offset(
+    struct last_offsets {
+        std::optional<kafka::offset> last_added_offset;
+        std::optional<kafka::offset> last_committed_offset;
+    };
+    ss::future<checked<last_offsets, errc>> sync_get_last_added_offsets(
       model::topic_partition tp, model::revision_id topic_rev);
 
     void notify_leadership(std::optional<model::node_id>);
