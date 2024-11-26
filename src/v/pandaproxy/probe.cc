@@ -50,7 +50,7 @@ void probe::setup_metrics() {
             return _request_metrics.hist().internal_histogram_logform();
         })},
       {},
-      {sm::shard_label, operation_label});
+      {sm::shard_label});
 }
 
 void probe::setup_public_metrics() {
