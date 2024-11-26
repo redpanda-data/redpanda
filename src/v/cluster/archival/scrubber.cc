@@ -123,6 +123,8 @@ ss::future<scrubber::run_result> scrubber::run(run_quota_t quota) {
     }
 
     if (_as.abort_requested()) {
+        vlog(
+          _logger.info, "Scrub abort after {} operations.", detect_result.ops);
         co_return run_result{
           .status = run_status::failed,
           .consumed = consumed,
