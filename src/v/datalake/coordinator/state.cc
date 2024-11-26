@@ -24,12 +24,25 @@ partition_state partition_state::copy() const {
     return result;
 }
 
+std::ostream& operator<<(std::ostream& o, topic_state::lifecycle_state_t s) {
+    switch (s) {
+    case topic_state::lifecycle_state_t::live:
+        return o << "live";
+    case topic_state::lifecycle_state_t::closed:
+        return o << "closed";
+    case topic_state::lifecycle_state_t::purged:
+        return o << "purged";
+    }
+}
+
 topic_state topic_state::copy() const {
     topic_state result;
+    result.revision = revision;
     result.pid_to_pending_files.reserve(pid_to_pending_files.size());
     for (const auto& [id, state] : pid_to_pending_files) {
         result.pid_to_pending_files[id] = state.copy();
     }
+    result.lifecycle_state = lifecycle_state;
     return result;
 }
 
@@ -54,6 +67,15 @@ topics_state topics_state::copy() const {
         result.topic_to_state[id] = state.copy();
     }
     return result;
+}
+
+bool topic_state::has_pending_entries() const {
+    for (const auto& [_, partition_state] : pid_to_pending_files) {
+        if (!partition_state.pending_entries.empty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace datalake::coordinator

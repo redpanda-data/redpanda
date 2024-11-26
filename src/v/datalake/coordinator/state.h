@@ -81,10 +81,31 @@ struct partition_state
 struct topic_state
   : public serde::
       envelope<topic_state, serde::version<0>, serde::compat_version<0>> {
-    auto serde_fields() { return std::tie(pid_to_pending_files); }
+    auto serde_fields() {
+        return std::tie(revision, pid_to_pending_files, lifecycle_state);
+    }
 
+    enum class lifecycle_state_t {
+        // ready to accept new files
+        live,
+        // topic deleted, new files can't be accepted (but already accepted
+        // files will be committed)
+        closed,
+        // all state related to this revision of the topic has been purged,
+        // files for new revisions of this topic can be accepted.
+        // TODO: GC purged topic states
+        purged,
+    };
+    friend std::ostream&
+    operator<<(std::ostream&, topic_state::lifecycle_state_t);
+
+    bool has_pending_entries() const;
+
+    // Topic revision
+    model::revision_id revision;
     // Map from Redpanda partition id to the files pending per partition.
     chunked_hash_map<model::partition_id, partition_state> pid_to_pending_files;
+    lifecycle_state_t lifecycle_state = lifecycle_state_t::live;
 
     topic_state copy() const;
 

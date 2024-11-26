@@ -52,6 +52,7 @@ redpanda_cc_library(
 #        "//src/v/cluster",
 #        "//src/v/datalake:cloud_data_io",
 #        "//src/v/datalake:logger",
+#        "//src/v/datalake:table_creator",
 #        "//src/v/datalake:types",
 #        "//src/v/datalake:writer",
 #        "//src/v/datalake/coordinator:frontend",

@@ -9,11 +9,13 @@
  */
 #pragma once
 
+#include "cluster/fwd.h"
 #include "config/property.h"
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/fwd.h"
 #include "model/fundamental.h"
 
 namespace datalake::coordinator {
@@ -27,23 +29,46 @@ public:
     enum class errc {
         not_leader,
         stm_apply_error,
+        revision_mismatch,
+        incompatible_schema,
         timedout,
         shutting_down,
+        failed,
     };
+    using remove_tombstone_f
+      = ss::noncopyable_function<ss::future<checked<std::nullopt_t, errc>>(
+        const model::topic&, model::revision_id)>;
     coordinator(
       ss::shared_ptr<coordinator_stm> stm,
+      cluster::topic_table& topics,
+      table_creator& table_creator,
+      remove_tombstone_f remove_tombstone,
       file_committer& file_committer,
       config::binding<std::chrono::milliseconds> commit_interval)
       : stm_(std::move(stm))
+      , topic_table_(topics)
+      , table_creator_(table_creator)
+      , remove_tombstone_(std::move(remove_tombstone))
       , file_committer_(file_committer)
       , commit_interval_(std::move(commit_interval)) {}
 
     void start();
     ss::future<> stop_and_wait();
+
+    ss::future<checked<std::nullopt_t, errc>> sync_ensure_table_exists(
+      model::topic topic,
+      model::revision_id topic_revision,
+      record_schema_components);
+
     ss::future<checked<std::nullopt_t, errc>> sync_add_files(
-      model::topic_partition tp, chunked_vector<translated_offset_range>);
+      model::topic_partition tp,
+      model::revision_id topic_revision,
+      chunked_vector<translated_offset_range>);
+
     ss::future<checked<std::optional<kafka::offset>, errc>>
-    sync_get_last_added_offset(model::topic_partition tp);
+    sync_get_last_added_offset(
+      model::topic_partition tp, model::revision_id topic_rev);
+
     void notify_leadership(std::optional<model::node_id>);
 
     bool leader_loop_running() const { return term_as_.has_value(); }
@@ -62,7 +87,13 @@ private:
     ss::future<checked<std::nullopt_t, errc>>
       run_until_term_change(model::term_id);
 
+    ss::future<checked<ss::stop_iteration, errc>>
+    update_lifecycle_state(const model::topic&, model::term_id);
+
     ss::shared_ptr<coordinator_stm> stm_;
+    cluster::topic_table& topic_table_;
+    table_creator& table_creator_;
+    remove_tombstone_f remove_tombstone_;
     file_committer& file_committer_;
     config::binding<std::chrono::milliseconds> commit_interval_;
 

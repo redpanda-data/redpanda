@@ -103,8 +103,14 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     if (tp_it == state.topic_to_state.end()) {
         co_return chunked_vector<mark_files_committed_update>{};
     }
+    if (
+      tp_it->second.lifecycle_state == topic_state::lifecycle_state_t::purged) {
+        co_return chunked_vector<mark_files_committed_update>{};
+    }
+    auto topic_revision = tp_it->second.revision;
+
     auto table_id = table_id_for_topic(topic);
-    auto table_res = co_await load_or_create_table(table_id);
+    auto table_res = co_await load_table(table_id);
     if (table_res.has_error()) {
         co_return table_res.error();
     }
@@ -120,6 +126,14 @@ iceberg_file_committer::commit_topic_files_to_catalog(
         co_return errc::failed;
     }
     auto iceberg_commit_meta_opt = meta_res.value();
+
+    // update the iterator after a scheduling point
+    tp_it = state.topic_to_state.find(topic);
+    if (
+      tp_it == state.topic_to_state.end()
+      || tp_it->second.revision != topic_revision) {
+        co_return chunked_vector<mark_files_committed_update>{};
+    }
 
     chunked_hash_map<model::partition_id, kafka::offset> pending_commits;
     chunked_vector<iceberg::data_file> icb_files;
@@ -162,7 +176,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     for (const auto& [pid, committed_offset] : pending_commits) {
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
-          state, tp, committed_offset);
+          state, tp, topic_revision, committed_offset);
         if (update_res.has_error()) {
             vlog(
               datalake_log.warn,
@@ -203,6 +217,20 @@ iceberg_file_committer::commit_topic_files_to_catalog(
     }
     co_return updates;
 }
+
+ss::future<checked<std::nullopt_t, file_committer::errc>>
+iceberg_file_committer::drop_table(const model::topic& topic) const {
+    auto table_id = table_id_for_topic(topic);
+    auto drop_res = co_await catalog_.drop_table(table_id, true);
+    if (
+      drop_res.has_error()
+      && drop_res.error() != iceberg::catalog::errc::not_found) {
+        co_return log_and_convert_catalog_errc(
+          drop_res.error(), fmt::format("Failed to drop {}", table_id));
+    }
+    co_return std::nullopt;
+}
+
 iceberg::table_identifier
 iceberg_file_committer::table_id_for_topic(const model::topic& t) const {
     return iceberg::table_identifier{
@@ -213,13 +241,12 @@ iceberg_file_committer::table_id_for_topic(const model::topic& t) const {
 }
 
 ss::future<checked<iceberg::table_metadata, file_committer::errc>>
-iceberg_file_committer::load_or_create_table(
+iceberg_file_committer::load_table(
   const iceberg::table_identifier& table_id) const {
-    auto res = co_await catalog_.load_or_create_table(
-      table_id, schemaless_struct_type(), hour_partition_spec());
+    auto res = co_await catalog_.load_table(table_id);
     if (res.has_error()) {
         co_return log_and_convert_catalog_errc(
-          res.error(), fmt::format("Failed to load or create {}", table_id));
+          res.error(), fmt::format("Failed to load table {}", table_id));
     }
     co_return std::move(res.value());
 }

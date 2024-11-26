@@ -23,7 +23,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir,
   model::partition_id p_id,
   model::revision_id rev,
-  model::initial_revision_id init_rev) const {
+  model::revision_id topic_rev,
+  model::initial_revision_id remote_rev) const {
     auto has_overrides = properties.has_overrides() || is_internal();
     std::unique_ptr<storage::ntp_config::default_overrides> overrides = nullptr;
 
@@ -65,7 +66,8 @@ storage::ntp_config topic_configuration::make_ntp_config(
       work_dir,
       std::move(overrides),
       rev,
-      init_rev};
+      topic_rev,
+      remote_rev};
 }
 
 void topic_configuration::serde_write(iobuf& out) {

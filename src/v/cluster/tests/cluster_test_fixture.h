@@ -69,7 +69,7 @@ public:
         std::filesystem::remove_all(std::filesystem::path(_base_dir));
     }
 
-    virtual fixture_ptr make_redpanda_fixture(
+    fixture_ptr make_redpanda_fixture(
       model::node_id node_id,
       int16_t kafka_port,
       int16_t rpc_port,
@@ -82,7 +82,8 @@ public:
       = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
-      bool enable_legacy_upload_mode = true) {
+      bool enable_legacy_upload_mode = true,
+      bool iceberg_enabled = false) {
         return std::make_unique<redpanda_thread_fixture>(
           node_id,
           kafka_port,
@@ -100,7 +101,8 @@ public:
           empty_seed_starts_cluster_val,
           std::nullopt,
           false,
-          enable_legacy_upload_mode);
+          enable_legacy_upload_mode,
+          iceberg_enabled);
     }
 
     void add_node(
@@ -117,7 +119,8 @@ public:
       = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
-      bool enable_legacy_upload_mode = true) {
+      bool enable_legacy_upload_mode = true,
+      bool iceberg_enabled = false) {
         _instances.emplace(
           node_id,
           make_redpanda_fixture(
@@ -132,7 +135,8 @@ public:
             s3_config,
             archival_cfg,
             cloud_cfg,
-            enable_legacy_upload_mode));
+            enable_legacy_upload_mode,
+            iceberg_enabled));
     }
 
     application* get_node_application(model::node_id id) {
@@ -165,7 +169,8 @@ public:
       = std::nullopt,
       std::optional<archival::configuration> archival_cfg = std::nullopt,
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
-      bool legacy_upload_mode_enabled = true) {
+      bool legacy_upload_mode_enabled = true,
+      bool iceberg_enabled = false) {
         std::vector<config::seed_server> seeds = {};
         if (!empty_seed_starts_cluster_val || node_id != 0) {
             seeds.push_back(
@@ -183,7 +188,8 @@ public:
           s3_config,
           archival_cfg,
           cloud_cfg,
-          legacy_upload_mode_enabled);
+          legacy_upload_mode_enabled,
+          iceberg_enabled);
         return get_node_application(node_id);
     }
 
@@ -320,6 +326,25 @@ public:
     }
 
 protected:
+    std::vector<model::node_id> instance_ids() const {
+        std::vector<model::node_id> ret;
+        for (const auto& [id, _] : _instances) {
+            ret.push_back(id);
+        }
+        return ret;
+    }
+
+    model::node_id next_node_id() const {
+        model::node_id max;
+        for (const auto& [id, _] : _instances) {
+            max = std::max(max, id);
+        }
+        if (max < 0) {
+            return model::node_id{0};
+        }
+        return max + model::node_id{1};
+    }
+
     redpanda_thread_fixture* instance(model::node_id id) {
         return _instances[id].get();
     }

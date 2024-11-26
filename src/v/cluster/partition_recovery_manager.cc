@@ -711,7 +711,7 @@ partition_downloader::download_segment_file(
     auto stream_stats = cloud_storage::stream_stats{};
     auto remote_path = cloud_storage::remote_segment_path(
       _remote_path_provider.segment_path(
-        _ntpc.ntp(), _ntpc.get_initial_revision(), segm));
+        _ntpc.ntp(), _ntpc.get_remote_revision(), segm));
 
     auto stream = [this,
                    &stream_stats,

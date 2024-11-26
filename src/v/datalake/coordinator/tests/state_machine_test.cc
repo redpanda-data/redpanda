@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cluster/data_migrated_resources.h"
+#include "cluster/topic_table.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
@@ -46,7 +48,14 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
             auto stm = get_stm<0>(node);
             coordinators[node.get_vnode()]
               = std::make_unique<datalake::coordinator::coordinator>(
-                get_stm<0>(node), file_committer, commit_interval());
+                get_stm<0>(node),
+                topic_table,
+                table_creator,
+                [this](const model::topic& t, model::revision_id r) {
+                    return remove_tombstone(t, r);
+                },
+                file_committer,
+                commit_interval());
             coordinators[node.get_vnode()]->start();
             return ss::now();
         });
@@ -115,8 +124,18 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
             random_generators::get_int<int32_t>(0, max_partitions - 1))};
     }
 
+    ss::future<
+      checked<std::nullopt_t, datalake::coordinator::coordinator::errc>>
+    remove_tombstone(const model::topic&, model::revision_id) {
+        co_return std::nullopt;
+    }
+
     static constexpr int32_t max_partitions = 5;
     model::topic_partition tp{model::topic{"test"}, model::partition_id{0}};
+    model::revision_id rev{123};
+    cluster::data_migrations::migrated_resources mr;
+    cluster::topic_table topic_table{mr};
+    datalake::coordinator::noop_table_creator table_creator;
     datalake::coordinator::simple_file_committer file_committer;
     absl::flat_hash_map<raft::vnode, coordinator> coordinators;
 };
@@ -135,7 +154,7 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
         auto add_files_result = co_await retry_with_leader_coordinator(
           [&, this](coordinator& coordinator) mutable {
               auto tp = random_tp();
-              return coordinator->sync_get_last_added_offset(tp).then(
+              return coordinator->sync_get_last_added_offset(tp, rev).then(
                 [&, tp](auto result) {
                     if (!result) {
                         return ss::make_ready_future<bool>(false);
@@ -150,12 +169,24 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
                         next_offset = next_offset + 6;
                     }
                     return coordinator
-                      ->sync_add_files(
-                        tp,
-                        datalake::coordinator::make_pending_files(offset_pairs))
-                      .then([](auto result) {
-                          return ss::make_ready_future<bool>(
-                            result.has_value());
+                      ->sync_ensure_table_exists(
+                        tp.topic, rev, datalake::record_schema_components{})
+                      .then([this, tp, offset_pairs, &coordinator](
+                              auto ensure_res) {
+                          if (!ensure_res) {
+                              return ss::make_ready_future<bool>(false);
+                          }
+
+                          return coordinator
+                            ->sync_add_files(
+                              tp,
+                              rev,
+                              datalake::coordinator::make_pending_files(
+                                offset_pairs))
+                            .then([](auto result) {
+                                return ss::make_ready_future<bool>(
+                                  result.has_value());
+                            });
                       });
                 });
           });

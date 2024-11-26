@@ -170,55 +170,121 @@ ss::future<std::error_code>
 topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
 
-    if (soft_del.mode == topic_lifecycle_transition_mode::pending_gc) {
-        // Create a lifecycle marker
+    switch (soft_del.mode) {
+    case topic_lifecycle_transition_mode::pending_gc: {
         auto tp = _topics.find(soft_del.topic.nt);
         if (tp == _topics.end()) {
             return ss::make_ready_future<std::error_code>(
               errc::topic_not_exists);
         }
 
-        auto tombstone = nt_lifecycle_marker{
-          .config = tp->second.get_configuration(),
-          .initial_revision_id = tp->second.get_remote_revision().value_or(
-            model::initial_revision_id(tp->second.get_revision())),
-          .timestamp = ss::lowres_system_clock::now()};
+        // Create lifecycle markers
 
-        _lifecycle_markers.emplace(soft_del.topic, tombstone);
-        vlog(
-          clusterlog.debug,
-          "Created lifecycle marker for topic {} {}",
-          soft_del.topic.nt,
-          soft_del.topic.initial_revision_id);
-    } else if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
-        if (_lifecycle_markers.contains(soft_del.topic)) {
+        const auto& topic_properties
+          = tp->second.get_configuration().properties;
+
+        if (topic_properties.requires_remote_erase()) {
+            auto tombstone = nt_lifecycle_marker{
+              .config = tp->second.get_configuration(),
+              .initial_revision_id = tp->second.get_remote_revision().value_or(
+                model::initial_revision_id(tp->second.get_revision())),
+              .timestamp = ss::lowres_system_clock::now()};
+
+            _lifecycle_markers.emplace(soft_del.topic, tombstone);
             vlog(
               clusterlog.debug,
-              "Purged lifecycle marker for {} {}",
+              "Created lifecycle marker for topic {} {}",
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
-            _lifecycle_markers.erase(soft_del.topic);
-            return ss::make_ready_future<std::error_code>(errc::success);
-        } else {
+        }
+
+        if (
+          topic_properties.iceberg_mode != model::iceberg_mode::disabled
+          && topic_properties.iceberg_delete.value_or(
+            config::shard_local_cfg().iceberg_delete())) {
+            // Note that for iceberg tombstones we use topic.get_revision()
+            // (i.e. revision that got assigned to the topic at creation time)
+            // and not topic.get_remote_revision() (which may be an earlier
+            // revision if the topic was recovered from cloud storage).
+            auto tombstone = nt_iceberg_tombstone{
+              .last_deleted_revision = tp->second.get_revision()};
+            auto it = _iceberg_tombstones.emplace(tp->first, tombstone).first;
+            it->second.last_deleted_revision = std::max(
+              it->second.last_deleted_revision, tp->second.get_revision());
+
             vlog(
-              clusterlog.info,
-              "Unexpected record at offset {} to drop non-existent lifecycle "
-              "marker {} {}",
-              offset,
+              clusterlog.debug,
+              "created iceberg tombstone for topic {} (revision: {})",
+              it->first,
+              it->second.last_deleted_revision);
+        }
+
+        [[fallthrough]]; // proceed to local deletion
+    }
+    case topic_lifecycle_transition_mode::oneshot_delete:
+    case topic_lifecycle_transition_mode::delete_migrated:
+        return ssx::now(do_local_delete(
+          soft_del.topic.nt,
+          offset,
+          soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
+    case topic_lifecycle_transition_mode::purged:
+        switch (soft_del.domain) {
+        case topic_purge_domain::cloud_storage: {
+            if (_lifecycle_markers.contains(soft_del.topic)) {
+                vlog(
+                  clusterlog.debug,
+                  "Purged cloud storage lifecycle marker for {} {}",
+                  soft_del.topic.nt,
+                  soft_del.topic.initial_revision_id);
+                _lifecycle_markers.erase(soft_del.topic);
+                return ss::make_ready_future<std::error_code>(errc::success);
+            } else {
+                vlog(
+                  clusterlog.info,
+                  "Unexpected record at offset {} to drop non-existent "
+                  "lifecycle marker {} {}",
+                  offset,
+                  soft_del.topic.nt,
+                  soft_del.topic.initial_revision_id);
+                return ss::make_ready_future<std::error_code>(
+                  errc::topic_not_exists);
+            }
+        }
+        case topic_purge_domain::iceberg: {
+            auto tombstone_it = _iceberg_tombstones.find(soft_del.topic.nt);
+            if (tombstone_it == _iceberg_tombstones.end()) {
+                return ss::make_ready_future<std::error_code>(
+                  errc::topic_not_exists);
+            }
+
+            model::revision_id purged_revision{
+              soft_del.topic.initial_revision_id};
+            if (tombstone_it->second.last_deleted_revision > purged_revision) {
+                return ss::make_ready_future<std::error_code>(
+                  errc::concurrent_modification_error);
+            }
+
+            vlog(
+              clusterlog.debug,
+              "Purged iceberg tombstone for {} {}",
+              tombstone_it->first,
+              tombstone_it->second.last_deleted_revision);
+
+            _iceberg_tombstones.erase(tombstone_it);
+            return ss::make_ready_future<std::error_code>(errc::success);
+        }
+        default:
+            vlog(
+              clusterlog.error,
+              "Unknown purge domain {} for topic {} (initial rev: {}). "
+              "This is a bug.",
+              static_cast<int>(soft_del.domain),
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
             return ss::make_ready_future<std::error_code>(
-              errc::topic_not_exists);
+              errc::invalid_request);
         }
     }
-
-    if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
-        return ssx::now<std::error_code>(errc::success);
-    }
-    return ssx::now(do_local_delete(
-      soft_del.topic.nt,
-      offset,
-      soft_del.mode == topic_lifecycle_transition_mode::delete_migrated));
 }
 
 ss::future<std::error_code>
@@ -1532,6 +1598,9 @@ ss::future<> topic_table::apply_snapshot(
 
     reset_partitions_to_force_reconfigure(
       controller_snap.topics.partitions_to_force_recover);
+
+    _iceberg_tombstones.replace(
+      controller_snap.topics.iceberg_tombstones.values().copy());
 
     // 2. re-calculate derived state
 

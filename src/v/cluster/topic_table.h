@@ -263,6 +263,12 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
+    using iceberg_tombstones_t = chunked_hash_map<
+      model::topic_namespace,
+      nt_iceberg_tombstone,
+      model::topic_namespace_hash,
+      model::topic_namespace_eq>;
+
     using topic_delta = topic_table_topic_delta;
 
     using topic_delta_cb_t
@@ -559,7 +565,7 @@ public:
     size_t get_node_partition_count(model::node_id) const;
 
     /**
-     * See which topics have pending deletion work
+     * See which topics have pending cloud storage deletion work
      */
     const lifecycle_markers_t& get_lifecycle_markers() const {
         return _lifecycle_markers;
@@ -605,6 +611,11 @@ public:
 
     bool is_disabled(const model::ntp& ntp) const {
         return is_disabled(model::topic_namespace_view{ntp}, ntp.tp.partition);
+    }
+
+    // Get a set of topics with pending iceberg deletion work.
+    const iceberg_tombstones_t& get_iceberg_tombstones() const {
+        return _iceberg_tombstones;
     }
 
     auto topics_iterator_begin() const {
@@ -700,6 +711,7 @@ private:
     underlying_t _topics;
     lifecycle_markers_t _lifecycle_markers;
     disabled_partitions_t _disabled_partitions;
+    iceberg_tombstones_t _iceberg_tombstones;
     size_t _partition_count{0};
 
     updates_t _updates_in_progress;

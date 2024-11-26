@@ -32,9 +32,30 @@ errc to_rpc_errc(coordinator::errc e) {
         return errc::not_leader;
     case coordinator::errc::stm_apply_error:
         return errc::stale;
+    case coordinator::errc::revision_mismatch:
+        return errc::revision_mismatch;
+    case coordinator::errc::incompatible_schema:
+        return errc::incompatible_schema;
     case coordinator::errc::timedout:
         return errc::timeout;
+    case coordinator::errc::failed:
+        return errc::failed;
     }
+}
+ss::future<ensure_table_exists_reply> do_ensure_table_exists(
+  coordinator_manager& mgr,
+  model::ntp coordinator_ntp,
+  ensure_table_exists_request req) {
+    auto crd = mgr.get(coordinator_ntp);
+    if (!crd) {
+        co_return ensure_table_exists_reply{errc::not_leader};
+    }
+    auto ret = co_await crd->sync_ensure_table_exists(
+      req.topic, req.topic_revision, std::move(req.schema_components));
+    if (ret.has_error()) {
+        co_return to_rpc_errc(ret.error());
+    }
+    co_return ensure_table_exists_reply{errc::ok};
 }
 ss::future<add_translated_data_files_reply> add_files(
   coordinator_manager& mgr,
@@ -44,7 +65,8 @@ ss::future<add_translated_data_files_reply> add_files(
     if (!crd) {
         co_return add_translated_data_files_reply{errc::not_leader};
     }
-    auto ret = co_await crd->sync_add_files(req.tp, std::move(req.ranges));
+    auto ret = co_await crd->sync_add_files(
+      req.tp, req.topic_revision, std::move(req.ranges));
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
@@ -58,7 +80,8 @@ ss::future<fetch_latest_translated_offset_reply> fetch_latest_offset(
     if (!crd) {
         co_return fetch_latest_translated_offset_reply{errc::not_leader};
     }
-    auto ret = co_await crd->sync_get_last_added_offset(req.tp);
+    auto ret = co_await crd->sync_get_last_added_offset(
+      req.tp, req.topic_revision);
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }
@@ -110,7 +133,7 @@ auto frontend::process(req_t req, bool local_only) {
             return ss::make_ready_future<resp_t>(
               resp_t{errc::coordinator_topic_not_exists});
         }
-        auto cp = coordinator_partition(req.topic_partition().topic);
+        auto cp = coordinator_partition(req.get_topic());
         if (!cp) {
             return ss::make_ready_future<resp_t>(
               resp_t{errc::coordinator_topic_not_exists});
@@ -250,6 +273,31 @@ ss::future<bool> frontend::ensure_topic_exists() {
           e);
         co_return false;
     }
+}
+
+ss::future<ensure_table_exists_reply> frontend::ensure_table_exists_locally(
+  ensure_table_exists_request request,
+  const model::ntp& coordinator_partition,
+  ss::shard_id shard) {
+    co_return co_await _coordinator_mgr->invoke_on(
+      shard,
+      [coordinator_partition,
+       req = std::move(request)](coordinator_manager& mgr) mutable {
+          auto partition = mgr.get(coordinator_partition);
+          if (!partition) {
+              return ssx::now(ensure_table_exists_reply{errc::not_leader});
+          }
+          return do_ensure_table_exists(
+            mgr, coordinator_partition, std::move(req));
+      });
+}
+
+ss::future<ensure_table_exists_reply> frontend::ensure_table_exists(
+  ensure_table_exists_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &frontend::ensure_table_exists_locally,
+      &client::ensure_table_exists>(std::move(request), bool(local_only_exec));
 }
 
 ss::future<add_translated_data_files_reply>
