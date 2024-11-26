@@ -317,6 +317,21 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "produce_consume_test",
+    timeout = "short",
+    srcs = [
+        "produce_consume_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":disk_log_builder",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "scoped_file_tracker_test",
     timeout = "short",
