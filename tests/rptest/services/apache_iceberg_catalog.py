@@ -108,8 +108,14 @@ class IcebergRESTCatalog(Service):
                 s3_prefix = "s3a"
             self.cloud_storage_warehouse = f"{s3_prefix}://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
         elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            self.cloud_storage_warehouse = f"gs://{self.cloud_storage_bucket}/{self.cloud_storage_catalog_prefix}"
+        elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
             self.cloud_storage_warehouse = f"abfss://{self.cloud_storage_bucket}@{self.credentials.endpoint}/{self.cloud_storage_catalog_prefix}"
+        else:
+            raise ValueError(
+                f"Unsupported credential type: {type(self.credentials)}")
 
     def set_filesystem_wrapper_mode(self, mode: bool):
         self.filesystem_wrapper_mode = mode
@@ -128,6 +134,9 @@ class IcebergRESTCatalog(Service):
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.aws.s3.S3FileIO"
+        elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            env["CATALOG_IO__IMPL"] = "org.apache.iceberg.gcp.gcs.GCSFileIO"
         elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
             env["CATALOG_IO__IMPL"] = "org.apache.iceberg.azure.adlsv2.ADLSFileIO"
@@ -169,6 +178,9 @@ class IcebergRESTCatalog(Service):
                         cloud_storage.AWSInstanceMetadataCredentials):
             pass
         elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
+            pass
+        elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):
             # Legancy pyiceberg https://github.com/apache/iceberg-python/issues/866
             conf["adlfs.account-name"] = self.credentials.account_name
@@ -205,6 +217,9 @@ class IcebergRESTCatalog(Service):
             })
         elif isinstance(self.credentials,
                         cloud_storage.AWSInstanceMetadataCredentials):
+            pass
+        elif isinstance(self.credentials,
+                        cloud_storage.GCPInstanceMetadataCredentials):
             pass
         elif isinstance(self.credentials,
                         cloud_storage.ABSSharedKeyCredentials):

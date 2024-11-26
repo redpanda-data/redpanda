@@ -73,7 +73,7 @@ class DatalakeE2ETests(RedpandaTest):
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types(),
             query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            filesystem_catalog_mode=[True])
+            filesystem_catalog_mode=[False, True])
     def test_e2e_basic(self, cloud_storage_type, query_engine,
                        filesystem_catalog_mode):
         # Create a topic
