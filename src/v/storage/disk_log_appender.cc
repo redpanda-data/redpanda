@@ -50,7 +50,7 @@ ss::future<> disk_log_appender::initialize() {
 }
 
 bool disk_log_appender::segment_is_appendable(model::term_id batch_term) const {
-    if (!_seg || !_seg->has_appender()) {
+    if (!_seg || !_seg->has_appender() || _seg->is_tombstone()) {
         // The latest segment with which this log_appender has called
         // initialize() has been rolled and no longer has an segment appender
         // (e.g. because segment.ms rolled onto a new segment). There is likely
