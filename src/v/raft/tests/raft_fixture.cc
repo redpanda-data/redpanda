@@ -94,7 +94,9 @@ ss::lw_shared_ptr<consensus> channel::raft() {
 ss::future<> channel::dispatch_loop() {
     while (!_as.abort_requested()) {
         co_await _new_messages.wait([this] { return !_messages.empty(); });
-
+        if (_messages.empty()) {
+            continue;
+        }
         auto msg = std::move(_messages.front());
         _messages.pop_front();
         iobuf_parser req_parser(std::move(msg.req_data));
