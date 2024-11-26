@@ -368,6 +368,19 @@ void partition_translator::update_translation_lag(
     _partition->probe().update_iceberg_translation_offset_lag(offset_lag);
 }
 
+void partition_translator::update_commit_lag(
+  std::optional<kafka::offset> max_committed_offset) const {
+    auto max_translatable_offset = max_offset_for_translation();
+    if (
+      !max_translatable_offset
+      || max_translatable_offset.value() < kafka::offset{0}) {
+        return;
+    }
+    auto offset_lag = max_translatable_offset.value()
+                      - max_committed_offset.value_or(kafka::offset{-1});
+    _partition->probe().update_iceberg_commit_offset_lag(offset_lag);
+}
+
 ss::future<partition_translator::checkpoint_result>
 partition_translator::checkpoint_translated_data(
   retry_chain_node& rcn,
@@ -429,6 +442,7 @@ partition_translator::reconcile_with_coordinator() {
         vlog(_logger.warn, "reconciliation failed, response: {}", resp);
         co_return std::nullopt;
     }
+    update_commit_lag(resp.last_iceberg_committed_offset);
     // No file entry signifies the translation was just enabled on the
     // topic. In such a case we start translation from the local start
     // of the log. The underlying assumption is that there is a reasonable
