@@ -106,8 +106,24 @@ filesystem_catalog::load_table(const table_identifier& table_ident) {
 }
 
 ss::future<checked<void, catalog::errc>>
-filesystem_catalog::drop_table(const table_identifier&, bool) {
-    // TODO: implement
+filesystem_catalog::drop_table(const table_identifier& table_id, bool) {
+    // Check that the table exists.
+    auto current_tmeta = co_await read_table_meta(table_id);
+    if (current_tmeta.has_error()) {
+        co_return current_tmeta.error();
+    }
+
+    // delete metadata
+    auto delete_res = co_await table_io_.delete_all_metadata(
+      metadata_location_path{
+        fmt::format("{}/metadata/", table_location(table_id))});
+    if (delete_res.has_error()) {
+        vlog(log.warn, "dropping table {} failed", table_id);
+        co_return to_catalog_errc(delete_res.error());
+    }
+
+    // TODO: support purging data
+
     co_return outcome::success();
 }
 
