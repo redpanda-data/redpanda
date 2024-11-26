@@ -1142,12 +1142,13 @@ offset_delta_time should_apply_delta_time_offset(
 }
 
 ss::future<> mark_segment_as_finished_window_compaction(
-  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp) {
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp, probe& pb) {
     seg->mark_as_finished_windowed_compaction();
     if (set_clean_compact_timestamp) {
         bool did_set = seg->index().maybe_set_clean_compact_timestamp(
           model::timestamp::now());
         if (did_set) {
+            pb.add_cleanly_compacted_segment();
             return seg->index().flush();
         }
     }

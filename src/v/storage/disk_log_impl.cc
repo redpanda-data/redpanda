@@ -616,7 +616,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // compacted.
         auto seg = segs.front();
         co_await internal::mark_segment_as_finished_window_compaction(
-          seg, true);
+          seg, true, *_probe);
         segs.pop_front();
     }
     if (segs.empty()) {
@@ -707,7 +707,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             // entirely comprised of non-data batches. Mark it as compacted so
             // we can progress through compactions.
             co_await internal::mark_segment_as_finished_window_compaction(
-              seg, is_clean_compacted);
+              seg, is_clean_compacted, *_probe);
 
             vlog(
               gclog.debug,
@@ -722,7 +722,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             // All data records are already compacted away. Skip to avoid a
             // needless rewrite.
             co_await internal::mark_segment_as_finished_window_compaction(
-              seg, is_clean_compacted);
+              seg, is_clean_compacted, *_probe);
 
             vlog(
               gclog.trace,
@@ -822,7 +822,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // Mark the segment as completed window compaction, and possibly set the
         // clean_compact_timestamp in it's index.
         co_await internal::mark_segment_as_finished_window_compaction(
-          seg, is_clean_compacted);
+          seg, is_clean_compacted, *_probe);
 
         co_await seg->index().flush();
         co_await ss::rename_file(
