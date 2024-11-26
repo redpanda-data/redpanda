@@ -48,6 +48,11 @@ var testCases = []any{
 			DefinitionLevelsByteLength: 21,
 			RepetitionLevelsByteLength: 1,
 			IsCompressed:               ptr(false),
+			Statistics: format.Statistics{
+				NullCount: 42,
+				MinValue:  []byte{0xDE, 0xAD, 0xBE, 0xE0},
+				MaxValue:  []byte{0xDE, 0xAD, 0xBE, 0xEF},
+			},
 		},
 	},
 	&format.PageHeader{
@@ -120,6 +125,11 @@ var testCases = []any{
 							DataPageOffset:       2,
 							IndexPageOffset:      5,
 							DictionaryPageOffset: 9,
+							Statistics: format.Statistics{
+								NullCount: 9,
+								MinValue:  []byte{0x00},
+								MaxValue:  []byte{0xFF},
+							},
 						},
 					},
 				},
