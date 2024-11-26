@@ -551,11 +551,8 @@ segment_set disk_log_impl::find_sliding_range(
 
         buf.emplace_back(seg);
     }
-    segment_set segs(std::move(buf));
-    if (segs.empty()) {
-        return segs;
-    }
 
+    segment_set segs(std::move(buf));
     return segs;
 }
 
