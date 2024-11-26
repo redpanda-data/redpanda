@@ -1,4 +1,21 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest")
+
+redpanda_cc_bench(
+    name = "serde_bench",
+    timeout = "short",
+    srcs = [
+        "bench.cc",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/serde",
+        "@boost//:container_hash",
+        "@seastar",
+        "@seastar//:benchmark",
+    ],
+)
 
 redpanda_cc_btest(
     name = "serde_test",
