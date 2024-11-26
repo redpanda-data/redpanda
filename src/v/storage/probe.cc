@@ -215,6 +215,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of segments that have been verified through "
                           "the compaction process to be tombstone free."),
           labels),
+        sm::make_counter(
+          "complete_sliding_window_rounds",
+          [this] { return _num_rounds_window_compaction; },
+          sm::description("Number of rounds of sliding window compaction that "
+                          "have been driven to completion."),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});
