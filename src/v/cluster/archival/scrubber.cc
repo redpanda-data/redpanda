@@ -175,7 +175,8 @@ void scrubber::release() {
 ss::future<> scrubber::stop() {
     vlog(_logger.info, "Stopping scrubber ({})...", _gate.get_count());
     _as.request_abort();
-    return _gate.close();
+    co_await _gate.close();
+    vlog(_logger.info, "Stopped scrubber");
 }
 
 retry_chain_node* scrubber::get_root_retry_chain_node() { return &_root_rtc; }
