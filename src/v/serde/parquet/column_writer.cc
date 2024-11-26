@@ -160,7 +160,7 @@ public:
         full_page_data.append(std::move(encoded_def_levels));
         full_page_data.append(std::move(encoded_data));
         co_return data_page{
-          .header = header,
+          .header = std::move(header),
           .serialized_header_size = header_size,
           .serialized = std::move(full_page_data),
         };

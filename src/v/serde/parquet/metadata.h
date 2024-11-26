@@ -142,6 +142,42 @@ enum class boundary_order {
     descending = 2,
 };
 
+/**
+ * Statistics per row group and per page
+ * All fields are optional.
+ */
+struct statistics {
+    // A bound on the range of values stored in this column_chunk/page.
+    struct bound {
+        // The value of the column determined by ColumnOrder.
+        //
+        // These may be the actual minimum and maximum values found on a page or
+        // column chunk, but can also be (more compact) values that do not exist
+        // on a page or column chunk. For example, instead of storing "Blart
+        // Versenwald III", a writer may set min_value="B", max_value="C". Such
+        // more compact values must still be valid values within the column's
+        // logical type.
+        //
+        // Values are encoded using PLAIN encoding, except that variable-length
+        // byte arrays do not include a length prefix.
+        iobuf value;
+        // If the value referenced above is the actual value
+        bool is_exact = false;
+    };
+
+    /**
+     * Count of null values in the column.
+     *
+     * Writers SHOULD always write this field even if it is zero (i.e. no null
+     * value) or the column is not nullable. Readers MUST distinguish between
+     * null_count not being present and null_count == 0. If null_count is not
+     * present, readers MUST NOT assume null_count == 0.
+     */
+    std::optional<int64_t> null_count = 0;
+    std::optional<bound> max;
+    std::optional<bound> min;
+};
+
 struct index_page_header {};
 
 /**
@@ -196,6 +232,9 @@ struct data_page_header {
     compressed_page_size (included) is compressed with the compression_codec. If
     missing it is considered compressed */
     bool is_compressed;
+
+    /** Optional statistics for the data in this page **/
+    std::optional<statistics> stats;
 };
 
 struct page_header {
@@ -276,6 +315,9 @@ struct column_meta_data {
     /** Byte offset from the beginning of file to first (only) dictionary
        page **/
     std::optional<int64_t> dictionary_page_offset;
+
+    /** optional statistics for this column chunk */
+    std::optional<statistics> stats;
 };
 
 struct column_chunk {

@@ -48,6 +48,48 @@ iobuf encode(time_unit t) {
     return std::move(encoder).write_stop();
 }
 
+iobuf encode(const statistics& stats) {
+    constexpr auto null_count_field_id = thrift::field_id(3);
+    constexpr auto max_value_field_id = thrift::field_id(5);
+    constexpr auto min_value_field_id = thrift::field_id(6);
+    constexpr auto is_max_value_exact_field_id = thrift::field_id(7);
+    constexpr auto is_min_value_exact_field_id = thrift::field_id(8);
+    thrift::struct_encoder encoder;
+    if (stats.null_count) {
+        encoder.write_field(
+          null_count_field_id,
+          thrift::field_type::i64,
+          vint::to_bytes(*stats.null_count));
+    }
+    if (stats.max) {
+        encoder.write_field(
+          max_value_field_id,
+          thrift::field_type::binary,
+          thrift::encode_binary(stats.max->value.copy()));
+    }
+    if (stats.min) {
+        encoder.write_field(
+          min_value_field_id,
+          thrift::field_type::binary,
+          thrift::encode_binary(stats.min->value.copy()));
+    }
+    if (stats.max) {
+        encoder.write_field(
+          is_max_value_exact_field_id,
+          stats.max->is_exact ? thrift::field_type::boolean_true
+                              : thrift::field_type::boolean_false,
+          bytes());
+    }
+    if (stats.min) {
+        encoder.write_field(
+          is_min_value_exact_field_id,
+          stats.min->is_exact ? thrift::field_type::boolean_true
+                              : thrift::field_type::boolean_false,
+          bytes());
+    }
+    return std::move(encoder).write_stop();
+}
+
 /**
  * DEPRECATED: Common types used by frameworks(e.g. hive, pig) using
  * parquet. ConvertedType is superseded by LogicalType.  This enum should
@@ -442,6 +484,7 @@ iobuf encode(const column_meta_data& metadata) {
     constexpr auto data_page_offset_field_id = thrift::field_id(9);
     constexpr auto index_page_offset_field_id = thrift::field_id(10);
     constexpr auto dictionary_page_offset_field_id = thrift::field_id(11);
+    constexpr auto stats_field_id = thrift::field_id(12);
     thrift::struct_encoder encoder;
     enum physical_type : int8_t {
         boolean = 0,
@@ -560,6 +603,12 @@ iobuf encode(const column_meta_data& metadata) {
           dictionary_page_offset_field_id,
           thrift::field_type::i64,
           vint::to_bytes(*metadata.dictionary_page_offset));
+    }
+    if (metadata.stats) {
+        encoder.write_field(
+          stats_field_id,
+          thrift::field_type::structure,
+          encode(*metadata.stats));
     }
     return std::move(encoder).write_stop();
 }
@@ -721,6 +770,7 @@ iobuf encode(const data_page_header& header) {
     constexpr auto definition_levels_byte_length_field_id = thrift::field_id(5);
     constexpr auto repetition_levels_byte_length_field_id = thrift::field_id(6);
     constexpr auto is_compressed_field_id = thrift::field_id(7);
+    constexpr auto stats_field_id = thrift::field_id(8);
     thrift::struct_encoder encoder;
     encoder.write_field(
       num_values_field_id,
@@ -751,6 +801,10 @@ iobuf encode(const data_page_header& header) {
       header.is_compressed ? thrift::field_type::boolean_true
                            : thrift::field_type::boolean_false,
       bytes());
+    if (header.stats) {
+        encoder.write_field(
+          stats_field_id, thrift::field_type::structure, encode(*header.stats));
+    }
     return std::move(encoder).write_stop();
 }
 

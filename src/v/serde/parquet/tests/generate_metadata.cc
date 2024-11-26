@@ -56,6 +56,17 @@ iobuf serialize_testcase(size_t test_case) {
             .definition_levels_byte_length = 21,
             .repetition_levels_byte_length = 1,
             .is_compressed = false,
+            .stats = statistics{
+              .null_count = 42,
+              .max = std::make_optional<statistics::bound>(
+                iobuf::from("\xDE\xAD\xBE\xEF"),
+                false
+              ),
+              .min = std::make_optional<statistics::bound>(
+                iobuf::from("\xDE\xAD\xBE\xE0"),
+                true
+              ),
+            },
           },
         });
     case 2:
@@ -117,6 +128,17 @@ iobuf serialize_testcase(size_t test_case) {
                       .data_page_offset = 2,
                       .index_page_offset = 5,
                       .dictionary_page_offset = 9,
+                      .stats = statistics{
+                        .null_count = 9,
+                        .max = std::make_optional<statistics::bound>(
+                           iobuf::from("\xFF"),
+                           true
+                        ),
+                        .min = std::make_optional<statistics::bound>(
+                          iobuf::from(std::string_view{"\x00", 1}),
+                          false
+                        ),
+                      },
                     },
                   }
                 ),
