@@ -597,10 +597,12 @@ redpanda_test_cc_library(
 
 redpanda_cc_gtest(
     name = "raft_reconfiguration_test",
-    timeout = "moderate",
+    timeout = "long",
     srcs = [
         "raft_reconfiguration_test.cc",
     ],
+    cpu = 4,
+    memory = "2GiB",
     tags = ["exclusive"],
     deps = [
         "//src/v/base",
