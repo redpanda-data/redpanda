@@ -17,6 +17,7 @@ from rptest.services.redpanda import CloudStorageType, get_cloud_provider
 # there no fundamental reason it shouldn't work.
 ACCEPTED_VARIANTS = {("docker", CloudStorageType.S3),
                      ("aws", CloudStorageType.S3),
+                     ("gcp", CloudStorageType.S3),
                      ("azure", CloudStorageType.ABS)}
 
 

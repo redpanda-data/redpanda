@@ -59,6 +59,7 @@ size_t num_chunks(const R& r, size_t max_batch_size) {
     }
 }
 
+static constexpr auto gcs_scheme = "gs";
 static constexpr auto s3_scheme = "s3";
 
 cloud_io::provider infer_provider(
@@ -66,10 +67,11 @@ cloud_io::provider infer_provider(
   const cloud_storage_clients::client_configuration& conf) {
     switch (backend) {
     case model::cloud_storage_backend::aws:
-    case model::cloud_storage_backend::google_s3_compat:
     case model::cloud_storage_backend::minio:
     case model::cloud_storage_backend::oracle_s3_compat:
         return cloud_io::s3_compat_provider{s3_scheme};
+    case model::cloud_storage_backend::google_s3_compat:
+        return cloud_io::s3_compat_provider{gcs_scheme};
     case model::cloud_storage_backend::azure: {
         auto abs = std::get<cloud_storage_clients::abs_configuration>(conf);
         return cloud_io::abs_provider{

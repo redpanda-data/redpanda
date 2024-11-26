@@ -51,7 +51,7 @@ class Credentials(abc.ABC):
                     region=test_context.globals.get(GLOBAL_S3_REGION_KEY),
                     access_key=test_context.globals.get(GLOBAL_S3_ACCESS_KEY),
                     secret_key=test_context.globals.get(GLOBAL_S3_SECRET_KEY))
-            elif source == 'aws_instance_metadata':
+            elif source in ['aws_instance_metadata', 'gcp_instance_metadata']:
                 return Credentials._instance_metadata_credentials(
                     cloud_provider=cloud_provider)
             else:
