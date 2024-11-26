@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_segment.h"
 
+#include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
@@ -37,6 +38,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -1663,7 +1665,18 @@ ss::future<> hydration_loop_state::hydrate(size_t wait_list_size) {
             fs.push_back(state.hydrate_action());
             break;
         case cache_element_status::in_progress:
-            vassert(false, "{} is already in progress", state.path);
+            // Ths means that we have two remote_segment instances running
+            // in parallel. This is possible in case of extreme contention
+            // when the materialized segment gets evicted and then
+            // materialized again. The underlying cache service is a global
+            // state that all instances of the 'remote_segment' share.
+            vlog(_ctxlog.warn, "{} is already in progress", state.path);
+            fs.push_back(
+              ss::make_exception_future<>(std::runtime_error(fmt_with_ctx(
+                fmt::format,
+                "Concurrency violation. {} is already in progress.",
+                state.path))));
+            break;
         }
     }
 

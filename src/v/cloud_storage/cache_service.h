@@ -33,6 +33,8 @@
 #include <set>
 #include <string_view>
 
+struct cloud_storage_fixture;
+
 namespace cloud_storage {
 
 static constexpr size_t default_write_buffer_size = 128_KiB;
@@ -393,6 +395,7 @@ private:
     ss::condition_variable _block_puts_cond;
 
     friend class cache_test_fixture;
+    friend struct ::cloud_storage_fixture;
 
     // List of probable deletion candidates from the last trim.
     std::optional<fragmented_vector<file_list_item>> _last_trim_carryover;
