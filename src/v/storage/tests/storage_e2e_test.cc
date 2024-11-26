@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "bytes/random.h"
 #include "config/mock_property.h"
+#include "finjector/stress_fiber.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -1027,6 +1028,16 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
  */
 FIXTURE_TEST(append_concurrent_with_prefix_truncate, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
+    // start stress fiber to make the test less likely to trigger race
+    // conditions
+    stress_fiber_manager stress_mgr;
+    stress_config stress_cfg;
+    stress_cfg.min_spins_per_scheduling_point = random_generators::get_int(
+      1, 100);
+    stress_cfg.max_spins_per_scheduling_point = random_generators::get_int(
+      1000, 10000);
+    stress_cfg.num_fibers = random_generators::get_int(100, 200);
+    stress_mgr.start(stress_cfg);
 
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
@@ -1123,6 +1134,7 @@ FIXTURE_TEST(append_concurrent_with_prefix_truncate, storage_test_fixture) {
 
     ss::when_all(std::move(f_1), std::move(f_2), std::move(f_3), std::move(f_4))
       .get();
+    stress_mgr.stop().get();
 };
 
 FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
