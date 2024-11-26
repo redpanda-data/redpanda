@@ -62,6 +62,11 @@ class IcebergRESTCatalog(Service):
     <value>{{ fs_dedicated_nodes }}</value>
 </property>
 
+<property>
+    <name>fs.gs.impl</name>
+    <value>com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem</value>
+</property>
+
 {{extra_config}}
 </configuration>""")
 
