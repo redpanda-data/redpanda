@@ -522,7 +522,7 @@ segment_set disk_log_impl::find_sliding_range(
           config().ntp(),
           _last_compaction_window_start_offset.value(),
           _segs.front()->offsets().get_base_offset());
-
+        _probe->add_sliding_window_round_complete();
         _last_compaction_window_start_offset.reset();
     }
 
@@ -687,7 +687,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           "{}, resetting sliding window start offset",
           config().ntp(),
           idx_start_offset);
-
+        _probe->add_sliding_window_round_complete();
         next_window_start_offset.reset();
     }
 
