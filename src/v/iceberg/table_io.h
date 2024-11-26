@@ -16,8 +16,13 @@
 
 namespace iceberg {
 
+// /<table-location>/metadata/
+using metadata_location_path
+  = named_type<std::filesystem::path, struct metadata_location_path_tag>;
+// /<table-location>/metadata/v0.metadata.json
 using table_metadata_path
   = named_type<std::filesystem::path, struct table_metadata_path_tag>;
+// /<table-location>/metadata/version-hint.text
 using version_hint_path
   = named_type<std::filesystem::path, struct table_metadata_path_tag>;
 
@@ -40,6 +45,9 @@ public:
 
     ss::future<checked<bool, metadata_io::errc>>
     version_hint_exists(const version_hint_path& path);
+
+    ss::future<checked<std::nullopt_t, metadata_io::errc>>
+    delete_all_metadata(const metadata_location_path& path);
 };
 
 } // namespace iceberg
