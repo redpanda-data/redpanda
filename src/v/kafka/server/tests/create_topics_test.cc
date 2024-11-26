@@ -11,6 +11,7 @@
 #include "container/fragmented_vector.h"
 #include "features/enterprise_feature_messages.h"
 #include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/tests/topic_properties_helpers.h"
@@ -566,4 +567,38 @@ FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
           features::enterprise_error_message::required));
         update_cluster_config(config, "false");
     }
+}
+
+FIXTURE_TEST(create_dry_run_rejects_existing, create_topic_fixture) {
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    auto topic = make_topic(ssx::sformat("topic_foo"));
+
+    // create the topic
+    auto resp = client
+                  .dispatch(
+                    make_req({topic}, /*validate_only = */ false),
+                    kafka::api_version(5))
+                  .get();
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::none);
+
+    // rejects attempt to create it again
+    resp = client
+             .dispatch(
+               make_req({topic}, /*validate_only = */ false),
+               kafka::api_version(5))
+             .get();
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::topic_already_exists);
+
+    // also rejects dry run create
+    resp = client
+             .dispatch(
+               make_req({topic}, /*validate_only = */ true),
+               kafka::api_version(5))
+             .get();
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::topic_already_exists);
 }
