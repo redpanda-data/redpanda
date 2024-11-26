@@ -4,6 +4,7 @@ common --extra_toolchains=@llvm_18_toolchain//:all
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
+build --linkopt -stdlib=libc++
 
 common:clang-19 --extra_toolchains=@llvm_19_toolchain//:all
 
@@ -110,6 +111,12 @@ build:coverage --experimental_split_coverage_postprocessing
 build:coverage --experimental_fetch_all_coverage_outputs
 build:coverage --collect_code_coverage
 build:coverage --instrumentation_filter="^//src/v[/:]"
+
+# =================================
+# Debug Symbols
+# =================================
+build:debug-symbols --copt -g
+build:debug-symbols --strip=never
 
 # =================================
 # Testing
