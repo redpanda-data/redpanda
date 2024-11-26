@@ -348,6 +348,27 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "offset_translator_tests",
+    timeout = "moderate",
+    srcs = [
+        "offset_translator_tests.cc",
+    ],
+    cpu = 8,
+    deps = [
+        "//src/v/bytes:random",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "scoped_file_tracker_test",
     timeout = "short",
