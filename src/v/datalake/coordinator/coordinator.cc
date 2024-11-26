@@ -387,8 +387,8 @@ coordinator::sync_add_files(
     co_return std::nullopt;
 }
 
-ss::future<checked<std::optional<kafka::offset>, coordinator::errc>>
-coordinator::sync_get_last_added_offset(
+ss::future<checked<coordinator::last_offsets, coordinator::errc>>
+coordinator::sync_get_last_added_offsets(
   model::topic_partition tp, model::revision_id requested_topic_rev) {
     auto gate = maybe_gate();
     if (gate.has_error()) {
@@ -400,7 +400,7 @@ coordinator::sync_get_last_added_offset(
     }
     auto topic_it = stm_->state().topic_to_state.find(tp.topic);
     if (topic_it == stm_->state().topic_to_state.end()) {
-        co_return std::nullopt;
+        co_return last_offsets{std::nullopt, std::nullopt};
     }
     const auto& topic = topic_it->second;
     if (requested_topic_rev < topic.revision) {
@@ -415,7 +415,7 @@ coordinator::sync_get_last_added_offset(
         if (topic.lifecycle_state == topic_state::lifecycle_state_t::purged) {
             // Coordinator is ready to accept files for the new topic revision,
             // but there is no stm record yet. Reply with "no offset".
-            co_return std::nullopt;
+            co_return last_offsets{std::nullopt, std::nullopt};
         }
 
         vlog(
@@ -438,13 +438,16 @@ coordinator::sync_get_last_added_offset(
 
     auto partition_it = topic.pid_to_pending_files.find(tp.partition);
     if (partition_it == topic.pid_to_pending_files.end()) {
-        co_return std::nullopt;
+        co_return last_offsets{std::nullopt, std::nullopt};
     }
     const auto& prt_state = partition_it->second;
     if (prt_state.pending_entries.empty()) {
-        co_return prt_state.last_committed;
+        co_return last_offsets{
+          prt_state.last_committed, prt_state.last_committed};
     }
-    co_return prt_state.pending_entries.back().data.last_offset;
+    co_return last_offsets{
+      prt_state.pending_entries.back().data.last_offset,
+      prt_state.last_committed};
 }
 
 void coordinator::notify_leadership(std::optional<model::node_id> leader_id) {

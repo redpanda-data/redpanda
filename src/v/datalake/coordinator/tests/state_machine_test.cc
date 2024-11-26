@@ -154,13 +154,14 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
         auto add_files_result = co_await retry_with_leader_coordinator(
           [&, this](coordinator& coordinator) mutable {
               auto tp = random_tp();
-              return coordinator->sync_get_last_added_offset(tp, rev).then(
+              return coordinator->sync_get_last_added_offsets(tp, rev).then(
                 [&, tp](auto result) {
                     if (!result) {
                         return ss::make_ready_future<bool>(false);
                     }
                     auto last_committed_offset = kafka::offset_cast(
-                      result.value().value_or(kafka::offset{-1}));
+                      result.value().last_added_offset.value_or(
+                        kafka::offset{-1}));
                     std::vector<std::pair<int64_t, int64_t>> offset_pairs;
                     offset_pairs.reserve(5);
                     auto next_offset = last_committed_offset() + 1;
