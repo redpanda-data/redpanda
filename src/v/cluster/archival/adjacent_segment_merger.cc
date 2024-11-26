@@ -53,7 +53,11 @@ adjacent_segment_merger::adjacent_segment_merger(
       _archiver.get_ntp());
 }
 
-ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
+ss::future<> adjacent_segment_merger::stop() {
+    vlog(_ctxlog.debug, "Stopping adjacent segment merger");
+    co_await _gate.close();
+    vlog(_ctxlog.debug, "Stopped adjacent segment merger");
+}
 
 void adjacent_segment_merger::set_enabled(bool enabled) {
     vlog(_ctxlog.trace, "Setting adjacent segment merger enabled: {}", enabled);
