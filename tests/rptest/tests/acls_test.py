@@ -307,7 +307,8 @@ class AccessControlListTest(AccessControlListTestBase):
 
         acl = [acl for acl in acls if acl.resource_name == resource]
         assert len(acl) == 1, f'Expected match for {resource} not found'
-        assert acl[0].error == 'INVALID_REQUEST'
+        assert 'INVALID_REQUEST' in acl[
+            0].error, f'expected INVALID_REQUEST to be in {acl[0].error}'
 
     '''
     The old config style has use_sasl at the top level, which enables

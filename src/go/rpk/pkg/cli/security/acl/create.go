@@ -69,6 +69,10 @@ Allow write permissions to user buzz to transactional ID "txn":
 			tw := out.NewTable(headersWithError...)
 			defer tw.Flush()
 			for _, c := range results {
+				errMsg := kafka.ErrMessage(c.Err)
+				if c.ErrMessage != "" {
+					errMsg = fmt.Sprintf("%v: %v", errMsg, c.ErrMessage)
+				}
 				tw.PrintStructFields(aclWithMessage{
 					c.Principal,
 					c.Host,
@@ -77,7 +81,7 @@ Allow write permissions to user buzz to transactional ID "txn":
 					c.Pattern,
 					c.Operation,
 					c.Permission,
-					kafka.ErrMessage(c.Err),
+					errMsg,
 				})
 			}
 		},

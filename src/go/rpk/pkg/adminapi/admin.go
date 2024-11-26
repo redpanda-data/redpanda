@@ -129,6 +129,22 @@ func NewHostClient(fs afero.Fs, p *config.RpkProfile, host string) (*rpadmin.Adm
 	return rpadmin.NewClient(addrs, tc, auth, p.FromCloud)
 }
 
+// TryDecodeMessageFromErr tries to decode the message if it's a
+// rpadmin.HTTPResponseError and logs the full error. Otherwise, it returns
+// the original error string.
+func TryDecodeMessageFromErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	if he := (*rpadmin.HTTPResponseError)(nil); errors.As(err, &he) {
+		zap.L().Sugar().Debugf("got admin API error: %v", strings.TrimSpace(err.Error()))
+		if body, err := he.DecodeGenericErrorBody(); err == nil {
+			return body.Message
+		}
+	}
+	return strings.TrimSpace(err.Error())
+}
+
 // licenseFeatureChecks checks if the user is talking to a cluster that has
 // enterprise features enabled without a license and returns a message with a
 // warning.
