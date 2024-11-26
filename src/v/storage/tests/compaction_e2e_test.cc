@@ -363,6 +363,63 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
 }
 
+// Test that failing to index a single segment will result in the compaction
+// sliding window being reset, allowing compaction to potentially make progress
+// in the future instead of repeatedly failing to index the same segment.
+TEST_F(CompactionFixtureTest, TestFailToIndexOneSegmentResetWindow) {
+    constexpr auto num_segments = 1;
+    constexpr auto cardinality = 10;
+    size_t records_per_segment = cardinality;
+    generate_data(num_segments, cardinality, records_per_segment).get();
+
+    ss::abort_source never_abort;
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+
+    // Set the last compaction window start offset, just to be sure that its
+    // value is reset by failing to index a segment.
+    disk_log.set_last_compaction_window_start_offset(model::offset::max());
+
+    bool did_compact = do_sliding_window_compact(
+                         log->segments().back()->offsets().get_base_offset(),
+                         std::nullopt,
+                         cardinality - 1)
+                         .get();
+
+    ASSERT_FALSE(did_compact);
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+
+    // Generate some more data in such a way that the first segment can be fully
+    // indexed after the next round of compaction.
+    generate_data(num_segments, cardinality, records_per_segment / 2).get();
+
+    // This round of compaction will fully index the last added segment, and
+    // deduplicate the keys in the first segment enough that it will no longer
+    // fail to be indexed.
+    did_compact = do_sliding_window_compact(
+                    log->segments().back()->offsets().get_base_offset(),
+                    std::nullopt,
+                    cardinality - 1)
+                    .get();
+
+    ASSERT_TRUE(did_compact);
+    ASSERT_TRUE(disk_log.get_last_compaction_window_start_offset().has_value());
+    ASSERT_EQ(
+      disk_log.get_last_compaction_window_start_offset().value(),
+      disk_log.segments()[1]->offsets().get_base_offset());
+
+    // Now, try to compact one last time.
+    did_compact = do_sliding_window_compact(
+                    log->segments().back()->offsets().get_base_offset(),
+                    std::nullopt,
+                    cardinality - 1)
+                    .get();
+
+    ASSERT_TRUE(did_compact);
+    ASSERT_FALSE(
+      disk_log.get_last_compaction_window_start_offset().has_value());
+}
+
 TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
     constexpr auto duplicates_per_key = 10;
     constexpr auto num_segments = 25;
