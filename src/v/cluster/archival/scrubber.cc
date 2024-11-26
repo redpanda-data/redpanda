@@ -181,7 +181,9 @@ ss::future<> scrubber::stop() {
 
 retry_chain_node* scrubber::get_root_retry_chain_node() { return &_root_rtc; }
 
-ss::sstring scrubber::name() const { return "scrubber"; }
+ss::sstring scrubber::name() const {
+    return ssx::sformat("scrubber:{}", _archiver.get_ntp());
+}
 
 std::pair<bool, std::optional<ss::sstring>> scrubber::should_skip() const {
     if (!_feature_table.is_active(features::feature::cloud_storage_scrubbing)) {
