@@ -209,6 +209,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
             "keys de-duplicated with all previous segments "
             "before them to the front of the log)"),
           labels),
+        sm::make_counter(
+          "segments_marked_tombstone_free",
+          [this] { return _segments_marked_tombstone_free; },
+          sm::description("Number of segments that have been verified through "
+                          "the compaction process to be tombstone free."),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});
