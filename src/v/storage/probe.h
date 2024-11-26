@@ -99,6 +99,9 @@ public:
 
     void add_removed_tombstone() { ++_tombstones_removed; }
     void add_cleanly_compacted_segment() { ++_segment_cleanly_compacted; }
+    void add_segment_marked_tombstone_free() {
+        ++_segments_marked_tombstone_free;
+    }
 
     void batch_parse_error() { ++_batch_parse_errors; }
 
@@ -142,6 +145,7 @@ private:
     double _compaction_ratio = 1.0;
     uint64_t _tombstones_removed = 0;
     uint64_t _segment_cleanly_compacted = 0;
+    uint64_t _segments_marked_tombstone_free = 0;
 
     ssize_t _compaction_removed_bytes = 0;
 

@@ -460,6 +460,12 @@ ss::future<storage::index_state> do_copy_segment_data(
     // Set may_have_tombstone_records
     new_index.may_have_tombstone_records = may_have_tombstone_records;
 
+    if (
+      seg->index().may_have_tombstone_records()
+      && !may_have_tombstone_records) {
+        pb.add_segment_marked_tombstone_free();
+    }
+
     co_return new_index;
 }
 
