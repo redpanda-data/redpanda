@@ -56,12 +56,12 @@ struct type_and_buf {
 
     // Part of a record field (key or value) that conforms to the given Iceberg
     // field type.
-    iobuf parsable_buf;
+    std::optional<iobuf> parsable_buf;
 
     // Constructs a type that indicates that the record didn't have a schema or
     // there was an issue trying to parse the schema, in which case we need to
     // fall back to representing the value as a binary blob column.
-    static type_and_buf make_raw_binary(iobuf buf);
+    static type_and_buf make_raw_binary(std::optional<iobuf> buf);
 };
 
 class type_resolver {
@@ -73,7 +73,8 @@ public:
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
     virtual ss::future<checked<type_and_buf, errc>>
-    resolve_buf_type(iobuf b) const = 0;
+    resolve_buf_type(std::optional<iobuf> b) const = 0;
+
     virtual ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const = 0;
     virtual ~type_resolver() = default;
@@ -82,7 +83,8 @@ public:
 class binary_type_resolver : public type_resolver {
 public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
-    resolve_buf_type(iobuf b) const override;
+    resolve_buf_type(std::optional<iobuf> b) const override;
+
     ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const override;
     ~binary_type_resolver() override = default;
@@ -94,11 +96,10 @@ public:
       : sr_(sr) {}
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
-    resolve_buf_type(iobuf b) const override;
+    resolve_buf_type(std::optional<iobuf> b) const override;
 
     ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const override;
-
     ~record_schema_resolver() override = default;
 
 private:

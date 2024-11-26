@@ -233,12 +233,25 @@ public:
     const iobuf& key() const { return _key; }
     iobuf release_key() { return std::exchange(_key, {}); }
     iobuf share_key() { return _key.share(0, _key.size_bytes()); }
+    std::optional<iobuf> share_key_opt() {
+        if (!has_key()) {
+            return std::nullopt;
+        }
+        return share_key();
+    }
+    std::optional<iobuf> share_value_opt() {
+        if (!has_value()) {
+            return std::nullopt;
+        }
+        return share_value();
+    }
 
     int32_t value_size() const { return _val_size; }
     const iobuf& value() const { return _value; }
     iobuf release_value() { return std::exchange(_value, {}); }
     iobuf share_value() { return _value.share(0, _value.size_bytes()); }
     bool has_value() const { return _val_size >= 0; }
+    bool has_key() const { return _key_size >= 0; }
     bool is_tombstone() const { return !has_value(); }
 
     const std::vector<record_header>& headers() const { return _headers; }

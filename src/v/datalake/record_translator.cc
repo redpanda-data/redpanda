@@ -61,7 +61,7 @@ std::optional<size_t> get_redpanda_idx(const iceberg::struct_type& val_type) {
 std::unique_ptr<iceberg::struct_value> build_rp_struct(
   model::partition_id pid,
   kafka::offset o,
-  iobuf key,
+  std::optional<iobuf> key,
   model::timestamp ts,
   const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
     headers) {
@@ -91,7 +91,10 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
         system_data->fields.emplace_back(std::move(headers_list));
     }
 
-    system_data->fields.emplace_back(iceberg::binary_value{std::move(key)});
+    system_data->fields.emplace_back(
+      key ? std::make_optional<iceberg::value>(
+              iceberg::binary_value(std::move(*key)))
+          : std::nullopt);
     return system_data;
 }
 
@@ -118,9 +121,9 @@ ss::future<checked<iceberg::struct_value, record_translator::errc>>
 default_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
-  iobuf key,
+  std::optional<iobuf> key,
   const std::optional<resolved_type>& val_type,
-  iobuf parsable_val,
+  std::optional<iobuf> parsable_val,
   model::timestamp ts,
   const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
     headers) {
@@ -140,15 +143,12 @@ default_translator::translate_data(
 
 record_type key_value_translator::build_type(std::optional<resolved_type>) {
     auto ret_type = schemaless_struct_type();
-    std::optional<schema_identifier> val_id;
-    auto& system_fields = std::get<iceberg::struct_type>(
-      ret_type.fields[0]->type);
-    system_fields.fields.emplace_back(iceberg::nested_field::create(
-      10, "data", iceberg::field_required::no, iceberg::binary_type{}));
+    ret_type.fields.emplace_back(iceberg::nested_field::create(
+      10, "value", iceberg::field_required::no, iceberg::binary_type{}));
     return record_type{
       .comps = record_schema_components{
           .key_identifier = std::nullopt,
-          .val_identifier = std::move(val_id),
+          .val_identifier = std::nullopt,
       },
       .type = std::move(ret_type),
     };
@@ -158,9 +158,9 @@ ss::future<checked<iceberg::struct_value, record_translator::errc>>
 key_value_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
-  iobuf key,
+  std::optional<iobuf> key,
   const std::optional<resolved_type>& val_type,
-  iobuf parsable_val,
+  std::optional<iobuf> parsable_val,
   model::timestamp ts,
   const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
     headers) {
@@ -171,11 +171,13 @@ key_value_translator::translate_data(
         co_return record_translator::errc::unexpected_schema;
     }
     auto ret_data = iceberg::struct_value{};
-    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
-    system_data->fields.emplace_back(
-      iceberg::binary_value{std::move(parsable_val)});
 
+    auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
     ret_data.fields.emplace_back(std::move(system_data));
+    ret_data.fields.emplace_back(
+      parsable_val ? std::make_optional<iceberg::value>(
+                       iceberg::binary_value(std::move(*parsable_val)))
+                   : std::nullopt);
     co_return ret_data;
 }
 
@@ -214,9 +216,9 @@ ss::future<checked<iceberg::struct_value, record_translator::errc>>
 structured_data_translator::translate_data(
   model::partition_id pid,
   kafka::offset o,
-  iobuf key,
+  std::optional<iobuf> key,
   const std::optional<resolved_type>& val_type,
-  iobuf parsable_val,
+  std::optional<iobuf> parsable_val,
   model::timestamp ts,
   const chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>&
     headers) {
@@ -226,13 +228,17 @@ structured_data_translator::translate_data(
           "Must have parsed schema when using structured data mode");
         co_return record_translator::errc::unexpected_schema;
     }
+    if (!parsable_val.has_value()) {
+        vlog(datalake_log.error, "Tombstones cannot be translated");
+        co_return record_translator::errc::translation_error;
+    }
     auto ret_data = iceberg::struct_value{};
     auto system_data = build_rp_struct(pid, o, std::move(key), ts, headers);
     // Fill in the internal value field.
     ret_data.fields.emplace_back(std::move(system_data));
 
     auto translated_val = co_await std::visit(
-      value_translating_visitor{std::move(parsable_val), val_type->type},
+      value_translating_visitor{std::move(*parsable_val), val_type->type},
       val_type->schema);
     if (translated_val.has_error()) {
         vlog(

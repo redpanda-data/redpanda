@@ -55,12 +55,11 @@ public:
 private:
     // Handles the given record components of a record that is invalid for the
     // target table.
-    // TODO: this just writes to the existing table, populating internal
-    // columns. Consider a separate table entirely.
+    // TODO: this just drops the data. Consider a separate table entirely.
     ss::future<result<std::nullopt_t, writer_error>> handle_invalid_record(
       kafka::offset,
-      iobuf,
-      iobuf,
+      std::optional<iobuf>,
+      std::optional<iobuf>,
       model::timestamp,
       chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>);
 
