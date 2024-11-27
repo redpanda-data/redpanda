@@ -337,7 +337,8 @@ ss::future<> ntp_archiver::upload_until_abort(bool legacy_mode) {
         co_return;
     }
     if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+        _probe.emplace(
+          _conf->ntp_metrics_disabled, _ntp, _parent.archival_meta_stm());
     }
 
     while (!_as.abort_requested()) {
@@ -459,7 +460,8 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
         co_return;
     }
     if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+        _probe.emplace(
+          _conf->ntp_metrics_disabled, _ntp, _parent.archival_meta_stm());
     }
 
     while (!_as.abort_requested()) {
@@ -797,8 +799,6 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             co_await maybe_flush_manifest_clean_offset();
         }
 
-        update_probe();
-
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
         units.return_all();
@@ -1062,8 +1062,6 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             // flush it for them.
             co_await maybe_flush_manifest_clean_offset();
         }
-
-        update_probe();
     }
 }
 
@@ -1161,22 +1159,6 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
 
     _last_sync_time = ss::lowres_clock::now();
     co_return cloud_storage::download_result::success;
-}
-
-void ntp_archiver::update_probe() {
-    const auto& man = manifest();
-
-    _probe->segments_in_manifest(man.size());
-
-    const auto first_addressable = man.first_addressable_segment();
-    const auto truncated_seg_count = first_addressable == man.end()
-                                       ? 0
-                                       : first_addressable.index();
-
-    _probe->segments_to_delete(
-      truncated_seg_count + man.replaced_segments_count());
-
-    _probe->cloud_log_size(man.cloud_log_size());
 }
 
 bool ntp_archiver::can_update_archival_metadata() const {
