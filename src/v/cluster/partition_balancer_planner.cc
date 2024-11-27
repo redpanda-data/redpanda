@@ -190,6 +190,15 @@ private:
     void
     report_decommission_reallocation_failure(model::node_id, const model::ntp&);
 
+    node2count_t& get_topic_to_node_count(model::topic_namespace_view tp_ns) {
+        auto it = _topic2node_counts.find(tp_ns);
+        if (it != _topic2node_counts.end()) {
+            return it->second;
+        }
+        throw iterator_stability_violation(
+          fmt::format("Topic {} not found in topic2node_counts map", tp_ns));
+    }
+
     struct partition_sizes {
         absl::flat_hash_map<model::node_id, size_t> current;
 
@@ -673,7 +682,7 @@ public:
 
             // adjust topic node counts
 
-            auto& node_counts = _ctx._topic2node_counts.at(
+            auto& node_counts = _ctx.get_topic_to_node_count(
               model::topic_namespace_view(ntp()));
             for (const auto& bs : moving_to) {
                 auto& count = node_counts.at(bs.node_id);
@@ -1142,7 +1151,7 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
         // Add constraint for balanced topic-wise replica counts
         constraints.add(min_count_in_map(
           "min topic-wise count",
-          _ctx._topic2node_counts.at(model::topic_namespace_view(ntp()))));
+          _ctx.get_topic_to_node_count(model::topic_namespace_view(ntp()))));
     }
 
     // Add constraint for balanced total replica counts
@@ -1223,7 +1232,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
 
         {
             // adjust topic node counts
-            auto& node_counts = _ctx._topic2node_counts.at(
+            auto& node_counts = _ctx.get_topic_to_node_count(
               model::topic_namespace_view(ntp()));
             auto& prev_count = node_counts.at(replica);
             prev_count -= 1;
@@ -1288,7 +1297,7 @@ void partition_balancer_planner::reassignable_partition::revert(
 
     {
         // adjust topic node counts
-        auto& node_counts = _ctx._topic2node_counts.at(
+        auto& node_counts = _ctx.get_topic_to_node_count(
           model::topic_namespace_view(ntp()));
         auto& cur_count = node_counts.at(move.current().node_id);
         cur_count -= 1;
@@ -1386,7 +1395,7 @@ void partition_balancer_planner::force_reassignable_partition::
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
     node2count_t* node2count = nullptr;
     if (_ctx.config().topic_aware) {
-        node2count = &_ctx._topic2node_counts.at(
+        node2count = &_ctx.get_topic_to_node_count(
           model::topic_namespace_view(_ntp.ns, _ntp.tp.topic));
     }
 
@@ -1845,7 +1854,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
 
         double topic_count = 0;
         if (ctx.config().topic_aware) {
-            const auto& counts = ctx._topic2node_counts.at(
+            const auto& counts = ctx.get_topic_to_node_count(
               model::topic_namespace_view(ntp));
             topic_count = double(counts.at(id)) / alloc_node.max_capacity();
         }
