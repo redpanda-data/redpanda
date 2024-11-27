@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
+#include <compare>
 #include <cstdint>
 #include <iterator>
 #include <span>
@@ -50,6 +51,22 @@ SEASTAR_THREAD_TEST_CASE(test_lt) {
     BOOST_CHECK_LT(iobuf::from("cat"), iobuf::from("catastrophe"));
     BOOST_CHECK_EQUAL(false, iobuf::from("cat") < iobuf::from("cat"));
     BOOST_CHECK_EQUAL(false, iobuf{} < iobuf{});
+    BOOST_CHECK(std::strong_ordering::equal == (iobuf{} <=> iobuf{}));
+    BOOST_CHECK(
+      (std::string_view("cat") <=> "catastrophe")
+      == (iobuf::from("cat") <=> iobuf::from("catastrophe")));
+    BOOST_CHECK(
+      (std::string_view("catastrophe") <=> "cat")
+      == (iobuf::from("catastrophe") <=> iobuf::from("cat")));
+    BOOST_CHECK(
+      (std::string_view("catastrophe") <=> "dog")
+      == (iobuf::from("catastrophe") <=> iobuf::from("dog")));
+    BOOST_CHECK(
+      (std::string_view("dog") <=> "cat")
+      == (iobuf::from("dog") <=> iobuf::from("cat")));
+    BOOST_CHECK(
+      (std::string_view("dog") <=> "cat")
+      == (iobuf::from("dog") <=> iobuf::from("cat")));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {

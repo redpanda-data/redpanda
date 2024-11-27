@@ -17,6 +17,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
 
+#include <compare>
 #include <cstddef>
 #include <iostream>
 #include <limits>
@@ -103,6 +104,10 @@ bool iobuf::operator==(const iobuf& o) const {
 }
 
 bool iobuf::operator<(const iobuf& o) const {
+    return (*this <=> o) == std::strong_ordering::less;
+}
+
+std::strong_ordering iobuf::operator<=>(const iobuf& o) const {
     auto lhs = byte_iterator(cbegin(), cend());
     auto lhs_end = byte_iterator(cend(), cend());
     auto rhs = byte_iterator(o.cbegin(), o.cend());
@@ -110,20 +115,22 @@ bool iobuf::operator<(const iobuf& o) const {
     while (lhs != lhs_end && rhs != rhs_end) {
         char l = *lhs;
         char r = *rhs;
-        if (l < r) {
-            return true;
-        }
-        if (l > r) {
-            return false;
+        auto cmp = l <=> r;
+        if (cmp != std::strong_ordering::equal) {
+            return cmp;
         }
         ++lhs;
         ++rhs;
     }
     if (rhs != rhs_end) {
         // lhs is a prefix of rhs.
-        return true;
+        return std::strong_ordering::less;
     }
-    return false;
+    if (lhs != lhs_end) {
+        // rhs is a prefix of lhs.
+        return std::strong_ordering::greater;
+    }
+    return std::strong_ordering::equal;
 }
 
 bool iobuf::operator==(std::string_view o) const {
