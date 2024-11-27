@@ -1637,31 +1637,27 @@ ss::future<> disk_log_impl::new_segment(
             });
       });
 }
+namespace {
+model::offset get_next_append_offset(const offset_stats& offsets) {
+    /**
+     * When dirty_offset < start_offset, the log is empty. In this case we use
+     * the start offset as the next offset for appender
+     */
+    if (offsets.dirty_offset < offsets.start_offset) {
+        return offsets.start_offset;
+    }
+    // otherwise next batch will be appended at dirty_offset + 1
+    return model::next_offset(offsets.dirty_offset);
+}
+} // namespace
 
 // config timeout is for the one calling reader consumer
 log_appender disk_log_impl::make_appender(log_append_config cfg) {
     vassert(!_closed, "make_appender on closed log - {}", *this);
     auto now = log_clock::now();
     auto ofs = offsets();
-    auto next_offset = ofs.dirty_offset;
-    if (next_offset() >= 0) {
-        // when dirty offset >= 0 it is implicity encoding the state of a
-        // non-empty log (see offsets()). for a non-empty log, the offset of the
-        // next batch to be applied is one past the last batch (dirty + 1).
-        next_offset++;
+    model::offset next_offset = get_next_append_offset(ofs);
 
-    } else {
-        // otherwise, the log is empty. in this case the offset of the next
-        // batch to be appended is the starting offset of the log, which may be
-        // explicitly set via operations like prefix truncation.
-        next_offset = ofs.start_offset;
-
-        // but, in the case of a brand new log, no starting offset has been
-        // explicitly set, so it is defined implicitly to be 0.
-        if (next_offset() < 0) {
-            next_offset = model::offset(0);
-        }
-    }
     vlog(
       stlog.trace,
       "creating log appender for: {}, next offset: {}, log offsets: {}",
@@ -2534,6 +2530,12 @@ ss::future<> disk_log_impl::remove_segment_permanently(
     _probe->delete_segment(*s);
     // background close
     s->tombstone();
+    if (s->has_outstanding_locks()) {
+        vlog(
+          stlog.info,
+          "Segment has outstanding locks. Might take a while to close:{}",
+          s->reader().filename());
+    }
 
     return _readers_cache->evict_segment_readers(s)
       .then([s](readers_cache::range_lock_holder cache_lock) {
@@ -2559,6 +2561,15 @@ ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
           return remove_segment_permanently(ptr, "remove_full_segments");
       });
 }
+namespace {
+bool keep_segment_after_prefix_truncate(
+  const ss::lw_shared_ptr<segment>& segment,
+  model::offset prefix_truncate_offset) {
+    auto& offsets = segment->offsets();
+    return offsets.get_base_offset() >= prefix_truncate_offset
+           || offsets.get_dirty_offset() >= prefix_truncate_offset;
+}
+} // namespace
 ss::future<>
 disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
@@ -2567,25 +2578,34 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
           // (where dirty = base - 1). We don't want to remove it because
           // batches may be concurrently appended to it and we should keep them.
           return _segs.empty()
-                 || _segs.front()->offsets().get_base_offset()
-                      >= cfg.start_offset
-                 || _segs.front()->offsets().get_dirty_offset()
-                      >= cfg.start_offset;
+                 || keep_segment_after_prefix_truncate(
+                   _segs.front(), cfg.start_offset);
       },
-      [this] {
+      [this, prefix_truncate_offset = cfg.start_offset] {
+          // it is safe to capture the front segment pointer here. This
+          // operation is executed under the segment_rewrite_lock, we are
+          // guaranteed that no other operation will remove the segment from the
+          // segment list head (front).
           auto ptr = _segs.front();
-          // evict readers before trying to grab a write lock to prevent
-          // contention
           return _readers_cache->evict_segment_readers(ptr).then(
-            [this, ptr](readers_cache::range_lock_holder cache_lock) {
-                /**
-                 * If segment has outstanding locks wait for it to be unlocked
-                 * before prefixing truncating it, this way the prefix
-                 * truncation will not overlap with appends.
-                 */
+            [this, ptr, prefix_truncate_offset](
+              readers_cache::range_lock_holder cache_lock) {
                 return ptr->write_lock().then(
-                  [this, ptr, cache_lock = std::move(cache_lock)](
+                  [this,
+                   ptr,
+                   prefix_truncate_offset,
+                   cache_lock = std::move(cache_lock)](
                     ss::rwlock::holder lock_holder) {
+                      // after the lock is acquired, check if the segment is
+                      // still eligible for deletion as there might have been
+                      // concurrent appends. If segments collection is empty we
+                      // can skip prefix truncation as the segments were removed
+                      if (
+                        keep_segment_after_prefix_truncate(
+                          ptr, prefix_truncate_offset)
+                        || _segs.empty()) {
+                          return ss::make_ready_future<>();
+                      }
                       _segs.pop_front();
                       _probe->add_bytes_prefix_truncated(ptr->file_size());
                       // first call the remove segments, then release the lock
@@ -2625,6 +2645,11 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
+    vlog(
+      stlog.trace,
+      "prefix truncate {} at {}",
+      config().ntp(),
+      cfg.start_offset);
     /*
      * Persist the desired starting offset
      */
