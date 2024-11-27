@@ -23,7 +23,7 @@
 #include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
 #include "test_utils/randoms.h"
-#include "utils/tmpbuf_file.h"
+#include "test_utils/tmpbuf_file.h"
 #include "utils/vint.h"
 
 #include <boost/test/unit_test_suite.hpp>
