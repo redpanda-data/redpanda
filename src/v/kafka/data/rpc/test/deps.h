@@ -213,6 +213,25 @@ private:
     absl::flat_hash_map<model::ntp, model::node_id> _leader_map;
 };
 
+class delegating_fake_partition_leader_cache : public partition_leader_cache {
+public:
+    explicit delegating_fake_partition_leader_cache(
+      fake_partition_leader_cache* c)
+      : _delegate(c) {}
+
+    std::optional<model::node_id> get_leader_node(
+      model::topic_namespace_view tp_ns, model::partition_id p) const final {
+        return _delegate->get_leader_node(tp_ns, p);
+    }
+
+    void set_leader_node(const model::ntp& ntp, model::node_id nid) {
+        _delegate->set_leader_node(ntp, nid);
+    }
+
+private:
+    fake_partition_leader_cache* _delegate;
+};
+
 class fake_topic_metadata_cache : public topic_metadata_cache {
 public:
     std::optional<cluster::topic_configuration>
@@ -268,6 +287,10 @@ public:
     std::optional<cluster::topic_configuration>
     find_topic_cfg(model::topic_namespace_view tp_ns) const final {
         return _delegator->find_topic_cfg(tp_ns);
+    }
+
+    void set_topic_cfg(cluster::topic_configuration cfg) {
+        _delegator->set_topic_cfg(std::move(cfg));
     }
 
     uint32_t get_default_batch_max_bytes() const final {
@@ -467,6 +490,7 @@ public:
         return _local_fpmp.get();
     }
     fake_partition_leader_cache* partition_leader_cache() { return _fplc; }
+    fake_topic_creator* topic_creator() { return _ftpc; }
 
     void elect_leader(const model::ntp& ntp, model::node_id node_id);
 
