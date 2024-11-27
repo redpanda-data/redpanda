@@ -701,6 +701,15 @@ iobuf encode(const row_group& group) {
     return std::move(encoder).write_stop();
 }
 
+iobuf encode(column_order col_order) {
+    thrift::struct_encoder encoder;
+    encoder.write_field(
+      thrift::field_id(static_cast<int16_t>(col_order)),
+      thrift::field_type::structure,
+      thrift::struct_encoder::empty_struct);
+    return std::move(encoder).write_stop();
+}
+
 } // namespace
 
 iobuf encode(const file_metadata& metadata) {
@@ -710,6 +719,7 @@ iobuf encode(const file_metadata& metadata) {
     constexpr auto row_groups_field_id = thrift::field_id(4);
     constexpr auto key_value_metadata_field_id = thrift::field_id(5);
     constexpr auto created_by_field_id = thrift::field_id(6);
+    constexpr auto column_orders_field_id = thrift::field_id(7);
 
     thrift::struct_encoder encoder;
     encoder.write_field(
@@ -756,6 +766,18 @@ iobuf encode(const file_metadata& metadata) {
       created_by_field_id,
       thrift::field_type::binary,
       thrift::encode_string(metadata.created_by));
+
+    if (!metadata.column_orders.empty()) {
+        thrift::list_encoder column_orders_encoder(
+          metadata.column_orders.size(), thrift::field_type::structure);
+        for (const auto& order : metadata.column_orders) {
+            column_orders_encoder.write_element(encode(order));
+        }
+        encoder.write_field(
+          column_orders_field_id,
+          thrift::field_type::list,
+          std::move(column_orders_encoder).finish());
+    }
 
     return std::move(encoder).write_stop();
 }

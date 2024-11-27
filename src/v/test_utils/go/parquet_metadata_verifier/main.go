@@ -163,6 +163,11 @@ var testCases = []any{
 			{Key: "nice", Value: ""},
 		},
 		CreatedBy: "The best Message Broker in the West",
+		ColumnOrders: []format.ColumnOrder{
+			{TypeOrder: &format.TypeDefinedOrder{}},
+			{TypeOrder: &format.TypeDefinedOrder{}},
+			{TypeOrder: &format.TypeDefinedOrder{}},
+		},
 	},
 	&format.FileMetaData{
 		Version: 2,

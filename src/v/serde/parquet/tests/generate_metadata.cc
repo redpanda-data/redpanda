@@ -166,6 +166,7 @@ iobuf serialize_testcase(size_t test_case) {
           ),
           .key_value_metadata = {{"foo", "bar"}, {"baz", "qux"}, {"nice", ""}},
           .created_by = "The best Message Broker in the West",
+          .column_orders = {column_order::type_defined, column_order::type_defined, column_order::type_defined},
         });
     case 4:
         // logical type serialization test for all iceberg types
