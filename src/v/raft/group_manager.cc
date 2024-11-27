@@ -182,10 +182,6 @@ raft::group_configuration group_manager::create_initial_configuration(
     // old configuration with brokers
     auto raft_cfg = raft::group_configuration(
       std::move(initial_brokers), revision);
-    if (unlikely(!_feature_table.is_active(
-          features::feature::raft_improved_configuration))) {
-        raft_cfg.set_version(group_configuration::v_3);
-    }
     return raft_cfg;
 }
 

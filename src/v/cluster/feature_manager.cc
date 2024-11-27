@@ -300,16 +300,14 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
         // Shutting down - next iteration will drop out
         co_return;
     }
-    if (_feature_table.local().is_active(features::feature::license)) {
-        auto enterprise_features = report_enterprise_features();
-        if (enterprise_features.any()) {
-            if (_feature_table.local().should_sanction()) {
-                vlog(
-                  clusterlog.warn,
-                  "{}",
-                  features::enterprise_error_message::license_nag(
-                    enterprise_features.enabled()));
-            }
+    auto enterprise_features = report_enterprise_features();
+    if (enterprise_features.any()) {
+        if (_feature_table.local().should_sanction()) {
+            vlog(
+              clusterlog.warn,
+              "{}",
+              features::enterprise_error_message::license_nag(
+                enterprise_features.enabled()));
         }
     }
 }

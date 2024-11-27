@@ -688,12 +688,9 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
 
         ss::when_all_succeed(requests.begin(), requests.end()).get();
     };
-    // If the server is configured to allow use of service_unavailable, while
-    // the server hasn't added all services, we should see a retriable error
-    // instead of method_not_found.
-    server().set_use_service_unavailable();
+    // While the server hasn't added all services, we should see a retriable
+    // error instead of method_not_found.
     verify_bad_method_errors(rpc::errc::service_unavailable);
-
     server().set_all_services_added();
     verify_bad_method_errors(rpc::errc::method_not_found);
 }

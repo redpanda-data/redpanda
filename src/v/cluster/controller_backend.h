@@ -327,7 +327,6 @@ private:
       shard_placement_table&);
 
     ss::future<result<ss::stop_iteration>> reconcile_partition_reconfiguration(
-      ntp_reconciliation_state&,
       ss::lw_shared_ptr<partition>,
       const topic_table::in_progress_update&,
       const replicas_revision_map& replicas_revisions);
@@ -365,7 +364,6 @@ private:
 
     bool can_finish_update(
       std::optional<model::node_id> current_leader,
-      uint64_t current_retry,
       reconfiguration_state,
       const replicas_t& requested_replicas);
 

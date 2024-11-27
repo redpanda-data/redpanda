@@ -172,11 +172,6 @@ void node_status_backend::tick() {
 }
 
 ss::future<> node_status_backend::collect_and_store_updates() {
-    if (!_feature_table.local().is_active(
-          features::feature::raftless_node_status)) {
-        co_return;
-    }
-
     auto updates = co_await collect_updates_from_peers();
     co_return co_await _node_status_table.invoke_on_all(
       [updates = std::move(updates)](auto& table) {
