@@ -31,6 +31,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/defer.hh>
 
 #include <boost/beast/core/buffer_traits.hpp>
 #include <boost/beast/core/error.hpp>
@@ -155,6 +156,8 @@ ss::future<client::request_response_t> client::make_request(
 
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
+    auto clear_shutdown_signal = ss::defer(
+      [this]() noexcept { _shutdown_now = false; });
     if (unlikely(_stopped)) {
         throw std::runtime_error("client is stopped");
     }
@@ -190,6 +193,16 @@ ss::future<reconnect_result_t> client::get_connected(
             vlog(ctxlog.trace, "connection refused {}", err);
         } catch (const ss::timed_out_error&) {
             vlog(ctxlog.trace, "connection timeout");
+        }
+        // on the off chance that shutdown_now flag got set outside this loop,
+        // we allow for one successful connect attempt. the alternative to this
+        // heuristic would be to add reset interfaces and plumb that down
+        // through the http client pool / storage client interfaces.
+        if (_shutdown_now) {
+            vlog(
+              ctxlog.debug,
+              "Stopping connect attempts due to shutdown request");
+            co_return reconnect_result_t::timed_out;
         }
         current = ss::lowres_clock::now();
         // Any TLS error have to be propagated because it's not
