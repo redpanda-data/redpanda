@@ -50,4 +50,14 @@ iobuf encode_levels(
 iobuf encode_levels(
   def_level max_value, const chunked_vector<def_level>& levels);
 
+// Stats are encoded using plain encoding, except variable length arrays
+// which don't have a length prefix.
+iobuf encode_for_stats(boolean_value);
+iobuf encode_for_stats(int32_value);
+iobuf encode_for_stats(int64_value);
+iobuf encode_for_stats(float32_value);
+iobuf encode_for_stats(float64_value);
+iobuf encode_for_stats(const byte_array_value&);
+iobuf encode_for_stats(const fixed_byte_array_value&);
+
 } // namespace serde::parquet
