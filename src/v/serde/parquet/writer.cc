@@ -82,8 +82,7 @@ public:
         rg.file_offset = static_cast<int64_t>(_offset);
         for (auto& [pos, col] : _columns) {
             auto page = co_await col.writer.flush_page();
-            const auto& data_header = std::get<data_page_header>(
-              page.header.type);
+            auto& data_header = std::get<data_page_header>(page.header.type);
             rg.num_rows = data_header.num_rows;
             auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
             rg.total_byte_size += page_size;
@@ -98,6 +97,9 @@ public:
                 .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,
                 .key_value_metadata = {},
                 .data_page_offset = static_cast<int64_t>(_offset),
+                // Because we only write a single page per row group at the moment,
+                // a column chunk's stats are trivially the same as it's page.
+                .stats = std::move(data_header.stats),
               },
             });
             co_await write_iobuf(std::move(page.serialized));

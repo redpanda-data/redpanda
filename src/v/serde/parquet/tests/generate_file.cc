@@ -383,6 +383,7 @@ int main(int argc, char** argv) {
     // Use a small footprint to generate this single file.
     seastar_config.smp_opts.smp.set_value(1);
     seastar_config.smp_opts.memory_allocator = ss::memory_allocator::standard;
+    seastar_config.reactor_opts.overprovisioned.set_value();
     seastar_config.log_opts.default_log_level.set_value(ss::log_level::warn);
     ss::app_template app(std::move(seastar_config));
     app.add_options()(
