@@ -3787,10 +3787,7 @@ configuration::configuration()
       "Default value for the redpanda.iceberg.delete topic property that "
       "determines if the corresponding Iceberg table is deleted upon deleting "
       "the topic.",
-      meta{
-        .needs_restart = needs_restart::no,
-        .visibility = visibility::user,
-      },
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       true)
   , development_enable_cloud_topics(
       *this,
