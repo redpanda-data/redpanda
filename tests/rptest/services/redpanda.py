@@ -3240,10 +3240,10 @@ class RedpandaService(RedpandaServiceBase):
             if expect_fail:
                 wait_until(
                     lambda: self.redpanda_pid(node) == None,
-                    timeout_sec=10,
+                    timeout_sec=timeout,
                     backoff_sec=0.2,
                     err_msg=
-                    f"Redpanda processes did not terminate on {node.name} during startup as expected"
+                    f"Redpanda processes did not terminate on {node.name} during startup as expected in {timeout} sec"
                 )
             elif not skip_readiness_check:
                 wait_until(
