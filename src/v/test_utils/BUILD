@@ -159,3 +159,17 @@ redpanda_test_cc_library(
         "@boost//:test",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "tmpbuf_file",
+    hdrs = [
+        "tmpbuf_file.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
