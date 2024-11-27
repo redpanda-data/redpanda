@@ -241,20 +241,20 @@ COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/polaris /
 RUN /polaris && rm /polaris
 #################################
 
-FROM base as iceberg-rest
+FROM base AS iceberg-rest
 COPY --chown=0:0 tests/java/iceberg-rest-catalog /opt/redpanda-tests/java/iceberg-rest-catalog
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/iceberg-rest-catalog /
 RUN /iceberg-rest-catalog && rm /iceberg-rest-catalog
 
 #################################
 
-FROM base as trino 
+FROM base AS trino
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/trino /
 RUN /trino && rm /trino
 
 #################################
 
-FROM base as spark 
+FROM base AS spark
 COPY --chown=0:0 tests/java/spark-iceberg-dependencies /opt/redpanda-tests/java/spark-iceberg-dependencies
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/spark /
 RUN /spark && rm /spark
