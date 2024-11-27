@@ -72,5 +72,4 @@ rp_test(
   LIBRARIES
     Seastar::seastar_perf_testing
     v::iceberg
-  ARGS "-- -c1"
 )
