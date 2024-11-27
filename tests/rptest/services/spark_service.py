@@ -142,6 +142,9 @@ class SparkService(Service, QueryEngineBase):
         self.stop_node(node, allow_fail=True)
         node.account.remove(SparkService.LOGS_DIR, allow_fail=True)
 
+    def escape_identifier(self, table: str) -> str:
+        return f"`{table}`"
+
     @staticmethod
     def engine_name():
         return QueryEngineType.SPARK
