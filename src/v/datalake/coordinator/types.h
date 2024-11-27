@@ -169,12 +169,16 @@ struct fetch_latest_translated_offset_reply
     explicit fetch_latest_translated_offset_reply(errc err)
       : errc(err) {}
     explicit fetch_latest_translated_offset_reply(
-      std::optional<kafka::offset> o)
-      : last_added_offset(o)
+      std::optional<kafka::offset> last_added,
+      std::optional<kafka::offset> last_committed)
+      : last_added_offset(last_added)
+      , last_iceberg_committed_offset(last_committed)
       , errc(errc::ok) {}
 
     // The offset of the latest data file added to the coordinator.
     std::optional<kafka::offset> last_added_offset;
+
+    std::optional<kafka::offset> last_iceberg_committed_offset;
 
     // If not ok, the request processing has a problem.
     errc errc;

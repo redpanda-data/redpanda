@@ -94,6 +94,11 @@ private:
 
     ss::future<> do_translate();
 
+    void
+    update_translation_lag(kafka::offset max_translated_kafka_offset) const;
+    void update_commit_lag(
+      std::optional<kafka::offset> max_committed_kafka_offset) const;
+
     using translation_success = ss::bool_class<struct translation_success>;
     ss::future<translation_success> do_translate_once(retry_chain_node& parent);
     ss::future<model::record_batch_reader> make_reader();
