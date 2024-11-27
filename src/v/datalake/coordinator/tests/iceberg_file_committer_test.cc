@@ -148,9 +148,11 @@ TEST_F(FileCommitterTest, TestMissingTable) {
     topics_state state;
     state.topic_to_state[topic] = make_topic_state({});
 
-    // Requires a table (which is not created yet)
+    // If there are no files to commit, this should be a no-op even if the table
+    // is not there yet.
     auto res = committer.commit_topic_files_to_catalog(topic, state).get();
-    ASSERT_TRUE(res.has_error());
+    ASSERT_FALSE(res.has_error());
+    ASSERT_EQ(res.value().size(), 0);
 
     create_table();
 
