@@ -40,6 +40,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/fundamental.h"
+#include "ssx/future-util.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
@@ -53,6 +54,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -78,6 +80,18 @@ constexpr auto housekeeping_jit = 5ms;
 }
 
 namespace archival {
+
+static bool is_nested_shutdown_exception(const ss::nested_exception& ex) {
+    // During shutdown we could potentially get a 'shutdown' exception. If the
+    // 'finally' continuation is used it will be invoked and if it touches the
+    // gate or abort source it will also trigger a 'shutdown' exception. The
+    // 'finally' continuation is invoked even for the exceptional future. In
+    // this case we will get the nested_exception. If both exceptions are
+    // actually exceptions we can safely conclude that the shutdown is in
+    // progress (somewhat safely).
+    return ssx::is_shutdown_exception(ex.inner)
+           && ssx::is_shutdown_exception(ex.outer);
+}
 
 static bool segment_meta_matches_stats(
   const cloud_storage::segment_meta& meta,
@@ -1553,6 +1567,20 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
         response = cloud_storage::upload_result::cancelled;
     } catch (const ss::abort_requested_exception&) {
         response = cloud_storage::upload_result::cancelled;
+    } catch (const ss::nested_exception& e) {
+        // Nested exception can be thrown by the cache
+        // which uses 'finally' to close the stream.
+        if (is_nested_shutdown_exception(e)) {
+            response = cloud_storage::upload_result::cancelled;
+        } else {
+            vlog(
+              _rtclog.error,
+              "failed to upload segment {}: {} % {}",
+              path,
+              e.inner,
+              e.outer);
+            response = cloud_storage::upload_result::failed;
+        }
     } catch (const std::exception& e) {
         vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
         response = cloud_storage::upload_result::failed;
