@@ -13,12 +13,12 @@ redpanda_cc_library(
         "random.cc",
         "signature.cc",
         "ssl_utils.cc",
-        "ssl_utils.h",
     ],
     hdrs = [
         "crypto.h",
         "exceptions.h",
         "ossl_context_service.h",
+        "ssl_utils.h",
         "types.h",
     ],
     implementation_deps = [

@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:select_file.bzl", "select_file")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
 filegroup(
@@ -24,6 +25,24 @@ configure_make(
         "",
         "install_fips",
     ],
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "gen_dir",
+    srcs = [":openssl-fips"],
+    output_group = "gen_dir",
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+select_file(
+    name = "fipsmodule_so",
+    srcs = ":openssl-fips",
+    subpath = "lib/ossl-modules/fips.so",
     visibility = [
         "//visibility:public",
     ],

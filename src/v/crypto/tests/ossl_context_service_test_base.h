@@ -43,6 +43,17 @@ public:
         // Grab a copy of the global context.  This will be set on all shards at
         // clean up just in case a test fails and does not perform this action
         _global_context = OSSL_LIB_CTX_get0_global_default();
+
+        // Maybe override the module directory
+        // We need this to play nice with bazel, which isn't very friendly about
+        // providing us with directories.
+        if (auto module_override = ::getenv("__FIPS_MODULE_PATH");
+            module_override != nullptr) {
+            ASSERT_TRUE_CORO(std::filesystem::exists(module_override))
+              << fmt::format("Module not found: {}", module_override);
+            auto mod = std::filesystem::path{module_override}.parent_path();
+            ::setenv("MODULE_DIR", mod.c_str(), 1);
+        }
     }
 
     ss::future<> TearDownAsync() override {
