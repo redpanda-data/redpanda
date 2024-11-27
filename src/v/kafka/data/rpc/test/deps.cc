@@ -2,7 +2,8 @@
 
 namespace kafka::data::rpc::test {
 
-void kafka_data_test_fixture::wire_up() {
+void kafka_data_test_fixture::wire_up_and_start() {
+    _remote_fpmp = std::make_unique<fake_partition_manager_proxy>();
     _remote_services
       .start_single(
         ss::sharded_parameter([this]() {
@@ -11,12 +12,14 @@ void kafka_data_test_fixture::wire_up() {
             return ftmc;
         }),
         ss::sharded_parameter([this]() {
-            auto fpm = std::make_unique<fake_partition_manager>();
+            auto fpm = std::make_unique<fake_partition_manager>(
+              remote_partition_manager_proxy());
             _remote_fpm = fpm.get();
             return fpm;
         }))
       .get();
 
+    _local_fpmp = std::make_unique<fake_partition_manager_proxy>();
     _local_services
       .start_single(
         ss::sharded_parameter([this]() {
@@ -25,7 +28,8 @@ void kafka_data_test_fixture::wire_up() {
             return ftmc;
         }),
         ss::sharded_parameter([this]() {
-            auto fpm = std::make_unique<fake_partition_manager>();
+            auto fpm = std::make_unique<fake_partition_manager>(
+              local_partition_manager_proxy());
             _local_fpm = fpm.get();
             return fpm;
         }))
@@ -83,8 +87,10 @@ void kafka_data_test_fixture::reset() {
     _client.stop().get();
     _local_ftmc = nullptr;
     _local_fpm = nullptr;
+    _local_fpmp.reset();
     _remote_ftmc = nullptr;
     _remote_fpm = nullptr;
+    _remote_fpmp.reset();
     _fplc = nullptr;
     _ftpc = nullptr;
     _local_services.stop().get();

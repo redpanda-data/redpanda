@@ -153,4 +153,57 @@ public:
       = 0;
 };
 
+class partition_manager_proxy {
+public:
+    partition_manager_proxy(
+      ss::sharded<cluster::shard_table>* table,
+      ss::sharded<cluster::partition_manager>* manager,
+      ss::smp_service_group smp_group);
+    ~partition_manager_proxy() = default;
+
+    partition_manager_proxy(const partition_manager_proxy&) = delete;
+    partition_manager_proxy& operator=(const partition_manager_proxy&) = delete;
+    partition_manager_proxy(partition_manager_proxy&&) = delete;
+    partition_manager_proxy& operator=(partition_manager_proxy&&) = delete;
+
+    template<typename R, typename NTP>
+    ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
+      ss::shard_id shard,
+      const NTP& ntp,
+      ss::noncopyable_function<
+        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> func) {
+        return invoke_func_on_shard_impl(
+          shard,
+          [ntp,
+           func = std::move(func)](cluster::partition_manager& mgr) mutable {
+              auto pp = kafka::make_partition_proxy(ntp, mgr);
+              if (!pp || !pp->is_leader()) {
+                  return ss::make_ready_future<result<R, cluster::errc>>(
+                    cluster::errc::not_leader);
+              }
+              return ss::do_with(
+                *std::move(pp),
+                [func = std::move(func)](kafka::partition_proxy& pp) {
+                    return func(&pp);
+                });
+          });
+    }
+
+    template<class Func>
+    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
+    std::invoke_result_t<Func, cluster::partition_manager&>
+    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
+        return _manager->invoke_on(
+          shard, {_smp_group}, std::forward<Func>(func));
+    }
+
+    std::optional<ss::shard_id> shard_owner(const model::ktp& ntp);
+    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp);
+
+private:
+    ss::sharded<cluster::shard_table>* _table;
+    ss::sharded<cluster::partition_manager>* _manager;
+    ss::smp_service_group _smp_group;
+};
+
 }; // namespace kafka::data::rpc

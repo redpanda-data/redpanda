@@ -73,19 +73,15 @@ private:
 };
 class partition_manager_impl final : public partition_manager {
 public:
-    partition_manager_impl(
-      ss::sharded<cluster::shard_table>* table,
-      ss::sharded<cluster::partition_manager>* manager,
-      ss::smp_service_group smp_group)
-      : _table(table)
-      , _manager(manager)
-      , _smp_group(smp_group) {}
+    explicit partition_manager_impl(
+      std::unique_ptr<partition_manager_proxy> proxy)
+      : _proxy(std::move(proxy)) {}
 
     std::optional<ss::shard_id> shard_owner(const model::ktp& ntp) final {
-        return _table->local().shard_for(ntp);
+        return _proxy->shard_owner(ntp);
     };
     std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) final {
-        return _table->local().shard_for(ntp);
+        return _proxy->shard_owner(ntp);
     };
 
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
@@ -93,7 +89,7 @@ public:
       const model::ktp& ktp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ktp, std::move(fn));
+        return _proxy->invoke_on_shard_impl(shard, ktp, std::move(fn));
     }
 
     ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
@@ -101,44 +97,11 @@ public:
       const model::ntp& ntp,
       ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
         kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard, ntp, std::move(fn));
+        return _proxy->invoke_on_shard_impl(shard, ntp, std::move(fn));
     }
 
 private:
-    template<typename R, typename NTP>
-    ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
-      ss::shard_id shard,
-      const NTP& ntp,
-      ss::noncopyable_function<
-        ss::future<result<R, cluster::errc>>(kafka::partition_proxy*)> func) {
-        return invoke_func_on_shard_impl(
-          shard,
-          [ntp,
-           func = std::move(func)](cluster::partition_manager& mgr) mutable {
-              auto pp = kafka::make_partition_proxy(ntp, mgr);
-              if (!pp || !pp->is_leader()) {
-                  return ss::make_ready_future<result<R, cluster::errc>>(
-                    cluster::errc::not_leader);
-              }
-              return ss::do_with(
-                *std::move(pp),
-                [func = std::move(func)](kafka::partition_proxy& pp) {
-                    return func(&pp);
-                });
-          });
-    }
-
-    template<class Func>
-    requires requires(Func f, cluster::partition_manager& mgr) { f(mgr); }
-    std::invoke_result_t<Func, cluster::partition_manager&>
-    invoke_func_on_shard_impl(ss::shard_id shard, Func&& func) {
-        return _manager->invoke_on(
-          shard, {_smp_group}, std::forward<Func>(func));
-    }
-
-    ss::sharded<cluster::shard_table>* _table;
-    ss::sharded<cluster::partition_manager>* _manager;
-    ss::smp_service_group _smp_group;
+    std::unique_ptr<partition_manager_proxy> _proxy;
 };
 
 class topic_creator_impl : public topic_creator {
@@ -217,8 +180,26 @@ kafka::data::rpc::partition_manager::make_default(
   ss::sharded<cluster::shard_table>* table,
   ss::sharded<cluster::partition_manager>* manager,
   ss::smp_service_group smp_group) {
-    return std::make_unique<partition_manager_impl>(table, manager, smp_group);
+    return std::make_unique<partition_manager_impl>(
+      std::make_unique<partition_manager_proxy>(table, manager, smp_group));
 }
+
+partition_manager_proxy::partition_manager_proxy(
+  ss::sharded<cluster::shard_table>* table,
+  ss::sharded<cluster::partition_manager>* manager,
+  ss::smp_service_group smp_group)
+  : _table(table)
+  , _manager(manager)
+  , _smp_group(smp_group) {}
+
+std::optional<ss::shard_id>
+partition_manager_proxy::shard_owner(const model::ktp& ntp) {
+    return _table->local().shard_for(ntp);
+};
+std::optional<ss::shard_id>
+partition_manager_proxy::shard_owner(const model::ntp& ntp) {
+    return _table->local().shard_for(ntp);
+};
 
 std::optional<ss::shard_id>
 partition_manager::shard_owner(const model::ktp& ktp) {

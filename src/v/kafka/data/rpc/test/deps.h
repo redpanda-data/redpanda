@@ -331,16 +331,16 @@ private:
       _new_ntp_cb;
 };
 
-class fake_partition_manager : public partition_manager {
+class fake_partition_manager_proxy {
 public:
-    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) override {
+    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) {
         auto it = _shard_locations.find(ktp);
         if (it == _shard_locations.end()) {
             return std::nullopt;
         }
         return it->second;
     };
-    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) override {
+    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) {
         auto it = _shard_locations.find(ntp);
         if (it == _shard_locations.end()) {
             return std::nullopt;
@@ -367,22 +367,6 @@ public:
         return batches;
     }
 
-    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
-      ss::shard_id shard_id,
-      const model::ktp& ktp,
-      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ktp, std::move(fn));
-    }
-    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
-      ss::shard_id shard_id,
-      const model::ntp& ntp,
-      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
-        kafka::partition_proxy*)> fn) final {
-        return invoke_on_shard_impl(shard_id, ntp, std::move(fn));
-    }
-
-private:
     template<typename R, typename N>
     ss::future<result<R, cluster::errc>> invoke_on_shard_impl(
       ss::shard_id shard_id,
@@ -401,9 +385,54 @@ private:
           std::make_unique<in_memory_proxy>(ntp, &_produced_batches));
         co_return co_await fn(&pp);
     }
+
+private:
     int _errors_to_inject = 0;
     ss::chunked_fifo<produced_batch> _produced_batches;
     model::ntp_map_type<ss::shard_id> _shard_locations;
+};
+
+class fake_partition_manager : public partition_manager {
+public:
+    explicit fake_partition_manager(fake_partition_manager_proxy* fake_proxy)
+      : _fake_proxy(fake_proxy) {}
+    std::optional<ss::shard_id> shard_owner(const model::ktp& ktp) override {
+        return _fake_proxy->shard_owner(ktp);
+    };
+    std::optional<ss::shard_id> shard_owner(const model::ntp& ntp) override {
+        return _fake_proxy->shard_owner(ntp);
+    }
+
+    void set_errors(int n) { _fake_proxy->set_errors(n); }
+
+    void set_shard_owner(const model::ntp& ntp, ss::shard_id shard_id) {
+        _fake_proxy->set_shard_owner(ntp, shard_id);
+    }
+    void remove_shard_owner(const model::ntp& ntp) {
+        _fake_proxy->remove_shard_owner(ntp);
+    }
+
+    record_batches partition_records(const model::ntp& ntp) {
+        return _fake_proxy->partition_records(ntp);
+    }
+
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ktp& ktp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ktp, std::move(fn));
+    }
+    ss::future<result<model::offset, cluster::errc>> invoke_on_shard(
+      ss::shard_id shard_id,
+      const model::ntp& ntp,
+      ss::noncopyable_function<ss::future<result<model::offset, cluster::errc>>(
+        kafka::partition_proxy*)> fn) final {
+        return _fake_proxy->invoke_on_shard_impl(shard_id, ntp, std::move(fn));
+    }
+
+private:
+    fake_partition_manager_proxy* _fake_proxy;
 };
 
 class kafka_data_test_fixture {
@@ -429,8 +458,14 @@ public:
 
     fake_topic_metadata_cache* remote_metadata_cache() { return _remote_ftmc; }
     fake_partition_manager* remote_partition_manager() { return _remote_fpm; }
+    fake_partition_manager_proxy* remote_partition_manager_proxy() {
+        return _remote_fpmp.get();
+    }
     fake_topic_metadata_cache* local_metadata_cache() { return _local_ftmc; }
     fake_partition_manager* local_partition_manager() { return _local_fpm; }
+    fake_partition_manager_proxy* local_partition_manager_proxy() {
+        return _local_fpmp.get();
+    }
     fake_partition_leader_cache* partition_leader_cache() { return _fplc; }
 
     void elect_leader(const model::ntp& ntp, model::node_id node_id);
@@ -441,9 +476,11 @@ public:
 
 private:
     fake_topic_metadata_cache* _local_ftmc = nullptr;
+    std::unique_ptr<fake_partition_manager_proxy> _local_fpmp = nullptr;
     fake_partition_manager* _local_fpm = nullptr;
     fake_topic_metadata_cache* _remote_ftmc = nullptr;
     fake_partition_manager* _remote_fpm = nullptr;
+    std::unique_ptr<fake_partition_manager_proxy> _remote_fpmp = nullptr;
     fake_partition_leader_cache* _fplc = nullptr;
     fake_topic_creator* _ftpc = nullptr;
     ss::sharded<local_service> _local_services;
