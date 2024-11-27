@@ -15,6 +15,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import get_cloud_provider
 from rptest.tests.redpanda_cloud_test import RedpandaCloudTest
 from ducktape.tests.test import TestContext
+from ducktape.mark import matrix
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda_cloud import ProductInfo
@@ -230,7 +231,8 @@ class OMBValidationTest(RedpandaCloudTest):
         return math.floor(0.9537 * mb)
 
     @cluster(num_nodes=CLUSTER_NODES)
-    def test_max_connections(self):
+    @matrix(write_caching=["on", "off"])
+    def test_max_connections(self, write_caching: str):
         tier_limits = self.tier_limits
 
         # Constants
@@ -280,6 +282,9 @@ class OMBValidationTest(RedpandaCloudTest):
             "consumer_config": {
                 "auto.offset.reset": "earliest",
                 "enable.auto.commit": "false",
+            },
+            "topic_config": {
+                "write.caching": write_caching,
             },
         }
 
@@ -396,7 +401,8 @@ class OMBValidationTest(RedpandaCloudTest):
 
         self.rpk.create_topic(swarm_topic_name,
                               self._partition_count(),
-                              replicas=3)
+                              replicas=3,
+                              config={"write.caching": write_caching})
 
         def make_swarm():
             return ProducerSwarm(
@@ -558,7 +564,8 @@ class OMBValidationTest(RedpandaCloudTest):
             self.logger.warn(str(results))
 
     @cluster(num_nodes=CLUSTER_NODES)
-    def test_max_partitions(self):
+    @matrix(write_caching=["on", "off"])
+    def test_max_partitions(self, write_caching: str):
         tier_limits = self.tier_limits
 
         # multiplier for the latencies to log warnings on, but still pass the test
@@ -596,6 +603,27 @@ class OMBValidationTest(RedpandaCloudTest):
             producer_rate / (1 * KiB),
         }
 
+        driver = {
+            "name": "MaxPartitionsTestDriver",
+            "replication_factor": 3,
+            "request_timeout": 300000,
+            "producer_config": {
+                "enable.idempotence": "true",
+                "acks": "all",
+                "linger.ms": 1,
+                "max.in.flight.requests.per.connection": 5,
+                "batch.size": 131072,
+            },
+            "consumer_config": {
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": "false",
+                "max.partition.fetch.bytes": 131072
+            },
+            "topic_config": {
+                "write.caching": write_caching,
+            },
+        }
+
         # validator to check metrics and fail on
         fail_validator = self.base_validator(fudge_factor) | {
             OMBSampleConfigurations.AVG_THROUGHPUT_MBPS: [
@@ -612,13 +640,11 @@ class OMBValidationTest(RedpandaCloudTest):
             ],
         }
 
-        benchmark = OpenMessagingBenchmark(
-            self._ctx,
-            self.redpanda,
-            "ACK_ALL_GROUP_LINGER_1MS_IDEM_MAX_IN_FLIGHT",
-            (workload, fail_validator),
-            num_workers=self.CLUSTER_NODES - 1,
-            topology="ensemble")
+        benchmark = OpenMessagingBenchmark(self._ctx,
+                                           self.redpanda,
+                                           driver, (workload, fail_validator),
+                                           num_workers=self.CLUSTER_NODES - 1,
+                                           topology="ensemble")
         benchmark.start()
         benchmark_time_min = benchmark.benchmark_time() + 5
         benchmark.wait(timeout_sec=benchmark_time_min * 60)
@@ -644,7 +670,8 @@ class OMBValidationTest(RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=CLUSTER_NODES)
-    def test_common_workload(self):
+    @matrix(write_caching=["on", "off"])
+    def test_common_workload(self, write_caching: str):
         tier_limits = self.tier_limits
 
         subscriptions = max(tier_limits.max_egress // tier_limits.max_ingress,
@@ -684,6 +711,9 @@ class OMBValidationTest(RedpandaCloudTest):
                 "auto.offset.reset": "earliest",
                 "enable.auto.commit": "false",
             },
+            "topic_config": {
+                "write.caching": write_caching,
+            },
         }
 
         benchmark = OpenMessagingBenchmark(self._ctx,
@@ -698,7 +728,8 @@ class OMBValidationTest(RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=CLUSTER_NODES)
-    def test_retention(self):
+    @matrix(write_caching=["on", "off"])
+    def test_retention(self, write_caching: str):
         tier_limits = self.tier_limits
 
         subscriptions = max(tier_limits.max_egress // tier_limits.max_ingress,
@@ -740,6 +771,7 @@ class OMBValidationTest(RedpandaCloudTest):
                 "enable.auto.commit": "false",
             },
             "topic_config": {
+                "write.caching": write_caching,
                 "retention.bytes": retention_bytes,
                 "retention.local.target.bytes": retention_bytes,
                 "segment.bytes": segment_bytes,
