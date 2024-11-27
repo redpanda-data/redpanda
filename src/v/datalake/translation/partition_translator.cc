@@ -275,6 +275,7 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
           read_begin_offset,
           read_end_offset,
           _partition->last_stable_offset());
+        _partition->probe().update_iceberg_translation_offset_lag(0);
         co_return translation_success::yes;
     }
     // We have some data to translate, make a reader
@@ -313,14 +314,46 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
       parent_rcn, std::move(kafka_reader), read_begin_offset);
     units.return_all();
     vlog(_logger.debug, "translation result: {}", translation_result);
-    units.return_all();
-    if (
-      translation_result
-      && co_await checkpoint_translated_data(
-        parent_rcn, read_begin_offset, std::move(translation_result.value()))) {
-        co_return translation_success::yes;
+    auto result = translation_success::no;
+    auto max_translated_offset = kafka::prev_offset(read_begin_offset);
+    if (translation_result) {
+        auto last_translated_offset = translation_result->last_offset;
+        if (co_await checkpoint_translated_data(
+              parent_rcn,
+              read_begin_offset,
+              std::move(translation_result.value()))) {
+            max_translated_offset = last_translated_offset;
+            result = translation_success::yes;
+        }
     }
-    co_return translation_success::no;
+    update_translation_lag(max_translated_offset);
+    co_return result;
+}
+
+void partition_translator::update_translation_lag(
+  kafka::offset max_translated_offset) const {
+    auto max_translatable_offset = max_offset_for_translation();
+    if (
+      !max_translatable_offset
+      || max_translatable_offset.value() < kafka::offset{0}) {
+        return;
+    }
+    auto offset_lag = max_translatable_offset.value()
+                      - std::max(max_translated_offset, kafka::offset{-1});
+    _partition->probe().update_iceberg_translation_offset_lag(offset_lag);
+}
+
+void partition_translator::update_commit_lag(
+  std::optional<kafka::offset> max_committed_offset) const {
+    auto max_translatable_offset = max_offset_for_translation();
+    if (
+      !max_translatable_offset
+      || max_translatable_offset.value() < kafka::offset{0}) {
+        return;
+    }
+    auto offset_lag = max_translatable_offset.value()
+                      - max_committed_offset.value_or(kafka::offset{-1});
+    _partition->probe().update_iceberg_commit_offset_lag(offset_lag);
 }
 
 ss::future<partition_translator::checkpoint_result>
@@ -384,6 +417,7 @@ partition_translator::reconcile_with_coordinator() {
         vlog(_logger.warn, "reconciliation failed, response: {}", resp);
         co_return std::nullopt;
     }
+    update_commit_lag(resp.last_iceberg_committed_offset);
     // No file entry signifies the translation was just enabled on the
     // topic. In such a case we start translation from the local start
     // of the log. The underlying assumption is that there is a reasonable

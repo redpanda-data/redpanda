@@ -167,6 +167,35 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
       {},
       {sm::shard_label, partition_label});
 
+    if (model::is_user_topic(_partition.ntp())) {
+        _metrics.add_group(
+          cluster_metrics_name,
+          {
+            sm::make_gauge(
+              "iceberg_offsets_pending_translation",
+              [this] {
+                  return _partition.log()->config().iceberg_enabled()
+                           ? _iceberg_translation_offset_lag
+                           : metric_feature_disabled_state;
+              },
+              sm::description("Total number of offsets that are pending "
+                              "translation to iceberg."),
+              labels),
+            sm::make_gauge(
+              "iceberg_offsets_pending_commit",
+              [this] {
+                  return _partition.log()->config().iceberg_enabled()
+                           ? _iceberg_commit_offset_lag
+                           : metric_feature_disabled_state;
+              },
+              sm::description("Total number of offsets that are pending "
+                              "commit to iceberg catalog."),
+              labels),
+          },
+          {},
+          {sm::shard_label, partition_label});
+    }
+
     if (
       config::shard_local_cfg().enable_schema_id_validation()
       != pandaproxy::schema_registry::schema_id_validation_mode::none) {
