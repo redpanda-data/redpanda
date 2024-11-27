@@ -305,6 +305,7 @@ private:
     ss::future<> remove_from_shard_table(
       model::ntp, raft::group_id, model::revision_id log_revision);
 
+    /* may fail only with ss::gate_closed_exception */
     ss::future<xshard_transfer_state>
       shutdown_partition(ss::lw_shared_ptr<partition>);
 
