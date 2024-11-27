@@ -3,6 +3,6 @@ set -e
 set -x
 
 cd /rp_storage_tool
-cargo build --release
+cargo build --config 'term.verbose=true' --config 'net.retry=6' --release
 cp target/release/rp-storage-tool /usr/local/bin
 cd /
