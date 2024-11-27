@@ -11,7 +11,7 @@ import re
 import time
 import random
 import operator
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import MetricsEndpoint, RedpandaService
 from rptest.clients.rpk import RpkTool
 from requests.exceptions import HTTPError
 from rptest.services.cluster import cluster
@@ -498,6 +498,19 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
 
         bucket_view = BucketView(self.redpanda)
 
+        def fetch_metric_usage():
+            total_usage = 0
+            for topic in self.topics:
+                usage = self.redpanda.metric_sum(
+                    "redpanda_cloud_storage_cloud_log_size",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                    topic=topic.name) / topic.replication_factor
+                self.logger.info(
+                    f"Metric reported cloud storage usage for topic {topic.name}: {usage}"
+                )
+                total_usage += usage
+            return int(total_usage)
+
         def check_usage():
             # Check that the usage reporting system has reported correct values
             manifest_usage = bucket_view.cloud_log_sizes_sum().total(
@@ -514,12 +527,19 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
             self.logger.info(
                 f"Max reported usages via kafka/usage_manager: {max(reported_usages)}"
             )
-            return manifest_usage in reported_usages
+            if manifest_usage not in reported_usages:
+                self.logger.info(
+                    f"Reported usages: {reported_usages} does not contain {manifest_usage}"
+                )
+                return False
 
-        wait_until(
-            check_usage,
-            timeout_sec=30,
-            backoff_sec=1,
-            err_msg=
-            "Reported cloud storage usage (via usage endpoint) did not match the manifest inferred usage"
-        )
+            metric_usage = fetch_metric_usage()
+            self.logger.info(
+                f"Metric reported cloud storage usage: {metric_usage}")
+
+            return manifest_usage == metric_usage
+
+        wait_until(check_usage,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Inconsistent cloud storage usage reported")
