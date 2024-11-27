@@ -142,3 +142,20 @@ redpanda_test_cc_library(
         "//src/v/serde",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "archival",
+    hdrs = [
+        "archival.h",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:iostream",
+        "//src/v/cloud_storage",
+        "//src/v/cluster",
+        "//src/v/model/tests:random",
+        "//src/v/storage/tests:disk_log_builder",
+        "@boost//:test",
+    ],
+)

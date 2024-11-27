@@ -349,6 +349,23 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "offset_to_filepos_test",
+    timeout = "short",
+    srcs = [
+        "offset_to_filepos_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/storage",
+        "//src/v/test_utils:archival",
+        "//src/v/test_utils:fixture",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "offset_translator_tests",
     timeout = "moderate",
     srcs = [
