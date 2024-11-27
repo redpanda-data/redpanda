@@ -97,6 +97,10 @@ public:
           .get();
     }
 
+    cluster::errc update_topic(cluster::topic_properties_update update) {
+        return _kd->client().local().update_topic(std::move(update)).get();
+    }
+
     void elect_leader(const model::ntp& ntp, model::node_id node_id) {
         _kd->elect_leader(ntp, node_id);
     }
@@ -111,6 +115,16 @@ public:
           .local()
           .produce(ntp.tp, std::move(batches.underlying))
           .get();
+    }
+
+    std::optional<cluster::topic_configuration>
+    local_find_topic_cfg(model::topic_namespace_view tp_ns) {
+        return _kd->local_metadata_cache()->find_topic_cfg(tp_ns);
+    }
+
+    std::optional<cluster::topic_configuration>
+    remote_find_topic_cfg(model::topic_namespace_view tp_ns) {
+        return _kd->remote_metadata_cache()->find_topic_cfg(tp_ns);
     }
 
     model::node_id leader_node() const { return GetParam().leader_node; }
@@ -158,6 +172,38 @@ TEST_P(KafkaDataRpcTest, ClientCanProduce) {
       << cluster::error_category().message(int(ec));
     EXPECT_THAT(non_leader_batches(ntp), IsEmpty());
     EXPECT_EQ(leader_batches(ntp), batches);
+}
+
+TEST_P(KafkaDataRpcTest, ClientCanUpdateTopics) {
+    auto ntp = make_ntp("foo");
+    constexpr int batch_max_bytes = 23;
+    create_topic(model::topic_namespace(ntp.ns, ntp.tp.topic));
+    cluster::topic_properties_update update;
+    update.tp_ns = model::topic_namespace{ntp.ns, ntp.tp.topic};
+    update.properties.batch_max_bytes = {
+      batch_max_bytes, cluster::incremental_update_operation::set};
+
+    auto ec = update_topic(update);
+    EXPECT_EQ(ec, cluster::errc::success);
+
+    {
+        // local cfg
+        auto cfg = local_find_topic_cfg(
+          model::topic_namespace{ntp.ns, ntp.tp.topic});
+        ASSERT_TRUE(cfg.has_value());
+        EXPECT_EQ(
+          cfg.value().properties.batch_max_bytes,
+          update.properties.batch_max_bytes.value);
+    }
+    {
+        // remote cfg
+        auto cfg = remote_find_topic_cfg(
+          model::topic_namespace{ntp.ns, ntp.tp.topic});
+        ASSERT_TRUE(cfg.has_value());
+        EXPECT_EQ(
+          cfg.value().properties.batch_max_bytes,
+          update.properties.batch_max_bytes.value);
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(

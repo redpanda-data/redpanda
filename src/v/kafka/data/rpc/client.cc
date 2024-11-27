@@ -224,6 +224,11 @@ ss::future<cluster::errc> client::try_create_topic(
     co_return ec;
 }
 
+ss::future<cluster::errc>
+client::update_topic(cluster::topic_properties_update update) {
+    return _topic_creator->update_topic(std::move(update));
+}
+
 ss::future<> client::start() { return ss::now(); }
 
 ss::future<> client::stop() {

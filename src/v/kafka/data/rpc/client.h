@@ -63,15 +63,17 @@ public:
       cluster::topic_properties,
       std::optional<int32_t> partition_count = std::nullopt);
 
+    ss::future<cluster::errc> update_topic(cluster::topic_properties_update);
+
     ss::future<> start();
     ss::future<> stop();
 
-private:
     ss::future<cluster::errc> try_create_topic(
       model::topic_namespace_view,
       cluster::topic_properties,
       std::optional<int32_t> partition_count);
 
+private:
     ss::future<cluster::errc> do_produce_once(produce_request);
     ss::future<produce_reply> do_local_produce(produce_request);
     ss::future<produce_reply>
