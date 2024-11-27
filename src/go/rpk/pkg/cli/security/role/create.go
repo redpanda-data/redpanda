@@ -46,7 +46,7 @@ flag in the 'rpk security acl create' command.`,
 
 			roleName := args[0]
 			_, err = cl.CreateRole(cmd.Context(), roleName)
-			out.MaybeDie(err, "unable to create role %q: %v", roleName, err)
+			out.MaybeDie(err, "unable to create role %q: %v", roleName, adminapi.TryDecodeMessageFromErr(err))
 
 			if isText, _, s, err := f.Format(createResponse{[]string{roleName}}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
