@@ -10,6 +10,7 @@ redpanda_test_cc_library(
     include_prefix = "transform/logging/tests",
     deps = [
         "//src/v/bytes:iobuf",
+        "//src/v/bytes:streambuf",
         "//src/v/json",
         "//src/v/model",
     ],

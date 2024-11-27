@@ -38,6 +38,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fixture",
+        "//src/v/base",
         "@fmt",
         "@googletest//:gtest",
         "@seastar",

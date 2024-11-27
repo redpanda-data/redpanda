@@ -18,8 +18,6 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
 
-#include <boost/test/unit_test.hpp>
-
 #include <algorithm>
 #include <ostream>
 #include <random>

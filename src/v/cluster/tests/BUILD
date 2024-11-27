@@ -58,7 +58,7 @@ redpanda_test_cc_library(
     include_prefix = "cluster/tests",
     deps = [
         "//src/v/cluster",
-        "//src/v/raft/tests:simple_raft_fixture",
+        "//src/v/raft/tests:simple_raft_fixture_btest",
     ],
 )
 

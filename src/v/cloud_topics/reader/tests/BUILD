@@ -21,6 +21,7 @@ redpanda_test_cc_library(
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:placeholder",
+        "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/random:generators",

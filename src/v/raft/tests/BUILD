@@ -1,7 +1,7 @@
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
-    name = "simple_raft_fixture",
+    name = "simple_raft_fixture_btest",
     hdrs = [
         "simple_raft_fixture.h",
     ],
@@ -82,21 +82,29 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:random",
         "//src/v/config",
+        "//src/v/features",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/random:generators",
         "//src/v/rpc",
+        "//src/v/ssx:future_util",
+        "//src/v/ssx:sformat",
         "//src/v/storage",
         "//src/v/test_utils:gtest",
+        "//src/v/utils:prefix_logger",
         "//src/v/utils:unresolved_address",
+        "@abseil-cpp//absl/container:node_hash_map",
+        "@boost//:range",
         "@seastar",
     ],
 )
 
 redpanda_test_cc_library(
-    name = "stm_raft_fixture",
+    name = "stm_raft_fixture_btest",
     hdrs = [
         "raft_group_fixture.h",
     ],
@@ -380,7 +388,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/model",
         "//src/v/raft",
-        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/raft/tests:stm_raft_fixture_btest",
         "//src/v/storage",
         "//src/v/test_utils:fixture",
         "//src/v/test_utils:seastar_boost",
@@ -400,7 +408,7 @@ redpanda_cc_btest(
         "//src/v/finjector",
         "//src/v/model",
         "//src/v/raft",
-        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/raft/tests:stm_raft_fixture_btest",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@seastar//:testing",
@@ -416,7 +424,7 @@ redpanda_cc_btest(
     tags = ["exclusive"],
     deps = [
         "//src/v/raft",
-        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/raft/tests:stm_raft_fixture_btest",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:directory_walker",
         "@boost//:test",
@@ -439,7 +447,7 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/raft",
-        "//src/v/raft/tests:stm_raft_fixture",
+        "//src/v/raft/tests:stm_raft_fixture_btest",
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",

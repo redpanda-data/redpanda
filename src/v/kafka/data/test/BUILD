@@ -14,6 +14,7 @@ redpanda_test_cc_library(
     include_prefix = "kafka/data/test",
     deps = [
         "//src/v/bytes",
+        "//src/v/bytes:iobuf",
     ],
 )
 

@@ -16,7 +16,9 @@ redpanda_test_cc_library(
     ],
     include_prefix = "cloud_storage/inventory/tests",
     deps = [
+        "//src/v/bytes:iostream",
         "//src/v/cloud_storage",
+        "//src/v/compression",
         "@googletest//:gtest",
     ],
 )
