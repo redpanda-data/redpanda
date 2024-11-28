@@ -27,6 +27,7 @@
 #include "storage/log_manager.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
+#include "test_utils/test_macros.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
@@ -179,9 +180,9 @@ struct linear_int_kv_batch_generator {
       ss::circular_buffer<model::record_batch>&& batches) {
         int idx = 0;
         for (const auto& batch : batches) {
-            BOOST_REQUIRE_EQUAL(batch.record_count(), 1);
+            RPTEST_EXPECT_EQ(batch.record_count(), 1);
             batch.for_each_record([&idx](model::record rec) {
-                BOOST_REQUIRE_EQUAL(
+                RPTEST_EXPECT_EQ(
                   reflection::from_iobuf<int>(rec.release_key()), idx++);
             });
         }
@@ -282,7 +283,7 @@ public:
 
     struct batch_validating_consumer {
         ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-            BOOST_REQUIRE_EQUAL(b.header().crc, model::crc_record_batch(b));
+            RPTEST_EXPECT_EQ(b.header().crc, model::crc_record_batch(b));
             batches.push_back(std::move(b));
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::no);
@@ -362,8 +363,8 @@ public:
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
-            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
-            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
+            RPTEST_EXPECT_EQ(log->offsets().dirty_offset, res.last_offset);
+            RPTEST_EXPECT_EQ(log->offsets().dirty_offset, expected_offset);
         }
 
         return headers;
@@ -393,8 +394,8 @@ public:
 
         log->flush().get();
 
-        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
-        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
+        RPTEST_EXPECT_EQ(log->offsets().dirty_offset, res.last_offset);
+        RPTEST_EXPECT_EQ(log->offsets().dirty_offset, expected_offset);
     }
 
     // model::offset start_offset;
