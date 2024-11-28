@@ -12,6 +12,7 @@
 #include "model/timestamp.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/exceptions.h"
 #include "storage/index_state.h"
 #include "storage/key_offset_map.h"
 #include "storage/probe.h"
@@ -159,7 +160,7 @@ ss::future<model::offset> build_offset_map(
     if (!min_segment_fully_indexed.has_value()) {
         // If we broke out without setting an offset, we failed to index even a
         // single segment, likely because it had too many keys.
-        throw std::runtime_error(
+        throw zero_segments_indexed_exception(
           fmt::format("Couldn't index {}", iter->get()->path()));
     }
     co_return min_segment_fully_indexed.value();
