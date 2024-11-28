@@ -75,6 +75,24 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "timeout_adl",
+    timeout = "short",
+    srcs = [
+        "timeout_adl.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/model",
+        "//src/v/reflection:adl",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:to_string",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
     name = "topic_view_test",
     timeout = "short",
     srcs = [
