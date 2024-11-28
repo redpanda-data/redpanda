@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
 redpanda_cc_btest(
@@ -78,6 +78,19 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "rpc_bench",
+    timeout = "short",
+    srcs = [
+        "rpc_bench.cc",
+    ],
+    deps = [
+        "//src/v/reflection:adl",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
