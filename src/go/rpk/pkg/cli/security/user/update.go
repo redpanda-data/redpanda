@@ -10,6 +10,7 @@
 package user
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -22,7 +23,7 @@ import (
 func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var newPass, mechanism string
 	cmd := &cobra.Command{
-		Use:   "update [USER] --new-password [PW]",
+		Use:   "update [USER] --new-password [PW] --mechanism [MECHANISM]",
 		Short: "Update SASL user credentials",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -46,9 +47,11 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&newPass, "new-password", "", "New user's password.")
-	cmd.Flags().StringVar(&mechanism, "mechanism", adminapi.ScramSha256, "SASL mechanism to use for the user you are updating (scram-sha-256, scram-sha-512, case insensitive)")
+	cmd.Flags().StringVar(&mechanism, "mechanism", "", fmt.Sprintf("SASL mechanism to use for the user you are updating (%v, %v, case insensitive)", adminapi.ScramSha256, adminapi.ScramSha512))
 	cmd.MarkFlagRequired("new-password")
 	cmd.MarkFlagRequired("mechanism")
-
+	cmd.RegisterFlagCompletionFunc("mechanism", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{adminapi.ScramSha256, adminapi.ScramSha512}, cobra.ShellCompDirectiveDefault
+	})
 	return cmd
 }
