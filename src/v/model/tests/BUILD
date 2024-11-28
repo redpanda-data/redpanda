@@ -109,6 +109,22 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "record_batch_test",
+    timeout = "short",
+    srcs = [
+        "record_batch_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":random",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "record_batch_reader_test",
     timeout = "short",
     srcs = [
