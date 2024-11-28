@@ -125,6 +125,22 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "model_serialization_test",
+    timeout = "short",
+    srcs = [
+        "model_serialization_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/model",
+        "//src/v/test_utils:rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "record_batch_reader_test",
     timeout = "short",
     srcs = [
