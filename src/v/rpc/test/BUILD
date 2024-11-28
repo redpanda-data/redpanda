@@ -81,6 +81,26 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "connection_cache_test",
+    timeout = "short",
+    srcs = [
+        "connection_cache_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_bench(
     name = "rpc_bench",
     timeout = "short",
