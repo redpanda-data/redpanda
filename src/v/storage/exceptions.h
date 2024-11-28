@@ -28,3 +28,14 @@ public:
 private:
     ss::sstring _msg;
 };
+
+class zero_segments_indexed_exception : public std::exception {
+public:
+    explicit zero_segments_indexed_exception(ss::sstring s)
+      : _msg(std::move(s)) {}
+
+    const char* what() const noexcept override { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
