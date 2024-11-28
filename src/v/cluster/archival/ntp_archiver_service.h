@@ -633,8 +633,6 @@ private:
     // the state of manifest uploads.
     bool uploaded_data_past_flush_offset() const;
 
-    void update_probe();
-
     /// Return true if archival metadata can be replicated.
     /// This means that the replica is a leader, the term did not
     /// change and the archiver is not stopping.
