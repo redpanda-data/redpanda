@@ -486,7 +486,7 @@ ss::future<> abs_client::stop() {
     vlog(abs_log.debug, "Stopped ABS client");
 }
 
-void abs_client::shutdown() { _client.shutdown(); }
+void abs_client::shutdown() { _client.shutdown_now(); }
 
 template<typename T>
 ss::future<result<T, error_outcome>> abs_client::send_request(

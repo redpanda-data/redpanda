@@ -123,6 +123,8 @@ ss::future<scrubber::run_result> scrubber::run(run_quota_t quota) {
     }
 
     if (_as.abort_requested()) {
+        vlog(
+          _logger.info, "Scrub abort after {} operations.", detect_result.ops);
         co_return run_result{
           .status = run_status::failed,
           .consumed = consumed,
@@ -175,12 +177,15 @@ void scrubber::release() {
 ss::future<> scrubber::stop() {
     vlog(_logger.info, "Stopping scrubber ({})...", _gate.get_count());
     _as.request_abort();
-    return _gate.close();
+    co_await _gate.close();
+    vlog(_logger.info, "Stopped scrubber");
 }
 
 retry_chain_node* scrubber::get_root_retry_chain_node() { return &_root_rtc; }
 
-ss::sstring scrubber::name() const { return "scrubber"; }
+ss::sstring scrubber::name() const {
+    return ssx::sformat("scrubber:{}", _archiver.get_ntp());
+}
 
 std::pair<bool, std::optional<ss::sstring>> scrubber::should_skip() const {
     if (!_feature_table.is_active(features::feature::cloud_storage_scrubbing)) {
