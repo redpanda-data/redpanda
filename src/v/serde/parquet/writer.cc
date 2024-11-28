@@ -124,6 +124,12 @@ public:
         for (const auto& rg : _row_groups) {
             num_rows += rg.num_rows;
         }
+        chunked_vector<column_order> orders;
+        _opts.schema.for_each([&orders](const schema_element& element) {
+            if (element.is_leaf()) {
+                orders.push_back(column_order::type_defined);
+            }
+        });
         auto encoded_footer = encode(file_metadata{
           .version = 2,
           .schema = flatten(_opts.schema),
@@ -132,6 +138,7 @@ public:
           .key_value_metadata = std::move(_opts.metadata),
           .created_by = fmt::format(
             "Redpanda version {} (build {})", _opts.version, _opts.build),
+          .column_orders = std::move(orders),
         });
         size_t footer_size = encoded_footer.size_bytes();
         co_await write_iobuf(std::move(encoded_footer));
