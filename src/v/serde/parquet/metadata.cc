@@ -663,6 +663,8 @@ iobuf encode(const row_group& group) {
     constexpr auto num_rows_field_id = thrift::field_id(3);
     constexpr auto sorting_columns_field_id = thrift::field_id(4);
     constexpr auto file_offset_field_id = thrift::field_id(5);
+    constexpr auto total_compressed_size_field_id = thrift::field_id(6);
+    constexpr auto ordinal_field_id = thrift::field_id(7);
 
     thrift::struct_encoder encoder;
 
@@ -698,6 +700,12 @@ iobuf encode(const row_group& group) {
       file_offset_field_id,
       thrift::field_type::i64,
       vint::to_bytes(group.file_offset));
+    encoder.write_field(
+      total_compressed_size_field_id,
+      thrift::field_type::i64,
+      vint::to_bytes(group.total_compressed_size));
+    encoder.write_field(
+      ordinal_field_id, thrift::field_type::i16, vint::to_bytes(group.ordinal));
     return std::move(encoder).write_stop();
 }
 

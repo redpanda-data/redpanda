@@ -439,6 +439,13 @@ struct row_group {
     /** Byte offset from beginning of file to first page (data or dictionary)
      * in this row group **/
     int64_t file_offset;
+
+    /** Total byte size of all compressed (and potentially encrypted) column
+     * data in this row group **/
+    int64_t total_compressed_size;
+
+    /** Row group ordinal in the file **/
+    int16_t ordinal;
 };
 
 /**

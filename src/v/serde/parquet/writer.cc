@@ -82,12 +82,18 @@ public:
           .total_byte_size = 0, // Computed incrementally below
           .num_rows = _current_row_group_stats.rows,
           .file_offset = static_cast<int64_t>(_offset),
+          .total_compressed_size = 0, // Computed incrementally below
+          .ordinal = static_cast<int16_t>(_row_groups.size()),
         };
         for (auto& [pos, col] : _columns) {
             auto page = co_await col.writer.flush_page();
             auto& data_header = std::get<data_page_header>(page.header.type);
-            auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
-            rg.total_byte_size += page_size;
+            auto uncompressed_size = page.header.uncompressed_page_size
+                                     + page.serialized_header_size;
+            auto compressed_size = page.header.compressed_page_size
+                                   + page.serialized_header_size;
+            rg.total_byte_size += uncompressed_size;
+            rg.total_compressed_size += compressed_size;
             rg.columns.push_back(column_chunk{
               .meta_data = column_meta_data{
                 .type = col.leaf->type,
@@ -95,12 +101,14 @@ public:
                 .path_in_schema = path_in_schema(*col.leaf),
                 .codec = _opts.compress ? compression_codec::zstd : compression_codec::uncompressed,
                 .num_values = data_header.num_values,
-                .total_uncompressed_size = page.header.uncompressed_page_size + page.serialized_header_size,
-                .total_compressed_size = page.header.compressed_page_size + page.serialized_header_size,
+                .total_uncompressed_size = uncompressed_size,
+                .total_compressed_size = compressed_size,
                 .key_value_metadata = {},
                 .data_page_offset = static_cast<int64_t>(_offset),
                 // Because we only write a single page per row group at the moment,
                 // a column chunk's stats are trivially the same as it's page.
+                // When we have multiple pages in a row group we'll have to 
+                // calculate these dynamically.
                 .stats = std::move(data_header.stats),
               },
             });

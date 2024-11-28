@@ -145,6 +145,8 @@ iobuf serialize_testcase(size_t test_case) {
                 .total_byte_size = 321,
                 .num_rows = 1,
                 .file_offset = 1234,
+                .total_compressed_size = 231,
+                .ordinal = 1,
              },
              row_group{
                 .total_byte_size = 99999,
@@ -162,6 +164,8 @@ iobuf serialize_testcase(size_t test_case) {
                   },
                 },
                 .file_offset = 4123,
+                .total_compressed_size = 8888,
+                .ordinal = 2,
              }
           ),
           .key_value_metadata = {{"foo", "bar"}, {"baz", "qux"}, {"nice", ""}},
