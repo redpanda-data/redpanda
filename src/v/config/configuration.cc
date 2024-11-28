@@ -3388,8 +3388,7 @@ configuration::configuration()
       *this,
       "kafka_throughput_replenish_threshold",
       "Threshold for refilling the token bucket as part of enforcing "
-      "throughput limits. This only applies when "
-      "kafka_throughput_throttling_v2 is `true`. This threshold is evaluated "
+      "throughput limits. This threshold is evaluated "
       "with each request for data. When the number of tokens to replenish "
       "exceeds this threshold, then tokens are added to the token bucket. This "
       "ensures that the atomic is not being updated for the token count with "
