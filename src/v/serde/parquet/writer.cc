@@ -78,12 +78,14 @@ public:
         if (_current_row_group_stats.rows == 0) {
             co_return;
         }
-        row_group rg{};
-        rg.file_offset = static_cast<int64_t>(_offset);
+        row_group rg{
+          .total_byte_size = 0, // Computed incrementally below
+          .num_rows = _current_row_group_stats.rows,
+          .file_offset = static_cast<int64_t>(_offset),
+        };
         for (auto& [pos, col] : _columns) {
             auto page = co_await col.writer.flush_page();
             auto& data_header = std::get<data_page_header>(page.header.type);
-            rg.num_rows = data_header.num_rows;
             auto page_size = static_cast<int64_t>(page.serialized.size_bytes());
             rg.total_byte_size += page_size;
             rg.columns.push_back(column_chunk{
