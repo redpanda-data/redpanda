@@ -14,7 +14,7 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
-    name = "fixture",
+    name = "fixture_btest",
     hdrs = [
         "fixture.h",
     ],
@@ -24,7 +24,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fixture_base",
-        "//src/v/cloud_storage/tests:s3_imposter",
+        "//src/v/cloud_storage/tests:s3_imposter_btest",
     ],
 )
 

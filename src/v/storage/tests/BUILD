@@ -54,8 +54,12 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/features",
+        "//src/v/model",
         "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "//src/v/ssx:sformat",
         "//src/v/storage",
+        "@seastar",
     ],
 )
 

@@ -22,7 +22,6 @@
 #include "storage/tests/utils/disk_log_builder.h"
 
 #include <boost/numeric/conversion/cast.hpp>
-#include <boost/test/tools/interface.hpp>
 
 namespace cloud_storage {
 static const auto manifest_namespace = model::kafka_namespace;  // NOLINT

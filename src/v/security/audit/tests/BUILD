@@ -9,7 +9,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/cluster",
         "//src/v/kafka/client/test:fixture",
-        "//src/v/redpanda/tests:fixture",
+        "//src/v/redpanda/tests:fixture_btest",
         "//src/v/security/audit",
         "//src/v/security/audit:types",
         "//src/v/test_utils:seastar_boost",

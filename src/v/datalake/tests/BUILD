@@ -99,6 +99,7 @@ redpanda_test_cc_library(
         "record_generator.h",
     ],
     implementation_deps = [
+        "//src/v/container:chunked_hash_map",
         "//src/v/schema:registry",
         "//src/v/serde/avro/tests:data_generator",
         "@avro",

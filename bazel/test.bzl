@@ -274,4 +274,7 @@ def redpanda_test_cc_library(
         deps = deps,
         copts = redpanda_copts(),
         testonly = True,
+        features = [
+            "layering_check",
+        ],
     )
