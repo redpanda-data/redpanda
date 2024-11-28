@@ -60,4 +60,11 @@ ss::future<index_state> deduplicate_segment(
   ss::sharded<features::feature_table>&,
   bool inject_reader_failure = false);
 
+ss::future<> linear_scan_of_segment_for_map(
+  const compaction_config& compact_cfg,
+  ss::lw_shared_ptr<segment> seg,
+  key_offset_map& map,
+  probe& pb,
+  model::offset& next_start_offset);
+
 } // namespace storage
