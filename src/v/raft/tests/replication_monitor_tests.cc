@@ -7,19 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/fundamental.h"
 #include "raft/tests/raft_fixture.h"
-#include "raft/tests/raft_group_fixture.h"
 #include "test_utils/async.h"
 
-using namespace raft;
+#include <seastar/core/lowres_clock.hh>
 
-class monitor_test_fixture
-  : public raft_fixture
-  , public ::testing::WithParamInterface<std::tuple<bool, size_t>> {
-public:
-    static bool write_caching() { return std::get<0>(GetParam()); }
-    static size_t num_waiters() { return std::get<1>(GetParam()); }
-};
+using namespace raft;
 
 namespace {
 
@@ -49,75 +43,110 @@ auto populate_waiters(
     return ss::when_all_succeed(futures.begin(), futures.end());
 }
 
+class monitor_test_fixture
+  : public raft_fixture
+  , public ::testing::WithParamInterface<std::tuple<bool, size_t>> {
+public:
+    static bool write_caching() { return std::get<0>(GetParam()); }
+    static size_t num_waiters() { return std::get<1>(GetParam()); }
+
+    ss::future<> truncation_detection_test(raft_node_instance& leader) {
+        auto raft = leader.raft();
+        auto wait_futures = ::populate_waiters(
+          raft, write_caching(), num_waiters());
+        co_await ss::sleep(500ms);
+        ASSERT_FALSE_CORO(wait_futures.available());
+
+        for (auto& [id, node] : nodes()) {
+            if (id == leader.get_vnode().id()) {
+                node->on_dispatch(
+                  [](model::node_id, raft::msg_type) { return ss::sleep(3s); });
+            }
+        }
+
+        std::vector<ss::future<result<replicate_result>>> replicate_f;
+        replicate_f.reserve(num_waiters());
+        for (size_t i = 0; i < num_waiters(); i++) {
+            replicate_f.push_back(raft->replicate(
+              make_batches({{"k", "v"}}),
+              replicate_options{raft::consistency_level::quorum_ack}));
+        }
+        auto repl_results = co_await ss::when_all(
+          replicate_f.begin(), replicate_f.end());
+        for (auto& r : repl_results) {
+            auto res = r.get();
+            ASSERT_TRUE_CORO(res.has_error());
+            if (res.error() == errc::not_leader) {
+                throw raft_not_leader_exception();
+            }
+            ASSERT_EQ_CORO(res.error(), errc::replicated_entry_truncated);
+        }
+
+        co_await tests::cooperative_spin_wait_with_timeout(2s, [&] {
+            return wait_futures.available() && !wait_futures.failed();
+        });
+
+        auto wait_results = wait_futures.get();
+        for (size_t i = 0; i < num_waiters(); i++) {
+            if (wait_results.at(i) == errc::not_leader) {
+                throw raft_not_leader_exception();
+            }
+            ASSERT_EQ_CORO(
+              wait_results.at(i), errc::replicated_entry_truncated);
+        }
+    }
+    ss::future<> replication_monitor_wait_test(raft_node_instance& leader) {
+        auto raft = leader.raft();
+
+        auto wait_futures = ::populate_waiters(
+          raft, write_caching(), num_waiters());
+        co_await ss::sleep(500ms);
+        ASSERT_FALSE_CORO(wait_futures.available());
+
+        for (size_t i = 0; i < num_waiters(); i++) {
+            auto repl_result = co_await raft->replicate(
+              make_batches({{"k", "v"}}),
+              replicate_options{raft::consistency_level::quorum_ack});
+            if (
+              repl_result.has_error()
+              && repl_result.error() == errc::not_leader) {
+                throw raft_not_leader_exception();
+            }
+            ASSERT_TRUE_CORO(repl_result.has_value()) << repl_result.error();
+        }
+
+        co_await tests::cooperative_spin_wait_with_timeout(2s, [&] {
+            return wait_futures.available() && !wait_futures.failed();
+        });
+
+        auto wait_results = wait_futures.get();
+        for (size_t i = 0; i < num_waiters(); i++) {
+            if (wait_results.at(i) == errc::not_leader) {
+                throw raft_not_leader_exception();
+            }
+            ASSERT_EQ_CORO(wait_results.at(i), errc::success);
+        }
+    }
+};
 } // namespace
 
 TEST_P_CORO(monitor_test_fixture, replication_monitor_wait) {
     co_await create_simple_group(5);
 
     co_await set_write_caching(write_caching());
-    auto leader = co_await wait_for_leader(10s);
-    auto raft = node(leader).raft();
 
-    auto all = ::populate_waiters(raft, write_caching(), num_waiters());
-    co_await ss::sleep(500ms);
-    ASSERT_FALSE_CORO(all.available());
-
-    for (size_t i = 0; i < num_waiters(); i++) {
-        auto result = co_await raft->replicate(
-          make_batches({{"k", "v"}}),
-          replicate_options{raft::consistency_level::quorum_ack});
-        ASSERT_TRUE_CORO(result.has_value()) << result.error();
-    }
-
-    co_await tests::cooperative_spin_wait_with_timeout(
-      2s, [&] { return all.available() && !all.failed(); });
-
-    auto result = all.get();
-    for (size_t i = 0; i < num_waiters(); i++) {
-        ASSERT_EQ_CORO(result.at(i), errc::success);
-    }
+    co_await test_with_leader(
+      60s, &monitor_test_fixture::replication_monitor_wait_test);
 }
 
 TEST_P_CORO(monitor_test_fixture, truncation_detection) {
     set_enable_longest_log_detection(false);
     co_await create_simple_group(3);
-    auto leader = co_await wait_for_leader(10s);
+
     co_await set_write_caching(write_caching());
 
-    auto raft = node(leader).raft();
-    auto all = ::populate_waiters(raft, write_caching(), num_waiters());
-    co_await ss::sleep(500ms);
-    ASSERT_FALSE_CORO(all.available());
-
-    for (auto& [id, node] : nodes()) {
-        if (id == leader) {
-            node->on_dispatch(
-              [](model::node_id, raft::msg_type) { return ss::sleep(3s); });
-        }
-    }
-
-    std::vector<ss::future<result<replicate_result>>> replicate_f;
-    replicate_f.reserve(num_waiters());
-    for (size_t i = 0; i < num_waiters(); i++) {
-        replicate_f.push_back(raft->replicate(
-          make_batches({{"k", "v"}}),
-          replicate_options{raft::consistency_level::quorum_ack}));
-    }
-    auto results = co_await ss::when_all(
-      replicate_f.begin(), replicate_f.end());
-    for (auto& r : results) {
-        auto res = r.get();
-        ASSERT_TRUE_CORO(res.has_error());
-        ASSERT_EQ_CORO(res.error(), errc::replicated_entry_truncated);
-    }
-
-    co_await tests::cooperative_spin_wait_with_timeout(
-      2s, [&] { return all.available() && !all.failed(); });
-
-    auto result = all.get();
-    for (size_t i = 0; i < num_waiters(); i++) {
-        ASSERT_EQ_CORO(result.at(i), errc::replicated_entry_truncated);
-    }
+    co_await test_with_leader(
+      60s, &monitor_test_fixture::truncation_detection_test);
 }
 
 INSTANTIATE_TEST_SUITE_P(

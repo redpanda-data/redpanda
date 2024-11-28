@@ -666,11 +666,13 @@ redpanda_cc_gtest(
     ],
     tags = ["exclusive"],
     deps = [
+        "//src/v/model",
         "//src/v/raft/tests:raft_fixture",
         "//src/v/raft/tests:stm_raft_fixture_gtest",
         "//src/v/test_utils:fixture",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
+        "@seastar",
         "@seastar//:testing",
     ],
 )
