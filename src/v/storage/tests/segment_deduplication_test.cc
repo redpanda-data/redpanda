@@ -382,23 +382,6 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
           .get();
     }
 
-    // Build a map, configuring it to hold too little data for even a single
-    // segment.
-    simple_key_offset_map too_small_map(5);
-    ASSERT_THAT(
-      [&] {
-          build_offset_map(
-            cfg,
-            segs,
-            disk_log.stm_manager(),
-            disk_log.resources(),
-            disk_log.get_probe(),
-            too_small_map)
-            .get();
-      },
-      testing::ThrowsMessage<std::runtime_error>(
-        testing::HasSubstr("Couldn't index")));
-
     // Now configure a map to index some segments.
     simple_key_offset_map partial_map(15);
     auto partial_o = build_offset_map(

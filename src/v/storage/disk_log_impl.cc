@@ -25,6 +25,7 @@
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
+#include "storage/exceptions.h"
 #include "storage/fwd.h"
 #include "storage/key_offset_map.h"
 #include "storage/kvstore.h"
@@ -648,9 +649,14 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
                             ? dynamic_cast<key_offset_map&>(*cfg.hash_key_map)
                             : dynamic_cast<key_offset_map&>(*simple_map);
     model::offset idx_start_offset;
+    bool needs_chunked_sliding_window_compact = false;
     try {
         idx_start_offset = co_await build_offset_map(
           cfg, segs, _stm_manager, _manager.resources(), *_probe, map);
+    } catch (const zero_segments_indexed_exception&) {
+        // We failed to index even one segment (the last entry of the segs set).
+        // Perform chunked compaction on it.
+        needs_chunked_sliding_window_compact = true;
     } catch (...) {
         auto eptr = std::current_exception();
         if (ssx::is_shutdown_exception(eptr)) {
@@ -664,6 +670,11 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           std::current_exception());
         co_return false;
     }
+
+    if (needs_chunked_sliding_window_compact) {
+        co_return co_await chunked_sliding_window_compact(cfg, segs, map);
+    }
+
     vlog(
       gclog.debug,
       "[{}] built offset map with {} keys (max allowed {}), min segment fully "
@@ -1186,6 +1197,58 @@ ss::future<> disk_log_impl::do_compact(
         // segment compaction.
         co_await compact_adjacent_segments(compact_cfg);
     }
+}
+
+ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
+  const compaction_config& compact_cfg,
+  const segment_set& segs,
+  key_offset_map& map) {
+    // The unindexed segment.
+    auto seg = segs.back();
+    vlog(
+      gclog.debug,
+      "Performing chunked sliding window compaction for segment {}",
+      seg);
+
+    auto last_indexed_offset = model::offset{-1};
+    auto last_offset = seg->offsets().get_dirty_offset();
+    while (last_indexed_offset < last_offset) {
+        if (compact_cfg.asrc) {
+            compact_cfg.asrc->check();
+        }
+
+        co_await linear_scan_of_segment_for_map(
+          compact_cfg, seg, map, *_probe, std::ref(last_indexed_offset));
+
+        for (auto& s : segs) {
+            if (compact_cfg.asrc) {
+                compact_cfg.asrc->check();
+            }
+
+            // Neither of these flags are true until chunked compaction is
+            // complete
+            static const bool is_finished_window_compaction = false;
+            static const bool is_clean_compacted = false;
+            co_await rewrite_segment_with_offset_map(
+              compact_cfg,
+              s,
+              map,
+              is_finished_window_compaction,
+              is_clean_compacted);
+        }
+    }
+
+    // Segments can now be marked as finished window compaction
+    for (auto& s : segs) {
+        co_await internal::mark_segment_as_finished_window_compaction(s, false);
+    }
+
+    // We can also mark the last segment as cleanly compacted now
+    co_await internal::mark_segment_as_finished_window_compaction(seg, true);
+
+    _last_compaction_window_start_offset = seg->offsets().get_base_offset();
+
+    co_return true;
 }
 
 ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
