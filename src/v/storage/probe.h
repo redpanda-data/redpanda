@@ -107,6 +107,9 @@ public:
     }
 
     void add_chunked_compaction_run() { ++_num_chunked_compaction_runs; }
+    auto get_chunked_compaction_runs() const {
+        return _num_chunked_compaction_runs;
+    }
 
     void batch_parse_error() { ++_batch_parse_errors; }
 
