@@ -232,6 +232,13 @@ public:
       const compaction_config& cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
+    ss::future<> rewrite_segment_with_offset_map(
+      const compaction_config& cfg,
+      ss::lw_shared_ptr<segment> seg,
+      key_offset_map& map,
+      bool is_finished_window_compaction,
+      bool is_clean_compacted);
+
     const auto& compaction_ratio() const { return _compaction_ratio; }
 
     static ss::future<> copy_kvstore_state(
