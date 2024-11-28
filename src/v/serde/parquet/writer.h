@@ -23,7 +23,7 @@ namespace serde::parquet {
 //
 // These are mainly provided to limit memory usage.
 struct row_group_stats {
-    uint64_t rows = 0;
+    int64_t rows = 0;
     uint64_t memory_usage = 0;
 };
 
