@@ -15,6 +15,7 @@
 #include "bytes/bytes.h"
 #include "container/fragmented_vector.h"
 #include "hashing/xx.h"
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -271,6 +272,21 @@ private:
     stats _stats;
     // Set if a transactional stm is attached to this partition.
     std::optional<storage::stm_type> _transactional_stm_type;
+};
+
+class chunked_compaction_reducer : public compaction_reducer {
+public:
+    explicit chunked_compaction_reducer(
+      key_offset_map* map, model::offset start_offset_inclusive)
+      : _map(map)
+      , _start_offset(start_offset_inclusive) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch);
+    model::offset end_of_stream() { return _map->max_offset(); }
+
+private:
+    key_offset_map* _map;
+    model::offset _start_offset;
 };
 
 } // namespace storage::internal
