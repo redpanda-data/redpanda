@@ -12,7 +12,6 @@
 #include "raft/heartbeats.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "serde/serde.h"
 #include "test_utils/randoms.h"
 
 #include <seastar/core/sstring.hh>
