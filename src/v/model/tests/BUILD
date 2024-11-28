@@ -114,6 +114,7 @@ redpanda_cc_btest(
     srcs = [
         "record_batch_reader_test.cc",
     ],
+    cpu = 1,
     deps = [
         ":random",
         "//src/v/model",
