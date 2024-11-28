@@ -100,11 +100,9 @@ ss::future<
 iceberg_file_committer::commit_topic_files_to_catalog(
   model::topic topic, const topics_state& state) const {
     auto tp_it = state.topic_to_state.find(topic);
-    if (tp_it == state.topic_to_state.end()) {
-        co_return chunked_vector<mark_files_committed_update>{};
-    }
     if (
-      tp_it->second.lifecycle_state == topic_state::lifecycle_state_t::purged) {
+      tp_it == state.topic_to_state.end()
+      || !tp_it->second.has_pending_entries()) {
         co_return chunked_vector<mark_files_committed_update>{};
     }
     auto topic_revision = tp_it->second.revision;

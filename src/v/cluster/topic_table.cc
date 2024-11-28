@@ -260,6 +260,12 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
             model::revision_id purged_revision{
               soft_del.topic.initial_revision_id};
             if (tombstone_it->second.last_deleted_revision > purged_revision) {
+                vlog(
+                  clusterlog.info,
+                  "[{}] unexpected iceberg tombstone revision {} (expected {})",
+                  soft_del.topic.nt,
+                  tombstone_it->second.last_deleted_revision,
+                  purged_revision);
                 return ss::make_ready_future<std::error_code>(
                   errc::concurrent_modification_error);
             }
