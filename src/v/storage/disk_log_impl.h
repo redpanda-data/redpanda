@@ -239,6 +239,11 @@ public:
       bool is_finished_window_compaction,
       bool is_clean_compacted);
 
+    ss::future<bool> chunked_sliding_window_compact(
+      const compaction_config& cfg,
+      const segment_set& segs,
+      key_offset_map& map);
+
     const auto& compaction_ratio() const { return _compaction_ratio; }
 
     static ss::future<> copy_kvstore_state(
