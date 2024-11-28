@@ -65,6 +65,22 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "exponential_backoff",
+    timeout = "short",
+    srcs = [
+        "exponential_backoff.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_rpc_library(
     name = "cycling_rpc",
     src = "cycling_service.json",
