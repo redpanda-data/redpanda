@@ -51,7 +51,10 @@ func init() {
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			cfg, redpandaID, pluginArgs, err := parseBYOCFlags(fs, p, cmd, args)
 			out.MaybeDieErr(err)
-
+			if cmd.Flags().Changed("help") {
+				cmd.Help()
+				return
+			}
 			// --redpanda-id is only required in apply or destroy commands.
 			// For validate commands we don't need the redpanda-id, instead,
 			// we download the latest version always.
@@ -168,7 +171,7 @@ and then come back to this command to complete the process.
 				}
 			}
 
-			if !isKnown || (redpandaID == "" && !isValidate) {
+			if !isKnown || (redpandaID == "" && !isValidate) || cmd.Flags().Changed("help") {
 				cmd.Help()
 				return
 			}
