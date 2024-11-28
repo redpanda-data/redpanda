@@ -48,6 +48,11 @@ model::offset simple_key_offset_map::max_offset() const { return _max_offset; }
 
 size_t simple_key_offset_map::size() const { return _map.size(); }
 size_t simple_key_offset_map::capacity() const { return _max_keys; }
+ss::future<> simple_key_offset_map::reset() {
+    _map.clear();
+    _max_offset = model::offset{};
+    return ss::now();
+};
 
 seastar::future<std::optional<model::offset>>
 hash_key_offset_map::get(const compaction_key& key) const {

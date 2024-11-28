@@ -60,6 +60,13 @@ public:
      * Returns the number of entries the map has space allocated for.
      */
     virtual size_t capacity() const = 0;
+
+    /**
+     * Prepares the container for use in a new context by resetting
+     * every element to an initial state. This call does not change the size of
+     * the container.
+     */
+    virtual seastar::future<> reset() = 0;
 };
 
 /**
@@ -86,6 +93,8 @@ public:
 
     size_t size() const override;
     size_t capacity() const override;
+
+    seastar::future<> reset() override;
 
 private:
     ss::shared_ptr<util::mem_tracker> _memory_tracker;
@@ -136,7 +145,7 @@ public:
      * every element to an initial state. This call does not change the size of
      * the container.
      */
-    seastar::future<> reset();
+    seastar::future<> reset() override;
 
     /**
      * The ratio of hash table searches (e.g. one get or put) to the number of
