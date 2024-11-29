@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/tests/utils.h"
+#include "cluster/types.h"
 #include "config/seed_server.h"
 #include "model/metadata.h"
 #include "random/generators.h"
@@ -19,7 +20,6 @@
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "test_utils/async.h"
-#include "types.h"
 
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/sharded.hh>
@@ -280,7 +280,9 @@ public:
         co_await tests::cooperative_spin_wait_with_timeout(10s, [&]() {
             auto md = app_0.metadata_cache.local().get_topic_metadata(
               result.tp_ns);
-            return md && md->get_assignments().size() == partitions
+            return md
+                   && md->get_assignments().size()
+                        == static_cast<size_t>(partitions)
                    && std::all_of(
                      md->get_assignments().begin(),
                      md->get_assignments().end(),
