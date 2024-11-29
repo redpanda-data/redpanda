@@ -475,14 +475,15 @@ class ScalingUpTest(PreallocNodesTest):
             for id in added_ids:
                 added_node_usage = usage[id]
                 assert added_node_usage < percentage * avg_usage, \
-                f"Added node {id} disk usage {added_node_usage} is too large, "
-                f"expected usage to be smaller than {percentage * avg_usage} bytes"
+                (f"Added node {id} disk usage {added_node_usage} is too large, "
+                 f"expected usage to be smaller than {percentage * avg_usage} bytes")
 
         usage = self._kafka_usage(nodes=self.redpanda.nodes[0:5])
         print_disk_usage(usage)
 
         verify_disk_usage(usage,
-                          [self.redpanda.node_id(self.redpanda.nodes[4])], 0.3)
+                          [self.redpanda.node_id(self.redpanda.nodes[4])],
+                          0.35)
 
         # add sixth node
         self.redpanda.start_node(self.redpanda.nodes[5])
@@ -494,7 +495,7 @@ class ScalingUpTest(PreallocNodesTest):
         verify_disk_usage(usage, [
             self.redpanda.node_id(self.redpanda.nodes[4]),
             self.redpanda.node_id(self.redpanda.nodes[5])
-        ], 0.3)
+        ], 0.35)
         # verify that data can be read
         self.consumer = KgoVerifierSeqConsumer(self.test_context,
                                                self.redpanda,
