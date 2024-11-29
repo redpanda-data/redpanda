@@ -173,15 +173,19 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create a partition count that would violate the per-core
     // limit.
-    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard());
+    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard())
+                                - (broker_count * _partitions_reserve_shard0());
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
           "Refusing to create {} partitions as total partition count {} would "
-          "exceed core limit {}",
+          "exceed the core-based limit {} (per-shard limit: {}, shard0 "
+          "reservation: {})",
           new_partitions_replicas_requested,
           proposed_total_partitions,
-          effective_cpu_count * _partitions_per_shard());
+          core_limit,
+          _partitions_per_shard(),
+          _partitions_reserve_shard0());
         return errc::topic_invalid_partitions_core_limit;
     }
 
