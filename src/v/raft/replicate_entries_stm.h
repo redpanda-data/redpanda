@@ -118,6 +118,7 @@ private:
     /// we keep a copy around until we finish the retries
     protocol_metadata _meta;
     flush_after_append _is_flush_required;
+    size_t _batches_size;
     std::optional<model::record_batch_reader> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     absl::flat_hash_map<vnode, consensus::inflight_appends_guard>

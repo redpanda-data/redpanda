@@ -122,10 +122,7 @@ consensus::consensus(
   , _enable_longest_log_detection(std::move(enable_longest_log_detection))
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
-  , _fstats(
-      _self,
-      config::shard_local_cfg()
-        .raft_max_concurrent_append_requests_per_follower())
+  , _fstats(_self)
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
   , _probe(std::make_unique<probe>())
@@ -715,6 +712,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
+          0,
           flush_after_append::yes);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
@@ -726,8 +724,7 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
                    .append_entries(
                      target.id(),
                      std::move(req),
-                     rpc::client_opts(_replicate_append_timeout),
-                     use_all_serde_append_entries())
+                     rpc::client_opts(_replicate_append_timeout))
                    .then([this, id = target.id(), seq, dirty_offset](
                            result<append_entries_reply> reply) {
                        process_append_entries_reply(
@@ -2632,14 +2629,17 @@ ss::future<std::error_code> consensus::replicate_configuration(
 
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
+          size_t batches_size{0};
           for (auto& b : batches) {
+              batches_size += b.size_bytes();
               b.set_term(model::term_id(_term));
           }
           auto seqs = next_followers_request_seq();
           append_entries_request req(
             _self,
             meta(),
-            model::make_memory_record_batch_reader(std::move(batches)));
+            model::make_memory_record_batch_reader(std::move(batches)),
+            batches_size);
           /**
            * We use dispatch_replicate directly as we already hold the
            * _op_lock mutex when replicating configuration
@@ -4032,6 +4032,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
       },
       model::make_memory_record_batch_reader(
         ss::circular_buffer<model::record_batch>{}),
+      0,
       flush_after_append::no));
 
     reply.result = r.result;

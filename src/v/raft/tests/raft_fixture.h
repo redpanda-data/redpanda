@@ -17,6 +17,7 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "raft/buffered_protocol.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/errc.h"
@@ -94,28 +95,25 @@ public:
     explicit in_memory_test_protocol(raft_node_map&, prefix_logger&);
 
     ss::future<result<vote_reply>>
-    vote(model::node_id, vote_request&&, rpc::client_opts) final;
+      vote(model::node_id, vote_request, rpc::client_opts) final;
 
     ss::future<result<append_entries_reply>> append_entries(
-      model::node_id,
-      append_entries_request&&,
-      rpc::client_opts,
-      bool use_all_serde_encoding) final;
+      model::node_id, append_entries_request, rpc::client_opts) final;
 
     ss::future<result<heartbeat_reply>>
-    heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) final;
+      heartbeat(model::node_id, heartbeat_request, rpc::client_opts) final;
 
     ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
-      model::node_id, heartbeat_request_v2&&, rpc::client_opts) final;
+      model::node_id, heartbeat_request_v2, rpc::client_opts) final;
 
     ss::future<result<install_snapshot_reply>> install_snapshot(
-      model::node_id, install_snapshot_request&&, rpc::client_opts) final;
+      model::node_id, install_snapshot_request, rpc::client_opts) final;
 
     ss::future<result<timeout_now_reply>>
-    timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts) final;
+      timeout_now(model::node_id, timeout_now_request, rpc::client_opts) final;
 
     ss::future<result<transfer_leadership_reply>> transfer_leadership(
-      model::node_id, transfer_leadership_request&&, rpc::client_opts) final;
+      model::node_id, transfer_leadership_request, rpc::client_opts) final;
 
     // TODO: move those methods out of Raft protocol.
     ss::future<> reset_backoff(model::node_id) final { co_return; }
@@ -240,6 +238,9 @@ public:
     void on_dispatch(dispatch_callback_t);
 
     ss::shared_ptr<in_memory_test_protocol> get_protocol() { return _protocol; }
+    ss::shared_ptr<buffered_protocol> get_buffered_protocol() {
+        return _buffered_protocol;
+    }
 
     storage::kvstore& get_kvstore() { return _storage.local().kvs(); }
 
@@ -248,7 +249,10 @@ private:
     model::revision_id _revision;
     prefix_logger _logger;
     ss::sstring _base_directory;
+    config::mock_property<size_t> _max_inflight_requests{16};
+    config::mock_property<size_t> _max_queued_bytes{1_MiB};
     ss::shared_ptr<in_memory_test_protocol> _protocol;
+    ss::shared_ptr<buffered_protocol> _buffered_protocol;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;

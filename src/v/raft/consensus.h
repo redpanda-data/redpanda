@@ -766,11 +766,6 @@ private:
 
     void update_confirmed_term();
 
-    bool use_all_serde_append_entries() const {
-        return _features.is_active(
-          features::feature::raft_append_entries_serde);
-    }
-
     // Called when during processing of an append_entries request we realize
     // that we need recovery or that the leader is already recovering us.
     // Will initialize or update _follower_recovery_state.
