@@ -234,7 +234,8 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         # Leadership should be stabilized
         self.redpanda._admin.await_stable_leader(topic=self.topic,
                                                  replication=len(alive),
-                                                 hosts=self._alive_nodes())
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
 
         self._start_consumer()
         if controller_snapshots:
