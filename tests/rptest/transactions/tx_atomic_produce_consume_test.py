@@ -189,30 +189,40 @@ class ExactlyOnceVerifier():
                 ])
 
             def reached_end(positions):
-                high_watermarks = self.get_high_watermarks(self._src_topic)
+                try:
+                    high_watermarks = self.get_high_watermarks(self._src_topic)
 
-                assignments = {tp.partition for tp in consumer.assignment()}
-                if len(assignments) == 0:
+                    assignments = {
+                        tp.partition
+                        for tp in consumer.assignment()
+                    }
+                    if len(assignments) == 0:
+                        return False
+
+                    end_for = {
+                        p.partition
+                        for p in positions if p.partition in high_watermarks
+                        and high_watermarks[p.partition] <= p.offset
+                    }
+                    self._logger.info(
+                        f"[{tx_id}] Topic {self._src_topic} partitions high watermarks"
+                        f"{high_watermarks}, assignment: {assignments} positions: {positions}, end_for: {end_for}"
+                    )
+
+                    consumers = 0
+                    with self._lock:
+                        self._finished_partitions |= end_for
+                        consumers = self._consumer_cnt
+                        if len(self._finished_partitions
+                               ) == self._partition_count:
+                            return True
+
+                    return len(end_for) == len(assignments) and consumers > 1
+                except Exception as e:
+                    self._logger.info(
+                        f"[{tx_id}] error checking if transformer reached end: {e}"
+                    )
                     return False
-
-                end_for = {
-                    p.partition
-                    for p in positions if p.partition in high_watermarks
-                    and high_watermarks[p.partition] <= p.offset
-                }
-                self._logger.info(
-                    f"[{tx_id}] Topic {self._src_topic} partitions high watermarks"
-                    f"{high_watermarks}, assignment: {assignments} positions: {positions}, end_for: {end_for}"
-                )
-
-                consumers = 0
-                with self._lock:
-                    self._finished_partitions |= end_for
-                    consumers = self._consumer_cnt
-                    if len(self._finished_partitions) == self._partition_count:
-                        return True
-
-                return len(end_for) == len(assignments) and consumers > 1
 
             in_transaction = False
 
