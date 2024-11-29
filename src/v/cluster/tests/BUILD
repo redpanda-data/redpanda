@@ -28,6 +28,20 @@ redpanda_test_cc_library(
 )
 
 redpanda_test_cc_library(
+    name = "cluster_test_fixture",
+    hdrs = [
+        "cluster_test_fixture.h",
+    ],
+    include_prefix = "cluster/tests",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":utils",
+        "//src/v/base",
+        "//src/v/cluster",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "partition_allocator_fixture",
     hdrs = [
         "partition_allocator_fixture.h",
@@ -68,6 +82,7 @@ redpanda_test_cc_library(
         "utils.h",
     ],
     include_prefix = "cluster/tests",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/cluster",
         "//src/v/test_utils:seastar_boost",
