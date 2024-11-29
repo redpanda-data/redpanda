@@ -49,8 +49,7 @@ class UpgradeMigrationCreatingDefaultRole(RedpandaTest):
         self.admin.create_user("bob")
 
         # Update all nodes to newest version
-        self.installer.install(self.redpanda.nodes,
-                               self.installer.head_version())
+        self.installer.install(self.redpanda.nodes, (24, 1))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         _ = wait_for_num_versions(self.redpanda, 1)
 
