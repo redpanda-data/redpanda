@@ -138,7 +138,7 @@ class PolarisCatalog(Service):
                 f"Querying polaris healthcheck on http://{node.account.hostname}:8182/healthcheck"
             )
             r = requests.get(
-                f"http://{node.account.hostname}:8182/healthcheck")
+                f"http://{node.account.hostname}:8182/healthcheck", timeout=10)
 
             self.logger.info(
                 f"health check result status code: {r.status_code}")
