@@ -137,8 +137,14 @@ class PolarisCatalog(Service):
             self.logger.debug(
                 f"Querying polaris healthcheck on http://{node.account.hostname}:8182/healthcheck"
             )
-            r = requests.get(
-                f"http://{node.account.hostname}:8182/healthcheck")
+            try:
+                r = requests.get(
+                    f"http://{node.account.hostname}:8182/healthcheck")
+            except:
+                # If we attempted to make a healthcheck before the port
+                # was opened on the node, this will raise an exception.
+                # Pass through and allow wait_until() to retry.
+                pass
 
             self.logger.info(
                 f"health check result status code: {r.status_code}")
