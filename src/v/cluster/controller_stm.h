@@ -71,6 +71,7 @@ public:
         return _limiter.throttle<Cmd>();
     }
 
+    void shutdown_apply_loop();
     ss::future<> shutdown();
 
     virtual ss::future<> stop() final;

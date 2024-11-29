@@ -827,6 +827,13 @@ ss::future<> controller::shutdown_input() {
     if (_metadata_uploader) {
         _metadata_uploader->stop();
     }
+
+    co_await ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
+        if (stm.local_is_initialized()) {
+            stm.local().shutdown_apply_loop();
+        }
+    });
+
     co_await _as.invoke_on_all(&ss::abort_source::request_abort);
     vlog(clusterlog.debug, "Shut down controller inputs");
 }
@@ -838,16 +845,13 @@ ss::future<> controller::stop() {
         co_await shutdown_input();
     }
 
+    co_await ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
+        return stm.local_is_initialized() ? stm.local().shutdown() : ss::now();
+    });
+
     if (_leader_balancer) {
         co_await _leader_balancer->stop();
     }
-
-    co_await ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
-        if (stm.local_is_initialized()) {
-            return stm.local().shutdown();
-        }
-        return ss::now();
-    });
 
     if (_metadata_uploader) {
         co_await _metadata_uploader->stop_and_wait();
