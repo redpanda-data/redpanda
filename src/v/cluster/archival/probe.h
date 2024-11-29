@@ -19,6 +19,10 @@
 
 #include <cstdint>
 
+namespace cluster {
+class archival_metadata_stm;
+}
+
 namespace archival {
 
 /// \brief Per-ntp archval service probe
@@ -30,7 +34,10 @@ namespace archival {
 /// The unit of measure is offset delta.
 class ntp_level_probe {
 public:
-    ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
+    ntp_level_probe(
+      per_ntp_metrics_disabled disabled,
+      const model::ntp& ntp,
+      ss::shared_ptr<const cluster::archival_metadata_stm> stm);
     ntp_level_probe(const ntp_level_probe&) = delete;
     ntp_level_probe& operator=(const ntp_level_probe&) = delete;
     ntp_level_probe(ntp_level_probe&&) = delete;
@@ -56,12 +63,6 @@ public:
         _segments_deleted += deleted_count;
     };
 
-    void segments_in_manifest(int64_t count) { _segments_in_manifest = count; };
-
-    void segments_to_delete(int64_t count) { _segments_to_delete = count; };
-
-    void cloud_log_size(uint64_t size) { _cloud_log_size = size; }
-
     void compacted_replaced_bytes(size_t bytes) {
         _compacted_replaced_bytes = bytes;
     }
@@ -77,17 +78,13 @@ private:
     int64_t _pending = 0;
     /// Number of segments deleted by garbage collection
     int64_t _segments_deleted = 0;
-    /// Number of accounted segments in the cloud
-    int64_t _segments_in_manifest = 0;
-    /// Number of segments awaiting deletion
-    int64_t _segments_to_delete = 0;
-    /// size in bytes of the user-visible log
-    uint64_t _cloud_log_size = 0;
     /// cloud bytes "removed" due to compaction operation
     size_t _compacted_replaced_bytes = 0;
 
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
+
+    ss::shared_ptr<const cluster::archival_metadata_stm> _stm;
 };
 
 /// Metrics probe for upload housekeeping service
