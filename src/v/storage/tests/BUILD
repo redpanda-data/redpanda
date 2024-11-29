@@ -317,6 +317,95 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "produce_consume_test",
+    timeout = "short",
+    srcs = [
+        "produce_consume_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":disk_log_builder",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "offset_translator_state_test",
+    timeout = "short",
+    srcs = [
+        "offset_translator_state_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "offset_to_filepos_test",
+    timeout = "short",
+    srcs = [
+        "offset_to_filepos_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/storage",
+        "//src/v/test_utils:archival",
+        "//src/v/test_utils:fixture",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "offset_index_utils_tests",
+    timeout = "short",
+    srcs = [
+        "offset_index_utils_tests.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/test_utils:fixture",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:tmpbuf_file",
+        "//src/v/utils:file_io",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "offset_translator_tests",
+    timeout = "moderate",
+    srcs = [
+        "offset_translator_tests.cc",
+    ],
+    cpu = 8,
+    deps = [
+        "//src/v/bytes:random",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "scoped_file_tracker_test",
     timeout = "short",
