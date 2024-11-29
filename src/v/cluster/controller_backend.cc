@@ -1919,10 +1919,17 @@ controller_backend::shutdown_partition(ss::lw_shared_ptr<partition> partition) {
           ntp, gr, partition->get_log_revision_id());
         // shutdown partition
         co_return co_await _partition_manager.local().shutdown(ntp);
+    } catch (const seastar::gate_closed_exception&) {
+        // let it bubble up and break reconciliation loop
+        vlog(
+          clusterlog.debug,
+          "error shutting down {} partition, app shutting down",
+          ntp);
+        throw;
     } catch (...) {
         /**
-         * If partition shutdown failed we should crash, this error is
-         * unrecoverable
+         * If partition shutdown failed with any other exception we should
+         * crash, this error is unrecoverable
          */
         vassert(
           false,
