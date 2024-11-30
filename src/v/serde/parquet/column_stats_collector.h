@@ -71,6 +71,10 @@ class column_stats_collector {
       std::is_trivially_copyable_v<value_type>,
       const value_type,
       const value_type&>;
+    using bound_ref_type = std::conditional_t<
+      std::is_trivially_copyable_v<value_type>,
+      std::optional<value_type>,
+      const std::optional<value_type>&>;
 
 public:
     // Construct a new stats collector that uses the given logical type for
@@ -121,8 +125,26 @@ public:
     }
 
     int64_t null_count() const { return _null_count; }
-    const std::optional<value_type>& min() const { return _min; }
-    const std::optional<value_type>& max() const { return _max; }
+    bound_ref_type min() const {
+        // According to the rules for stats, a zero floating point value is
+        // always written as negative.
+        if constexpr (std::is_floating_point_v<decltype(_min->val)>) {
+            if (_min && _min->val == 0.0) {
+                return std::make_optional<value_type>(-0.0);
+            }
+        }
+        return _min;
+    }
+    bound_ref_type max() const {
+        // According to the rules for stats, a zero floating point value is
+        // always written as positive.
+        if constexpr (std::is_floating_point_v<decltype(_max->val)>) {
+            if (_max && _max->val == 0.0) {
+                return std::make_optional<value_type>(0.0);
+            }
+        }
+        return _max;
+    }
 
 private:
     ss::noncopyable_function<std::strong_ordering(
