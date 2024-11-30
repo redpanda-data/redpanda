@@ -2285,8 +2285,25 @@ disk_log_impl::offset_range_size(
                 auto delta = target.target_size - prev;
                 truncate_after = delta;
             }
+            auto committed_offset = it->get()->offsets().get_committed_offset();
+            if (committed_offset == model::offset{}) {
+                co_return std::nullopt;
+            }
             auto last_index_entry = it->get()->index().find_above_size_bytes(
               truncate_after);
+            if (
+              last_index_entry.has_value()
+              && last_index_entry->offset > committed_offset) {
+                // The index entry overshoots the committed offset
+                vlog(
+                  stlog.debug,
+                  "Index lookup overshoot committed offset {}, index entry "
+                  "found: {}",
+                  committed_offset,
+                  last_index_entry->offset);
+                last_index_entry = it->get()->index().find_nearest(
+                  committed_offset);
+            }
             if (
               last_index_entry.has_value()
               && model::prev_offset(last_index_entry->offset) > first) {
