@@ -219,7 +219,6 @@ BOOST_AUTO_TEST_CASE(even_topic_distribution_empty) {
       gntp_i, shard_index, muted_index);
 
     BOOST_REQUIRE(even_topic_con.error() == 0);
-    BOOST_REQUIRE(!even_topic_con.recommended_reassignment());
 }
 
 BOOST_AUTO_TEST_CASE(even_topic_distribution_constraint_no_error) {
@@ -326,39 +325,10 @@ BOOST_AUTO_TEST_CASE(even_topic_distributon_constraint_find_reassignment) {
     BOOST_REQUIRE(
       topic_constraint.error() == topic_constraint.evaluate(reassignment));
 
-    auto rreassignment = topic_constraint.recommended_reassignment();
-    BOOST_REQUIRE(rreassignment.has_value());
-
-    index_cl.update_index(rreassignment.value());
-    topic_constraint.update_index(rreassignment.value());
+    index_cl.update_index(reassignment);
+    topic_constraint.update_index(reassignment);
 
     BOOST_REQUIRE(topic_constraint.error() == 0);
-}
-
-BOOST_AUTO_TEST_CASE(even_topic_odd_partition_cnt) {
-    // In cases where a topic as a partition count that
-    // is not even divisible by the nodes they are replicated on.
-    // In these cases its not possible for every node to has_value
-    // equal leadership for the topic.
-    //
-    // This tests that in those cases the even topic constraint
-    // correctly recommends no further reassignments.
-
-    auto g_id_to_t_id = group_to_topic_from_spec({
-      {0, {1, 2, 3}},
-    });
-
-    auto [shard_index, muted_index] = from_spec(
-      {
-        {{1, 2}, {3}},
-        {{3}, {1, 2}},
-      },
-      {});
-
-    auto even_topic_con = lbt::even_topic_distributon_constraint(
-      g_id_to_t_id, shard_index, muted_index);
-
-    BOOST_REQUIRE(!even_topic_con.recommended_reassignment());
 }
 
 BOOST_AUTO_TEST_CASE(even_shard_no_error_even_topic_error) {
@@ -390,11 +360,10 @@ BOOST_AUTO_TEST_CASE(even_shard_no_error_even_topic_error) {
     BOOST_REQUIRE(even_shard_con.error() == 0);
     BOOST_REQUIRE(even_topic_con.error() > 0);
 
-    auto rea = even_topic_con.recommended_reassignment();
-    BOOST_REQUIRE(rea.has_value());
+    auto rea = re(1, 0, 1);
 
-    BOOST_REQUIRE(even_shard_con.evaluate(*rea) < 0);
-    BOOST_REQUIRE(even_topic_con.evaluate(*rea) > 0);
+    BOOST_REQUIRE(even_shard_con.evaluate(rea) < 0);
+    BOOST_REQUIRE(even_topic_con.evaluate(rea) > 0);
 }
 
 BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
@@ -426,8 +395,6 @@ BOOST_AUTO_TEST_CASE(even_topic_no_error_even_shard_error) {
       g_id_to_t_id, shard_index, muted_index);
 
     BOOST_REQUIRE(even_shard_con.error() > 0);
-
-    BOOST_REQUIRE(!even_topic_con.recommended_reassignment());
     BOOST_REQUIRE(even_shard_con.recommended_reassignment().has_value());
 }
 

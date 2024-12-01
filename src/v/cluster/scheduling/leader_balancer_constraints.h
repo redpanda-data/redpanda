@@ -114,20 +114,6 @@ class even_topic_distributon_constraint final
     // more than this value.
     static constexpr double error_jitter = 0.000001;
 
-    struct group_info {
-        raft::group_id group_id;
-        model::broker_shard leader;
-        std::vector<model::broker_shard> replicas;
-
-        group_info(
-          const raft::group_id& gid,
-          const model::broker_shard& bs,
-          std::vector<model::broker_shard> r)
-          : group_id(gid)
-          , leader(bs)
-          , replicas(std::move(r)) {}
-    };
-
     using topic_id_t = model::revision_id::type;
 
     template<typename ValueType>
@@ -178,8 +164,8 @@ private:
     group_id_to_topic_revision_t _group_to_topic_rev;
     double _error{0};
 
-    topic_map<absl::flat_hash_map<model::node_id, std::vector<group_info>>>
-      _topic_node_index;
+    // Stores the number of leaders on a given node per topic.
+    topic_map<absl::flat_hash_map<model::node_id, size_t>> _topic_node_index;
     topic_map<size_t> _topic_partition_index;
     topic_map<absl::flat_hash_set<model::node_id>> _topic_replica_index;
     topic_map<double> _topic_skew;
