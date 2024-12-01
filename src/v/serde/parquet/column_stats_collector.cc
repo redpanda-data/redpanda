@@ -14,8 +14,6 @@
 #include "bytes/iobuf_parser.h"
 #include "serde/parquet/value.h"
 
-#include <seastar/util/variant_utils.hh>
-
 #include <absl/numeric/int128.h>
 
 #include <cassert>
@@ -55,6 +53,7 @@ std::strong_ordering float32(const float32_value a, const float32_value b) {
         return std::strong_ordering::greater;
     } else {
         // NOTE we can assume this because nans are filtered out
+        // negative zero is handled in min/max
         assert(!std::isnan(a.val));
         assert(!std::isnan(b.val));
         return std::strong_ordering::equivalent;
@@ -69,6 +68,7 @@ std::strong_ordering float64(const float64_value a, const float64_value b) {
         return std::strong_ordering::greater;
     } else {
         // NOTE we can assume this because nans are filtered out
+        // negative zero is handled in min/max
         assert(!std::isnan(a.val));
         assert(!std::isnan(b.val));
         return std::strong_ordering::equivalent;
