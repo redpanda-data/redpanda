@@ -15,32 +15,49 @@
 #include "container/fragmented_vector.h"
 
 #include <cstdint>
+#include <unistd.h>
 
 // A subset of parquet values that is needed for iceberg.
 
 namespace serde::parquet {
 
-struct null_value {};
+struct null_value {
+    bool operator==(const null_value&) const = default;
+};
 struct boolean_value {
     bool val;
+
+    bool operator==(const boolean_value&) const = default;
 };
 struct int32_value {
     int32_t val;
+
+    bool operator==(const int32_value&) const = default;
 };
 struct int64_value {
     int64_t val;
+
+    bool operator==(const int64_value&) const = default;
 };
 struct float32_value {
     float val;
+
+    bool operator==(const float32_value&) const = default;
 };
 struct float64_value {
     double val;
+
+    bool operator==(const float64_value&) const = default;
 };
 struct byte_array_value {
     iobuf val;
+
+    bool operator==(const byte_array_value&) const = default;
 };
 struct fixed_byte_array_value {
     iobuf val;
+
+    bool operator==(const fixed_byte_array_value&) const = default;
 };
 
 struct repeated_element;
@@ -75,10 +92,14 @@ using value = std::variant<
 
 struct group_member {
     value field;
+
+    bool operator==(const group_member&) const = default;
 };
 
 struct repeated_element {
     value element;
+
+    bool operator==(const repeated_element&) const = default;
 };
 
 value copy(const value&);
