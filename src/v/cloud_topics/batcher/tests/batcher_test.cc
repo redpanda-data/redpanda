@@ -89,14 +89,20 @@ namespace experimental::cloud_topics {
 struct batcher_accessor {
     ss::future<result<bool>> run_once() noexcept { return batcher->run_once(); }
 
-    // Returns true if the write request is in the `_pending` collection
-    bool write_requests_pending(size_t n) {
-        return batcher->_pending.size() == n;
-    }
-
     cloud_topics::batcher<ss::manual_clock>* batcher;
 };
 } // namespace experimental::cloud_topics
+
+namespace experimental::cloud_topics::core {
+struct write_pipeline_accessor {
+    // Returns true if the write request is in the `_pending` collection
+    bool write_requests_pending(size_t n) {
+        return pipeline->_pending.size() == n;
+    }
+
+    cloud_topics::core::write_pipeline<ss::manual_clock>* pipeline;
+};
+} // namespace experimental::cloud_topics::core
 
 ss::future<> sleep(std::chrono::milliseconds delta, int retry_limit = 100) {
     ss::manual_clock::advance(delta);
@@ -131,9 +137,13 @@ parse_placeholder_batch(model::record_batch batch) {
 TEST_CORO(batcher_test, single_write_request) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
-    cloud_topics::batcher<ss::manual_clock> batcher(bucket, mock);
-    cloud_topics::batcher_accessor accessor{
+    cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
+    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
+    };
+    cloud_topics::core::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
     };
     int num_batches = 10;
     auto [_, records, reader] = get_random_reader(num_batches, 10);
@@ -141,14 +151,13 @@ TEST_CORO(batcher_test, single_write_request) {
     mock.expect_upload_object(records);
 
     const auto timeout = 1s;
-    auto fut = batcher.write_and_debounce(
+    auto fut = pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader), timeout);
-
     // Make sure the write request is in the _pending list
     co_await sleep_until(
-      10ms, [&] { return accessor.write_requests_pending(1); });
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
 
-    auto res = co_await accessor.run_once();
+    auto res = co_await batcher_accessor.run_once();
 
     ASSERT_TRUE_CORO(res.has_value());
 
@@ -175,9 +184,13 @@ TEST_CORO(batcher_test, single_write_request) {
 TEST_CORO(batcher_test, many_write_requests) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
-    cloud_topics::batcher<ss::manual_clock> batcher(bucket, mock);
-    cloud_topics::batcher_accessor accessor{
+    cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
+    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
+    };
+    cloud_topics::core::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
     };
 
     std::vector<size_t> expected_num_batches = {10, 20, 10};
@@ -204,20 +217,20 @@ TEST_CORO(batcher_test, many_write_requests) {
 
     const auto timeout = 1s;
     std::vector<ss::future<result<model::record_batch_reader>>> futures;
-    futures.push_back(batcher.write_and_debounce(
+    futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader1), timeout));
-    futures.push_back(batcher.write_and_debounce(
+    futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader2), timeout));
-    futures.push_back(batcher.write_and_debounce(
+    futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader3), timeout));
 
     // Make sure that all write requests are in the _pending list
     co_await sleep_until(
-      10ms, [&] { return accessor.write_requests_pending(3); });
+      10ms, [&] { return pipeline_accessor.write_requests_pending(3); });
 
     // Single L0 object that contains data from all write requests
     // should be "uploaded".
-    auto res = co_await accessor.run_once();
+    auto res = co_await batcher_accessor.run_once();
 
     // Expect single L0 upload
     ASSERT_EQ_CORO(mock.keys.size(), 1);
@@ -251,9 +264,13 @@ TEST_CORO(batcher_test, expired_write_request) {
     // data from the expired write request.
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
-    cloud_topics::batcher<ss::manual_clock> batcher(bucket, mock);
-    cloud_topics::batcher_accessor accessor{
+    cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
+    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
+    };
+    cloud_topics::core::write_pipeline_accessor pipeline_accessor{
+      .pipeline = &pipeline,
     };
 
     int expected_num_batches = 33;
@@ -276,24 +293,24 @@ TEST_CORO(batcher_test, expired_write_request) {
     mock.expect_upload_object(all_records);
 
     const auto timeout = 1s;
-    auto expect_fail_fut = batcher.write_and_debounce(
+    auto expect_fail_fut = pipeline.write_and_debounce(
       model::controller_ntp, std::move(timedout_reader), timeout);
 
     // Let time pass to invalidate the first enqueued write request
     co_await sleep_until(
-      10ms, [&] { return accessor.write_requests_pending(1); });
+      10ms, [&] { return pipeline_accessor.write_requests_pending(1); });
     ss::manual_clock::advance(timeout);
 
-    auto expect_pass_fut = batcher.write_and_debounce(
+    auto expect_pass_fut = pipeline.write_and_debounce(
       model::controller_ntp, std::move(included_reader), timeout);
 
     // Make sure that both write requests are pending
     co_await sleep_until(
-      10ms, [&] { return accessor.write_requests_pending(2); });
+      10ms, [&] { return pipeline_accessor.write_requests_pending(2); });
 
     // Single L0 object that contains data from all write requests
     // should be "uploaded".
-    auto res = co_await accessor.run_once();
+    auto res = co_await batcher_accessor.run_once();
 
     // Expect single L0 upload
     ASSERT_EQ_CORO(mock.keys.size(), 1);

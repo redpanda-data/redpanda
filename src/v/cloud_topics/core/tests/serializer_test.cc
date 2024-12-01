@@ -8,7 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/serializer.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 
@@ -19,7 +20,7 @@
 namespace cloud_topics = experimental::cloud_topics;
 
 TEST(SerializerTest, EmptyReader) {
-    auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
+    auto res = cloud_topics::core::serialize_in_memory_record_batch_reader(
                  model::make_empty_record_batch_reader())
                  .get();
     ASSERT_TRUE(res.payload.empty());
@@ -36,7 +37,7 @@ TEST_P(SerializerFixture, Consume) {
       model::test::make_random_batches(
         {.count = num_batches, .records = num_records})
         .get());
-    auto res = cloud_topics::details::serialize_in_memory_record_batch_reader(
+    auto res = cloud_topics::core::serialize_in_memory_record_batch_reader(
                  std::move(test_data))
                  .get();
     ASSERT_GT(res.payload.size_bytes(), 0);
