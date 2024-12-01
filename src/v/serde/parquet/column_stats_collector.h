@@ -14,8 +14,6 @@
 #include "base/seastarx.h"
 #include "serde/parquet/value.h"
 
-#include <seastar/util/noncopyable_function.hh>
-
 #include <cmath>
 #include <compare>
 #include <cstdint>
@@ -90,7 +88,7 @@ public:
     void record_null() { ++_null_count; }
 
     // Merge another stats collector into this one.
-    void merge(column_stats_collector<value_type, comparator> other) {
+    void merge(column_stats_collector<value_type, comparator>& other) {
         _null_count += other._null_count;
         if (
           other._min
