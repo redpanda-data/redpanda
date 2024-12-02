@@ -68,7 +68,7 @@ class PolarisCatalogSmokeTest(RedpandaTest):
     def setUp(self):
         pass
 
-    def _start_redpanad(self, catalog_prefix, client_id, client_secret,
+    def _start_redpanda(self, catalog_prefix, client_id, client_secret,
                         with_tls):
         self.redpanda._extra_rp_conf.update({
             "iceberg_enabled":
@@ -204,7 +204,7 @@ class PolarisCatalogSmokeTest(RedpandaTest):
         principal_name = "test-user"
         credentials = self._initialize_catalog(catalog_name, principal_name)
 
-        self._start_redpanad(catalog_prefix=catalog_name,
+        self._start_redpanda(catalog_prefix=catalog_name,
                              client_id=credentials.client_id,
                              client_secret=credentials.client_secret,
                              with_tls=with_tls)
