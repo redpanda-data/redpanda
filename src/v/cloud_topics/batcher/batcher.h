@@ -14,7 +14,8 @@
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "bytes/iobuf.h"
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/pipeline_stage.h"
+#include "cloud_topics/core/write_pipeline.h"
 #include "cloud_topics/types.h"
 #include "config/property.h"
 #include "model/fundamental.h"
@@ -63,17 +64,9 @@ class batcher {
 
 public:
     explicit batcher(
+      core::write_pipeline<Clock>& pipeline,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::remote_api<Clock>& remote_api);
-
-    /// Upload data to the cloud storage
-    ///
-    /// Wait until the record batch is uploaded and return result.
-    /// Always consumes everything from the reader.
-    ss::future<result<model::record_batch_reader>> write_and_debounce(
-      model::ntp ntp,
-      model::record_batch_reader r,
-      std::chrono::milliseconds timeout);
 
     ss::future<> start();
     ss::future<> stop();
@@ -97,28 +90,6 @@ private:
     /// The method should only be invoked on shard 0
     ss::future<> bg_controller_loop();
 
-    /// List of write requests which are ready to be uploaded
-    struct size_limited_write_req_list {
-        /// Write requests list which are ready for
-        /// upload or expired.
-        details::write_request_list<Clock> ready;
-        /// If the batcher contains more write requests which
-        /// were not included because the size limit was reached
-        /// this field will be set to false.
-        bool complete{true};
-        /// Total size of all listed write requests.
-        size_t size_bytes{0};
-    };
-
-    /// Get write requests atomically.
-    /// Return requests which are either ready to be uploaded or expired. Limit
-    /// the total size of all returned write requests by 'max_bytes'.
-    size_limited_write_req_list get_write_requests(size_t max_bytes);
-
-    /// Find all timed out write requests and remove them from the list
-    /// atomically.
-    void remove_timed_out_write_requests();
-
     /// Wait until upload interval elapses or until
     /// enough bytes are accumulated
     ss::future<errc> wait_for_next_upload() noexcept;
@@ -138,17 +109,14 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
 
-    // List of new write requests
-    details::write_request_list<Clock> _pending;
+    core::write_pipeline<Clock>& _pipeline;
 
     static constexpr size_t max_buffer_size = 16_MiB;
     static constexpr size_t max_cardinality = 1000;
 
-    details::batcher_req_index _index{0};
-    size_t _current_size{0};
     basic_retry_chain_node<Clock> _rtc;
     basic_retry_chain_logger<Clock> _logger;
 
-    ss::condition_variable _cv;
+    core::pipeline_stage _my_stage;
 };
 } // namespace experimental::cloud_topics

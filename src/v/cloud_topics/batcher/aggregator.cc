@@ -10,15 +10,15 @@
 
 #include "cloud_topics/batcher/aggregator.h"
 
-#include "cloud_topics/batcher/serializer.h"
-#include "cloud_topics/batcher/write_request.h"
+#include "cloud_topics/core/serializer.h"
+#include "cloud_topics/core/write_request.h"
 #include "cloud_topics/dl_placeholder.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/util/defer.hh>
 
-namespace experimental::cloud_topics::details {
+namespace experimental::cloud_topics {
 
 template<class Clock>
 aggregator<Clock>::aggregator(object_id id)
@@ -53,8 +53,8 @@ namespace {
 template<class Clock>
 void make_dl_placeholder_batches(
   prepared_placeholder_batches<Clock>& ctx,
-  write_request<Clock>& req,
-  const serialized_chunk& chunk) {
+  core::write_request<Clock>& req,
+  const core::serialized_chunk& chunk) {
     auto result = std::make_unique<batches_for_req<Clock>>();
     for (const auto& b : chunk.batches) {
         dl_placeholder placeholder{
@@ -164,10 +164,11 @@ void aggregator<Clock>::ack_error(errc e) {
 }
 
 template<class Clock>
-void aggregator<Clock>::add(write_request<Clock>& req) {
+void aggregator<Clock>::add(core::write_request<Clock>& req) {
     auto it = _staging.find(req.ntp);
     if (it == _staging.end()) {
-        it = _staging.emplace_hint(it, req.ntp, write_request_list<Clock>());
+        it = _staging.emplace_hint(
+          it, req.ntp, core::write_request_list<Clock>());
     }
     req._hook.unlink();
     it->second.push_back(req);
@@ -181,4 +182,4 @@ size_t aggregator<Clock>::size_bytes() const noexcept {
 
 template class aggregator<ss::lowres_clock>;
 template class aggregator<ss::manual_clock>;
-} // namespace experimental::cloud_topics::details
+} // namespace experimental::cloud_topics

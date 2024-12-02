@@ -13,7 +13,9 @@
 #include "base/unreachable.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/batcher/aggregator.h"
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/event_filter.h"
+#include "cloud_topics/core/serializer.h"
+#include "cloud_topics/core/write_request.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
@@ -22,6 +24,7 @@
 #include "utils/human.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <chrono>
 #include <exception>
@@ -32,17 +35,20 @@ namespace experimental::cloud_topics {
 
 template<class Clock>
 batcher<Clock>::batcher(
+  core::write_pipeline<Clock>& pipeline,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>& remote)
-  : _remote(remote)
+  cloud_io::remote_api<Clock>& remote_api)
+  : _remote(remote_api)
   , _bucket(std::move(bucket))
   , _upload_timeout(
       config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms.bind())
   , _upload_interval(config::shard_local_cfg()
                        .cloud_storage_upload_loop_initial_backoff_ms
                        .bind()) // TODO: use different config
+  , _pipeline(pipeline)
   , _rtc(_as)
-  , _logger(cd_log, _rtc) {}
+  , _logger(cd_log, _rtc)
+  , _my_stage(_pipeline.register_pipeline_stage()) {}
 
 template<class Clock>
 ss::future<> batcher<Clock>::start() {
@@ -54,56 +60,6 @@ template<class Clock>
 ss::future<> batcher<Clock>::stop() {
     _as.request_abort();
     co_await _gate.close();
-}
-
-template<class Clock>
-typename batcher<Clock>::size_limited_write_req_list
-batcher<Clock>::get_write_requests(size_t max_bytes) {
-    vlog(
-      _logger.debug,
-      "get_write_requests called with max_bytes = {}",
-      max_bytes);
-    size_limited_write_req_list result;
-    size_t acc_size = 0;
-    // The elements in the list are in the insertion order.
-    auto it = _pending.begin();
-    for (; it != _pending.end(); it++) {
-        auto sz = it->data_chunk.payload.size_bytes();
-        acc_size += sz;
-        if (acc_size >= max_bytes) {
-            // Include last element
-            it++;
-            break;
-        }
-    }
-    result.ready.splice(result.ready.end(), _pending, _pending.begin(), it);
-    result.size_bytes = acc_size;
-    result.complete = _pending.empty();
-    vlog(
-      _logger.debug,
-      "get_write_requests returned {} elements, containing {}",
-      result.ready.size(),
-      human::bytes(result.size_bytes));
-    return result;
-}
-
-template<class Clock>
-void batcher<Clock>::remove_timed_out_write_requests() {
-    chunked_vector<ss::weak_ptr<details::write_request<Clock>>> expired;
-    for (auto& wr : _pending) {
-        if (wr.has_expired()) {
-            expired.push_back(wr.weak_from_this());
-        }
-    }
-    if (!expired.empty()) {
-        vlog(_logger.debug, "{} write requests have expired", expired.size());
-    }
-    for (auto& wp : expired) {
-        if (wp != nullptr) {
-            wp->_hook.unlink();
-            wp->set_value(errc::timeout);
-        }
-    }
 }
 
 template<class Clock>
@@ -175,13 +131,36 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 
 template<class Clock>
 ss::future<errc> batcher<Clock>::wait_for_next_upload() noexcept {
-    try {
-        co_await _cv.wait<Clock>(Clock::now() + _upload_interval(), [this] {
-            return _current_size >= 10_MiB; // TODO: use configuration parameter
-        });
-    } catch (const ss::broken_condition_variable&) {
-        co_return errc::shutting_down;
-    } catch (const ss::condition_variable_timed_out&) {
+    auto deadline = Clock::now() + _upload_interval();
+    while (true) {
+        core::event_filter<Clock> filter(
+          core::event_type::new_write_request, _my_stage, deadline);
+        auto event_fut = co_await ss::coroutine::as_future(
+          _pipeline.subscribe(filter));
+        if (event_fut.failed()) {
+            auto err = event_fut.get_exception();
+            if (ssx::is_shutdown_exception(err)) {
+                co_return errc::shutting_down;
+            }
+            co_return errc::unexpected_failure;
+        }
+        auto event = event_fut.get();
+        switch (event.type) {
+        case core::event_type::shutting_down:
+            co_return errc::shutting_down;
+        case core::event_type::new_write_request:
+            if (event.pending_write_bytes < 10_MiB) {
+                // Ignore all write requests until timed
+                // out or enough data.
+                break;
+            }
+            [[fallthrough]];
+        case core::event_type::err_timedout:
+            co_return errc::success;
+        case core::event_type::new_read_request:
+        case core::event_type::none:
+            unreachable();
+        }
     }
     co_return errc::success;
 }
@@ -211,16 +190,14 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
         // by the strict order in which the ack() method is called
         // explicitly after the operation is either committed or failed.
 
-        remove_timed_out_write_requests();
-
-        auto list = get_write_requests(
-          10_MiB); // TODO: use configuration parameter
+        auto list = _pipeline.get_write_requests(
+          10_MiB, _my_stage); // TODO: use configuration parameter
 
         if (list.ready.empty()) {
             co_return true;
         }
 
-        details::aggregator<Clock> aggregator;
+        aggregator<Clock> aggregator;
         while (!list.ready.empty()) {
             auto& wr = list.ready.back();
             wr._hook.unlink();
@@ -269,9 +246,6 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
                 co_return;
             }
         }
-        // TODO: implement rate limiting
-        // take units from upload rate tb here and from failure tb
-        // in case of failure
         auto res = co_await run_once();
         if (res.has_error()) {
             if (res.error() == errc::shutting_down) {
@@ -281,57 +255,10 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
                 // Some other (most likely upload) error
                 vlog(
                   _logger.info, "Batcher upload loop error: {}", res.error());
-                // TODO: implement throttling/circuit breaking.
-                // The batcher should use two token buckets:
-                // - upload bucket should limit request rate and the limit
-                // should be higher
-                //   than configured upload frequency (to account for the case
-                //   when more than one L0 object is upload on every iteration)
-                // - failure bucket should limit failure rate. It should be set
-                // up to allow
-                //   lower frequency then the expected upload rate.
-                // So basically in case of error we should retry immediately but
-                // eventually we should be throttled.
                 more_work = true;
             }
         }
     }
-}
-
-template<class Clock>
-ss::future<result<model::record_batch_reader>>
-batcher<Clock>::write_and_debounce(
-  model::ntp ntp,
-  model::record_batch_reader reader,
-  std::chrono::milliseconds timeout) {
-    auto h = _gate.hold();
-    auto index = _index++;
-    // The write request is stored on the stack of the
-    // fiber until the 'response' promise is set. The
-    // promise can be set by any fiber that uploaded the
-    // data from the write request.
-    auto data_chunk = co_await details::serialize_in_memory_record_batch_reader(
-      std::move(reader));
-    _current_size += data_chunk.payload.size_bytes();
-    details::write_request<Clock> request(
-      std::move(ntp), index, std::move(data_chunk), timeout);
-    auto fut = request.response.get_future();
-    _pending.push_back(request);
-    if (_current_size > 10_MiB) { // NOLINT
-        _cv.signal();
-    }
-    // TODO: The MT-version of this could be implemented as an external
-    // load balancer that submits request to chosen shard
-    // and awaits the result. This method will be an entry point into the
-    // load balancer.
-    auto res = co_await std::move(fut);
-    if (res.has_error()) {
-        co_return res.error();
-    }
-    // At this point the request is no longer referenced
-    // by any other shard
-    auto rdr = model::make_memory_record_batch_reader(std::move(res.value()));
-    co_return std::move(rdr);
 }
 
 template class batcher<ss::lowres_clock>;

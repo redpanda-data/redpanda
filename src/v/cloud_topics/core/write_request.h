@@ -12,25 +12,24 @@
 
 #include "base/outcome.h"
 #include "base/seastarx.h"
-#include "cloud_topics/batcher/serializer.h"
+#include "cloud_topics/core/pipeline_stage.h"
+#include "cloud_topics/core/serializer.h"
 #include "cloud_topics/errc.h"
 #include "model/record.h"
 
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/weak_ptr.hh>
 
-namespace experimental::cloud_topics::details {
-
-using batcher_req_index = named_type<int64_t, struct batcher_req_index_tag>;
+namespace experimental::cloud_topics::core {
 
 // This object is created for every produce request. It may contain
 // multiple batches.
-template<class Clock>
+template<class Clock = ss::lowres_clock>
 struct write_request : ss::weakly_referencable<write_request<Clock>> {
     using timestamp_t = Clock::time_point;
     /// Target NTP
     model::ntp ntp;
-    /// Monotonically increasing write request index
-    batcher_req_index index;
     /// Serialized record batches
     serialized_chunk data_chunk;
     /// Timestamp of the data ingestion
@@ -38,10 +37,12 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// At this point in time we need to reply to the client
     /// with timeout error
     timestamp_t expiration_time;
+    /// Current pipeline stage
+    pipeline_stage stage;
     /// List of all write requests
     intrusive_list_hook _hook;
 
-    using response_t = result<ss::circular_buffer<model::record_batch>>;
+    using response_t = checked<ss::circular_buffer<model::record_batch>, errc>;
     /// The promise is used to signal to the caller
     /// after the upload is completed
     ss::promise<response_t> response;
@@ -56,9 +57,9 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// The object can't be copied to another shard directly.
     write_request(
       model::ntp ntp,
-      batcher_req_index index,
       serialized_chunk chunk,
-      std::chrono::milliseconds timeout);
+      std::chrono::milliseconds timeout,
+      pipeline_stage stage = unassigned_pipeline_stage);
 
     size_t size_bytes() const noexcept;
 
@@ -74,4 +75,4 @@ template<class Clock>
 using write_request_list
   = intrusive_list<write_request<Clock>, &write_request<Clock>::_hook>;
 
-} // namespace experimental::cloud_topics::details
+} // namespace experimental::cloud_topics::core
