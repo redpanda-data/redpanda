@@ -159,8 +159,10 @@ class DatalakeServices():
                     self.query_engines))
             self.redpanda.logger.debug(
                 f"Current translated offsets: {offsets}")
-            return all(
-                [offset <= max_offset for _, max_offset in offsets.items()])
+            return all([
+                offset and offset <= max_offset
+                for _, max_offset in offsets.items()
+            ])
 
         wait_until(
             translation_done,
