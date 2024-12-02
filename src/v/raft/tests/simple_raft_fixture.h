@@ -122,7 +122,7 @@ struct simple_raft_fixture {
                       auto group = raft::group_id(0);
                       return _group_mgr.local().create_group(
                         group,
-                        {self_broker()},
+                        {self_vnode()},
                         log,
                         raft::with_learner_recovery_throttle::yes);
                   })
@@ -174,6 +174,7 @@ struct simple_raft_fixture {
           std::nullopt,
           model::broker_properties{});
     }
+    raft::vnode self_vnode() { return {_self, model::revision_id{0}}; }
 
     void wait_for_becoming_leader() {
         using namespace std::chrono_literals;
