@@ -142,6 +142,110 @@ enum class boundary_order {
     descending = 2,
 };
 
+/**
+ * Union to specify the order used for the min_value and max_value fields for a
+ * column. This union takes the role of an enhanced enum that allows rich
+ * elements (which will be needed for a collation-based ordering in the future).
+ *
+ * Possible values are:
+ * * TypeDefinedOrder - the column uses the order defined by its logical or
+ *                      physical type (if there is no logical type).
+ *
+ * If the reader does not support the value of this union, min and max stats
+ * for this column should be ignored.
+ */
+enum class column_order {
+    /**
+     * The sort orders for logical types are:
+     *   UTF8 - unsigned byte-wise comparison
+     *   INT8 - signed comparison
+     *   INT16 - signed comparison
+     *   INT32 - signed comparison
+     *   INT64 - signed comparison
+     *   UINT8 - unsigned comparison
+     *   UINT16 - unsigned comparison
+     *   UINT32 - unsigned comparison
+     *   UINT64 - unsigned comparison
+     *   DECIMAL - signed comparison of the represented value
+     *   DATE - signed comparison
+     *   TIME_MILLIS - signed comparison
+     *   TIME_MICROS - signed comparison
+     *   TIMESTAMP_MILLIS - signed comparison
+     *   TIMESTAMP_MICROS - signed comparison
+     *   INTERVAL - undefined
+     *   JSON - unsigned byte-wise comparison
+     *   BSON - unsigned byte-wise comparison
+     *   ENUM - unsigned byte-wise comparison
+     *   LIST - undefined
+     *   MAP - undefined
+     *   VARIANT - undefined
+     *
+     * In the absence of logical types, the sort order is determined by the
+     * physical type:
+     *   BOOLEAN - false, true
+     *   INT32 - signed comparison
+     *   INT64 - signed comparison
+     *   INT96 (only used for legacy timestamps) - undefined
+     *   FLOAT - signed comparison of the represented value (*)
+     *   DOUBLE - signed comparison of the represented value (*)
+     *   BYTE_ARRAY - unsigned byte-wise comparison
+     *   FIXED_LEN_BYTE_ARRAY - unsigned byte-wise comparison
+     *
+     * (*) Because the sorting order is not specified properly for floating
+     *     point values (relations vs. total ordering) the following
+     *     compatibility rules should be applied when reading statistics:
+     *     - If the min is a NaN, it should be ignored.
+     *     - If the max is a NaN, it should be ignored.
+     *     - If the min is +0, the row group may contain -0 values as well.
+     *     - If the max is -0, the row group may contain +0 values as well.
+     *     - When looking for NaN values, min and max should be ignored.
+     *
+     *     When writing statistics the following rules should be followed:
+     *     - NaNs should not be written to min or max statistics fields.
+     *     - If the computed max value is zero (whether negative or positive),
+     *       `+0.0` should be written into the max statistics field.
+     *     - If the computed min value is zero (whether negative or positive),
+     *       `-0.0` should be written into the min statistics field.
+     */
+    type_defined = 1,
+};
+
+/**
+ * Statistics per row group and per page
+ * All fields are optional.
+ */
+struct statistics {
+    // A bound on the range of values stored in this column_chunk/page.
+    struct bound {
+        // The value of the column determined by ColumnOrder.
+        //
+        // These may be the actual minimum and maximum values found on a page or
+        // column chunk, but can also be (more compact) values that do not exist
+        // on a page or column chunk. For example, instead of storing "Blart
+        // Versenwald III", a writer may set min_value="B", max_value="C". Such
+        // more compact values must still be valid values within the column's
+        // logical type.
+        //
+        // Values are encoded using PLAIN encoding, except that variable-length
+        // byte arrays do not include a length prefix.
+        iobuf value;
+        // If the value referenced above is the actual value
+        bool is_exact = false;
+    };
+
+    /**
+     * Count of null values in the column.
+     *
+     * Writers SHOULD always write this field even if it is zero (i.e. no null
+     * value) or the column is not nullable. Readers MUST distinguish between
+     * null_count not being present and null_count == 0. If null_count is not
+     * present, readers MUST NOT assume null_count == 0.
+     */
+    std::optional<int64_t> null_count = 0;
+    std::optional<bound> max;
+    std::optional<bound> min;
+};
+
 struct index_page_header {};
 
 /**
@@ -196,6 +300,9 @@ struct data_page_header {
     compressed_page_size (included) is compressed with the compression_codec. If
     missing it is considered compressed */
     bool is_compressed;
+
+    /** Optional statistics for the data in this page **/
+    std::optional<statistics> stats;
 };
 
 struct page_header {
@@ -276,6 +383,9 @@ struct column_meta_data {
     /** Byte offset from the beginning of file to first (only) dictionary
        page **/
     std::optional<int64_t> dictionary_page_offset;
+
+    /** optional statistics for this column chunk */
+    std::optional<statistics> stats;
 };
 
 struct column_chunk {
@@ -329,6 +439,13 @@ struct row_group {
     /** Byte offset from beginning of file to first page (data or dictionary)
      * in this row group **/
     int64_t file_offset;
+
+    /** Total byte size of all compressed (and potentially encrypted) column
+     * data in this row group **/
+    int64_t total_compressed_size;
+
+    /** Row group ordinal in the file **/
+    int16_t ordinal;
 };
 
 /**
@@ -356,6 +473,23 @@ struct file_metadata {
      * impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
      */
     ss::sstring created_by;
+    /**
+     * Sort order used for the min_value and max_value fields in the Statistics
+     * objects and the min_values and max_values fields in the ColumnIndex
+     * objects of each column in this file. Sort orders are listed in the order
+     * matching the columns in the schema. The indexes are not necessary the
+     * same though, because only leaf nodes of the schema are represented in the
+     * list of sort orders.
+     *
+     * Without column_orders, the meaning of the min_value and max_value fields
+     * in the Statistics object and the ColumnIndex object is undefined. To
+     * ensure well-defined behaviour, if these fields are written to a Parquet
+     * file, column_orders must be written as well.
+     *
+     * The obsolete min and max fields in the Statistics object are always
+     * sorted by signed comparison regardless of column_orders.
+     */
+    chunked_vector<column_order> column_orders;
 };
 
 /**

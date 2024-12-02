@@ -13,6 +13,9 @@
 
 #include "utils/vint.h"
 
+#include <limits>
+#include <stdexcept>
+
 namespace serde::thrift {
 
 namespace {
@@ -73,11 +76,23 @@ void struct_encoder::write_long_form_field_header(
 }
 
 bytes encode_string(std::string_view str) {
-    auto b = unsigned_vint::to_bytes(static_cast<int64_t>(str.size()));
+    auto b = unsigned_vint::to_bytes(str.size());
     b.reserve(b.size() + str.size());
     for (const char c : str) {
         b.push_back(c);
     }
+    return b;
+}
+
+iobuf encode_binary(iobuf b) {
+    if (b.size_bytes() > std::numeric_limits<uint32_t>::max()) {
+        throw std::invalid_argument("encoded thrift binary value too big");
+    }
+    auto len = unsigned_vint::to_bytes(b.size_bytes());
+    b.prepend(ss::temporary_buffer<char>(
+      // NOLINTNEXTLINE(*reinterpret-cast*)
+      reinterpret_cast<const char*>(len.data()),
+      len.size()));
     return b;
 }
 

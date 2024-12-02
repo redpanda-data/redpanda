@@ -156,4 +156,11 @@ iobuf encode_levels(
     return encode_levels_impl(max_value, levels);
 }
 
+iobuf encode_for_stats(boolean_value v) { return encode_plain({v}); }
+iobuf encode_for_stats(int32_value v) { return encode_plain({v}); }
+iobuf encode_for_stats(int64_value v) { return encode_plain({v}); }
+iobuf encode_for_stats(float32_value v) { return encode_plain({v}); }
+iobuf encode_for_stats(float64_value v) { return encode_plain({v}); }
+iobuf encode_for_stats(const byte_array_value& v) { return v.val.copy(); }
+iobuf encode_for_stats(const fixed_byte_array_value& v) { return v.val.copy(); }
 } // namespace serde::parquet

@@ -232,6 +232,7 @@ public:
     bool operator==(const iobuf&) const;
     bool operator<(const iobuf&) const;
     bool operator!=(const iobuf&) const;
+    std::strong_ordering operator<=>(const iobuf&) const;
 
     bool operator==(std::string_view) const;
     bool operator!=(std::string_view) const;

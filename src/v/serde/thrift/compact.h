@@ -121,4 +121,11 @@ private:
  */
 bytes encode_string(std::string_view str);
 
+/**
+ * Binary is length prefix encoded.
+ *
+ * First an unsigned varint for the length, then the binary contents itself.
+ */
+iobuf encode_binary(iobuf b);
+
 } // namespace serde::thrift
