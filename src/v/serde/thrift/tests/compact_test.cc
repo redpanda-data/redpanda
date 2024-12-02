@@ -10,7 +10,6 @@
  */
 
 #include "serde/thrift/compact.h"
-#include "src/v/serde/thrift/compact.h"
 #include "utils/vint.h"
 
 #include <gtest/gtest.h>

@@ -173,3 +173,20 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "column_stats_collector_test",
+    timeout = "short",
+    srcs = [
+        "column_stats_collector_test.cc",
+    ],
+    cpu = 1,
+    memory = "64MiB",
+    deps = [
+        "//src/v/serde/parquet:column_writer",
+        "//src/v/serde/parquet:value",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

@@ -107,9 +107,11 @@ redpanda_cc_library(
 redpanda_cc_library(
     name = "column_writer",
     srcs = [
+        "column_stats_collector.cc",
         "column_writer.cc",
     ],
     hdrs = [
+        "column_stats_collector.h",
         "column_writer.h",
     ],
     include_prefix = "serde/parquet",
@@ -119,8 +121,11 @@ redpanda_cc_library(
         ":schema",
         ":value",
         "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/compression",
         "//src/v/hashing:crc32",
+        "@abseil-cpp//absl/numeric:int128",
         "@seastar",
     ],
 )

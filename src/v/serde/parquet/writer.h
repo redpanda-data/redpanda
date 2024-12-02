@@ -23,8 +23,24 @@ namespace serde::parquet {
 //
 // These are mainly provided to limit memory usage.
 struct row_group_stats {
-    uint64_t rows = 0;
+    int64_t rows = 0;
     uint64_t memory_usage = 0;
+};
+
+// Statistics about the current file being built.
+struct file_stats {
+    // Note these are only the number of rows flushed
+    // to the output stream (so does not include the number
+    // in the current row group)
+    int64_t rows = 0;
+
+    // The size of the file flushed to the output stream - does not include the
+    // current row group buffered in memory, nor the footer (until close is
+    // called).
+    uint64_t size = 0;
+
+    // Additional information about the current row group buffered in memory.
+    row_group_stats current_row_group;
 };
 
 // A parquet file writer for seastar.
@@ -66,11 +82,13 @@ public:
     // class.
     ss::future<> write_row(group_value);
 
-    // The current stats on the buffered row group.
+    // The current stats on the file being written.
     //
-    // This can be used to account for memory usage and flush a row group
+    // This can be used to monitor the current file size.
+    //
+    // This can also be used to account for memory usage and flush a row group
     // when the memory usage is over some limit.
-    row_group_stats current_row_group_stats() const;
+    file_stats stats() const;
 
     // Flush the current row group to the output stream, creating a new row
     // group.

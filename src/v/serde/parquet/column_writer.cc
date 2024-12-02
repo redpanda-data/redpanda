@@ -11,15 +11,20 @@
 
 #include "serde/parquet/column_writer.h"
 
+#include "column_stats_collector.h"
 #include "compression/compression.h"
 #include "hashing/crc32.h"
 #include "serde/parquet/encoding.h"
 
 #include <seastar/util/variant_utils.hh>
 
+#include <absl/numeric/int128.h>
+
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
+#include <variant>
 
 namespace serde::parquet {
 
@@ -53,13 +58,12 @@ crc::crc32 compute_crc32(Args&&... args) {
     return crc;
 }
 
-template<typename value_type>
+template<typename value_type, auto comparator>
 class buffered_column_writer final : public column_writer::impl {
 public:
-    buffered_column_writer(
-      def_level max_def_level, rep_level max_rep_level, options opts)
-      : _max_rep_level(max_rep_level)
-      , _max_def_level(max_def_level)
+    buffered_column_writer(const schema_element& schema_element, options opts)
+      : _max_rep_level(schema_element.max_repetition_level)
+      , _max_def_level(schema_element.max_definition_level)
       , _opts(opts) {}
 
     incremental_column_stats
@@ -81,12 +85,13 @@ public:
               } else {
                   value_memory_usage = sizeof(value_type);
               }
+              _stats.record_value(v);
               _value_buffer.push_back(std::move(v));
           },
           [this](null_value&) {
               // null values are valid, but are not encoded in the actual data,
               // they are encoded in the defintion levels.
-              ++_num_nulls;
+              _stats.record_null();
           },
           [](auto& v) {
               throw std::runtime_error(fmt::format(
@@ -146,12 +151,24 @@ public:
           .crc = compute_crc32(encoded_rep_levels, encoded_def_levels, encoded_data),
           .type = data_page_header{
             .num_values = std::exchange(_num_values, 0),
-            .num_nulls = std::exchange(_num_nulls, 0),
+            .num_nulls = static_cast<int32_t>(_stats.null_count()),
             .num_rows = std::exchange(_num_rows, 0),
             .data_encoding = encoding::plain,
             .definition_levels_byte_length = static_cast<int32_t>(encoded_def_levels.size_bytes()),
             .repetition_levels_byte_length = static_cast<int32_t>(encoded_rep_levels.size_bytes()),
             .is_compressed = _opts.compress,
+            .stats = statistics{
+              .null_count = _stats.null_count(),
+              // TODO: consider truncating large values instead of writing them (is_exact=false)
+              .max = _stats.max() ? std::make_optional<statistics::bound>(
+                 /*value=*/encode_for_stats(*_stats.max()),
+                 /*is_exact=*/true
+              ) : std::nullopt,
+              .min = _stats.min() ? std::make_optional<statistics::bound>(
+                /*value=*/encode_for_stats(*_stats.min()),
+                /*is_exact=*/true
+              ) : std::nullopt,
+            },
           },
         };
         iobuf full_page_data = encode(header);
@@ -159,33 +176,40 @@ public:
         full_page_data.append(std::move(encoded_rep_levels));
         full_page_data.append(std::move(encoded_def_levels));
         full_page_data.append(std::move(encoded_data));
+        _stats.reset();
         co_return data_page{
-          .header = header,
+          .header = std::move(header),
           .serialized_header_size = header_size,
           .serialized = std::move(full_page_data),
         };
     }
 
 private:
-    // TODO: add compression and detailed stats
+    column_stats_collector<value_type, comparator> _stats;
     chunked_vector<value_type> _value_buffer;
     chunked_vector<def_level> _def_levels;
     chunked_vector<rep_level> _rep_levels;
     int32_t _num_rows = 0;
-    int32_t _num_nulls = 0;
     int32_t _num_values = 0;
     rep_level _max_rep_level;
     def_level _max_def_level;
     options _opts;
 };
 
-template class buffered_column_writer<boolean_value>;
-template class buffered_column_writer<int32_value>;
-template class buffered_column_writer<int64_value>;
-template class buffered_column_writer<float32_value>;
-template class buffered_column_writer<float64_value>;
-template class buffered_column_writer<byte_array_value>;
-template class buffered_column_writer<fixed_byte_array_value>;
+template class buffered_column_writer<boolean_value, ordering::boolean>;
+template class buffered_column_writer<int32_value, ordering::int32>;
+template class buffered_column_writer<int32_value, ordering::uint32>;
+template class buffered_column_writer<int64_value, ordering::int64>;
+template class buffered_column_writer<int64_value, ordering::uint64>;
+template class buffered_column_writer<float32_value, ordering::float32>;
+template class buffered_column_writer<float64_value, ordering::float64>;
+template class buffered_column_writer<byte_array_value, ordering::byte_array>;
+template class buffered_column_writer<
+  fixed_byte_array_value,
+  ordering::fixed_byte_array>;
+template class buffered_column_writer<
+  fixed_byte_array_value,
+  ordering::int128_be>;
 
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element&, std::monostate, options) {
@@ -194,37 +218,55 @@ make_impl(const schema_element&, std::monostate, options) {
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, bool_type, options opts) {
-    return std::make_unique<buffered_column_writer<boolean_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    return std::make_unique<
+      buffered_column_writer<boolean_value, ordering::boolean>>(e, opts);
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, i32_type, options opts) {
-    return std::make_unique<buffered_column_writer<int32_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    auto integer_type = std::get_if<int_type>(&e.logical_type);
+    if (integer_type && !integer_type->is_signed) {
+        return std::make_unique<
+          buffered_column_writer<int32_value, ordering::uint32>>(e, opts);
+    }
+    return std::make_unique<
+      buffered_column_writer<int32_value, ordering::int32>>(e, opts);
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, i64_type, options opts) {
-    return std::make_unique<buffered_column_writer<int64_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    auto integer_type = std::get_if<int_type>(&e.logical_type);
+    if (integer_type && !integer_type->is_signed) {
+        return std::make_unique<
+          buffered_column_writer<int64_value, ordering::uint64>>(e, opts);
+    }
+    return std::make_unique<
+      buffered_column_writer<int64_value, ordering::int64>>(e, opts);
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, f32_type, options opts) {
-    return std::make_unique<buffered_column_writer<float32_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    return std::make_unique<
+      buffered_column_writer<float32_value, ordering::float32>>(e, opts);
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, f64_type, options opts) {
-    return std::make_unique<buffered_column_writer<float64_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    return std::make_unique<
+      buffered_column_writer<float64_value, ordering::float64>>(e, opts);
 }
 std::unique_ptr<column_writer::impl>
 make_impl(const schema_element& e, byte_array_type t, options opts) {
     if (t.fixed_length.has_value()) {
-        return std::make_unique<buffered_column_writer<fixed_byte_array_value>>(
-          e.max_definition_level, e.max_repetition_level, opts);
+        if (
+          t.fixed_length == sizeof(absl::int128)
+          && std::holds_alternative<decimal_type>(e.logical_type)) {
+            return std::make_unique<buffered_column_writer<
+              fixed_byte_array_value,
+              ordering::int128_be>>(e, opts);
+        }
+        return std::make_unique<buffered_column_writer<
+          fixed_byte_array_value,
+          ordering::fixed_byte_array>>(e, opts);
     }
-    return std::make_unique<buffered_column_writer<byte_array_value>>(
-      e.max_definition_level, e.max_repetition_level, opts);
+    return std::make_unique<
+      buffered_column_writer<byte_array_value, ordering::byte_array>>(e, opts);
 }
 
 } // namespace
