@@ -1211,6 +1211,7 @@ class TopicRecoveryTest(RedpandaTest):
         self._started = True
 
         self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
 
     def rpk_producer_maker(self,
                            topic: str,
@@ -1467,6 +1468,17 @@ class TopicRecoveryTest(RedpandaTest):
         expected_num_leaders = sum(
             [t.partition_count for t in recovered_topics])
 
+        def all_replicas_in_sync(topic, *, partition, num_replicas):
+            partition_state = self.admin.get_partition_state(
+                "kafka", topic, partition)
+            if len(partition_state["replicas"]) != num_replicas:
+                return False
+            hwms = [
+                replica["high_watermark"]
+                for replica in partition_state["replicas"]
+            ]
+            return all([hwm == hwms[0] for hwm in hwms])
+
         def verify():
             num_leaders = 0
             try:
@@ -1478,6 +1490,15 @@ class TopicRecoveryTest(RedpandaTest):
                         self.logger.info(f"partition: {partition}")
                         if partition.leader in partition.replicas:
                             num_leaders += 1
+
+                            # If we have a leader, we can check if all replicas are in sync
+                            if not all_replicas_in_sync(
+                                    topic.name,
+                                    partition=partition.id,
+                                    num_replicas=len(partition.replicas)):
+                                self.logger.debug(
+                                    "partition replicas are not in sync yet")
+                                return False
             except:
                 return False
             return num_leaders == expected_num_leaders
