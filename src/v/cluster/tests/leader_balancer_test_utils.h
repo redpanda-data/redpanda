@@ -56,8 +56,9 @@ inline cluster::leader_balancer_strategy::index_type copy_cluster_index(
     cluster::leader_balancer_strategy::index_type index;
 
     for (const auto& [bs, leaders] : c_index) {
+        auto& gid2replicas = index[bs];
         for (const auto& [group_id, replicas] : leaders) {
-            index[bs][group_id] = replicas;
+            gid2replicas[group_id] = replicas;
         }
     }
 
