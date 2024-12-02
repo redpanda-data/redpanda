@@ -18,7 +18,11 @@
 #include "model/timestamp.h"
 #include "model/transform.h"
 #include "random/generators.h"
-#include "serde/serde.h"
+#include "serde/rw/map.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/uuid.h"
+#include "serde/rw/variant.h"
+#include "serde/rw/vector.h"
 #include "test_utils/randoms.h"
 
 #include <seastar/core/chunked_fifo.hh>

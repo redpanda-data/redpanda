@@ -141,7 +141,13 @@ class Struct:
 
 
 FILE_TEMPLATE = """#include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/rw/vector.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
 
 template<typename... T>
 struct type_list {};

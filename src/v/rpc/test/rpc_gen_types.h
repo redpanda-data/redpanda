@@ -15,7 +15,11 @@
 #include "reflection/adl.h"
 #include "rpc/parse_utils.h"
 #include "serde/envelope.h"
-#include "serde/serde.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 
 #include <seastar/core/sstring.hh>
 

@@ -17,7 +17,10 @@
 #include "json/writer.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
-#include "serde/serde.h"
+#include "serde/async.h"
+#include "serde/rw/iobuf.h"
+#include "serde/rw/rw.h"
+#include "serde/rw/sstring.h"
 
 #include <seastar/core/sstring.hh>
 

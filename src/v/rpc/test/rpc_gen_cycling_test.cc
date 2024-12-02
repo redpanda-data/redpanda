@@ -21,6 +21,7 @@
 #include "rpc/types.h"
 #include "rpc_gen_types.h"
 #include "rpc_integration_fixture.h"
+#include "serde/rw/iobuf.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
