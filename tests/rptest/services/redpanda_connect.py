@@ -92,7 +92,8 @@ logger:
         self.url = f"http://{node.account.hostname}:4195"
 
         def _ready():
-            r = requests.get(f"http://{node.account.hostname}:4195/ready")
+            r = requests.get(f"http://{node.account.hostname}:4195/ready",
+                             timeout=5)
             return r.status_code == 200
 
         wait_until(_ready,
