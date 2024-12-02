@@ -525,7 +525,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(
       it->second->max_capacity(),
       10 * partition_allocator_fixture::partitions_per_shard
-        - partition_allocator_fixture::partitions_reserve_shard0);
+        - partitions_reserve_shard0());
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
