@@ -140,11 +140,15 @@ template class scram_authenticator<scram_sha512>;
 std::optional<std::string_view> validate_scram_credential(
   const scram_credential& cred, const credential_password& password) {
     std::optional<std::string_view> sasl_mechanism;
-    if (security::scram_sha256::validate_password(
-          password, cred.stored_key(), cred.salt(), cred.iterations())) {
+    if (
+      cred.stored_key().size() == 32
+      && security::scram_sha256::validate_password(
+        password, cred.stored_key(), cred.salt(), cred.iterations())) {
         sasl_mechanism = security::scram_sha256_authenticator::name;
-    } else if (security::scram_sha512::validate_password(
-                 password, cred.stored_key(), cred.salt(), cred.iterations())) {
+    } else if (
+      cred.stored_key().size() == 64
+      && security::scram_sha512::validate_password(
+        password, cred.stored_key(), cred.salt(), cred.iterations())) {
         sasl_mechanism = security::scram_sha512_authenticator::name;
     }
 
