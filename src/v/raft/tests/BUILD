@@ -240,7 +240,7 @@ redpanda_cc_btest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "group_configuration_test",
     timeout = "short",
     srcs = [
@@ -256,11 +256,12 @@ redpanda_cc_btest(
         "//src/v/resource_mgmt:io_priority",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:unresolved_address",
-        "@boost//:test",
         "@fmt",
+        "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
     ],
