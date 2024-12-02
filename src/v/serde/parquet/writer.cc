@@ -67,21 +67,19 @@ public:
           _opts.schema, std::move(row), [this](shredded_value sv) {
               return write_value(std::move(sv));
           });
-        ++_current_row_group_stats.rows;
+        ++_stats.current_row_group.rows;
     }
 
-    row_group_stats current_row_group_stats() const {
-        return _current_row_group_stats;
-    }
+    file_stats stats() const { return _stats; }
 
     ss::future<> flush_row_group() {
-        if (_current_row_group_stats.rows == 0) {
+        if (_stats.current_row_group.rows == 0) {
             co_return;
         }
         row_group rg{
           .total_byte_size = 0, // Computed incrementally below
-          .num_rows = _current_row_group_stats.rows,
-          .file_offset = static_cast<int64_t>(_offset),
+          .num_rows = _stats.current_row_group.rows,
+          .file_offset = static_cast<int64_t>(_stats.size),
           .total_compressed_size = 0, // Computed incrementally below
           .ordinal = static_cast<int16_t>(_row_groups.size()),
         };
@@ -104,7 +102,7 @@ public:
                 .total_uncompressed_size = uncompressed_size,
                 .total_compressed_size = compressed_size,
                 .key_value_metadata = {},
-                .data_page_offset = static_cast<int64_t>(_offset),
+                .data_page_offset = static_cast<int64_t>(_stats.size),
                 // Because we only write a single page per row group at the moment,
                 // a column chunk's stats are trivially the same as it's page.
                 // When we have multiple pages in a row group we'll have to 
@@ -114,7 +112,8 @@ public:
             });
             co_await write_iobuf(std::move(page.serialized));
         }
-        _current_row_group_stats = {};
+        _stats.rows += _stats.current_row_group.rows;
+        _stats.current_row_group = {};
         _row_groups.push_back(std::move(rg));
     }
 
@@ -160,12 +159,12 @@ private:
         auto& col = _columns.at(sv.schema_element_position);
         auto stats = col.writer.add(
           std::move(sv.val), sv.rep_level, sv.def_level);
-        _current_row_group_stats.memory_usage += stats.memory_usage;
+        _stats.current_row_group.memory_usage += stats.memory_usage;
         return ss::now();
     }
 
     ss::future<> write_iobuf(iobuf b) {
-        _offset += b.size_bytes();
+        _stats.size += b.size_bytes();
         co_await write_iobuf_to_output_stream(std::move(b), _output);
     }
 
@@ -176,10 +175,9 @@ private:
 
     options _opts;
     ss::output_stream<char> _output;
-    size_t _offset = 0; // offset written to the stream
     contiguous_range_map<int32_t, column> _columns;
     chunked_vector<row_group> _row_groups;
-    row_group_stats _current_row_group_stats;
+    file_stats _stats;
 };
 
 writer::writer(options opts, ss::output_stream<char> output)
@@ -195,9 +193,7 @@ ss::future<> writer::write_row(group_value row) {
     return _impl->write_row(std::move(row));
 }
 
-row_group_stats writer::current_row_group_stats() const {
-    return _impl->current_row_group_stats();
-}
+file_stats writer::stats() const { return _impl->stats(); }
 
 ss::future<> writer::flush_row_group() { return _impl->flush_row_group(); }
 
