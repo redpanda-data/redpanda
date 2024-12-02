@@ -288,4 +288,26 @@ private:
     preference_index _preference_idx;
 };
 
+// Constraint implementing node-wise balanced load objective (i.e. equal number
+// of leaders on each node as opposed to on each shard).
+class even_node_load_constraint final
+  : public soft_constraint
+  , public index {
+public:
+    explicit even_node_load_constraint(const shard_index& si);
+
+    void update_index(const reassignment& r) override;
+
+private:
+    double evaluate_internal(const reassignment& r) override;
+
+private:
+    struct node_info {
+        int32_t leaders = 0;
+        uint32_t shards = 0;
+    };
+
+    absl::flat_hash_map<model::node_id, node_info> _node2info;
+};
+
 } // namespace cluster::leader_balancer_types
