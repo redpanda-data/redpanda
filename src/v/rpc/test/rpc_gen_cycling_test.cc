@@ -18,10 +18,8 @@
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
 #include "rpc/test/echo_v2_service.h"
+#include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
-#include "rpc_gen_types.h"
-#include "rpc_integration_fixture.h"
-#include "serde/rw/iobuf.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
@@ -135,6 +133,41 @@ public:
     static constexpr uint16_t redpanda_rpc_port = 32147;
 };
 
+struct certificate {
+    ss::sstring key;
+    ss::sstring crt;
+    ss::sstring ca;
+};
+
+namespace {
+ss::sstring root_path() {
+    // if this file exists, we are running in cmake
+    if (std::filesystem::exists("redpanda.key")) {
+        return "";
+    }
+
+    // otherwise we are running in bazel and we need
+    // the full path
+    return "src/v/rpc/test/";
+}
+
+certificate redpanda_cert() {
+    const auto root = root_path();
+    return {
+      .key = root + "redpanda.key",
+      .crt = root + "redpanda.crt",
+      .ca = root + "root_certificate_authority.crt"};
+}
+
+certificate redpanda_other_cert() {
+    const auto root = root_path();
+    return {
+      .key = root + "redpanda.other.key",
+      .crt = root + "redpanda.other.crt",
+      .ca = root + "root_certificate_authority.other.crt"};
+}
+} // namespace
+
 FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     configure_server();
     register_services();
@@ -237,7 +270,7 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
     // Check that we can create connections from a cache, and moreover that we
     // can run several clients targeted at the same server, if we provide
     // multiple node IDs to the cache.
-    constexpr const size_t num_nodes_ids = 10;
+    constexpr const int num_nodes_ids = 10;
     const auto ccfg = client_config();
     for (int i = 0; i < num_nodes_ids; ++i) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -301,10 +334,11 @@ FIXTURE_TEST(rpc_abort_from_cache, rpc_integration_fixture) {
 }
 
 FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
+    const auto cert = redpanda_cert();
     auto creds_builder = config::tls_config(
                            true,
-                           config::key_cert{"redpanda.key", "redpanda.crt"},
-                           "root_certificate_authority.crt",
+                           config::key_cert{cert.key, cert.crt},
+                           cert.ca,
                            std::nullopt, /* CRL */
                            false)
                            .get_credentials_builder()
@@ -367,16 +401,18 @@ struct certificate_reload_ctx {
 };
 
 FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
+    const certificate cert = redpanda_cert();
+    const certificate other_cert = redpanda_other_cert();
+
     // Server starts with bad credentials, files are updated on disk and then
     // client connects. Expected behavior is that client can connect without
     // issues. Condition variable is used to wait for credentials to reload.
     auto context = ss::make_lw_shared<certificate_reload_ctx>();
     temporary_dir tmp;
     // client credentials
-    auto client_key = tmp.copy_file("redpanda.key", "client.key");
-    auto client_crt = tmp.copy_file("redpanda.crt", "client.crt");
-    auto client_ca = tmp.copy_file(
-      "root_certificate_authority.crt", "ca_client.pem");
+    auto client_key = tmp.copy_file(cert.key.c_str(), "client.key");
+    auto client_crt = tmp.copy_file(cert.crt.c_str(), "client.crt");
+    auto client_ca = tmp.copy_file(cert.ca.c_str(), "ca_client.pem");
     auto client_creds_builder = config::tls_config(
                                   true,
                                   config::key_cert{
@@ -387,10 +423,9 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   .get_credentials_builder()
                                   .get();
     // server credentials
-    auto server_key = tmp.copy_file("redpanda.other.key", "server.key");
-    auto server_crt = tmp.copy_file("redpanda.other.crt", "server.crt");
-    auto server_ca = tmp.copy_file(
-      "root_certificate_authority.other.crt", "ca_server.pem");
+    auto server_key = tmp.copy_file(other_cert.key.c_str(), "server.key");
+    auto server_crt = tmp.copy_file(other_cert.crt.c_str(), "server.crt");
+    auto server_ca = tmp.copy_file(other_cert.ca.c_str(), "ca_server.pem");
     auto server_creds_builder = config::tls_config(
                                   true,
                                   config::key_cert{
@@ -432,9 +467,9 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
 
     // fix client credentials and reconnect
     info("replacing files");
-    tmp.copy_file("redpanda.key", "server.key");
-    tmp.copy_file("redpanda.crt", "server.crt");
-    tmp.copy_file("root_certificate_authority.crt", "ca_server.pem");
+    tmp.copy_file(cert.key.c_str(), "server.key");
+    tmp.copy_file(cert.crt.c_str(), "server.crt");
+    tmp.copy_file(cert.ca.c_str(), "ca_server.pem");
 
     context->cvar.wait([context] { return context->updated.size() == 3; })
       .get();
