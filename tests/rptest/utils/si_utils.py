@@ -407,8 +407,10 @@ def verify_file_layout(baseline_per_host,
         that maps host to dict of ntps where each ntp is mapped to the list of
         segments. The result is a map from ntp to the partition size on disk.
         """
+        first_host = None
+
         ntps = defaultdict(int)
-        for _, fdata in fdata_per_host.items():
+        for host, fdata in fdata_per_host.items():
             ntp_size = defaultdict(int)
             for path, entry in fdata.items():
                 it = _parse_checksum_entry(path, entry, ignore_rev=True)
@@ -417,6 +419,13 @@ def verify_file_layout(baseline_per_host,
                         # filter out empty segments created at the end of the log
                         # which are created after recovery
                         ntp_size[it.ntp] += it.size
+
+            if first_host is None:
+                first_host = host
+            else:
+                assert set(ntps.keys()) == set(
+                    ntp_size.keys()
+                ), f"NTPs on {host} differ from first host {first_host}: {set(ntps.keys())} vs {host}: {set(ntp_size.keys())}"
 
             for ntp, total_size in ntp_size.items():
                 if ntp in ntps and not hosts_can_vary:
