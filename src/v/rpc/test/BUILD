@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
 redpanda_cc_btest(
@@ -62,6 +62,55 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "exponential_backoff",
+    timeout = "short",
+    srcs = [
+        "exponential_backoff.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "connection_cache_test",
+    timeout = "short",
+    srcs = [
+        "connection_cache_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "rpc_bench",
+    timeout = "short",
+    srcs = [
+        "rpc_bench.cc",
+    ],
+    deps = [
+        "//src/v/reflection:adl",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )
 
