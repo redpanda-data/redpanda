@@ -1481,29 +1481,29 @@ class TopicRecoveryTest(RedpandaTest):
 
         def verify():
             num_leaders = 0
-            try:
-                for topic in recovered_topics:
-                    topic_state = self.rpk.describe_topic(topic.name)
-                    # Describe topics only works after leader election succeded.
-                    # We can use it to wait until the recovery is completed.
-                    for partition in topic_state:
-                        self.logger.info(f"partition: {partition}")
-                        if partition.leader in partition.replicas:
-                            num_leaders += 1
+            for topic in recovered_topics:
+                topic_state = self.rpk.describe_topic(topic.name)
+                # Describe topics only works after leader election succeded.
+                # We can use it to wait until the recovery is completed.
+                for partition in topic_state:
+                    self.logger.info(f"partition: {partition}")
+                    if partition.leader in partition.replicas:
+                        num_leaders += 1
 
-                            # If we have a leader, we can check if all replicas are in sync
-                            if not all_replicas_in_sync(
-                                    topic.name,
-                                    partition=partition.id,
-                                    num_replicas=len(partition.replicas)):
-                                self.logger.debug(
-                                    "partition replicas are not in sync yet")
-                                return False
-            except:
-                return False
+                        # If we have a leader, we can check if all replicas are in sync
+                        if not all_replicas_in_sync(topic.name,
+                                                    partition=partition.id,
+                                                    num_replicas=len(
+                                                        partition.replicas)):
+                            self.logger.debug(
+                                "partition replicas are not in sync yet")
+                            return False
             return num_leaders == expected_num_leaders
 
-        wait_until(verify, timeout_sec=timeout.total_seconds(), backoff_sec=1)
+        wait_until(verify,
+                   timeout_sec=timeout.total_seconds(),
+                   backoff_sec=1,
+                   retry_on_exc=True)
 
     def do_run(self, test_case: BaseCase, upload_delay_sec=60):
         """Template method invoked by all tests."""
