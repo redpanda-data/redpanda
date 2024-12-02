@@ -136,6 +136,9 @@ iceberg.rest-catalog.uri={{ catalog_rest_uri }}
                              port=self.trino_port,
                              catalog="redpanda")
 
+    def escape_identifier(self, table: str) -> str:
+        return f'"{table}"'
+
     @staticmethod
     def dict_to_conf(d: dict[str, Optional[str | bool]]):
         """

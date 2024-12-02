@@ -150,13 +150,12 @@ class DatalakeServices():
                                           timeout=30,
                                           backoff_sec=5):
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
-        table_name = f"redpanda.{topic}"
 
         def translation_done():
             offsets = dict(
                 map(
-                    lambda e: (e.engine_name(),
-                               e.max_translated_offset(table_name, partition)),
+                    lambda e: (e.engine_name(
+                    ), e.max_translated_offset("redpanda", topic, partition)),
                     self.query_engines))
             self.redpanda.logger.debug(
                 f"Current translated offsets: {offsets}")
@@ -177,11 +176,12 @@ class DatalakeServices():
                              timeout=30,
                              backoff_sec=5):
         self.wait_for_iceberg_table("redpanda", topic, timeout, backoff_sec)
-        table_name = f"redpanda.{topic}"
 
         def translation_done():
             counts = dict(
-                map(lambda e: (e.engine_name(), e.count_table(table_name)),
+                map(
+                    lambda e:
+                    (e.engine_name(), e.count_table("redpanda", topic)),
                     self.query_engines))
             self.redpanda.logger.debug(f"Current counts: {counts}")
             return all([c == msg_count for _, c in counts.items()])
