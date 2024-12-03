@@ -20,7 +20,9 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
+#include "config/tls_config.h"
 #include "config/types.h"
 #include "config/validators.h"
 #include "features/enterprise_feature_messages.h"
@@ -309,6 +311,22 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               features::enterprise_error_message::license_nag(
                 enterprise_features.enabled()));
         }
+    }
+
+    if (std::ranges::any_of(
+          config::shard_local_cfg().sasl_mechanisms(),
+          [](const auto& m) { return m == "PLAIN"; })) {
+        const bool any_tls_disabled = std::ranges::any_of(
+          config::node_config().kafka_api_tls.value(),
+          [](const config::endpoint_tls_config& cfg) {
+              return !cfg.config.is_enabled();
+          });
+
+        vlogl(
+          clusterlog,
+          any_tls_disabled ? ss::log_level::error : ss::log_level::warn,
+          "SASL/PLAIN is enabled. This is insecure and not recommenmded for "
+          "production.");
     }
 }
 
