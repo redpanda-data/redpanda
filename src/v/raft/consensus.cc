@@ -1354,15 +1354,7 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
         auto units = co_await _op_lock.get_units();
         auto new_cfg = group_configuration(
           std::move(voters), std::move(learners), new_revision);
-        if (
-          new_cfg.version() == group_configuration::v_5
-          && use_serde_configuration()) {
-            vlog(
-              _ctxlog.debug,
-              "Upgrading configuration {} version to 6",
-              new_cfg);
-            new_cfg.set_version(group_configuration::v_6);
-        }
+        try_updating_configuration_version(new_cfg);
         vlog(_ctxlog.info, "Force replacing configuration with: {}", new_cfg);
 
         update_follower_stats(new_cfg);
@@ -2619,9 +2611,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
           maybe_upgrade_configuration_to_v4(cfg);
-          if (
-            cfg.version() == group_configuration::v_5
-            && use_serde_configuration()) {
+          if (cfg.version() == group_configuration::v_5) {
               vlog(
                 _ctxlog.debug, "Upgrading configuration {} version to 6", cfg);
               cfg.set_version(group_configuration::v_6);
