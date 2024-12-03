@@ -4,6 +4,7 @@ common --extra_toolchains=@llvm_18_toolchain//:all
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
+build --linkopt -stdlib=libc++
 
 common:clang-19 --extra_toolchains=@llvm_19_toolchain//:all
 
@@ -93,6 +94,12 @@ build:release --linkopt=-flto
 build:release --@seastar//:stack_guards=False
 
 build:stamp --stamp --workspace_status_command=./bazel/stamp_vars.sh
+
+# =================================
+# Debug Symbols
+# =================================
+build:debug-symbols --copt -g
+build:debug-symbols --strip=never
 
 # =================================
 # Testing
