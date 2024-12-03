@@ -418,6 +418,9 @@ SEASTAR_THREAD_TEST_CASE(is_major_version_upgrade_test) {
       cluster::cluster_version{-1},
       to_cluster_version(release_version::v22_3_1)));
     BOOST_CHECK(is_major_version_upgrade(
-      to_cluster_version(release_version::v24_3_1),
-      cluster::cluster_version{15}));
+      to_cluster_version(release_version::MAX),
+      cluster::cluster_version{
+        static_cast<std::underlying_type_t<release_version>>(
+          release_version::MAX)
+        + 1}));
 }
