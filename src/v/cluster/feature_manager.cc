@@ -34,9 +34,9 @@
 
 #include <seastar/core/semaphore.hh>
 
-#include <absl/algorithm/container.h>
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace cluster {
@@ -208,7 +208,7 @@ feature_manager::report_enterprise_features() const {
     const auto& cfg = config::shard_local_cfg();
     const auto& node_cfg = config::node();
     auto has_gssapi = [&cfg]() {
-        return absl::c_any_of(
+        return std::ranges::any_of(
           cfg.sasl_mechanisms(), [](const auto& m) { return m == "GSSAPI"; });
     };
     auto has_oidc = []() {
