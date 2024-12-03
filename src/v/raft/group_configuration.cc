@@ -311,17 +311,13 @@ group_configuration::group_configuration(
 
 group_configuration::group_configuration(
   std::vector<vnode> initial_nodes, model::revision_id rev)
-  : _version(v_5)
-  , _revision(rev) {
-    _current.voters = std::move(initial_nodes);
-}
+  : group_configuration(std::move(initial_nodes), {}, rev) {}
 
 group_configuration::group_configuration(
   std::vector<vnode> voters,
   std::vector<vnode> learners,
   model::revision_id rev)
-  : _version(v_5)
-  , _revision(rev) {
+  : _revision(rev) {
     _current.voters = std::move(voters);
     _current.learners = std::move(learners);
 }

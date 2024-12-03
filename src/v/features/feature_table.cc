@@ -62,8 +62,6 @@ std::string_view to_string_view(feature f) {
         return "broker_time_based_retention";
     case feature::wasm_transforms:
         return "wasm_transforms";
-    case feature::raft_config_serde:
-        return "raft_config_serde";
     case feature::fast_partition_reconfiguration:
         return "fast_partition_reconfiguration";
     case feature::disabling_partitions:
