@@ -20,7 +20,9 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
+#include "config/tls_config.h"
 #include "config/types.h"
 #include "config/validators.h"
 #include "features/enterprise_feature_messages.h"
@@ -184,7 +186,7 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
         return ss::do_until(
           [this] { return _as.local().abort_requested(); },
-          [this] { return maybe_log_license_check_info(); });
+          [this] { return maybe_log_periodic_reminders(); });
     });
 
     for (const model::node_id n : cluster_founder_nodes) {
@@ -274,32 +276,38 @@ feature_manager::report_enterprise_features() const {
     return report;
 }
 
-ss::future<> feature_manager::maybe_log_license_check_info() {
-    auto license_check_retry = std::chrono::seconds(60 * 5);
+ss::future<> feature_manager::maybe_log_periodic_reminders() {
+    auto reminder_period = std::chrono::seconds(60 * 5);
     auto interval_override = std::getenv(
       "__REDPANDA_LICENSE_CHECK_INTERVAL_SEC");
     if (interval_override != nullptr) {
         try {
-            license_check_retry = std::min(
-              std::chrono::seconds{license_check_retry},
+            reminder_period = std::min(
+              std::chrono::seconds{reminder_period},
               std::chrono::seconds{std::stoi(interval_override)});
             vlog(
               clusterlog.info,
-              "Overriding default license log annoy interval to: {}s",
-              license_check_retry.count());
+              "Overriding default reminder period interval to: {}s",
+              reminder_period.count());
         } catch (...) {
             vlog(
               clusterlog.error,
-              "Invalid license check interval override '{}'",
+              "Invalid reminder period interval override '{}'",
               interval_override);
         }
     }
     try {
-        co_await ss::sleep_abortable(license_check_retry, _as.local());
+        co_await ss::sleep_abortable(reminder_period, _as.local());
     } catch (const ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
         co_return;
     }
+
+    maybe_log_license_nag();
+    maybe_log_security_nag();
+}
+
+void feature_manager::maybe_log_license_nag() {
     auto enterprise_features = report_enterprise_features();
     if (enterprise_features.any()) {
         if (_feature_table.local().should_sanction()) {
@@ -309,6 +317,26 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               features::enterprise_error_message::license_nag(
                 enterprise_features.enabled()));
         }
+    }
+}
+
+void feature_manager::maybe_log_security_nag() {
+    if (std::ranges::any_of(
+          config::shard_local_cfg().sasl_mechanisms(),
+          [](const auto& m) { return m == "PLAIN"; })) {
+        const bool any_tls_disabled
+          = std::ranges::any_of(
+              config::node_config().kafka_api_tls.value(),
+              [](const config::endpoint_tls_config& cfg) {
+                  return !cfg.config.is_enabled();
+              })
+            || config::node_config().kafka_api_tls.value().empty();
+
+        vlogl(
+          clusterlog,
+          any_tls_disabled ? ss::log_level::error : ss::log_level::warn,
+          "SASL/PLAIN is enabled. This is insecure and not recommended for "
+          "production.");
     }
 }
 
