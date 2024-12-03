@@ -98,6 +98,8 @@ std::string_view to_string_view(feature f) {
         return "shadow_indexing_split_topic_property_update";
     case feature::datalake_iceberg:
         return "datalake_iceberg";
+    case feature::raft_symmetric_reconfiguration_cancel:
+        return "raft_symmetric_reconfiguration_cancel";
 
     /*
      * testing features
