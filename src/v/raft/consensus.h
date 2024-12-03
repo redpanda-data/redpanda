@@ -776,10 +776,6 @@ private:
 
     std::optional<model::offset> get_learner_start_offset() const;
 
-    bool use_serde_configuration() const {
-        return _features.is_active(features::feature::raft_config_serde);
-    }
-
     flush_delay_t compute_max_flush_delay() const;
     ss::future<> do_flush();
 
