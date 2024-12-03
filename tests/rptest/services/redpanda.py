@@ -31,6 +31,7 @@ import pathlib
 import shlex
 from enum import Enum, IntEnum
 from typing import Callable, List, Generator, Literal, Mapping, Optional, Protocol, Set, Tuple, Any, Type, cast
+from urllib3.exceptions import MaxRetryError
 
 import yaml
 from ducktape.services.service import Service
@@ -5087,6 +5088,11 @@ class RedpandaService(RedpandaServiceBase):
                 try:
                     status = self._admin.get_partition_cloud_storage_status(
                         p.topic, p.index, node=p.leader)
+                except MaxRetryError as e:
+                    self.logger.info(
+                        f"Max retries exceeded while fetching cloud partition status: {e}"
+                    )
+                    return False
                 except HTTPError as he:
                     if he.response.status_code == 404:
                         # Old redpanda, doesn't have this endpoint.  We can't
