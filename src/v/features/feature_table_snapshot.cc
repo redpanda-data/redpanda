@@ -54,13 +54,25 @@ void feature_table_snapshot::apply(feature_table& ft) const {
           });
         if (snap_state_iter == states.end()) {
             // The feature table refers to a feature name that the snapshot
-            // doesn't mention: this is normal on upgrade.  The feature will
-            // remain in its default-initialized state.
+            // doesn't mention: this is normal on upgrade.
+            if (spec.require_version <= version) {
+                // The feature was introduced no later than the agreed version,
+                // which is no later than the version of the broker that took
+                // the snapshot. So it only can be missing because it has been
+                // retired and thus deemed active.
+                cur_state._state = feature_state::state::active;
+            } else {
+                // Otherwise the feature was introduced after the agreed
+                // version, so it can only be disabled before we reach it.
+                cur_state._state = feature_state::state::unavailable;
+            }
             vlog(
               featureslog.debug,
-              "No state for feature '{}' in snapshot, upgrade in progress?",
-              spec.name);
-            continue;
+              "No state for feature '{}' in snapshot v{}, upgrade in progress? "
+              "Assuming the feature state is {}",
+              spec.name,
+              version,
+              cur_state._state);
         } else {
             if (
               spec.require_version
