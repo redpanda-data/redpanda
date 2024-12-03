@@ -701,7 +701,7 @@ struct configuration final : public config_store {
     enum_property<tls_version> tls_min_version;
 
     // datalake configurations
-    enterprise<property<bool>> iceberg_enabled;
+    property<bool> iceberg_enabled;
     bounded_property<std::chrono::milliseconds>
       iceberg_catalog_commit_interval_ms;
     property<ss::sstring> iceberg_catalog_base_location;
