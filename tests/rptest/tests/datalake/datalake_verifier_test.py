@@ -51,7 +51,7 @@ class DatalakeVerifierTest(RedpandaTest):
                                         iceberg_mode="key_value")
         connect = dl.start_counter_stream(topic=topic_name)
         dl.wait_for_translation(topic_name, 100)
-        connect.wait_for_stream_to_finish("ducky_stream")
+        connect.stop_stream("ducky_stream")
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types())

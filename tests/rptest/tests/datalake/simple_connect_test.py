@@ -135,5 +135,5 @@ class RedpandaConnectIcebergTest(RedpandaTest):
                                      topic_name, "verifier_schema"))
 
             verifier.start()
-            connect.wait_for_stream_to_finish("ducky_stream")
+            connect.stop_stream("ducky_stream")
             verifier.wait()
