@@ -1500,7 +1500,7 @@ configuration::configuration()
       std::vector<ss::sstring>{"GSSAPI", "OAUTHBEARER"},
       "sasl_mechanisms",
       "A list of supported SASL mechanisms. Accepted values: `SCRAM`, "
-      "`GSSAPI`, `OAUTHBEARER`.",
+      "`GSSAPI`, `OAUTHBEARER`, `PLAIN`.",
       meta{
         .needs_restart = needs_restart::no,
         .visibility = visibility::user,
