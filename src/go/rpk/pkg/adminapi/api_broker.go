@@ -87,7 +87,7 @@ type DecommissionStatusResponse struct {
 func (a *AdminAPI) Brokers(ctx context.Context) ([]Broker, error) {
 	var bs []Broker
 	defer func() {
-		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID }) //nolint:revive // return inside this deferred function is for the sort's less function
+		sort.Slice(bs, func(i, j int) bool { return bs[i].NodeID < bs[j].NodeID })
 	}()
 	return bs, a.sendAny(ctx, http.MethodGet, brokersEndpoint, nil, &bs)
 }
