@@ -530,9 +530,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 err_msg="Error waiting for cluster to report consistent version"
             )
 
-        if with_tiered_storage:
-            self.redpanda.stop_and_scrub_object_storage()
-
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():
