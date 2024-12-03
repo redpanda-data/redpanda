@@ -92,7 +92,9 @@ raft::group_configuration random_configuration() {
 
 SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     for (auto v :
-         {raft::group_configuration::v_5, raft::group_configuration::v_6}) {
+         {raft::group_configuration::v_5,
+          raft::group_configuration::v_6,
+          raft::group_configuration::v_7}) {
         auto cfg = random_configuration();
         cfg.set_version(v);
 
