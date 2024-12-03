@@ -17,6 +17,7 @@ from rptest.services.redpanda import RedpandaService
 from rptest.services.spark_service import SparkService
 from rptest.services.trino_service import TrinoService
 from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.services.redpanda_connect import RedpandaConnectService
 from rptest.tests.datalake.query_engine_factory import get_query_engine_by_type
 
 
@@ -93,6 +94,36 @@ class DatalakeServices():
         spark = self.service(QueryEngineType.SPARK)
         assert spark, "Missing Spark service"
         return spark
+
+    def start_counter_stream(self,
+                             topic: str,
+                             name: str = "ducky_stream",
+                             count: int = 100,
+                             interval: str = "") -> RedpandaConnectService:
+        stream_conf = {
+            "input": {
+                "generate": {
+                    "mapping": "root = counter()",
+                    "interval": interval,
+                    "count": count,
+                    "batch_size": 1
+                }
+            },
+            "pipeline": {
+                "processors": []
+            },
+            "output": {
+                "redpanda": {
+                    "seed_brokers": self.redpanda.brokers_list(),
+                    "topic": topic,
+                }
+            }
+        }
+        connect = RedpandaConnectService(self.test_ctx, self.redpanda)
+        connect.start()
+        # create a stream
+        connect.start_stream(name, config=stream_conf)
+        return connect
 
     def service(self, engine_type: QueryEngineType):
         for e in self.query_engines:
