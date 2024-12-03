@@ -48,8 +48,9 @@ recovery_stm::recovery_stm(
   , _ctxlog(
       raftlog,
       ssx::sformat(
-        "[follower: {}] [group_id:{}, {}]",
+        "[follower: {}, term: {}] [group_id:{}, {}]",
         _node_id,
+        _term,
         _ptr->group(),
         _ptr->ntp()))
   , _memory_quota(quota) {}
