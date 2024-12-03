@@ -218,6 +218,10 @@ std::vector<shard_load> even_shard_load_constraint::stats() const {
           // oddly, absl::btree::size returns a signed type
           return shard_load{e->first, static_cast<size_t>(e->second.size())};
       });
+    std::sort(
+      ret.begin(), ret.end(), [](const shard_load& l, const shard_load& r) {
+          return l.shard < r.shard;
+      });
     return ret;
 }
 
