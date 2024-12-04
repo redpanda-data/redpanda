@@ -11,11 +11,12 @@ from rptest.clients.default import DefaultClient
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
+from rptest.services.redpanda import RedpandaService, SISettings, get_cloud_storage_type, make_redpanda_service
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.read_replica_e2e_test import hwms_are_identical, create_read_replica_topic
 from rptest.util import wait_until
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from rptest.utils.si_utils import BucketView, NT, quiesce_uploads
 
@@ -90,7 +91,8 @@ class RemoteLabelsTest(RedpandaTest):
         producer.free()
 
     @cluster(num_nodes=3)
-    def test_clusters_share_bucket(self) -> None:
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_clusters_share_bucket(self, cloud_storage_type) -> None:
         """
         cluster 1 creates topic_a
         cluster 2 creates topic_a
