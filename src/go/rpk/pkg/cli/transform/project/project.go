@@ -11,6 +11,7 @@ package project
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -120,8 +121,14 @@ func UnmarshalConfig(b []byte, c *Config) error {
 func LoadCfg(fs afero.Fs) (c Config, err error) {
 	b, err := afero.ReadFile(fs, ConfigFileName)
 	if err != nil {
-		return c, err
+		if os.IsNotExist(err) {
+			return c, fmt.Errorf("config file %q not found; you must be in the same directory as the %[1]q", ConfigFileName)
+		}
+		return c, fmt.Errorf("failed to read config file %q: %v", ConfigFileName, err)
 	}
 	err = UnmarshalConfig(b, &c)
-	return c, err
+	if err != nil {
+		return c, fmt.Errorf("failed to unmarshal config file %q: %v", ConfigFileName, err)
+	}
+	return c, nil
 }
