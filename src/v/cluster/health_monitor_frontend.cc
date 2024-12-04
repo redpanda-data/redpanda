@@ -60,8 +60,9 @@ health_monitor_frontend::get_cluster_health(
       });
 }
 
-storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
-    return _cluster_disk_health;
+storage::disk_space_alert
+health_monitor_frontend::get_cluster_data_disk_health() {
+    return _cluster_data_disk_health;
 }
 
 /**
@@ -100,23 +101,24 @@ health_monitor_frontend::get_cluster_health_overview(
 
 ss::future<> health_monitor_frontend::update_other_shards(
   const storage::disk_space_alert dsa) {
-    co_await container().invoke_on_others(
-      [dsa](health_monitor_frontend& fe) { fe._cluster_disk_health = dsa; });
+    co_await container().invoke_on_others([dsa](health_monitor_frontend& fe) {
+        fe._cluster_data_disk_health = dsa;
+    });
 }
 
 ss::future<> health_monitor_frontend::update_frontend_and_backend_cache() {
     auto deadline = model::time_from_now(default_timeout);
     auto disk_health = co_await dispatch_to_backend(
       [deadline](health_monitor_backend& be) {
-          return be.get_cluster_disk_health(force_refresh::no, deadline);
+          return be.get_cluster_data_disk_health(force_refresh::no, deadline);
       });
-    if (disk_health != _cluster_disk_health) {
+    if (disk_health != _cluster_data_disk_health) {
         vlog(
           clusterlog.debug,
-          "Update disk health cache {} -> {}",
-          _cluster_disk_health,
+          "Update data disk health cache {} -> {}",
+          _cluster_data_disk_health,
           disk_health);
-        _cluster_disk_health = disk_health;
+        _cluster_data_disk_health = disk_health;
         co_await update_other_shards(disk_health);
     }
 }
