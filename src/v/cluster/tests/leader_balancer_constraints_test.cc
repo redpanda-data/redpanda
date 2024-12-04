@@ -347,3 +347,74 @@ BOOST_AUTO_TEST_CASE(topic_skew_error) {
     BOOST_REQUIRE(post_topic_error <= pre_topic_error);
     BOOST_REQUIRE(post_shard_error <= pre_shard_error);
 }
+
+BOOST_AUTO_TEST_CASE(even_shard_uneven_node_load) {
+    index_type idx;
+    cluster::leader_balancer_types::group_id_to_topic_id g2topic;
+    using cluster::leader_balancer_types::topic_id_t;
+
+    // 3-node cluster, node 2 has twice as many shards as nodes 0 and 1
+    const int n_partitions = 10;
+    for (int n = 0; n < 3; ++n) {
+        uint32_t n_shards = (n <= 1 ? n_partitions : n_partitions * 2);
+        for (uint32_t s = 0; s < n_shards; ++s) {
+            idx[model::broker_shard{model::node_id(n), s}];
+        }
+    }
+
+    // 2 topics, n_partitions partitions each
+    for (int g = 0; g < n_partitions; ++g) {
+        raft::group_id group_id(g);
+        g2topic[group_id] = topic_id_t{123};
+
+        cluster::replicas_t replicas;
+        for (int n = 0; n < 3; ++n) {
+            // each partition on its own shard
+            uint32_t shard = g;
+            replicas.push_back(model::broker_shard{model::node_id{n}, shard});
+        }
+        // all leaders on on node 0
+        idx[replicas[0]][group_id] = replicas;
+    }
+
+    for (int g = n_partitions; g < 2 * n_partitions; ++g) {
+        raft::group_id group_id(g);
+        g2topic[group_id] = topic_id_t{345};
+
+        cluster::replicas_t replicas;
+        for (int n = 0; n < 3; ++n) {
+            // each partition on its own shard
+            uint32_t shard = (n <= 1 ? (g - n_partitions) : g);
+            replicas.push_back(model::broker_shard{model::node_id{n}, shard});
+        }
+        // all leaders on on node 1
+        idx[replicas[1]][group_id] = replicas;
+    }
+
+    cluster::leader_balancer_types::shard_index shard_idx(std::move(idx));
+
+    auto strategy = lbt::random_hill_climbing_strategy(
+      leader_balancer_test_utils::copy_cluster_index(shard_idx.shards()),
+      std::move(g2topic),
+      cluster::leader_balancer_types::muted_index({}, {}),
+      std::nullopt);
+
+    // If we view shards as independent, this distribution is perfectly balanced
+    // (each shard has either 1 or 0 leaders), but node 2 has 0 leaders. Check
+    // that the balancing strategy fixes this.
+
+    while (auto movement_opt = strategy.find_movement({})) {
+        strategy.apply_movement(*movement_opt);
+        shard_idx.update_index(*movement_opt);
+    }
+
+    std::map<model::node_id, size_t> node_stats;
+    for (const auto& s : strategy.stats()) {
+        node_stats[s.shard.node_id] += s.leaders;
+    }
+
+    // node 2 is twice bigger so hosts twice as many partitions.
+    BOOST_CHECK_EQUAL(node_stats[model::node_id{0}], n_partitions / 2);
+    BOOST_CHECK_EQUAL(node_stats[model::node_id{1}], n_partitions / 2);
+    BOOST_CHECK_EQUAL(node_stats[model::node_id{2}], n_partitions);
+}

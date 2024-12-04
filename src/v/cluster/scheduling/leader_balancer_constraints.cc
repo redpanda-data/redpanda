@@ -218,6 +218,10 @@ std::vector<shard_load> even_shard_load_constraint::stats() const {
           // oddly, absl::btree::size returns a signed type
           return shard_load{e->first, static_cast<size_t>(e->second.size())};
       });
+    std::sort(
+      ret.begin(), ret.end(), [](const shard_load& l, const shard_load& r) {
+          return l.shard < r.shard;
+      });
     return ret;
 }
 
@@ -251,6 +255,32 @@ double pinning_constraint::evaluate_internal(const reassignment& r) {
     }
 
     return diff;
+}
+
+even_node_load_constraint::even_node_load_constraint(const shard_index& si) {
+    for (const auto& [bs, leaders] : si.shards()) {
+        auto& info = _node2info[bs.node_id];
+        info.shards += 1;
+        info.leaders += leaders.size();
+    }
+}
+
+void even_node_load_constraint::update_index(const reassignment& r) {
+    _node2info[r.from.node_id].leaders -= 1;
+    _node2info[r.to.node_id].leaders += 1;
+}
+
+double even_node_load_constraint::evaluate_internal(const reassignment& r) {
+    // Positive if the reassignment makes the weighted distribution more
+    // balanced. In particular, it is positive iff
+    // (from_info.leaders/from_info.shards - to_info.leaders/to_info.shards)^2
+    // decreases as a result of the reassignment (showing equivalence is
+    // straightforward with some algebraic transforms).
+    const auto& from_info = _node2info[r.from.node_id];
+    const auto& to_info = _node2info[r.to.node_id];
+    return 2 * (double(from_info.leaders) * to_info.shards
+           - double(to_info.leaders) * from_info.shards) - from_info.shards
+           - to_info.shards;
 }
 
 } // namespace cluster::leader_balancer_types
