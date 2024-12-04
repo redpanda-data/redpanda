@@ -84,7 +84,20 @@ def in_fips_environment() -> bool:
 
 def skip_fips_mode(*args, **kwargs):
     """
-    Test method decorator which signals to the test runner to ignore a given test.
+    Decorator indicating that the test should not run in FIPS mode.
+
+    Ideally all tests should run in FIPS mode. The following are some situations
+    in which skipping FIPS mode is required.
+
+    * Exercising a known non-FIPS condition (e.g. virtual-host vs path style
+    testing).
+
+    * We can't test it in FIPS mode because of infrastructure issues, but the
+    implementation doesn't change between FIPS and non-FIPS (auditing & OCSF
+    server).
+
+    * Certain license tests (since enabling FIPS mode enables enterprise license
+    requirement).
 
     Example::
 
