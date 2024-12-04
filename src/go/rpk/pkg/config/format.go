@@ -63,6 +63,10 @@ func (f *OutFormatter) Help(t any) (string, bool) {
 	return s, true
 }
 
+func (f *OutFormatter) IsText() bool {
+	return f.Kind != "json" && f.Kind != "yaml"
+}
+
 func formatType(t any, includeTypeName bool) (string, error) {
 	types := make(map[reflect.Type]struct{})
 
