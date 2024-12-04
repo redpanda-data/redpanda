@@ -64,12 +64,15 @@ class ConfigProfileVerifyTest(RedpandaCloudTest):
             .format(self._clusterId, clusterConfig["cluster_id"]))
         assert "rp-{}".format(self._clusterId) == clusterConfig['cluster_id']
 
-        for k, v in self._configProfile["cluster_config"].items():
+        for k, expected_v in self._configProfile["cluster_config"].items():
+            actual_v = clusterConfig[k]
             self.logger.debug(
                 "asserting cluster config key {} has expected value: {}  actual: {}"
-                .format(k, v, clusterConfig[k]))
-            if clusterConfig[k] != v and "{}".format(clusterConfig[k]) != v:
-                assert False
+                .format(k, expected_v, actual_v))
+            if expected_v == "null":
+                expected_v = None
+            if actual_v != expected_v and "{}".format(actual_v) != expected_v:
+                assert False, f"incorrect config value for key '{k}': {actual_v} != {expected_v}"
 
     def _check_gcp_nodes(self):
         cmd = self.redpanda.kubectl._ssh_prefix() + [
