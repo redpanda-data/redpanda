@@ -95,6 +95,13 @@ public:
     }
     bool is_full(const model::ntp&, bool will_add_allocation) const;
 
+    // Internal topics are excluded from checks to prevent allocation failures
+    // when creating them. This is okay because they are fairly small in number
+    // compared to kafka user topic partitions.
+    static bool is_internal_topic(
+      const config::binding<std::vector<ss::sstring>>& internal_kafka_topics,
+      model::topic_namespace_view ntp);
+
 private:
     friend allocation_state;
 
