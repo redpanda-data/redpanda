@@ -227,6 +227,13 @@
                     },
                     "description": "ids of all nodes being recognized as down"
                 },
+                "data_disk_degraded": {
+                    "type": "array",
+                    "items": {
+                        "type": "int"
+                    },
+                    "description": "ids of all nodes with data disk degraded"
+                },
                 "nodes_in_recovery_mode": {
                     "type": "array",
                     "items": {
