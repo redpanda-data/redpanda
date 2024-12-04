@@ -116,18 +116,29 @@ avro_compatibility_result check_compatible(
                       *reader.leafAt(int(r_idx)),
                       *writer.leafAt(int(w_idx)),
                       fields_p / std::to_string(r_idx) / "type"));
-                } else if (
-                  reader.defaultValueAt(int(r_idx)).type() == avro::AVRO_NULL) {
-                    // if the reader's record schema has a field with no default
-                    // value, and writer's schema does not have a field with the
-                    // same name, an error is signalled.
+                } else {
+                    // if the reader's record schema has a field with no
+                    // default value, and writer's schema does not have a
+                    // field with the same name, an error is signalled.
+                    // For union, the default must correspond to the first
+                    // type.
+                    const auto& def = reader.defaultValueAt(int(r_idx));
 
-                    // For union, the default must correspond to the first type.
-                    // The default may be null.
-                    const auto& r_leaf = reader.leafAt(int(r_idx));
-                    if (
-                      r_leaf->type() != avro::Type::AVRO_UNION
-                      || r_leaf->leafAt(0)->type() != avro::Type::AVRO_NULL) {
+                    // Note: this code is overly restrictive for null-type
+                    // fields with null defaults. This is because the Avro API
+                    // is not expressive enough to differentiate the two.
+                    // Union type field's default set to null:
+                    //   def=GenericDatum(Union(Null))
+                    // Union type field's default missing:
+                    //   def=GenericDatum(Null)
+                    // Null type field's default set to null:
+                    //   def=GenericDatum(Null)
+                    // Null type field's default missing:
+                    //   def=GenericDatum(Null)
+                    auto default_unset = !def.isUnion()
+                                         && def.type() == avro::AVRO_NULL;
+
+                    if (default_unset) {
                         compat_result.emplace<avro_incompatibility>(
                           fields_p / std::to_string(r_idx),
                           avro_incompatibility::Type::
