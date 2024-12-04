@@ -109,7 +109,8 @@ std::optional<retention_calculator> retention_calculator::factory(
 
         if (
           manifest.size() > 0
-          && manifest.begin()->max_timestamp < oldest_allowed_timestamp) {
+          && manifest.first_addressable_segment()->max_timestamp
+               < oldest_allowed_timestamp) {
             strats.push_back(
               std::make_unique<time_based_strategy>(oldest_allowed_timestamp));
         }
