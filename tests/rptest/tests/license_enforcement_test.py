@@ -49,9 +49,6 @@ class LicenseEnforcementTest(RedpandaTest):
     )
     def test_license_enforcement(self, clean_node_before_recovery,
                                  clean_node_after_recovery):
-        self.redpanda.set_environment(
-            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
-
         installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
@@ -72,6 +69,16 @@ class LicenseEnforcementTest(RedpandaTest):
         self.logger.info(f"Enabling an enterprise feature")
         self.redpanda.set_cluster_config(
             {"partition_autobalancing_mode": "continuous"})
+
+        self.logger.info(
+            "Disabling the trial license to simulate that the license expired")
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=60,
+                                 backoff_sec=1,
+                                 err_msg="The cluster hasn't stabilized")
 
         first_upgraded = self.redpanda.nodes[0]
         self.logger.info(
@@ -112,9 +119,6 @@ class LicenseEnforcementTest(RedpandaTest):
     @cluster(num_nodes=5, log_allow_list=LOG_ALLOW_LIST)
     @matrix(clean_node_before_upgrade=[False, True])
     def test_escape_hatch_license_variable(self, clean_node_before_upgrade):
-        self.redpanda.set_environment(
-            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
-
         installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
@@ -135,6 +139,16 @@ class LicenseEnforcementTest(RedpandaTest):
         self.logger.info(f"Enabling an enterprise feature")
         self.redpanda.set_cluster_config(
             {"partition_autobalancing_mode": "continuous"})
+
+        self.logger.info(
+            "Disabling the trial license to simulate that the license expired")
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=60,
+                                 backoff_sec=1,
+                                 err_msg="The cluster hasn't stabilized")
 
         first_upgraded = self.redpanda.nodes[0]
         first_upgraded_id = self.redpanda.node_id(first_upgraded)
