@@ -551,11 +551,8 @@ segment_set disk_log_impl::find_sliding_range(
 
         buf.emplace_back(seg);
     }
-    segment_set segs(std::move(buf));
-    if (segs.empty()) {
-        return segs;
-    }
 
+    segment_set segs(std::move(buf));
     return segs;
 }
 
@@ -662,6 +659,10 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
           "[{}] failed to build offset map. Stopping compaction: {}",
           config().ntp(),
           std::current_exception());
+        // Reset the sliding window start offset so that compaction may still
+        // make progress in the future. Otherwise, we will fail to build the
+        // offset map for the same segment over and over.
+        _last_compaction_window_start_offset.reset();
         co_return false;
     }
     vlog(
