@@ -87,3 +87,39 @@ class DatalakeRecoveryModeTest(RedpandaTest):
 
             dl.wait_for_translation("foo", msg_count=2 * count)
             dl.wait_for_translation("bar", msg_count=count)
+
+    @cluster(num_nodes=6)
+    @matrix(cloud_storage_type=supported_storage_types(),
+            filesystem_catalog_mode=[True, False])
+    def test_disabled_partitions(self, cloud_storage_type,
+                                 filesystem_catalog_mode):
+        with DatalakeServices(self.test_context,
+                              redpanda=self.redpanda,
+                              filesystem_catalog_mode=filesystem_catalog_mode,
+                              include_query_engines=[QueryEngineType.SPARK
+                                                     ]) as dl:
+
+            count = 1000
+            rpk = RpkTool(self.redpanda)
+
+            dl.create_iceberg_enabled_topic("foo", partitions=10)
+            rpk.create_topic("bar", partitions=10, replicas=3)
+
+            dl.produce_to_topic("foo", 1024, count)
+
+            admin = Admin(self.redpanda)
+            admin.set_partitions_disabled(ns="kafka", topic="foo")
+            admin.set_partitions_disabled(ns="kafka", topic="bar")
+
+            rpk.alter_topic_config("bar", TopicSpec.PROPERTY_ICEBERG_MODE,
+                                   "key_value")
+
+            time.sleep(15)
+            admin.set_partitions_disabled(ns="kafka", topic="foo", value=False)
+            admin.set_partitions_disabled(ns="kafka", topic="bar", value=False)
+
+            dl.produce_to_topic("foo", 1024, count)
+            dl.produce_to_topic("bar", 1024, count)
+
+            dl.wait_for_translation("foo", msg_count=2 * count)
+            dl.wait_for_translation("bar", msg_count=count)
