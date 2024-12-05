@@ -92,7 +92,7 @@ private:
           "This method can only be called on data migration shard");
     }
 
-    bool data_migrations_active() const;
+    bool data_migrations_active(bool check_license) const;
 
 private:
     model::node_id _self;

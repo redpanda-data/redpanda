@@ -120,14 +120,15 @@ frontend::process_or_dispatch(
     co_return reply_mapper(std::move(reply));
 }
 
-bool frontend::data_migrations_active() const {
+bool frontend::data_migrations_active(bool check_license) const {
     return _features.is_active(features::feature::data_migrations)
-           && _cloud_storage_api_initialized;
+           && _cloud_storage_api_initialized
+           && !(check_license && _features.should_sanction());
 }
 
 ss::future<result<id>> frontend::create_migration(
   data_migration migration, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(true)) {
         return ssx::now<result<id>>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "creating migration: {}", migration);
@@ -162,7 +163,7 @@ ss::future<result<id>> frontend::create_migration(
 
 ss::future<std::error_code> frontend::update_migration_state(
   id id, state state, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(false)) {
         return ssx::now<std::error_code>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "updating migration: {} state with: {}", id, state);
@@ -196,7 +197,7 @@ ss::future<std::error_code> frontend::update_migration_state(
 
 ss::future<std::error_code>
 frontend::remove_migration(id id, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(false)) {
         return ssx::now<std::error_code>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "removing migration: {}", id);
