@@ -81,6 +81,35 @@ allocation_constraints partition_allocator::default_constraints() {
     return req;
 }
 
+std::error_code partition_allocator::check_memory_limits(
+  uint64_t new_partitions_replicas_requested,
+  uint64_t proposed_total_partitions,
+  uint64_t effective_cluster_memory) const {
+    // Refuse to create partitions that would violate the configured
+    // memory per partition.
+    auto memory_per_partition_replica = _memory_per_partition();
+    if (
+      memory_per_partition_replica.has_value()
+      && memory_per_partition_replica.value() > 0) {
+        const uint64_t memory_limit = effective_cluster_memory
+                                      / memory_per_partition_replica.value();
+
+        if (proposed_total_partitions > memory_limit) {
+            vlog(
+              clusterlog.warn,
+              "Refusing to create {} new partitions as total partition count "
+              "{} "
+              "would exceed memory limit {}",
+              new_partitions_replicas_requested,
+              proposed_total_partitions,
+              memory_limit);
+            return errc::topic_invalid_partitions_memory_limit;
+        }
+    }
+
+    return errc::success;
+}
+
 /**
  * Check cluster-wide limits on total partition count vs available
  * system resources.  This is the 'sanity' check that the user doesn't
@@ -189,26 +218,13 @@ std::error_code partition_allocator::check_cluster_limits(
         return errc::topic_invalid_partitions_core_limit;
     }
 
-    // Refuse to create partitions that would violate the configured
-    // memory per partition.
-    auto memory_per_partition_replica = _memory_per_partition();
-    if (
-      memory_per_partition_replica.has_value()
-      && memory_per_partition_replica.value() > 0) {
-        const uint64_t memory_limit = effective_cluster_memory
-                                      / memory_per_partition_replica.value();
+    auto memory_errc = check_memory_limits(
+      new_partitions_replicas_requested,
+      proposed_total_partitions,
+      effective_cluster_memory);
 
-        if (proposed_total_partitions > memory_limit) {
-            vlog(
-              clusterlog.warn,
-              "Refusing to create {} new partitions as total partition count "
-              "{} "
-              "would exceed memory limit {}",
-              new_partitions_replicas_requested,
-              proposed_total_partitions,
-              memory_limit);
-            return errc::topic_invalid_partitions_memory_limit;
-        }
+    if (memory_errc != errc::success) {
+        return memory_errc;
     }
 
     // Refuse to create partitions that would exhaust our nfiles ulimit

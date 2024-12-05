@@ -149,6 +149,12 @@ private:
       const uint64_t new_partitions_replicas_requested,
       const model::topic_namespace& topic) const;
 
+    // sub-routine of the above, checks available memory
+    std::error_code check_memory_limits(
+      uint64_t new_partitions_replicas_requested,
+      uint64_t proposed_total_partitions,
+      uint64_t effective_cluster_memory) const;
+
     ss::future<result<allocation_units::pointer>>
       do_allocate(allocation_request);
 
