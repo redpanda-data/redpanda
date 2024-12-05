@@ -221,6 +221,7 @@ class NodeOpsExecutor():
         self.timeout = 360
         self.lock = lock
         self.progress_timeout = progress_timeout
+        self.override_config_params: None | dict = None
 
     def node_id(self, idx):
         return self.redpanda.node_id(self.redpanda.get_node(idx),
@@ -373,10 +374,12 @@ class NodeOpsExecutor():
 
         node = self.redpanda.get_node(idx)
 
-        self.redpanda.start_node(node,
-                                 timeout=self.timeout,
-                                 auto_assign_node_id=True,
-                                 omit_seeds_on_idx_one=False)
+        self.redpanda.start_node(
+            node,
+            timeout=self.timeout,
+            auto_assign_node_id=True,
+            omit_seeds_on_idx_one=False,
+            override_cfg_params=self.override_config_params)
 
         self.logger.info(
             f"added node: {idx} with new node id: {self.node_id(idx)}")
