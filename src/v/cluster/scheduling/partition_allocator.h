@@ -34,7 +34,6 @@ public:
     partition_allocator(
       ss::sharded<members_table>&,
       ss::sharded<features::feature_table>&,
-      config::binding<std::optional<size_t>> memory_per_partition,
       config::binding<std::optional<int32_t>> fds_per_partition,
       config::binding<uint32_t> partitions_per_shard,
       config::binding<uint32_t> partitions_reserve_shard0,
@@ -170,7 +169,6 @@ private:
     ss::sharded<members_table>& _members;
     features::feature_table& _feature_table;
 
-    config::binding<std::optional<size_t>> _memory_per_partition;
     config::binding<std::optional<int32_t>> _fds_per_partition;
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
