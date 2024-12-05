@@ -69,11 +69,9 @@ value& value::operator=(const value& other) noexcept {
 }
 
 value::~value() noexcept {
-    // There is a bug with clang tidy where thinks that it's possible for _ctx
-    // to be uninitialized when destructed inside of std::expected
-
-    // NOLINTNEXTLINE
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
 }
 
 value value::undefined(JSContext* ctx) { return {ctx, JS_UNDEFINED}; }
