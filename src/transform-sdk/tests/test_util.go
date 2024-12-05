@@ -61,6 +61,7 @@ func startRedpanda(ctx context.Context) (*redpanda.Container, context.CancelFunc
 			req.LogConsumerCfg.Consumers = append(req.LogConsumerCfg.Consumers, &stdoutLogConsumer{})
 			return nil
 		}),
+		testcontainers.WithEnv(map[string]string{"WASMTIME_BACKTRACE_DETAILS": "1"}),
 		redpanda.WithEnableWasmTransform(),
 		redpanda.WithBootstrapConfig("data_transforms_per_core_memory_reservation", 135000000),
 		redpanda.WithBootstrapConfig("data_transforms_per_function_memory_limit", 16777216),

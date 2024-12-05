@@ -26,7 +26,7 @@ endif()
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
-if(CMAKE_BUILD_TYPE MATCHES Release)
+if(CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ltosupported OUTPUT error)
   # NOTE(oren): rather a blunt instrument. CMake doesn't currently
