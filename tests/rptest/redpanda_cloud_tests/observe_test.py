@@ -59,15 +59,23 @@ class HTObserveTest(RedpandaCloudTest):
 
     @cluster(num_nodes=0, check_allowed_error_logs=False)
     def test_cloud_observe(self):
-        self.logger.debug("Here we go")
+        self.logger.debug("Starting cloud observe test")
 
         rule_groups = self.load_grafana_rules()
-
         alerts = self.cluster_alerts(rule_groups.data.groups)
+        high_priority_alerts = []
 
         for alert in alerts:
-            self.logger.warn(
-                f'alert firing for cluster: {alert.labels.grafana_folder} / {alert.labels.alertname}'
-            )
+            alert_message = f"alert firing for cluster: {alert.labels.grafana_folder} / {alert.labels.alertname}"
+            if "high priority" in alert_message.lower():
+                self.logger.error(f"High priority - {alert_message}")
+                high_priority_alerts.append(alert_message)
+            else:
+                self.logger.warning(f"Low priority - {alert_message}")
 
-        assert len(alerts) == 0
+        # Fail the test if high-priority alerts are present
+        assert not high_priority_alerts, (
+            f"Test failed due to high-priority alerts:\n{high_priority_alerts}"
+        )
+
+        self.logger.info("Cloud observe test completed successfully.")
