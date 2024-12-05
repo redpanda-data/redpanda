@@ -334,6 +334,40 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
       == feature_state::state::active);
 }
 
+// Test that applying an old snapshot disables features that we only enabled in
+// this version.
+FIXTURE_TEST(feature_table_old_snapshot_missing, feature_table_fixture) {
+    bootstrap_active_version(TEST_VERSION);
+
+    features::feature_table_snapshot snapshot;
+    snapshot.version = cluster::cluster_version{ft.get_active_version() - 1};
+    snapshot.states = {};
+    snapshot.apply(ft);
+
+    // A feature with explicit available_policy should be activated by the
+    // snapshot.
+    BOOST_CHECK(
+      ft.get_state(feature::test_alpha).get_state()
+      == feature_state::state::unavailable);
+}
+
+// Test that applying a snapshot of the same version with a missing feature
+// enables it, as we assume it was retired in the next version.
+FIXTURE_TEST(feature_table_new_snapshot_missing, feature_table_fixture) {
+    bootstrap_active_version(TEST_VERSION);
+
+    features::feature_table_snapshot snapshot;
+    snapshot.version = cluster::cluster_version{ft.get_active_version()};
+    snapshot.states = {};
+    snapshot.apply(ft);
+
+    // A feature with explicit available_policy should be activated by the
+    // snapshot.
+    BOOST_CHECK(
+      ft.get_state(feature::test_alpha).get_state()
+      == feature_state::state::active);
+}
+
 FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
     const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
     if (sample_valid_license == nullptr) {
