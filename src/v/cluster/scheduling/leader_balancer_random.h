@@ -112,7 +112,8 @@ public:
       , _si(std::make_unique<shard_index>(std::move(index)))
       , _reassignments(_si->shards())
       , _etdc(*_group2topic, *_si, *_mi)
-      , _eslc(*_si, *_mi) {
+      , _eslc(*_si, *_mi)
+      , _enlc(*_si) {
         if (preference_idx) {
             _pinning_constr.emplace(
               *_group2topic, std::move(preference_idx.value()));
@@ -156,13 +157,20 @@ public:
                 }
             }
 
-            auto balancing_diff = _etdc.evaluate(reassignment)
-                                  + _eslc.evaluate(reassignment);
-            if (balancing_diff <= error_jitter) {
+            auto shard_load_diff = _etdc.evaluate(reassignment)
+                                   + _eslc.evaluate(reassignment);
+            if (shard_load_diff < -error_jitter) {
                 continue;
+            } else if (shard_load_diff > error_jitter) {
+                return reassignment_opt;
             }
 
-            return reassignment_opt;
+            auto node_load_diff = _enlc.evaluate(reassignment);
+            if (node_load_diff < -error_jitter) {
+                continue;
+            } else if (node_load_diff > error_jitter) {
+                return reassignment_opt;
+            }
         }
 
         return std::nullopt;
@@ -171,6 +179,7 @@ public:
     void apply_movement(const reassignment& reassignment) override {
         _etdc.update_index(reassignment);
         _eslc.update_index(reassignment);
+        _enlc.update_index(reassignment);
         _mi->update_index(reassignment);
         _si->update_index(reassignment);
         _reassignments.update_index(reassignment);
@@ -192,6 +201,7 @@ private:
     std::optional<pinning_constraint> _pinning_constr;
     even_topic_distribution_constraint _etdc;
     even_shard_load_constraint _eslc;
+    even_node_load_constraint _enlc;
 };
 
 } // namespace cluster::leader_balancer_types

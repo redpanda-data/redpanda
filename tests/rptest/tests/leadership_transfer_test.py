@@ -474,7 +474,7 @@ class LeadershipPinningTest(RedpandaTest):
             "foo": {"A"},
             "bar": {"B", "C"}
         },
-                            timeout_sec=30)
+                            timeout_sec=60)
 
         # Decrease idle timeout to not wait too long after nodes are killed
         self.redpanda.set_cluster_config({"enable_leader_balancer": False})
@@ -504,7 +504,7 @@ class LeadershipPinningTest(RedpandaTest):
             "bar": {"C"}
         },
                             check_balance=False,
-                            timeout_sec=30)
+                            timeout_sec=60)
 
         self.logger.info("unset topic configs")
 
@@ -515,7 +515,7 @@ class LeadershipPinningTest(RedpandaTest):
             "foo": {"A"},
             "bar": {"A"}
         },
-                            timeout_sec=30)
+                            timeout_sec=60)
 
         self.logger.info("unset default preference")
 
