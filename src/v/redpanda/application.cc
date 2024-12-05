@@ -582,12 +582,8 @@ void application::initialize(
      * Disable the logger for protobuf; some interfaces don't allow a pluggable
      * error collector.
      */
-#if PROTOBUF_VERSION < 5027000
-    google::protobuf::SetLogHandler(nullptr);
-#else
     // Protobuf uses absl logging in the latest version
     absl::SetMinLogLevel(absl::LogSeverityAtLeast::kInfinity);
-#endif
 
     /*
      * allocate per-core zstd decompression workspace and per-core
