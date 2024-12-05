@@ -248,11 +248,14 @@ partition_translator::do_translation_for_range(
 }
 
 ss::future<partition_translator::translation_success>
-partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
+partition_translator::do_translate_once(
+  retry_chain_node& parent_rcn, bool& caught_up) {
+    caught_up = false;
     if (
       !_partition->get_ntp_config().iceberg_enabled()
       || !_features->local().is_active(features::feature::datalake_iceberg)) {
         vlog(_logger.debug, "iceberg config/feature disabled, nothing to do.");
+        caught_up = true;
         co_return translation_success::yes;
     }
     auto reconcile_result = co_await reconcile_with_coordinator();
@@ -276,6 +279,7 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
           read_end_offset,
           _partition->last_stable_offset());
         _partition->probe().update_iceberg_translation_offset_lag(0);
+        caught_up = true;
         co_return translation_success::yes;
     }
     // We have some data to translate, make a reader
@@ -324,6 +328,9 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
               std::move(translation_result.value()))) {
             max_translated_offset = last_translated_offset;
             result = translation_success::yes;
+        }
+        if (last_translated_offset >= read_end_offset) {
+            caught_up = true;
         }
     }
     update_translation_lag(max_translated_offset);
@@ -440,15 +447,20 @@ bool partition_translator::can_continue() const {
 
 ss::future<> partition_translator::do_translate() {
     while (can_continue()) {
-        co_await ss::sleep_abortable(_jitter.next_duration(), _as);
         retry_chain_node rcn{
           _as, max_translation_task_timeout, initial_backoff};
+        bool caught_up = false;
         co_await retry_with_backoff(
           rcn,
-          [this, &rcn] { return do_translate_once(rcn); },
+          [this, &rcn, &caught_up] {
+              return do_translate_once(rcn, caught_up);
+          },
           [this](translation_success result) {
               return can_continue() && result == translation_success::no;
           });
+        if (caught_up) {
+            co_await ss::sleep_abortable(_jitter.next_duration(), _as);
+        }
     }
 }
 

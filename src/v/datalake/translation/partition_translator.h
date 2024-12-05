@@ -100,7 +100,9 @@ private:
       std::optional<kafka::offset> max_committed_kafka_offset) const;
 
     using translation_success = ss::bool_class<struct translation_success>;
-    ss::future<translation_success> do_translate_once(retry_chain_node& parent);
+    // XXX: fold caught_up into a translation outcome
+    ss::future<translation_success>
+    do_translate_once(retry_chain_node& parent, bool& caught_up);
     ss::future<model::record_batch_reader> make_reader();
     ss::future<std::optional<coordinator::translated_offset_range>>
     do_translation_for_range(
