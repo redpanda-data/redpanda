@@ -48,7 +48,9 @@ value& value::operator=(value&& other) noexcept {
     if (this == &other) {
         return *this;
     }
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
     _ctx = std::exchange(other._ctx, nullptr);
     _underlying = std::exchange(other._underlying, JS_UNINITIALIZED);
     return *this;
@@ -62,7 +64,9 @@ value& value::operator=(const value& other) noexcept {
     if (this == &other) {
         return *this;
     }
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
     _ctx = other._ctx;
     _underlying = other.raw_dup();
     return *this;

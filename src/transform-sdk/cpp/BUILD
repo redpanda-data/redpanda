@@ -1,5 +1,5 @@
 cc_library(
-    name = "transform-sdk",
+    name = "transform_sdk",
     srcs = ["src/transform_sdk.cc"],
     hdrs = ["include/redpanda/transform_sdk.h"],
     copts = [
@@ -7,4 +7,5 @@ cc_library(
         "-fno-exceptions",
     ],
     includes = ["include"],
+    visibility = ["//visibility:public"],
 )

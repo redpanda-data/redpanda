@@ -22,3 +22,16 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_binary(
+    name = "main",
+    srcs = ["main.cc"],
+    copts = [
+        "-std=c++23",
+        "-fno-exceptions",
+    ],
+    deps = [
+        ":js_vm",
+        "//src/transform-sdk/cpp:transform_sdk",
+    ],
+)
