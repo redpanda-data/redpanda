@@ -194,6 +194,28 @@ FIXTURE_TEST(allocation_over_capacity, partition_allocator_fixture) {
       allocator().allocate(make_allocation_request(int_2, 1, 1)).get());
 }
 
+FIXTURE_TEST(
+  allocation_over_capacity_without_shard0, partition_allocator_fixture) {
+    // Disable shard0 reservations
+    partitions_reserve_shard0.update(0);
+
+    register_node(0, 6);
+    register_node(1, 6);
+    register_node(2, 6);
+
+    saturate_all_machines();
+    auto gr = allocator().state().last_group_id();
+    BOOST_REQUIRE(
+      allocator().allocate(make_allocation_request(1, 1)).get().has_error());
+    // group id hasn't changed
+    BOOST_REQUIRE_EQUAL(allocator().state().last_group_id(), gr);
+
+    // Make the topic internal and retry, should work.
+    kafka_internal_topics.update({tn.tp()});
+    BOOST_REQUIRE(allocator().allocate(make_allocation_request(1, 1)).get());
+    BOOST_REQUIRE_GT(allocator().state().last_group_id(), gr);
+}
+
 FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
     register_node(0, 2);
     register_node(1, 2);
@@ -525,7 +547,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(
       it->second->max_capacity(),
       10 * partition_allocator_fixture::partitions_per_shard
-        - partition_allocator_fixture::partitions_reserve_shard0);
+        - partitions_reserve_shard0());
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {

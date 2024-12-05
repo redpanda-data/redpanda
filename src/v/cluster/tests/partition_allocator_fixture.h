@@ -32,7 +32,6 @@
 
 struct partition_allocator_fixture {
     static constexpr uint32_t partitions_per_shard = 1000;
-    static constexpr uint32_t partitions_reserve_shard0 = 2;
 
     partition_allocator_fixture()
       : partition_allocator_fixture(std::nullopt, std::nullopt) {}
@@ -68,7 +67,7 @@ struct partition_allocator_fixture {
           broker.id(),
           broker.properties().cores,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+          partitions_reserve_shard0.bind(),
           kafka_internal_topics.bind()));
     }
 
@@ -135,6 +134,7 @@ struct partition_allocator_fixture {
     cluster::partition_allocator& allocator() { return _allocator.local(); }
 
     config::mock_property<std::vector<ss::sstring>> kafka_internal_topics{{}};
+    config::mock_property<uint32_t> partitions_reserve_shard0{2};
     model::topic_namespace tn{model::kafka_namespace, model::topic{"test"}};
     ss::sharded<cluster::members_table> members;
     ss::sharded<features::feature_table> features;
@@ -155,7 +155,7 @@ protected:
             config::mock_binding<std::optional<size_t>>(memory_per_partition),
             config::mock_binding<std::optional<int32_t>>(fds_per_partition),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-            config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+            partitions_reserve_shard0.bind(),
             kafka_internal_topics.bind(),
             config::mock_binding<bool>(true))
           .get();
