@@ -142,7 +142,7 @@ public:
     void operator()(const iceberg::float_type&) { w.String("float"); }
     void operator()(const iceberg::double_type&) { w.String("double"); }
     void operator()(const iceberg::decimal_type& t) {
-        w.String("decimal({}, {})", t.precision, t.scale);
+        w.String(fmt::format("decimal({}, {})", t.precision, t.scale));
     }
     void operator()(const iceberg::date_type&) { w.String("date"); }
     void operator()(const iceberg::time_type&) { w.String("time"); }
