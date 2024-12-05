@@ -163,6 +163,8 @@ constexpr cluster::cluster_version to_cluster_version(release_version rv) {
     vassert(false, "Invalid release_version");
 }
 
+constexpr cluster::cluster_version TEST_VERSION{2001};
+
 bool is_major_version_upgrade(
   cluster::cluster_version from, cluster::cluster_version to);
 

@@ -121,10 +121,10 @@ FIXTURE_TEST(feature_table_basic, feature_table_fixture) {
       ft.get_state(feature::test_alpha).get_state()
       == feature_state::state::unavailable);
 
-    // The dummy test features requires version 2001.  The feature
+    // The dummy test features requires version TEST_VERSION. The feature
     // should go available, but not any further: the feature table
     // relies on external stimulus to actually activate features.
-    set_active_version(cluster_version{2001});
+    set_active_version(TEST_VERSION);
 
     BOOST_REQUIRE(
       ft.get_state(feature::test_alpha).get_state()
@@ -274,7 +274,7 @@ FIXTURE_TEST(feature_uniqueness, feature_table_fixture) {
  * but also activates elegible features.
  */
 FIXTURE_TEST(feature_table_bootstrap, feature_table_fixture) {
-    bootstrap_active_version(cluster_version{2001});
+    bootstrap_active_version(TEST_VERSION);
 
     // A non-auto-activating feature should remain in available state:
     // explicit_only features always require explicit activation, even
