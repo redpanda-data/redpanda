@@ -43,7 +43,7 @@ endif()
 FetchContent_Declare(
   quickjs
   GIT_REPOSITORY https://github.com/quickjs-ng/quickjs.git
-  GIT_TAG        0362c0a4eb59aaa43621bd0c487eed021db30bb5
+  GIT_TAG        66732e78ef0ba82bb0f75386ca4ea5b5814668fb
 )
 
 FetchContent_Declare(
