@@ -45,7 +45,6 @@ namespace cluster {
 partition_allocator::partition_allocator(
   ss::sharded<members_table>& members,
   ss::sharded<features::feature_table>& feature_table,
-  config::binding<std::optional<size_t>> memory_per_partition,
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0,
@@ -58,7 +57,6 @@ partition_allocator::partition_allocator(
       internal_kafka_topics))
   , _members(members)
   , _feature_table(feature_table.local())
-  , _memory_per_partition(std::move(memory_per_partition))
   , _fds_per_partition(std::move(fds_per_partition))
   , _partitions_per_shard(std::move(partitions_per_shard))
   , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
@@ -87,7 +85,9 @@ std::error_code partition_allocator::check_memory_limits(
   uint64_t effective_cluster_memory) const {
     // Refuse to create partitions that would violate the configured
     // memory per partition.
-    auto memory_per_partition_replica = _memory_per_partition();
+    auto memory_per_partition_replica
+      = config::shard_local_cfg().topic_memory_per_partition();
+
     if (
       memory_per_partition_replica.has_value()
       && memory_per_partition_replica.value() > 0) {
