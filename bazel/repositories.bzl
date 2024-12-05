@@ -197,3 +197,11 @@ def data_dependency():
         strip_prefix = "xxHash-bbb27a5efb85b92a0486cf361a8635715a53f6ba",
         url = "https://github.com/Cyan4973/xxHash/archive/bbb27a5efb85b92a0486cf361a8635715a53f6ba.tar.gz",
     )
+
+    http_archive(
+        name = "quickjs",
+        build_file = "//bazel/thirdparty:quickjs.BUILD",
+        integrity = "sha256-igZ/erq79s2sYHpl7cX2qJGlx6t+VaszT45YD4lZFGI=",
+        strip_prefix = "quickjs-66732e78ef0ba82bb0f75386ca4ea5b5814668fb",
+        url = "https://github.com/quickjs-ng/quickjs/archive/66732e78ef0ba82bb0f75386ca4ea5b5814668fb.tar.gz",
+    )

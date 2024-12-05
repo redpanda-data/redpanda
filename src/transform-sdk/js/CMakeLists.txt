@@ -19,6 +19,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -fno-exceptions")
 if(Redpanda_ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,leak,undefined)
   add_compile_options(-fsanitize=address,leak,undefined)
+  set(CONFIG_ASAN ON)
+  set(CONFIG_UBSAN ON)
 endif()
 
 include(FetchContent)
