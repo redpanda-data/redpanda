@@ -24,6 +24,7 @@
 #include "storage/ntp_config.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <algorithm>
@@ -33,6 +34,49 @@
 #include <vector>
 
 namespace cluster {
+
+namespace {
+enum class properties_source {
+    create,
+    update,
+    snapshot,
+};
+
+std::string_view to_string_view(properties_source ps) {
+    switch (ps) {
+    case properties_source::create:
+        return "created topic";
+    case properties_source::update:
+        return "topic properties update";
+    case properties_source::snapshot:
+        return "topic snapshot";
+    }
+}
+
+void maybe_log_cloud_storage_config_warning(
+  model::topic_namespace_view tp,
+  const topic_properties& props,
+  properties_source ps) {
+    if (
+      ss::this_shard_id() != 0
+      || !config::shard_local_cfg().cloud_storage_enabled()
+      || !props.delete_retention_ms.is_disabled()) {
+        return;
+    }
+
+    if (auto mode = props.shadow_indexing.value_or(
+          model::shadow_indexing_mode::disabled);
+        mode != model::shadow_indexing_mode::full) {
+        vlog(
+          clusterlog.warn,
+          "Cloud storage not fully enabled for {}: ns_tp: {{{}}} - si_mode: "
+          "{{{}}}",
+          ps,
+          tp,
+          mode);
+    }
+}
+} // namespace
 
 topic_table::topic_table(
   data_migrations::migrated_resources& migrated_resources)
@@ -67,6 +111,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         return ss::make_ready_future<std::error_code>(
           errc::topic_invalid_config);
     }
+
+    maybe_log_cloud_storage_config_warning(
+      model::topic_namespace_view{cmd.key},
+      cmd.value.cfg.properties,
+      properties_source::create);
 
     std::optional<model::initial_revision_id> remote_revision
       = cmd.value.cfg.properties.remote_topic_properties
@@ -1142,6 +1191,11 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         co_return make_error_code(errc::topic_invalid_config);
     }
 
+    maybe_log_cloud_storage_config_warning(
+      model::topic_namespace_view{tp->first},
+      updated_properties,
+      properties_source::update);
+
     // Apply the changes
     properties = std::move(updated_properties);
 
@@ -1592,6 +1646,10 @@ ss::future<> topic_table::apply_snapshot(
 
     // Next, go over the new topics set and add state for new topics.
     for (const auto& [ns_tp, topic] : snap.topics) {
+        maybe_log_cloud_storage_config_warning(
+          model::topic_namespace_view{ns_tp},
+          topic.metadata.configuration.properties,
+          properties_source::snapshot);
         if (!_topics.contains(ns_tp)) {
             _topics.emplace(ns_tp, co_await applier.create_topic(ns_tp, topic));
             _topics_map_revision++;
