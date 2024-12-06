@@ -107,3 +107,5 @@ class PartitionMovementTest(PartitionMovementMixin, RedpandaTest):
             verifier = DatalakeVerifier(self.redpanda, topic, dl.trino())
             verifier.start()
             verifier.wait()
+
+        assert False, "injected failure"
