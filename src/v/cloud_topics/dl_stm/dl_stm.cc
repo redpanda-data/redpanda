@@ -46,6 +46,17 @@ ss::future<> dl_stm::do_apply(const model::record_batch& batch) {
             _state.push_overlay(new_dl_version, std::move(cmd.overlay));
             break;
         }
+        case dl_stm_key::start_snapshot: {
+            std::ignore = serde::from_iobuf<start_snapshot_cmd>(
+              r.release_value());
+            _state.start_snapshot(new_dl_version);
+            break;
+        }
+        case dl_stm_key::remove_snapshots_before_version:
+            auto cmd = serde::from_iobuf<remove_snapshots_before_version_cmd>(
+              r.release_value());
+            _state.remove_snapshots_before(cmd.last_version_to_keep);
+            break;
         }
     });
 

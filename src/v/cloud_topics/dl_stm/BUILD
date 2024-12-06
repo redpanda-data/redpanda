@@ -7,6 +7,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/cloud_topics:dl_overlay",
+        "//src/v/cloud_topics:dl_version",
         "//src/v/serde",
     ],
 )
@@ -19,6 +20,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/cloud_topics:dl_overlay",
+        "//src/v/cloud_topics:dl_snapshot",
         "//src/v/cloud_topics:dl_version",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
@@ -58,6 +60,8 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:dl_overlay",
+        "//src/v/cloud_topics:dl_snapshot",
+        "//src/v/cloud_topics:dl_version",
         "//src/v/model",
         "@seastar",
     ],

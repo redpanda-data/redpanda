@@ -46,13 +46,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "dl_version",
-    hdrs = ["dl_version.h"],
-    include_prefix = "cloud_topics",
-    deps = ["//src/v/utils:named_type"],
-)
-
-redpanda_cc_library(
     name = "dl_overlay",
     srcs = [
         "dl_overlay.cc",
@@ -83,6 +76,33 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
+    name = "dl_version",
+    hdrs = ["dl_version.h"],
+    include_prefix = "cloud_topics",
+    deps = ["//src/v/utils:named_type"],
+)
+
+redpanda_cc_library(
+    name = "dl_snapshot",
+    srcs = [
+        "dl_snapshot.cc",
+    ],
+    hdrs = [
+        "dl_snapshot.h",
+    ],
+    implementation_deps = [
+        "@fmt",
+    ],
+    include_prefix = "cloud_topics",
+    deps = [
+        ":dl_overlay",
+        ":dl_version",
+        "//src/v/container:fragmented_vector",
+        "//src/v/serde",
     ],
 )
 
