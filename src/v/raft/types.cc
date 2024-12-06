@@ -142,6 +142,7 @@ void follower_index_metadata::reset() {
     last_successful_received_seq = follower_req_seq{0};
     inflight_append_request_count = 0;
     last_sent_protocol_meta.reset();
+    follower_state_change.broadcast();
 }
 
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
