@@ -30,6 +30,7 @@ redpanda_cc_library(
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crypto",
+        "//src/v/crash_tracker",
         #       "//src/v/datalake:manager",
         "//src/v/datalake:types",
         "//src/v/datalake:cloud_data_io",

@@ -63,6 +63,7 @@ v_cc_library(
     monitor_unsafe.cc
   DEPS
     Seastar::seastar
+    v::crash_tracker
     v::crypto
     v::cluster
     v::datalake_coordinator
