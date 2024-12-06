@@ -41,7 +41,7 @@ public:
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
-    /// this functions deal with the snapshot stored in local kvstore (in
+    /// these functions deal with the snapshot stored in local kvstore (in
     /// contrast to fill/apply_snapshot which deal with the feature table data
     /// in the replicated controller snapshot).
     bool has_local_snapshot();

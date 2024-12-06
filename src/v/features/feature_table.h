@@ -82,8 +82,13 @@ enum class feature : std::uint64_t {
 // controller messages for unknown features (unexpected), and controller
 // messages that refer to features that have been retired.
 //
-// retired does *not* mean the functionality is gone: it just means it
+// Retired does *not* mean the functionality is gone: it just means it
 // is no longer guarded by a feature flag.
+//
+// All feature checks need to be removed one version before the feature is
+// retired. That's because during upgrade, when a mixed version cluster is
+// running, the older version nodes may read a snaphot from the newer version
+// and get the feature automatically enabled.
 inline const std::unordered_set<std::string_view> retired_features = {
   "central_config",
   "consumer_offsets",
@@ -157,6 +162,8 @@ constexpr cluster::cluster_version to_cluster_version(release_version rv) {
     }
     vassert(false, "Invalid release_version");
 }
+
+constexpr cluster::cluster_version TEST_VERSION{2001};
 
 bool is_major_version_upgrade(
   cluster::cluster_version from, cluster::cluster_version to);
