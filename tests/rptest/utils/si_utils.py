@@ -1731,10 +1731,8 @@ class BucketView:
         summaries = self.segment_summaries(ntp)
         if len(summaries) == 0:
             assert 'archive_start_offset' not in manifest
-            assert 'archive_start_offset' not in manifest
         else:
             next_base_offset = manifest.get('archive_start_offset')
-            stm_start_offset = manifest.get('start_offset')
             expected_last = manifest.get('last_offset')
 
             for summary in summaries:
