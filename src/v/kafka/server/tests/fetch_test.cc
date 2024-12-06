@@ -153,6 +153,16 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
     }
 }
 
+namespace {
+chunked_vector<model::record_batch>
+to_chunked_vector(ss::circular_buffer<model::record_batch> batches) {
+    chunked_vector<model::record_batch> res;
+    res.reserve(batches.size());
+    std::move(batches.begin(), batches.end(), std::back_inserter(res));
+    return res;
+}
+} // namespace
+
 // TODO: when we have a more precise log builder tool we can make these finer
 // grained tests. for now the test is coarse grained based on the random batch
 // builder.
@@ -434,11 +444,10 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
             {
                 auto batches
                   = model::test::make_random_batches(model::offset(0), 5).get();
-                auto rdr = model::make_memory_record_batch_reader(
-                  std::move(batches));
+
                 partition->raft()
                   ->replicate(
-                    std::move(rdr),
+                    to_chunked_vector(std::move(batches)),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack))
                   .discard_result()
@@ -447,13 +456,12 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
             partition->raft()->step_down("trigger epoch change").get();
             wait_for_leader(ntp, 10s).get();
             {
-                auto batches
-                  = model::test::make_random_batches(model::offset(0), 5).get();
-                auto rdr = model::make_memory_record_batch_reader(
-                  std::move(batches));
+                auto batches = to_chunked_vector(
+                  model::test::make_random_batches(model::offset(0), 5).get());
+
                 partition->raft()
                   ->replicate(
-                    std::move(rdr),
+                    std::move(batches),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack))
                   .discard_result()
@@ -531,10 +539,9 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
                 return model::test::make_random_batches(model::offset(0), 5)
                   .then([ntp, &mgr](auto batches) {
                       auto partition = mgr.get(ntp);
-                      auto rdr = model::make_memory_record_batch_reader(
-                        std::move(batches));
+
                       return partition->raft()->replicate(
-                        std::move(rdr),
+                        to_chunked_vector(std::move(batches)),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack));
                   });
@@ -600,10 +607,9 @@ FIXTURE_TEST(fetch_leader_ack, redpanda_thread_fixture) {
             return model::test::make_random_batches(model::offset(0), 5)
               .then([ntp, &mgr](auto batches) {
                   auto partition = mgr.get(ntp);
-                  auto rdr = model::make_memory_record_batch_reader(
-                    std::move(batches));
+
                   return partition->raft()->replicate(
-                    std::move(rdr),
+                    to_chunked_vector(std::move(batches)),
                     raft::replicate_options(
                       raft::consistency_level::leader_ack));
               });
@@ -659,10 +665,8 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
             return model::test::make_random_batches(model::offset(0), 5)
               .then([ntp, &mgr](auto batches) {
                   auto partition = mgr.get(ntp);
-                  auto rdr = model::make_memory_record_batch_reader(
-                    std::move(batches));
                   return partition->raft()->replicate(
-                    std::move(rdr),
+                    to_chunked_vector(std::move(batches)),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack));
               });
@@ -740,10 +744,9 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
                 return model::test::make_random_batches(model::offset(0), 5)
                   .then([ntp, &mgr](auto batches) {
                       auto partition = mgr.get(ntp);
-                      auto rdr = model::make_memory_record_batch_reader(
-                        std::move(batches));
+
                       return partition->raft()->replicate(
-                        std::move(rdr),
+                        to_chunked_vector(std::move(batches)),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack));
                   });
@@ -793,10 +796,9 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
             return model::test::make_random_batches(model::offset(0), 20)
               .then([ntp, &mgr](auto batches) {
                   auto partition = mgr.get(ntp);
-                  auto rdr = model::make_memory_record_batch_reader(
-                    std::move(batches));
+
                   return partition->raft()->replicate(
-                    std::move(rdr),
+                    to_chunked_vector(std::move(batches)),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack));
               });

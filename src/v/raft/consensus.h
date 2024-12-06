@@ -248,9 +248,11 @@ public:
       model::offset);
 
     ss::future<result<replicate_result>>
-    replicate(model::record_batch_reader&&, replicate_options);
-    replicate_stages
-    replicate_in_stages(model::record_batch_reader&&, replicate_options);
+      replicate(chunked_vector<model::record_batch>, replicate_options);
+    ss::future<result<replicate_result>>
+      replicate(model::record_batch, replicate_options);
+    replicate_stages replicate_in_stages(
+      chunked_vector<model::record_batch>, replicate_options);
     uint64_t get_snapshot_size() const { return _snapshot_size; }
 
     std::optional<state_machine_manager>& stm_manager() { return _stm_manager; }
@@ -278,10 +280,13 @@ public:
      *      d. cache the term
      *      e. continue with step #1
      */
+    ss::future<result<replicate_result>> replicate(
+      model::term_id, chunked_vector<model::record_batch>, replicate_options);
     ss::future<result<replicate_result>>
-    replicate(model::term_id, model::record_batch_reader&&, replicate_options);
+      replicate(model::term_id, model::record_batch, replicate_options);
     replicate_stages replicate_in_stages(
-      model::term_id, model::record_batch_reader&&, replicate_options);
+      model::term_id, chunked_vector<model::record_batch>, replicate_options);
+
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config,
       std::optional<clock_type::time_point> = std::nullopt);
@@ -588,7 +593,7 @@ private:
 
     replicate_stages do_replicate(
       std::optional<model::term_id>,
-      model::record_batch_reader&&,
+      chunked_vector<model::record_batch>,
       replicate_options);
 
     ss::future<result<replicate_result>> chain_stages(replicate_stages);

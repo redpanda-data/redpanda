@@ -63,19 +63,18 @@ TEST_F(raft_fixture, test_empty_writes) {
     create_simple_group(5).get();
     auto leader = wait_for_leader(10s).get();
 
-    auto replicate = [&](auto reader) {
+    auto replicate = [&](chunked_vector<model::record_batch> batches) {
         return node(leader).raft()->replicate(
-          std::move(reader), replicate_options{consistency_level::quorum_ack});
+          std::move(batches), replicate_options{consistency_level::quorum_ack});
     };
 
     // no records
     storage::record_batch_builder builder(
       model::record_batch_type::raft_data, model::offset(0));
-    auto reader = model::make_memory_record_batch_reader(
-      std::move(builder).build());
-
+    chunked_vector<model::record_batch> b;
+    b.push_back(std::move(builder).build());
     // Catch the error when appending.
-    auto res = replicate(std::move(reader)).get();
+    auto res = replicate(std::move(b)).get();
     ASSERT_TRUE(res.has_error());
     ASSERT_EQ(res.error(), errc::leader_append_failed);
 

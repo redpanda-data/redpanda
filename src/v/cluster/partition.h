@@ -80,8 +80,8 @@ public:
     /// after a configuration change.
     void maybe_construct_archiver();
 
-    ss::future<result<kafka_result>>
-    replicate(model::record_batch_reader&&, raft::replicate_options);
+    ss::future<result<kafka_result>> replicate(
+      chunked_vector<model::record_batch> batches, raft::replicate_options);
 
     /// Truncate the beginning of the log up until a given offset
     /// Can only be performed on logs that are deletable and non internal
@@ -90,7 +90,7 @@ public:
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
-      model::record_batch_reader&&,
+      chunked_vector<model::record_batch> batches,
       raft::replicate_options);
 
     /**

@@ -112,7 +112,7 @@ public:
 
 private:
     ss::future<tx_manager_replicate_reply> do_replicate(
-      partition_manager&, model::ntp, fragmented_vector<model::record_batch>);
+      partition_manager&, model::ntp, chunked_vector<model::record_batch>);
 
     ss::sharded<partition_manager>& _partition_manager;
 };
@@ -198,7 +198,7 @@ private:
     rehash_and_write_partition_data(model::partition_id source_partition_id);
     ss::future<std::error_code> rehash_chunk(
       model::partition_id source_partition_id,
-      fragmented_vector<model::record_batch> batches);
+      chunked_vector<model::record_batch> batches);
 
     ss::future<std::error_code>
       copy_from_temporary_to_tx_manager_topic(model::partition_id);

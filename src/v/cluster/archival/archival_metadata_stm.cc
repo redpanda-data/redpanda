@@ -895,9 +895,7 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     opts.set_force_flush();
 
     auto result = co_await _raft->replicate(
-      current_term,
-      model::make_memory_record_batch_reader(std::move(batch)),
-      opts);
+      current_term, std::move(batch), opts);
     if (!result) {
         vlog(
           _logger.warn,

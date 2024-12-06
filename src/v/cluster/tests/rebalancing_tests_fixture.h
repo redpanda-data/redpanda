@@ -133,11 +133,10 @@ public:
         auto single_retry = [count, ntp](cluster::partition_manager& pm) {
             return model::test::make_random_batches(model::offset(0), count)
               .then([&pm, ntp](auto batches) {
-                  auto rdr = model::make_memory_record_batch_reader(
-                    std::move(batches));
                   // replicate
                   auto f = pm.get(ntp)->raft()->replicate(
-                    std::move(rdr),
+                    chunked_vector<model::record_batch>::from(
+                      std::move(batches)),
                     raft::replicate_options(
                       raft::consistency_level::quorum_ack));
 

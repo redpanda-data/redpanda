@@ -32,8 +32,7 @@ ss::future<result<raft::replicate_result>>
 tm_stm::replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
     auto opts = raft::replicate_options{raft::consistency_level::quorum_ack};
     opts.set_force_flush();
-    return _raft->replicate(
-      term, model::make_memory_record_batch_reader(std::move(batch)), opts);
+    return _raft->replicate(term, std::move(batch), opts);
 }
 
 model::record_batch tm_stm::serialize_tx(tx_metadata tx) {
@@ -135,11 +134,11 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         });
 }
 
-model::record_batch_reader make_checkpoint() {
+model::record_batch make_checkpoint() {
     storage::record_batch_builder builder(
       model::record_batch_type::checkpoint, model::offset(0));
     builder.add_raw_kv(iobuf(), iobuf());
-    return model::make_memory_record_batch_reader(std::move(builder).build());
+    return std::move(builder).build();
 }
 
 ss::future<result<raft::replicate_result>>

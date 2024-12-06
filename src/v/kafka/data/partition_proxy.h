@@ -80,12 +80,12 @@ public:
           = 0;
 
         virtual ss::future<result<model::offset>>
-          replicate(model::record_batch_reader, raft::replicate_options) = 0;
-
+          replicate(model::record_batch, raft::replicate_options) = 0;
+        virtual ss::future<result<model::offset>> replicate(
+          chunked_vector<model::record_batch>, raft::replicate_options)
+          = 0;
         virtual raft::replicate_stages replicate(
-          model::batch_identity,
-          model::record_batch_reader&&,
-          raft::replicate_options)
+          model::batch_identity, model::record_batch, raft::replicate_options)
           = 0;
 
         virtual result<partition_info> get_partition_info() const = 0;
@@ -165,16 +165,22 @@ public:
         return _impl->get_partition_info();
     }
 
+    ss::future<result<model::offset>>
+    replicate(model::record_batch batch, raft::replicate_options opts) const {
+        return _impl->replicate(std::move(batch), opts);
+    }
+
     ss::future<result<model::offset>> replicate(
-      model::record_batch_reader r, raft::replicate_options opts) const {
-        return _impl->replicate(std::move(r), opts);
+      chunked_vector<model::record_batch> batches,
+      raft::replicate_options opts) const {
+        return _impl->replicate(std::move(batches), opts);
     }
 
     raft::replicate_stages replicate(
       model::batch_identity bi,
-      model::record_batch_reader&& r,
+      model::record_batch batch,
       raft::replicate_options opts) {
-        return _impl->replicate(bi, std::move(r), opts);
+        return _impl->replicate(bi, std::move(batch), opts);
     }
 
 private:

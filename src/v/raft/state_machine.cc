@@ -105,11 +105,11 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
 
 bool state_machine::stop_batch_applicator() { return _gate.is_closed(); }
 
-model::record_batch_reader make_checkpoint() {
+model::record_batch make_checkpoint() {
     storage::record_batch_builder builder(
       model::record_batch_type::checkpoint, model::offset(0));
     builder.add_raw_kv(iobuf(), iobuf());
-    return model::make_memory_record_batch_reader(std::move(builder).build());
+    return std::move(builder).build();
 }
 
 // FIXME: implement linearizable reads in a way similar to Logcabin

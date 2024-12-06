@@ -42,9 +42,9 @@ public:
     schema_id_validator& operator=(const schema_id_validator&) = delete;
     ~schema_id_validator() noexcept;
 
-    using result = ::result<model::record_batch_reader, kafka::error_code>;
+    using result = ::result<model::record_batch, kafka::error_code>;
     ss::future<result>
-    operator()(model::record_batch_reader&&, cluster::partition_probe* probe);
+    operator()(model::record_batch, cluster::partition_probe* probe);
 
 private:
     std::unique_ptr<impl> _impl;
@@ -57,12 +57,12 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
 
 inline ss::future<schema_id_validator::result> maybe_validate_schema_id(
   std::optional<schema_id_validator> validator,
-  model::record_batch_reader rbr,
+  model::record_batch batch,
   cluster::partition_probe* probe) {
     if (validator) {
-        co_return co_await (*validator)(std::move(rbr), probe);
+        co_return co_await (*validator)(std::move(batch), probe);
     }
-    co_return std::move(rbr);
+    co_return std::move(batch);
 }
 
 } // namespace pandaproxy::schema_registry

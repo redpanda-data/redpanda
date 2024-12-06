@@ -400,11 +400,12 @@ private:
 
     ss::future<errc> replicate_and_wait(simple_batch_builder builder) {
         auto batch = std::move(builder).build();
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
+        chunked_vector<model::record_batch> batches;
+        batches.push_back(std::move(batch));
 
         auto r = co_await _raft->replicate(
           _insync_term,
-          std::move(reader),
+          std::move(batches),
           raft::replicate_options(raft::consistency_level::quorum_ack));
 
         if (!r) {
