@@ -82,6 +82,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "circuit_breaker",
+    hdrs = [
+        "circuit_breaker.h",
+    ],
+    include_prefix = "cloud_topics/core",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "write_pipeline",
     srcs = [
         "write_pipeline.cc",

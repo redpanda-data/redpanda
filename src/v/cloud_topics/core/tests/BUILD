@@ -67,3 +67,17 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "circuit_breaker_test",
+    timeout = "short",
+    srcs = [
+        "circuit_breaker_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_topics/core:circuit_breaker",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
