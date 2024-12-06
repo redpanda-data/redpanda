@@ -48,7 +48,9 @@ value& value::operator=(value&& other) noexcept {
     if (this == &other) {
         return *this;
     }
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
     _ctx = std::exchange(other._ctx, nullptr);
     _underlying = std::exchange(other._underlying, JS_UNINITIALIZED);
     return *this;
@@ -62,18 +64,18 @@ value& value::operator=(const value& other) noexcept {
     if (this == &other) {
         return *this;
     }
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
     _ctx = other._ctx;
     _underlying = other.raw_dup();
     return *this;
 }
 
 value::~value() noexcept {
-    // There is a bug with clang tidy where thinks that it's possible for _ctx
-    // to be uninitialized when destructed inside of std::expected
-
-    // NOLINTNEXTLINE
-    JS_FreeValue(_ctx, _underlying);
+    if (_ctx != nullptr) {
+        JS_FreeValue(_ctx, _underlying);
+    }
 }
 
 value value::undefined(JSContext* ctx) { return {ctx, JS_UNDEFINED}; }
@@ -599,17 +601,11 @@ module_builder::add_function(std::string name, native_function func) {
     return *this;
 }
 
-module_builder&
-module_builder::add_object(std::string name, object_builder obj) {
-    _objects.emplace(std::move(name), std::move(obj));
-    return *this;
-}
-
 std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
     auto* ctx_state = static_cast<runtime::context_state*>(
       JS_GetContextOpaque(ctx));
     std::vector<JSCFunctionListEntry> entries;
-    entries.reserve(_exports.size() + _objects.size());
+    entries.reserve(_exports.size());
     for (auto& [name, func] : _exports) {
         auto my_magic = static_cast<int16_t>(ctx_state->named_functions.size());
         runtime::named_native_function& function
@@ -652,29 +648,6 @@ std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
                 }}}}});
     }
 
-    for (auto& [name, builder] : _objects) {
-        auto obj_data = builder.build(ctx);
-        if (!obj_data.has_value()) {
-            return std::unexpected(obj_data.error());
-        }
-        const auto& obj = ctx_state->named_objects.emplace_back(
-          std::make_unique<std::string>(name), std::move(obj_data).value());
-        // TODO(oren): any properties? configurable, etc?
-        constexpr int prop_flags = 0;
-        entries.push_back(JSCFunctionListEntry{
-          .name = obj.name->c_str(),
-          .prop_flags = prop_flags,
-          .def_type = JS_DEF_OBJECT,
-          .magic = 0 /* not used  */,
-          .u = {
-            .prop_list = {
-              .tab = obj.data.properties.data(),
-              .len = static_cast<int32_t>(obj.data.properties.size()),
-            }
-          },
-        });
-    }
-
     JSModuleDef* mod = JS_NewCModule(
       ctx, _name.c_str() /*copied*/, [](JSContext* ctx, JSModuleDef* mod) {
           auto* ctx_state = static_cast<runtime::context_state*>(
@@ -694,82 +667,6 @@ std::expected<std::monostate, exception> module_builder::build(JSContext* ctx) {
       ctx, mod, entries.data(), static_cast<int>(entries.size()));
     ctx_state->module_functions.emplace(mod, std::move(entries));
     return {};
-}
-
-object_builder& object_builder::add_string(std::string key, std::string value) {
-    return add_native_value(std::move(key), std::move(value));
-}
-object_builder& object_builder::add_i32(std::string key, int32_t value) {
-    return add_native_value(std::move(key), value);
-}
-object_builder& object_builder::add_i64(std::string key, int64_t value) {
-    return add_native_value(std::move(key), value);
-}
-object_builder& object_builder::add_f64(std::string key, double value) {
-    return add_native_value(std::move(key), value);
-}
-
-object_builder& object_builder::add_native_value(
-  std::string key, object_builder::native_value value) {
-    _properties.emplace(std::move(key), std::move(value));
-    return *this;
-}
-
-std::expected<object_export_data, exception>
-object_builder::build(JSContext* ctx) {
-    std::vector<std::unique_ptr<std::string>> pnames;
-    pnames.reserve(_properties.size());
-    std::vector<JSCFunctionListEntry> props;
-    props.reserve(_properties.size());
-    std::vector<std::unique_ptr<std::string>> strs;
-    for (const auto& [pname, pval] : _properties) {
-        pnames.push_back(std::make_unique<std::string>(pname));
-        if (const auto* arg = std::get_if<std::string>(&pval)) {
-            strs.push_back(std::make_unique<std::string>(*arg));
-            props.push_back(JSCFunctionListEntry{
-              .name = pnames.back()->c_str(),
-              .prop_flags = 0,
-              .def_type = JS_DEF_PROP_STRING,
-              .magic = 0, /* not used */
-              .u = {.str = strs.back()->c_str()},
-            });
-        } else if (const auto* arg = std::get_if<int32_t>(&pval)) {
-            props.push_back(JSCFunctionListEntry{
-              .name = pnames.back()->c_str(),
-              .prop_flags = 0,
-              .def_type = JS_DEF_PROP_INT32,
-              .magic = 0, /* not used */
-              .u = {.i32 = static_cast<int32_t>(*arg)},
-            });
-        } else if (const auto* arg = std::get_if<int64_t>(&pval)) {
-            props.push_back(JSCFunctionListEntry{
-              .name = pnames.back()->c_str(),
-              .prop_flags = 0,
-              .def_type = JS_DEF_PROP_INT64,
-              .magic = 0, /* not used */
-              .u = {.i64 = static_cast<int64_t>(*arg)},
-            });
-        } else if (const auto* arg = std::get_if<double>(&pval)) {
-            props.push_back(JSCFunctionListEntry{
-              .name = pnames.back()->c_str(),
-              .prop_flags = 0,
-              .def_type = JS_DEF_PROP_DOUBLE,
-              .magic = 0, /* not used */
-              .u = {.f64 = static_cast<double>(*arg)},
-            });
-        } else {
-            return std::unexpected(qjs::exception::make(
-              ctx,
-              std::format(
-                "object builder failed - bad type for '{}'", *pnames.back())));
-        }
-    }
-
-    return object_export_data{
-      .property_names = std::move(pnames),
-      .str_values = std::move(strs),
-      .properties = std::move(props),
-    };
 }
 
 cstring::cstring(JSContext* context, const char* ptr, size_t size)

@@ -97,6 +97,7 @@ use_repo(non_module_dependencies, "seastar")
 use_repo(non_module_dependencies, "unordered_dense")
 use_repo(non_module_dependencies, "wasmtime")
 use_repo(non_module_dependencies, "xxhash")
+use_repo(non_module_dependencies, "quickjs")
 
 bazel_dep(name = "toolchains_llvm", version = "1.1.2")
 single_version_override(

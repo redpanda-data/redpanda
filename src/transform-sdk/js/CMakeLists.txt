@@ -19,12 +19,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -fno-exceptions")
 if(Redpanda_ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,leak,undefined)
   add_compile_options(-fsanitize=address,leak,undefined)
+  set(CONFIG_ASAN ON)
+  set(CONFIG_UBSAN ON)
 endif()
 
 include(FetchContent)
 set(FETCHCONTENT_QUIET FALSE)
 
-if(CMAKE_BUILD_TYPE MATCHES Release)
+if(CMAKE_BUILD_TYPE MATCHES Release OR CMAKE_BUILD_TYPE MATCHES RelWithDebInfo)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ltosupported OUTPUT error)
   # NOTE(oren): rather a blunt instrument. CMake doesn't currently
@@ -41,7 +43,7 @@ endif()
 FetchContent_Declare(
   quickjs
   GIT_REPOSITORY https://github.com/quickjs-ng/quickjs.git
-  GIT_TAG        f227746c6ebe7f0c7ddb0e5152d52cd41f5a7cdd
+  GIT_TAG        66732e78ef0ba82bb0f75386ca4ea5b5814668fb
 )
 
 FetchContent_Declare(
