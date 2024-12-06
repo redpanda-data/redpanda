@@ -293,7 +293,7 @@ redpanda_cc_library(
         "cloud_data_io.h",
     ],
     include_prefix = "datalake",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":base_types",
         ":logger",
