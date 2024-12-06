@@ -105,6 +105,95 @@ message Person {
   .Person.PhoneNumber phone = 2;
 }`
 
+	// https://github.com/redpanda-data/redpanda/blob/dev/src/v/pandaproxy/schema_registry/test/compatibility_protobuf.cc
+	const testWellKnownSchema = `syntax = "proto3";
+package test;
+import "google/protobuf/any.proto";
+import "google/protobuf/api.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/source_context.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/type.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/calendar_period.proto";
+import "google/type/color.proto";
+import "google/type/date.proto";
+import "google/type/datetime.proto";
+import "google/type/dayofweek.proto";
+import "google/type/decimal.proto";
+import "google/type/expr.proto";
+import "google/type/fraction.proto";
+import "google/type/interval.proto";
+import "google/type/latlng.proto";
+import "google/type/localized_text.proto";
+import "google/type/money.proto";
+import "google/type/month.proto";
+import "google/type/phone_number.proto";
+import "google/type/postal_address.proto";
+import "google/type/quaternion.proto";
+import "google/type/timeofday.proto";
+import "confluent/meta.proto";
+import "confluent/types/decimal.proto";
+
+message well_known_types {
+  google.protobuf.Any any = 1;
+  google.protobuf.Api api = 2;
+  google.protobuf.BoolValue bool_value = 3;
+  google.protobuf.BytesValue bytes_value = 4;
+  google.protobuf.DoubleValue double_value = 5;
+  google.protobuf.Duration duration = 6;
+  google.protobuf.Empty empty = 7;
+  google.protobuf.Enum enum = 8;
+  google.protobuf.EnumValue enum_value = 9;
+  google.protobuf.Field field = 10;
+  google.protobuf.FieldMask field_mask = 11;
+  google.protobuf.FloatValue float_value = 12;
+  google.protobuf.Int32Value int32_value = 13;
+  google.protobuf.Int64Value int64_value = 14;
+  google.protobuf.ListValue list_value = 15;
+  google.protobuf.Method method = 16;
+  google.protobuf.Mixin mixin = 17;
+  google.protobuf.NullValue null_value = 18;
+  google.protobuf.Option option = 19;
+  google.protobuf.SourceContext source_context = 20;
+  google.protobuf.StringValue string_value = 21;
+  google.protobuf.Struct struct = 22;
+  google.protobuf.Syntax syntax = 23;
+  google.protobuf.Timestamp timestamp = 24;
+  google.protobuf.Type type = 25;
+  google.protobuf.UInt32Value uint32_value = 26;
+  google.protobuf.UInt64Value uint64_value = 27;
+  google.protobuf.Value value = 28;
+  google.type.CalendarPeriod calendar_period = 29;
+  google.type.Color color = 30;
+  google.type.Date date = 31;
+  google.type.DateTime date_time = 32;
+  google.type.DayOfWeek day_of_week = 33;
+  google.type.Decimal decimal = 34;
+  google.type.Expr expr = 35;
+  google.type.Fraction fraction = 36;
+  google.type.Interval interval = 37;
+  google.type.LatLng lat_lng = 39;
+  google.type.LocalizedText localized_text = 40;
+  google.type.Money money = 41;
+  google.type.Month month = 42;
+  google.type.PhoneNumber phone_number = 43;
+  google.type.PostalAddress postal_address = 44;
+  google.type.Quaternion quaternion = 45;
+  google.type.TimeOfDay time_of_day = 46;
+  confluent.Meta c_meta = 47;
+  confluent.type.Decimal c_decimal = 48;
+}
+
+message Person {
+  string first_name = 1;
+  string last_name = 2;
+}
+`
+
 	tests := []struct {
 		name      string
 		schema    string
@@ -224,6 +313,14 @@ message Person {
 			record:    `{"brand":"pandaPhone","year":2023}`,
 			expRecord: `{"brand":"pandaPhone","year":2023}`,
 			expIdx:    []int{0, 1, 1},
+		}, {
+			name:      "wellknown - All Fields",
+			schema:    testWellKnownSchema,
+			msgType:   "test.well_known_types",
+			schemaID:  11,
+			record:    messageAllWellKnown,
+			expRecord: messageAllWellKnown,
+			expIdx:    []int{0},
 		},
 	}
 	for _, tt := range tests {
@@ -454,3 +551,168 @@ func protoReferenceHandler() http.HandlerFunc {
 		}
 	}
 }
+
+// Long message, including all well-known types baked in rpk that we can
+// encode/decode.
+const messageAllWellKnown = `{
+  "any": {
+    "@type": "type.googleapis.com/test.Person",
+    "firstName": "foo",
+    "lastName": "bar"
+  },
+  "api": {
+    "version": "v1",
+    "methods": [
+      {
+        "name": "GetMethod",
+        "requestTypeUrl": "type.googleapis.com/google.protobuf.Empty",
+        "responseTypeUrl": "type.googleapis.com/google.protobuf.StringValue"
+      }
+    ]
+  },
+  "boolValue": true,
+  "bytesValue": "bGVasG6gd11ybGQ=",
+  "doubleValue": 3.14159,
+  "duration": "3600s",
+  "empty": {},
+  "enum": {
+    "name": "ZERO"
+  },
+  "enumValue": {
+    "name": "MY_ENUM_VALUE",
+    "number": 1
+  },
+  "field": {
+    "name": "fieldName"
+  },
+  "fieldMask": "field",
+  "floatValue": 1.23,
+  "int32Value": 42,
+  "int64Value": "123456789",
+  "listValue": [
+      { "stringValue": "Item 1" },
+      { "int32Value": 100 }
+  ],
+  "method": {
+    "name": "MethodName",
+    "requestTypeUrl": "type.googleapis.com/google.protobuf.StringValue",
+    "responseTypeUrl": "type.googleapis.com/google.protobuf.StringValue"
+  },
+  "mixin": {
+    "name": "MixinName",
+    "root": "rootPath"
+  },
+  "option": {
+    "name": "optionName",
+    "value": { 
+      "@type": "type.googleapis.com/test.Person",
+      "firstName": "foo",
+      "lastName": "bar"
+    }
+  },
+  "sourceContext": {
+    "fileName": "fileName.proto"
+  },
+  "stringValue": "This is a string",
+  "struct": {
+    "fields": {
+      "field1": { "stringValue": "value1" }
+    }
+  },
+  "syntax": "SYNTAX_PROTO3",
+  "timestamp": "2020-05-22T20:32:05Z",
+  "type": {
+    "name": "TypeName",
+    "fields": [
+      { "name": "field1", "typeUrl": "type.googleapis.com/google.protobuf.StringValue" }
+    ]
+  },
+  "uint32Value": 9876521,
+  "uint64Value": "9876543210",
+  "value": {
+    "stringValue": "A value example"
+  },
+  "calendarPeriod": "DAY",
+  "color": {
+    "red": 255,
+    "green": 100,
+    "blue": 50,
+    "alpha": 0.8
+  },
+  "date": {
+    "year": 2024,
+    "month": 12,
+    "day": 5
+  },
+  "dateTime": {
+    "year": 2024,
+    "month": 12,
+    "day": 5,
+    "hours": 14,
+    "minutes": 30,
+    "seconds": 15,
+    "nanos": 123456789,
+    "utcOffset": "3600s"
+  },
+  "dayOfWeek": "WEDNESDAY",
+  "decimal": {
+    "value": "123.456"
+  },
+  "expr": {
+    "expression": "a + b",
+    "title": "Sample Expression"
+  },
+  "fraction": {
+    "numerator": "3",
+    "denominator": "4"
+  },
+  "interval": {
+    "startTime": "2020-05-22T20:32:05Z",
+    "endTime": "2023-01-01T20:32:05Z"
+  },
+  "latLng": {
+    "latitude": 37.7749,
+    "longitude": -122.4194
+  },
+  "localizedText": {
+    "text": "Hello",
+    "languageCode": "en-US"
+  },
+  "money": {
+    "currencyCode": "USD",
+    "units": "100",
+    "nanos": 99
+  },
+  "month": "DECEMBER",
+  "phoneNumber": {
+    "e164Number": "+15552220123",
+    "extension": "1234"
+  },
+  "postalAddress": {
+    "regionCode": "US",
+    "postalCode": "94105",
+    "locality": "San Francisco",
+    "addressLines": ["123 Main St", "Suite 456"]
+  },
+  "quaternion": {
+    "x": 1.0,
+    "y": 1.0,
+    "z": 1.0,
+    "w": 1.0
+  },
+  "timeOfDay": {
+    "hours": 14,
+    "minutes": 30,
+    "seconds": 1,
+    "nanos": 2
+  },
+  "cMeta": {
+    "doc": "v2"
+  },
+  "cDecimal": {
+    "value": "AQAAAG9wI1Xh",
+    "precision": 10,
+    "scale": 2
+  }
+}
+`
