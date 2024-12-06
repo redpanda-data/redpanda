@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/serde",
     visibility = ["//visibility:public"],
     deps = [
+        "//src/go/rpk/pkg/serde/embed",
         "@com_github_bufbuild_protocompile//:protocompile",
         "@com_github_bufbuild_protocompile//linker",
         "@com_github_hamba_avro_v2//:avro",
