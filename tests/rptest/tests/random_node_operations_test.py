@@ -14,12 +14,14 @@ import threading
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.spark_service import SparkService
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
+from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
@@ -115,6 +117,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
     def setUp(self):
         self.catalog_service.start()
+        self.spark = SparkService(self.test_context,
+                                  self.catalog_service.catalog_url)
+        self.spark.start()
 
     def _setup_test_scale(self):
         # test setup
@@ -316,7 +321,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @skip_debug_mode
-    @cluster(num_nodes=9,
+    @cluster(num_nodes=10,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
@@ -501,6 +506,20 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                     is not TopicSpec.CLEANUP_DELETE),
                 tolerate_data_loss=True)
             write_caching_producer_consumer.start()
+        dl_verifiers = []
+        # when Iceberg is enabled, start a verifier for the two topics:
+        # - regular topic
+        # - topic with fast partition movements enabled
+        if with_iceberg:
+            dl_verifiers.append(
+                DatalakeVerifier(self.redpanda, regular_topic.name,
+                                 self.spark))
+            if enable_fast_partition_movement():
+                dl_verifiers.append(
+                    DatalakeVerifier(self.redpanda, fast_topic.name,
+                                     self.spark))
+            for verifier in dl_verifiers:
+                verifier.start()
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
@@ -584,6 +603,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 backoff_sec=2,
                 err_msg="Error waiting for cluster to report consistent version"
             )
+
+        for verifier in dl_verifiers:
+            verifier.wait(progress_timeout_sec=60)
 
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
