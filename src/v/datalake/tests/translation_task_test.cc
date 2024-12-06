@@ -10,12 +10,12 @@
 
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
-#include "datalake/batching_parquet_writer.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/cloud_data_io.h"
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
 #include "datalake/translation_task.h"
 #include "model/record_batch_reader.h"
@@ -84,8 +84,7 @@ public:
         return std::make_unique<datalake::local_parquet_file_writer_factory>(
           datalake::local_path(tmp_dir.get_path()),
           "test-prefix",
-          ss::make_shared<datalake::batching_parquet_writer_factory>(
-            row_threshold, bytes_threshold));
+          ss::make_shared<datalake::serde_parquet_writer_factory>());
     }
 
     lazy_abort_source& never_abort() {

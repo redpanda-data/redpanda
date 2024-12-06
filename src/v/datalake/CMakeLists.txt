@@ -1,5 +1,3 @@
-find_package(Arrow REQUIRED)
-find_package(Parquet REQUIRED)
 find_package(Protobuf REQUIRED)
 
 add_subdirectory(coordinator)
@@ -30,11 +28,8 @@ v_cc_library(
 v_cc_library(
   NAME datalake_writer
   SRCS
-    arrow_translator.cc
-    batching_parquet_writer.cc
     catalog_schema_manager.cc
     data_writer_interface.cc
-    arrow_writer.cc
     record_multiplexer.cc
     record_schema_resolver.cc
     record_translator.cc
@@ -61,8 +56,6 @@ v_cc_library(
     v::storage
     v::schema
     Seastar::seastar
-    Arrow::arrow_shared
-    Parquet::parquet_shared
     protobuf::libprotobuf
     v::iceberg
     v::serde_protobuf

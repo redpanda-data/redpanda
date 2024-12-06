@@ -8,12 +8,12 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/base_types.h"
-#include "datalake/batching_parquet_writer.h"
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/local_parquet_file_writer.h"
 #include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
+#include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
 #include "datalake/tests/catalog_and_registry_fixture.h"
 #include "datalake/tests/record_generator.h"
@@ -25,10 +25,7 @@
 #include "storage/record_batch_builder.h"
 #include "test_utils/tmp_dir.h"
 
-#include <arrow/io/file.h>
-#include <arrow/table.h>
 #include <gtest/gtest.h>
-#include <parquet/arrow/reader.h>
 
 #include <filesystem>
 
@@ -128,7 +125,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     auto writer_factory = std::make_unique<local_parquet_file_writer_factory>(
       datalake::local_path(tmp_dir.get_path()),
       "data",
-      ss::make_shared<datalake::batching_parquet_writer_factory>(100, 10000));
+      ss::make_shared<datalake::serde_parquet_writer_factory>());
 
     datalake::record_multiplexer multiplexer(
       ntp,
@@ -164,34 +161,6 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     EXPECT_EQ(
       result.value().last_offset(),
       start_offset + record_count * batch_count - 1);
-
-    // Open the resulting file and check that it has data in it with the
-    // appropriate counts.
-    int file_count = 0;
-    for (const auto& entry :
-         std::filesystem::directory_iterator(tmp_dir.get_path())) {
-        file_count++;
-        auto arrow_file_reader
-          = arrow::io::ReadableFile::Open(entry.path()).ValueUnsafe();
-
-        // Open Parquet file reader
-        std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
-        ASSERT_TRUE(
-          parquet::arrow::OpenFile(
-            arrow_file_reader, arrow::default_memory_pool(), &arrow_reader)
-            .ok());
-
-        // Read entire file as a single Arrow table
-        std::shared_ptr<arrow::Table> table;
-        auto r = arrow_reader->ReadTable(&table);
-        ASSERT_TRUE(r.ok());
-
-        EXPECT_EQ(table->num_rows(), record_count * batch_count);
-        // Expect one nested column and one value column.
-        EXPECT_EQ(table->num_columns(), 2);
-    }
-    // Expect this test to create exactly 1 file
-    EXPECT_EQ(file_count, 1);
 }
 
 namespace {
@@ -274,7 +243,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
     auto writer_factory = std::make_unique<local_parquet_file_writer_factory>(
       datalake::local_path(tmp_dir.get_path()),
       "data",
-      ss::make_shared<datalake::batching_parquet_writer_factory>(100, 10000));
+      ss::make_shared<datalake::serde_parquet_writer_factory>());
     record_multiplexer mux(
       ntp,
       rev,
@@ -289,39 +258,4 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
 
     const auto num_records = num_hrs * batches_per_hr * records_per_batch;
     EXPECT_EQ(res.value().last_offset(), start_offset() + num_records - 1);
-    int file_count = 0;
-    for (const auto& entry :
-         std::filesystem::directory_iterator(tmp_dir.get_path())) {
-        file_count++;
-        auto arrow_file_reader
-          = arrow::io::ReadableFile::Open(entry.path()).ValueUnsafe();
-        std::unique_ptr<parquet::arrow::FileReader> arrow_reader;
-        ASSERT_TRUE(
-          parquet::arrow::OpenFile(
-            arrow_file_reader, arrow::default_memory_pool(), &arrow_reader)
-            .ok());
-
-        // Read entire file as a single Arrow table
-        std::shared_ptr<arrow::Table> table;
-        auto r = arrow_reader->ReadTable(&table);
-        ASSERT_TRUE(r.ok());
-
-        // Records should be split across hours.
-        EXPECT_EQ(table->num_rows(), num_records / num_hrs);
-
-        // Default columns + a nested struct.
-        EXPECT_EQ(table->num_columns(), 8);
-        auto expected_type
-          = R"(redpanda: struct<partition: int32 not null, offset: int64 not null, timestamp: timestamp[us] not null, headers: list<element: struct<key: binary, value: binary> not null>, key: binary> not null
-mylong: int64 not null
-nestedrecord: struct<inval1: double not null, inval2: string not null, inval3: int32 not null> not null
-myarray: list<element: double not null> not null
-mybool: bool not null
-myfixed: fixed_size_binary[16] not null
-anotherint: int32 not null
-bytes: binary not null)";
-        EXPECT_EQ(expected_type, table->schema()->ToString());
-    }
-    // Expect this test to create exactly 1 file
-    EXPECT_EQ(file_count, num_hrs);
 }
