@@ -194,7 +194,11 @@ ss::future<> client_pool::stop() {
 }
 
 void client_pool::shutdown_connections() {
-    vlog(pool_log.info, "Shutting down client pool: {}", _pool.size());
+    vlog(
+      pool_log.info,
+      "Shutting down client pool: {} ({} connections leased)",
+      _pool.size(),
+      _leased.size());
 
     _as.request_abort();
     _cvar.broken();
