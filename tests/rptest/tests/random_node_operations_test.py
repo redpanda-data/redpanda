@@ -165,14 +165,12 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             f"running test with: [message_size {self.msg_size},  total_bytes: {self.total_data}, message_count: {self.msg_count}, rate_limit: {self.rate_limit}, cluster_operations: {self.node_operations}]"
         )
 
-    def _start_redpanda(self, mixed_versions, with_tiered_storage,
-                        with_iceberg, with_chunked_compaction):
+    def _start_redpanda(self, mixed_versions, with_iceberg,
+                        with_chunked_compaction):
 
-        if with_tiered_storage or with_iceberg:
-            # since this test is deleting topics we must tolerate missing manifests
-            self._si_settings.set_expected_damage(
-                {"ntr_no_topic_manifest", "ntpr_no_manifest"})
-            self.redpanda.set_si_settings(self._si_settings)
+        self._si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest", "ntpr_no_manifest"})
+        self.redpanda.set_si_settings(self._si_settings)
 
         if with_iceberg:
             self.redpanda.add_extra_rp_conf({
@@ -338,6 +336,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             client.alter_topic_config(topic_spec.name,
                                       TopicSpec.PROPERTY_ICEBERG_MODE,
                                       "key_value")
+            client.alter_topic_config(topic_spec.name,
+                                      TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS,
+                                      "10000")
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
@@ -347,7 +348,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             mixed_versions=[True, False],
-            with_tiered_storage=[True, False],
             with_iceberg=[True],
             with_chunked_compaction=[True, False],
             cloud_storage_type=get_cloud_storage_type())
@@ -358,8 +358,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             with_chunked_compaction=[True, False],
             cloud_storage_type=get_cloud_storage_type())
     def test_node_operations(self, enable_failures, mixed_versions,
-                             with_tiered_storage, with_iceberg,
-                             with_chunked_compaction, cloud_storage_type):
+                             with_iceberg, with_chunked_compaction,
+                             cloud_storage_type):
         # In order to reduce the number of parameters and at the same time cover
         # as many use cases as possible this test uses 3 topics which 3 separate
         # producer/consumer pairs:
@@ -381,8 +381,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 )
 
         def enable_fast_partition_movement():
-            if not with_tiered_storage:
-                return False
 
             initial_version = self.redpanda._installer.highest_from_prior_feature_version(
                 RedpandaInstaller.HEAD)
@@ -413,7 +411,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # start redpanda process
         self._start_redpanda(mixed_versions,
-                             with_tiered_storage=with_tiered_storage,
                              with_iceberg=with_iceberg,
                              with_chunked_compaction=with_chunked_compaction)
 
@@ -433,15 +430,13 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                   replication_factor=3,
                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
                                   segment_bytes=default_segment_size,
-                                  redpanda_remote_read=with_tiered_storage,
-                                  redpanda_remote_write=with_tiered_storage)
+                                  redpanda_remote_read=True,
+                                  redpanda_remote_write=True)
         client.create_topic(regular_topic)
         self.maybe_enable_iceberg_for_topic(regular_topic, with_iceberg)
 
-        if with_tiered_storage:
-            # change local retention policy to make some local segments will be deleted during the test
-            self._alter_local_topic_retention_bytes(regular_topic.name,
-                                                    3 * default_segment_size)
+        self._alter_local_topic_retention_bytes(regular_topic.name,
+                                                3 * default_segment_size)
 
         regular_producer_consumer = RandomNodeOperationsTest.producer_consumer(
             test_context=self.test_context,
@@ -459,8 +454,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                     partition_count=self.max_partitions,
                                     cleanup_policy=TopicSpec.CLEANUP_COMPACT,
                                     segment_bytes=default_segment_size,
-                                    redpanda_remote_read=with_tiered_storage,
-                                    redpanda_remote_write=with_tiered_storage)
+                                    redpanda_remote_read=True,
+                                    redpanda_remote_write=True)
         client.create_topic(compacted_topic)
         self.maybe_enable_iceberg_for_topic(compacted_topic, with_iceberg)
 
@@ -487,8 +482,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                    partition_count=self.max_partitions,
                                    cleanup_policy=TopicSpec.CLEANUP_DELETE,
                                    segment_bytes=default_segment_size,
-                                   redpanda_remote_read=with_tiered_storage,
-                                   redpanda_remote_write=with_tiered_storage)
+                                   redpanda_remote_read=True,
+                                   redpanda_remote_write=True)
 
             client.create_topic(fast_topic)
 
@@ -520,8 +515,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 partition_count=self.max_partitions,
                 cleanup_policy=cleanup_policy,
                 segment_bytes=default_segment_size,
-                redpanda_remote_read=with_tiered_storage,
-                redpanda_remote_write=with_tiered_storage)
+                redpanda_remote_read=True,
+                redpanda_remote_write=True)
 
             client.create_topic(write_caching_topic)
             client.alter_topic_config(write_caching_topic.name,
