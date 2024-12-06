@@ -83,7 +83,7 @@ class CloudBroker():
         # Copy agent -> broker node
         remote_path = os.path.join("/tmp", script_name)
         _cp_cmd = self._kubeclient._ssh_prefix() + [
-            'kubectl', 'cp', script_name,
+            'kubectl', '-n', 'redpanda-node-setup', 'cp', script_name,
             f"{self.nodeshell.pod_name}:{remote_path}"
         ]
         self.logger.debug(_cp_cmd)
