@@ -316,14 +316,6 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       _ntpc.get_revision(),
       retention);
     auto mat = co_await find_recovery_material();
-    if (cst_log.is_enabled(ss::log_level::debug)) {
-        std::stringstream ostr;
-        mat.partition_manifest.serialize_json(ostr);
-        vlog(
-          _ctxlog.debug,
-          "Partition manifest used for recovery: {}",
-          ostr.str());
-    }
     if (mat.partition_manifest.size() == 0) {
         // If the downloaded manifest doesn't have any segments
         log_recovery_result result{
