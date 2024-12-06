@@ -27,6 +27,7 @@
 #include "cluster/self_test_frontend.h"
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
+#include "crash_tracker/service.h"
 #include "crypto/ossl_context_service.h"
 #include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
@@ -96,7 +97,6 @@ public:
     void wire_up_and_start(::stop_signal&, bool test_mode = false);
     void post_start_tasks();
 
-    void check_for_crash_loop();
     void schedule_crash_tracker_file_cleanup();
 
     explicit application(ss::sstring = "main");
@@ -207,20 +207,6 @@ private:
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;
 
-    struct crash_tracker_metadata
-      : serde::envelope<
-          crash_tracker_metadata,
-          serde::version<0>,
-          serde::compat_version<0>> {
-        uint32_t _crash_count{0};
-        uint64_t _config_checksum{0};
-        model::timestamp _last_start_ts;
-
-        auto serde_fields() {
-            return std::tie(_crash_count, _config_checksum, _last_start_ts);
-        }
-    };
-
     // Constructs and starts the services required to provide cryptographic
     // algorithm support to Redpanda
     void wire_up_and_start_crypto_services();
@@ -261,6 +247,8 @@ private:
     bool wasm_data_transforms_enabled();
 
     bool datalake_enabled();
+
+    void init_crashtracker();
 
     /**
      * @brief Construct service boilerplate.
@@ -366,6 +354,8 @@ private:
     std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
 
     config::node_override_store _node_overrides{};
+
+    std::unique_ptr<crash_tracker::service> _crash_tracker_service;
 
     ss::sharded<ss::abort_source> _as;
 };

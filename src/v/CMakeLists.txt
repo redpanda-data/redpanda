@@ -136,6 +136,7 @@ add_subdirectory(datalake)
 add_subdirectory(cloud_io)
 add_subdirectory(cloud_topics)
 add_subdirectory(schema)
+add_subdirectory(crash_tracker)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 
