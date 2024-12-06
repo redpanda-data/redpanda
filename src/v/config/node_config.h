@@ -121,6 +121,10 @@ public:
         return data_directory().path / "startup_log";
     }
 
+    std::filesystem::path crash_report_dir_path() const {
+        return data_directory().path / "crash_reports";
+    }
+
     /**
      * Return the configured cache path if set, otherwise a default
      * path within the data directory.

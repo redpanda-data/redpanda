@@ -96,7 +96,6 @@ public:
     void wire_up_and_start(::stop_signal&, bool test_mode = false);
     void post_start_tasks();
 
-    void check_for_crash_loop();
     void schedule_crash_tracker_file_cleanup();
 
     explicit application(ss::sstring = "main");
@@ -206,20 +205,6 @@ public:
 private:
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;
-
-    struct crash_tracker_metadata
-      : serde::envelope<
-          crash_tracker_metadata,
-          serde::version<0>,
-          serde::compat_version<0>> {
-        uint32_t _crash_count{0};
-        uint64_t _config_checksum{0};
-        model::timestamp _last_start_ts;
-
-        auto serde_fields() {
-            return std::tie(_crash_count, _config_checksum, _last_start_ts);
-        }
-    };
 
     // Constructs and starts the services required to provide cryptographic
     // algorithm support to Redpanda
