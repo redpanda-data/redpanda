@@ -335,6 +335,15 @@ configuration::configuration()
         .min = 0,     // It is not mandatory to reserve any capacity
         .max = 131072 // Same max as topic_partitions_per_shard
       })
+  , topic_partitions_max_memory_allocation_share(
+      *this,
+      "topic_partitions_max_memory_allocation_share",
+      "foo",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      20,
+      {
+        .min = 1,
+      })
   , partition_manager_shutdown_watchdog_timeout(
       *this,
       "partition_manager_shutdown_watchdog_timeout",
