@@ -41,13 +41,14 @@ FIXTURE_TEST(
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .producer_id = -1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches1 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(0),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .producer_id = -1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{-1, 0},
       .first_seq = 0,
@@ -55,19 +56,20 @@ FIXTURE_TEST(
     auto r1 = stm
                 .replicate(
                   bid1,
-                  std::move(rdr1),
+                  std::move(batches1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(count),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = -1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches2 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(count),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = -1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{-1, 0},
       .first_seq = 0,
@@ -75,7 +77,7 @@ FIXTURE_TEST(
     auto r2 = stm
                 .replicate(
                   bid2,
-                  std::move(rdr2),
+                  std::move(batches2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE((bool)r2);
@@ -93,14 +95,15 @@ FIXTURE_TEST(
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches1 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(0),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = 0,
@@ -108,19 +111,20 @@ FIXTURE_TEST(
     auto r1 = stm
                 .replicate(
                   bid1,
-                  std::move(rdr1),
+                  std::move(batches1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(count),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = count});
+    auto batches2 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(count),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = count})
+                      .get();
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = count,
@@ -128,7 +132,7 @@ FIXTURE_TEST(
     auto r2 = stm
                 .replicate(
                   bid2,
-                  std::move(rdr2),
+                  std::move(batches2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE((bool)r2);
@@ -151,14 +155,15 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
     auto count = 5;
 
     for (int i = 0; i < 10; i++) {
-        auto rdr = random_batch_reader(model::test::record_batch_spec{
-          .offset = model::offset(i * count),
-          .allow_compression = true,
-          .count = count,
-          .enable_idempotence = true,
-          .producer_id = 1,
-          .producer_epoch = 0,
-          .base_sequence = i * count});
+        auto batches = random_batches(model::test::record_batch_spec{
+                                        .offset = model::offset(i * count),
+                                        .allow_compression = true,
+                                        .count = count,
+                                        .enable_idempotence = true,
+                                        .producer_id = 1,
+                                        .producer_epoch = 0,
+                                        .base_sequence = i * count})
+                         .get();
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
@@ -166,7 +171,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
         auto r1 = stm
                     .replicate(
                       bid,
-                      std::move(rdr),
+                      std::move(batches),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
                     .get();
@@ -178,14 +183,15 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
     // pid and seq numbers the duplicated request should yield the same
     // offsets
     for (int i = 5; i < 10; i++) {
-        auto rdr = random_batch_reader(model::test::record_batch_spec{
-          .offset = model::offset(i * count),
-          .allow_compression = true,
-          .count = count,
-          .enable_idempotence = true,
-          .producer_id = 1,
-          .producer_epoch = 0,
-          .base_sequence = i * count});
+        auto batches = random_batches(model::test::record_batch_spec{
+                                        .offset = model::offset(i * count),
+                                        .allow_compression = true,
+                                        .count = count,
+                                        .enable_idempotence = true,
+                                        .producer_id = 1,
+                                        .producer_epoch = 0,
+                                        .base_sequence = i * count})
+                         .get();
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
@@ -193,7 +199,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, rm_stm_test_fixture) {
         auto r1 = stm
                     .replicate(
                       bid,
-                      std::move(rdr),
+                      std::move(batches),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
                     .get();
@@ -215,14 +221,15 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
     auto count = 5;
 
     for (int i = 0; i < 6; i++) {
-        auto rdr = random_batch_reader(model::test::record_batch_spec{
-          .offset = model::offset(i * count),
-          .allow_compression = true,
-          .count = count,
-          .enable_idempotence = true,
-          .producer_id = 1,
-          .producer_epoch = 0,
-          .base_sequence = i * count});
+        auto batches = random_batches(model::test::record_batch_spec{
+                                        .offset = model::offset(i * count),
+                                        .allow_compression = true,
+                                        .count = count,
+                                        .enable_idempotence = true,
+                                        .producer_id = 1,
+                                        .producer_epoch = 0,
+                                        .base_sequence = i * count})
+                         .get();
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
           .first_seq = i * count,
@@ -230,7 +237,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
         auto r1 = stm
                     .replicate(
                       bid,
-                      std::move(rdr),
+                      std::move(batches),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
                     .get();
@@ -239,14 +246,15 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
     }
 
     {
-        auto rdr = random_batch_reader(model::test::record_batch_spec{
-          .offset = model::offset(0),
-          .allow_compression = true,
-          .count = count,
-          .enable_idempotence = true,
-          .producer_id = 1,
-          .producer_epoch = 0,
-          .base_sequence = 0});
+        auto batches = random_batches(model::test::record_batch_spec{
+                                        .offset = model::offset(0),
+                                        .allow_compression = true,
+                                        .count = count,
+                                        .enable_idempotence = true,
+                                        .producer_id = 1,
+                                        .producer_epoch = 0,
+                                        .base_sequence = 0})
+                         .get();
         auto bid = model::batch_identity{
           .pid = model::producer_identity{1, 0},
           .first_seq = 0,
@@ -254,7 +262,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, rm_stm_test_fixture) {
         auto r1 = stm
                     .replicate(
                       bid,
-                      std::move(rdr),
+                      std::move(batches),
                       raft::replicate_options(
                         raft::consistency_level::quorum_ack))
                     .get();
@@ -275,14 +283,15 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches1 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(0),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = 0,
@@ -290,19 +299,20 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
     auto r1 = stm
                 .replicate(
                   bid1,
-                  std::move(rdr1),
+                  std::move(batches1),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE((bool)r1);
 
-    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(count),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = count + 1});
+    auto batches2 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(count),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = count + 1})
+                      .get();
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = count + 1,
@@ -310,7 +320,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, rm_stm_test_fixture) {
     auto r2 = stm
                 .replicate(
                   bid2,
-                  std::move(rdr2),
+                  std::move(batches2),
                   raft::replicate_options(raft::consistency_level::quorum_ack))
                 .get();
     BOOST_REQUIRE(
@@ -328,14 +338,15 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
     wait_for_meta_initialized();
 
     auto count = 5;
-    auto rdr1 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches1 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(0),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid1 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = 0,
@@ -344,14 +355,15 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
     // replicate caches only metadata so as long as batches have the same
     // pid and seq numbers the duplicated request should yield the same
     // offsets
-    auto rdr2 = random_batch_reader(model::test::record_batch_spec{
-      .offset = model::offset(0),
-      .allow_compression = true,
-      .count = count,
-      .enable_idempotence = true,
-      .producer_id = 1,
-      .producer_epoch = 0,
-      .base_sequence = 0});
+    auto batches2 = random_batches(model::test::record_batch_spec{
+                                     .offset = model::offset(0),
+                                     .allow_compression = true,
+                                     .count = count,
+                                     .enable_idempotence = true,
+                                     .producer_id = 1,
+                                     .producer_epoch = 0,
+                                     .base_sequence = 0})
+                      .get();
     auto bid2 = model::batch_identity{
       .pid = model::producer_identity{1, 0},
       .first_seq = 0,
@@ -359,11 +371,11 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, rm_stm_test_fixture) {
 
     auto f1 = stm.replicate(
       bid1,
-      std::move(rdr1),
+      std::move(batches1),
       raft::replicate_options(raft::consistency_level::quorum_ack));
     auto f2 = stm.replicate(
       bid2,
-      std::move(rdr2),
+      std::move(batches2),
       raft::replicate_options(raft::consistency_level::quorum_ack));
     auto r2 = f2.get();
     auto r1 = f1.get();

@@ -36,27 +36,28 @@ using namespace std::chrono_literals;
 static const failure_type<cluster::errc>
   invalid_producer_epoch(cluster::errc::invalid_producer_epoch);
 
-struct rich_reader {
+struct batches_with_identity {
     model::batch_identity id;
-    model::record_batch_reader reader;
+    chunked_vector<model::record_batch> batches;
 };
 
-static rich_reader make_rreader(
+static batches_with_identity make_rreader(
   model::producer_identity pid,
   int first_seq,
   int count,
   bool is_transactional) {
-    return rich_reader{
+    return batches_with_identity{
       .id = model::
         batch_identity{.pid = pid, .first_seq = first_seq, .last_seq = first_seq + count - 1, .record_count = count, .is_transactional = is_transactional},
-      .reader = random_batch_reader(model::test::record_batch_spec{
-        .offset = model::offset(0),
-        .allow_compression = true,
-        .count = count,
-        .producer_id = pid.id,
-        .producer_epoch = pid.epoch,
-        .base_sequence = first_seq,
-        .is_transactional = is_transactional})};
+      .batches = random_batches(model::test::record_batch_spec{
+                                  .offset = model::offset(0),
+                                  .allow_compression = true,
+                                  .count = count,
+                                  .producer_id = pid.id,
+                                  .producer_epoch = pid.epoch,
+                                  .base_sequence = first_seq,
+                                  .is_transactional = is_transactional})
+                   .get()};
 }
 
 void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
@@ -109,7 +110,7 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -139,7 +140,7 @@ FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE((bool)offset_r);
@@ -186,7 +187,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -216,7 +217,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE((bool)offset_r);
@@ -273,7 +274,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -303,7 +304,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE_EQUAL(stm.highest_producer_id(), pid2.get_id());
@@ -355,7 +356,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -368,7 +369,7 @@ FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
@@ -440,7 +441,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -472,7 +473,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE(!(bool)offset_r);
@@ -498,7 +499,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     auto offset_r = stm
                       .replicate(
                         rreader.id,
-                        std::move(rreader.reader),
+                        std::move(rreader.batches),
                         raft::replicate_options(
                           raft::consistency_level::quorum_ack))
                       .get();
@@ -519,7 +520,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE((bool)offset_r);
@@ -531,7 +532,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
     offset_r = stm
                  .replicate(
                    rreader.id,
-                   std::move(rreader.reader),
+                   std::move(rreader.batches),
                    raft::replicate_options(raft::consistency_level::quorum_ack))
                  .get();
     BOOST_REQUIRE(offset_r == invalid_producer_epoch);
@@ -599,7 +600,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
           stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get());
         auto rreader = make_rreader(pid, 0, 5, true);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
+          stm.replicate(rreader.id, std::move(rreader.batches), opts).get());
         return pid;
     };
 
@@ -611,7 +612,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
     auto abort_tx = [&](auto pid) {
         auto rreader = make_rreader(pid, 5, 5, true);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
+          stm.replicate(rreader.id, std::move(rreader.batches), opts).get());
         BOOST_REQUIRE_EQUAL(
           stm.abort_tx(pid, tx_seq, timeout).get(), cluster::tx::errc::none);
     };
@@ -715,7 +716,7 @@ FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
         auto rreader = make_rreader(
           model::producer_identity{-1, -1}, 0, 5, false);
         BOOST_REQUIRE(
-          stm.replicate(rreader.id, std::move(rreader.reader), opts).get());
+          stm.replicate(rreader.id, std::move(rreader.batches), opts).get());
 
         // roll and abort.
         roll_log();

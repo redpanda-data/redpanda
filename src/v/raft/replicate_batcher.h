@@ -125,7 +125,7 @@ public:
 
     replicate_stages replicate(
       std::optional<model::term_id>,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       replicate_options);
 
     ss::future<> flush(ssx::semaphore_units u, const bool transfer_flush);
@@ -141,7 +141,7 @@ private:
 
     ss::future<item_ptr> do_cache(
       std::optional<model::term_id>,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       replicate_options);
 
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
@@ -153,7 +153,7 @@ private:
     ss::future<result<replicate_result>> cache_and_wait_for_result(
       ss::promise<> enqueued,
       std::optional<model::term_id> expected_term,
-      model::record_batch_reader r,
+      chunked_vector<model::record_batch> r,
       replicate_options);
 
     consensus* _ptr;
