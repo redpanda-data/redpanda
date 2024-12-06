@@ -29,13 +29,20 @@ class CloudBroker():
 
         # Metadata
         self.operating_system = 'k8s'
+        self._spec = pod['spec']
+        self._status = pod['status']
         self._meta = pod['metadata']
         self.name = self._meta['name']
 
         # Backward compatibility
         # Various classes will use this to hash and compare nodes
-        self.account = DummyAccount(node_name=pod['spec']['nodeName'],
-                                    pod_name=pod['metadata']['name'])
+        try:
+            self.account = DummyAccount(node_name=self._spec['nodeName'],
+                                        pod_name=self.name)
+        except KeyError as k:
+            self.logger.debug(f'could not find {k.args} in pod spec.\n'
+                              f'pod spec: {vars(self._spec)}')
+            raise k
 
         # It appears that the node-id label will only be added if the cluster
         # is still being managed by the operator - if managed=false then this
@@ -47,13 +54,9 @@ class CloudBroker():
         self.slot_id = int(self.name.replace(self._meta['generateName'], ""))
         self.uuid = self._meta['uid']
 
-        # Save other data
-        self._spec = pod['spec']
-        self._status = pod['status']
-
         # Mimic Ducktape cluster node hostname field
-        self.hostname = f"{self._spec['nodeName']}/{self.name}"
         self.nodename = self._spec['nodeName']
+        self.hostname = f"{self.nodename}/{self.name}"
         # Create node shell pod
         self.nodeshell = KubeNodeShell(self._kubeclient,
                                        self.nodename,
