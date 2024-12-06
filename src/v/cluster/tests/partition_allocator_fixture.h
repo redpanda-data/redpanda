@@ -28,13 +28,14 @@
 
 #include <seastar/core/chunked_fifo.hh>
 
+#include <cstdint>
 #include <limits>
 
 struct partition_allocator_fixture {
-    static constexpr uint32_t partitions_per_shard = 1000;
+    static constexpr uint32_t gb_per_core = 5;
 
     partition_allocator_fixture()
-      : partition_allocator_fixture(std::nullopt, std::nullopt) {}
+      : partition_allocator_fixture(std::nullopt, std::nullopt, 1000) {}
 
     ~partition_allocator_fixture() {
         _allocator.stop().get();
@@ -53,7 +54,7 @@ struct partition_allocator_fixture {
           std::move(rack),
           model::broker_properties{
             .cores = core_count,
-            .available_memory_gb = 5 * core_count,
+            .available_memory_gb = gb_per_core * core_count,
             .available_disk_gb = 10 * core_count});
 
         auto ec = members.local().apply(
@@ -142,27 +143,32 @@ struct partition_allocator_fixture {
 
     fast_prng prng;
 
+    uint32_t partitions_per_shard;
+
 protected:
     explicit partition_allocator_fixture(
       std::optional<size_t> memory_per_partition,
-      std::optional<int32_t> fds_per_partition) {
+      std::optional<int32_t> fds_per_partition,
+      uint32_t partitions_per_shard)
+      : partitions_per_shard(partitions_per_shard) {
         members.start().get();
         features.start().get();
         _allocator
           .start_single(
             std::ref(members),
             std::ref(features),
-            config::mock_binding<std::optional<size_t>>(memory_per_partition),
             config::mock_binding<std::optional<int32_t>>(fds_per_partition),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             partitions_reserve_shard0.bind(),
             kafka_internal_topics.bind(),
             config::mock_binding<bool>(true))
           .get();
-        ss::smp::invoke_on_all([] {
+        ss::smp::invoke_on_all([memory_per_partition] {
             config::shard_local_cfg()
               .get("partition_autobalancing_mode")
               .set_value(model::partition_autobalancing_mode::node_add);
+            config::shard_local_cfg().topic_memory_per_partition.set_value(
+              memory_per_partition);
         }).get();
     }
 };
@@ -172,7 +178,8 @@ struct partition_allocator_memory_limited_fixture
     static constexpr size_t memory_per_partition
       = std::numeric_limits<size_t>::max();
     partition_allocator_memory_limited_fixture()
-      : partition_allocator_fixture(memory_per_partition, std::nullopt) {}
+      : partition_allocator_fixture(memory_per_partition, std::nullopt, 10000) {
+    }
 };
 
 struct partition_allocator_fd_limited_fixture
@@ -181,5 +188,5 @@ struct partition_allocator_fd_limited_fixture
       = std::numeric_limits<int32_t>::max();
 
     partition_allocator_fd_limited_fixture()
-      : partition_allocator_fixture(std::nullopt, fds_per_partition) {}
+      : partition_allocator_fixture(std::nullopt, fds_per_partition, 10000) {}
 };

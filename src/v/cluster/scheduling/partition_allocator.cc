@@ -15,12 +15,14 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/constraints.h"
+#include "cluster/scheduling/topic_memory_per_partition_default.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_groups.h"
 #include "ssx/async_algorithm.h"
 #include "utils/human.h"
 
@@ -79,6 +81,53 @@ allocation_constraints partition_allocator::default_constraints() {
     return req;
 }
 
+bool guess_is_memory_group_aware_memory_limit() {
+    // Here we are trying to guess whether `topic_memory_per_partition` is
+    // memory group aware.
+    //
+    // Originally the property was chosen such that at maxed out
+    // `topic_partitions_per_shard` we wouldn't run into OOM issues on 4 or 8GiB
+    // per shard hosts.
+    //
+    // These days we have a better understanding of how much memory a partition
+    // actually uses at rest based on memory profiler and metrics analysis.
+    // Hence we now set it to a more realistic value in the XXXKiB range.
+    //
+    // At the same time we also made the memory_groups reserve a percentage of
+    // the total memory space for partitions. Instead of dividing the whole
+    // memory space by `topic_memory_per_partition` we now only do that with the
+    // reserved value.
+    //
+    // Because of the latter making this change isn't trivial. Users might have
+    // lowered the `topic_memory_per_partition` property to gain higher
+    // partition density. With only using the reserved memory space when
+    // checking memory limits this might lead to now actually having less
+    // partition density. Hence, we need to guess whether the property was set
+    // before this change or after. If it was set before we just use the old
+    // rules (while still reserving a part of the memory) when checking memory
+    // limits to not break existing behaviour.
+    //
+    // Note that if we get this guess wrong that isn't immediately fatal. This
+    // only becomes active when creating new topics or modifying existing
+    // topics. At that point users can increase the memory reservation if
+    // needed.
+
+    // not overriden so definitely memory group aware
+    if (!config::shard_local_cfg().topic_memory_per_partition.is_overriden()) {
+        return true;
+    }
+
+    auto value = config::shard_local_cfg().topic_memory_per_partition.value();
+
+    // Previous default was 4MiB. New one is more than 10x smaller. We assume
+    // it's unlikely someone would have changed the value to be that much
+    // smaller and hence guess that all the values larger than 2 times the new
+    // default are old values. Equally in the new world it's unlikely anybody
+    // would increase the value (at all really).
+
+    return value < 2 * ORIGINAL_MEMORY_GROUP_AWARE_TMPP;
+}
+
 std::error_code partition_allocator::check_memory_limits(
   uint64_t new_partitions_replicas_requested,
   uint64_t proposed_total_partitions,
@@ -88,23 +137,38 @@ std::error_code partition_allocator::check_memory_limits(
     auto memory_per_partition_replica
       = config::shard_local_cfg().topic_memory_per_partition();
 
-    if (
-      memory_per_partition_replica.has_value()
-      && memory_per_partition_replica.value() > 0) {
-        const uint64_t memory_limit = effective_cluster_memory
-                                      / memory_per_partition_replica.value();
+    if (!memory_per_partition_replica.has_value()) {
+        return errc::success;
+    }
 
-        if (proposed_total_partitions > memory_limit) {
-            vlog(
-              clusterlog.warn,
-              "Refusing to create {} new partitions as total partition count "
-              "{} "
-              "would exceed memory limit {}",
-              new_partitions_replicas_requested,
-              proposed_total_partitions,
-              memory_limit);
-            return errc::topic_invalid_partitions_memory_limit;
-        }
+    bool is_memory_aware = guess_is_memory_group_aware_memory_limit();
+
+    uint64_t partition_memory;
+    if (is_memory_aware) {
+        partition_memory = effective_cluster_memory
+                           * memory_groups().partitions_max_memory_share();
+    } else {
+        partition_memory = effective_cluster_memory;
+    }
+
+    uint64_t memory_limit = partition_memory
+                            / memory_per_partition_replica.value();
+
+    if (proposed_total_partitions > memory_limit) {
+        vlog(
+          clusterlog.warn,
+          "Refusing to create {} new partitions as total partition count "
+          "{} "
+          "would exceed memory limit of {} partitions. Cluster partition "
+          "memory: {} - "
+          "required memory per partition: {} - memory group aware: {}",
+          new_partitions_replicas_requested,
+          proposed_total_partitions,
+          memory_limit,
+          partition_memory,
+          memory_per_partition_replica.value(),
+          is_memory_aware);
+        return errc::topic_invalid_partitions_memory_limit;
     }
 
     return errc::success;

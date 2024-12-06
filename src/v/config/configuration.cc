@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 
 #include "base/units.h"
+#include "cluster/scheduling/topic_memory_per_partition_default.h"
 #include "config/base_property.h"
 #include "config/bounded_property.h"
 #include "config/node_config.h"
@@ -290,11 +291,11 @@ configuration::configuration()
       "topic_memory_per_partition",
       "Required memory per partition when creating topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      4_MiB,
+      cluster::DEFAULT_TOPIC_MEMORY_PER_PARTITION,
       {
         .min = 1,      // Must be nonzero, it's a divisor
         .max = 100_MiB // Rough 'sanity' limit: a machine with 1GB RAM must be
-                       // able to create at least 10 partitions})
+                       // able to create at least 10 partitions
       })
   , topic_fds_per_partition(
       *this,
@@ -313,7 +314,7 @@ configuration::configuration()
       "Maximum number of partitions which may be allocated to one shard (CPU "
       "core).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      1000,
+      5000,
       {
         .min = 16,    // Forbid absurdly small values that would prevent most
                       // practical workloads from running
@@ -340,7 +341,7 @@ configuration::configuration()
       "topic_partitions_memory_allocation_percent",
       "Percentage of total memory to reserve for topic partitions.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      20,
+      10,
       {
         .min = 1,
         .max = 80,

@@ -91,7 +91,7 @@ class ResourceLimitsTest(RedpandaTest):
         # Three nodes, each with 1 core, 1000 partition-replicas
         # per core, so with replicas=3, 1000 partitions should be the limit
         try:
-            rpk.create_topic("toobig", partitions=1500, replicas=3)
+            rpk.create_topic("toobig", partitions=5500, replicas=3)
         except RpkException as e:
             assert 'INVALID_PARTITIONS' in e.msg
         else:
