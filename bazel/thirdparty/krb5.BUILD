@@ -48,6 +48,10 @@ configure_make(
         "--disable-static",
         "--enable-asan=$(SANITIZERS)",
     ],
+    # Need to pass this additionally here because of a bug in the kerberos build where it doesn't properly pass the linker flag down
+    copts = [
+        "-fuse-ld=lld",
+    ],
     env = {
         "KRB5_BUILD_JOBS": "$(BUILD_JOBS)",
     },
