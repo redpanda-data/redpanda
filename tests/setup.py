@@ -29,7 +29,7 @@ setup(
         'pytest==7.1.2',
         'jump-consistent-hash==3.2.0',
         'azure-storage-blob==12.14.1',
-        'kafkatest@git+https://github.com/apache/kafka.git@e146c7c9164c4e8817fe891ac9d7d1661889b2b4#egg=kafkatest&subdirectory=tests',
+        'kafkatest@git+https://github.com/apache/kafka.git@b3939f7901470048a70ee7cbaaa587f32cfac50e#egg=kafkatest&subdirectory=tests',
         'grpcio==1.57.0',
         'grpcio-tools==1.57',
         'grpcio-status==1.57.0',
