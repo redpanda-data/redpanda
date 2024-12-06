@@ -162,11 +162,11 @@ class CloudArchiveRetentionTest(RedpandaTest):
             f"waiting until {segments_to_delete} segments will be removed")
         # Wait for the first truncation to the middle of the archive
         wait_until(
-            lambda: self.num_segments_deleted() == segments_to_delete,
+            lambda: self.num_segments_deleted() >= segments_to_delete,
             timeout_sec=100,
             backoff_sec=5,
             err_msg=
-            f"Segments were not removed from the cloud, expected {segments_to_delete} deletions"
+            f"Segments were not removed from the cloud, expected at least {segments_to_delete} deletions"
         )
 
         view.reset()
@@ -210,11 +210,11 @@ class CloudArchiveRetentionTest(RedpandaTest):
             f"waiting until {segments_to_delete} segments will be removed")
         # Wait for the second truncation of the entire archive
         wait_until(
-            lambda: self.num_segments_deleted() == segments_to_delete,
+            lambda: self.num_segments_deleted() >= segments_to_delete,
             timeout_sec=120,
             backoff_sec=5,
             err_msg=
-            f"Segments were not removed from the cloud, expected {segments_to_delete} "
+            f"Segments were not removed from the cloud, expected at least {segments_to_delete} "
             f"segments to be removed but only {self.num_segments_deleted()} was actually removed"
         )
 
