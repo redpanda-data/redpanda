@@ -35,6 +35,7 @@ proto_library(
         "schema_registry/protobuf/google/type/quaternion.proto",
         "schema_registry/protobuf/google/type/timeofday.proto",
     ],
+    visibility = ["//src/go/rpk/pkg/serde:__subpackages__"],
     deps = [
         "@protobuf//:any_proto",
         "@protobuf//:descriptor_proto",
