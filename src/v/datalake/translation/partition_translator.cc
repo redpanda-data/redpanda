@@ -275,7 +275,8 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
           read_begin_offset,
           read_end_offset,
           _partition->last_stable_offset());
-        _partition->probe().update_iceberg_translation_offset_lag(0);
+        _partition->probe().update_iceberg_translation_offset_lag(
+          read_end_offset);
         co_return translation_success::yes;
     }
     // We have some data to translate, make a reader
