@@ -92,16 +92,16 @@ private:
           "This method can only be called on data migration shard");
     }
 
-    bool data_migrations_active() const;
+    bool data_migrations_active(bool check_license) const;
 
 private:
     model::node_id _self;
     bool _cloud_storage_api_initialized;
     ssx::single_sharded<migrations_table>& _table;
-    ss::sharded<features::feature_table>& _features;
+    features::feature_table& _features;
     ss::sharded<controller_stm>& _controller;
-    ss::sharded<partition_leaders_table>& _leaders_table;
-    ss::sharded<rpc::connection_cache>& _connections;
+    partition_leaders_table& _leaders_table;
+    rpc::connection_cache& _connections;
     std::optional<std::reference_wrapper<cloud_storage::topic_mount_handler>>
       _topic_mount_handler;
     ss::sharded<ss::abort_source>& _as;

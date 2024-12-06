@@ -48,10 +48,10 @@ frontend::frontend(
   : _self(self)
   , _cloud_storage_api_initialized(cloud_storage_api_initialized)
   , _table(table)
-  , _features(features)
+  , _features(features.local())
   , _controller(stm)
-  , _leaders_table(leaders)
-  , _connections(connections)
+  , _leaders_table(leaders.local())
+  , _connections(connections.local())
   , _topic_mount_handler(topic_mount_handler)
   , _as(as)
   , _operation_timeout(10s) {}
@@ -69,8 +69,7 @@ frontend::process_or_dispatch(
   DispatchFunc dispatch,
   ProcessFunc process,
   ReplyMapperFunc reply_mapper) {
-    auto controller_leader = _leaders_table.local().get_leader(
-      model::controller_ntp);
+    auto controller_leader = _leaders_table.get_leader(model::controller_ntp);
     /// Return early if there is no controller leader
     if (!controller_leader) {
         vlog(
@@ -102,18 +101,17 @@ frontend::process_or_dispatch(
       req,
       *controller_leader);
     /// If leader is somewhere else, dispatch RPC request to current leader
-    auto reply = co_await _connections.local()
-                   .with_node_client<data_migrations_client_protocol>(
-                     _self,
-                     ss::this_shard_id(),
-                     *controller_leader,
-                     _operation_timeout,
-                     [req = std::move(req),
-                      dispatch = std::forward<DispatchFunc>(dispatch)](
-                       data_migrations_client_protocol client) mutable {
-                         return dispatch(std::move(req), client)
-                           .then(&rpc::get_ctx_data<Reply>);
-                     });
+    auto reply
+      = co_await _connections.with_node_client<data_migrations_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *controller_leader,
+        _operation_timeout,
+        [req = std::move(req), dispatch = std::forward<DispatchFunc>(dispatch)](
+          data_migrations_client_protocol client) mutable {
+            return dispatch(std::move(req), client)
+              .then(&rpc::get_ctx_data<Reply>);
+        });
     vlog(
       dm_log.debug,
       "got reply {} from controller leader at {}",
@@ -122,14 +120,15 @@ frontend::process_or_dispatch(
     co_return reply_mapper(std::move(reply));
 }
 
-bool frontend::data_migrations_active() const {
-    return _features.local().is_active(features::feature::data_migrations)
-           && _cloud_storage_api_initialized;
+bool frontend::data_migrations_active(bool check_license) const {
+    return _features.is_active(features::feature::data_migrations)
+           && _cloud_storage_api_initialized
+           && !(check_license && _features.should_sanction());
 }
 
 ss::future<result<id>> frontend::create_migration(
   data_migration migration, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(true)) {
         return ssx::now<result<id>>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "creating migration: {}", migration);
@@ -164,7 +163,7 @@ ss::future<result<id>> frontend::create_migration(
 
 ss::future<std::error_code> frontend::update_migration_state(
   id id, state state, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(false)) {
         return ssx::now<std::error_code>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "updating migration: {} state with: {}", id, state);
@@ -198,7 +197,7 @@ ss::future<std::error_code> frontend::update_migration_state(
 
 ss::future<std::error_code>
 frontend::remove_migration(id id, can_dispatch_to_leader can_dispatch) {
-    if (!data_migrations_active()) {
+    if (!data_migrations_active(false)) {
         return ssx::now<std::error_code>(errc::feature_disabled);
     }
     vlog(dm_log.debug, "removing migration: {}", id);
@@ -233,7 +232,7 @@ ss::future<check_ntp_states_reply> frontend::check_ntp_states_on_foreign_node(
   model::node_id node, check_ntp_states_request&& req) {
     vlog(dm_log.debug, "dispatching node request {} to node {}", req, node);
 
-    return _connections.local()
+    return _connections
       .with_node_client<data_migrations_client_protocol>(
         _self,
         ss::this_shard_id(),
@@ -295,21 +294,17 @@ ss::future<result<id>> frontend::do_create_migration(data_migration migration) {
 }
 
 ss::future<chunked_vector<migration_metadata>> frontend::list_migrations() {
-    return container().invoke_on(data_migrations_shard, [](frontend& local) {
-        return local._table.local().list_migrations();
-    });
+    return _table.invoke_on_instance(&migrations_table::list_migrations);
 }
 
 ss::future<result<migration_metadata>>
 frontend::get_migration(id migration_id) {
-    return container().invoke_on(
-      data_migrations_shard, [migration_id](frontend& local) {
-          auto maybe_migration = local._table.local().get_migration(
-            migration_id);
-          return maybe_migration
-                   ? result<migration_metadata>(maybe_migration->get().copy())
-                   : errc::data_migration_not_exists;
-      });
+    return _table.invoke_on_instance([migration_id](migrations_table& table) {
+        auto maybe_migration = table.get_migration(migration_id);
+        return maybe_migration
+                 ? result<migration_metadata>(maybe_migration->get().copy())
+                 : errc::data_migration_not_exists;
+    });
 }
 
 ss::future<frontend::list_mountable_topics_result>
@@ -333,6 +328,7 @@ ss::future<std::error_code> frontend::insert_barrier() {
      * required for correctness but allows the fronted to do more accurate
      * preliminary validation.
      */
+    static_assert(controller_stm_shard == data_migrations_shard);
     auto barrier_result
       = co_await _controller.local().insert_linearizable_barrier(
         _operation_timeout + model::timeout_clock::now());

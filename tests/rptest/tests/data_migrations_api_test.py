@@ -581,8 +581,29 @@ class DataMigrationsApiTest(RedpandaTest):
             self.admin.delete_data_migration(in_migration_id)
             self.wait_migration_disappear(in_migration_id)
 
+    def toggle_license(self, on: bool):
+        ENV_KEY = '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE'
+        if on:
+            self.redpanda.unset_environment([ENV_KEY])
+        else:
+            self.redpanda.set_environment({ENV_KEY: '1'})
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                            use_maintenance_mode=False)
+
     @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
     def test_creating_and_listing_migrations(self):
+        self.do_test_creating_and_listing_migrations(False)
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
+            # license violation
+            r'/v1/migrations.*Requested feature is disabled',
+        ])
+    def test_creating_and_listing_migrations_wo_license(self):
+        self.do_test_creating_and_listing_migrations(True)
+
+    def do_test_creating_and_listing_migrations(self, try_wo_license: bool):
         topics = [TopicSpec(partition_count=3) for i in range(5)]
 
         for t in topics:
@@ -591,13 +612,27 @@ class DataMigrationsApiTest(RedpandaTest):
         migrations_map = self.get_migrations_map()
         assert len(migrations_map) == 0, "There should be no data migrations"
 
-        with self.finj_thread():
+        if try_wo_license:
+            time.sleep(2)  # make sure test harness can see Redpanda is live
+            self.toggle_license(on=False)
+            self.assure_not_migratable(
+                topics[0], {
+                    "message":
+                    "Unexpected cluster error: Requested feature is disabled",
+                    "code": 500
+                })
+            self.toggle_license(on=True)
+
+        with nullcontext() if try_wo_license else self.finj_thread():
             # out
             outbound_topics = [make_namespaced_topic(t.name) for t in topics]
             out_migration = OutboundDataMigration(outbound_topics,
                                                   consumer_groups=[])
-
             out_migration_id = self.create_and_wait(out_migration)
+
+            if try_wo_license:
+                self.toggle_license(on=False)
+
             self.check_migrations(out_migration_id, len(topics), 1)
 
             self.execute_data_migration_action_flaky(out_migration_id,
@@ -605,6 +640,7 @@ class DataMigrationsApiTest(RedpandaTest):
             self.wait_for_migration_states(out_migration_id,
                                            ['preparing', 'prepared'])
             self.wait_for_migration_states(out_migration_id, ['prepared'])
+
             self.execute_data_migration_action_flaky(out_migration_id,
                                                      MigrationAction.execute)
             self.wait_for_migration_states(out_migration_id,
@@ -631,7 +667,12 @@ class DataMigrationsApiTest(RedpandaTest):
             ]
             in_migration = InboundDataMigration(topics=inbound_topics,
                                                 consumer_groups=["g-1", "g-2"])
+            self.logger.info(f'{try_wo_license=}')
+            if try_wo_license:
+                self.toggle_license(on=True)
             in_migration_id = self.create_and_wait(in_migration)
+            if try_wo_license:
+                self.toggle_license(on=False)
             self.check_migrations(in_migration_id, len(inbound_topics), 2)
 
             self.log_topics(t.source_topic_reference.topic
@@ -639,9 +680,19 @@ class DataMigrationsApiTest(RedpandaTest):
 
             self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.prepare)
-            self.wait_for_migration_states(in_migration_id,
-                                           ['preparing', 'prepared'])
-            self.wait_for_migration_states(in_migration_id, ['prepared'])
+            if try_wo_license:
+                self.wait_for_migration_states(in_migration_id, ['preparing'])
+                time.sleep(5)
+                # stuck as a topic cannot be created without license
+                self.wait_for_migration_states(in_migration_id, ['preparing'])
+                self.toggle_license(on=True)
+                self.wait_for_migration_states(in_migration_id, ['prepared'])
+                self.toggle_license(on=False)
+            else:
+                self.wait_for_migration_states(in_migration_id,
+                                               ['preparing', 'prepared'])
+                self.wait_for_migration_states(in_migration_id, ['prepared'])
+
             self.execute_data_migration_action_flaky(in_migration_id,
                                                      MigrationAction.execute)
             self.wait_for_migration_states(in_migration_id,
