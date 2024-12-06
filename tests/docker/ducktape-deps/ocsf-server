@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-OCSF_SCHEMA_VERSION=9608805fe0b61035cb821bb9068096fe47fed12d  # tip of v1.0.0 branch
+OCSF_SCHEMA_VERSION=9608805fe0b61035cb821bb9068096fe47fed12d # tip of v1.0.0 branch
 OCSF_SERVER_VERSION=d3b26de39df9eb33c6d63e34a126c77c0811c7a0
 
 wget "https://github.com/redpanda-data/ocsf-schema/archive/${OCSF_SCHEMA_VERSION}.tar.gz"
