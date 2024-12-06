@@ -162,8 +162,6 @@ void finalize_worker_thread(OSSL_LIB_CTX* orig_ctx) {
 }
 } // namespace
 
-ossl_context_service::~ossl_context_service() noexcept = default;
-
 class ossl_context_service::impl final {
     friend class ossl_context_test_class;
 
@@ -327,6 +325,8 @@ private:
     // the shard local context is cleaned up
     OSSL_LIB_CTX* _old_context{nullptr};
 };
+
+ossl_context_service::~ossl_context_service() noexcept = default;
 
 ossl_context_service::ossl_context_service(
   ssx::singleton_thread_worker& thread_worker,
