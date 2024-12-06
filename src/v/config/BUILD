@@ -43,6 +43,9 @@ redpanda_cc_library(
         "validation_error.h",
         "validators.h",
     ],
+    implementation_deps = [
+        "//src/v/cluster:topic_memory_per_partition_default",
+    ],
     include_prefix = "config",
     visibility = ["//visibility:public"],
     deps = [
