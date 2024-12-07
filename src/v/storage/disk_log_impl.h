@@ -31,6 +31,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+struct storage_e2e_fixture;
 namespace storage {
 
 /// \brief offset boundary type
@@ -248,6 +249,7 @@ public:
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
+    friend ::storage_e2e_fixture;
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
     /// Compute file offset of the batch inside the segment
