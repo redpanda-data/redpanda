@@ -66,10 +66,6 @@ struct api_activity_notification {
 // references/pointers to this interface instead of remote to enable testing.
 class cloud_storage_api {
 public:
-    using list_result = result<
-      cloud_storage_clients::client::list_bucket_result,
-      cloud_storage_clients::error_outcome>;
-
     /// Functor that attempts to consume the input stream. If the connection
     /// is broken during the download the functor is responsible for he cleanup.
     /// The functor should be reenterable since it can be called many times.
@@ -219,12 +215,16 @@ public:
     /// \param bucket is a bucket name
     /// \param manifest is a manifest to upload
     /// \param key is the remote object name
+    /// \param upload_if_not_exists If true, a conditional write to cloud
+    /// storage will be issued. If an existing manifest exists, this put request
+    /// will fail with a precondition_failed return value.
     /// \return future that returns success code
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
       const remote_manifest_path& key,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      bool upload_if_not_exists = false);
 
     /// \brief Upload segment to S3
     ///

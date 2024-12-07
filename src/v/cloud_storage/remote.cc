@@ -210,7 +210,8 @@ ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
   const remote_manifest_path& key,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  bool upload_if_not_exists) {
     auto buf = co_await manifest.serialize_buf();
     auto success_cb = [this, t = manifest.get_manifest_type()]() {
         switch (t) {
@@ -235,6 +236,12 @@ ss::future<upload_result> remote::upload_manifest(
             break;
         }
     };
+
+    request_headers headers;
+    if (upload_if_not_exists) {
+        headers.add_if_none_match("*");
+    }
+
     co_return co_await io().upload_object({
       .transfer_details = {
         .bucket = bucket,
@@ -248,6 +255,7 @@ ss::future<upload_result> remote::upload_manifest(
       .display_str = to_string(upload_type::manifest),
       .payload = std::move(buf),
       .accept_no_content_response = false,
+      .headers = std::move(headers.headers),
     });
 }
 
@@ -463,6 +471,7 @@ remote::download_object(download_request download_request) {
       .transfer_details = std::move(details),
       .display_str = to_string(download_request.type),
       .payload = download_request.payload,
+      .headers = std::move(download_request.headers.headers),
     });
 }
 
@@ -526,7 +535,7 @@ remote::delete_objects<std::deque<cloud_storage_clients::object_key>>(
   std::deque<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent);
 
-ss::future<remote::list_result> remote::list_objects(
+ss::future<list_result> remote::list_objects(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& parent,
   std::optional<cloud_storage_clients::object_key> prefix,
@@ -550,12 +559,13 @@ ss::future<upload_result> remote::upload_object(upload_request req) {
         details.on_req_cb = make_notify_cb(
           api_activity_type::object_upload, details.parent_rtc);
     }
-    return io().upload_object({
-      .transfer_details = std::move(details),
-      .display_str = to_string(req.type),
-      .payload = std::move(req.payload),
-      .accept_no_content_response = false,
-    });
+    return io().upload_object(
+      {.transfer_details = std::move(details),
+       .display_str = to_string(req.type),
+       .payload = std::move(req.payload),
+       .accept_no_content_response = false,
+       .headers = std::move(req.headers.headers),
+       .etag = req.etag});
 }
 
 ss::future<api_activity_notification>

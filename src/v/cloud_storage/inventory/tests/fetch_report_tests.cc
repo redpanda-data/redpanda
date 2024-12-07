@@ -11,6 +11,7 @@
 #include "cloud_storage/inventory/aws_ops.h"
 #include "cloud_storage/inventory/inv_ops.h"
 #include "cloud_storage/inventory/tests/common.h"
+#include "cloud_storage/types.h"
 
 namespace cst = cloud_storage;
 namespace csi = cst::inventory;
@@ -58,8 +59,7 @@ void setup_and_validate_list_call(
         t::Eq(std::nullopt)))
       .Times(1)
       .WillOnce(
-        t::Return(ss::make_ready_future<cst::cloud_storage_api::list_result>(
-          std::move(result))));
+        t::Return(ss::make_ready_future<cst::list_result>(std::move(result))));
 }
 
 TEST(FindLatestReport, NoReportsExist) {

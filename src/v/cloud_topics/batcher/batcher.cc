@@ -11,6 +11,7 @@
 #include "cloud_topics/batcher/batcher.h"
 
 #include "base/unreachable.h"
+#include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/batcher/aggregator.h"
 #include "cloud_topics/core/event_filter.h"
@@ -107,6 +108,8 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
         case cloud_io::upload_result::timedout:
             err = errc::timeout;
             break;
+        case cloud_io::upload_result::precondition_failed:
+            [[fallthrough]];
         case cloud_io::upload_result::failed:
             err = errc::upload_failure;
         }

@@ -35,6 +35,7 @@ enum class s3_error_code {
     bucket_already_exists,
     bucket_already_owned_by_you,
     bucket_not_empty,
+    conditional_request_conflict,
     credentials_not_supported,
     cross_location_logging_prohibited,
     entity_too_small,

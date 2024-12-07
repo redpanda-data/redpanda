@@ -41,6 +41,8 @@ struct basic_upload_request {
     std::string_view display_str;
     iobuf payload;
     bool accept_no_content_response{false};
+    cloud_storage_clients::header_map_t headers;
+    ss::sstring* etag{nullptr};
 };
 using upload_request = basic_upload_request<ss::lowres_clock>;
 
@@ -50,13 +52,10 @@ struct basic_download_request {
     std::string_view display_str;
     iobuf& payload;
     bool expect_missing{false};
+    cloud_storage_clients::header_map_t headers;
 };
 using download_request = basic_download_request<ss::lowres_clock>;
 using remote_path = named_type<ss::sstring, struct remote_path_tag>;
-
-using list_result = result<
-  cloud_storage_clients::client::list_bucket_result,
-  cloud_storage_clients::error_outcome>;
 
 /// Functor that attempts to consume the input stream. If the connection
 /// is broken during the download the functor is responsible for he cleanup.
@@ -97,7 +96,8 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type)
+      std::string_view object_type,
+      cloud_storage_clients::header_map_t headers = {})
       = 0;
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
@@ -184,7 +184,8 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent,
-      std::string_view object_type) override;
+      std::string_view object_type,
+      cloud_storage_clients::header_map_t headers = {}) override;
 
     /// \brief Delete object from S3
     ///

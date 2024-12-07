@@ -33,6 +33,8 @@ const char* download_exception::what() const noexcept {
         return "TimedOut";
     case download_result::success:
         vassert(false, "Successful result can't be used as an error");
+    case download_result::precondition_failed:
+        return "PreconditionFailed";
     }
     __builtin_unreachable();
 }

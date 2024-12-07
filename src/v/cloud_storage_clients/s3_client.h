@@ -51,7 +51,8 @@ public:
     result<http::client::request_header> make_unsigned_put_object_request(
       const bucket_name& name,
       const object_key& key,
-      size_t payload_size_bytes);
+      size_t payload_size_bytes,
+      header_map_t headers = {});
 
     /// \brief Create a 'GetObject' request header
     ///
@@ -62,15 +63,18 @@ public:
     result<http::client::request_header> make_get_object_request(
       const bucket_name& name,
       const object_key& key,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {});
 
     /// \brief Create a 'HeadObject' request header
     ///
     /// \param name is a bucket that has the object
     /// \param key is an object name
     /// \return initialized and signed http header or error
-    result<http::client::request_header>
-    make_head_object_request(const bucket_name& name, const object_key& key);
+    result<http::client::request_header> make_head_object_request(
+      const bucket_name& name,
+      const object_key& key,
+      header_map_t headers = {});
 
     /// \brief Create a 'DeleteObject' request header
     ///
@@ -156,7 +160,8 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt) override;
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {}) override;
 
     /// HeadObject request.
     /// \param name is a bucket name
@@ -165,7 +170,8 @@ public:
     ss::future<result<head_object_result, error_outcome>> head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout) override;
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {}) override;
 
     /// Put object to S3 bucket.
     /// \param name is a bucket name
@@ -173,13 +179,14 @@ public:
     /// \param payload_size is a size of the object in bytes
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the upload is completed
-    ss::future<result<no_response, error_outcome>> put_object(
+    ss::future<result<put_object_result, error_outcome>> put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false) override;
+      bool accept_no_content = false,
+      header_map_t headers = {}) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
@@ -205,22 +212,25 @@ private:
     ss::future<head_object_result> do_head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {});
 
     ss::future<http::client::response_stream_ref> do_get_object(
       const bucket_name& name,
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt);
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {});
 
-    ss::future<> do_put_object(
+    ss::future<put_object_result> do_put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false);
+      bool accept_no_content = false,
+      header_map_t headers = {});
 
     ss::future<list_bucket_result> do_list_objects_v2(
       const bucket_name& name,

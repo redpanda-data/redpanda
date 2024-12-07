@@ -53,7 +53,8 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false,
-      std::optional<http_byte_range> byte_range = std::nullopt)
+      std::optional<http_byte_range> byte_range = std::nullopt,
+      header_map_t headers = {})
       = 0;
 
     struct head_object_result {
@@ -70,8 +71,13 @@ public:
     virtual ss::future<result<head_object_result, error_outcome>> head_object(
       const bucket_name& name,
       const object_key& key,
-      ss::lowres_clock::duration timeout)
+      ss::lowres_clock::duration timeout,
+      header_map_t headers = {})
       = 0;
+
+    struct put_object_result {
+        ss::sstring etag;
+    };
 
     /// Upload object to cloud storage
     ///
@@ -82,13 +88,14 @@ public:
     /// \param timeout is a timeout of the operation
     /// \param accept_no_content accepts a 204 response as valid
     /// \return future that becomes ready when the upload is completed
-    virtual ss::future<result<no_response, error_outcome>> put_object(
+    virtual ss::future<result<put_object_result, error_outcome>> put_object(
       const bucket_name& name,
       const object_key& key,
       size_t payload_size,
       ss::input_stream<char> body,
       ss::lowres_clock::duration timeout,
-      bool accept_no_content = false)
+      bool accept_no_content = false,
+      header_map_t headers = {})
       = 0;
 
     struct list_bucket_item {
@@ -104,6 +111,8 @@ public:
         std::vector<list_bucket_item> contents;
         std::vector<ss::sstring> common_prefixes;
     };
+
+    using list_result = result<list_bucket_result, error_outcome>;
 
     /// A predicate to allow list_objects to collect items selectively, saving
     /// memory. This cannot be ss::noncopyable_function because remote needs to
@@ -122,7 +131,7 @@ public:
     /// \param collect_item_if if present, only items passing this predicate are
     /// collected.
     /// \return future that becomes ready when the request is completed
-    virtual ss::future<result<list_bucket_result, error_outcome>> list_objects(
+    virtual ss::future<list_result> list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,

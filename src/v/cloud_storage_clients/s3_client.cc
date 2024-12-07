@@ -83,7 +83,8 @@ request_creator::request_creator(
 result<http::client::request_header> request_creator::make_get_object_request(
   const bucket_name& name,
   const object_key& key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     http::client::request_header header{};
     // Virtual Style:
     // GET /{object-id} HTTP/1.1
@@ -111,6 +112,11 @@ result<http::client::request_header> request_creator::make_get_object_request(
             byte_range.value().first,
             byte_range.value().second));
     }
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -119,7 +125,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
 }
 
 result<http::client::request_header> request_creator::make_head_object_request(
-  const bucket_name& name, const object_key& key) {
+  const bucket_name& name, const object_key& key, header_map_t headers) {
     http::client::request_header header{};
     // Virtual Style:
     // HEAD /{object-id} HTTP/1.1
@@ -139,6 +145,11 @@ result<http::client::request_header> request_creator::make_head_object_request(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
+
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -148,7 +159,10 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  const bucket_name& name, const object_key& key, size_t payload_size_bytes) {
+  const bucket_name& name,
+  const object_key& key,
+  size_t payload_size_bytes,
+  header_map_t headers) {
     // Virtual Style:
     // PUT /my-image.jpg HTTP/1.1
     // Host: {bucket-name}.s3.{region}.amazonaws.com
@@ -176,6 +190,10 @@ request_creator::make_unsigned_put_object_request(
     header.insert(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
+
+    for (const auto& [field, value] : headers) {
+        header.insert(field, value.c_str());
+    }
 
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -454,11 +472,12 @@ ss::future<ResultT> parse_head_error_response(
             msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
         }
         boost::string_view rid;
-        if (hdr.find(aws_header_names::x_amz_request_id) != hdr.end()) {
-            rid = hdr.at(aws_header_names::x_amz_request_id);
-        } else if (
-          hdr.find(aws_header_names::x_guploader_uploadid) != hdr.end()) {
-            rid = hdr.at(aws_header_names::x_guploader_uploadid);
+        if (auto it = hdr.find(aws_header_names::x_amz_request_id);
+            it != hdr.end()) {
+            rid = it->value();
+        } else if (auto it = hdr.find(aws_header_names::x_guploader_uploadid);
+                   it != hdr.end()) {
+            rid = it->value();
         }
         rest_error_response err(
           code, msg, ss::sstring(rid.data(), rid.size()), key().native());
@@ -513,6 +532,24 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               err.code(),
               key,
               bucket);
+            outcome = error_outcome::retry;
+        } else if (err.code() == s3_error_code::precondition_failed) {
+            // We support preconditions for cloud requests. If a request
+            // fails due to a precondition header, it
+            // should be handled differently than a regular `fail` outcome (as
+            // it may be expected).
+            vlog(
+              s3_log.debug, "{} response received for key {}", err.code(), key);
+            outcome = error_outcome::precondition_failed;
+        } else if (err.code() == s3_error_code::conditional_request_conflict) {
+            // This can happen when using conditional requests in S3.
+            // It is suggested that for this 409 error, the request should be
+            // retried.
+            // References:
+            // https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html
+            // https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-requests.html
+            vlog(
+              s3_log.debug, "{} response received for key {}", err.code(), key);
             outcome = error_outcome::retry;
         } else {
             // Unexpected REST API error, we can't recover from this
@@ -639,10 +676,16 @@ s3_client::get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     return send_request(
       do_get_object(
-        name, key, timeout, expect_no_such_key, std::move(byte_range)),
+        name,
+        key,
+        timeout,
+        expect_no_such_key,
+        std::move(byte_range),
+        std::move(headers)),
       name,
       key);
 }
@@ -652,10 +695,11 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   const object_key& key,
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key,
-  std::optional<http_byte_range> byte_range) {
+  std::optional<http_byte_range> byte_range,
+  header_map_t headers) {
     bool is_byte_range_requested = byte_range.has_value();
     auto header = _requestor.make_get_object_request(
-      name, key, std::move(byte_range));
+      name, key, std::move(byte_range), std::move(headers));
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
@@ -719,15 +763,19 @@ ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    return send_request(do_head_object(name, key, timeout), name, key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    return send_request(
+      do_head_object(name, key, timeout, std::move(headers)), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
   const bucket_name& name,
   const object_key& key,
-  ss::lowres_clock::duration timeout) {
-    auto header = _requestor.make_head_object_request(name, key);
+  ss::lowres_clock::duration timeout,
+  header_map_t headers) {
+    auto header = _requestor.make_head_object_request(
+      name, key, std::move(headers));
     if (!header) {
         return ss::make_exception_future<s3_client::head_object_result>(
           std::system_error(header.error()));
@@ -777,34 +825,41 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
       });
 }
 
-ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
+ss::future<result<s3_client::put_object_result, error_outcome>>
+s3_client::put_object(
   const bucket_name& name,
   const object_key& key,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  bool accept_no_content,
+  header_map_t headers) {
     return send_request(
       do_put_object(
-        name, key, payload_size, std::move(body), timeout, accept_no_content)
-        .then(
-          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+        name,
+        key,
+        payload_size,
+        std::move(body),
+        timeout,
+        accept_no_content,
+        std::move(headers)),
       name,
       key);
 }
 
-ss::future<> s3_client::do_put_object(
+ss::future<s3_client::put_object_result> s3_client::do_put_object(
   const bucket_name& name,
   const object_key& id,
   size_t payload_size,
   ss::input_stream<char> body,
   ss::lowres_clock::duration timeout,
-  bool accept_no_content) {
+  bool accept_no_content,
+  header_map_t headers) {
     auto header = _requestor.make_unsigned_put_object_request(
-      name, id, payload_size);
+      name, id, payload_size, std::move(headers));
     if (!header) {
         return body.close().then([header] {
-            return ss::make_exception_future<>(
+            return ss::make_exception_future<put_object_result>(
               std::system_error(header.error()));
         });
     }
@@ -822,7 +877,8 @@ ss::future<> s3_client::do_put_object(
                     const http::client::response_stream_ref& ref) {
                 return util::drain_response_stream(ref).then(
                   [ref, id, accept_no_content](iobuf&& res) {
-                      auto status = ref->get_headers().result();
+                      auto resp_headers = ref->get_headers();
+                      auto status = resp_headers.result();
                       using enum boost::beast::http::status;
                       if (const auto is_no_content_and_accepted
                           = status == no_content && accept_no_content;
@@ -832,20 +888,33 @@ ss::future<> s3_client::do_put_object(
                             "S3 PUT request failed for key {}: {} {:l}",
                             id,
                             status,
-                            ref->get_headers());
-                          return parse_rest_error_response<>(
+                            resp_headers);
+                          return parse_rest_error_response<put_object_result>(
                             status, std::move(res));
                       }
-                      return ss::now();
+
+                      put_object_result result{};
+                      if (status == ok) {
+                          if (auto etag_it = resp_headers.find(
+                                boost::beast::http::field::etag);
+                              etag_it != resp_headers.end()) {
+                              auto etag = etag_it->value();
+                              result.etag = ss::sstring{
+                                etag.data(), etag.length()};
+                          }
+                      }
+
+                      return ss::make_ready_future<put_object_result>(
+                        std::move(result));
                   });
             })
             .handle_exception_type(
               [](const ss::abort_requested_exception& err) {
-                  return ss::make_exception_future<>(err);
+                  return ss::make_exception_future<put_object_result>(err);
               })
             .handle_exception_type([this](const rest_error_response& err) {
                 _probe->register_failure(err.code(), op_type_tag::upload);
-                return ss::make_exception_future<>(err);
+                return ss::make_exception_future<put_object_result>(err);
             })
             .handle_exception([id](std::exception_ptr eptr) {
                 vlog(
@@ -853,7 +922,7 @@ ss::future<> s3_client::do_put_object(
                   "S3 PUT request failed with error for key {}: {}",
                   id,
                   eptr);
-                return ss::make_exception_future<>(eptr);
+                return ss::make_exception_future<put_object_result>(eptr);
             })
             .finally([&body]() { return body.close(); });
       });

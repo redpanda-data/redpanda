@@ -16,6 +16,9 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_map.h>
+#include <boost/beast/http/field.hpp>
+
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -28,7 +31,11 @@ using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
+using header_map_t
+  = absl::flat_hash_map<boost::beast::http::field, ss::sstring>;
+
 enum class error_outcome {
+    /// Error condition that can be retried
     retry,
     /// Error condition that couldn't be retried
     fail,
@@ -36,7 +43,12 @@ enum class error_outcome {
     key_not_found,
     /// Currently used for directory deletion errors in ABS, typically treated
     /// as regular failure outcomes.
-    operation_not_supported
+    operation_not_supported,
+    /// We support preconditions for cloud requests, e.g someone may want to
+    /// make a request with the `If-None-Match` header. If a request fails due
+    /// a specified precondition, it should be handled differently than a
+    /// regular `fail` outcome (as it may be expected).
+    precondition_failed
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -54,6 +66,8 @@ struct error_outcome_category final : public std::error_category {
             return "Key not found error";
         case error_outcome::operation_not_supported:
             return "Operation not supported error";
+        case error_outcome::precondition_failed:
+            return "Precondition failed error";
         default:
             return "Undefined error_outcome encountered";
         }

@@ -9,6 +9,8 @@
  */
 #pragma once
 
+#include "cloud_storage_clients/client.h"
+
 #include <cstdint>
 #include <iostream>
 
@@ -19,6 +21,7 @@ enum class [[nodiscard]] download_result : int32_t {
     notfound,
     timedout,
     failed,
+    precondition_failed
 };
 
 enum class [[nodiscard]] upload_result : int32_t {
@@ -26,8 +29,11 @@ enum class [[nodiscard]] upload_result : int32_t {
     timedout,
     failed,
     cancelled,
+    precondition_failed
 };
 std::ostream& operator<<(std::ostream& o, const download_result& r);
 std::ostream& operator<<(std::ostream& o, const upload_result& r);
+
+using list_result = cloud_storage_clients::client::list_result;
 
 } // namespace cloud_io

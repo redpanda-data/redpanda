@@ -93,7 +93,7 @@ private:
       const iobuf& payload);
 
     struct verify_list_result {
-        cloud_storage::remote::list_result list_result;
+        cloud_storage::list_result list_result;
         self_test_result test_result;
     };
 
@@ -141,6 +141,12 @@ private:
     ss::future<verify_deletes_result> verify_deletes(
       cloud_storage_clients::bucket_name bucket,
       size_t num_objects = num_default_objects);
+
+    // Verify that conditional requests (both Put: write operation, using the
+    // `If-None-Match` header and Get: read operation, using the `If-Match`
+    // header) to cloud storage work.
+    ss::future<verify_upload_result>
+    verify_conditional_puts_and_gets(cloud_storage_clients::bucket_name bucket);
 
 private:
     static constexpr size_t num_default_objects = 5;

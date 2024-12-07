@@ -124,7 +124,7 @@ validate_create_inv_req_failure(cst::upload_request r) {
     co_return cst::upload_result::failed;
 }
 
-ss::future<cst::cloud_storage_api::list_result> validate_list_objs(
+ss::future<cst::list_result> validate_list_objs(
   const cloud_storage_clients::bucket_name&,
   retry_chain_node&,
   std::optional<cloud_storage_clients::object_key> pre,
@@ -367,8 +367,7 @@ TEST(Service, OlderReportIsSkipped) {
       .Times(1)
       .WillRepeatedly(validate_check_inv_exists_success);
 
-    auto list_return_old_date =
-      []() -> ss::future<csi::MockRemote::list_result> {
+    auto list_return_old_date = []() -> ss::future<cst::list_result> {
         co_return cloud_storage_clients::client::list_bucket_result{
           .common_prefixes = {
             fmt::format(

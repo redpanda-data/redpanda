@@ -36,6 +36,7 @@ namespace cloud_storage {
 
 using upload_result = cloud_io::upload_result;
 using download_result = cloud_io::download_result;
+using list_result = cloud_io::list_result;
 
 using remote_metrics_disabled
   = ss::bool_class<struct remote_metrics_disabled_tag>;
@@ -423,11 +424,54 @@ enum class existence_check_type { object, segment, manifest };
 std::ostream& operator<<(std::ostream&, existence_check_type);
 
 class remote_probe;
+
+struct request_headers {
+    void add_header(boost::beast::http::field field, ss::sstring value) {
+        headers.insert_or_assign(field, std::move(value));
+    }
+
+    // Adds the `If-None-Match` header.
+    void add_if_none_match(ss::sstring etag) {
+        add_header(boost::beast::http::field::if_none_match, std::move(etag));
+    }
+
+    // Adds the `If-Match` header.
+    void add_if_match(ss::sstring etag) {
+        add_header(boost::beast::http::field::if_match, std::move(etag));
+    }
+
+    cloud_storage_clients::header_map_t headers;
+};
+
 struct upload_request {
     cloud_io::transfer_details transfer_details;
     upload_type type;
     iobuf payload;
     bool accept_no_content_response{false};
+    request_headers headers;
+    ss::sstring* etag{nullptr};
+
+    // Sets the `If-None-Match` header in the HTTP request with the provided
+    // ETag. This header is useful for guaranteeing atomic uploads to cloud
+    // storage.
+    //
+    // GCS, ABS and S3 all support the wildcard '*' character in place of a
+    // specific ETag. A request made with this header that fails due to an
+    // existing resource in cloud storage returns a varying error code
+    // depending on the cloud provider:
+    // S3:  Returns with either a 412 PreconditionFailed or 409
+    //      ConditionalRequestConflict error. The 409 error should be
+    //      considered retriable.
+    // ABS: Return with a 412 PreconditionFailed error.
+    // GCS: Return with a 412 PreconditionFailed error.
+    //
+    // Sources:
+    // https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations#write-operations
+    // https://cloud.google.com/storage/docs/xml-api/reference-headers#ifnonematch
+    void set_upload_if_not_exists(ss::sstring etag = "*") {
+        headers.add_if_none_match(std::move(etag));
+    }
 };
 
 struct download_request {
@@ -435,6 +479,28 @@ struct download_request {
     download_type type;
     iobuf& payload;
     bool expect_missing{false};
+    request_headers headers;
+
+    // Sets the `If-Match` header in the HTTP request.
+    // This header is useful for guaranteeing atomic downloads from cloud
+    // storage.
+    //
+    // The ETag from the originally uploaded resource is required here.
+    // A request made with this header that fails due to a differing ETag for
+    // the resource in cloud storage returns the following error codes per the
+    // cloud provider:
+    //
+    // S3:  Return with a 412 PreconditionFailed error.
+    // ABS: Return with a 412 PreconditionFailed error.
+    // GCS: Return with a 412 PreconditionFailed error.
+    //
+    // Sources:
+    // https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-reads.html
+    // https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations#read-operations
+    // https://cloud.google.com/storage/docs/xml-api/reference-headers#ifmatch
+    void set_download_if_matches(ss::sstring etag) {
+        headers.add_if_match(std::move(etag));
+    }
 };
 
 } // namespace cloud_storage
