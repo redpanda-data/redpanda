@@ -295,7 +295,7 @@ health_monitor_backend::get_cluster_health(
 }
 
 ss::future<storage::disk_space_alert>
-health_monitor_backend::get_cluster_disk_health(
+health_monitor_backend::get_cluster_data_disk_health(
   force_refresh refresh, model::timeout_clock::time_point deadline) {
     auto ec = co_await maybe_refresh_cluster_health(refresh, deadline);
     if (ec) {
@@ -308,7 +308,7 @@ health_monitor_backend::get_cluster_disk_health(
         // operate, I guess.
         co_return storage::disk_space_alert::ok;
     }
-    co_return _reports_disk_health;
+    co_return _reports_data_disk_health;
 }
 
 ss::future<std::error_code>
@@ -444,8 +444,8 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
 
     auto old_reports = std::exchange(_reports, {});
 
-    // update nodes reports and cache cluster-level disk health
-    storage::disk_space_alert cluster_disk_health
+    // update nodes reports and cache cluster-level data disk health
+    storage::disk_space_alert cluster_data_disk_health
       = storage::disk_space_alert::ok;
     for (auto& r : reports) {
         if (r) {
@@ -471,14 +471,14 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
             for (auto& cb : _node_callbacks) {
                 cb.second(r.value(), old_report);
             }
-            cluster_disk_health = storage::max_severity(
-              r.value().local_state.get_disk_alert(), cluster_disk_health);
+            cluster_data_disk_health = storage::max_severity(
+              r.value().local_state.data_disk.alert, cluster_data_disk_health);
 
             _reports.emplace(
               id, ss::make_lw_shared<node_health_report>(std::move(r.value())));
         }
     }
-    _reports_disk_health = cluster_disk_health;
+    _reports_data_disk_health = cluster_data_disk_health;
 
     if (config::shard_local_cfg().enable_usage()) {
         vlog(clusterlog.info, "collecting cloud health statistics");

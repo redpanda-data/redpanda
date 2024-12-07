@@ -149,7 +149,7 @@ std::vector<model::node_id> metadata_cache::node_ids() const {
 }
 
 bool metadata_cache::should_reject_writes() const {
-    return _health_monitor.local().get_cluster_disk_health()
+    return _health_monitor.local().get_cluster_data_disk_health()
            == storage::disk_space_alert::degraded;
 }
 
