@@ -15,6 +15,8 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
+#include "storage/compacted_index.h"
+#include "storage/compaction.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
@@ -22,6 +24,7 @@
 #include "storage/segment_utils.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 
 #include <absl/algorithm/container.h>
 #include <boost/range/irange.hpp>
@@ -431,6 +434,40 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
         }
     }
     co_return co_await _delegate(std::move(b));
+}
+
+ss::future<ss::stop_iteration>
+chunked_compaction_reducer::operator()(model::record_batch batch) {
+    bool fully_indexed_batch = true;
+    auto b = co_await decompress_batch(std::move(batch));
+    co_await b.for_each_record_async(
+      [this,
+       &fully_indexed_batch,
+       base_offset = b.base_offset(),
+       type = b.header().type,
+       is_control = b.header().attrs.is_control()](
+        model::record r) -> ss::future<ss::stop_iteration> {
+          auto offset = base_offset + model::offset_delta(r.offset_delta());
+          if (offset < _start_offset) {
+              return ss::make_ready_future<ss::stop_iteration>(
+                ss::stop_iteration::no);
+          }
+          auto key_view = iobuf_to_bytes(r.key());
+          auto key = enhance_key(type, is_control, key_view);
+          return _map->put(key, offset)
+            .then([&fully_indexed_batch](bool success) -> ss::stop_iteration {
+                if (success) {
+                    return ss::stop_iteration::no;
+                }
+                fully_indexed_batch = false;
+                return ss::stop_iteration::yes;
+            });
+      });
+
+    if (fully_indexed_batch) {
+        co_return ss::stop_iteration::no;
+    }
+    co_return ss::stop_iteration::yes;
 }
 
 } // namespace storage::internal
