@@ -1,4 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@bazel_skylib//rules:select_file.bzl", "select_file")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 
 # Make this build faster by setting `build --@openssl//:build_jobs=16` in user.bazelrc
@@ -55,11 +57,37 @@ configure_make(
         "OPENSSL_BUILD_JOBS": "$(BUILD_JOBS)",
     },
     lib_source = ":srcs",
+    out_binaries = [
+        "openssl",
+    ],
     out_shared_libs = [
         "libssl.so.3",
         "libcrypto.so.3",
     ],
     toolchains = [":build_jobs"],
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+filegroup(
+    name = "gen_dir",
+    srcs = [":openssl"],
+    output_group = "gen_dir",
+)
+
+select_file(
+    name = "openssl_exe_file",
+    srcs = ":openssl",
+    subpath = "bin/openssl",
+)
+
+copy_file(
+    name = "openssl_exe",
+    src = ":openssl_exe_file",
+    out = "openssl.exe",
+    allow_symlink = True,
+    is_executable = True,
     visibility = [
         "//visibility:public",
     ],
