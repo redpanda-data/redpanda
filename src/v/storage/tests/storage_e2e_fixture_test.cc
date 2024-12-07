@@ -15,6 +15,7 @@
 #include "storage/tests/storage_e2e_fixture.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
 
@@ -24,6 +25,16 @@
 #include <vector>
 
 using namespace std::chrono_literals;
+
+namespace {
+ss::future<> force_roll_log(storage::disk_log_impl* log) {
+    try {
+        co_await log->force_roll(ss::default_priority_class());
+    } catch (...) {
+    }
+}
+
+} // namespace
 
 FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     test_local_cfg.get("log_segment_ms_min")
@@ -154,4 +165,32 @@ FIXTURE_TEST(test_concurrent_log_eviction_and_append, storage_e2e_fixture) {
     // log_eviction_stm may have removed the active segment after we finished
     // final round of eviction.
     BOOST_REQUIRE_LE(log->segment_count(), 1);
+}
+
+FIXTURE_TEST(test_concurrent_segment_roll_and_close, storage_e2e_fixture) {
+    const auto topic_name = model::topic("tapioca");
+    const auto ntp = model::ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp);
+    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+    auto seg = log->segments().back();
+
+    // Hold a read lock, which will force release_appender() to go through
+    // release_appender_in_background()
+    auto read_lock_holder = seg->read_lock().get();
+
+    auto roll_fut = force_roll_log(log);
+    auto release_holder_fut = ss::sleep(100ms).then(
+      [read_locker_holder = std::move(read_lock_holder)] {});
+    auto remove_segment_fut = remove_segment_permanently(log, seg);
+
+    ss::when_all(
+      std::move(roll_fut),
+      std::move(remove_segment_fut),
+      std::move(release_holder_fut))
+      .get();
 }
