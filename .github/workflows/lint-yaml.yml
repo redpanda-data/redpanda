@@ -12,7 +12,7 @@ on:
       - '.github/workflows/*.yml'
 jobs:
   yamllint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - run: yamllint -f github .yamllint .github/workflows/*.yml
