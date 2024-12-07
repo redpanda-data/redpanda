@@ -10,6 +10,7 @@
 
 #include "cluster/partition_recovery_manager.h"
 
+#include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest_downloader.h"
@@ -45,6 +46,7 @@
 
 #include <chrono>
 #include <exception>
+#include <string>
 #include <variant>
 
 namespace cloud_storage {
@@ -317,12 +319,14 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       retention);
     auto mat = co_await find_recovery_material();
     if (cst_log.is_enabled(ss::log_level::debug)) {
-        std::stringstream ostr;
-        mat.partition_manifest.serialize_json(ostr);
-        vlog(
-          _ctxlog.debug,
-          "Partition manifest used for recovery: {}",
-          ostr.str());
+        iobuf buf;
+        auto ostr = make_iobuf_ref_output_stream(buf);
+        co_await mat.partition_manifest.serialize_json(ostr);
+        auto istr = make_iobuf_input_stream(std::move(buf));
+        auto truncated = co_await istr.read_exactly(
+          details::io_allocation_size::max_chunk_size);
+        auto view = std::string_view(truncated.get(), truncated.size());
+        vlog(_ctxlog.debug, "Partition manifest used for recovery: {}", view);
     }
     if (mat.partition_manifest.size() == 0) {
         // If the downloaded manifest doesn't have any segments
