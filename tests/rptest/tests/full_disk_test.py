@@ -147,7 +147,7 @@ class WriteRejectTest(RedpandaTest):
             # Looking for a log statement about a change in disk space.
             # This is a check for the health monitor frontend because
             # that structure logs disk space alerts.
-            pattern = f"Update disk health cache {disk_space_change}"
+            pattern = f"Update data disk health cache {disk_space_change}"
             wait_until(
                 lambda: self.redpanda.search_log_any(pattern),
                 timeout_sec=5,
