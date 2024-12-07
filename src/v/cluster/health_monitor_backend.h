@@ -65,7 +65,7 @@ public:
     ss::future<result<cluster_health_report>> get_cluster_health(
       cluster_report_filter, force_refresh, model::timeout_clock::time_point);
 
-    ss::future<storage::disk_space_alert> get_cluster_disk_health(
+    ss::future<storage::disk_space_alert> get_cluster_data_disk_health(
       force_refresh refresh, model::timeout_clock::time_point deadline);
 
     ss::future<result<node_health_report>> collect_current_node_health();
@@ -182,7 +182,7 @@ private:
 
     status_cache_t _status;
     report_cache_t _reports;
-    storage::disk_space_alert _reports_disk_health
+    storage::disk_space_alert _reports_data_disk_health
       = storage::disk_space_alert::ok;
     std::optional<size_t> _bytes_in_cloud_storage;
 
