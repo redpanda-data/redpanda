@@ -10,10 +10,12 @@
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
-#include "redpanda/tests/fixture.h"
+#include "storage/disk_log_impl.h"
+#include "storage/segment.h"
+#include "storage/tests/storage_e2e_fixture.h"
 #include "test_utils/fixture.h"
-#include "test_utils/scoped_config.h"
 
+#include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -22,29 +24,6 @@
 #include <vector>
 
 using namespace std::chrono_literals;
-
-struct storage_e2e_fixture : public redpanda_thread_fixture {
-    scoped_config test_local_cfg;
-};
-
-namespace {
-
-// Produces to the given fixture's partition for 10 seconds.
-ss::future<> produce_to_fixture(
-  storage_e2e_fixture* fix, model::topic topic_name, int* incomplete) {
-    tests::kafka_produce_transport producer(co_await fix->make_kafka_client());
-    co_await producer.start();
-    const int cardinality = 10;
-    auto now = ss::lowres_clock::now();
-    while (ss::lowres_clock::now() < now + 5s) {
-        for (int i = 0; i < cardinality; i++) {
-            co_await producer.produce_to_partition(
-              topic_name, model::partition_id(0), tests::kv_t::sequence(i, 1));
-        }
-    }
-    *incomplete -= 1;
-}
-} // namespace
 
 FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     test_local_cfg.get("log_segment_ms_min")
@@ -69,7 +48,7 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     produces.reserve(5);
     int incomplete = 5;
     for (int i = 0; i < 5; i++) {
-        auto fut = produce_to_fixture(this, topic_name, &incomplete);
+        auto fut = produce_to_fixture(topic_name, &incomplete);
         produces.emplace_back(std::move(fut));
     }
     auto partition = app.partition_manager.local().get(ntp);
