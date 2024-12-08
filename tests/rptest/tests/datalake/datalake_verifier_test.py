@@ -40,27 +40,6 @@ class DatalakeVerifierTest(RedpandaTest):
             },
             schema_registry_config=SchemaRegistryConfig())
 
-    def simple_stream(self, topic, subject):
-        return {
-            "input": {
-                "generate": {
-                    "mapping": "root = counter()",
-                    "interval": "",
-                    "count": 100,
-                    "batch_size": 1
-                }
-            },
-            "pipeline": {
-                "processors": []
-            },
-            "output": {
-                "redpanda": {
-                    "seed_brokers": self.redpanda.brokers_list(),
-                    "topic": topic,
-                }
-            }
-        }
-
     def setUp(self):
         pass
 
@@ -70,15 +49,9 @@ class DatalakeVerifierTest(RedpandaTest):
                                         partitions=1,
                                         replicas=1,
                                         iceberg_mode="key_value")
-
-        connect = RedpandaConnectService(self.test_context, self.redpanda)
-        connect.start()
-        # create a stream
-        connect.start_stream(name="ducky_stream",
-                             config=self.simple_stream(topic_name,
-                                                       "verifier_schema"))
+        connect = dl.start_counter_stream(topic=topic_name)
         dl.wait_for_translation(topic_name, 100)
-        connect.wait_for_stream_to_finish("ducky_stream")
+        connect.stop_stream("ducky_stream")
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types())

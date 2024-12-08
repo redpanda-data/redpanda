@@ -18,6 +18,7 @@ from ducktape.tests.test import TestContext
 import requests
 from rptest.services.redpanda import RedpandaService
 from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
 
 from ducktape.cluster.cluster import ClusterNode
 
@@ -119,25 +120,35 @@ logger:
     def remove_stream(self, name: str):
         self._request("DELETE", f"streams/{name}")
 
-    def wait_for_stream_to_finish(self,
-                                  name: str,
-                                  timeout_sec=60,
-                                  remove=True):
+    def stream_metrics(self, name: str):
+        metrics_resp = self._request("GET", "metrics")
+        assert metrics_resp.status_code == 200
+        families = text_string_to_metric_families(metrics_resp.text)
+        metrics = dict()
+        for family in families:
+            for sample in family.samples:
+                if sample.labels.get('stream') == name:
+                    family_metrics = metrics.get(family.name, [])
+                    family_metrics.append(sample)
+                    metrics[family.name] = family_metrics
+        return metrics
+
+    def stop_stream(self, name: str, wait_to_finish=True, timeout_sec=60):
         """
-        Waits for all streams to finish and then removes the stream
+        Optionally waits for the stream to finish and then removes the stream
         """
         def _finished():
             streams = self._request("GET", f"streams").json()
             return name not in streams or streams[name]["active"] == False
 
-        wait_until(_finished,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=0.5,
-                   err_msg=f"Timeout waiting for {name} stream to finish",
-                   retry_on_exc=True)
+        if wait_to_finish:
+            wait_until(_finished,
+                       timeout_sec=timeout_sec,
+                       backoff_sec=0.5,
+                       err_msg=f"Timeout waiting for {name} stream to finish",
+                       retry_on_exc=True)
 
-        if remove:
-            self.remove_stream(name)
+        self.remove_stream(name)
 
     def _request(self, method, endpoint, **kwargs):
         self.logger.debug(f"Executing request {method} {self.url}/{endpoint}")

@@ -100,7 +100,7 @@ class RedpandaConnectTest(RedpandaTest):
                                  "test"))
 
         # wait for the stream to finish
-        connect.wait_for_stream_to_finish(name="ducky_stream")
+        connect.stop_stream(name="ducky_stream")
         connect.wait()
 
         # check if the messages are in the topic

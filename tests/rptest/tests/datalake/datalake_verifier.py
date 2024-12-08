@@ -85,9 +85,10 @@ class DatalakeVerifier():
 
             with self._lock:
                 self._total_msgs_cnt += 1
-                self.logger.debug(
-                    f"Consumed message partition: {msg.partition()} at offset {msg.offset()}"
-                )
+                if self._total_msgs_cnt % 100 == 0:
+                    self.logger.debug(
+                        f"Consumed message partition: {msg.partition()} at offset {msg.offset()}"
+                    )
                 self._consumed_messages[msg.partition()].append(msg)
                 if len(self._errors) > 0:
                     return
