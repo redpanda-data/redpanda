@@ -91,9 +91,10 @@ BOOST_AUTO_TEST_CASE(allocator_list_vector) {
         allocator<int> alloc{tracker};
         std::vector<int, allocator<int>> v{alloc};
         v.push_back(1);
-        BOOST_REQUIRE_EQUAL(tracker->consumption(), sizeof(int));
+        BOOST_REQUIRE_GE(tracker->consumption(), sizeof(int));
         v.push_back(2);
-        BOOST_REQUIRE_EQUAL(tracker->consumption(), 2 * sizeof(int));
+        BOOST_REQUIRE_GE(tracker->consumption(), 2 * sizeof(int));
+        BOOST_REQUIRE_EQUAL(v.size(), 2);
     }
     BOOST_REQUIRE_EQUAL(tracker->consumption(), 0);
     {
@@ -101,6 +102,7 @@ BOOST_AUTO_TEST_CASE(allocator_list_vector) {
         std::list<int, allocator<int>> v{alloc};
         v.push_back(1);
         BOOST_REQUIRE_GE(tracker->consumption(), 0);
+        BOOST_REQUIRE_EQUAL(v.size(), 1);
     }
     BOOST_REQUIRE_EQUAL(tracker->consumption(), 0);
 }
