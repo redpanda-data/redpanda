@@ -61,8 +61,23 @@ redpanda_test_cc_library(
     include_prefix = "test_utils",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/test_utils:fixture",
+        ":boost_result_redirect",
+        ":fixture",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "boost_result_redirect",
+    srcs = [
+        "boost_result_redirect.cc",
+    ],
+    include_prefix = "test_utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@boost//:config",
+        "@boost//:core",
+        "@boost//:test",
     ],
 )
 
