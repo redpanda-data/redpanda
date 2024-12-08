@@ -20,8 +20,10 @@
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/schema_getter.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -111,12 +113,6 @@ constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
 // info, etc)
 using json_id_uri = named_type<ss::sstring, struct json_id_uri_tag>;
 
-// mapping of $id to jsonpointer to the parent object
-// it contains at least the root $id for doc. If the root $id is not
-// present, then the default value "" is used
-using id_to_schema_pointer = absl::
-  flat_hash_map<json_id_uri, std::pair<json::Pointer, json_schema_dialect>>;
-
 json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
     // ensure that only scheme, host and path are used
     return json_id_uri{
@@ -124,11 +120,96 @@ json_id_uri to_json_id_uri(const jsoncons::uri& uri) {
         .string()};
 }
 
-struct document_context {
-    json::Document doc;
+// use ext_name as the path of a uri with a predefined host. this integrates
+// neatly when using this as a base uri for relative refs. example: base_uri
+// https://schema-registry.com/an.external.schema + $ref:
+// another.external.schema ->
+// https://schema-registry.com/another.external.schema
+jsoncons::uri uri_for_external_name(std::string_view ext_name) {
+    return jsoncons::uri{
+      "https", "", "schema-registry.com", "", ext_name, "", ""};
+}
+
+// helper to parse a json pointer with rapidjson. throws if there is an error
+// parsing it
+json::Pointer to_json_pointer(std::string_view sv) {
+    auto candidate = json::Pointer{sv.data(), sv.size()};
+    if (auto ec = candidate.GetParseErrorCode();
+        ec != rapidjson::kPointerParseErrorNone) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "invalid fragment '{}' error {} at {}",
+            sv,
+            ec,
+            candidate.GetParseErrorOffset())});
+    }
+
+    return candidate;
+}
+
+json::Pointer to_json_pointer(const jsoncons::jsonpointer::json_pointer& jp) {
+    return to_json_pointer(jp.to_string());
+}
+
+// helper to convert a jsoncons::ojson to a rapidjson::Document
+json::Document to_json_document(const jsoncons::ojson& oj) {
+    // serialize the input in a iobuf and parse it again
+    auto iobuf_os = iobuf_ostream{};
+    oj.dump(iobuf_os.ostream());
+    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
+    auto json = json::Document{};
+    if (json.ParseStream(schema_stream).HasParseError()) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "Malformed json: {} at offset {}",
+            rapidjson::GetParseError_En(json.GetParseError()),
+            json.GetErrorOffset())});
+    }
+    return json;
+}
+
+// document_context contains the json document, the dialect, an index to resolve
+// $ref and the external schemas
+template<typename JDocT, typename JPtrT>
+struct document_context_base {
+    struct external_ptr {
+        json_id_uri external_schema_name;
+        JPtrT ptr;
+    };
+
+    struct local_ptr {
+        JPtrT ptr;
+        json_schema_dialect dialect;
+    };
+
+    struct external_document_ctx {
+        JDocT doc;
+        json_schema_dialect dialect;
+    };
+
+    using schemas_index_t
+      = absl::flat_hash_map<json_id_uri, std::variant<local_ptr, external_ptr>>;
+    using local_schemas_index_t = absl::flat_hash_map<json_id_uri, local_ptr>;
+    using external_schemas_map_t
+      = absl::flat_hash_map<json_id_uri, external_document_ctx>;
+
+    // root schema
+    JDocT doc;
     json_schema_dialect dialect;
-    id_to_schema_pointer bundled_schemas;
+    // mapping of ($id|external_schema) -> (local_ptr|external_ptr).
+    // local_ptr resolves against `doc`, external_ptr resolves against one value
+    // in `external_schema`. it contains at least the root $id for doc. If the
+    // root $id is not present, then the default value "" is used
+    schemas_index_t schemas_index;
+    // store for the external schemas )
+    external_schemas_map_t external_schemas;
 };
+
+using document_context = document_context_base<json::Document, json::Pointer>;
+using document_context_jsoncons
+  = document_context_base<jsoncons::ojson, jsoncons::jsonpointer::json_pointer>;
 
 // Passed into is_superset_* methods where the path and the generated verbose
 // incompatibilities don't matter, only whether they are compatible or not
@@ -263,6 +344,41 @@ struct pjp {
     }
 };
 
+// helper to resolve a pointer in a json object. throws if the object can't be
+// retrieved
+const json::Value&
+resolve_pointer(const json::Pointer& p, const json::Value& root) {
+    auto unresolved_token = size_t{0};
+    auto* value = p.Get(root, &unresolved_token);
+    if (value == nullptr) {
+        throw as_exception(error_info{
+          error_code::schema_invalid,
+          fmt::format(
+            "object not found for pointer '{}' unresolved token at index "
+            "{}",
+            pjp{p},
+            unresolved_token)});
+    }
+
+    return *value;
+}
+
+// Extracts the last token of a uri path and returns it as a json_id_uri.
+// Example: https://example.com/some/path -> path.
+// This is useful to check if the input is an external reference, because
+// collect_bundled_schemas_and_fix_refs eagerly resolves refs to the base_uri of
+// the current schema, so external refs end up looking like refs to a bundled
+// schema.
+std::optional<json_id_uri>
+extract_external_schema_name(const jsoncons::uri& maybe_external) {
+    auto path = jsoncons::jsonpointer::json_pointer{maybe_external.path()};
+    if (path.empty()) {
+        return std::nullopt;
+    }
+
+    return to_json_id_uri(uri_for_external_name(*(--path.end())));
+}
+
 class schema_context {
 public:
     explicit schema_context(const json_schema_definition::impl& schema)
@@ -271,13 +387,69 @@ public:
     json_schema_dialect dialect() const { return _schema.ctx.dialect; }
     const json::Value& doc() const { return _schema.ctx.doc; }
 
-    const id_to_schema_pointer::mapped_type*
-    find_bundled(const json_id_uri id) const {
-        auto it = _schema.ctx.bundled_schemas.find(id);
-        if (it == _schema.ctx.bundled_schemas.end()) {
-            return nullptr;
-        }
-        return &(it->second);
+    // resolves a reference to a json object. throws if the reference can't be
+    // resolved. supports local, bundled and external references
+    std::pair<json::Value::ConstObject, json_schema_dialect>
+    resolve_reference(const jsoncons::uri& uri) const {
+        fmt::print(
+          "--uri: {} h:{} p:{} f:{}\n",
+          uri.string(),
+          uri.host(),
+          uri.path(),
+          uri.fragment());
+        // try to find the referenced schema, either a bundled or an external
+        auto [id_uri, reference_mapping] = [&] {
+            // try to process uri as a bundled schema
+            auto bundled_uri = to_json_id_uri(uri);
+            auto it = _schema.ctx.schemas_index.find(bundled_uri);
+            if (it != _schema.ctx.schemas_index.end()) {
+                return std::pair{bundled_uri, it->second};
+            }
+            // try to process uri as an external schema
+            auto maybe_external_uri = extract_external_schema_name(uri);
+            if (maybe_external_uri.has_value()) {
+                auto ext_it = _schema.ctx.schemas_index.find(
+                  maybe_external_uri.value());
+                if (ext_it != _schema.ctx.schemas_index.end()) {
+                    return std::pair{
+                      maybe_external_uri.value(), ext_it->second};
+                }
+            }
+
+            throw as_exception(error_info{
+              error_code::schema_invalid,
+              fmt::format(
+                "schema pointer not found for uri '{}'", uri.string())});
+        }();
+
+        // step 1: get the schema object
+        const auto& [doc, ptr, dialect] = ss::visit(
+          reference_mapping,
+          [&](const document_context::local_ptr& lp) {
+              // bundled schema, return the root doc and the ptr
+              return std::tie(_schema.ctx.doc, lp.ptr, lp.dialect);
+          },
+          [&](const document_context::external_ptr& ep) {
+              // external schema, get the external doc and return the ptr into
+              // it
+              auto external_it = _schema.ctx.external_schemas.find(
+                ep.external_schema_name);
+              if (external_it == _schema.ctx.external_schemas.end()) {
+                  throw as_exception(error_info{
+                    error_code::schema_invalid,
+                    fmt::format(
+                      "external schema pointer not found for uri '{}'",
+                      id_uri)});
+              }
+              return std::tie(
+                external_it->second.doc, ep.ptr, external_it->second.dialect);
+          });
+
+        // step 2: get the referenced object inside the schema
+        const auto& schema = resolve_pointer(ptr, doc);
+        return {
+          resolve_pointer(to_json_pointer(uri.fragment()), schema).GetObject(),
+          dialect};
     }
 
     int remaining_ref_units() const { return _ref_units; }
@@ -388,10 +560,38 @@ try_validate_json_schema(const jsoncons::ojson& schema) {
 }
 
 // forward declaration
-result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
-  jsoncons::ojson& doc, json_schema_dialect dialect);
+using assume_unknown_ref_is_external
+  = ss::bool_class<struct assume_uref_is_external_tag>;
 
-result<document_context> parse_json(iobuf buf) {
+result<document_context_jsoncons::local_schemas_index_t>
+collect_bundled_schemas_and_fix_refs(
+  jsoncons::ojson& doc,
+  json_schema_dialect dialect,
+  const canonical_schema_definition::references& refs,
+  const std::optional<jsoncons::uri>& default_id,
+  assume_unknown_ref_is_external assume_is_external);
+
+// parse a iobuf into a valid json schema and supporting maps to resolve $ref to
+// json objects.
+// 1. buf is parsed as a json, then it's validated to ensure it's a valid json
+// schema.
+// 2. all the local $ref and $id are made absolute, and all the bundled schemas
+// are validated and collected. 2.a if the root schema does not have an $id,
+// then default_id is used as the root $id. this is done for external schemas,
+// to ensure that relative refs inside them are resolved correctly.
+// 3. all the external refs are resolved and collected.
+// 3.a for each external ref, the schema is recursively parsed (ref name is used
+// as a default_id), it's bundled schema are transformed and stored in the
+// index. then the external schema is stored in the external_schemas map. The
+// result is a the json object for the input, the json objects for all the
+// direct and indirect external schemas, and the maps to perform $ref
+// resolution, as performed in the function resolve_reference().
+ss::future<document_context_jsoncons> parse_jsoncons(
+  schema_getter& store,
+  iobuf buf,
+  std::optional<jsoncons::uri> default_id,
+  canonical_schema_definition::references refs,
+  assume_unknown_ref_is_external unknown_ref_action) {
     // parse string in json document, check it's a valid json
     iobuf_istream is{buf.share(0, buf.size_bytes())};
 
@@ -401,13 +601,13 @@ result<document_context> parse_json(iobuf buf) {
     reader.read(ec);
     if (ec || !decoder.is_valid()) {
         // not a valid json document, return error
-        return error_info{
+        throw as_exception(error_info{
           error_code::schema_invalid,
           fmt::format(
             "Malformed json schema: {} at line {} column {}",
             ec ? ec.message() : "Invalid document",
             reader.line(),
-            reader.column())};
+            reader.column())});
     }
     auto schema = decoder.get_result();
 
@@ -428,11 +628,11 @@ result<document_context> parse_json(iobuf buf) {
               it->value().is_string() == false || !maybe_dialect.has_value()) {
                 // if present, "$schema" have to be a string, and it has to be
                 // one the implemented dialects. If not, return an error
-                return error_info{
+                throw as_exception(error_info{
                   error_code::schema_invalid,
                   fmt::format(
                     "Unsupported json schema dialect: '{}'",
-                    jsoncons::print(it->value()))};
+                    jsoncons::print(it->value()))});
             }
         }
     }
@@ -440,46 +640,174 @@ result<document_context> parse_json(iobuf buf) {
     // We use jsoncons for validating the schema against the metaschema as
     // currently rapidjson doesn't support validating schemas newer than
     // draft 5.
-    auto validation_res = maybe_dialect.has_value()
-                            ? validate_json_schema(
-                                maybe_dialect.value(), schema)
-                            : try_validate_json_schema(schema);
-    if (validation_res.has_error()) {
-        return validation_res.as_failure();
+    auto dialect
+      = maybe_dialect.has_value()
+          ? validate_json_schema(maybe_dialect.value(), schema).value()
+          : try_validate_json_schema(schema).value();
+
+    // this function will resolve al local ref against their respective
+    // baseuri. if we are currently in the process of parsing a external
+    // schema, default_id will have a value and will be used as a baseuri if
+    // $id is not set. this is done to ensure that relative refs inside the
+    // external schema do not clash with relative refs in the root schema,
+    // if it does not have a base_uri.
+    auto bundled_schemas_map
+      = document_context_jsoncons::local_schemas_index_t{};
+    try {
+        bundled_schemas_map
+          = collect_bundled_schemas_and_fix_refs(
+              schema, dialect, refs, default_id, unknown_ref_action)
+              .value();
+    } catch (...) {
+        fmt::print(
+          "Error in collect_bundled_schemas_and_fix_refs\n{}\n",
+          jsoncons::pretty_print(schema));
+        throw;
     }
-    auto dialect = validation_res.assume_value();
+    auto schemas_index = document_context_jsoncons::schemas_index_t{
+      std::move_iterator(bundled_schemas_map.begin()),
+      std::move_iterator(bundled_schemas_map.end())};
 
-    // this function will resolve al local ref against their respective baseuri.
-    auto bundled_schemas_map = collect_bundled_schema_and_fix_refs(
-      schema, dialect);
-    if (bundled_schemas_map.has_error()) {
-        return bundled_schemas_map.as_failure();
+    // now the schema is a valid schema, the $ref are absolute, and the bundled
+    // schemas are collected in schemas_index. proceed to parse the external
+    // refs
+
+    // collect the iobufs for each external schema. all recursive external refs
+    // are collected, there will be no duplicated names
+    auto external_refs = (co_await collect_schema(store, {}, refs)).get();
+    auto external_schemas = document_context_jsoncons::external_schemas_map_t{};
+    for (auto& [ref_name, def] : external_refs) {
+        // build an uri with ref_name as the host
+        auto ref_name_as_uri = uri_for_external_name(ref_name);
+        auto ref_name_as_id_uri = json_id_uri{ref_name_as_uri.string()};
+        // recursive call to parse the external schema. it will have no external
+        // refs but it will have a default_id and all the relative refs will be
+        // resolved against it
+        auto ref_document = co_await parse_jsoncons(
+          store,
+          std::move(def),
+          ref_name_as_uri,
+          {},
+          assume_unknown_ref_is_external::yes);
+
+        for (auto& [uri, subschema_ptr] : ref_document.schemas_index) {
+            auto* local_subschema_ptr
+              = std::get_if<document_context_jsoncons::local_ptr>(
+                &subschema_ptr);
+            if (!local_subschema_ptr) {
+                // this is not expected: we didn't provide any
+                // external refs to parse_jsoncons, so the only possible value
+                // is a local_ptr type
+                throw as_exception(error_info{
+                  error_code::schema_invalid,
+                  fmt::format(
+                    "External schema '{}' contains a reference to another "
+                    "external schema '{}'",
+                    ref_name,
+                    uri)});
+            }
+            // convert and save local_ptr to an external_ptr
+            if (!schemas_index
+                   .emplace(
+                     uri,
+                     document_context_jsoncons::external_ptr{
+                       .external_schema_name = ref_name_as_id_uri,
+                       .ptr = std::move(local_subschema_ptr->ptr),
+                     })
+                   .second) {
+                // collect_schema should have ensured that there are no
+                // duplicated external schemas, so this means that the root
+                // schema already contains an index entry for a bundled schema
+                // inside the current external schema
+                throw as_exception(error_info{
+                  error_code::schema_invalid,
+                  fmt::format(
+                    "Non-unique bundled schema id '{}' in external schema '{}'",
+                    uri,
+                    ref_name)});
+            }
+        }
+        // all bundled schemas are saved in the index. add an entry for the
+        // external schema itself, to resolve `"$ref": "ref_name_as_uri"` note:
+        // this key-value already exist if the external schema has no $id
+        schemas_index.emplace(
+          ref_name_as_id_uri,
+          document_context_jsoncons::external_ptr{
+            .external_schema_name = ref_name_as_id_uri,
+            .ptr = {},
+          });
+        // store the external schema
+        external_schemas.emplace(
+          ref_name_as_id_uri,
+          document_context_jsoncons::external_document_ctx{
+            .doc = std::move(ref_document.doc),
+            .dialect = ref_document.dialect,
+          });
     }
 
-    // to use rapidjson we need to serialized schema again
-    // We take a copy of the jsoncons schema here because it has the fixed-up
-    // references that we want to use for compatibility checks
-    auto iobuf_os = iobuf_ostream{};
-    schema.dump(iobuf_os.ostream());
+    co_return document_context_jsoncons{
+      .doc = std::move(schema),
+      .dialect = dialect,
+      .schemas_index = std::move(schemas_index),
+      .external_schemas = std::move(external_schemas),
+    };
+}
 
-    auto schema_stream = json::chunked_input_stream{std::move(iobuf_os).buf()};
-    auto rapidjson_schema = json::Document{};
-    if (rapidjson_schema.ParseStream(schema_stream).HasParseError()) {
-        // not a valid json document, return error
-        // this is unlikely to happen, since we already parsed this stream with
-        // jsoncons, but the possibility of a bug exists
-        return error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "Malformed json schema: {} at offset {}",
-            rapidjson::GetParseError_En(rapidjson_schema.GetParseError()),
-            rapidjson_schema.GetErrorOffset())};
-    }
+// wrapper for parse_jsoncons that perform the conversion from jsoncons::ojson
+// to rapidjson::Document
+ss::future<document_context> parse_json(
+  schema_getter& store,
+  iobuf buf,
+  canonical_schema_definition::references refs = {}) {
+    // we are parsing the root so we don't have a default_id
+    auto doc_ctx = co_await parse_jsoncons(
+      store,
+      std::move(buf),
+      std::nullopt,
+      std::move(refs),
+      assume_unknown_ref_is_external::no);
 
-    return {
-      std::move(rapidjson_schema),
-      dialect,
-      std::move(bundled_schemas_map).assume_value()};
+    // convert external_ptr and local_ptr to rapidjson::Pointer
+    constexpr static auto to_json_ctx_ptr =
+      [](const document_context_jsoncons::schemas_index_t::mapped_type& v) {
+          return ss::visit(
+            v,
+            [](const document_context_jsoncons::local_ptr& lp)
+              -> document_context::schemas_index_t::mapped_type {
+                return document_context::local_ptr{
+                  .ptr = to_json_pointer(lp.ptr), .dialect = lp.dialect};
+            },
+            [](const document_context_jsoncons::external_ptr& ep)
+              -> document_context::schemas_index_t::mapped_type {
+                return document_context::external_ptr{
+                  .external_schema_name = ep.external_schema_name,
+                  .ptr = to_json_pointer(ep.ptr)};
+            });
+      };
+
+    // convert index to rapidjson
+    auto index_view = doc_ctx.schemas_index
+                      | std::views::transform([](auto& p) {
+                            return std::pair{
+                              p.first, to_json_ctx_ptr(p.second)};
+                        })
+                      | std::views::common;
+    // convert external_schemas to rapidjson
+    auto external_view = doc_ctx.external_schemas
+                         | std::views::transform([](auto& p) {
+                               return std::pair{
+                                 p.first,
+                                 document_context::external_document_ctx{
+                                   .doc = to_json_document(p.second.doc),
+                                   .dialect = p.second.dialect}};
+                           })
+                         | std::views::common;
+    co_return document_context{
+      .doc = to_json_document(doc_ctx.doc),
+      .dialect = doc_ctx.dialect,
+      .schemas_index = {index_view.begin(), index_view.end()},
+      .external_schemas = {external_view.begin(), external_view.end()},
+    };
 }
 
 /// is_superset section
@@ -742,43 +1070,6 @@ merge_references(std::span<json::Value::ConstObject> references_objects) {
     return res;
 }
 
-// helper to parse a json pointer with rapidjson. throws if there is an error
-// parsing it
-json::Pointer to_json_pointer(std::string_view sv) {
-    auto candidate = json::Pointer{sv.data(), sv.size()};
-    if (auto ec = candidate.GetParseErrorCode();
-        ec != rapidjson::kPointerParseErrorNone) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "invalid fragment '{}' error {} at {}",
-            sv,
-            ec,
-            candidate.GetParseErrorOffset())});
-    }
-
-    return candidate;
-}
-
-// helper to resolve a pointer in a json object. throws if the object can't be
-// retrieved
-const json::Value&
-resolve_pointer(const json::Pointer& p, const json::Value& root) {
-    auto unresolved_token = size_t{0};
-    auto* value = p.Get(root, &unresolved_token);
-    if (value == nullptr) {
-        throw as_exception(error_info{
-          error_code::schema_invalid,
-          fmt::format(
-            "object not found for pointer '{}' unresolved token at index "
-            "{}",
-            pjp{p},
-            unresolved_token)});
-    }
-
-    return *value;
-}
-
 // iteratively resolve a reference, following the $ref field until the end or
 // the max_allowed_depth is reached. throws if the max depth is reached or if
 // the reference can't be resolved
@@ -789,13 +1080,7 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
         return candidate.GetObject();
     }
 
-    auto get_uri_fragment = [](std::string uri_s) {
-        // split into host and fragment
-        auto uri = jsoncons::uri{uri_s};
-        return std::pair{to_json_id_uri(uri), to_json_pointer(uri.fragment())};
-    };
-
-    auto [id_uri, fragment_p] = get_uri_fragment(ref_it->value.GetString());
+    auto ref_uri = jsoncons::uri{ref_it->value.GetString()};
 
     // store the reference chains here, to merge them later, start with base
     auto references_objects = absl::InlinedVector<json::Value::ConstObject, 4>{
@@ -803,29 +1088,16 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
 
     // resolve the reference:
     while (ctx.consume_ref_units() > 0) {
-        // try to find the bundled schema, get a pointer to it
-        auto* lookup_p = ctx.find_bundled(id_uri);
-        if (lookup_p == nullptr) {
-            // TODO use a better error code
-            throw as_exception(error_info{
-              error_code::schema_invalid,
-              fmt::format("schema pointer not found for uri '{}'", id_uri)});
-        }
-        const auto& [schema_pointer, dialect] = *lookup_p;
-
-        // step 1: get the schema object
-        const auto& schema = resolve_pointer(schema_pointer, ctx.doc());
-        // step 2: get the referenced object inside the schema
-        const auto& referenced_obj = resolve_pointer(fragment_p, schema);
-        // step 2.5: store referenced_obj for merging later
-        references_objects.push_back(referenced_obj.GetObject());
+        // step 1 get the referenced schema
+        auto [referenced_obj, dialect] = ctx.resolve_reference(ref_uri);
+        // step 2: store referenced_obj for merging later
+        references_objects.push_back(referenced_obj);
 
         // step 3: check if the referenced object has a $ref field, and if so
         // resolve it
         if (auto next_ref_it = referenced_obj.FindMember("$ref");
             next_ref_it != referenced_obj.MemberEnd()) {
-            std::tie(id_uri, fragment_p) = get_uri_fragment(
-              next_ref_it->value.GetString());
+            ref_uri = jsoncons::uri{next_ref_it->value.GetString()};
         } else {
             // if this is the final target, return it.
 
@@ -835,14 +1107,16 @@ resolve_reference(schema_context& ctx, const json::Value& candidate) {
             if (dialect != ctx.dialect()) {
                 throw as_exception(error_info{
                   error_code::schema_invalid,
-                  fmt::format("schema dialect mismatch for uri '{}'", id_uri)});
+                  fmt::format(
+                    "schema dialect mismatch for uri '{}'", ref_uri.string())});
             }
 
             return merge_references(references_objects);
         }
     }
-    throw std::runtime_error(fmt::format(
-      "max traversals reached for uri {} '{}'", id_uri, pjp{fragment_p}));
+
+    throw std::runtime_error(
+      fmt::format("max traversals reached for uri '{}'", ref_uri.string()));
 }
 
 // helper to convert a boolean to a schema, and to traverse $refs
@@ -2105,6 +2379,7 @@ json_compatibility_result is_superset(
         return res;
     }
 
+    fmt::print("---path: {}\n", p);
     auto older = get_schema(ctx.older, older_schema);
     auto newer = get_schema(ctx.newer, newer_schema);
 
@@ -2205,8 +2480,74 @@ void sort(json::Value& val) {
     }
 }
 
+struct unresolved_ref {
+    jsoncons::uri base_uri;
+    jsoncons::ojson& reference_value;
+};
+
+result<void> statically_fix_ref(
+  unresolved_ref& uref,
+  const jsoncons::ojson& schema,
+  const document_context_jsoncons::local_schemas_index_t& bundled_schemas,
+  const canonical_schema_definition::references& external_refs,
+  assume_unknown_ref_is_external assume_external) {
+    auto& [base_uri, reference_value] = uref;
+    // try to solve it against a bundled schema
+    auto resolved_uri = jsoncons::uri{reference_value.as_string()}.resolve(
+      base_uri);
+    auto uri_id = to_json_id_uri(resolved_uri);
+    auto uri_fragment = resolved_uri.fragment();
+    auto bundled_schema_it = bundled_schemas.find(uri_id);
+    if (bundled_schema_it != bundled_schemas.end()) {
+        // the reference matches a bundled schema. verify that it points to an
+        // existing object
+        auto ec = std::error_code{};
+        auto target = jsoncons::jsonpointer::get(
+          schema, bundled_schema_it->second.ptr, ec);
+        if (ec) {
+            // points to nothing: error
+            return invalid_schema(fmt::format(
+              "internal reference '{}' points to nothing",
+              resolved_uri.string()));
+        }
+        // points to something: check that's a schema
+        if (!(target.is_bool() || target.is_object())) {
+            // does not point to a schema: error
+            return invalid_schema(fmt::format(
+              "internal reference '{}' points to the non-schema '{}'",
+              resolved_uri.string(),
+              jsoncons::print(target)));
+        }
+        // points to a valid schema: fix the ref to ensure that it's in absolute
+        // form
+        reference_value = resolved_uri.string();
+        return outcome::success();
+    }
+
+    // could not solve it against a bundled schema, try to solve it against an
+    // external schema
+    if (
+      assume_external
+      || std::ranges::find(
+           external_refs,
+           reference_value.as_string_view(),
+           &schema_reference::name)
+           != external_refs.end()) {
+        // the reference matches an external schema. transform the ref to an
+        // absolute uri for external schemas
+        reference_value
+          = uri_for_external_name(reference_value.as_string()).string();
+        return outcome::success();
+    }
+
+    // could not solve it against an external schema either, error
+    return invalid_schema(fmt::format(
+      "reference '{}' points to nothing", reference_value.as_string()));
+}
+
 void collect_bundled_schemas_and_fix_refs(
-  id_to_schema_pointer& bundled_schemas,
+  document_context_jsoncons::local_schemas_index_t& bundled_schemas,
+  std::vector<unresolved_ref>& unresolved_refs,
   jsoncons::uri base_uri,
   jsoncons::jsonpointer::json_pointer this_obj_ptr,
   jsoncons::ojson& this_obj,
@@ -2283,14 +2624,18 @@ void collect_bundled_schemas_and_fix_refs(
               to_uri(maybe_new_dialect.value()))));
         }
 
-        // run validation since we are not a guaranteed to be in proper schema
-        if (auto validation = validate_json_schema(
-              maybe_new_dialect.value(), this_obj);
-            validation.has_error()) {
-            // stop exploring this branch, the schema is invalid
-            throw as_exception(invalid_schema(fmt::format(
-              "bundled schema is invalid. {}",
-              validation.assume_error().message())));
+        // only for non-root objects, since root is already validated:
+        if (!this_obj_ptr.empty()) {
+            // run validation since we are not a guaranteed to be in proper
+            // schema
+            if (auto validation = validate_json_schema(
+                  maybe_new_dialect.value(), this_obj);
+                validation.has_error()) {
+                // stop exploring this branch, the schema is invalid
+                throw as_exception(invalid_schema(fmt::format(
+                  "bundled schema is invalid. {}",
+                  validation.assume_error().message())));
+            }
         }
 
         // base uri keyword agrees with the dialect, it's a validated schema, we
@@ -2298,23 +2643,39 @@ void collect_bundled_schemas_and_fix_refs(
         // (run resolve because it could be relative to the parent schema).
         base_uri = jsoncons::uri{id_it->value().as_string()}.resolve(base_uri);
         dialect = maybe_new_dialect.value();
-        bundled_schemas.insert_or_assign(
-          to_json_id_uri(base_uri),
-          std::pair{json::Pointer{this_obj_ptr.to_string()}, dialect});
+        auto inserted = bundled_schemas
+                          .emplace(
+                            to_json_id_uri(base_uri),
+                            document_context_jsoncons::local_ptr{
+                              .ptr = this_obj_ptr,
+                              .dialect = dialect,
+                            })
+                          .second;
+        if (!this_obj_ptr.empty() && !inserted) {
+            // last check, only for bundled schemas: ensure the $id is unique
+            // for this object the root id might already be in the map, but it's
+            // just an artifact
+            throw as_exception(invalid_schema(fmt::format(
+              "bundled schema with duplicate id '{}' at '{}'",
+              base_uri.string(),
+              this_obj_ptr.string())));
+        }
     }
 
     if (auto ref_it = this_obj.find("$ref");
         ref_it != this_obj.object_range().end()) {
-        // ensure refs are absolute uris
-        ref_it->value() = jsoncons::uri{ref_it->value().as_string()}
-                            .resolve(base_uri)
-                            .string();
+        unresolved_refs.emplace_back(base_uri, ref_it->value());
     }
 
     // lambda to recursively scan the object for more bundled schemas and $refs
     auto collect_and_fix = [&](const auto& key, auto& value) {
         collect_bundled_schemas_and_fix_refs(
-          bundled_schemas, base_uri, this_obj_ptr / key, value, dialect);
+          bundled_schemas,
+          unresolved_refs,
+          base_uri,
+          this_obj_ptr / key,
+          value,
+          dialect);
     };
 
     // recursively scan the object for more bundled schemas and $refs
@@ -2333,54 +2694,82 @@ void collect_bundled_schemas_and_fix_refs(
     }
 }
 
-result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
-  jsoncons::ojson& doc, json_schema_dialect dialect) {
+// scan the `doc` with root `dialect`, collect all bundled schemas and ensure
+// that all the $ref are absolute uris. `default_id` is used as the root id if
+// the schema does not have an explicit $id. this is useful for external
+// schemas, to ensure that their local refs do not conflict with the root
+// schema.
+result<document_context_jsoncons::local_schemas_index_t>
+collect_bundled_schemas_and_fix_refs(
+  jsoncons::ojson& doc,
+  json_schema_dialect dialect,
+  const canonical_schema_definition::references& external_refs,
+  const std::optional<jsoncons::uri>& default_id,
+  assume_unknown_ref_is_external unkown_ref_action) {
     // entry point to collect all bundled schemas
     // fetch the root id, if it exists
     auto root_id = [&] {
         if (!doc.is_object()) {
             // might be the case for "true" or "false" schemas
-            return json_id_uri{""};
+            return default_id.value_or(jsoncons::uri{});
         }
 
         auto id_it = doc.find(
           dialect == json_schema_dialect::draft4 ? "id" : "$id");
         if (id_it == doc.object_range().end()) {
-            // no explicit id, use the empty string
-            return json_id_uri{""};
+            // no explicit id, use the default_id
+            return default_id.value_or(jsoncons::uri{});
         }
 
         // $id is set in the schema, use it as the root id
-        return to_json_id_uri(jsoncons::uri{id_it->value().as_string()});
+        return jsoncons::uri{id_it->value().as_string()};
     }();
 
     // insert the root schema as a bundled schema
-    auto bundled_schemas = id_to_schema_pointer{
-      {root_id, std::pair{json::Pointer{}, dialect}}};
+    auto bundled_schemas = document_context_jsoncons::local_schemas_index_t{
+      {json_id_uri{root_id.string()},
+       document_context_jsoncons::local_ptr{
+         .ptr = {},
+         .dialect = dialect,
+       }},
+    };
 
     if (doc.is_object()) {
+        // extract the refs to fix them after we collect all the bundled schemas
+        auto unresolved_refs = std::vector<unresolved_ref>{};
         // note: current implementation is overly strict and reject any bundled
         // schema that is deemed invalid. this could be relaxed if the invalid
         // schema is not actually accessed by a $ref, but it requires to scan
         // the document in two passes.
         try {
             collect_bundled_schemas_and_fix_refs(
-              bundled_schemas, jsoncons::uri{}, {}, doc, dialect);
+              bundled_schemas, unresolved_refs, root_id, {}, doc, dialect);
         } catch (const exception& e) {
             return error_info(
               static_cast<error_code>(e.code().value()), e.message());
         }
+
+        // try to resolve the refs against the bundled schemas or the  external
+        // refs, return an error if it fails. the function modifies the ref in
+        // place, if it is to a bundled schema
+        for (auto& uref : unresolved_refs) {
+            if (auto r = statically_fix_ref(
+                  uref, doc, bundled_schemas, external_refs, unkown_ref_action);
+                r.has_error()) {
+                return r.error();
+            }
+        }
     }
 
-    return bundled_schemas;
+    return std::move(bundled_schemas);
 }
 
 } // namespace
 
 ss::future<json_schema_definition>
-make_json_schema_definition(schema_getter&, canonical_schema schema) {
-    auto doc
-      = parse_json(schema.def().shared_raw()()).value(); // throws on error
+make_json_schema_definition(schema_getter& store, canonical_schema schema) {
+    auto doc = co_await parse_json(
+      store, schema.def().shared_raw()(), schema.def().refs());
     std::string_view name = schema.sub()();
     auto refs = std::move(schema).def().refs();
     co_return json_schema_definition{
@@ -2393,7 +2782,7 @@ ss::future<canonical_schema> make_canonical_json_schema(
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs] = std::move(unparsed).destructure();
 
-    auto ctx = parse_json(std::move(def)).value(); // throws on error
+    auto ctx = co_await parse_json(store, std::move(def), refs);
     if (norm) {
         sort(ctx.doc);
         std::sort(refs.begin(), refs.end());
