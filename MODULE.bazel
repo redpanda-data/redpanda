@@ -123,7 +123,7 @@ single_version_override(
 # NOTE: We build our toolchains on ubuntu:jammy so you're going to need a distro at least that old.
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
 
-CXX_STANDARD = "c++20"
+CXX_STANDARD = "c++23"
 
 llvm.toolchain(
     name = "llvm_19_toolchain",

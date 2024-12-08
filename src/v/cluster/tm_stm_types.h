@@ -58,7 +58,7 @@ namespace cluster {
  *                 |               |
  *                 +---------------+
  */
-enum tx_status : int32_t {
+enum class tx_status : int32_t {
     /**
      * When transactional id to producer id mapping is added to coordinator it
      * starts in this state

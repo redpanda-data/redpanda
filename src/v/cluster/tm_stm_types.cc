@@ -38,41 +38,41 @@ bool is_state_transition_valid(
      * precursor of the requested one.
      */
     switch (target_status) {
-    case empty:
+    case tx_status::empty:
         // ready is an initial state a transaction can never go back to that
         // state
         return is_one_of(current.status, tx_status::empty);
-    case ongoing:
+    case tx_status::ongoing:
         return is_one_of(current.status, tx_status::empty, tx_status::ongoing);
-    case preparing_commit:
+    case tx_status::preparing_commit:
         return is_one_of(
           current.status,
           tx_status::empty,
           tx_status::ongoing,
           tx_status::preparing_commit);
-    case completed_commit:
+    case tx_status::completed_commit:
         return is_one_of(
           current.status,
           tx_status::preparing_commit,
           tx_status::completed_commit);
-    case preparing_abort:
+    case tx_status::preparing_abort:
         return is_one_of(
           current.status,
           tx_status::empty,
           tx_status::ongoing,
           tx_status::preparing_abort);
-    case preparing_internal_abort:
+    case tx_status::preparing_internal_abort:
         return is_one_of(
           current.status,
           tx_status::ongoing,
           tx_status::preparing_internal_abort);
-    case tombstone:
+    case tx_status::tombstone:
         return is_one_of(
           current.status,
           tx_status::tombstone,
           tx_status::completed_commit,
           tx_status::completed_abort);
-    case completed_abort:
+    case tx_status::completed_abort:
         return is_one_of(
           current.status,
           tx_status::preparing_internal_abort,
@@ -84,7 +84,8 @@ bool is_state_transition_valid(
 }
 
 bool tx_metadata::is_finished() const {
-    return status == completed_commit || status == completed_abort;
+    return status == tx_status::completed_commit
+           || status == tx_status::completed_abort;
 }
 
 std::string_view tx_metadata::get_status() const {
@@ -164,21 +165,21 @@ tx_metadata::try_update_status(tx_status requested) {
 
 std::ostream& operator<<(std::ostream& o, tx_status status) {
     switch (status) {
-    case ongoing:
+    case tx_status::ongoing:
         return o << "ongoing";
-    case preparing_abort:
+    case tx_status::preparing_abort:
         return o << "preparing_abort";
-    case preparing_commit:
+    case tx_status::preparing_commit:
         return o << "preparing_commit";
-    case completed_commit:
+    case tx_status::completed_commit:
         return o << "completed_commit";
-    case preparing_internal_abort:
+    case tx_status::preparing_internal_abort:
         return o << "expired";
-    case empty:
+    case tx_status::empty:
         return o << "empty";
-    case tombstone:
+    case tx_status::tombstone:
         return o << "tombstone";
-    case completed_abort:
+    case tx_status::completed_abort:
         return o << "completed_abort";
     }
 }

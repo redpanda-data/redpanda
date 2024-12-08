@@ -577,9 +577,9 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     }
     vlog(txlog.info, "[tx_id={}] found transaction {} to abort", tx_id, tx);
     switch (tx.status) {
-    case empty:
+    case tx_status::empty:
         [[fallthrough]];
-    case ongoing: {
+    case tx_status::ongoing: {
         vlog(txlog.trace, "[tx_id={}] aborting transaction: {}", tx_id, tx);
         auto killed_tx = co_await stm->update_transaction_status(
           term, tx.id, tx_status::preparing_internal_abort);
@@ -595,22 +595,22 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         }
         co_return try_abort_reply::make_aborted();
     }
-    case preparing_commit:
+    case tx_status::preparing_commit:
         [[fallthrough]];
-    case completed_commit:
+    case tx_status::completed_commit:
         vlog(
           txlog.trace,
           "[tx_id={}] transaction: {} is already committed",
           tx_id,
           tx);
         co_return try_abort_reply::make_committed();
-    case preparing_abort:
+    case tx_status::preparing_abort:
         [[fallthrough]];
-    case preparing_internal_abort:
+    case tx_status::preparing_internal_abort:
         [[fallthrough]];
-    case completed_abort:
+    case tx_status::completed_abort:
         [[fallthrough]];
-    case tombstone:
+    case tx_status::tombstone:
         vlog(
           txlog.trace,
           "[tx_id={}] transaction: {} is already aborted",
@@ -1005,7 +1005,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
 
     switch (tx.status) {
-    case ongoing: {
+    case tx_status::ongoing: {
         vlog(txlog.info, "[tx_id={}] tx is ongoing, aborting", tx_id);
         auto abort_result = co_await do_abort_tm_tx(term, stm, tx, timeout);
         if (!abort_result) {
@@ -1019,10 +1019,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         }
         co_return init_tm_tx_reply{tx::errc::concurrent_transactions};
     }
-    case empty:
-    case tombstone:
-    case completed_commit:
-    case completed_abort: {
+    case tx_status::empty:
+    case tx_status::tombstone:
+    case tx_status::completed_commit:
+    case tx_status::completed_abort: {
         co_return co_await increase_producer_epoch(
           tx.id,
           tx.pid,
@@ -1033,9 +1033,9 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
           transaction_timeout_ms,
           timeout);
     }
-    case preparing_abort:
-    case preparing_internal_abort:
-    case preparing_commit:
+    case tx_status::preparing_abort:
+    case tx_status::preparing_internal_abort:
+    case tx_status::preparing_commit:
         co_return init_tm_tx_reply{tx::errc::concurrent_transactions};
     }
 }

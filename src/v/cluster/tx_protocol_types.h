@@ -224,7 +224,7 @@ struct fetch_tx_reply
       envelope<fetch_tx_reply, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    enum tx_status : int32_t {
+    enum class tx_status : int32_t {
         ongoing,
         preparing,
         prepared,

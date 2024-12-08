@@ -138,7 +138,7 @@ std::ostream& operator<<(std::ostream& o, const fetch_tx_reply& r) {
       r.last_pid,
       r.tx_seq,
       r.timeout_ms.count(),
-      r.status,
+      static_cast<int32_t>(r.status),
       r.partitions,
       r.groups);
     return o;
