@@ -297,37 +297,29 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
 }
 
 void segment::release_appender_in_background(readers_cache* readers_cache) {
-    auto a = std::exchange(_appender, nullptr);
-    auto c = config::shard_local_cfg().release_cache_on_segment_roll()
-               ? std::exchange(_cache, std::nullopt)
-               : std::nullopt;
-    auto i = std::exchange(_compaction_index, std::nullopt);
-    ssx::spawn_with_gate(
-      _gate,
-      [this,
-       readers_cache,
-       a = std::move(a),
-       c = std::move(c),
-       i = std::move(i)]() mutable {
-          return readers_cache
-            ->evict_range(
-              _tracker.get_base_offset(), _tracker.get_dirty_offset())
-            .then(
-              [this, a = std::move(a), c = std::move(c), i = std::move(i)](
-                readers_cache::range_lock_holder readers_cache_lock) mutable {
-                  return ss::do_with(
-                           std::move(readers_cache_lock),
-                           [this](auto&) { return write_lock(); })
-                    .then([this,
-                           a = std::move(a),
-                           c = std::move(c),
-                           i = std::move(i)](ss::rwlock::holder h) mutable {
-                        return do_release_appender(
-                                 std::move(a), std::move(c), std::move(i))
-                          .finally([h = std::move(h)] {});
-                    });
-              });
-      });
+    ssx::spawn_with_gate(_gate, [this, readers_cache]() mutable {
+        auto a = std::exchange(_appender, nullptr);
+        auto c = config::shard_local_cfg().release_cache_on_segment_roll()
+                   ? std::exchange(_cache, std::nullopt)
+                   : std::nullopt;
+        auto i = std::exchange(_compaction_index, std::nullopt);
+
+        return readers_cache
+          ->evict_range(_tracker.get_base_offset(), _tracker.get_dirty_offset())
+          .then([this, a = std::move(a), c = std::move(c), i = std::move(i)](
+                  readers_cache::range_lock_holder readers_cache_lock) mutable {
+              return ss::do_with(
+                       std::move(readers_cache_lock),
+                       [this](auto&) { return write_lock(); })
+                .then(
+                  [this, a = std::move(a), c = std::move(c), i = std::move(i)](
+                    ss::rwlock::holder h) mutable {
+                      return do_release_appender(
+                               std::move(a), std::move(c), std::move(i))
+                        .finally([h = std::move(h)] {});
+                  });
+          });
+    });
 }
 
 ss::future<> segment::flush() {
