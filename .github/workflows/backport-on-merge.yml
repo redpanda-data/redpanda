@@ -9,7 +9,7 @@ env:
   PR_NUMBER: ${{ github.event.number }}
 jobs:
   backport-on-merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       id-token: write
       contents: read

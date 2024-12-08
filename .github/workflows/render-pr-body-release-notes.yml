@@ -14,7 +14,7 @@ on:
 jobs:
   render:
     if: ${{ ! ( github.event.pull_request.user.login == 'vbotbuildovich' && startsWith(github.event.pull_request.title, 'merge') ) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Curl rpchangelog
         run: |

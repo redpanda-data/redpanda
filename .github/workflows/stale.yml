@@ -7,7 +7,7 @@ on:
     - cron: '32 6 * * 1-5'
 jobs:
   stale:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       issues: write
     steps:

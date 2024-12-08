@@ -23,7 +23,7 @@ on:
 jobs:
   cpp:
     name: Lint files with clang-format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

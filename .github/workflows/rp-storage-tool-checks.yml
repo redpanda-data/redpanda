@@ -15,7 +15,7 @@ on:
 jobs:
   check:
     name: Compile check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           args: --manifest-path tools/rp_storage_tool/Cargo.toml
   test:
     name: Unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
