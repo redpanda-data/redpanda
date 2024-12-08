@@ -2431,10 +2431,9 @@ disk_log_impl::make_reader(timequery_config config) {
                     stlog.debug,
                     "Batch timestamps have monotonically increasing "
                     "timestamps; used segment index to find first batch before "
-                    "timestamp {}: offset={} with ts={}",
+                    "timestamp {}: {}",
                     cfg.time,
-                    index_entry->offset,
-                    index_entry->timestamp);
+                    index_entry);
               }
 
               auto offset_within_segment

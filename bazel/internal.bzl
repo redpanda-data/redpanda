@@ -32,5 +32,6 @@ def redpanda_copts():
     # this workaround macro was removed. so we'll need to rewrite the format
     # handling for >1000 types.
     copts.append("-DFMT_DEPRECATED_OSTREAM")
+    copts.append("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
 
     return copts

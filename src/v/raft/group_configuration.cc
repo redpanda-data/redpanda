@@ -926,6 +926,9 @@ void configuration_change_strategy_v4::replace_brokers(
 
 void configuration_change_strategy_v4::finish_configuration_transition() {
     // if there are no nodes to remove there is no need to enter joint consensus
+    if (!_cfg._configuration_update.has_value()) {
+        return;
+    }
     if (_cfg._configuration_update->replicas_to_remove.empty()) {
         _cfg._configuration_update.reset();
         return;
@@ -1158,6 +1161,9 @@ void configuration_change_strategy_v5::replace(
 
 void configuration_change_strategy_v5::finish_configuration_transition() {
     // if there are no nodes to remove there is no need to enter joint consensus
+    if (!_cfg._configuration_update.has_value()) {
+        return;
+    }
     if (_cfg._configuration_update->replicas_to_remove.empty()) {
         _cfg._configuration_update.reset();
         return;
