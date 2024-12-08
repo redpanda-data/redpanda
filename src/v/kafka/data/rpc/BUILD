@@ -2,9 +2,9 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 load("//src/v/rpc:compiler.bzl", "redpanda_cc_rpc_library")
 
 redpanda_cc_rpc_library(
-    name = "transform_rpc",
+    name = "kafka_data_rpc",
     src = "rpc.json",
-    include_prefix = "transform/rpc",
+    include_prefix = "kafka/data/rpc",
 )
 
 redpanda_cc_library(
@@ -20,19 +20,19 @@ redpanda_cc_library(
     hdrs = [
         "client.h",
         "deps.h",
+        "fwd.h",
         "serde.h",
         "service.h",
     ],
-    include_prefix = "transform/rpc",
+    include_prefix = "kafka/data/rpc",
     visibility = ["//visibility:public"],
     deps = [
-        ":transform_rpc",
+        ":kafka_data_rpc",
         "//src/v/base",
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/kafka/data:partition_proxy",
-        "//src/v/kafka/data/rpc",
         "//src/v/model",
         "//src/v/raft",
         "//src/v/resource_mgmt:io_priority",

@@ -34,4 +34,5 @@ v_cc_library(
     v::storage
 )
 
+add_subdirectory(rpc)
 add_subdirectory(test)

@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include "kafka/data/rpc/deps.h"
+#include "kafka/data/rpc/fwd.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/transform.h"
@@ -30,13 +32,9 @@ namespace transform::rpc {
 class local_service {
 public:
     local_service(
-      std::unique_ptr<topic_metadata_cache> metadata_cache,
+      std::unique_ptr<kafka::data::rpc::topic_metadata_cache> metadata_cache,
       std::unique_ptr<partition_manager> partition_manager,
       std::unique_ptr<reporter>);
-
-    ss::future<ss::chunked_fifo<transformed_topic_data_result>> produce(
-      ss::chunked_fifo<transformed_topic_data> topic_data,
-      model::timeout_clock::duration timeout);
 
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     store_wasm_binary(
@@ -74,7 +72,7 @@ private:
       consume_wasm_binary_reader(
         model::record_batch_reader, model::timeout_clock::duration);
 
-    std::unique_ptr<topic_metadata_cache> _metadata_cache;
+    std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _metadata_cache;
     std::unique_ptr<partition_manager> _partition_manager;
     std::unique_ptr<reporter> _reporter;
 };
@@ -90,9 +88,6 @@ public:
       ss::sharded<local_service>* service)
       : impl::transform_rpc_service{sc, ssg}
       , _service(service) {}
-
-    ss::future<produce_reply>
-    produce(produce_request, ::rpc::streaming_context&) override;
 
     ss::future<store_wasm_binary_reply> store_wasm_binary(
       store_wasm_binary_request, ::rpc::streaming_context&) override;
