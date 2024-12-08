@@ -53,7 +53,7 @@ struct tx_manager_read_reply
       : ec(ec) {}
 
     tx_manager_read_reply(
-      fragmented_vector<model::record_batch> batches,
+      chunked_vector<model::record_batch> batches,
       model::offset log_dirty_offset)
       : ec(errc::success)
       , batches(std::move(batches))
@@ -75,7 +75,7 @@ struct tx_manager_read_reply
     auto serde_fields() { return std::tie(ec, batches, log_dirty_offset); }
 
     errc ec;
-    fragmented_vector<model::record_batch> batches;
+    chunked_vector<model::record_batch> batches;
     model::offset log_dirty_offset;
 
     friend bool operator==(
@@ -96,7 +96,7 @@ struct tx_manager_replicate_request
     tx_manager_replicate_request() = default;
 
     tx_manager_replicate_request(
-      model::ntp ntp, fragmented_vector<model::record_batch> batches)
+      model::ntp ntp, chunked_vector<model::record_batch> batches)
       : ntp(std::move(ntp))
       , batches(std::move(batches)) {}
 
@@ -121,7 +121,7 @@ struct tx_manager_replicate_request
     auto serde_fields() { return std::tie(ntp, batches); }
 
     model::ntp ntp;
-    fragmented_vector<model::record_batch> batches;
+    chunked_vector<model::record_batch> batches;
 
     friend bool operator==(
       const tx_manager_replicate_request& lhs,

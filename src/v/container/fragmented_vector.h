@@ -480,6 +480,15 @@ public:
      */
     void erase_to_end(const_iterator begin) { pop_back_n(cend() - begin); }
 
+    template<typename Range>
+    requires std::ranges::range<Range>
+    static fragmented_vector from(Range range) {
+        fragmented_vector ret;
+        ret.reserve(std::ranges::size(range));
+        std::move(range.begin(), range.end(), std::back_inserter(ret));
+        return ret;
+    }
+
     friend std::ostream&
     operator<<(std::ostream& os, const fragmented_vector& v) {
         os << "[";
