@@ -14,7 +14,7 @@ on:
 jobs:
   list-golang:
     name: List Golang Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -44,7 +44,7 @@ jobs:
         run: go list -m github.com/redpanda-data/redpanda/src/transform-sdk/go/transform@${{steps.gotag.outputs.result}}
   publish-rust:
     name: Publish Rust Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       id-token: write
       contents: read
@@ -72,7 +72,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
   publish-javascript:
     name: Publish JavaScript Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       id-token: write
       contents: read
