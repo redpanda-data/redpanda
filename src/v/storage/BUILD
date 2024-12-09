@@ -187,6 +187,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:intrusive",
+        "//src/v/metrics",
         "//src/v/ssx:semaphore",
         "//src/v/utils:named_type",
         "@seastar",
