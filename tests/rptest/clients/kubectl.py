@@ -450,7 +450,7 @@ class KubeNodeShell():
     def __init__(self,
                  kubectl: KubectlTool,
                  node_name: str,
-                 namespace: str = 'redpanda-node-setup',
+                 namespace: str = 'redpanda',
                  clean=False) -> None:
         self.kubectl = kubectl
         self.node_name = node_name
