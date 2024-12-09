@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "metrics/metrics.h"
 #include "ssx/semaphore.h"
 #include "storage/segment_appender_chunk.h"
 
@@ -42,6 +43,7 @@ public:
     ~chunk_cache() noexcept = default;
 
     ss::future<> start();
+    ss::future<> stop();
 
     void add(const chunk_ptr& chunk);
 
@@ -51,6 +53,8 @@ public:
 
 private:
     ss::future<chunk_ptr> do_get();
+    void setup_metrics();
+    ss::future<chunk_cache::chunk_ptr> wait_and_get();
 
     chunk_ptr pop_or_allocate();
 
@@ -62,6 +66,9 @@ private:
     const size_t _size_limit;
 
     const size_t _chunk_size{0};
+
+    size_t _wait_for_chunk_count{0};
+    metrics::internal_metric_groups _metrics;
 };
 
 chunk_cache& chunks();
