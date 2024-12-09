@@ -8,19 +8,20 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/reader/placeholder_extent_reader.h"
+#include "cloud_topics/L0_read_path/placeholder_extent_reader.h"
 
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
+#include "cloud_topics/L0_read_path/placeholder_extent.h"
 #include "cloud_topics/dl_placeholder.h"
 #include "cloud_topics/errc.h"
 #include "cloud_topics/logger.h"
-#include "cloud_topics/reader/placeholder_extent.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -191,6 +192,52 @@ model::record_batch_reader make_placeholder_extent_reader(
     auto impl = std::make_unique<joining_record_batch_reader_impl>(
       std::move(underlying), cfg, std::move(bucket), api, cache, &rtc);
     return model::record_batch_reader(std::move(impl));
+}
+
+struct dumb_consumer {
+    ss::future<ss::stop_iteration> operator()(model::record_batch rb) {
+        read_buffer->push_back(std::move(rb));
+        co_return ss::stop_iteration::no;
+    }
+
+    void end_of_stream() {}
+
+    ss::circular_buffer<model::record_batch>* read_buffer;
+    retry_chain_logger* logger;
+};
+
+ss::future<ss::circular_buffer<model::record_batch>> materialize_placeholders(
+  cloud_storage_clients::bucket_name bucket,
+  model::record_batch_reader underlying,
+  cloud_io::remote_api<ss::lowres_clock>& api,
+  cloud_io::basic_cache_service_api<ss::lowres_clock>& cache,
+  retry_chain_node& rtc,
+  retry_chain_logger& logger) {
+    ss::circular_buffer<model::record_batch> read_buffer;
+    dumb_consumer cons{
+      .read_buffer = &read_buffer,
+      .logger = &logger,
+    };
+    vlog(logger.debug, "start consuming underlying log reader");
+    co_await std::move(underlying).consume(cons, rtc.get_deadline());
+    vlog(logger.debug, "consumed {} placeholders", read_buffer.size());
+
+    auto extents = co_await materialize_sorted_run(
+      std::move(read_buffer), bucket, &api, &cache, &rtc);
+    if (extents.has_error()) {
+        vlog(
+          logger.error,
+          "Failed to materialize sorted run: {}",
+          extents.error().message());
+        throw std::system_error(extents.error());
+    }
+
+    ss::circular_buffer<model::record_batch> results;
+    for (auto& e : extents.value()) {
+        results.push_back(make_raft_data_batch(std::move(e)));
+    }
+
+    co_return std::move(results);
 }
 
 } // namespace experimental::cloud_topics

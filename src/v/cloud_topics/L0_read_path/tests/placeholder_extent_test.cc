@@ -7,16 +7,15 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cloud_topics/reader/placeholder_extent.h"
-#include "cloud_topics/reader/tests/placeholder_extent_fixture.h"
+#include "cloud_topics/L0_read_path/placeholder_extent.h"
+#include "cloud_topics/L0_read_path/tests/placeholder_extent_fixture.h"
+#include "cloud_topics/errc.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/later.hh>
 
-#include <chrono>
-#include <exception>
 #include <queue>
 
 namespace cloud_topics = experimental::cloud_topics;

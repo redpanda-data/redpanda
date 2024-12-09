@@ -9,7 +9,7 @@ redpanda_test_cc_library(
         "mocks.h",
         "placeholder_extent_fixture.h",
     ],
-    include_prefix = "cloud_topics/reader/tests",
+    include_prefix = "cloud_topics/L0_read_path/tests",
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
@@ -41,8 +41,9 @@ redpanda_cc_gtest(
         "placeholder_extent_test.cc",
     ],
     deps = [
-        "//src/v/cloud_topics/reader:placeholder_extent",
-        "//src/v/cloud_topics/reader/tests:placeholder_extent_fixture",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/L0_read_path:placeholder_extent",
+        "//src/v/cloud_topics/L0_read_path/tests:placeholder_extent_fixture",
         "//src/v/model",
         "//src/v/ssx:sformat",
         "//src/v/test_utils:gtest",
@@ -59,8 +60,31 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/cloud_topics/reader:placeholder_extent_reader",
-        "//src/v/cloud_topics/reader/tests:placeholder_extent_fixture",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/L0_read_path:placeholder_extent_reader",
+        "//src/v/cloud_topics/L0_read_path/tests:placeholder_extent_fixture",
+        "//src/v/model",
+        "//src/v/ssx:sformat",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "resolver_test",
+    timeout = "short",
+    srcs = [
+        "resolver_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/core:read_pipeline",
+        "//src/v/cloud_topics/L0_read_path:resolver",
+        "//src/v/cloud_topics/L0_read_path/tests:placeholder_extent_fixture",
+        "//src/v/cloud_topics/interfaces/tests:mocks",
         "//src/v/model",
         "//src/v/ssx:sformat",
         "//src/v/test_utils:gtest",

@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "base/vlog.h"
-#include "cloud_topics/reader/placeholder_extent_reader.h"
-#include "cloud_topics/reader/tests/placeholder_extent_fixture.h"
+#include "cloud_topics/L0_read_path/placeholder_extent_reader.h"
+#include "cloud_topics/L0_read_path/tests/placeholder_extent_fixture.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"

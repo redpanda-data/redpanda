@@ -8,15 +8,20 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/reader/placeholder_extent.h"
+#include "cloud_topics/L0_read_path/placeholder_extent.h"
 
+#include "bytes/iostream.h"
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/io_result.h"
+#include "cloud_topics/errc.h"
+#include "cloud_topics/logger.h"
+#include "storage/record_batch_utils.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>
+#include <exception>
 
 namespace experimental::cloud_topics {
 

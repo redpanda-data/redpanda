@@ -1,6 +1,9 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//src/v/cloud_topics/reader/tests:__pkg__"])
+package(default_visibility = [
+    "//src/v/cloud_topics/L0_read_path:__pkg__",
+    "//src/v/cloud_topics/L0_read_path/tests:__pkg__",
+])
 
 redpanda_cc_library(
     name = "placeholder_extent",
@@ -10,7 +13,7 @@ redpanda_cc_library(
     hdrs = [
         "placeholder_extent.h",
     ],
-    include_prefix = "cloud_topics/reader",
+    include_prefix = "cloud_topics/L0_read_path",
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -43,7 +46,7 @@ redpanda_cc_library(
     hdrs = [
         "placeholder_extent_reader.h",
     ],
-    include_prefix = "cloud_topics/reader",
+    include_prefix = "cloud_topics/L0_read_path",
     deps = [
         "//src/v/base",
         "//src/v/cloud_io:basic_cache_service_api",
@@ -52,11 +55,42 @@ redpanda_cc_library(
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:placeholder",
         "//src/v/cloud_topics:types",
-        "//src/v/cloud_topics/reader:placeholder_extent",
+        "//src/v/cloud_topics/L0_read_path:placeholder_extent",
         "//src/v/config",
         "//src/v/model",
         "//src/v/storage",
         "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "resolver",
+    srcs = [
+        "resolver.cc",
+    ],
+    hdrs = [
+        "resolver.h",
+    ],
+    include_prefix = "cloud_topics/L0_read_path",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:basic_cache_service_api",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:placeholder",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/L0_read_path:placeholder_extent_reader",
+        "//src/v/cloud_topics/core:event_filter",
+        "//src/v/cloud_topics/core:read_pipeline",
+        "//src/v/cloud_topics/core:read_request",
+        "//src/v/cloud_topics/interfaces:cluster_partition_manager",
+        "//src/v/model",
+        "//src/v/storage",
+        "//src/v/utils:retry_chain_node",
+        "//src/v/ssx:future_util",
         "@seastar",
     ],
 )
