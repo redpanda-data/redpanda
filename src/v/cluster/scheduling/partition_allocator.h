@@ -18,6 +18,7 @@
 #include "cluster/scheduling/types.h"
 #include "config/property.h"
 #include "features/fwd.h"
+#include "model/metadata.h"
 
 namespace cluster {
 
@@ -145,7 +146,8 @@ private:
     // new_partitions_replicas_requested represents the total number of
     // partitions requested by a request. i.e. partitions * replicas requested.
     std::error_code check_cluster_limits(
-      const uint64_t new_partitions_replicas_requested) const;
+      const uint64_t new_partitions_replicas_requested,
+      const model::topic_namespace& topic) const;
 
     ss::future<result<allocation_units::pointer>>
       do_allocate(allocation_request);
