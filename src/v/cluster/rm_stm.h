@@ -242,7 +242,8 @@ private:
       = ss::bool_class<struct new_producer_created_tag>;
     std::pair<tx::producer_ptr, producer_previously_known>
       maybe_create_producer(model::producer_identity);
-    void cleanup_producer_state(model::producer_identity);
+    void cleanup_producer_state(model::producer_identity) noexcept;
+    ss::future<> cleanup_evicted_producers();
     ss::future<> reset_producers();
     ss::future<checked<model::term_id, tx::errc>> do_begin_tx(
       model::term_id,
@@ -413,6 +414,8 @@ private:
     // a given producer_id remains active. This also works for idempotent
     // producers because epoch is unused.
     producers_t _producers;
+
+    ss::queue<model::producer_identity> _producers_pending_cleanup;
 
     // All the producers with open transactions in this partition.
     // The list is sorted by the open transaction begin offset, so
