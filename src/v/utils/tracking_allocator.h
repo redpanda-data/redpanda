@@ -121,6 +121,14 @@ public:
         return allocator::allocate(n);
     }
 
+#if __cplusplus >= 202302L
+    [[nodiscard]] std::allocation_result<T*> allocate_at_least(std::size_t n) {
+        auto result = allocator::allocate_at_least(n);
+        _tracker->allocate(result.count * sizeof(T));
+        return result;
+    }
+#endif
+
     void deallocate(T* p, std::size_t n) {
         allocator::deallocate(p, n);
         _tracker->deallocate(n * sizeof(T));

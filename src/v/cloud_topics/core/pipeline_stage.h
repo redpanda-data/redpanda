@@ -47,9 +47,6 @@ public:
     pipeline_stage register_pipeline_stage() noexcept;
 
 private:
-    // Pipeline stage counter used to assign ids to stages
-    int _next_stage_id_to_alloc{0};
-
     std::vector<const pipeline_stage_id> _stages;
 };
 
