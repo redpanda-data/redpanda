@@ -4,13 +4,19 @@ This module contains functions to generate a simple CA
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 
+openssl_env = {
+    "OPENSSL_CONF": "$(execpath @openssl//:openssl_data)/openssl.cnf",
+}
+
 # buildifier: disable=function-docstring-args
 def _redpanda_private_key(name, certificate):
     private_key = certificate + ".key"
 
     run_binary(
         name = name + "_key_gen",
-        srcs = [],
+        srcs = [
+            "@openssl//:openssl_data",
+        ],
         outs = [private_key],
         args = [
             "ecparam",
@@ -21,6 +27,7 @@ def _redpanda_private_key(name, certificate):
             "-out",
             "$(execpath :{})".format(private_key),
         ],
+        env = openssl_env,
         tool = "@openssl//:openssl_exe",
     )
 
@@ -44,7 +51,10 @@ def redpanda_selfsigned_cert(name, certificate, common_name, visibility = None):
 
     run_binary(
         name = name + "_crt_gen",
-        srcs = [private_key],
+        srcs = [
+            private_key,
+            "@openssl//:openssl_data",
+        ],
         outs = [cert],
         args = [
             "req",
@@ -60,6 +70,7 @@ def redpanda_selfsigned_cert(name, certificate, common_name, visibility = None):
             "-addext",
             "subjectAltName = IP:127.0.0.1",
         ],
+        env = openssl_env,
         tool = "@openssl//:openssl_exe",
     )
 
@@ -90,7 +101,10 @@ def redpanda_signed_cert(name, certificate, common_name, ca, serial_number, visi
 
     run_binary(
         name = name + "_csr_gen",
-        srcs = [private_key],
+        srcs = [
+            private_key,
+            "@openssl//:openssl_data",
+        ],
         outs = [csr],
         args = [
             "req",
@@ -103,6 +117,7 @@ def redpanda_signed_cert(name, certificate, common_name, ca, serial_number, visi
             "-subj",
             subj,
         ],
+        env = openssl_env,
         tool = "@openssl//:openssl_exe",
     )
 
@@ -115,6 +130,7 @@ def redpanda_signed_cert(name, certificate, common_name, ca, serial_number, visi
             ca_cert,
             ca_private_key,
             csr,
+            "@openssl//:openssl_data",
         ],
         outs = [cert],
         args = [
@@ -134,6 +150,7 @@ def redpanda_signed_cert(name, certificate, common_name, ca, serial_number, visi
             "-out",
             "$(execpath :{})".format(cert),
         ],
+        env = openssl_env,
         tool = "@openssl//:openssl_exe",
     )
 

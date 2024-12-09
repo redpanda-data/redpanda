@@ -1,7 +1,6 @@
 load("@bazel_skylib//rules:common_settings.bzl", "int_flag", "string_flag")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:select_file.bzl", "select_file")
-load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make", "runnable_binary")
 
 # Make this build faster by setting `build --@openssl//:build_jobs=16` in user.bazelrc
 # if you have the cores to spare.
@@ -60,6 +59,9 @@ configure_make(
     out_binaries = [
         "openssl",
     ],
+    out_data_dirs = [
+        "ssl",
+    ],
     out_shared_libs = [
         "libssl.so.3",
         "libcrypto.so.3",
@@ -77,18 +79,17 @@ filegroup(
 )
 
 select_file(
-    name = "openssl_exe_file",
+    name = "openssl_data",
     srcs = ":openssl",
-    subpath = "bin/openssl",
-)
-
-copy_file(
-    name = "openssl_exe",
-    src = ":openssl_exe_file",
-    out = "openssl.exe",
-    allow_symlink = True,
-    is_executable = True,
+    subpath = "ssl",
     visibility = [
         "//visibility:public",
     ],
+)
+
+runnable_binary(
+    name = "openssl_exe",
+    binary = "openssl",
+    foreign_cc_target = ":openssl",
+    visibility = ["//visibility:public"],
 )
