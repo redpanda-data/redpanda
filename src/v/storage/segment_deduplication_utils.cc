@@ -245,6 +245,12 @@ ss::future<index_state> deduplicate_segment(
     // Set may_have_tombstone_records
     new_idx.may_have_tombstone_records = may_have_tombstone_records;
 
+    if (
+      seg->index().may_have_tombstone_records()
+      && !may_have_tombstone_records) {
+        probe.add_segment_marked_tombstone_free();
+    }
+
     co_return new_idx;
 }
 
