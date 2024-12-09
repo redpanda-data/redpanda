@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "io/cache.h"
 #include "io/page.h"
+#include "utils/s3_fifo.h"
 
 namespace experimental::io {
 
@@ -26,7 +26,8 @@ class page_cache {
         size_t operator()(const page&) noexcept;
     };
 
-    using cache_type = cache<page, &page::cache_hook, evict, cost>;
+    using cache_type
+      = utils::s3_fifo::cache<page, &page::cache_hook, evict, cost>;
 
 public:
     using config = cache_type::config;

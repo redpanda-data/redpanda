@@ -31,6 +31,7 @@ rp_test(
   BINARY_NAME gtest_utils_single_thread
   SOURCES
     external_process_test.cc
+    s3_fifo_test.cc
   LIBRARIES
     v::utils
     v::gtest_main
