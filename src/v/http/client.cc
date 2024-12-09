@@ -202,6 +202,11 @@ ss::future<reconnect_result_t> client::get_connected(
             vlog(
               ctxlog.debug,
               "Stopping connect attempts due to shutdown request");
+            if (is_valid()) {
+                // We might have established connection at this point
+                // which has to be closed.
+                shutdown();
+            }
             co_return reconnect_result_t::timed_out;
         }
         current = ss::lowres_clock::now();
