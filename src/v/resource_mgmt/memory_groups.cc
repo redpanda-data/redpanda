@@ -31,7 +31,7 @@ bool datalake_enabled() {
 }
 
 struct memory_shares {
-    constexpr static size_t chunk_cache = 30;
+    constexpr static size_t chunk_cache = 15;
     constexpr static size_t kafka = 30;
     constexpr static size_t rpc = 20;
     constexpr static size_t recovery = 10;
