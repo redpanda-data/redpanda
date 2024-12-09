@@ -249,7 +249,10 @@ def redpanda_cc_btest_no_seastar(
         srcs = srcs,
         defines = defines,
         copts = redpanda_copts(),
-        deps = ["@boost//:test.so"] + deps,
+        deps = [
+            "//src/v/test_utils:boost_result_redirect",
+            "@boost//:test.so",
+        ] + deps,
     )
 
 def redpanda_test_cc_library(
