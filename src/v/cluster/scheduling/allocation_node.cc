@@ -50,24 +50,26 @@ allocation_node::allocation_node(
     });
 }
 
-bool allocation_node::is_full(
-  const model::ntp& ntp, bool will_add_allocation) const {
-    // Internal topics are excluded from checks to prevent allocation failures
-    // when creating them. This is okay because they are fairly small in number
-    // compared to kafka user topic partitions.
+bool allocation_node::is_internal_topic(
+  const config::binding<std::vector<ss::sstring>>& internal_kafka_topics,
+  model::topic_namespace_view ntp) {
     auto is_internal_ns = ntp.ns == model::redpanda_ns
                           || ntp.ns == model::kafka_internal_namespace;
     if (is_internal_ns) {
-        return false;
+        return true;
     }
-    const auto& internal_topics = _internal_kafka_topics();
-    auto is_internal_topic = ntp.ns == model::kafka_namespace
-                             && std::any_of(
-                               internal_topics.cbegin(),
-                               internal_topics.cend(),
-                               [&ntp](const ss::sstring& topic) {
-                                   return topic == ntp.tp.topic();
-                               });
+    const auto& internal_topics = internal_kafka_topics();
+    return ntp.ns == model::kafka_namespace
+           && std::any_of(
+             internal_topics.cbegin(),
+             internal_topics.cend(),
+             [&ntp](const ss::sstring& topic) { return topic == ntp.tp; });
+}
+
+bool allocation_node::is_full(
+  const model::ntp& ntp, bool will_add_allocation) const {
+    auto is_internal_topic = allocation_node::is_internal_topic(
+      _internal_kafka_topics, model::topic_namespace_view{ntp});
 
     auto count = _allocated_partitions;
     if (will_add_allocation) {
