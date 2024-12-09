@@ -148,7 +148,7 @@ func newMovePartitionReplicasCommand(fs afero.Fs, p *config.Params) *cobra.Comma
 			}
 		},
 	}
-	cmd.Flags().StringArrayVarP(&partitionsFlag, "partition", "p", nil, "Topic-partitions to move and new replica locations (repeatable)")
+	cmd.Flags().StringArrayVarP(&partitionsFlag, "partition", "p", nil, "Topic partitions to move and new replica locations (repeatable)")
 	cmd.MarkFlagRequired("partition")
 
 	p.InstallFormatFlag(cmd)
