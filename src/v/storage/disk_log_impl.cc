@@ -1253,6 +1253,7 @@ ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
       seg, true, *_probe);
 
     _last_compaction_window_start_offset = seg->offsets().get_base_offset();
+    _probe->add_chunked_compaction_run();
 
     // It is possible that chunked compaction on the last segment in the set
     // resulted in all of the segments with compactible records being cleanly
