@@ -8,29 +8,29 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "io/cache.h"
 #include "test_utils/test.h"
+#include "utils/s3_fifo.h"
 
 #include <map>
 
-namespace experimental::io::testing_details {
+namespace utils::s3_fifo::testing_details {
 class cache_hook_accessor {
 public:
     static std::optional<size_t>
-    get_hook_insertion_time(const io::cache_hook& hook) {
+    get_hook_insertion_time(const utils::s3_fifo::cache_hook& hook) {
         return hook.ghost_insertion_time_;
     }
 
-    static void
-    set_hook_insertion_time(io::cache_hook& hook, std::optional<size_t> time) {
+    static void set_hook_insertion_time(
+      utils::s3_fifo::cache_hook& hook, std::optional<size_t> time) {
         hook.ghost_insertion_time_ = time;
     }
 
-    static uint8_t get_hook_freq(io::cache_hook& hook) { return hook.freq_; }
+    static uint8_t get_hook_freq(utils::s3_fifo::cache_hook& hook) {
+        return hook.freq_;
+    }
 };
-} // namespace experimental::io::testing_details
-
-namespace io = experimental::io;
+} // namespace utils::s3_fifo::testing_details
 
 class CacheTest : public ::testing::Test {
 public:
@@ -39,7 +39,7 @@ public:
     static constexpr auto main_size = cache_size - small_size;
 
     struct entry {
-        io::cache_hook hook;
+        utils::s3_fifo::cache_hook hook;
         bool may_evict{true};
         bool evicted{false};
     };
@@ -58,7 +58,8 @@ public:
         size_t operator()(const entry& /*entry*/) noexcept { return 1; }
     };
 
-    using cache_type = io::cache<entry, &entry::hook, evict, entry_cost>;
+    using cache_type
+      = utils::s3_fifo::cache<entry, &entry::hook, evict, entry_cost>;
 
     void SetUp() override {
         cache = std::make_unique<cache_type>(cache_type::config{
@@ -78,19 +79,19 @@ public:
     }
 
     static std::optional<size_t> get_hook_insertion_time(const entry& entry) {
-        return io::testing_details::cache_hook_accessor::
+        return utils::s3_fifo::testing_details::cache_hook_accessor::
           get_hook_insertion_time(entry.hook);
     }
 
     static void
     set_hook_insertion_time(entry& entry, std::optional<size_t> time) {
-        io::testing_details::cache_hook_accessor::set_hook_insertion_time(
-          entry.hook, time);
+        utils::s3_fifo::testing_details::cache_hook_accessor::
+          set_hook_insertion_time(entry.hook, time);
     }
 
     static uint8_t get_hook_freq(entry& entry) {
-        return io::testing_details::cache_hook_accessor::get_hook_freq(
-          entry.hook);
+        return utils::s3_fifo::testing_details::cache_hook_accessor::
+          get_hook_freq(entry.hook);
     }
 
     template<typename... Entries>
@@ -700,7 +701,7 @@ TEST_F(CacheTest, Formattable) {
 
 TEST(CacheTestCustom, CustomCost) {
     struct entry {
-        io::cache_hook hook;
+        utils::s3_fifo::cache_hook hook;
         std::string data;
     };
 
@@ -713,8 +714,11 @@ TEST(CacheTestCustom, CustomCost) {
     constexpr auto cache_size = 100;
     constexpr auto small_size = 5;
 
-    using cache_type
-      = io::cache<entry, &entry::hook, io::default_cache_evictor, entry_cost>;
+    using cache_type = utils::s3_fifo::cache<
+      entry,
+      &entry::hook,
+      utils::s3_fifo::default_cache_evictor,
+      entry_cost>;
 
     cache_type cache(
       cache_type::config{.cache_size = cache_size, .small_size = small_size});

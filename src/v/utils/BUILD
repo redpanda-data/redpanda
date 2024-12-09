@@ -652,3 +652,15 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "s3_fifo",
+    hdrs = [
+        "s3_fifo.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "@boost//:intrusive",
+        "@fmt",
+    ],
+)
