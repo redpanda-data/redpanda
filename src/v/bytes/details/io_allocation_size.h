@@ -29,28 +29,46 @@ public:
     static constexpr size_t ss_max_small_allocation = 16384;
 
 public:
-    // >>> x=512
-    // >>> while x < int((1024*128)):
-    // ...     print(x)
-    // ...     x=int(((x*3)+1)/2)
-    // ...     x=int(min(1024*128,x))
-    // print(1024*128)
+    // This script computes the table immediately below, which are "ideal"
+    // allocation sizes: rounded up to the next true size supported by
+    // the seastar allocator. At <= 16K we apply the small pool indexing
+    // logic, and above we use powers of 2 since we are in the buddy allocator
+    // which only supports power-of-two sizes.
+    //
+    // We scale the target size by 1.47, i.e., 1.5 tweaked slightly to ensure
+    // we hit 16K at the small<->big pool boundary.
+    //
+    // def lg2(size: int):
+    //     return size.bit_length() - 1
+    // def p(v: object):
+    //     print(f"{v},")
+    // s = 512
+    // fb = 2 # idx_frac_bits
+    // while s <= 2**14:
+    //     # The size calculation below is doing idx_to_size(size_to_idx(s)),
+    //     # i.e., figuring out which small point index the allocation falls in
+    //     # then seeing what the size of that small pool is, i.e., the size of
+    //     # the smallest small pool that can fix this allocation.
+    //     # See the corresponding routines in src/core/memory.cc:
+    //     #https://github.com/scylladb/seastar/blob/f840b860432e7e716e3cfc004690897b50dc122c/src/core/memory.cc#L478-L499
+    //     idx = ((lg2(s) << fb) - ((1 << fb) - 1)) + ((s - 1) >> (lg2(s) - fb))
+    //     p((((1 << fb) | (idx & ((1 << fb) - 1))) << (idx >> fb)) >> fb)
+    //     s = int(s * 1.47)
+    // for e in [15, 16, 17]:
+    //     p(2**e)
     static constexpr auto alloc_table = std::to_array<uint32_t>(
-      // computed from a python script above
       {512,
        768,
-       1152,
-       1728,
-       2592,
-       3888,
-       5832,
-       8748,
-       13122,
-       19683,
-       29525,
-       44288,
-       66432,
-       99648,
+       1280,
+       1792,
+       2560,
+       3584,
+       6144,
+       8192,
+       12288,
+       16384,
+       32768,
+       65536,
        131072});
     static size_t next_allocation_size(size_t data_size);
 
