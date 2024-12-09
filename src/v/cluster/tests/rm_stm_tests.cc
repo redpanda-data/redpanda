@@ -12,6 +12,7 @@
 #include "cluster/tests/randoms.h"
 #include "cluster/tests/rm_stm_test_fixture.h"
 #include "finjector/hbadger.h"
+#include "finjector/stress_fiber.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -930,4 +931,103 @@ FIXTURE_TEST(test_tx_expiration_without_data_batches, rm_stm_test_fixture) {
                  [pid](auto producer) { return producer->id() == pid; })
                != expired.end();
     }).get();
+}
+
+/*
+ * This test ensures concurrent evictions can happen in the presence of
+ * replication operations and operations that reset the state (snapshots,
+ * partition stop).
+ */
+FIXTURE_TEST(test_concurrent_producer_evictions, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
+    stm.start().get0();
+    stm.testing_only_disable_auto_abort();
+
+    wait_for_confirmed_leader();
+    wait_for_meta_initialized();
+
+    // Ensure eviction runs with higher frequency
+    // and evicts everything possible.
+    update_producer_expiration(0ms);
+    rearm_eviction_timer(1ms);
+
+    stress_fiber_manager stress_mgr;
+    stress_mgr.start(
+      {.min_spins_per_scheduling_point = random_generators::get_int(50, 100),
+       .max_spins_per_scheduling_point = random_generators::get_int(500, 1000),
+       .num_fibers = random_generators::get_int<size_t>(5, 10)});
+    auto stop = ss::defer([&stress_mgr] { stress_mgr.stop().get(); });
+
+    int64_t counter = 0;
+    ss::abort_source as;
+    ss::gate gate;
+    size_t max_replication_fibers = 1000;
+
+    // simulates replication.
+    // In each iteration of the loop, we create some producers and randomly
+    // hold the producer state lock on some of them(thus preventing eviction).
+    // This is roughly the lifecycle of replicate requests using a producer
+    // state. This creates stream of producer states in a tight loop, some
+    // evictable and some non evictable while eviction constantly runs in the
+    // background.
+    auto replicate_f = ss::do_until(
+      [&as] { return as.abort_requested(); },
+      [&, this] {
+          std::vector<ss::future<>> spawn_replicate_futures;
+          for (int i = 0; i < 5; i++) {
+              auto maybe_replicate_f
+                = maybe_create_producer(model::producer_identity{counter++, 0})
+                    .then([&, this](auto result) {
+                        auto producer = result.first;
+                        if (
+                          gate.get_count() < max_replication_fibers
+                          && tests::random_bool()) {
+                            // simulates replication.
+                            ssx::spawn_with_gate(gate, [this, producer] {
+                                return stm_read_lock().then([producer](
+                                                              auto stm_units) {
+                                    return producer
+                                      ->run_with_lock([](auto units) {
+                                          auto sleep_ms
+                                            = std::chrono::milliseconds{
+                                              random_generators::get_int(3)};
+                                          return ss::sleep(sleep_ms).finally(
+                                            [units = std::move(units)] {});
+                                      })
+                                      .handle_exception_type(
+                                        [producer](
+                                          const ss::gate_closed_exception&) {
+                                            vlog(
+                                              logger.info,
+                                              "producer {} already evicted, "
+                                              "ignoring",
+                                              producer->id());
+                                        })
+                                      .finally(
+                                        [producer,
+                                         stm_units = std::move(stm_units)] {});
+                                });
+                            });
+                        }
+                    });
+              spawn_replicate_futures.push_back(std::move(maybe_replicate_f));
+          }
+
+          return ss::when_all_succeed(std::move(spawn_replicate_futures))
+            .then([]() { return ss::sleep(1ms); });
+      });
+
+    // simulates raft snapshot application / partition shutdown
+    // applying a snapshot is stop the world operation that resets
+    // all the producers.
+    auto reset_f = ss::do_until(
+      [&as] { return as.abort_requested(); },
+      [&, this] {
+          return reset_producers().then([] { return ss::sleep(3ms); });
+      });
+
+    ss::sleep(20s).finally([&as] { as.request_abort(); }).get();
+    ss::when_all_succeed(std::move(replicate_f), std::move(reset_f)).get();
+    gate.close().get();
 }
