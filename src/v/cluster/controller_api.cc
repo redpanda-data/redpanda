@@ -338,10 +338,9 @@ ss::future<std::error_code> controller_api::wait_for_topic(
 ss::future<result<chunked_vector<partition_reconfiguration_state>>>
 controller_api::get_partitions_reconfiguration_state(
   const chunked_vector<model::ntp>& partitions,
-  model::timeout_clock::time_point timeout) {
+  model::timeout_clock::time_point) {
     auto& updates_in_progress = _topics.local().updates_in_progress();
 
-    partitions_filter partitions_filter;
     absl::node_hash_map<model::ntp, partition_reconfiguration_state> states;
     for (auto& ntp : partitions) {
         auto progress_it = updates_in_progress.find(ntp);
@@ -359,58 +358,28 @@ controller_api::get_partitions_reconfiguration_state(
         state.previous_assignment = progress_it->second.get_previous_replicas();
         state.state = progress_it->second.get_state();
         state.policy = progress_it->second.get_reconfiguration_policy();
-        states.emplace(ntp, std::move(state));
 
-        auto [tp_it, _] = partitions_filter.namespaces.try_emplace(
-          ntp.ns, partitions_filter::topic_map_t{});
-
-        auto [p_it, inserted] = tp_it->second.try_emplace(
-          ntp.tp.topic, partitions_filter::partitions_set_t{});
-
-        p_it->second.emplace(ntp.tp.partition);
-    }
-
-    auto result = co_await _health_monitor.local().get_cluster_health(
-      cluster_report_filter{
-        .node_report_filter
-        = node_report_filter{.ntp_filters = std::move(partitions_filter)}},
-      force_refresh::no,
-      timeout);
-
-    if (!result) {
-        co_return result.error();
-    }
-
-    auto& report = result.value();
-
-    for (auto& node_report : report.node_reports) {
-        for (auto& [tp_ns, partitions] : node_report->topics) {
-            for (auto& p : partitions) {
-                model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
-                auto it = states.find(ntp);
-                if (it == states.end()) {
-                    continue;
+        auto reconciliation_state = co_await get_reconciliation_state(ntp);
+        for (auto& operation : reconciliation_state.pending_operations()) {
+            if (operation.recovery_state) {
+                state.current_partition_size
+                  = operation.recovery_state->local_size;
+                for (auto& [id, recovery_state] :
+                     operation.recovery_state->replicas) {
+                    state.replicas.push_back(replica_bytes{
+                      .node = id,
+                      .bytes_left = recovery_state.bytes_left,
+                      .bytes_transferred = state.current_partition_size
+                                           - recovery_state.bytes_left,
+                      .offset = recovery_state.last_offset,
+                    });
                 }
-
-                if (p.leader_id == node_report->id) {
-                    it->second.current_partition_size = p.size_bytes;
-                }
-                const auto moving_to = moving_to_node(
-                  node_report->id,
-                  it->second.previous_assignment,
-                  it->second.current_assignment);
-
-                // node was added to replica set
-                if (moving_to) {
-                    it->second.already_transferred_bytes.emplace_back(
-                      replica_bytes{
-                        .node = node_report->id, .bytes = p.size_bytes});
-                }
-
-                co_await ss::maybe_yield();
             }
         }
+
+        states.emplace(ntp, std::move(state));
     }
+
     chunked_vector<partition_reconfiguration_state> ret;
     ret.reserve(states.size());
     for (auto& [_, state] : states) {
