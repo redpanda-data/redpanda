@@ -63,6 +63,48 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "common",
+    hdrs = [
+        "common.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/storage",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "storage_test_fixture",
+    hdrs = [
+        "storage_test_fixture.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/compression",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/model/tests:random",
+        "//src/v/storage",
+        "//src/v/test_utils:seastar_boost",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "log_gap_analysis",
+    srcs = [
+        "utils/log_gap_analysis.cc",
+    ],
+    hdrs = [
+        "utils/log_gap_analysis.h",
+    ],
+    include_prefix = "storage/tests",
+    deps = [
+        "//src/v/model",
+        "//src/v/storage:parser_utils",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "segment_offset_tracker_test",
     timeout = "short",
@@ -458,6 +500,44 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@fmt",
         "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "storage_e2e_single_thread",
+    timeout = "moderate",
+    srcs = [
+        "storage_e2e_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":common",
+        ":disk_log_builder",
+        ":disk_log_builder_fixture",
+        ":log_gap_analysis",
+        ":storage_test_fixture",
+        "//src/v/base",
+        "//src/v/bytes",
+        "//src/v/bytes:random",
+        "//src/v/compression",
+        "//src/v/config",
+        "//src/v/features",
+        "//src/v/finjector",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/random:generators",
+        "//src/v/reflection:adl",
+        "//src/v/storage",
+        "//src/v/storage:batch_cache",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/storage:resources",
+        "//src/v/test_utils:random",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:directory_walker",
+        "//src/v/utils:to_string",
+        "@boost//:test",
+        "@fmt",
         "@seastar",
     ],
 )
