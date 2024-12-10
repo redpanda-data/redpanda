@@ -1,29 +1,28 @@
 include(rpcgen)
 
 rpcgen(
-  TARGET generated_transform_rpc
+  TARGET generated_kafka_data_rpc
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/rpc.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/rpc_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
 v_cc_library(
-  NAME transform_rpc
+  NAME kd_rpc
   SRCS
     client.cc
+    deps.cc
     logger.cc
     serde.cc
     service.cc
-    deps.cc
   DEPS
-    generated_transform_rpc 
+    generated_kafka_data_rpc 
     v::cluster
     v::model
     v::rpc
     v::kafka_partition_proxy
-    v::transform_stm
-    v::kd_rpc
     Seastar::seastar
 )
 
-add_subdirectory(tests)
+# TODO(oren):
+add_subdirectory(test)
