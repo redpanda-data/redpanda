@@ -109,11 +109,16 @@ allocation_constraints partition_allocator::default_constraints() {
  * with partitions that cannot be re-accommodated on smaller peers).
  */
 std::error_code partition_allocator::check_cluster_limits(
-  const uint64_t new_partitions_replicas_requested) const {
+  const uint64_t new_partitions_replicas_requested,
+  const model::topic_namespace& topic) const {
     if (_members.local().nodes().empty()) {
         // Empty members table, we're probably running in a unit test
         return errc::success;
     }
+    if (allocation_node::is_internal_topic(_internal_kafka_topics, topic)) {
+        return errc::success;
+    }
+
     // Calculate how many partition-replicas already exist, so that we can
     // check if the new topic would take us past any limits.
     uint64_t existent_partitions{0};
@@ -169,15 +174,19 @@ std::error_code partition_allocator::check_cluster_limits(
 
     // Refuse to create a partition count that would violate the per-core
     // limit.
-    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard());
+    const uint64_t core_limit = (effective_cpu_count * _partitions_per_shard())
+                                - (broker_count * _partitions_reserve_shard0());
     if (proposed_total_partitions > core_limit) {
         vlog(
           clusterlog.warn,
           "Refusing to create {} partitions as total partition count {} would "
-          "exceed core limit {}",
+          "exceed the core-based limit {} (per-shard limit: {}, shard0 "
+          "reservation: {})",
           new_partitions_replicas_requested,
           proposed_total_partitions,
-          effective_cpu_count * _partitions_per_shard());
+          core_limit,
+          _partitions_per_shard(),
+          _partitions_reserve_shard0());
         return errc::topic_invalid_partitions_core_limit;
     }
 
@@ -243,7 +252,7 @@ partition_allocator::allocate(simple_allocation_request simple_req) {
     const uint64_t create_count
       = static_cast<uint64_t>(simple_req.additional_partitions)
         * static_cast<uint64_t>(simple_req.replication_factor);
-    auto cluster_errc = check_cluster_limits(create_count);
+    auto cluster_errc = check_cluster_limits(create_count, simple_req.tp_ns);
     if (cluster_errc) {
         co_return cluster_errc;
     }
@@ -276,7 +285,7 @@ partition_allocator::allocate(allocation_request request) {
         }
     }
 
-    auto cluster_errc = check_cluster_limits(create_count);
+    auto cluster_errc = check_cluster_limits(create_count, request._nt);
     if (cluster_errc) {
         co_return cluster_errc;
     }
