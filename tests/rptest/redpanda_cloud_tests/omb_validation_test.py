@@ -24,6 +24,7 @@ from rptest.services.openmessaging_benchmark_configs import \
     OMBSampleConfigurations
 from rptest.services.machinetype import get_machine_info
 from rptest.utils.type_utils import rcast
+from rptest.tests.write_caching_test import WriteCachingMode
 
 # pyright: strict
 
@@ -231,7 +232,7 @@ class OMBValidationTest(RedpandaCloudTest):
         return math.floor(0.9537 * mb)
 
     @cluster(num_nodes=CLUSTER_NODES)
-    @matrix(write_caching=["on", "off"])
+    @matrix(write_caching=[WriteCachingMode.TRUE, WriteCachingMode.FALSE])
     def test_max_connections(self, write_caching: str):
         tier_limits = self.tier_limits
 
@@ -564,7 +565,7 @@ class OMBValidationTest(RedpandaCloudTest):
             self.logger.warn(str(results))
 
     @cluster(num_nodes=CLUSTER_NODES)
-    @matrix(write_caching=["on", "off"])
+    @matrix(write_caching=[WriteCachingMode.TRUE, WriteCachingMode.FALSE])
     def test_max_partitions(self, write_caching: str):
         tier_limits = self.tier_limits
 
@@ -670,7 +671,7 @@ class OMBValidationTest(RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=CLUSTER_NODES)
-    @matrix(write_caching=["on", "off"])
+    @matrix(write_caching=[WriteCachingMode.TRUE, WriteCachingMode.FALSE])
     def test_common_workload(self, write_caching: str):
         tier_limits = self.tier_limits
 
@@ -728,7 +729,7 @@ class OMBValidationTest(RedpandaCloudTest):
         self.redpanda.assert_cluster_is_reusable()
 
     @cluster(num_nodes=CLUSTER_NODES)
-    @matrix(write_caching=["on", "off"])
+    @matrix(write_caching=[WriteCachingMode.TRUE, WriteCachingMode.FALSE])
     def test_retention(self, write_caching: str):
         tier_limits = self.tier_limits
 
