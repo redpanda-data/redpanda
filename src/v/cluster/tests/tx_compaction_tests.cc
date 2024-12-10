@@ -25,6 +25,8 @@ using cluster::tx_executor;
         _data_dir = "test_dir_" + random_generators::gen_alphanum_string(6);   \
         stop_all();                                                            \
         producer_state_manager.stop().get();                                   \
+        producer_expiration_ms.stop().get();                                   \
+        max_concurent_producers.stop().get();                                  \
         _stm = nullptr;                                                        \
     });                                                                        \
     wait_for_confirmed_leader();                                               \

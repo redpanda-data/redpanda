@@ -45,8 +45,10 @@ public:
      */
     void touch(producer_state&, std::optional<model::vcluster_id>);
 
+    void rearm_eviction_timer_for_testing(std::chrono::milliseconds);
+
 private:
-    static constexpr std::chrono::seconds period{5};
+    std::chrono::milliseconds _reaper_period{5000};
     /**
      *  Constant to be used when a partition has no vcluster_id assigned.
      */
@@ -83,7 +85,7 @@ private:
     config::binding<size_t> _virtual_cluster_min_producer_ids;
     // cache of all producers on this shard
     cache_t _cache;
-    ss::timer<ss::steady_clock_type> _reaper;
+    ss::timer<ss::lowres_clock> _reaper;
     ss::gate _gate;
     metrics::internal_metric_groups _metrics;
 
