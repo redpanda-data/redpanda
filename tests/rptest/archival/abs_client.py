@@ -3,6 +3,7 @@ from rptest.archival.shared_client_utils import key_to_topic
 from rptest.utils.type_utils import rcast
 
 from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
+from azure.core.exceptions import ResourceExistsError
 from itertools import islice
 
 import time
@@ -64,7 +65,12 @@ class ABSClient:
 
     def create_bucket(self, name: str):
         blob_service = BlobServiceClient.from_connection_string(self.conn_str)
-        blob_service.create_container(name)
+        try:
+            blob_service.create_container(name)
+        except ResourceExistsError as e:
+            # ignore if we get ResourceExistsError:
+            #     The specified container already exists
+            pass
 
     def empty_and_delete_bucket(self, name: str, parallel=False):
         """
