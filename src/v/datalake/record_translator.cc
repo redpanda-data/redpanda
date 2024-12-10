@@ -34,8 +34,8 @@ struct value_translating_visitor {
     const iceberg::field_type& type;
 
     ss::future<optional_value_outcome>
-    operator()(const wrapped_protobuf_descriptor& d) {
-        return deserialize_protobuf(std::move(parsable_buf), d.descriptor);
+    operator()(const google::protobuf::Descriptor& d) {
+        return deserialize_protobuf(std::move(parsable_buf), d);
     }
     ss::future<optional_value_outcome> operator()(const avro::ValidSchema& s) {
         auto value = co_await deserialize_avro(std::move(parsable_buf), s);
@@ -239,7 +239,7 @@ structured_data_translator::translate_data(
 
     auto translated_val = co_await std::visit(
       value_translating_visitor{std::move(*parsable_val), val_type->type},
-      val_type->schema);
+      val_type->schema.get_schema_ref());
     if (translated_val.has_error()) {
         vlog(
           datalake_log.error,

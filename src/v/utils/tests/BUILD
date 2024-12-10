@@ -513,3 +513,24 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "s3_fifo_test",
+    timeout = "short",
+    srcs = ["s3_fifo_test.cc"],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:s3_fifo",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "chunked_kv_cache_test",
+    timeout = "short",
+    srcs = ["chunked_kv_cache_test.cc"],
+    deps = [
+        "//src/v/test_utils:gtest",
+        "//src/v/utils:chunked_kv_cache",
+        "@seastar",
+    ],
+)

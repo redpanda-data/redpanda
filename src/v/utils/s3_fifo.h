@@ -175,7 +175,7 @@
  * @{
  */
 
-namespace experimental::io {
+namespace utils::s3_fifo {
 
 namespace testing_details {
 class cache_hook_accessor;
@@ -674,18 +674,18 @@ bool cache<T, Hook, Evictor, Cost>::evict_main() noexcept {
  * @}
  */
 
-} // namespace experimental::io
+} // namespace utils::s3_fifo
 
 template<
   typename T,
-  experimental::io::cache_hook T::*Hook,
-  experimental::io::cache_evictor<T> Evictor,
-  experimental::io::cache_cost<T> Cost>
-struct fmt::formatter<experimental::io::cache<T, Hook, Evictor, Cost>>
+  utils::s3_fifo::cache_hook T::*Hook,
+  utils::s3_fifo::cache_evictor<T> Evictor,
+  utils::s3_fifo::cache_cost<T> Cost>
+struct fmt::formatter<utils::s3_fifo::cache<T, Hook, Evictor, Cost>>
   : fmt::formatter<std::string_view> {
     template<typename FormatContext>
     auto format(
-      const experimental::io::cache<T, Hook, Evictor, Cost>& cache,
+      const utils::s3_fifo::cache<T, Hook, Evictor, Cost>& cache,
       FormatContext& ctx) const {
         const auto stat = cache.stat();
         return fmt::format_to(
