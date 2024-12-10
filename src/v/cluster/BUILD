@@ -215,6 +215,18 @@ redpanda_cc_library(
     ],
 )
 
+redpanda_cc_library(
+    name = "topic_memory_per_partition_default",
+    hdrs = [
+        "scheduling/topic_memory_per_partition_default.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+    ],
+)
+
 # TODO the following headers are the only headers in redpanda which are excluded
 # from clang-tidy. if you remove the exclusion then you'll observe a tangled web
 # of header dependencies. after many hours those have not yet been resolved, so
@@ -617,7 +629,9 @@ redpanda_cc_library(
         "version.h",
     ],
     implementation_deps = [
+        ":topic_memory_per_partition_default",
         "//src/v/features:enterprise_feature_messages",
+        "//src/v/resource_mgmt:memory_groups",
     ],
     include_prefix = "cluster",
     visibility = ["//visibility:public"],

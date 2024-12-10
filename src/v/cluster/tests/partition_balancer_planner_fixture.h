@@ -24,6 +24,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
@@ -78,7 +79,6 @@ public:
           .start_single(
             std::ref(members),
             std::ref(features),
-            config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
@@ -89,6 +89,8 @@ public:
                  "_schemas"}}),
             config::mock_binding<bool>(true))
           .get();
+        config::shard_local_cfg().topic_memory_per_partition.set_value(
+          std::nullopt);
         // use node status that is not used in test as self is always available
         node_status_table.start_single(model::node_id{123}).get();
         state
