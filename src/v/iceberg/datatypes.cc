@@ -16,17 +16,17 @@ namespace iceberg {
 
 struct primitive_type_comparison_visitor {
     template<typename T, typename U>
-    bool operator()(const T&, const U&) const {
+    static bool operator()(const T&, const U&) {
         return false;
     }
-    bool operator()(const decimal_type& lhs, const decimal_type& rhs) const {
+    static bool operator()(const decimal_type& lhs, const decimal_type& rhs) {
         return lhs.precision == rhs.precision && lhs.scale == rhs.scale;
     }
-    bool operator()(const fixed_type& lhs, const fixed_type& rhs) const {
+    static bool operator()(const fixed_type& lhs, const fixed_type& rhs) {
         return lhs.length == rhs.length;
     }
     template<typename T>
-    bool operator()(const T&, const T&) const {
+    static bool operator()(const T&, const T&) {
         return true;
     }
 };
@@ -37,20 +37,20 @@ bool operator==(const primitive_type& lhs, const primitive_type& rhs) {
 
 struct field_type_comparison_visitor {
     template<typename T, typename U>
-    bool operator()(const T&, const U&) const {
+    static bool operator()(const T&, const U&) {
         return false;
     }
-    bool
-    operator()(const primitive_type& lhs, const primitive_type& rhs) const {
+    static bool
+    operator()(const primitive_type& lhs, const primitive_type& rhs) {
         return lhs == rhs;
     }
-    bool operator()(const struct_type& lhs, const struct_type& rhs) const {
+    static bool operator()(const struct_type& lhs, const struct_type& rhs) {
         return lhs == rhs;
     }
-    bool operator()(const list_type& lhs, const list_type& rhs) const {
+    static bool operator()(const list_type& lhs, const list_type& rhs) {
         return lhs == rhs;
     }
-    bool operator()(const map_type& lhs, const map_type& rhs) const {
+    static bool operator()(const map_type& lhs, const map_type& rhs) {
         return lhs == rhs;
     }
 };
@@ -66,22 +66,24 @@ bool operator==(const nested_field& lhs, const nested_field& rhs) {
 namespace {
 
 struct type_copying_visitor {
-    field_type operator()(const primitive_type& t) { return make_copy(t); }
-    field_type operator()(const struct_type& t) {
+    static field_type operator()(const primitive_type& t) {
+        return make_copy(t);
+    }
+    static field_type operator()(const struct_type& t) {
         struct_type ret;
         for (const auto& field_ptr : t.fields) {
             ret.fields.emplace_back(field_ptr ? field_ptr->copy() : nullptr);
         }
         return ret;
     }
-    field_type operator()(const list_type& t) {
+    static field_type operator()(const list_type& t) {
         list_type ret;
         if (t.element_field) {
             ret.element_field = t.element_field->copy();
         }
         return ret;
     }
-    field_type operator()(const map_type& t) {
+    static field_type operator()(const map_type& t) {
         map_type ret;
         if (t.key_field) {
             ret.key_field = t.key_field->copy();
