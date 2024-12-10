@@ -190,7 +190,8 @@ private:
     hash_type::digest_type hash_key(const compaction_key&) const;
 
     mutable hash_type hasher_;
-    chunked_vector<entry> entries_;
+    using entries_t = chunked_vector<entry>;
+    entries_t entries_;
 
     size_t size_{0};
     model::offset max_offset_;
