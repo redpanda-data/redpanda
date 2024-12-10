@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
 import time
+from typing import Optional
 from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase
@@ -36,8 +37,11 @@ class DatalakeVerifier():
 
     #TODO: add an ability to pass lambda to verify the message content
     #TODO: add tolerance for compacted topics
-    def __init__(self, redpanda: RedpandaService, topic: str,
-                 query_engine: QueryEngineBase):
+    def __init__(self,
+                 redpanda: RedpandaService,
+                 topic: str,
+                 query_engine: QueryEngineBase,
+                 max_offset_check_override: Optional[int] = None):
         self.redpanda = redpanda
         self.topic = topic
         self.logger = redpanda.logger
@@ -57,6 +61,7 @@ class DatalakeVerifier():
         # map of last queried offset for each partition
         self._max_queried_offsets = {}
         self._last_checkpoint = {}
+        self._max_offset_check_override = max_offset_check_override
 
     def create_consumer(self):
         c = Consumer({
@@ -194,9 +199,13 @@ class DatalakeVerifier():
                     )
                     return False
 
-                if self._max_queried_offsets[p.id] < p.high_watermark - 1:
+                max_offset_to_check = p.high_watermark - 1
+                if self._max_offset_check_override:
+                    max_offset_to_check = self._max_offset_check_override
+
+                if self._max_queried_offsets[p.id] < max_offset_to_check:
                     self.logger.debug(
-                        f"partition {p.id} high watermark: {p.high_watermark}, max offset: {self._max_queried_offsets[p.id]}"
+                        f"partition {p.id} max offset to check: {max_offset_to_check}, high watermark: {p.high_watermark} max offset: {self._max_queried_offsets[p.id]}"
                     )
                     return False
         return True
