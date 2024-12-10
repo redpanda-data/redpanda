@@ -724,9 +724,10 @@ ss::future<compaction_result> self_compact_segment(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
     }
 
+    const bool may_remove_tombstones = may_have_removable_tombstones(s, cfg);
     if (
       !s->has_compactible_offsets(cfg)
-      || (s->finished_self_compaction() && !may_have_removable_tombstones(s, cfg))) {
+      || (s->finished_self_compaction() && !may_remove_tombstones)) {
         co_return compaction_result{s->size_bytes()};
     }
 
@@ -735,7 +736,11 @@ ss::future<compaction_result> self_compact_segment(
       = co_await maybe_rebuild_compaction_index(
         s, stm_manager, cfg, read_holder, resources, pb);
 
-    if (state == compacted_index::recovery_state::already_compacted) {
+    const bool segment_already_compacted
+      = (state == compacted_index::recovery_state::already_compacted)
+        && !may_remove_tombstones;
+
+    if (segment_already_compacted) {
         vlog(
           gclog.debug,
           "detected {} is already compacted",
@@ -744,10 +749,10 @@ ss::future<compaction_result> self_compact_segment(
         co_return compaction_result{s->size_bytes()};
     }
 
-    vassert(
-      state == compacted_index::recovery_state::index_recovered,
-      "Unexpected state {}",
-      state);
+    const bool is_valid_index_state
+      = (state == compacted_index::recovery_state::index_recovered)
+        || (state == compacted_index::recovery_state::already_compacted);
+    vassert(is_valid_index_state, "Unexpected state {}", state);
 
     auto sz_before = s->size_bytes();
     auto apply_offset = should_apply_delta_time_offset(feature_table);
