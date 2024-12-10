@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#include "base/vassert.h"
 #include "bytes/bytes.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
@@ -18,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <exception>
+#include <unordered_map>
 #include <variant>
 
 using namespace pandaproxy::schema_registry;
@@ -260,4 +262,192 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
     ASSERT_TRUE(resolved_buf.type.has_value());
     EXPECT_EQ(1, resolved_buf.type->id.schema_id());
     EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+}
+
+namespace {
+struct counting_store : public pandaproxy::schema_registry::schema_getter {
+    counting_store(
+      schema::fake_registry& registry,
+      std::unordered_map<pandaproxy::schema_registry::schema_id, size_t>&
+        counts)
+      : registry(registry)
+      , counts(counts) {}
+
+    ss::future<pandaproxy::schema_registry::subject_schema> get_subject_schema(
+      pandaproxy::schema_registry::subject sub,
+      std::optional<pandaproxy::schema_registry::schema_version> version,
+      pandaproxy::schema_registry::include_deleted inc_dec) final {
+        auto* getter = co_await registry.getter();
+        co_return co_await getter->get_subject_schema(sub, version, inc_dec);
+    }
+
+    ss::future<pandaproxy::schema_registry::canonical_schema_definition>
+    get_schema_definition(pandaproxy::schema_registry::schema_id id) final {
+        counts[id] += 1;
+        auto* getter = co_await registry.getter();
+        co_return co_await getter->get_schema_definition(id);
+    }
+
+    ss::future<
+      std::optional<pandaproxy::schema_registry::canonical_schema_definition>>
+    maybe_get_schema_definition(
+      pandaproxy::schema_registry::schema_id id) final {
+        counts[id] += 1;
+        auto* getter = co_await registry.getter();
+        co_return co_await getter->maybe_get_schema_definition(id);
+    }
+
+    schema::fake_registry& registry;
+    std::unordered_map<pandaproxy::schema_registry::schema_id, size_t>& counts;
+};
+
+class counting_registry : public schema::registry {
+public:
+    bool is_enabled() const override { return true; };
+
+    ss::future<pandaproxy::schema_registry::schema_getter*>
+    getter() const override {
+        co_return &_store;
+    }
+    ss::future<pandaproxy::schema_registry::canonical_schema_definition>
+    get_schema_definition(
+      pandaproxy::schema_registry::schema_id id) const override {
+        return _store.get_schema_definition(id);
+    }
+
+    ss::future<pandaproxy::schema_registry::subject_schema> get_subject_schema(
+      pandaproxy::schema_registry::subject sub,
+      std::optional<pandaproxy::schema_registry::schema_version> version)
+      const override {
+        return _registry.get_subject_schema(sub, version);
+    }
+
+    ss::future<pandaproxy::schema_registry::schema_id> create_schema(
+      pandaproxy::schema_registry::unparsed_schema unparsed) override {
+        return _registry.create_schema(std::move(unparsed));
+    }
+
+    const std::vector<pandaproxy::schema_registry::subject_schema>& get_all() {
+        return _registry.get_all();
+    }
+
+    size_t get_count(pandaproxy::schema_registry::schema_id id) {
+        return _counts[id];
+    }
+
+    void reset_counts() { _counts.clear(); }
+
+private:
+    schema::fake_registry _registry{};
+    std::unordered_map<pandaproxy::schema_registry::schema_id, size_t>
+      _counts{};
+    mutable counting_store _store{_registry, _counts};
+};
+
+schema_cache_t make_schema_cache() {
+    return schema_cache_t{schema_cache_t::config{10, 4}};
+}
+
+std::unique_ptr<counting_registry> make_counting_sr() {
+    auto sr = std::make_unique<counting_registry>();
+
+    auto avro_schema_id = sr
+                            ->create_schema(unparsed_schema{
+                              subject{"foo"},
+                              unparsed_schema_definition{
+                                avro_record_schema, schema_type::avro}})
+                            .get();
+    vassert(1 == avro_schema_id(), "failed to registry avro schema");
+    auto pb_schema_id = sr
+                          ->create_schema(unparsed_schema{
+                            subject{"foo"},
+                            unparsed_schema_definition{
+                              pb_record_schema, schema_type::protobuf}})
+                          .get();
+    vassert(2 == pb_schema_id(), "failed to register protobuf schema");
+    return sr;
+}
+} // namespace
+
+TEST(CachedRecordSchemaResolverTest, TestProtobufSchemaCache) {
+    // Kakfa magic byte + schema ID + pb offsets.
+    std::vector<int32_t> pb_offsets{2, 0};
+    iobuf buf;
+    buf.append("\0\0\0\0\2", 5);
+    buf.append(encode_pb_offsets(pb_offsets));
+    buf.append(generate_dummy_body());
+
+    auto schema_cache = make_schema_cache();
+    auto sr = make_counting_sr();
+    auto resolver = record_schema_resolver(*sr, schema_cache);
+
+    auto resolve_buffer_fn = [&](bool expect_sr_access) {
+        sr->reset_counts();
+        size_t expected_sr_count = expect_sr_access ? 1 : 0;
+
+        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        ASSERT_FALSE(res.has_error());
+        auto& resolved_buf = res.value();
+        ASSERT_TRUE(resolved_buf.type.has_value());
+        EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+        ASSERT_EQ(
+          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
+        EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
+        EXPECT_EQ(resolved_buf.type->id.protobuf_offsets.value(), pb_offsets);
+
+        const auto expected_type = field_type{[] {
+            auto expected_struct = struct_type{};
+            expected_struct.fields.emplace_back(nested_field::create(
+              1, "inner_label_1", field_required::no, string_type{}));
+            expected_struct.fields.emplace_back(nested_field::create(
+              2, "inner_number_1", field_required::no, int_type{}));
+            return expected_struct;
+        }()};
+        EXPECT_EQ(resolved_buf.type->type, expected_type);
+    };
+
+    // First access to a schema, should hit the schema registry.
+    resolve_buffer_fn(true);
+    // All accesses afterwards should be cache hits.
+    resolve_buffer_fn(false);
+}
+
+TEST(CachedRecordSchemaResolverTest, TestAvroSchemaCache) {
+    // Kakfa magic byte + schema ID.
+    iobuf buf;
+    buf.append("\0\0\0\0\1", 5);
+    buf.append(generate_dummy_body());
+
+    auto schema_cache = make_schema_cache();
+    auto sr = make_counting_sr();
+    auto resolver = record_schema_resolver(*sr, schema_cache);
+
+    auto resolve_buffer_fn = [&](bool expect_sr_access) {
+        sr->reset_counts();
+        size_t expected_sr_count = expect_sr_access ? 1 : 0;
+
+        auto res = resolver.resolve_buf_type(buf.copy()).get();
+        ASSERT_FALSE(res.has_error());
+        auto& resolved_buf = res.value();
+        ASSERT_TRUE(resolved_buf.type.has_value());
+        EXPECT_EQ(1, resolved_buf.type->id.schema_id());
+        ASSERT_EQ(
+          sr->get_count(resolved_buf.type->id.schema_id), expected_sr_count);
+        EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
+
+        const auto expected_type = field_type{[] {
+            auto expected_struct = struct_type{};
+            expected_struct.fields.emplace_back(nested_field::create(
+              0, "value", field_required::yes, long_type{}));
+            expected_struct.fields.emplace_back(
+              nested_field::create(0, "next", field_required::yes, int_type{}));
+            return expected_struct;
+        }()};
+        EXPECT_EQ(resolved_buf.type->type, expected_type);
+    };
+
+    // First access to a schema, should hit the schema registry.
+    resolve_buffer_fn(true);
+    // All accesses afterwards should be cache hits.
+    resolve_buffer_fn(false);
 }
