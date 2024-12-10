@@ -51,6 +51,7 @@ controller_api::controller_api(
   ss::sharded<health_monitor_frontend>& health_monitor,
   ss::sharded<members_table>& members,
   ss::sharded<partition_balancer_backend>& partition_balancer,
+  ss::sharded<partition_manager>& partition_manager,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _backend(backend)
@@ -60,6 +61,7 @@ controller_api::controller_api(
   , _health_monitor(health_monitor)
   , _members(members)
   , _partition_balancer(partition_balancer)
+  , _partition_manager(partition_manager)
   , _as(as) {}
 
 ss::future<chunked_vector<ntp_reconciliation_state>>
@@ -151,12 +153,31 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     co_return co_await get_reconciliation_state(std::move(ntps));
 }
 
+namespace {
+std::optional<recovery_state> get_partition_recovery_state(
+  const partition_manager& pm, const model::ntp& ntp) {
+    auto partition = pm.get(ntp);
+    if (!partition) {
+        return std::nullopt;
+    }
+    auto result = partition->get_recovery_state();
+    if (!result.has_value()) {
+        return std::nullopt;
+    }
+    return std::make_optional(std::move(result.value()));
+}
+} // namespace
+
 ss::future<std::optional<backend_operation>>
 controller_api::get_current_op(model::ntp ntp, ss::shard_id shard) {
-    auto cur_op = co_await _backend.invoke_on(
-      shard, [ntp = std::move(ntp)](controller_backend& backend) {
-          return backend.get_current_op(ntp);
+    auto [cur_op, r_state] = co_await ss::smp::submit_to(
+      shard,
+      [ntp = std::move(ntp), &backend = _backend, &pm = _partition_manager] {
+          return std::make_tuple(
+            backend.local().get_current_op(ntp),
+            get_partition_recovery_state(pm.local(), ntp));
       });
+
     if (cur_op) {
         co_return backend_operation{
           .source_shard = shard,
@@ -165,6 +186,7 @@ controller_api::get_current_op(model::ntp ntp, ss::shard_id shard) {
           .current_retry = cur_op->retries,
           .last_operation_result = cur_op->last_error,
           .revision_of_operation = cur_op->revision,
+          .recovery_state = r_state,
         };
     }
     co_return std::nullopt;

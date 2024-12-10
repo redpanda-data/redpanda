@@ -332,6 +332,11 @@ public:
     ss::sharded<features::feature_table>& feature_table() const;
 
     result<std::vector<raft::follower_metrics>> get_follower_metrics() const;
+    /**
+     * This method return a recovery state i.e. the offset and bytes that are
+     * left to be delivered to the recovering replica.
+     */
+    result<recovery_state> get_recovery_state() const;
 
     // Attempt to reset the partition manifest of a cloud storage partition
     // from an iobuf containing the JSON representation of the manifest.
