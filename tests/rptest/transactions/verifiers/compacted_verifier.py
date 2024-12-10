@@ -136,6 +136,7 @@ class CompactedVerifier(Service):
 
     def stop_node(self, node):
         node.account.ssh("bash /opt/remote/control/stop.sh rw")
+        self.wait_node(node, timeout_sec=30)
         self.raise_on_violation(node)
 
     def clean_node(self, node):
