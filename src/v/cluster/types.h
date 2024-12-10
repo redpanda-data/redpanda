@@ -2009,7 +2009,7 @@ struct reconciliation_state_request
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    std::vector<model::ntp> ntps;
+    chunked_vector<model::ntp> ntps;
 
     friend bool operator==(
       const reconciliation_state_request&, const reconciliation_state_request&)
@@ -2017,11 +2017,15 @@ struct reconciliation_state_request
 
     friend std::ostream&
     operator<<(std::ostream& o, const reconciliation_state_request& req) {
-        fmt::print(o, "{{ ntps: {} }}", req.ntps);
+        fmt::print(o, "{{ ntps: {} }}", fmt::join(req.ntps, ", "));
         return o;
     }
 
     auto serde_fields() { return std::tie(ntps); }
+
+    reconciliation_state_request copy() const {
+        return reconciliation_state_request{.ntps = ntps.copy()};
+    }
 };
 
 struct ntp_with_majority_loss
@@ -2099,7 +2103,7 @@ struct reconciliation_state_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    std::vector<ntp_reconciliation_state> results;
+    chunked_vector<ntp_reconciliation_state> results;
 
     friend bool operator==(
       const reconciliation_state_reply&, const reconciliation_state_reply&)
@@ -2107,12 +2111,12 @@ struct reconciliation_state_reply
 
     friend std::ostream&
     operator<<(std::ostream& o, const reconciliation_state_reply& rep) {
-        fmt::print(o, "{{ results {} }}", rep.results);
+        fmt::print(o, "{{ results {} }}", fmt::join(rep.results, ", "));
         return o;
     }
 
     reconciliation_state_reply copy() const {
-        std::vector<ntp_reconciliation_state> results_cp;
+        chunked_vector<ntp_reconciliation_state> results_cp;
         results_cp.reserve(results.size());
         for (auto& r : results) {
             results_cp.push_back(r.copy());
@@ -3160,7 +3164,7 @@ struct node_decommission_progress {
     // Replicas on the node with failures during reallocation.
     ss::chunked_fifo<model::ntp> allocation_failures;
     // list of currently ongoing partition reconfigurations
-    std::vector<partition_reconfiguration_state> current_reconfigurations;
+    chunked_vector<partition_reconfiguration_state> current_reconfigurations;
 };
 
 enum class cloud_storage_mode : uint8_t {

@@ -62,13 +62,15 @@ controller_api::controller_api(
   , _partition_balancer(partition_balancer)
   , _as(as) {}
 
-ss::future<std::vector<ntp_reconciliation_state>>
-controller_api::get_reconciliation_state(std::vector<model::ntp> ntps) {
-    return ss::do_with(std::move(ntps), [this](std::vector<model::ntp>& ntps) {
-        return ssx::async_transform(ntps, [this](const model::ntp& ntp) {
-            return get_reconciliation_state(ntp);
-        });
-    });
+ss::future<chunked_vector<ntp_reconciliation_state>>
+controller_api::get_reconciliation_state(chunked_vector<model::ntp> ntps) {
+    chunked_vector<ntp_reconciliation_state> result;
+    result.reserve(ntps.size());
+    for (auto& ntp : ntps) {
+        auto r = co_await get_reconciliation_state(std::move(ntp));
+        result.push_back(std::move(r));
+    }
+    co_return result;
 }
 
 ss::future<result<bool>>
@@ -128,14 +130,14 @@ bool has_node_local_replicas(
       [self](const model::broker_shard& p_as) { return p_as.node_id == self; });
 }
 
-ss::future<result<std::vector<ntp_reconciliation_state>>>
+ss::future<result<chunked_vector<ntp_reconciliation_state>>>
 controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
-    using ret_t = result<std::vector<ntp_reconciliation_state>>;
+    using ret_t = result<chunked_vector<ntp_reconciliation_state>>;
     auto metadata = _topics.local().get_topic_metadata_ref(tp_ns);
     if (!metadata) {
         co_return ret_t(errc::topic_not_exists);
     }
-    std::vector<model::ntp> ntps;
+    chunked_vector<model::ntp> ntps;
     ntps.reserve(metadata->get().get_assignments().size());
 
     std::transform(
@@ -223,15 +225,15 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
       std::move(ntp), {}, reconciliation_status::in_progress);
 }
 
-ss::future<result<std::vector<ntp_reconciliation_state>>>
+ss::future<result<chunked_vector<ntp_reconciliation_state>>>
 controller_api::get_reconciliation_state(
   model::node_id target_id,
-  std::vector<model::ntp> ntps,
+  chunked_vector<model::ntp> ntps,
   model::timeout_clock::time_point timeout) {
-    using ret_t = result<std::vector<ntp_reconciliation_state>>;
+    using ret_t = result<chunked_vector<ntp_reconciliation_state>>;
     if (target_id == _self) {
         return get_reconciliation_state(std::move(ntps))
-          .then([](std::vector<ntp_reconciliation_state> ret) {
+          .then([](chunked_vector<ntp_reconciliation_state> ret) {
               return ret_t(std::move(ret));
           });
     }
@@ -267,8 +269,8 @@ controller_api::get_reconciliation_state(
   model::node_id id, model::ntp ntp, model::timeout_clock::time_point timeout) {
     using ret_t = result<ntp_reconciliation_state>;
     return get_reconciliation_state(
-             id, std::vector<model::ntp>{std::move(ntp)}, timeout)
-      .then([](result<std::vector<ntp_reconciliation_state>> result) {
+             id, chunked_vector<model::ntp>{std::move(ntp)}, timeout)
+      .then([](result<chunked_vector<ntp_reconciliation_state>> result) {
           if (result.has_error()) {
               return ret_t(result.error());
           }
@@ -311,9 +313,9 @@ ss::future<std::error_code> controller_api::wait_for_topic(
     co_return errc::success;
 }
 
-ss::future<result<std::vector<partition_reconfiguration_state>>>
+ss::future<result<chunked_vector<partition_reconfiguration_state>>>
 controller_api::get_partitions_reconfiguration_state(
-  std::vector<model::ntp> partitions,
+  const chunked_vector<model::ntp>& partitions,
   model::timeout_clock::time_point timeout) {
     auto& updates_in_progress = _topics.local().updates_in_progress();
 
@@ -387,7 +389,7 @@ controller_api::get_partitions_reconfiguration_state(
             }
         }
     }
-    std::vector<partition_reconfiguration_state> ret;
+    chunked_vector<partition_reconfiguration_state> ret;
     ret.reserve(states.size());
     for (auto& [_, state] : states) {
         ret.push_back(std::move(state));
@@ -512,9 +514,11 @@ controller_api::shard_for(const model::ntp& ntp) const {
 
 ss::future<global_reconciliation_state>
 controller_api::get_global_reconciliation_state(
-  std::vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
+  const chunked_vector<model::ntp>& ntps,
+  model::timeout_clock::time_point timeout) {
     // step is to gather per node requests for each of the node
-    absl::node_hash_map<model::node_id, std::vector<model::ntp>> grouped_ntps;
+    absl::node_hash_map<model::node_id, chunked_vector<model::ntp>>
+      grouped_ntps;
     const auto ntps_sz = ntps.size();
 
     for (auto& ntp : ntps) {
@@ -531,7 +535,7 @@ controller_api::get_global_reconciliation_state(
         co_await ss::coroutine::maybe_yield();
     }
 
-    using ret_t = result<std::vector<ntp_reconciliation_state>>;
+    using ret_t = result<chunked_vector<ntp_reconciliation_state>>;
 
     auto node_results = co_await ssx::parallel_transform(
       std::move(grouped_ntps), [this, timeout](auto pair) {
