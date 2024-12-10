@@ -2714,7 +2714,9 @@ void partition_manifest::process_anomalies(
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_manifest& pm) {
+    o << "{manifest: ";
     pm.serialize_json(o, false);
+    o << "; last segment: " << pm.last_segment() << "}";
     return o;
 }
 
