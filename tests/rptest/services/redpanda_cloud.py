@@ -854,17 +854,12 @@ class CloudCluster():
         # Check topic count
         self._logger.info("Checking cluster topics")
         _topics = self._query_panda_proxy("/topics")
-        # For Azure, connect is in development
-        if self.config.provider == PROVIDER_AZURE:
-            _critical = ["_schemas", "_redpanda_e2e_probe"]
-            required_critical_topic_count = 2
-        else:
-            _critical = [
-                "_schemas", "__redpanda.connectors_logs",
-                "_internal_connectors_status", "_internal_connectors_configs",
-                "_redpanda_e2e_probe", "_internal_connectors_offsets"
-            ]
-            required_critical_topic_count = 6
+        _critical = [
+            "_schemas", "__redpanda.connectors_logs",
+            "_internal_connectors_status", "_internal_connectors_configs",
+            "_redpanda_e2e_probe", "_internal_connectors_offsets"
+        ]
+        required_critical_topic_count = 6
 
         _intersect = list(set(_topics) & set(_critical))
         if len(_intersect) < required_critical_topic_count:
