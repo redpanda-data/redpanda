@@ -297,6 +297,10 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
 }
 
 void segment::release_appender_in_background(readers_cache* readers_cache) {
+    if (_gate.is_closed()) {
+        return;
+    }
+
     auto a = std::exchange(_appender, nullptr);
     auto c = config::shard_local_cfg().release_cache_on_segment_roll()
                ? std::exchange(_cache, std::nullopt)
