@@ -17,10 +17,10 @@
  * -format=html ../src/v/bytes/iobuf.h ../src/v/bytes/iobuf.cc > cov.html
  */
 #include "base/vassert.h"
-#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/scattered_message.h"
 
+#include <exception>
 #include <numeric>
 
 /*
@@ -508,7 +508,7 @@ private:
 
     template<typename T>
     T read() {
-        if (std::distance(pc_, program_.cend()) < sizeof(T)) {
+        if (std::cmp_less(std::distance(pc_, program_.cend()), sizeof(T))) {
             throw end_of_program();
         }
         T ret;
