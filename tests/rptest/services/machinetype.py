@@ -24,6 +24,9 @@ class MachineTypeName(str, Enum):
     # Azure X86
     STANDARD_L8S_V3 = 'Standard_L8s_v3'
     STANDARD_L8AS_V3 = 'Standard_L8as_v3'
+    STANDARD_D2D_V5 = 'Standard_D2d_v5'
+    STANDARD_D4D_V5 = 'Standard_D4d_v5'
+    STANDARD_D32D_V5 = 'Standard_D32d_v5'
 
     # GCP X86
     N2_STANDARD_2 = 'n2-standard-2'
@@ -86,6 +89,12 @@ MachineTypeConfigs = {
     MachineTypeConfig(num_shards=7, memory=64 * GiB),
     MachineTypeName.STANDARD_L8AS_V3:
     MachineTypeConfig(num_shards=7, memory=64 * GiB),
+    MachineTypeName.STANDARD_D2D_V5:
+    MachineTypeConfig(num_shards=1, memory=8 * GiB),
+    MachineTypeName.STANDARD_D4D_V5:
+    MachineTypeConfig(num_shards=3, memory=16 * GiB),
+    MachineTypeName.STANDARD_D32D_V5:
+    MachineTypeConfig(num_shards=30, memory=128 * GiB),
 
     # GCP X86
     MachineTypeName.N2_STANDARD_2:
