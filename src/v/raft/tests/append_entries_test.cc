@@ -322,7 +322,7 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
     auto f = leader_raft->replicate(
-      random_batches_reader(2).get(), default_replicate_opts);
+      random_batches(2).get(), default_replicate_opts);
     leader_raft.release();
     // since replicate doesn't accept timeout client have to deal with it.
     ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
@@ -805,11 +805,9 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
             auto value = bytes_to_iobuf(random_generators::get_bytes(3_MiB));
             builder.add_raw_kv({}, std::move(value));
 
-            auto rdr = model::make_memory_record_batch_reader(
-              {std::move(builder).build()});
             return leader_node.consensus
               ->replicate(
-                std::move(rdr),
+                std::move(builder).build(),
                 raft::replicate_options(raft::consistency_level::quorum_ack))
               .then([](result<raft::replicate_result> res) {
                   if (!res) {
@@ -825,16 +823,16 @@ FIXTURE_TEST(test_big_batches_replication, raft_test_fixture) {
     validate_offset_translation(gr);
 }
 struct request_ordering_test_fixture : public raft_test_fixture {
-    model::record_batch_reader make_indexed_batch_reader(int32_t idx) {
+    chunked_vector<model::record_batch> make_indexed_batch_reader(int32_t idx) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
 
         iobuf buf;
         reflection::serialize(buf, idx);
         builder.add_raw_kv({}, std::move(buf));
-
-        return model::make_memory_record_batch_reader(
-          {std::move(builder).build()});
+        chunked_vector<model::record_batch> batches;
+        batches.push_back(std::move(builder).build());
+        return batches;
     }
 
     ss::future<> replicate_indexed_batches(

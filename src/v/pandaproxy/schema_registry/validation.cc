@@ -159,10 +159,6 @@ T combine(
 
 class schema_id_validator::impl {
 public:
-    using data_t = model::record_batch_reader::data_t;
-    using foreign_data_t = model::record_batch_reader::foreign_data_t;
-    using storage_t = model::record_batch_reader::storage_t;
-
     impl(
       const std::unique_ptr<api>& api,
       model::topic topic,
@@ -359,18 +355,7 @@ public:
         co_return valid;
     }
 
-    ss::future<bool> validate(const data_t& data) {
-        for (const auto& b : data) {
-            if (!co_await validate(b)) {
-                co_return false;
-            }
-        }
-        co_return true;
-    }
-
-    auto validate(const foreign_data_t& data) { return validate(*data.buffer); }
-
-    ss::future<result> operator()(model::record_batch_reader&& rbr) {
+    ss::future<result> operator()(model::record_batch batch) {
         if (!_api) {
             // If Schema Registry is not enabled, the safe default is to reject
             co_return kafka::error_code::invalid_record;
@@ -378,25 +363,16 @@ public:
         if (
           config::shard_local_cfg().enable_schema_id_validation()
           == pandaproxy::schema_registry::schema_id_validation_mode::none) {
-            co_return std::move(rbr);
+            co_return std::move(batch);
         }
 
-        auto impl = std::move(rbr).release();
-        auto slice = co_await impl->do_load_slice(model::no_timeout);
-        vassert(
-          impl->is_end_of_stream(),
-          "Attempt to validate schema id on a record_batch_reader with "
-          "multiple slices");
-
-        auto valid = co_await ss::visit(
-          slice, [this](const auto& d) { return validate(d); });
+        auto valid = co_await validate(batch);
 
         if (!valid) {
             // It's possible that the schema registry doesn't have a newly
             // written schema, update and retry.
             co_await _api->_sequencer.local().read_sync();
-            valid = co_await ss::visit(
-              slice, [this](const auto& d) { return validate(d); });
+            valid = co_await validate(batch);
         }
 
         if (!valid) {
@@ -414,7 +390,7 @@ public:
             co_return kafka::error_code::invalid_record;
         }
 
-        co_return model::make_memory_record_batch_reader(std::move(slice));
+        co_return std::move(batch);
     }
 
 private:
@@ -472,9 +448,9 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
 }
 
 ss::future<schema_id_validator::result> schema_id_validator::operator()(
-  model::record_batch_reader&& rbr, cluster::partition_probe* probe) {
+  model::record_batch batch, cluster::partition_probe* probe) {
     using futurator = ss::futurize<schema_id_validator::result>;
-    return (*_impl)(std::move(rbr))
+    return (*_impl)(std::move(batch))
       .handle_exception([](std::exception_ptr e) {
           vlog(plog.warn, "Invalid record due to exception: {}", e);
           return futurator::convert(kafka::error_code::invalid_record);

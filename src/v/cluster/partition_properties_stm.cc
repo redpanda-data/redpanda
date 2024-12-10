@@ -210,10 +210,7 @@ partition_properties_stm::replicate_properties_update(
       raft::consistency_level::quorum_ack,
       std::chrono::milliseconds(timeout / 1ms));
     r_opts.set_force_flush();
-    auto r = co_await _raft->replicate(
-      _insync_term,
-      model::make_memory_record_batch_reader(std::move(b)),
-      r_opts);
+    auto r = co_await _raft->replicate(_insync_term, std::move(b), r_opts);
 
     if (r.has_error()) {
         vlog(
