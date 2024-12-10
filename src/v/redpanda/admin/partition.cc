@@ -266,9 +266,9 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
 
           size_t left_to_move = 0;
           size_t already_moved = 0;
-          for (auto replica_status : s.already_transferred_bytes) {
-              left_to_move += (s.current_partition_size - replica_status.bytes);
-              already_moved += replica_status.bytes;
+          for (auto replica_status : s.replicas) {
+              left_to_move += replica_status.bytes_left;
+              already_moved += replica_status.bytes_transferred;
           }
           r.bytes_left_to_move = left_to_move;
           r.bytes_moved = already_moved;

@@ -2573,9 +2573,9 @@ admin_server::get_decommission_progress_handler(
         status.moving_to = moving_to;
         size_t left_to_move = 0;
         size_t already_moved = 0;
-        for (auto replica_status : p.already_transferred_bytes) {
-            left_to_move += (p.current_partition_size - replica_status.bytes);
-            already_moved += replica_status.bytes;
+        for (auto replica_status : p.replicas) {
+            left_to_move += replica_status.bytes_left;
+            already_moved += replica_status.bytes_transferred;
         }
         status.bytes_left_to_move = left_to_move;
         status.bytes_moved = already_moved;
