@@ -448,6 +448,53 @@ message AddressBook {
         assert json.loads(msg["value"]) == expected_msg_1
         assert json.loads(msg["key"]) == expected_msg_2
 
+        # Testing the same as above but using a well-known protobuf type
+        subject_3 = "subject_for_well_known_types"
+        well_known_proto_def = """
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/type/month.proto";
+
+message Test3 {
+  google.protobuf.Timestamp timestamp = 1;
+  google.type.Month month = 2;
+}
+"""
+        self.create_schema(subject_3, well_known_proto_def, ".proto")  # ID 3
+
+        msg_3 = '{"timestamp":"2024-12-18T20:32:05Z","month":"DECEMBER"}'
+        key_3 = "somekey"
+        expected_msg_3 = json.loads(msg_3)
+        # Produce: unencoded key, encoded value:
+        self._rpk.produce(
+            test_topic, msg=msg_3, key=key_3, schema_id=3,
+            proto_msg="")  # For single-message, it should default to it.
+
+        # We consume as is, i.e: it will show the encoded value.
+        out = self._rpk.consume(test_topic, offset="2:3")
+        msg = json.loads(out)
+
+        raw_bytes_string = msg["value"]
+        assert raw_bytes_string != expected_msg_3, f'expected to have raw bytes {raw_bytes_string} to be different than {expected_msg_3}'
+        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
+
+        bytes_from_string = bytes(
+            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+        assert bytes_from_string[
+            0] == 0, f'expected encoding to contain magic byte (0)'
+
+        # Now we decode the same message:
+        out = self._rpk.consume(test_topic,
+                                offset="2:3",
+                                use_schema_registry="value")
+        msg = json.loads(out)
+
+        assert json.loads(
+            msg["value"]
+        ) == expected_msg_3, f'got: {json.loads(msg["value"])}; expected {expected_msg_3}'
+        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
+
     @cluster(num_nodes=3)
     def test_produce_consume_json(self):
         # First we register the schemas with their references.
