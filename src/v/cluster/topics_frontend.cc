@@ -1800,7 +1800,7 @@ topics_frontend::cancel_moving_all_partition_replicas(
 
 ss::future<std::vector<move_cancellation_result>>
 topics_frontend::do_cancel_moving_partition_replicas(
-  std::vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
+  chunked_vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
     std::vector<move_cancellation_result> results;
     results.reserve(ntps.size());
     co_await ss::max_concurrent_for_each(

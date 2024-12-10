@@ -44,11 +44,11 @@ public:
       ss::sharded<partition_balancer_backend>&,
       ss::sharded<ss::abort_source>&);
 
-    ss::future<result<std::vector<ntp_reconciliation_state>>>
+    ss::future<result<chunked_vector<ntp_reconciliation_state>>>
       get_reconciliation_state(model::topic_namespace_view);
 
-    ss::future<std::vector<ntp_reconciliation_state>>
-      get_reconciliation_state(std::vector<model::ntp>);
+    ss::future<chunked_vector<ntp_reconciliation_state>>
+      get_reconciliation_state(chunked_vector<model::ntp>);
 
     ss::future<ntp_reconciliation_state> get_reconciliation_state(model::ntp);
 
@@ -57,10 +57,10 @@ public:
     /**
      * API to access both remote and local state
      */
-    ss::future<result<std::vector<ntp_reconciliation_state>>>
+    ss::future<result<chunked_vector<ntp_reconciliation_state>>>
       get_reconciliation_state(
         model::node_id,
-        std::vector<model::ntp>,
+        chunked_vector<model::ntp>,
         model::timeout_clock::time_point);
 
     ss::future<result<ntp_reconciliation_state>> get_reconciliation_state(
@@ -70,9 +70,9 @@ public:
     ss::future<std::error_code> wait_for_topic(
       model::topic_namespace_view, model::timeout_clock::time_point);
 
-    ss::future<result<std::vector<partition_reconfiguration_state>>>
-      get_partitions_reconfiguration_state(
-        std::vector<model::ntp>, model::timeout_clock::time_point);
+    ss::future<result<chunked_vector<partition_reconfiguration_state>>>
+    get_partitions_reconfiguration_state(
+      const chunked_vector<model::ntp>&, model::timeout_clock::time_point);
     /**
      * Returns state of controller backend from each node in the cluster for
      * requested list of ntps. A global reconciliation status contains a state
@@ -80,7 +80,7 @@ public:
      * ntp replica set.
      */
     ss::future<global_reconciliation_state> get_global_reconciliation_state(
-      std::vector<model::ntp>, model::timeout_clock::time_point);
+      const chunked_vector<model::ntp>&, model::timeout_clock::time_point);
 
     ss::future<result<node_decommission_progress>>
       get_node_decommission_progress(

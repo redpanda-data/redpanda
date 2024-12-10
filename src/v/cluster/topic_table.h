@@ -538,19 +538,19 @@ public:
     /**
      * Lists all NTPs that replicas are being move to a node
      */
-    std::vector<model::ntp> ntps_moving_to_node(model::node_id) const;
+    chunked_vector<model::ntp> ntps_moving_to_node(model::node_id) const;
 
     /**
      * Lists all NTPs that replicas are being move from a node
      */
-    std::vector<model::ntp> ntps_moving_from_node(model::node_id) const;
+    chunked_vector<model::ntp> ntps_moving_from_node(model::node_id) const;
 
     /**
      * Lists all ntps moving either from or to a node
      */
-    std::vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
+    chunked_vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
 
-    std::vector<model::ntp> all_updates_in_progress() const;
+    chunked_vector<model::ntp> all_updates_in_progress() const;
 
     model::revision_id last_applied_revision() const {
         return _last_applied_revision_id;

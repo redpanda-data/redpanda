@@ -204,7 +204,7 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     auto& in_progress
       = _controller->get_topics_state().local().updates_in_progress();
 
-    std::vector<model::ntp> ntps;
+    chunked_vector<model::ntp> ntps;
     ntps.reserve(in_progress.size());
 
     for (auto& [ntp, status] : in_progress) {
@@ -238,9 +238,13 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     auto reconciliations_ptr
       = ss::make_lw_shared<cluster::global_reconciliation_state>(
         std::move(reconciliations));
+    auto reconfiguration_states_value = std::move(
+      reconfiguration_states.value());
+
     co_return ss::json::json_return_type(ss::json::stream_range_as_array(
-      std::move(reconfiguration_states.value()),
-      [reconciliations = std::move(reconciliations_ptr)](auto& s) {
+      lw_shared_container(std::move(reconfiguration_states_value)),
+      [reconciliations = std::move(reconciliations_ptr)](
+        const cluster::partition_reconfiguration_state& s) -> reconfiguration {
           reconfiguration r;
           r.ns = s.ntp.ns;
           r.topic = s.ntp.tp.topic;
