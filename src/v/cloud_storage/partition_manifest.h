@@ -700,4 +700,6 @@ private:
     model::offset _applied_offset;
 };
 
+std::ostream& operator<<(std::ostream& o, const partition_manifest& f);
+
 } // namespace cloud_storage

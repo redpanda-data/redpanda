@@ -2713,4 +2713,9 @@ void partition_manifest::process_anomalies(
       _last_scrubbed_offset);
 }
 
+std::ostream& operator<<(std::ostream& o, const partition_manifest& pm) {
+    pm.serialize_json(o, false);
+    return o;
+}
+
 } // namespace cloud_storage
