@@ -316,6 +316,10 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       _ntpc.get_revision(),
       retention);
     auto mat = co_await find_recovery_material();
+    vlog(
+      _ctxlog.debug,
+      "Partition manifest used for recovery: {}",
+      mat.partition_manifest);
     if (mat.partition_manifest.size() == 0) {
         // If the downloaded manifest doesn't have any segments
         log_recovery_result result{
