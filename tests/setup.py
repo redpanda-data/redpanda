@@ -13,7 +13,7 @@ setup(
     package_data={'': ['*.md']},
     include_package_data=True,
     install_requires=[
-        'ducktape@git+https://github.com/redpanda-data/ducktape.git@0b128ce0aaa1815db9880fb171a4f90cf7b74e43',
+        'ducktape@git+https://github.com/redpanda-data/ducktape.git@f51d83f1c035cf77f9389139646f5abdaa6d3648',
         'prometheus-client==0.9.0',
         'kafka-python==2.0.2',
         'crc32c==2.2',
@@ -29,7 +29,7 @@ setup(
         'pytest==7.1.2',
         'jump-consistent-hash==3.2.0',
         'azure-storage-blob==12.14.1',
-        'kafkatest@git+https://github.com/apache/kafka.git@e146c7c9164c4e8817fe891ac9d7d1661889b2b4#egg=kafkatest&subdirectory=tests',
+        'kafkatest@git+https://github.com/apache/kafka.git@b3939f7901470048a70ee7cbaaa587f32cfac50e#egg=kafkatest&subdirectory=tests',
         'grpcio==1.57.0',
         'grpcio-tools==1.57',
         'grpcio-status==1.57.0',
