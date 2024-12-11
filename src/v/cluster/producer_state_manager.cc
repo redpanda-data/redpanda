@@ -41,7 +41,7 @@ producer_state_manager::producer_state_manager(
 
 ss::future<> producer_state_manager::start() {
     _reaper.set_callback([this] { evict_excess_producers(); });
-    _reaper.arm(period);
+    _reaper.arm(_reaper_period);
     vlog(clusterlog.info, "Started producer state manager");
     return ss::now();
 }
@@ -67,6 +67,12 @@ void producer_state_manager::setup_metrics() {
          "evicted_producers",
          [this] { return _eviction_counter; },
          sm::description("Number of evicted producers so far."))});
+}
+
+void producer_state_manager::rearm_eviction_timer_for_testing(
+  std::chrono::milliseconds new_period) {
+    _reaper_period = new_period;
+    _reaper.rearm(ss::lowres_clock::now() + _reaper_period);
 }
 
 void producer_state_manager::register_producer(
@@ -97,7 +103,7 @@ void producer_state_manager::evict_excess_producers() {
     _cache.evict_older_than<ss::lowres_system_clock>(
       ss::lowres_system_clock::now() - _producer_expiration_ms());
     if (!_gate.is_closed()) {
-        _reaper.arm(period);
+        _reaper.arm(_reaper_period);
     }
 }
 
