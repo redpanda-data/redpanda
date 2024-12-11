@@ -110,8 +110,7 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
         // TODO: make updates a variant so we can share code more easily?
         case update_key::add_files: {
             auto update = co_await serde::read_async<add_files_update>(val_p);
-            vlog(
-              _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
+            vlog(_log.debug, "Applying {} from offset {}: {}", key, o, update);
             auto res = update.apply(state_, o);
             maybe_log_update_error(_log, key, o, res);
             continue;
@@ -119,8 +118,7 @@ ss::future<> coordinator_stm::do_apply(const model::record_batch& b) {
         case update_key::mark_files_committed: {
             auto update
               = co_await serde::read_async<mark_files_committed_update>(val_p);
-            vlog(
-              _log.debug, "Applying {} from offset {}: {}", key, o, update.tp);
+            vlog(_log.debug, "Applying {} from offset {}: {}", key, o, update);
             auto res = update.apply(state_);
             maybe_log_update_error(_log, key, o, res);
             continue;
