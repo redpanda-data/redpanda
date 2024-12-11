@@ -167,6 +167,16 @@ rp_test(
   ARGS "-- -c 1"
 )
 
+rp_test(
+  FIXTURE_TEST
+  GTEST
+  BINARY_NAME gtest_compaction_reducer
+  SOURCES compaction_reducer_fixture_test.cc
+  LIBRARIES  v::application v::features v::gtest_main v::storage_test_utils
+  LABELS storage
+  ARGS "-- -c 1"
+)
+
 
 rp_test(
   UNIT_TEST
