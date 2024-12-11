@@ -776,13 +776,15 @@ private:
 
     std::optional<model::offset> get_learner_start_offset() const;
 
-    bool use_serde_configuration() const {
-        return _features.is_active(features::feature::raft_config_serde);
-    }
-
     flush_delay_t compute_max_flush_delay() const;
     ss::future<> do_flush();
 
+    bool supports_symmetric_reconfiguration_cancel() const {
+        return _features.is_active(
+          features::feature::raft_symmetric_reconfiguration_cancel);
+    }
+
+    void try_updating_configuration_version(group_configuration& cfg);
     // args
     vnode _self;
     raft::group_id _group;
