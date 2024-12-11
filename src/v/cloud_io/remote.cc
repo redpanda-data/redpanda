@@ -66,6 +66,9 @@ cloud_io::provider infer_provider(
   model::cloud_storage_backend backend,
   const cloud_storage_clients::client_configuration& conf) {
     switch (backend) {
+    case model::cloud_storage_backend::unknown:
+        // NOTE: treat unknown cloud storage backend as a valid case
+        // in which we're assuming S3 compatible storage.
     case model::cloud_storage_backend::aws:
     case model::cloud_storage_backend::minio:
     case model::cloud_storage_backend::oracle_s3_compat:
@@ -78,8 +81,6 @@ cloud_io::provider infer_provider(
           .account_name = abs.storage_account_name(),
         };
     }
-    case model::cloud_storage_backend::unknown:
-        unreachable();
     }
 }
 
