@@ -277,10 +277,28 @@ std::ostream& operator<<(std::ostream& o, const topic_table_ntp_delta& d) {
 std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
     fmt::print(
       o,
-      "{{partition_assignment: {}, shard: {},  type: {}}}",
+      "{{partition_assignment: {}, shard: {},  type: {}, "
+      "recovery_state: {}}}",
       op.p_as,
       op.source_shard,
-      op.type);
+      op.type,
+      op.recovery_state);
+    return o;
+}
+std::ostream& operator<<(std::ostream& o, const recovery_state& r) {
+    fmt::print(
+      o,
+      "{{local_last_offset: {}, replicas: {}}}",
+      r.local_last_offset,
+      r.replicas);
+    return o;
+}
+std::ostream& operator<<(std::ostream& o, const replica_recovery_state& rrs) {
+    fmt::print(
+      o,
+      "{{last_offset: {}, bytes_left: {}}}",
+      rrs.last_offset,
+      rrs.bytes_left);
     return o;
 }
 
