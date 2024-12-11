@@ -11,13 +11,15 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
-import time
+from time import time, sleep
+from typing import Optional
 from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import RedpandaService
 from rptest.tests.datalake.query_engine_base import QueryEngineBase
 from rptest.util import wait_until
 
 from confluent_kafka import Consumer
+from confluent_kafka import TopicPartition
 
 
 class DatalakeVerifier():
@@ -41,7 +43,18 @@ class DatalakeVerifier():
         self.redpanda = redpanda
         self.topic = topic
         self.logger = redpanda.logger
+        # Map from partition id to list of messages consumed
+        # by from the partition
         self._consumed_messages = defaultdict(list)
+        # Maximum offset consumed from the partition.
+        # Consumed here refers to consumption by the app layer, meaning
+        # there has to be a valid batch at the offset returned by the
+        # kafka consume API.
+        self._max_consumed_offsets = {}
+        # Next position to be consumed from the partition. This may be
+        # > max_consumed_offset + 1 if there are gaps from non consumable
+        # batches like aborted data batches / control batches
+        self._next_positions = defaultdict(lambda: -1)
 
         self._query: QueryEngineBase = query_engine
         self._cg = f"verifier-group-{random.randint(0, 1000000)}"
@@ -71,12 +84,38 @@ class DatalakeVerifier():
     def _consumer_thread(self):
         self.logger.info("Starting consumer thread")
         consumer = self.create_consumer()
-        while not self._stop.is_set():
 
+        last_position_update = time()
+
+        def maybe_update_positions():
+            nonlocal last_position_update
+            if time() < last_position_update + 3:
+                # periodically sweep through all partitions
+                # and update positions
+                return
+            with self._lock:
+                partitions = [
+                    TopicPartition(topic=self.topic, partition=p)
+                    for p in self._consumed_messages.keys()
+                ]
+                positions = consumer.position(partitions)
+                for p in positions:
+                    if p.error is not None:
+                        self.logger.warning(
+                            f"Erorr querying position for partition {p.partition}"
+                        )
+                    else:
+                        self.logger.debug(
+                            f"next position for {p.partition} is {p.offset}")
+                        self._next_positions[p.partition] = p.offset
+                last_position_update = time()
+
+        while not self._stop.is_set():
             self._msg_semaphore.acquire()
             if self._stop.is_set():
                 break
             msg = consumer.poll(1.0)
+            maybe_update_positions()
             if msg is None:
                 continue
             if msg.error():
@@ -90,6 +129,9 @@ class DatalakeVerifier():
                         f"Consumed message partition: {msg.partition()} at offset {msg.offset()}"
                     )
                 self._consumed_messages[msg.partition()].append(msg)
+                self._max_consumed_offsets[msg.partition()] = max(
+                    self._max_consumed_offsets.get(msg.partition(), -1),
+                    msg.offset())
                 if len(self._errors) > 0:
                     return
 
@@ -139,9 +181,7 @@ class DatalakeVerifier():
 
     def _get_partition_offsets_list(self):
         with self._lock:
-            return [(partition, messages[-1].offset())
-                    for partition, messages in self._consumed_messages.items()
-                    if len(messages) > 0]
+            return self._next_positions.copy()
 
     def _query_thread(self):
         self.logger.info("Starting query thread")
@@ -149,10 +189,11 @@ class DatalakeVerifier():
             try:
                 partitions = self._get_partition_offsets_list()
 
-                for partition, max_consumed in partitions:
+                for partition, next_consume_offset in partitions.items():
                     last_queried_offset = self._max_queried_offsets[
                         partition] if partition in self._max_queried_offsets else -1
 
+                    max_consumed = next_consume_offset - 1
                     # no new messages consumed, skip query
                     if max_consumed <= last_queried_offset:
                         continue
@@ -178,7 +219,7 @@ class DatalakeVerifier():
 
             except Exception as e:
                 self.logger.error(f"Error querying iceberg table: {e}")
-                time.sleep(2)
+                sleep(2)
 
     def start(self):
         self._executor.submit(self._consumer_thread)
@@ -194,11 +235,16 @@ class DatalakeVerifier():
                     )
                     return False
 
-                if self._max_queried_offsets[p.id] < p.high_watermark - 1:
+                if self._next_positions[p.id] < p.high_watermark:
                     self.logger.debug(
-                        f"partition {p.id} high watermark: {p.high_watermark}, max offset: {self._max_queried_offsets[p.id]}"
+                        f"partition {p.id} high watermark: {p.high_watermark} max offset: {self._next_positions[p.id]} has not been consumed fully"
                     )
                     return False
+                # Ensure all the consumed messages are drained.
+                return all(
+                    len(messages) == 0
+                    for messages in self._consumed_messages.values())
+
         return True
 
     def _made_progress(self):
@@ -237,6 +283,7 @@ class DatalakeVerifier():
             self._errors
         ) == 0, f"Topic {self.topic} validation errors: {self._errors}"
 
-        assert all(
-            len(messages) == 0 for messages in self._consumed_messages.values(
-            )), f"Partition left with consumed but not translated messages"
+        self.logger.debug(f"consumed offsets: {self._max_consumed_offsets}")
+        self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
+
+        assert self._max_queried_offsets == self._max_consumed_offsets, "Mismatch between maximum offsets in topic vs iceberg table"
