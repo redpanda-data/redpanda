@@ -385,6 +385,7 @@ redpanda_cc_library(
         ":schema_identifier",
         "//src/v/base",
         "//src/v/iceberg:datatypes",
+        "//src/v/utils:chunked_kv_cache",
         "@seastar",
     ],
 )
