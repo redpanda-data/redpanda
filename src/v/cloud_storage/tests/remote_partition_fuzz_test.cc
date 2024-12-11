@@ -362,7 +362,7 @@ FIXTURE_TEST(
     try {
         auto headers_read
           = scan_remote_partition_incrementally_with_closest_lso(
-            *this, base, max, 5, 5);
+            *this, base, max, 5, 25);
         vlog(test_log.debug, "{} record batches consumed", headers_read.size());
         model::offset expected_offset{0};
         size_t ix_header = 0;

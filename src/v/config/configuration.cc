@@ -1340,7 +1340,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "1",
        .visibility = visibility::tunable},
-      10)
+      1)
   , segment_fallocation_step(
       *this,
       "segment_fallocation_step",
