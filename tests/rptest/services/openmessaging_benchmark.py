@@ -10,6 +10,8 @@
 import os
 import json
 import collections
+import shutil
+from pathlib import Path
 from typing import Optional, Any
 
 from ducktape.services.service import Service
@@ -24,6 +26,40 @@ from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurati
 LOG_ALLOW_LIST = [
     "No such file or directory", "cannot be started once stopped"
 ]
+
+
+class LocalPayloadDirectory:
+    def __init__(self, path=Path("/tmp/custom_payloads")):
+        """
+        Used to enable the use of a set of custom payloads in OMB.
+        Note that each payload needs to be the same size.
+
+        :param path: used to specify the path on the localhost where custom
+                     payload files are stored before being transferred to the remote
+                     OMB coordinator.
+        """
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=False, exist_ok=False)
+        self.path = path
+        self.payload_size: None | int = None
+
+    def __del__(self):
+        shutil.rmtree(self.path)
+
+    def add_payload(self, payload_name: str, payload: bytes):
+        if self.payload_size is None:
+            self.payload_size = len(payload)
+
+        assert len(
+            payload
+        ) == self.payload_size, "all custom payloads must be the same size"
+
+        with open(self.path / f"{payload_name}.data", "wb") as f:
+            f.write(payload)
+
+    def has_payloads(self) -> bool:
+        return self.payload_size is not None
 
 
 # Benchmark worker that is used by benchmark process to run consumers and producers
@@ -152,6 +188,7 @@ class OpenMessagingBenchmark(Service):
     RESULTS_DIR = os.path.join(PERSISTENT_ROOT, "results")
     RESULT_FILE = os.path.join(RESULTS_DIR, "result.json")
     CHARTS_DIR = os.path.join(PERSISTENT_ROOT, "charts")
+    CUSTOM_PAYLOAD_DIR = os.path.join(PERSISTENT_ROOT, "custom_payloads")
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "benchmark.log")
     OPENMESSAGING_DIR = "/opt/openmessaging-benchmark"
     DRIVER_FILE = os.path.join(OPENMESSAGING_DIR,
@@ -177,7 +214,8 @@ class OpenMessagingBenchmark(Service):
                  node: ClusterNode | None = None,
                  worker_nodes=None,
                  topology="swarm",
-                 num_workers=NUM_WORKERS):
+                 num_workers=NUM_WORKERS,
+                 local_payload_dir: LocalPayloadDirectory | None = None):
         """
         Creates a utility that can run OpenMessagingBenchmark (OMB) tests in ducktape. See OMB
         documentation for definitions of driver/workload files.
@@ -187,6 +225,8 @@ class OpenMessagingBenchmark(Service):
                          structure of the dicts)
         :param nodes: optional, pre-allocated node to run the benchmark from (by default allocate one)
         :param worker_nodes: optional, list of pre-allocated nodes to run workers on (by default allocate NUM_WORKERS)
+        :param local_payload_dir: optional, if provided "payload_file" and "message_size" in `workload` will be overwritten
+                                  to use the payloads in `local_payload_dir`.
         """
         super(OpenMessagingBenchmark,
               self).__init__(ctx, num_nodes=0 if node else 1)
@@ -201,6 +241,7 @@ class OpenMessagingBenchmark(Service):
         self.worker_nodes = worker_nodes
         self.num_workers = num_workers
         self.workers = None
+        self._local_payload_dir = local_payload_dir
         if isinstance(driver, str):
             self.driver = OMBSampleConfigurations.DRIVERS[driver]
         else:
@@ -211,6 +252,13 @@ class OpenMessagingBenchmark(Service):
         else:
             self.workload = workload[0]
             self.validator = workload[1]
+
+        if local_payload_dir is not None:
+            assert local_payload_dir.has_payloads(
+            ), "local_payload_dir must have at least one payload"
+            self.workload[
+                "payload_file"] = OpenMessagingBenchmark.CUSTOM_PAYLOAD_DIR
+            self.workload["message_size"] = local_payload_dir.payload_size
 
         assert int(
             self.workload.get("warmup_duration_minutes", '0')
@@ -246,6 +294,31 @@ class OpenMessagingBenchmark(Service):
             self._ctx, num_workers=self.num_workers, nodes=self.worker_nodes)
         self.workers.start()
 
+    def _copy_custom_payload_dir_to_node(self, node):
+        assert self._local_payload_dir is not None
+        local_payload_dir = self._local_payload_dir.path
+
+        payload_file_list = []
+        for file in os.listdir(local_payload_dir):
+            file_path = os.path.join(local_payload_dir, file)
+            if file.endswith('data') and not os.path.isdir(file_path):
+                payload_file_list.append(file_path)
+
+        self.logger.info(
+            f"Copying {len(payload_file_list)} custom payloads to OMB coordinator."
+        )
+
+        na = node.account
+
+        assert not na.exists(
+            self.CUSTOM_PAYLOAD_DIR
+        ), f"Custom payload dir {self.CUSTOM_PAYLOAD_DIR} already exists on OMB workers."
+
+        na.mkdirs(self.CUSTOM_PAYLOAD_DIR)
+
+        for payload_file in payload_file_list:
+            na.copy_to(payload_file, self.CUSTOM_PAYLOAD_DIR)
+
     @property
     def metrics(self):
         """Metrics from the results of an OMB run.
@@ -263,6 +336,9 @@ class OpenMessagingBenchmark(Service):
 
         self._create_benchmark_workload_file(node)
         self._create_benchmark_driver_file(node)
+
+        if self._local_payload_dir is not None:
+            self._copy_custom_payload_dir_to_node(node)
 
         assert self.workers
         worker_nodes = self.workers.get_adresses()
