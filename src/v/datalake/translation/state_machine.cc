@@ -138,7 +138,14 @@ translation_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     co_return raft::stm_snapshot::create(0, snapshot_offset, std::move(result));
 }
 
-ss::future<> translation_stm::apply_raft_snapshot(const iobuf&) { co_return; }
+ss::future<> translation_stm::apply_raft_snapshot(const iobuf&) {
+    // reset offset to not initalized when handling Raft snapshot, this way
+    // state machine will not hold any obsolete state that should be overriden
+    // with the snapshot.
+    vlog(_log.debug, "Applying raft snapshot, resetting state");
+    _highest_translated_offset = kafka::offset{};
+    co_return;
+}
 
 ss::future<iobuf> translation_stm::take_snapshot(model::offset) {
     co_return iobuf{};
