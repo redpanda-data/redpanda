@@ -11,6 +11,8 @@ redpanda_cc_gtest(
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/kafka/data:partition_proxy",
+        "//src/v/kafka/data/rpc",
+        "//src/v/kafka/data/rpc/test:test_deps",
         "//src/v/model",
         "//src/v/model/tests:random",
         "//src/v/net",

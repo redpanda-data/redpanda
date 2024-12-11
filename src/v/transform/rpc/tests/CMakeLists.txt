@@ -9,6 +9,7 @@ rp_test(
     v::gtest_main
     v::transform_rpc
     v::model_test_utils
+    v::kd_rpc_test_deps
   ARGS "-- -c 1"
   LABELS transform_rpc
 )

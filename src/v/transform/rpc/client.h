@@ -14,6 +14,8 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "kafka/data/rpc/deps.h"
+#include "kafka/data/rpc/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -44,12 +46,12 @@ class client {
 public:
     client(
       model::node_id self,
-      std::unique_ptr<partition_leader_cache>,
-      std::unique_ptr<topic_metadata_cache>,
-      std::unique_ptr<topic_creator>,
+      std::unique_ptr<kafka::data::rpc::partition_leader_cache>,
+      std::unique_ptr<kafka::data::rpc::topic_metadata_cache>,
       std::unique_ptr<cluster_members_cache>,
       ss::sharded<::rpc::connection_cache>*,
       ss::sharded<local_service>*,
+      ss::sharded<kafka::data::rpc::client>*,
       config::binding<size_t>);
     client(client&&) = delete;
     client& operator=(client&&) = delete;
@@ -159,11 +161,6 @@ private:
     ss::future<result<model::cluster_transform_report, cluster::errc>>
       generate_remote_report(model::node_id);
 
-    ss::future<cluster::errc> do_produce_once(produce_request);
-    ss::future<produce_reply> do_local_produce(produce_request);
-    ss::future<produce_reply>
-      do_remote_produce(model::node_id, produce_request);
-
     ss::future<result<stored_wasm_binary_metadata, cluster::errc>>
     do_store_wasm_binary_once(
       model::wasm_binary_iobuf, model::timeout_clock::duration timeout);
@@ -256,11 +253,11 @@ private:
     model::node_id _self;
     std::unique_ptr<cluster_members_cache> _cluster_members;
     // need partition_leaders_table to know which node owns the partitions
-    std::unique_ptr<partition_leader_cache> _leaders;
-    std::unique_ptr<topic_metadata_cache> _topic_metadata;
-    std::unique_ptr<topic_creator> _topic_creator;
+    std::unique_ptr<kafka::data::rpc::partition_leader_cache> _leaders;
+    std::unique_ptr<kafka::data::rpc::topic_metadata_cache> _topic_metadata;
     ss::sharded<::rpc::connection_cache>* _connections;
     ss::sharded<local_service>* _local_service;
+    ss::sharded<kafka::data::rpc::client>* _kafka_client;
     ss::abort_source _as;
     ss::gate _gate;
     mutex _wasm_binary_max_size_updater_mu{

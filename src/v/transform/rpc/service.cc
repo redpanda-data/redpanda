@@ -13,6 +13,7 @@
 
 #include "cluster/types.h"
 #include "kafka/data/partition_proxy.h"
+#include "logger.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -92,44 +93,12 @@ model::record_header make_header(ss::sstring k, ss::sstring v) {
 } // namespace
 
 local_service::local_service(
-  std::unique_ptr<topic_metadata_cache> metadata_cache,
+  std::unique_ptr<kafka::data::rpc::topic_metadata_cache> metadata_cache,
   std::unique_ptr<partition_manager> partition_manager,
   std::unique_ptr<reporter> reporter)
   : _metadata_cache(std::move(metadata_cache))
   , _partition_manager(std::move(partition_manager))
   , _reporter(std::move(reporter)) {}
-
-ss::future<ss::chunked_fifo<transformed_topic_data_result>>
-local_service::produce(
-  ss::chunked_fifo<transformed_topic_data> topic_data,
-  model::timeout_clock::duration timeout) {
-    ss::chunked_fifo<transformed_topic_data_result> results;
-    constexpr size_t max_concurrent_produces = 10;
-    ss::semaphore sem(max_concurrent_produces);
-    co_await ss::parallel_for_each(
-      std::make_move_iterator(topic_data.begin()),
-      std::make_move_iterator(topic_data.end()),
-      [this, timeout, &results, &sem](transformed_topic_data data) {
-          return ss::with_semaphore(
-            sem,
-            1,
-            [this, timeout, &results, data = std::move(data)]() mutable {
-                return produce(std::move(data), timeout)
-                  .then([&results](transformed_topic_data_result r) {
-                      results.push_back(std::move(r));
-                  });
-            });
-      });
-    co_return results;
-}
-
-ss::future<transformed_topic_data_result> local_service::produce(
-  transformed_topic_data data, model::timeout_clock::duration timeout) {
-    auto ktp = model::ktp(data.tp.topic, data.tp.partition);
-    auto result = co_await produce(ktp, std::move(data.batches), timeout);
-    auto ec = result.has_error() ? result.error() : cluster::errc::success;
-    co_return transformed_topic_data_result(data.tp, ec);
-}
 
 ss::future<result<model::offset, cluster::errc>> local_service::produce(
   model::any_ntp auto ntp,
@@ -357,14 +326,6 @@ ss::future<cluster::errc> local_service::delete_committed_offsets(
     }
     co_return co_await _partition_manager->delete_committed_offsets_on_shard(
       *shard, ntp, std::move(ids));
-}
-
-ss::future<produce_reply>
-network_service::produce(produce_request req, ::rpc::streaming_context&) {
-    co_await ss::coroutine::switch_to(get_scheduling_group());
-    auto results = co_await _service->local().produce(
-      std::move(req.topic_data), req.timeout);
-    co_return produce_reply(std::move(results));
 }
 
 ss::future<delete_wasm_binary_reply> network_service::delete_wasm_binary(
