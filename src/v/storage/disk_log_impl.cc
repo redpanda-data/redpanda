@@ -58,6 +58,7 @@
 #include <fmt/format.h>
 #include <roaring/roaring.hh>
 
+#include <chrono>
 #include <exception>
 #include <iterator>
 #include <optional>
@@ -1820,13 +1821,36 @@ ss::future<> disk_log_impl::apply_segment_ms() {
     auto& local_config = config::shard_local_cfg();
     // clamp user provided value with (hopefully sane) server min and max
     // values, this should protect against overflow UB
-    if (
-      first_write_ts.value()
-        + std::clamp(
+    const auto clamped_seg_ms = std::clamp(
+      seg_ms.value(),
+      local_config.log_segment_ms_min(),
+      local_config.log_segment_ms_max());
+
+    static constexpr auto rate_limit = std::chrono::minutes(5);
+    thread_local static ss::logger::rate_limit rate(rate_limit);
+    if (seg_ms < clamped_seg_ms) {
+        stlog.log(
+          ss::log_level::warn,
+          rate,
+          "Configured segment.ms={} is lower than the configured cluster "
+          "bound {}={}",
           seg_ms.value(),
-          local_config.log_segment_ms_min(),
-          local_config.log_segment_ms_max())
-      > ss::lowres_clock::now()) {
+          local_config.log_segment_ms_min.name(),
+          local_config.log_segment_ms_min());
+    }
+
+    if (seg_ms > clamped_seg_ms) {
+        stlog.log(
+          ss::log_level::warn,
+          rate,
+          "Configured segment.ms={} is higher than the configured cluster "
+          "bound {}={}",
+          seg_ms.value(),
+          local_config.log_segment_ms_max.name(),
+          local_config.log_segment_ms_max());
+    }
+
+    if (first_write_ts.value() + clamped_seg_ms > ss::lowres_clock::now()) {
         // skip, time hasn't expired
         co_return;
     }
