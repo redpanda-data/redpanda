@@ -4,6 +4,7 @@ common --extra_toolchains=@llvm_18_toolchain//:all
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
 build --linkopt --unwindlib=libgcc
+build --linkopt -stdlib=libc++
 
 common:clang-19 --extra_toolchains=@llvm_19_toolchain//:all
 
@@ -46,7 +47,7 @@ build:sanitizer --copt -fsanitize=address,undefined,vptr,function
 build:sanitizer --linkopt -fsanitize=address,undefined,vptr,function
 build:sanitizer --linkopt --rtlib=compiler-rt
 build:sanitizer --linkopt -fsanitize-link-c++-runtime
-build:sanitizer --copt -O1
+build:sanitizer --copt -O1 --//bazel:mark_optimized=True
 # seastar has to be run with system allocator when using sanitizers
 build:sanitizer --@seastar//:system_allocator=True
 # krb5 is a foreign cc build and needs explicit list of sanitizers to build the shared library
@@ -86,7 +87,7 @@ build:secure --config=relro
 # =================================
 # Release
 # =================================
-build:release --compilation_mode opt
+build:release --compilation_mode opt --//bazel:mark_optimized=True
 build:release --config=secure
 build:release --copt -mllvm --copt -inline-threshold=2500
 build:release --@seastar//:stack_guards=False
@@ -110,6 +111,12 @@ build:coverage --experimental_split_coverage_postprocessing
 build:coverage --experimental_fetch_all_coverage_outputs
 build:coverage --collect_code_coverage
 build:coverage --instrumentation_filter="^//src/v[/:]"
+
+# =================================
+# Debug Symbols
+# =================================
+build:debug-symbols --copt -g
+build:debug-symbols --strip=never
 
 # =================================
 # Testing
