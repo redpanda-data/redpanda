@@ -2402,7 +2402,8 @@ bool application::wasm_data_transforms_enabled() {
 }
 
 bool application::datalake_enabled() {
-    return config::shard_local_cfg().iceberg_enabled();
+    return config::shard_local_cfg().iceberg_enabled()
+           && !config::node().recovery_mode_enabled();
 }
 
 ss::future<>
@@ -3143,11 +3144,13 @@ void application::start_runtime_services(
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_data_migration_frontend()),
               std::ref(controller->get_data_migration_irpc_frontend())));
-          runtime_services.push_back(
-            std::make_unique<datalake::coordinator::rpc::service>(
-              sched_groups.datalake_sg(),
-              smp_service_groups.datalake_sg(),
-              &_datalake_coordinator_fe));
+          if (datalake_enabled()) {
+              runtime_services.push_back(
+                std::make_unique<datalake::coordinator::rpc::service>(
+                  sched_groups.datalake_sg(),
+                  smp_service_groups.datalake_sg(),
+                  &_datalake_coordinator_fe));
+          }
 
           s.add_services(std::move(runtime_services));
 
