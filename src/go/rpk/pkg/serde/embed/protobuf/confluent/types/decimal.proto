@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package confluent.type;
+
+option go_package="../types";
+
+message Decimal {
+
+  // The two's-complement representation of the unscaled integer value in big-endian byte order
+  bytes value = 1;
+
+  // The precision
+  uint32 precision = 2;
+
+  // The scale
+  int32 scale = 3;
+}
