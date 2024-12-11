@@ -137,39 +137,40 @@ sharded_store::get_schema_version(subject_schema schema) {
     // Validate the schema (may throw)
     co_await validate_schema(schema.schema.share());
 
-    // Determine if the definition already exists
-    auto map = [&schema](store& s) {
-        return s.get_schema_id(schema.schema.def());
-    };
-    auto reduce = [](
-                    std::optional<schema_id> acc,
-                    std::optional<schema_id> s_id) { return acc ? acc : s_id; };
-    auto s_id = co_await _store.map_reduce0(
-      map, std::optional<schema_id>{}, reduce);
-
-    // Determine if a provided schema id is appropriate
+    std::optional<schema_id> s_id;
     if (schema.id != invalid_schema_id) {
-        if (s_id.has_value() && s_id != schema.id) {
-            co_return ss::coroutine::return_exception(exception(
-              error_code::subject_version_schema_id_already_exists,
-              fmt::format(
-                "Schema already registered with id {} instead of input id {}",
-                s_id.value()(),
-                schema.id())));
-        } else if (co_await has_schema(schema.id)) {
-            // The supplied id already exists, but the schema is different
-            co_return ss::coroutine::return_exception(exception(
-              error_code::subject_version_schema_id_already_exists,
-              fmt::format(
-                "Overwrite new schema with id {} is not permitted.",
-                schema.id())));
-        } else {
-            // Use the supplied id
-            s_id = schema.id;
-            vlog(plog.debug, "project_ids: using supplied ID {}", s_id.value());
+        // Use the provided schema.id if it exists and is equivalent
+        try {
+            auto def = co_await get_schema_definition(schema.id);
+            if (def != schema.schema.def()) {
+                // The supplied id already exists, but the schema is different
+                co_return ss::coroutine::return_exception(exception(
+                  error_code::subject_version_operation_not_permitted,
+                  fmt::format(
+                    "Overwrite new schema with id {} is not permitted.",
+                    schema.id())));
+            }
+        } catch (const exception& e) {
+            if (e.code() != error_code::schema_id_not_found) {
+                co_return ss::coroutine::return_exception(e);
+            }
         }
-    } else if (s_id) {
-        vlog(plog.debug, "project_ids: existing ID {}", s_id.value());
+        s_id = schema.id;
+        vlog(plog.debug, "project_ids: using supplied ID {}", s_id.value());
+    } else {
+        // If the schema definition already exists, use its id.
+        auto map = [&schema](store& s) {
+            return s.get_schema_id(schema.schema.def());
+        };
+        auto reduce =
+          [](std::optional<schema_id> acc, std::optional<schema_id> s_id) {
+              return acc ? acc : s_id;
+          };
+        s_id = co_await _store.map_reduce0(
+          map, std::optional<schema_id>{}, reduce);
+        if (s_id) {
+            vlog(plog.debug, "project_ids: existing ID {}", s_id.value());
+        }
     }
 
     // Determine if the subject already has a version that references this

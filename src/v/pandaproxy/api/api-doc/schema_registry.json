@@ -767,6 +767,12 @@
               "$ref": "#/definitions/error_body"
             }
           },
+          "422": {
+            "description": "Unprocessable Entity",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
           "500": {
             "description": "Internal Server Error",
             "schema": {
