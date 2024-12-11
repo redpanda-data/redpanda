@@ -35,11 +35,14 @@ from rptest.services.admin import Admin
 from rptest.services import tls
 from rptest.utils.utf8 import CONTROL_CHARS_MAP
 from typing import Optional, List, Dict, Union
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
+
+PAYLOAD_TOO_LARGE_HTTP_ERROR_CODE = 413
 
 HTTP_GET_BROKERS_HEADERS = {
     "Accept": "application/vnd.kafka.v2+json",
@@ -1283,6 +1286,66 @@ class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
         assert sc_res.status_code == requests.codes.bad_request
         assert sc_res.json(
         )["message"] == f'Invalid parameter \'topic_name\' got \'{topic_name.translate(CONTROL_CHARS_MAP)}\''
+
+    #Memory tracking is disabled in debug
+    @skip_debug_mode
+    @cluster(num_nodes=3)
+    def test_topic_produce_request_too_big(self):
+        """
+        Create a topic and post a request larger than the total available memory.
+        """
+
+        self.redpanda.set_resource_settings(
+            ResourceSettings(memory_mb=256, num_cpus=1))
+        self.redpanda.start()
+
+        name = create_topic_names(1)[0]
+
+        self.logger.info("Generating request larger than the available memory")
+        value = {
+            "value":
+            ("TWVzc2FnZSBTdGFydC4gVXNpbmcgYSBsb25nIHNlbnRlbmNlIHRvIGJlIGFibGUgdG8gcmVhY2ggdGhlIGF2YWlsYWJsZSB"
+             "tZW1vcnkgbGltaXQgd2l0aG91dCBoYXZpbmcgdG8gdXNlIHRvbyBtYW55IHJlY29yZHMuIEV2ZXJ5IHJlY29yZCBvYmplY3"
+             "QgaXMgOTYgYnl0ZXMgKyBoZWFwLiBJZiBhIHNtYWxsIHZhbHVlIHN0cmluZyBpcyB1c2VkIHBlciBvYmplY3QsIHdoZW4gd"
+             "GhpcyBqc29uIGlzIHBhcnNlZCwgdGhlIG1lbW9yeSByZXF1aXJlbWVudHMgYXJlIG11Y2ggbW9yZSB0aGFuIHRoZSByZXF1"
+             "ZXN0IGl0c2VsZi4gTWVzc2FnZSBFbmQuIE1lc3NhZ2UgU3RhcnQuIFVzaW5nIGEgbG9uZyBzZW50ZW5jZSB0byBiZSBhYmx"
+             "lIHRvIHJlYWNoIHRoZSBhdmFpbGFibGUgbWVtb3J5IGxpbWl0IHdpdGhvdXQgaGF2aW5nIHRvIHVzZSB0b28gbWFueSByZW"
+             "NvcmRzLiBFdmVyeSByZWNvcmQgb2JqZWN0IGlzIDk2IGJ5dGVzICsgaGVhcC4gSWYgYSBzbWFsbCB2YWx1ZSBzdHJpbmcga"
+             "XMgdXNlZCBwZXIgb2JqZWN0LCB3aGVuIHRoaXMganNvbiBpcyBwYXJzZWQsIHRoZSBtZW1vcnkgcmVxdWlyZW1lbnRzIGFy"
+             "ZSBtdWNoIG1vcmUgdGhhbiB0aGUgcmVxdWVzdCBpdHNlbGYuIE1lc3NhZ2UgRW5kLiBNZXNzYWdlIFN0YXJ0LiBVc2luZyB"
+             "hIGxvbmcgc2VudGVuY2UgdG8gYmUgYWJsZSB0byByZWFjaCB0aGUgYXZhaWxhYmxlIG1lbW9yeSBsaW1pdCB3aXRob3V0IG"
+             "hhdmluZyB0byB1c2UgdG9vIG1hbnkgcmVjb3Jkcy4gRXZlcnkgcmVjb3JkIG9iamVjdCBpcyA5NiBieXRlcyArIGhlYXAuI"
+             "ElmIGEgc21hbGwgdmFsdWUgc3RyaW5nIGlzIHVzZWQgcGVyIG9iamVjdCwgd2hlbiB0aGlzIGpzb24gaXMgcGFyc2VkLCB0"
+             "aGUgbWVtb3J5IHJlcXVpcmVtZW50cyBhcmUgbXVjaCBtb3JlIHRoYW4gdGhlIHJlcXVlc3QgaXRzZWxmLiBNZXNzYWdlIEV"
+             "uZC4gTWVzc2FnZSBTdGFydC4gVXNpbmcgYSBsb25nIHNlbnRlbmNlIHRvIGJlIGFibGUgdG8gcmVhY2ggdGhlIGF2YWlsYW"
+             "JsZSBtZW1vcnkgbGltaXQgd2l0aG91dCBoYXZpbmcgdG8gdXNlIHRvbyBtYW55IHJlY29yZHMuIEV2ZXJ5IHJlY29yZCBvY"
+             "mplY3QgaXMgOTYgYnl0ZXMgKyBoZWFwLiBJZiBhIHNtYWxsIHZhbHVlIHN0cmluZyBpcyB1c2VkIHBlciBvYmplY3QsIHdo"
+             "ZW4gdGhpcyBqc29uIGlzIHBhcnNlZCwgdGhlIG1lbW9yeSByZXF1aXJlbWVudHMgYXJlIG11Y2ggbW9yZSB0aGFuIHRoZSB"
+             "yZXF1ZXN0IGl0c2VsZi4gTWVzc2FnZSBFbmQuIE1lc3NhZ2UgU3RhcnQuIFVzaW5nIGEgbG9uZyBzZW50ZW5jZSB0byBiZS"
+             "BhYmxlIHRvIHJlYWNoIHRoZSBhdmFpbGFibGUgbWVtb3J5IGxpbWl0IHdpdGhvdXQgaGF2aW5nIHRvIHVzZSB0b28gbWFue"
+             "SByZWNvcmRzLiBFdmVyeSByZWNvcmQgb2JqZWN0IGlzIDk2IGJ5dGVzICsgaGVhcC4gSWYgYSBzbWFsbCB2YWx1ZSBzdHJp"
+             "bmcgaXMgdXNlZCBwZXIgb2JqZWN0LCB3aGVuIHRoaXMganNvbiBpcyBwYXJzZWQsIHRoZSBtZW1vcnkgcmVxdWlyZW1lbnR"
+             "zIGFyZSBtdWNoIG1vcmUgdGhhbiB0aGUgcmVxdWVzdCBpdHNlbGYuIE1lc3NhZ2UgRW5kLg=="
+             )
+        }
+        values = [value for _ in range(50000)]
+        data = {"records": values}
+        data_json = json.dumps(data)
+
+        # With 256Mb available per core, the available memory for the kafka services
+        # is 90.4Mb at most. We want to ensure that this request is larger than this
+        memory_limit = 90.4 * 1024 * 1024
+        assert len(data_json) > memory_limit, \
+            f"Expected request larger than {memory_limit}b. Got {len(data_json)}b, instead"
+
+        self.logger.info(f"Creating test topic: {name}")
+        self._create_topics([name], partitions=3)
+
+        self.logger.info(f"Producing to topic: {name}")
+        produce_result_raw = self._produce_topic(name, data_json)
+        assert produce_result_raw.status_code == PAYLOAD_TOO_LARGE_HTTP_ERROR_CODE, \
+                f"Expected '{PAYLOAD_TOO_LARGE_HTTP_ERROR_CODE}' " \
+                f"but got '{produce_result_raw.status_code}' instead"
 
 
 class PandaProxySASLTest(PandaProxyEndpoints):

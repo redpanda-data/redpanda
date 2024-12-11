@@ -104,6 +104,12 @@ struct handler_adaptor : ss::httpd::handler_base {
             co_return std::move(rp.rep);
         }
         auto req_size = get_request_size(*rq.req);
+        if (req_size > _ctx.max_memory) {
+            set_reply_payload_too_large(*rp.rep);
+            rp.mime_type = _exceptional_mime_type;
+            set_and_measure_response(rp);
+            co_return std::move(rp.rep);
+        }
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
