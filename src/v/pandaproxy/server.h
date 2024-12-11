@@ -69,6 +69,7 @@ class server {
 public:
     struct context_t {
         std::vector<net::unresolved_address> advertised_listeners;
+        size_t max_memory;
         ssx::semaphore& mem_sem;
         adjustable_semaphore& inflight_sem;
         ss::abort_source as;
