@@ -30,16 +30,6 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
-    name = "cache_test",
-    timeout = "short",
-    srcs = ["cache_test.cc"],
-    deps = [
-        "//src/v/io",
-        "//src/v/test_utils:gtest",
-    ],
-)
-
-redpanda_cc_gtest(
     name = "interval_map_test",
     timeout = "short",
     srcs = ["interval_map_test.cc"],

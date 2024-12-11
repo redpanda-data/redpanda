@@ -11,7 +11,7 @@
 #pragma once
 
 #include "container/intrusive_list_helpers.h"
-#include "io/cache.h"
+#include "utils/s3_fifo.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -40,7 +40,7 @@ public:
     page(
       uint64_t offset,
       seastar::temporary_buffer<char> data,
-      const cache_hook& hook);
+      const utils::s3_fifo::cache_hook& hook);
 
     page(const page&) = delete;
     page& operator=(const page&) = delete;
@@ -123,7 +123,7 @@ public:
      * Page cache entry intrusive list hook.
      */
     // NOLINTNEXTLINE(*-non-private-member-variables-in-classes)
-    cache_hook cache_hook;
+    utils::s3_fifo::cache_hook cache_hook;
 
     struct waiter {
         intrusive_list_hook waiter;
