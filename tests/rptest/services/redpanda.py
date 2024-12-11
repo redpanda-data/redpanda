@@ -3383,7 +3383,7 @@ class RedpandaService(RedpandaServiceBase):
             )
         else:
             raise RuntimeError(
-                f"Unsuported cloud_storage_type: {self.si_settings.cloud_storage_type}"
+                f"Unsupported cloud_storage_type: {self.si_settings.cloud_storage_type}"
             )
 
         if not self.si_settings.bypass_bucket_creation:
