@@ -11,21 +11,17 @@
 
 #pragma once
 
-#include <seastar/util/backtrace.hh>
-#include <seastar/util/log.hh>
+#include "base/vassert.h"
 
-namespace details {
-// NOLINTNEXTLINE
-inline seastar::logger _g_unreachable_assert_logger("assert-unreachable");
-} // namespace details
+#include <seastar/util/backtrace.hh>
 
 // NOLINTNEXTLINE
 #define unreachable()                                                          \
     /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
     do {                                                                       \
-        ::details::_g_unreachable_assert_logger.error(                         \
+        ::detail::g_assert_log.l.error(                                        \
           "This code should not be reached ({}:{})", __FILE__, __LINE__);      \
-        ::details::_g_unreachable_assert_logger.error(                         \
+        ::detail::g_assert_log.l.error(                                        \
           "Backtrace below:\n{}", seastar::current_backtrace());               \
         __builtin_trap();                                                      \
     } while (0)
