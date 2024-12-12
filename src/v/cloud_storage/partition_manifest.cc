@@ -2033,15 +2033,18 @@ ss::future<iobuf> partition_manifest::serialize_buf() const {
     return ss::make_ready_future<iobuf>(to_iobuf());
 }
 
-void partition_manifest::serialize_json(std::ostream& out) const {
+void partition_manifest::serialize_json(
+  std::ostream& out, bool include_segments) const {
     serialization_cursor_ptr c = make_cursor(out);
     serialize_begin(c);
-    while (!c->segments_done) {
-        serialize_segments(c);
-    }
-    serialize_replaced(c);
-    while (!c->spillover_done) {
-        serialize_spillover(c);
+    if (include_segments) {
+        while (!c->segments_done) {
+            serialize_segments(c);
+        }
+        serialize_replaced(c);
+        while (!c->spillover_done) {
+            serialize_spillover(c);
+        }
     }
     serialize_end(c);
 }
@@ -2708,6 +2711,13 @@ void partition_manifest::process_anomalies(
       _detected_anomalies,
       _last_partition_scrub,
       _last_scrubbed_offset);
+}
+
+std::ostream& operator<<(std::ostream& o, const partition_manifest& pm) {
+    o << "{manifest: ";
+    pm.serialize_json(o, false);
+    o << "; last segment: " << pm.last_segment() << "}";
+    return o;
 }
 
 } // namespace cloud_storage
