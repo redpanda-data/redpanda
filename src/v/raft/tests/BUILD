@@ -611,7 +611,7 @@ redpanda_cc_gtest(
         "raft_reconfiguration_test.cc",
     ],
     cpu = 4,
-    memory = "2GiB",
+    memory = "4GiB",
     tags = ["exclusive"],
     deps = [
         "//src/v/base",
