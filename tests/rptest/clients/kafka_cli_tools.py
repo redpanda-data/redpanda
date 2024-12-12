@@ -387,6 +387,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         assert split_str[-1] == ""
         partition_watermark_lines = split_str[2:-1]
         for partition_watermark_line in partition_watermark_lines:
+            if not partition_watermark_line.startswith("partition: "):
+                continue
             topic_partition_str, result_str = partition_watermark_line.strip(
             ).split('\t')
             topic_partition_str_split = topic_partition_str.split(
