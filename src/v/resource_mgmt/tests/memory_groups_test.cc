@@ -16,9 +16,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-static constexpr size_t total_shares_without_optionals = 10;
-static constexpr size_t total_wasm_shares = 1;
-static constexpr size_t total_datalake_shares = 1;
+static constexpr size_t total_shares_without_optionals = 85;
+static constexpr size_t total_wasm_shares = 10;
+static constexpr size_t total_datalake_shares = 10;
 
 // It's not really useful to know the exact byte values for each of these
 // numbers so we just make sure we're within a MB
@@ -68,33 +68,33 @@ TEST_P(MemoryGroupSharesTest, DividesSharesCorrectly) {
     }
     EXPECT_THAT(
       groups.chunk_cache_min_memory(),
-      IsApprox(total_available_memory * 1.0 / total_shares));
+      IsApprox(total_available_memory * 5.0 / total_shares));
     EXPECT_THAT(
       groups.chunk_cache_max_memory(),
-      IsApprox(total_available_memory * 3.0 / total_shares));
+      IsApprox(total_available_memory * 15.0 / total_shares));
     EXPECT_THAT(
       groups.tiered_storage_max_memory(),
-      IsApprox(total_available_memory * 1.0 / total_shares));
+      IsApprox(total_available_memory * 10.0 / total_shares));
     EXPECT_THAT(
       groups.recovery_max_memory(),
-      IsApprox(total_available_memory * 1.0 / total_shares));
+      IsApprox(total_available_memory * 10.0 / total_shares));
     EXPECT_THAT(
       groups.kafka_total_memory(),
-      IsApprox(total_available_memory * 3.0 / total_shares));
+      IsApprox(total_available_memory * 30.0 / total_shares));
     EXPECT_THAT(
       groups.rpc_total_memory(),
-      IsApprox(total_available_memory * 2.0 / total_shares));
+      IsApprox(total_available_memory * 20.0 / total_shares));
     if (wasm_enabled()) {
         EXPECT_THAT(
           groups.data_transforms_max_memory(),
-          IsApprox(total_available_memory * 1.0 / total_shares));
+          IsApprox(total_available_memory * 10.0 / total_shares));
     } else {
         EXPECT_THAT(groups.data_transforms_max_memory(), 0);
     }
     if (datalake_enabled()) {
         EXPECT_THAT(
           groups.datalake_max_memory(),
-          IsApprox(total_available_memory * 1.0 / total_shares));
+          IsApprox(total_available_memory * 10.0 / total_shares));
     } else {
         EXPECT_THAT(groups.datalake_max_memory(), 0);
     }

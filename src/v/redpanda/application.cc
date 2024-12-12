@@ -2456,6 +2456,11 @@ void application::wire_up_bootstrap_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
+    _deferred.emplace_back([] {
+        ss::smp::invoke_on_all([] {
+            return storage::internal::chunks().stop();
+        }).get();
+    });
     construct_service(stress_fiber_manager).get();
     syschecks::systemd_message("Constructing storage services").get();
     construct_single_service_sharded(

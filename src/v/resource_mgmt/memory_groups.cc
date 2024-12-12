@@ -31,13 +31,13 @@ bool datalake_enabled() {
 }
 
 struct memory_shares {
-    constexpr static size_t chunk_cache = 3;
-    constexpr static size_t kafka = 3;
-    constexpr static size_t rpc = 2;
-    constexpr static size_t recovery = 1;
-    constexpr static size_t tiered_storage = 1;
-    constexpr static size_t data_transforms = 1;
-    constexpr static size_t datalake = 1;
+    constexpr static size_t chunk_cache = 15;
+    constexpr static size_t kafka = 30;
+    constexpr static size_t rpc = 20;
+    constexpr static size_t recovery = 10;
+    constexpr static size_t tiered_storage = 10;
+    constexpr static size_t data_transforms = 10;
+    constexpr static size_t datalake = 10;
 
     static size_t total_shares(bool with_wasm, bool with_datalake) {
         size_t total = chunk_cache + kafka + rpc + recovery + tiered_storage;

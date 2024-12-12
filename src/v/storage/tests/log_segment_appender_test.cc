@@ -123,7 +123,7 @@ iobuf make_iobuf_with_char(size_t len, unsigned char c) {
     return ret;
 }
 
-size_t default_chunk_size() { return internal::chunks().chunk_size(); }
+size_t default_chunk_size() { return storage::internal::chunks().chunk_size(); }
 
 } // namespace
 
