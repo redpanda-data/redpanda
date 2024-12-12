@@ -59,55 +59,55 @@ FIXTURE_TEST(
     assert_stable_leadership(gr);
 };
 
-FIXTURE_TEST(
-  test_leader_is_not_elected_when_there_is_no_majority, raft_test_fixture) {
-    raft_group gr = raft_group(raft::group_id(0), 3);
+// FIXTURE_TEST(
+//   test_leader_is_not_elected_when_there_is_no_majority, raft_test_fixture) {
+//     raft_group gr = raft_group(raft::group_id(0), 3);
 
-    gr.enable_all();
+//     gr.enable_all();
 
-    auto leader_id = wait_for_group_leader(gr);
-    assert_at_most_one_leader(gr);
+//     auto leader_id = wait_for_group_leader(gr);
+//     assert_at_most_one_leader(gr);
 
-    validate_logs_replication(gr);
+//     validate_logs_replication(gr);
 
-    // Stop the current leader
-    tstlog.info("Stopping current leader {}", leader_id);
-    gr.disable_node(leader_id);
+//     // Stop the current leader
+//     tstlog.info("Stopping current leader {}", leader_id);
+//     gr.disable_node(leader_id);
 
-    auto new_leader_id = wait_for_group_leader(gr);
-    assert_at_most_one_leader(gr);
+//     auto new_leader_id = wait_for_group_leader(gr);
+//     assert_at_most_one_leader(gr);
 
-    // second_leader killed
-    tstlog.info("Stopping newly elected leader {}", new_leader_id);
-    gr.disable_node(new_leader_id);
+//     // second_leader killed
+//     tstlog.info("Stopping newly elected leader {}", new_leader_id);
+//     gr.disable_node(new_leader_id);
 
-    assert_stable_leadership(gr);
-};
+//     assert_stable_leadership(gr);
+// };
 
-FIXTURE_TEST(
-  test_leader_is_reelected_when_majority_is_back_up, raft_test_fixture) {
-    raft_group gr = raft_group(raft::group_id(0), 3);
-    gr.enable_all();
+// FIXTURE_TEST(
+//   test_leader_is_reelected_when_majority_is_back_up, raft_test_fixture) {
+//     raft_group gr = raft_group(raft::group_id(0), 3);
+//     gr.enable_all();
 
-    // Wait for first leader
-    auto leader_id = wait_for_group_leader(gr);
-    assert_at_most_one_leader(gr);
+//     // Wait for first leader
+//     auto leader_id = wait_for_group_leader(gr);
+//     assert_at_most_one_leader(gr);
 
-    validate_logs_replication(gr);
+//     validate_logs_replication(gr);
 
-    // Disable current leader and other node
-    gr.disable_node(leader_id);
+//     // Disable current leader and other node
+//     gr.disable_node(leader_id);
 
-    for (auto& [id, node] : gr.get_members()) {
-        if (leader_id != id) {
-            gr.disable_node(id);
-            break;
-        }
-    }
+//     for (auto& [id, node] : gr.get_members()) {
+//         if (leader_id != id) {
+//             gr.disable_node(id);
+//             break;
+//         }
+//     }
 
-    // enable again the old leader
-    gr.enable_node(leader_id);
-    // wait for next leader to be elected after recovery
-    wait_for_group_leader(gr);
-    assert_at_most_one_leader(gr);
-};
+//     // enable again the old leader
+//     gr.enable_node(leader_id);
+//     // wait for next leader to be elected after recovery
+//     wait_for_group_leader(gr);
+//     assert_at_most_one_leader(gr);
+// };

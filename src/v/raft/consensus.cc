@@ -49,6 +49,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
@@ -238,6 +239,8 @@ void consensus::maybe_step_down() {
                     if (_leader_id) {
                         _leader_id = std::nullopt;
                         trigger_leadership_notification();
+                        ssx::spawn_with_gate(
+                          _bg, [this] { return notify_stepdown(); });
                     }
                 }
             }
@@ -252,6 +255,9 @@ clock_type::time_point consensus::majority_heartbeat() const {
         }
 
         if (auto it = _fstats.find(rni); it != _fstats.end()) {
+            if (it->second.quiescent) {
+                return clock_type::now();
+            }
             return it->second.last_received_reply_timestamp;
         }
 
@@ -859,6 +865,7 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::shutting_down);
     }
 
+    leave_quiescent_state();
     if (!is_elected_leader() || unlikely(_transferring_leadership)) {
         return replicate_stages(errc::not_leader);
     }
@@ -1063,7 +1070,8 @@ void consensus::dispatch_vote(bool leadership_transfer) {
 
 void consensus::arm_vote_timeout() {
     if (!_bg.is_closed()) {
-        _vote_timeout.rearm(_jit());
+        _vote_timeout.cancel();
+        _vote_timeout.arm(_jit());
     }
 }
 
@@ -1296,6 +1304,8 @@ consensus::cancel_configuration_change(model::revision_id revision) {
                   return _op_lock
                     .with([this, ec] {
                         do_step_down("current leader is not voter");
+                        ssx::spawn_with_gate(
+                          _bg, [this] { return notify_stepdown(); });
                         return ec;
                     })
                     .handle_exception_type([](const ss::broken_semaphore&) {
@@ -1724,6 +1734,7 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
 }
 
 ss::future<vote_reply> consensus::do_vote(vote_request r) {
+    leave_quiescent_state();
     vote_reply reply;
     reply.term = _term;
     reply.target_node_id = r.node_id;
@@ -1895,6 +1906,7 @@ consensus::append_entries(append_entries_request&& r) {
 
 ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
+    leave_quiescent_state();
     auto lstats = _log->offsets();
     append_entries_reply reply;
     const auto request_metadata = r.metadata();
@@ -2247,6 +2259,7 @@ consensus::install_snapshot(install_snapshot_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
         return _op_lock
           .with([this, r = std::move(r)]() mutable {
+              leave_quiescent_state();
               return _snapshot_lock.with([this, r = std::move(r)]() mutable {
                   return do_install_snapshot(std::move(r));
               });
@@ -3058,6 +3071,7 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
             _leader_id = std::nullopt;
             trigger_leadership_notification();
         }
+        ssx::spawn_with_gate(_bg, [this] { return notify_stepdown(); });
     }
 }
 
@@ -3206,7 +3220,7 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
             });
         });
     }
-
+    leave_quiescent_state();
     if (_vstate != vote_state::follower) {
         vlog(
           _ctxlog.debug,
@@ -3262,6 +3276,7 @@ ss::future<transfer_leadership_reply>
 consensus::transfer_leadership(transfer_leadership_request req) {
     transfer_leadership_reply reply;
     try {
+        leave_quiescent_state();
         auto err = co_await do_transfer_leadership(req);
         if (err) {
             vlog(
@@ -3775,11 +3790,13 @@ consensus::inflight_appends_guard consensus::track_append_inflight(vnode id) {
     return inflight_appends_guard{*this, id};
 }
 
-void consensus::update_heartbeat_status(vnode id, bool success) {
+void consensus::update_heartbeat_status(
+  vnode id, bool success, in_quiescent_state quiescent) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (success) {
             it->second.last_received_reply_timestamp = clock_type::now();
             it->second.heartbeats_failed = 0;
+            it->second.quiescent = quiescent;
         } else {
             it->second.heartbeats_failed++;
         }
@@ -3993,6 +4010,7 @@ reply_result consensus::lightweight_heartbeat(
     }
 
     _hbeat = clock_type::now();
+    enter_quiescent_state();
     return reply_result::success;
 }
 ss::future<full_heartbeat_reply> consensus::full_heartbeat(
@@ -4000,6 +4018,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
   model::node_id source_node,
   model::node_id target_node,
   const heartbeat_request_data& hb_data) {
+    leave_quiescent_state();
     const vnode target_vnode(target_node, hb_data.target_revision);
     const vnode source_vnode(source_node, hb_data.source_revision);
     full_heartbeat_reply reply{.group = _group};
@@ -4050,6 +4069,7 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
 void consensus::reset_last_sent_protocol_meta(const vnode& node) {
     if (auto it = _fstats.find(node); it != _fstats.end()) {
         it->second.last_sent_protocol_meta.reset();
+        it->second.quiescent = in_quiescent_state::no;
     }
 }
 
@@ -4169,6 +4189,40 @@ size_t consensus::bytes_to_deliver_to_learners() const {
         }
     }
     return total;
+}
+
+
+void consensus::enter_quiescent_state() {
+    vlog(_ctxlog.info, "entering quiescent state");
+    _quiescent = in_quiescent_state::yes;
+    _vote_timeout.cancel();
+}
+
+void consensus::leave_quiescent_state() {
+    if (_quiescent) {
+        vlog(_ctxlog.info, "leaving quiescent state");
+        _quiescent = in_quiescent_state::no;
+        arm_vote_timeout();
+    }
+}
+
+ss::future<> consensus::notify_stepdown() {
+    auto configuration = _configuration_manager.get_latest();
+    auto timeout = clock_type::now() + _jit.base_duration();
+    std::vector<ss::future<result<timeout_now_reply>>> futures;
+    configuration.for_each_voter([this, timeout, &futures](const vnode& voter) {
+        timeout_now_request req{
+          .target_node_id = voter,
+          .node_id = _self,
+          .group = _group,
+          .term = _term};
+        futures.push_back(_client_protocol.timeout_now(
+          req.target_node_id.id(), std::move(req), rpc::client_opts(timeout)));
+    });
+
+    auto results = co_await ss::when_all_succeed(
+      futures.begin(), futures.end());
+    // TODO: handle results
 }
 
 } // namespace raft
