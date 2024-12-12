@@ -109,6 +109,8 @@ public:
     void clear_metrics() final;
 
 private:
+    int64_t iceberg_translation_offset_lag() const;
+    int64_t iceberg_commit_offset_lag() const;
     void reconfigure_metrics();
     void setup_public_metrics(const model::ntp&);
     void setup_internal_metrics(const model::ntp&);
