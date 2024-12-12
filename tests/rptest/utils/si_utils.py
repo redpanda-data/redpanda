@@ -1697,6 +1697,15 @@ class BucketView:
 
         return []
 
+    def are_all_segments_config_batches(self, summaries):
+        all_config_batches = all(
+            [summary.num_data_records == 0 for summary in summaries])
+        if all_config_batches:
+            self.logger.debug(
+                "Segments left in archive are composed of all non-data batches"
+            )
+        return all_config_batches
+
     def is_archive_cleanup_complete(self, ntp: NTP):
         self._ensure_listing()
         manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
@@ -1715,6 +1724,13 @@ class BucketView:
                 f"archive is empty, start: {aso}, clean: {aco}, len: {num}")
             return True
 
+        if self.are_all_segments_config_batches(summaries):
+            # quiesce_uploads() would not have waited for these segments
+            # to have been uploaded and the partition manifest
+            # to have been marked clean and reuploaded, since they
+            # didn't contribute to the HWM. Treat this race-y case as successful.
+            return True
+
         first_segment = min(summaries, key=lambda seg: seg.base_offset)
 
         if first_segment.base_offset != aso:
@@ -1731,10 +1747,15 @@ class BucketView:
         summaries = self.segment_summaries(ntp)
         if len(summaries) == 0:
             assert 'archive_start_offset' not in manifest
-            assert 'archive_start_offset' not in manifest
         else:
+            if self.are_all_segments_config_batches(summaries):
+                # quiesce_uploads() would not have waited for these segments
+                # to have been uploaded and the partition manifest
+                # to have been marked clean and reuploaded, since they
+                # didn't contribute to the HWM. Treat this race-y case as successful.
+                return
+
             next_base_offset = manifest.get('archive_start_offset')
-            stm_start_offset = manifest.get('start_offset')
             expected_last = manifest.get('last_offset')
 
             for summary in summaries:
