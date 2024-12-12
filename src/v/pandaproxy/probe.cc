@@ -110,7 +110,10 @@ void probe::setup_metrics() {
     if (!config::shard_local_cfg().disable_metrics()) {
         _metrics.add_group(
           "pandaproxy",
-          {make_internal_request_latency(internal_labels)},
+          {make_internal_request_latency(internal_labels),
+           make_request_errors_total_5xx(internal_labels),
+           make_request_errors_total_4xx(internal_labels),
+           make_request_errors_total_3xx(internal_labels)},
           {},
           internal_labels.agg);
     }
