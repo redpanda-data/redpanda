@@ -112,6 +112,7 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
 };
 
 TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
+    enable_offset_translation();
     co_await initialize_state_machines();
     co_await wait_for_leader(5s);
     scoped_config config;

@@ -346,7 +346,8 @@ raft_node_instance::raft_node_instance(
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
   config::binding<std::chrono::milliseconds> election_timeout,
-  config::binding<std::chrono::milliseconds> heartbeat_interval)
+  config::binding<std::chrono::milliseconds> heartbeat_interval,
+  bool with_offset_translation)
   : raft_node_instance(
       id,
       revision,
@@ -357,7 +358,8 @@ raft_node_instance::raft_node_instance(
       std::move(leader_update_clb),
       enable_longest_log_detection,
       std::move(election_timeout),
-      std::move(heartbeat_interval)) {}
+      std::move(heartbeat_interval),
+      with_offset_translation) {}
 
 raft_node_instance::raft_node_instance(
   model::node_id id,
@@ -368,7 +370,8 @@ raft_node_instance::raft_node_instance(
   leader_update_clb_t leader_update_clb,
   bool enable_longest_log_detection,
   config::binding<std::chrono::milliseconds> election_timeout,
-  config::binding<std::chrono::milliseconds> heartbeat_interval)
+  config::binding<std::chrono::milliseconds> heartbeat_interval,
+  bool with_offset_translation)
   : _id(id)
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
@@ -391,7 +394,8 @@ raft_node_instance::raft_node_instance(
   , _leader_clb(std::move(leader_update_clb))
   , _enable_longest_log_detection(enable_longest_log_detection)
   , _election_timeout(std::move(election_timeout))
-  , _heartbeat_interval(std::move(heartbeat_interval)) {
+  , _heartbeat_interval(std::move(heartbeat_interval))
+  , _with_offset_translation(with_offset_translation) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
@@ -424,7 +428,11 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     co_await _storage.invoke_on_all(&storage::api::start);
     storage::ntp_config ntp_cfg(ntp(), _base_directory);
 
-    auto log = co_await _storage.local().log_mgr().manage(std::move(ntp_cfg));
+    auto log = co_await _storage.local().log_mgr().manage(
+      std::move(ntp_cfg),
+      test_group,
+      _with_offset_translation ? model::offset_translator_batch_types()
+                               : std::vector<model::record_batch_type>{});
 
     _raft = ss::make_lw_shared<consensus>(
       _id,
@@ -591,7 +599,8 @@ raft_fixture::add_node(model::node_id id, model::revision_id rev) {
       },
       _enable_longest_log_detection,
       _election_timeout.bind(),
-      _heartbeat_interval.bind());
+      _heartbeat_interval.bind(),
+      _with_offset_translation);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
@@ -613,7 +622,8 @@ raft_node_instance& raft_fixture::add_node(
       },
       _enable_longest_log_detection,
       _election_timeout.bind(),
-      _heartbeat_interval.bind());
+      _heartbeat_interval.bind(),
+      _with_offset_translation);
 
     auto [it, success] = _nodes.emplace(id, std::move(instance));
     return *it->second;
