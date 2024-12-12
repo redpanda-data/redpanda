@@ -253,6 +253,7 @@ append_entries_queue::append_entries_queue(
         }
         _current_max_inflight_requests = new_value;
     });
+    setup_internal_metrics();
     // start dispatch loop
     ssx::repeat_until_gate_closed(
       _gate,
