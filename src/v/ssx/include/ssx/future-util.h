@@ -332,6 +332,29 @@ inline void spawn_with_gate(seastar::gate& g, Func&& func) noexcept {
     background = spawn_with_gate_then(g, std::forward<Func>(func));
 }
 
+/// \brief Repeats the passed func in a detached fiber until the gate is closed
+/// or abort is triggered.
+///
+/// \param gate Gate object to use.
+/// \param as Abort source to use.
+/// \param func function to invoke.
+template<class Func>
+inline void repeat_until_gate_closed_or_aborted(
+  ss::gate& gate, ss::abort_source& as, Func&& func) noexcept {
+    spawn_with_gate(
+      gate, [&gate, &as, func = std::forward<Func>(func)]() mutable {
+          return ss::do_until(
+            [&gate, &as] { return as.abort_requested() || gate.is_closed(); },
+            [func = std::forward<Func>(func)]() mutable {
+                return ss::futurize_invoke(func).handle_exception(
+                  [](const std::exception_ptr&) {
+                      // A generic catch all to avoid exceptional futures.
+                      // The input func may include it's own exception handling.
+                  });
+            });
+      });
+}
+
 /// \brief Repeats the passed func in a detached fiber until the gate is closed.
 ///
 /// \param gate Gate object to use.
