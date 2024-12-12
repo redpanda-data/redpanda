@@ -48,7 +48,7 @@ void probe::setup_metrics() {
         const auto operation_label = make_label("operation", internal);
         const auto agg = internal ? std::vector<sm::label>{sm::shard_label}
                                   : std::vector<sm::label>{
-                                      sm::shard_label, operation_label};
+                                    sm::shard_label, operation_label};
         const auto status = make_label("status", internal);
         return {
           .label = operation_label(_path.operations.nickname),
@@ -110,7 +110,10 @@ void probe::setup_metrics() {
     if (!config::shard_local_cfg().disable_metrics()) {
         _metrics.add_group(
           "pandaproxy",
-          {make_internal_request_latency(internal_labels)},
+          {make_internal_request_latency(internal_labels),
+           make_request_errors_total_5xx(internal_labels),
+           make_request_errors_total_4xx(internal_labels),
+           make_request_errors_total_3xx(internal_labels)},
           {},
           internal_labels.agg);
     }
