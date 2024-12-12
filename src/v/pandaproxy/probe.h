@@ -72,7 +72,6 @@ public:
 
 private:
     void setup_metrics();
-    void setup_public_metrics();
 
 private:
     http_status_metric _request_metrics;
