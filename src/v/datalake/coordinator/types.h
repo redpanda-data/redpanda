@@ -186,7 +186,9 @@ struct fetch_latest_translated_offset_reply
     friend std::ostream&
     operator<<(std::ostream&, const fetch_latest_translated_offset_reply&);
 
-    auto serde_fields() { return std::tie(last_added_offset, errc); }
+    auto serde_fields() {
+        return std::tie(last_added_offset, errc, last_iceberg_committed_offset);
+    }
 };
 
 // For a given topic/partition fetches the latest translated offset from
