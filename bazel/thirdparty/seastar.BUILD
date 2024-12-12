@@ -570,7 +570,10 @@ cc_library(
         ":use_logger_compile_time_fmt": ["SEASTAR_LOGGER_COMPILE_TIME_FMT"],
         "//conditions:default": [],
     }) + select({
-        ":with_debug": ["SEASTAR_DEBUG"],
+        ":with_debug": [
+            "SEASTAR_DEBUG",
+            "SEASTAR_DEBUG_SHARED_PTR",
+        ],
         "//conditions:default": [],
     }),
     includes = [
