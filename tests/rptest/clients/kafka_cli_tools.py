@@ -329,7 +329,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 acks: int = -1,
                 throughput: int = -1,
                 batch_size: int = 81960,
-                linger_ms: int = 0):
+                linger_ms: int = 0,
+                enable_idempotence: bool = True):
         self._redpanda.logger.debug("Producing to topic: %s", topic)
         cmd = [self._script("kafka-producer-perf-test.sh")]
         cmd += ["--topic", topic]
@@ -344,6 +345,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "bootstrap.servers=%s" % self._redpanda.brokers(),
             "linger.ms=%d" % linger_ms,
         ]
+        if enable_idempotence is False:
+            cmd += ["enable.idempotence=false"]
         if self._command_config:
             cmd += ["--producer.config", self._command_config.name]
         return self._execute(cmd, "produce")

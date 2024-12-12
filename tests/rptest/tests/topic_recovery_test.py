@@ -205,7 +205,10 @@ class BaseCase:
             err_msg=
             f'failed to get high watermark before produce for {topic_spec}')
 
-        self._kafka_tools.produce(topic_spec.name, 10000, 1024)
+        self._kafka_tools.produce(topic_spec.name,
+                                  10000,
+                                  1024,
+                                  enable_idempotence=False)
 
         new_state = PartitionState(self._rpk, topic_spec.name)
         wait_until(
