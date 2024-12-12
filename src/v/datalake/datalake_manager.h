@@ -75,7 +75,7 @@ private:
     void on_group_notification(const model::ntp&);
     void start_translator(
       ss::lw_shared_ptr<cluster::partition>, model::iceberg_mode);
-    ss::future<> stop_translator(const model::ntp&);
+    void stop_translator(const model::ntp&);
 
     model::node_id _self;
     ss::sharded<raft::group_manager>* _group_mgr;
