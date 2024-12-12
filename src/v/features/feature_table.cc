@@ -62,8 +62,6 @@ std::string_view to_string_view(feature f) {
         return "broker_time_based_retention";
     case feature::wasm_transforms:
         return "wasm_transforms";
-    case feature::raft_config_serde:
-        return "raft_config_serde";
     case feature::fast_partition_reconfiguration:
         return "fast_partition_reconfiguration";
     case feature::disabling_partitions:
@@ -98,6 +96,8 @@ std::string_view to_string_view(feature f) {
         return "shadow_indexing_split_topic_property_update";
     case feature::datalake_iceberg:
         return "datalake_iceberg";
+    case feature::raft_symmetric_reconfiguration_cancel:
+        return "raft_symmetric_reconfiguration_cancel";
 
     /*
      * testing features

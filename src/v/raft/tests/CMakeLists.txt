@@ -8,17 +8,6 @@ rp_test(
     ARGS "-- -c 8"
 )
 
-rp_test(
-    UNIT_TEST
-    BINARY_NAME group_configuration_tests
-    SOURCES group_configuration_tests.cc
-    DEFINITIONS BOOST_TEST_DYN_LINK
-    LIBRARIES Boost::unit_test_framework v::raft
-    LABELS raft
-    ARGS "-- -c 8"
-)
-
-
 set(srcs
     jitter_tests.cc
     bootstrap_configuration_test.cc
@@ -55,6 +44,7 @@ set(gsrcs
     replication_monitor_tests.cc
     mux_state_machine_test.cc
     snapshot_recovery_test.cc
+    group_configuration_tests.cc
 )
 
 rp_test(
