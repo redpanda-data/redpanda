@@ -35,7 +35,13 @@ FIXTURE_TEST(
           prop, props_t{{ss::sstring{prop}, ssx::sformat("{}", value)}});
     };
 
+    update_cluster_config(lconf().cloud_storage_enabled.name(), "true");
     update_cluster_config(lconf().enable_schema_id_validation.name(), "compat");
+    auto unset_cluster_config = ss::defer([&] {
+        update_cluster_config(lconf().cloud_storage_enabled.name(), "false");
+        update_cluster_config(
+          lconf().enable_schema_id_validation.name(), "none");
+    });
 
     std::initializer_list<test_t> enterprise_props{
       // si_props
@@ -76,6 +82,51 @@ FIXTURE_TEST(
               res.results[0].error_code, kafka::error_code::invalid_config);
             BOOST_CHECK(res.results[0].error_message.value_or("").contains(
               features::enterprise_error_message::required));
+
+            delete_topic(
+              model::topic_namespace{model::kafka_namespace, std::move(tp)})
+              .get();
+
+            reinstall_license();
+        }
+    }
+}
+
+FIXTURE_TEST(
+  test_unlicensed_topic_prop_create_partition_no_cluster_config,
+  topic_properties_test_fixture) {
+    using props_t = absl::flat_hash_map<ss::sstring, ss::sstring>;
+    using test_t = std::pair<std::string_view, props_t>;
+    const auto with = [](const std::string_view prop, const auto value) {
+        return std::make_pair(
+          prop, props_t{{ss::sstring{prop}, ssx::sformat("{}", value)}});
+    };
+
+    std::initializer_list<test_t> enterprise_props{
+      // si_props
+      // Exclude these; setting up s3_imposter is too complex for this test
+      //  * kafka::topic_property_recovery
+      //  * kafka::topic_property_read_replica
+      with(kafka::topic_property_remote_read, true),
+      with(kafka::topic_property_remote_write, true)};
+
+    const int32_t partitions = 3;
+
+    for (const auto& [prop, props] : enterprise_props) {
+        BOOST_TEST_CONTEXT(fmt::format("property: {}", prop)) {
+            auto tp = model::topic{ssx::sformat("{}", prop)};
+
+            auto c_res = create_topic(tp, props, 3).data;
+            BOOST_REQUIRE_EQUAL(c_res.topics.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              c_res.topics[0].error_code, kafka::error_code::none);
+
+            revoke_license();
+
+            auto res = create_partitions(tp, partitions + 1).data;
+            BOOST_REQUIRE_EQUAL(res.results.size(), 1);
+            BOOST_CHECK_EQUAL(
+              res.results[0].error_code, kafka::error_code::none);
 
             delete_topic(
               model::topic_namespace{model::kafka_namespace, std::move(tp)})
