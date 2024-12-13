@@ -126,9 +126,7 @@ ss::future<> datalake_manager::start() {
       = _partition_mgr->local().register_unmanage_notification(
         model::kafka_namespace, [this](model::topic_partition_view tp) {
             model::ntp ntp{model::kafka_namespace, tp.topic, tp.partition};
-            ssx::spawn_with_gate(_gate, [this, ntp = std::move(ntp)] {
-                return stop_translator(ntp);
-            });
+            stop_translator(ntp);
         });
     // Handle leadership changes
     auto leadership_registration
@@ -217,9 +215,7 @@ void datalake_manager::on_group_notification(const model::ntp& ntp) {
                             == model::iceberg_mode::disabled;
     if (!partition->is_leader() || iceberg_disabled) {
         if (it != _translators.end()) {
-            ssx::spawn_with_gate(_gate, [this, partition] {
-                return stop_translator(partition->ntp());
-            });
+            stop_translator(partition->ntp());
         }
         return;
     }
@@ -260,14 +256,23 @@ void datalake_manager::start_translator(
     _translators.emplace(partition->ntp(), std::move(translator));
 }
 
-ss::future<> datalake_manager::stop_translator(const model::ntp& ntp) {
+void datalake_manager::stop_translator(const model::ntp& ntp) {
+    if (_gate.is_closed()) {
+        // Cleanup should be deferred to stop().
+        return;
+    }
     auto it = _translators.find(ntp);
     if (it == _translators.end()) {
-        co_return;
+        return;
     }
-    auto translator = std::move(it->second);
+    auto t = std::move(it->second);
     _translators.erase(it);
-    co_await translator->stop();
+    ssx::spawn_with_gate(_gate, [t = std::move(t)]() mutable {
+        // Keep 't' alive by capturing it into the finally below. Use the raw
+        // pointer here to avoid a user-after-move.
+        auto* t_ptr = t.get();
+        return t_ptr->stop().finally([_ = std::move(t)] {});
+    });
 }
 
 } // namespace datalake
