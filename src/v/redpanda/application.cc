@@ -1360,7 +1360,7 @@ void application::wire_up_runtime_services(
         construct_service(
           _transform_rpc_service,
           ss::sharded_parameter([this] {
-              return transform::rpc::topic_metadata_cache::make_default(
+              return kafka::data::rpc::topic_metadata_cache::make_default(
                 &metadata_cache);
           }),
           ss::sharded_parameter([this] {
@@ -1377,16 +1377,12 @@ void application::wire_up_runtime_services(
           _transform_rpc_client,
           node_id,
           ss::sharded_parameter([this] {
-              return transform::rpc::partition_leader_cache::make_default(
+              return kafka::data::rpc::partition_leader_cache::make_default(
                 &controller->get_partition_leaders());
           }),
           ss::sharded_parameter([this] {
-              return transform::rpc::topic_metadata_cache::make_default(
+              return kafka::data::rpc::topic_metadata_cache::make_default(
                 &metadata_cache);
-          }),
-          ss::sharded_parameter([this] {
-              return transform::rpc::topic_creator::make_default(
-                controller.get());
           }),
           ss::sharded_parameter([this] {
               return transform::rpc::cluster_members_cache::make_default(
@@ -1394,6 +1390,7 @@ void application::wire_up_runtime_services(
           }),
           &_connection_cache,
           &_transform_rpc_service,
+          &_kafka_data_rpc_client,
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
                 .data_transforms_binary_max_size.bind();
@@ -1888,6 +1885,38 @@ void application::wire_up_redpanda_services(
     syschecks::systemd_message("Adding kafka quota managers").get();
     construct_service(quota_mgr, std::ref(controller->get_quota_store())).get();
     construct_service(snc_quota_mgr, std::ref(snc_node_quota)).get();
+
+    if (kafka_data_rpc_enabled()) {
+        // TODO(oren): separate service group for kafka data
+        construct_service(
+          _kafka_data_rpc_service,
+          ss::sharded_parameter([this] {
+              return kafka::data::rpc::topic_metadata_cache::make_default(
+                &metadata_cache);
+          }),
+          ss::sharded_parameter([this] {
+              return kafka::data::rpc::partition_manager::make_default(
+                &shard_table,
+                &partition_manager,
+                smp_service_groups.transform_smp_sg());
+          }))
+          .get();
+
+        construct_service(
+          _kafka_data_rpc_client,
+          node_id,
+          ss::sharded_parameter([this] {
+              return kafka::data::rpc::partition_leader_cache::make_default(
+                &controller->get_partition_leaders());
+          }),
+          ss::sharded_parameter([this] {
+              return kafka::data::rpc::topic_creator::make_default(
+                controller.get());
+          }),
+          &_connection_cache,
+          &_kafka_data_rpc_service)
+          .get();
+    }
 
     syschecks::systemd_message("Creating auditing subsystem").get();
     construct_service(
@@ -2404,6 +2433,10 @@ bool application::wasm_data_transforms_enabled() {
 bool application::datalake_enabled() {
     return config::shard_local_cfg().iceberg_enabled()
            && !config::node().recovery_mode_enabled();
+}
+
+bool application::kafka_data_rpc_enabled() {
+    return wasm_data_transforms_enabled();
 }
 
 ss::future<>
@@ -3116,6 +3149,14 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_ephemeral_credential_frontend())));
+
+          if (kafka_data_rpc_enabled()) {
+              runtime_services.push_back(
+                std::make_unique<kafka::data::rpc::network_service>(
+                  sched_groups.transforms_sg(),
+                  smp_service_groups.transform_smp_sg(),
+                  &_kafka_data_rpc_service));
+          }
 
           if (wasm_data_transforms_enabled()) {
               runtime_services.push_back(

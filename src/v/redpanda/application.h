@@ -34,6 +34,8 @@
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
+#include "kafka/data/rpc/client.h"
+#include "kafka/data/rpc/service.h"
 #include "kafka/server/app.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/snc_quota_manager.h"
@@ -262,6 +264,8 @@ private:
 
     bool datalake_enabled();
 
+    bool kafka_data_rpc_enabled();
+
     /**
      * @brief Construct service boilerplate.
      *
@@ -307,10 +311,10 @@ private:
     // in the log during startup.
     cluster::config_manager::preload_result _config_preload;
 
-    // When joining a cluster, we are tipped off as to the last applied offset
-    // of the controller stm from another node.  We will wait for this offset
-    // to be replicated to our controller log before listening for Kafka
-    // requests.
+    // When joining a cluster, we are tipped off as to the last applied
+    // offset of the controller stm from another node.  We will wait for
+    // this offset to be replicated to our controller log before listening
+    // for Kafka requests.
     std::optional<model::offset> _await_controller_last_applied;
 
     std::optional<pandaproxy::rest::configuration> _proxy_config;
@@ -356,6 +360,9 @@ private:
       _datalake_coordinator_mgr;
     ss::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;
     ss::sharded<datalake::datalake_manager> _datalake_manager;
+
+    ss::sharded<kafka::data::rpc::local_service> _kafka_data_rpc_service;
+    ss::sharded<kafka::data::rpc::client> _kafka_data_rpc_client;
 
     // run these first on destruction
     deferred_actions _deferred;
