@@ -1668,6 +1668,35 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                                       lambda e: e.response.status_code == 400):
                     self.admin.patch_cluster_config(upsert=upsert)
 
+    @cluster(num_nodes=1)
+    def test_disable_bounded_property_checks(self):
+        """
+        Test that the environmental variable __REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS
+        being set disables bounded property checks for cluster properties.
+        """
+        out_of_bound_properties = {
+            "storage_compaction_key_map_memory": 1,
+            "log_segment_size": 2,
+            "log_segment_ms": 10
+        }
+
+        # Check that these out of bounds value updates for bounded properties are properly rejected
+        with expect_exception(requests.exceptions.HTTPError,
+                              lambda e: e.response.status_code == 400):
+            self.redpanda.set_cluster_config(out_of_bound_properties,
+                                             expect_restart=True)
+
+        environment = {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        self.redpanda.set_environment(environment)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Expect these out of bound value updates to succeed.
+        # expect_restart=True due to some of the properties used.
+        self.redpanda.set_cluster_config(out_of_bound_properties,
+                                         expect_restart=True)
+        for prop, value in out_of_bound_properties.items():
+            self._check_value_everywhere(prop, value)
+
 
 """
 PropertyAliasData:
