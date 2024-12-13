@@ -257,6 +257,10 @@ void datalake_manager::start_translator(
 }
 
 void datalake_manager::stop_translator(const model::ntp& ntp) {
+    if (_gate.is_closed()) {
+        // Cleanup should be deferred to stop().
+        return;
+    }
     auto it = _translators.find(ntp);
     if (it == _translators.end()) {
         return;
