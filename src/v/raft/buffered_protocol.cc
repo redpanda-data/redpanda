@@ -358,7 +358,7 @@ void append_entries_queue::setup_internal_metrics() {
     }
     sm::label_instance target_node_id_label("target_node_id", _target_node);
     _internal_metrics.add_group(
-      prometheus_sanitize::metrics_name("raft::buffered::protocol"),
+      prometheus_sanitize::metrics_name("raft:buffered:protocol"),
       {sm::make_gauge(
          "inflight_requests",
          [this] { return inflight_requests(); },
