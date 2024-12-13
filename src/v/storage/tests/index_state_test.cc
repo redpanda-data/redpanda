@@ -8,6 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
+#include "bytes/iobuf_parser.h"
 #include "test_utils/scoped_config.h"
 
 #include <boost/test/tools/old/interface.hpp>
@@ -59,7 +60,7 @@ static storage::index_state make_random_index_state(
           pos);
         offset += random_generators::get_int<uint32_t>(0, 1000);
         tx += random_generators::get_int<uint32_t>(0, 1000);
-        pos += random_generators::get_int<uint64_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(32_KiB, 32_KiB + 1000);
     }
 
     if (apply_offset == storage::offset_delta_time::no) {
@@ -500,4 +501,118 @@ BOOST_AUTO_TEST_CASE(index_columns_AB) {
             BOOST_REQUIRE_EQUAL(r1.value(), r2.value());
         }
     }
+}
+
+static storage::index_columns
+make_random_non_monotonic_index_columns(bool offset_anomaly, bool pos_anomaly) {
+    storage::index_columns st;
+
+    auto offset = random_generators::get_int<uint32_t>(1, 10000);
+    auto tx = random_generators::get_int<uint32_t>(1, 10000);
+    auto pos = random_generators::get_int<uint64_t>(1, 10000);
+
+    std::vector<uint32_t> offsets_vec;
+    std::vector<uint32_t> ts_vec;
+    std::vector<uint64_t> pos_vec;
+
+    const auto n = random_generators::get_int(10, num_samples);
+    for (auto i = 0; i < n; ++i) {
+        offsets_vec.push_back(offset);
+        ts_vec.push_back(tx);
+        pos_vec.push_back(pos);
+        offset += random_generators::get_int<uint32_t>(0, 1000);
+        tx += random_generators::get_int<uint32_t>(0, 1000);
+        pos += random_generators::get_int<uint64_t>(32_KiB, 32_KiB + 1000);
+    }
+
+    if (offset_anomaly) {
+        auto ix = random_generators::get_int(1, n - 1);
+        offsets_vec[ix] = 0;
+    }
+
+    if (pos_anomaly) {
+        auto ix = random_generators::get_int(1, n - 1);
+        pos_vec[ix] = 0;
+    }
+
+    for (auto i = 0; i < n; ++i) {
+        st.add_entry(offsets_vec[i], ts_vec[i], pos_vec[i]);
+    }
+
+    return st;
+}
+
+BOOST_AUTO_TEST_CASE(index_fallback_on_offset) {
+    // The 'offset' column in the generated 'original' index
+    // contains an anomaly and can't be decoded using the delta-for
+    // format. The deserialization should fall back to non-compressed
+    // format.
+    auto original = make_random_non_monotonic_index_columns(true, false);
+    // serialize
+    iobuf buf;
+    original.write(buf);
+    // deserialize as compressed
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.read_nested(parser);
+    // The 'fallback' should be set and should not be compressed
+    BOOST_REQUIRE(fallback != nullptr);
+    BOOST_REQUIRE(*fallback == original);
+}
+
+BOOST_AUTO_TEST_CASE(index_fallback_on_pos) {
+    // The 'position' column in the generated 'original' index
+    // contains an anomaly and can't be decoded using the delta-for
+    // format. The deserialization should fall back to non-compressed
+    // format.
+    auto original = make_random_non_monotonic_index_columns(false, true);
+    iobuf buf;
+    original.write(buf);
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.read_nested(parser);
+    BOOST_REQUIRE(fallback != nullptr);
+    BOOST_REQUIRE(*fallback == original);
+}
+
+BOOST_AUTO_TEST_CASE(index_no_fallback) {
+    auto original = make_random_non_monotonic_index_columns(false, false);
+    iobuf buf;
+    original.write(buf);
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.read_nested(parser);
+    BOOST_REQUIRE(fallback == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(index_fallback_on_offset_adl) {
+    auto original = make_random_non_monotonic_index_columns(true, false);
+    iobuf buf;
+    original.to(buf);
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.from(parser);
+    BOOST_REQUIRE(fallback != nullptr);
+    BOOST_REQUIRE(*fallback == original);
+}
+
+BOOST_AUTO_TEST_CASE(index_fallback_on_pos_adl) {
+    auto original = make_random_non_monotonic_index_columns(false, true);
+    iobuf buf;
+    original.to(buf);
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.from(parser);
+    BOOST_REQUIRE(fallback != nullptr);
+    BOOST_REQUIRE(*fallback == original);
+}
+
+BOOST_AUTO_TEST_CASE(index_no_fallback_adl) {
+    auto original = make_random_non_monotonic_index_columns(false, false);
+    iobuf buf;
+    original.to(buf);
+    storage::compressed_index_columns compressed;
+    iobuf_parser parser(buf.copy());
+    auto fallback = compressed.from(parser);
+    BOOST_REQUIRE(fallback == nullptr);
 }

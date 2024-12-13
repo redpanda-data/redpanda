@@ -54,11 +54,21 @@ public:
 
     // serde serialization
     virtual void write(iobuf& buf) const = 0;
-    virtual void read_nested(iobuf_parser& buf) = 0;
+    // Try to deserialize the data.
+    // In case of success return nullptr.
+    // If it's impossible to represent the data using current
+    // columnar format either throw an exception or return a
+    // fallback implementation (non-compressed one).
+    virtual std::unique_ptr<index_columns_base>
+    read_nested(iobuf_parser& buf) = 0;
     virtual void to(iobuf& buf) const = 0;
 
-    // legacy serialization (adl)
-    virtual void from(iobuf_parser& buf) = 0;
+    // Legacy serialization (adl)
+    // In case of success return nullptr.
+    // If it's impossible to represent the data using current
+    // columnar format either throw an exception or return a
+    // fallback implementation (non-compressed one).
+    virtual std::unique_ptr<index_columns_base> from(iobuf_parser& buf) = 0;
 
     // checksum
     virtual void checksum(incremental_xxhash64&) const = 0;
@@ -127,8 +137,8 @@ public:
 
     // These methods are used by serialization
     void write(iobuf&) const override;
-    void read_nested(iobuf_parser& p) override;
-    void from(iobuf_parser& buf) override;
+    std::unique_ptr<index_columns_base> read_nested(iobuf_parser& p) override;
+    std::unique_ptr<index_columns_base> from(iobuf_parser& buf) override;
     void to(iobuf& buf) const override;
 
     // hashing
@@ -227,6 +237,11 @@ class index_columns : public index_columns_base {
     friend struct test_data;
 
 public:
+    index_columns() = default;
+    index_columns(
+      chunked_vector<uint32_t> offsets,
+      chunked_vector<uint32_t> timestamps,
+      chunked_vector<uint64_t> positions);
     /// Return index of the element or nullopt
     std::optional<int>
     offset_lower_bound(uint32_t needle) const noexcept override;
@@ -247,8 +262,8 @@ public:
 
     // These methods are used by serialization
     void write(iobuf&) const override;
-    void read_nested(iobuf_parser& p) override;
-    void from(iobuf_parser& parser) override;
+    std::unique_ptr<index_columns_base> read_nested(iobuf_parser& p) override;
+    std::unique_ptr<index_columns_base> from(iobuf_parser& parser) override;
     void to(iobuf& buf) const override;
 
     // hashing

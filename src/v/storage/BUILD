@@ -83,6 +83,7 @@ redpanda_cc_library(
         "index_state.h",
     ],
     implementation_deps = [
+        ":logger",
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
         "//src/v/config",
