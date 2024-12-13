@@ -279,7 +279,9 @@ private:
       = ss::bool_class<struct new_producer_created_tag>;
     std::pair<producer_ptr, producer_previously_known>
       maybe_create_producer(model::producer_identity);
-    void cleanup_producer_state(model::producer_identity);
+    void do_cleanup_producer_state(model::producer_identity) noexcept;
+    void cleanup_producer_state(model::producer_identity) noexcept;
+    ss::future<> cleanup_evicted_producers();
     ss::future<> reset_producers();
     model::record_batch make_fence_batch(
       model::producer_identity,
@@ -581,6 +583,9 @@ private:
     std::optional<model::vcluster_id> _vcluster_id;
 
     producers_t _producers;
+
+    ss::queue<model::producer_identity> _producers_pending_cleanup;
+
     metrics::internal_metric_groups _metrics;
     ss::abort_source _as;
     ss::gate _gate;
