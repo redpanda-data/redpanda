@@ -17,9 +17,9 @@ def redpanda_copts():
     # point this hack can be removed. To deal with this we add a `-I` parameter
     # for the include path of dependencies that are causing issues.
     copts = []
-    copts.append("-Iexternal/abseil-cpp~")
-    copts.append("-Iexternal/re2~")
-    copts.append("-Iexternal/snappy~")
+    copts.append("-Iexternal/abseil-cpp+")
+    copts.append("-Iexternal/re2+")
+    copts.append("-Iexternal/snappy+")
 
     copts.append("-Werror")
     copts.append("-Wall")
