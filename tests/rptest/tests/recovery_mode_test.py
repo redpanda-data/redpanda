@@ -159,7 +159,9 @@ class RecoveryModeTest(RedpandaTest):
 
         # check that a new node can join the cluster
 
-        self.redpanda.start(nodes=[joiner_node], auto_assign_node_id=True)
+        self.redpanda.start(nodes=[joiner_node],
+                            auto_assign_node_id=True,
+                            start_si=False)
         self.redpanda.wait_for_membership(first_start=True)
 
         # restart the cluster back in normal mode
