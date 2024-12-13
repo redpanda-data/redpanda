@@ -45,6 +45,7 @@ struct add_files_update
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error>
     apply(topics_state&, model::offset);
+    friend std::ostream& operator<<(std::ostream&, const add_files_update&);
 
     model::topic_partition tp;
     model::revision_id topic_revision;
@@ -68,6 +69,8 @@ struct mark_files_committed_update
 
     checked<std::nullopt_t, stm_update_error> can_apply(const topics_state&);
     checked<std::nullopt_t, stm_update_error> apply(topics_state&);
+    friend std::ostream&
+    operator<<(std::ostream&, const mark_files_committed_update&);
 
     model::topic_partition tp;
     model::revision_id topic_revision;
@@ -90,7 +93,8 @@ struct topic_lifecycle_update
     checked<bool, stm_update_error> can_apply(const topics_state&);
     checked<bool, stm_update_error> apply(topics_state&);
 
-    friend std::ostream& operator<<(std::ostream&, topic_lifecycle_update);
+    friend std::ostream&
+    operator<<(std::ostream&, const topic_lifecycle_update&);
 
     model::topic topic;
     model::revision_id revision;
