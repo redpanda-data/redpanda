@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/configuration.h"
 #include "config/leaders_preference.h"
 #include "container/fragmented_vector.h"
 #include "features/enterprise_feature_messages.h"
@@ -490,12 +491,57 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
     BOOST_CHECK_EQUAL(resp.data.topics[0].name, "topic1");
 }
 
+FIXTURE_TEST(unlicensed_permit_if_config_disabled, create_topic_fixture) {
+    lconf().enable_schema_id_validation.set_value(
+      pandaproxy::schema_registry::schema_id_validation_mode::none);
+    lconf().cloud_storage_enabled.set_value(false);
+
+    revoke_license();
+
+    using prop_t = std::map<ss::sstring, ss::sstring>;
+    const auto with = [](const std::string_view prop, const auto value) {
+        return std::make_pair(
+          prop, prop_t{{ss::sstring{prop}, ssx::sformat("{}", value)}});
+    };
+    std::vector<std::pair<std::string_view, prop_t>> enterprise_props{
+      // si_props
+      with(kafka::topic_property_remote_read, true),
+      with(kafka::topic_property_remote_write, true),
+      // schema id validation
+      with(kafka::topic_property_record_key_schema_id_validation, true),
+      with(kafka::topic_property_record_key_schema_id_validation_compat, true),
+      with(kafka::topic_property_record_value_schema_id_validation, true),
+      with(
+        kafka::topic_property_record_value_schema_id_validation_compat, true)};
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    for (const auto& [name, props] : enterprise_props) {
+        auto topic = make_topic(
+          ssx::sformat("topic_{}", name), std::nullopt, std::nullopt, props);
+
+        auto resp
+          = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
+
+        BOOST_CHECK_EQUAL(
+          resp.data.topics[0].error_code, kafka::error_code::none);
+    }
+}
+
 FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
     // NOTE(oren): w/o schema validation enabled at the cluster level, related
     // properties will be ignored on the topic create path. stick to COMPAT here
     // because it's a superset of REDPANDA.
     lconf().enable_schema_id_validation.set_value(
       pandaproxy::schema_registry::schema_id_validation_mode::compat);
+    lconf().cloud_storage_enabled.set_value(true);
+
+    auto unset_cloud_storage = ss::defer([&] {
+        lconf().enable_schema_id_validation.set_value(
+          pandaproxy::schema_registry::schema_id_validation_mode::none);
+        lconf().cloud_storage_enabled.set_value(false);
+    });
 
     revoke_license();
     using prop_t = std::map<ss::sstring, ss::sstring>;
@@ -545,6 +591,9 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
 }
 
 FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
+    lconf().cloud_storage_enabled.set_value(true);
+    auto unset_cloud_storage = ss::defer(
+      [&] { lconf().cloud_storage_enabled.set_value(false); });
     revoke_license();
 
     const std::initializer_list<std::string_view> si_configs{
