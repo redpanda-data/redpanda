@@ -1749,7 +1749,7 @@ void disk_log_impl::bg_checkpoint_offset_translator() {
 ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
     auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
     auto t = term();
-    auto next_offset = offsets().dirty_offset + model::offset(1);
+    auto next_offset = model::next_offset(offsets().dirty_offset);
     if (_segs.empty()) {
         co_return co_await new_segment(next_offset, t, iopc);
     }
