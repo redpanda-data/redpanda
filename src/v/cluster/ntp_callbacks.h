@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/notification.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -148,7 +149,7 @@ private:
     template<typename Key, typename Value>
     struct node {
         callbacks_t callbacks;
-        absl::flat_hash_map<Key, Value> next;
+        chunked_hash_map<Key, Value> next;
     };
 
     notification_id_type
