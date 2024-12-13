@@ -136,6 +136,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/bytes",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/random:generators",
         "//src/v/serde",
         "//src/v/storage:index_state",

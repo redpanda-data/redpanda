@@ -26,6 +26,7 @@
 #include "serde/rw/scalar.h"
 #include "serde/rw/vector.h"
 #include "serde/serde_exception.h"
+#include "storage/logger.h"
 #include "utils/to_string.h"
 
 #include <fmt/format.h>
@@ -159,19 +160,48 @@ void compressed_index_columns::write(iobuf& buf) const {
     serde::write(buf, copy_position_index());
 }
 
-void compressed_index_columns::read_nested(iobuf_parser& p) {
+namespace {
+struct pos_difference {
+    bool operator()(uint64_t lhs, uint64_t rhs) const {
+        return (lhs + position_index_step) > rhs;
+    }
+};
+static bool valid_offsets_and_positions(
+  const chunked_vector<uint32_t>& offsets,
+  const chunked_vector<uint64_t>& positions) {
+    // Offsets should be monotonic
+    bool monotonic = std::adjacent_find(
+                       offsets.begin(), offsets.end(), std::greater<uint32_t>())
+                     == offsets.end();
+    // 32_KiB step between adjacent file offsets
+    bool correct_step = std::adjacent_find(
+                          positions.begin(), positions.end(), pos_difference())
+                        == positions.end();
+    return monotonic && correct_step;
+}
+} // namespace
+
+std::unique_ptr<index_columns_base>
+compressed_index_columns::read_nested(iobuf_parser& p) {
     chunked_vector<uint32_t> offsets;
     chunked_vector<uint32_t> timestamps;
     chunked_vector<uint64_t> positions;
     serde::read_nested(p, offsets, 0U);
     serde::read_nested(p, timestamps, 0U);
     serde::read_nested(p, positions, 0U);
+    if (!valid_offsets_and_positions(offsets, positions)) {
+        auto fallback = std::make_unique<index_columns>(
+          std::move(offsets), std::move(timestamps), std::move(positions));
+        return fallback;
+    }
     assign_relative_offset_index(std::move(offsets));
     assign_relative_time_index(std::move(timestamps));
     assign_position_index(std::move(positions));
+    return nullptr;
 }
 
-void compressed_index_columns::from(iobuf_parser& parser) {
+std::unique_ptr<index_columns_base>
+compressed_index_columns::from(iobuf_parser& parser) {
     chunked_vector<uint32_t> offsets;
     chunked_vector<uint32_t> timestamps;
     chunked_vector<uint64_t> positions;
@@ -192,10 +222,15 @@ void compressed_index_columns::from(iobuf_parser& parser) {
     for (auto i = 0U; i < vsize; ++i) {
         positions.push_back(reflection::adl<uint64_t>{}.from(parser));
     }
-
+    if (!valid_offsets_and_positions(offsets, positions)) {
+        auto fallback = std::make_unique<index_columns>(
+          std::move(offsets), std::move(timestamps), std::move(positions));
+        return fallback;
+    }
     assign_relative_offset_index(std::move(offsets));
     assign_relative_time_index(std::move(timestamps));
     assign_position_index(std::move(positions));
+    return nullptr;
 }
 
 void compressed_index_columns::to(iobuf& out) const {
@@ -350,6 +385,14 @@ std::ostream& operator<<(std::ostream& o, const compressed_index_columns& s) {
     return o;
 }
 
+index_columns::index_columns(
+  chunked_vector<uint32_t> offsets,
+  chunked_vector<uint32_t> timestamps,
+  chunked_vector<uint64_t> positions)
+  : _relative_offset_index(std::move(offsets))
+  , _relative_time_index(std::move(timestamps))
+  , _position_index(std::move(positions)) {}
+
 std::optional<int>
 index_columns::offset_lower_bound(uint32_t needle) const noexcept {
     auto it = std::lower_bound(
@@ -404,13 +447,15 @@ void index_columns::write(iobuf& buf) const {
     serde::write(buf, _position_index.copy());
 }
 
-void index_columns::read_nested(iobuf_parser& p) {
+std::unique_ptr<index_columns_base>
+index_columns::read_nested(iobuf_parser& p) {
     _relative_offset_index = {};
     _relative_time_index = {};
     _position_index = {};
     serde::read_nested(p, _relative_offset_index, 0U);
     serde::read_nested(p, _relative_time_index, 0U);
     serde::read_nested(p, _position_index, 0U);
+    return nullptr;
 }
 
 size_t index_columns::size() const noexcept {
@@ -422,7 +467,7 @@ size_t index_columns::size() const noexcept {
     return _relative_offset_index.size();
 }
 
-void index_columns::from(iobuf_parser& parser) {
+std::unique_ptr<index_columns_base> index_columns::from(iobuf_parser& parser) {
     const uint32_t vsize = ss::le_to_cpu(
       reflection::adl<uint32_t>{}.from(parser));
 
@@ -445,6 +490,7 @@ void index_columns::from(iobuf_parser& parser) {
     for (auto i = 0U; i < vsize; ++i) {
         _position_index.push_back(reflection::adl<uint64_t>{}.from(parser));
     }
+    return nullptr;
 }
 
 void index_columns::to(iobuf& out) const {
@@ -791,7 +837,14 @@ void read_nested(
     read_nested(p, st.max_offset, 0U);
     read_nested(p, st.base_timestamp, 0U);
     read_nested(p, st.max_timestamp, 0U);
-    st.index->read_nested(p);
+    auto fallback = st.index->read_nested(p);
+    if (fallback != nullptr) {
+        // The fallback can be used if the index compression is
+        // enabled but at the same time the index contains non-monotonic
+        // offsets. Normally, this shouldn't happen.
+        vlog(stlog.error, "Using fallback index representation");
+        st.index = std::move(fallback);
+    }
 
     if (hdr._version < index_state::monotonic_timestamps_version) {
         st.batch_timestamps_are_monotonic = false;
@@ -930,7 +983,14 @@ index_state index_state_serde::decode(iobuf_parser& parser) {
     retval.max_timestamp = model::timestamp(
       reflection::adl<model::timestamp::type>{}.from(parser));
 
-    retval.index->from(parser);
+    auto fallback = retval.index->from(parser);
+    if (fallback != nullptr) {
+        // The fallback can be used if the index compression is
+        // enabled but at the same time the index contains non-monotonic
+        // offsets.
+        vlog(stlog.error, "Using fallback index representation");
+        retval.index = std::move(fallback);
+    }
 
     const auto computed_checksum = checksum(retval);
     if (unlikely(expected_checksum != computed_checksum)) {
