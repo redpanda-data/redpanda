@@ -10,6 +10,7 @@
 
 #include "segment_reupload.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
 #include "config/configuration.h"
 #include "logger.h"
@@ -202,6 +203,8 @@ void segment_collector::do_collect(segment_collector_mode mode) {
 
     align_end_offset_to_manifest(
       _target_end_inclusive.value_or(current_segment_end));
+
+    maybe_clamp_end_to_term_boundary();
 }
 
 model::offset segment_collector::find_replacement_boundary() const {
@@ -271,6 +274,48 @@ void segment_collector::align_end_offset_to_manifest(
             _end_inclusive = it->base_offset - model::offset{1};
         }
     }
+}
+
+void segment_collector::maybe_clamp_end_to_term_boundary() {
+    auto opt_term = _log.get_term(_begin_inclusive);
+    if (!opt_term.has_value()) {
+        vlog(
+          archival_log.info,
+          "Can't find term for offset {}, the log could be truncated",
+          _begin_inclusive);
+        _can_replace_manifest_segment = false;
+        _begin_inclusive = {};
+        _end_inclusive = {};
+        return;
+    }
+    auto opt_max_offset = _log.get_term_last_offset(opt_term.value());
+    if (!opt_max_offset.has_value()) {
+        vlog(
+          archival_log.info,
+          "Can't find last offset for term {}",
+          opt_term.value());
+        _can_replace_manifest_segment = false;
+        _begin_inclusive = {};
+        _end_inclusive = {};
+        return;
+    }
+    vlog(
+      archival_log.debug,
+      "Aligned reupload with the term boundary, begin offset {}, end offset "
+      "{}, segment term {}, "
+      "last term offset {}",
+      _begin_inclusive,
+      _end_inclusive,
+      opt_term.value(),
+      opt_max_offset.value());
+    auto max_offset = opt_max_offset.value();
+    // Invariant: 'max_offset' can't be in the middle of the uploaded segment
+    // because we're rolling a segment when new term starts. The ntp_archiver
+    // never uploads segments across term boundaries.
+    // Because of that if the '_end_inclusive' crosses the term boundary we can
+    // safely return 'max_offset' because it's guaranteed to be aligned with
+    // the end of some segment in the manifest.
+    _end_inclusive = std::min(max_offset, _end_inclusive);
 }
 
 segment_collector::lookup_result segment_collector::find_next_segment(
