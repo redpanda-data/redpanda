@@ -287,7 +287,7 @@ private:
 
     ss::future<std::vector<move_cancellation_result>>
       do_cancel_moving_partition_replicas(
-        std::vector<model::ntp>, model::timeout_clock::time_point);
+        chunked_vector<model::ntp>, model::timeout_clock::time_point);
 
     ss::future<capacity_info> get_health_info(
       model::topic_namespace topic, int32_t partition_count) const;

@@ -1142,6 +1142,32 @@ partition::get_follower_metrics() const {
     return _raft->get_follower_metrics();
 }
 
+result<recovery_state> partition::get_recovery_state() const {
+    if (!_raft->is_leader()) {
+        return errc::not_leader;
+    }
+    recovery_state r_state;
+    r_state.local_last_offset = _raft->dirty_offset();
+    r_state.local_size = _raft->log()->size_bytes();
+
+    const auto& f_stats = _raft->get_follower_stats();
+    r_state.replicas.reserve(f_stats.size());
+
+    for (auto& [follower_id, stats] : f_stats) {
+        if (!stats.is_recovering) {
+            continue;
+        }
+
+        replica_recovery_state replica_state{
+          .last_offset = stats.match_index,
+          .bytes_left = _raft->log()->size_bytes_after_offset(
+            stats.match_index),
+        };
+        r_state.replicas.emplace(follower_id.id(), replica_state);
+    }
+    return r_state;
+}
+
 ss::future<>
 partition::replicate_unsafe_reset(cloud_storage::partition_manifest manifest) {
     vlog(
