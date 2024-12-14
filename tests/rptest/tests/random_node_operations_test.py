@@ -29,6 +29,7 @@ from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode, ski
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
+from rptest.tests.datalake.utils import supported_storage_types
 
 TS_LOG_ALLOW_LIST = [
     re.compile(
@@ -334,11 +335,18 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # tp-workload-deletion   - topic with delete cleanup policy
         # tp-workload-compaction - topic with compaction
         # tp-workload-fast       - topic with fast partition movements enabled
-        if with_iceberg and mixed_versions:
-            self.should_skip = True
-            self.logger.info(
-                "Skipping test with iceberg and mixed versions as it is not supported"
-            )
+        if with_iceberg:
+            if mixed_versions:
+                self.should_skip = True
+                self.logger.info(
+                    "Skipping test with iceberg and mixed versions as it is not supported"
+                )
+            cloud_storage_types = supported_storage_types()
+            if cloud_storage_type not in cloud_storage_types:
+                self.should_skip = True
+                self.logger.info(
+                    "Skipping test with iceberg and unsupported cloud storage type"
+                )
 
         def enable_fast_partition_movement():
             if not with_tiered_storage:
