@@ -1624,11 +1624,7 @@ class RpkTool:
             ]
         return flags
 
-    def _run_registry(self,
-                      cmd,
-                      stdin=None,
-                      timeout=None,
-                      output_format="json"):
+    def _run_registry(self, cmd, stdin=None, timeout=60, output_format="json"):
         cmd = [self._rpk_binary(), "registry", "--format", output_format
                ] + self._schema_registry_conn_settings() + cmd
         out = self._execute(cmd, stdin=stdin, timeout=timeout)

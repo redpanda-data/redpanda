@@ -13,10 +13,12 @@ on:
     branches: [dev]
     paths:
       - 'src/go/rpk/**'
+      - 'src/v/pandaproxy/schema_registry/protobuf/**'
       - '.github/workflows/rpk-build.yml'
   pull_request:
     paths:
       - 'src/go/rpk/**'
+      - 'src/v/pandaproxy/schema_registry/protobuf/**'
       - '.github/workflows/rpk-build.yml'
 jobs:
   test:

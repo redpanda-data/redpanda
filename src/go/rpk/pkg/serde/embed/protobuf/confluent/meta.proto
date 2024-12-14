@@ -1,0 +1,27 @@
+syntax = "proto3";
+package confluent;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package="../confluent";
+
+message Meta {
+  string doc = 1;
+  map<string, string> params = 2;
+}
+
+extend google.protobuf.FileOptions {
+  Meta file_meta = 1088;
+}
+extend google.protobuf.MessageOptions {
+  Meta message_meta = 1088;
+}
+extend google.protobuf.FieldOptions {
+  Meta field_meta = 1088;
+}
+extend google.protobuf.EnumOptions {
+  Meta enum_meta = 1088;
+}
+extend google.protobuf.EnumValueOptions {
+  Meta enum_value_meta = 1088;
+}

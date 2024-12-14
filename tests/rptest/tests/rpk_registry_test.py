@@ -11,10 +11,12 @@ import tempfile
 import socket
 import json
 
+from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SchemaRegistryConfig, SecurityConfig
 from rptest.clients.rpk import RpkTool, RpkException
+from rptest.services.admin import Admin
 from rptest.services import tls
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.util import expect_exception
@@ -51,6 +53,7 @@ class RpkRegistryTest(RedpandaTest):
         super(RpkRegistryTest, self).__init__(
             test_context=ctx,
             schema_registry_config=schema_registry_config,
+            node_ready_timeout_s=60,
         )
         # SASL Config
         self.security = SecurityConfig()
@@ -86,7 +89,6 @@ class RpkRegistryTest(RedpandaTest):
         self.schema_registry_config.client_crt = self.admin_user.certificate.crt
         self.redpanda.set_security_settings(self.security)
         self.redpanda.set_schema_registry_settings(self.schema_registry_config)
-
         self.redpanda.start()
 
         self._rpk = RpkTool(self.redpanda,
@@ -100,6 +102,24 @@ class RpkRegistryTest(RedpandaTest):
                                    self.admin_user.password,
                                    self.admin_user.algorithm)
 
+        # wait for users to propagate to nodes
+        admin = Admin(self.redpanda)
+
+        def auth_user_propagated():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if self.admin_user.username not in users:
+                    return False
+            return True
+
+        wait_until(auth_user_propagated, timeout_sec=60, backoff_sec=3)
+
+        # Wait until Schema Registry is ready.
+        wait_until(self._schema_topic_created,
+                   timeout_sec=60,
+                   backoff_sec=3,
+                   retry_on_exc=True)
+
     def create_schema(self, subject, schema, suffix, references=None):
         with tempfile.NamedTemporaryFile(suffix=suffix) as tf:
             tf.write(bytes(schema, 'UTF-8'))
@@ -108,6 +128,11 @@ class RpkRegistryTest(RedpandaTest):
                                           tf.name,
                                           references=references)
             assert out["subject"] == subject
+
+    def _schema_topic_created(self):
+        # SR should create the topic the first time its accessed.
+        self._rpk.list_schemas()
+        return "_schemas" in self._rpk.list_topics()
 
     @cluster(num_nodes=3)
     def test_registry_schema(self):
@@ -361,6 +386,7 @@ class RpkRegistryTest(RedpandaTest):
 
     @cluster(num_nodes=3)
     def test_produce_consume_proto(self):
+
         # First we register the schemas with their references.
         subject_1 = "subject_for_person"
         proto_person = """
@@ -447,6 +473,53 @@ message AddressBook {
 
         assert json.loads(msg["value"]) == expected_msg_1
         assert json.loads(msg["key"]) == expected_msg_2
+
+        # Testing the same as above but using a well-known protobuf type
+        subject_3 = "subject_for_well_known_types"
+        well_known_proto_def = """
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import "google/type/month.proto";
+
+message Test3 {
+  google.protobuf.Timestamp timestamp = 1;
+  google.type.Month month = 2;
+}
+"""
+        self.create_schema(subject_3, well_known_proto_def, ".proto")  # ID 3
+
+        msg_3 = '{"timestamp":"2024-12-18T20:32:05Z","month":"DECEMBER"}'
+        key_3 = "somekey"
+        expected_msg_3 = json.loads(msg_3)
+        # Produce: unencoded key, encoded value:
+        self._rpk.produce(
+            test_topic, msg=msg_3, key=key_3, schema_id=3,
+            proto_msg="")  # For single-message, it should default to it.
+
+        # We consume as is, i.e: it will show the encoded value.
+        out = self._rpk.consume(test_topic, offset="2:3")
+        msg = json.loads(out)
+
+        raw_bytes_string = msg["value"]
+        assert raw_bytes_string != expected_msg_3, f'expected to have raw bytes {raw_bytes_string} to be different than {expected_msg_3}'
+        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
+
+        bytes_from_string = bytes(
+            raw_bytes_string.encode().decode('unicode-escape'), 'utf-8')
+        assert bytes_from_string[
+            0] == 0, f'expected encoding to contain magic byte (0)'
+
+        # Now we decode the same message:
+        out = self._rpk.consume(test_topic,
+                                offset="2:3",
+                                use_schema_registry="value")
+        msg = json.loads(out)
+
+        assert json.loads(
+            msg["value"]
+        ) == expected_msg_3, f'got: {json.loads(msg["value"])}; expected {expected_msg_3}'
+        assert msg["key"] == key_3, f'got key: {msg["key"]}; expected {key_3}'
 
     @cluster(num_nodes=3)
     def test_produce_consume_json(self):
