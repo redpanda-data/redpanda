@@ -24,11 +24,6 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.services.metrics_check import MetricCheck
 
-NO_SCHEMA_ERRORS = [
-    r'Must have parsed schema when using structured data mode',
-    r'Error translating data to binary record'
-]
-
 
 class DatalakeE2ETests(RedpandaTest):
     def __init__(self, test_ctx, *args, **kwargs):
@@ -190,45 +185,79 @@ class DatalakeE2ETests(RedpandaTest):
             dl.produce_to_topic(self.topic_name, 1024, count)
             dl.wait_for_translation(self.topic_name, msg_count=count)
 
-    @cluster(num_nodes=3, log_allow_list=NO_SCHEMA_ERRORS)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_metrics(self, cloud_storage_type):
 
-        commit_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_commit'
-        translation_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_translation'
+class DatalakeMetricsTest(RedpandaTest):
+
+    commit_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_commit'
+    translation_lag = 'vectorized_cluster_partition_iceberg_offsets_pending_translation'
+
+    def __init__(self, test_ctx, *args, **kwargs):
+        super(DatalakeMetricsTest,
+              self).__init__(test_ctx,
+                             num_brokers=3,
+                             si_settings=SISettings(test_context=test_ctx),
+                             extra_rp_conf={
+                                 "iceberg_enabled": "true",
+                                 "iceberg_catalog_commit_interval_ms": "5000",
+                                 "enable_leader_balancer": False
+                             },
+                             schema_registry_config=SchemaRegistryConfig(),
+                             pandaproxy_config=PandaproxyConfig(),
+                             *args,
+                             **kwargs)
+        self.test_ctx = test_ctx
+        self.topic_name = "test"
+
+    def setUp(self):
+        pass
+
+    def wait_for_lag(self, metric_check: MetricCheck, metric_name: str,
+                     count: int):
+        wait_until(
+            lambda: metric_check.evaluate([(metric_name, lambda _, val: val ==
+                                            count)]),
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=f"Timed out waiting for {metric_name} to reach: {count}")
+
+    @cluster(num_nodes=5)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_lag_metrics(self, cloud_storage_type):
 
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
                               filesystem_catalog_mode=False,
                               include_query_engines=[]) as dl:
 
-            dl.create_iceberg_enabled_topic(
-                self.topic_name,
-                partitions=1,
-                replicas=1,
-                iceberg_mode="value_schema_id_prefix")
+            # Stop the catalog to halt the translation flow
+            dl.catalog_service.stop()
+
+            dl.create_iceberg_enabled_topic(self.topic_name,
+                                            partitions=1,
+                                            replicas=3)
+            topic_leader = self.redpanda.partitions(self.topic_name)[0].leader
             count = randint(12, 21)
-            # Populate schemaless messages in schema-ed mode, this should
-            # hold up translation and commits
-            dl.produce_to_topic(self.topic_name, 1024, msg_count=count)
+            dl.produce_to_topic(self.topic_name, 1, msg_count=count)
 
             m = MetricCheck(self.redpanda.logger,
                             self.redpanda,
-                            self.redpanda.nodes[0],
-                            [commit_lag, translation_lag],
+                            topic_leader, [
+                                DatalakeMetricsTest.commit_lag,
+                                DatalakeMetricsTest.translation_lag
+                            ],
                             labels={
                                 'namespace': 'kafka',
                                 'topic': self.topic_name,
                                 'partition': '0'
                             },
                             reduce=sum)
-            expectations = []
-            for metric in [commit_lag, translation_lag]:
-                expectations.append([metric, lambda _, val: val == count])
 
-            # Ensure lag metric builds up as expected.
-            wait_until(
-                lambda: m.evaluate(expectations),
-                timeout_sec=30,
-                backoff_sec=5,
-                err_msg=f"Timed out waiting for metrics to reach: {count}")
+            # Wait for lag build up
+            self.wait_for_lag(m, DatalakeMetricsTest.translation_lag, count)
+            self.wait_for_lag(m, DatalakeMetricsTest.commit_lag, count)
+
+            # Resume iceberg translation
+            dl.catalog_service.start()
+
+            self.wait_for_lag(m, DatalakeMetricsTest.translation_lag, 0)
+            self.wait_for_lag(m, DatalakeMetricsTest.commit_lag, 0)
