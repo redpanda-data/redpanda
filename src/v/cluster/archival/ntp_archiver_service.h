@@ -114,6 +114,17 @@ enum class wait_result { not_in_progress, complete, lost_leadership, failed };
 
 std::ostream& operator<<(std::ostream& os, wait_result wr);
 
+/// Fence value for the archival STM.
+/// The value is used to implement optimistic
+/// concurrency control.
+struct archival_stm_fence {
+    // Offset of the last command added to the
+    // archival STM
+    model::offset read_write_fence;
+    // Disable fencing in tests
+    bool unsafe_add{false};
+};
+
 /// This class performs per-ntp archival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
 /// 'ntp_archiver' instances that the shard possesses are supposed to be
@@ -225,6 +236,7 @@ public:
     ///        offset.
     /// \return future that returns number of uploaded/failed segments
     virtual ss::future<batch_result> upload_next_candidates(
+      archival_stm_fence fence,
       std::optional<model::offset> unsafe_max_offset_override_exclusive
       = std::nullopt);
 
@@ -498,6 +510,7 @@ private:
     ///
     /// Update the probe and manifest
     ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
+      archival_stm_fence fence,
       std::vector<ntp_archiver::scheduled_upload> scheduled);
 
     /// Waits for scheduled segment uploads. The uploaded segments could be
@@ -505,6 +518,7 @@ private:
     /// cases with the major difference being the probe updates done after
     /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
+      archival_stm_fence fence,
       std::vector<scheduled_upload> scheduled,
       segment_upload_kind segment_kind,
       bool inline_manifest);

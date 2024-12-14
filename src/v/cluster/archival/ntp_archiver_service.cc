@@ -760,8 +760,19 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             continue;
         }
 
+        // This is the offset of the last applied command. It is used
+        // as a fence to implement optimistic concurrency control.
+        auto fence
+          = _parent.archival_meta_stm()->manifest().get_applied_offset();
+        vlog(
+          archival_log.debug,
+          "fence value is: {}, in-sync offset: {}",
+          fence,
+          _parent.archival_meta_stm()->get_insync_offset());
+
         auto [non_compacted_upload_result, compacted_upload_result]
-          = co_await upload_next_candidates();
+          = co_await upload_next_candidates(
+            archival_stm_fence{.read_write_fence = fence});
         if (non_compacted_upload_result.num_failed != 0) {
             // The logic in class `remote` already does retries: if we get here,
             // it means the upload failed after several retries, justifying
@@ -2087,6 +2098,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
 }
 
 ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
+  archival_stm_fence fence,
   std::vector<scheduled_upload> scheduled,
   segment_upload_kind segment_kind,
   bool inline_manifest) {
@@ -2165,6 +2177,21 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
       = config::shard_local_cfg()
           .cloud_storage_disable_upload_consistency_checks.value();
     if (!checks_disabled) {
+        // With read-write-fence it's guaranteed that the concurrent
+        // updates are not a problem. But we still need this check
+        // to prevent certain bugs from corrupting the cloud storage
+        // metadata.
+        // Overall, we're checking that the update makes sense here
+        // (that the new segment lines up with the previous one). Then
+        // we're checking that the segment actually matches its
+        // metadata. And then we're replicating the metadata with the
+        // fence that guarantees that no updates are made to the STM
+        // state interim.
+        // In other words, we're basing the decision to start an upload
+        // on the precondition. Then we're validating the actual uploads
+        // against this precondition and then we're discarding the
+        // changes to the STM state if the precondition is no longer
+        // valid.
         std::vector<cloud_storage::segment_meta> meta;
         for (size_t i = 0; i < segment_results.size(); i++) {
             meta.push_back(scheduled[ixupload[i]].meta.value());
@@ -2256,14 +2283,33 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
               ? _parent.highest_producer_id()
               : model::producer_id{};
 
-        auto error = co_await _parent.archival_meta_stm()->add_segments(
+        auto batch_builder = _parent.archival_meta_stm()->batch_start(
+          deadline, _as);
+        if (!fence.unsafe_add) {
+            // The fence should be added first because it can only
+            // affect commands which are following it in the same record
+            // batch.
+            vlog(
+              archival_log.debug,
+              "fence value is: {}, unsafe add: {}, manifest last "
+              "applied offset: {}, manifest in-sync offset: {}",
+              fence.read_write_fence,
+              fence.unsafe_add,
+              _parent.archival_meta_stm()->manifest().get_applied_offset(),
+              _parent.archival_meta_stm()->get_insync_offset());
+            batch_builder.read_write_fence(fence.read_write_fence);
+        }
+        batch_builder.add_segments(
           mdiff,
-          manifest_clean_offset,
-          highest_producer_id,
-          deadline,
-          _as,
           checks_disabled ? cluster::segment_validated::no
                           : cluster::segment_validated::yes);
+        if (manifest_clean_offset.has_value()) {
+            batch_builder.mark_clean(manifest_clean_offset.value());
+        }
+        batch_builder.update_highest_producer_id(highest_producer_id);
+
+        auto error = co_await batch_builder.replicate();
+
         if (
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
@@ -2303,6 +2349,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
+  archival_stm_fence fence,
   std::vector<ntp_archiver::scheduled_upload> scheduled) {
     // Split the set of scheduled uploads into compacted and non compacted
     // uploads, and then wait for them separately. They can also be waited on
@@ -2341,10 +2388,12 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
     auto [non_compacted_result, compacted_result]
       = co_await ss::when_all_succeed(
         wait_uploads(
+          fence,
           std::move(non_compacted_uploads),
           segment_upload_kind::non_compacted,
           inline_manifest_in_non_compacted_uploads),
         wait_uploads(
+          fence,
           std::move(compacted_uploads),
           segment_upload_kind::compacted,
           !inline_manifest_in_non_compacted_uploads));
@@ -2374,6 +2423,7 @@ model::offset ntp_archiver::max_uploadable_offset_exclusive() const {
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
+  archival_stm_fence fence,
   std::optional<model::offset> unsafe_max_offset_override_exclusive) {
     auto max_offset_exclusive = unsafe_max_offset_override_exclusive
                                   ? *unsafe_max_offset_override_exclusive
@@ -2389,7 +2439,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
         auto scheduled_uploads = co_await schedule_uploads(
           max_offset_exclusive);
         co_return co_await wait_all_scheduled_uploads(
-          std::move(scheduled_uploads));
+          fence, std::move(scheduled_uploads));
     } catch (const ss::gate_closed_exception&) {
     } catch (const ss::abort_requested_exception&) {
     }
