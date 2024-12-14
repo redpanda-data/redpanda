@@ -247,7 +247,10 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
         log->force_roll(ss::default_priority_class()).get();
 
         ASSERT_TRUE(archiver.sync_for_tests().get());
-        archiver.upload_next_candidates().get();
+        archiver
+          .upload_next_candidates(
+            archival::archival_stm_fence{.unsafe_add = true})
+          .get();
     }
     ASSERT_EQ(
       cloud_storage::upload_result::success,
@@ -737,7 +740,10 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
         // drive the uploading
         auto& archiver = prt_l->archiver()->get();
         archiver.sync_for_tests().get();
-        archiver.upload_next_candidates().get();
+        archiver
+          .upload_next_candidates(
+            archival::archival_stm_fence{.unsafe_add = true})
+          .get();
 
         // not for synchronization... just to give the system time to propogate
         // all the state changes are are happening so that this overall loop
