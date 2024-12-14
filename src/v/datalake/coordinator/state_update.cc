@@ -284,7 +284,34 @@ topic_lifecycle_update::apply(topics_state& state) {
     return true;
 }
 
-std::ostream& operator<<(std::ostream& o, topic_lifecycle_update u) {
+std::ostream& operator<<(std::ostream& o, const add_files_update& u) {
+    fmt::print(o, "{{tp: {}, revision: {}, entries: [", u.tp, u.topic_revision);
+    static constexpr size_t max_to_log = 6;
+    static constexpr size_t halved = max_to_log / 2;
+    const auto& e = u.entries;
+    if (e.size() <= max_to_log) {
+        fmt::print(o, "{}", fmt::join(e, ", "));
+    } else {
+        fmt::print(o, "{}", fmt::join(e.begin(), e.begin() + halved, ", "));
+        o << "...";
+        fmt::print(o, "{}", fmt::join(e.end() - halved, e.end(), ", "));
+    }
+    fmt::print(o, "] ({} entries)}}", e.size());
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const mark_files_committed_update& u) {
+    fmt::print(
+      o,
+      "{{tp: {}, revision: {}, new_committed: {}}}",
+      u.tp,
+      u.topic_revision,
+      u.new_committed);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_lifecycle_update& u) {
     fmt::print(
       o,
       "{{topic: {}, revision: {}, new_state: {}}}",
