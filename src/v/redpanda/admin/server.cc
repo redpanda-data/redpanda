@@ -3345,6 +3345,7 @@ struct cluster_partition_info {
     ss::lw_shared_ptr<model::topic_namespace> ns_tp;
     model::partition_id id;
     std::vector<model::broker_shard> replicas;
+    std::optional<model::node_id> leader_id;
     bool disabled = false;
 
     ss::httpd::cluster_json::cluster_partition to_json() const {
@@ -3357,6 +3358,9 @@ struct cluster_partition_info {
             a.node_id = r.node_id;
             a.core = r.shard;
             ret.replicas.push(a);
+        }
+        if (leader_id) {
+            ret.leader_id = leader_id.value();
         }
         ret.disabled = disabled;
         return ret;
@@ -3371,6 +3375,7 @@ using cluster_partitions_t
 cluster_partitions_t topic2cluster_partitions(
   model::topic_namespace ns_tp,
   const cluster::assignments_set& assignments,
+  const cluster::metadata_cache& md_cache,
   const cluster::topic_disabled_partitions_set* disabled_set,
   std::optional<bool> disabled_filter) {
     cluster_partitions_t ret;
@@ -3412,6 +3417,7 @@ cluster_partitions_t topic2cluster_partitions(
                 .ns_tp = shared_ns_tp,
                 .id = id,
                 .replicas = as_it->second.replicas,
+                .leader_id = md_cache.get_leader_id(*shared_ns_tp, id),
                 .disabled = true,
               });
         }
@@ -3429,6 +3435,7 @@ cluster_partitions_t topic2cluster_partitions(
                 .ns_tp = shared_ns_tp,
                 .id = p_as.id,
                 .replicas = p_as.replicas,
+                .leader_id = md_cache.get_leader_id(*shared_ns_tp, p_as.id),
                 .disabled = disabled,
               });
         }
@@ -3534,6 +3541,7 @@ admin_server::get_cluster_partitions_handler(
         auto topic_partitions = topic2cluster_partitions(
           ns_tp,
           topic_it->second.get_assignments(),
+          _metadata_cache.local(),
           topics_state.get_topic_disabled_set(ns_tp),
           disabled_filter);
 
@@ -3577,6 +3585,7 @@ admin_server::get_cluster_partitions_topic_handler(
     auto partitions = topic2cluster_partitions(
       ns_tp,
       topic_it->second.get_assignments(),
+      _metadata_cache.local(),
       topics_state.get_topic_disabled_set(ns_tp),
       disabled_filter);
 
