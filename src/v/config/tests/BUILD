@@ -173,6 +173,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "throughput_control_group_test",
+    timeout = "short",
+    srcs = [
+        "throughput_control_group_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/config",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+        "@yaml-cpp",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "enterprise_property_test",
     timeout = "short",
