@@ -43,7 +43,7 @@ class LicenseWorkload(PWorkload):
             return
 
         self.ctx.redpanda.set_environment({
-            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            '__REDPANDA_PERIODIC_REMINDER_INTERVAL_SEC':
             f'{LicenseWorkload.LICENSE_CHECK_INTERVAL_SEC}'
         })
 
@@ -107,7 +107,7 @@ class LicenseWorkload(PWorkload):
             # Install license
             assert admin.put_license(self.license).status_code == 200
             self.ctx.redpanda.unset_environment(
-                ['__REDPANDA_LICENSE_CHECK_INTERVAL_SEC'])
+                ['__REDPANDA_PERIODIC_REMINDER_INTERVAL_SEC'])
             self.license_installed = True
             return PWorkload.DONE
 

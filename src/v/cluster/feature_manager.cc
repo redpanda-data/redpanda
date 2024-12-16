@@ -279,7 +279,7 @@ feature_manager::report_enterprise_features() const {
 ss::future<> feature_manager::maybe_log_periodic_reminders() {
     auto reminder_period = std::chrono::seconds(60 * 5);
     auto interval_override = std::getenv(
-      "__REDPANDA_LICENSE_CHECK_INTERVAL_SEC");
+      "__REDPANDA_PERIODIC_REMINDER_INTERVAL_SEC");
     if (interval_override != nullptr) {
         try {
             reminder_period = std::min(
