@@ -94,6 +94,23 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "scoped_config_test",
+    timeout = "short",
+    srcs = [
+        "scoped_config_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/config",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
+        "@seastar",
+        "@seastar//:testing",
+        "@yaml-cpp",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "enterprise_property_test",
     timeout = "short",
