@@ -12,9 +12,9 @@ import re
 from ducktape.mark import matrix
 
 from rptest.services.cluster import cluster
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
-from rptest.services.redpanda import LoggingConfig
+from rptest.services.redpanda import LoggingConfig, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.utils.mode_checks import skip_fips_mode
@@ -201,3 +201,86 @@ class LicenseEnforcementTest(RedpandaTest):
                                  timeout_sec=60,
                                  backoff_sec=1,
                                  err_msg="The cluster hasn't stabilized")
+
+
+class LicenseEnforcementPermittedTopicParams(RedpandaTest):
+    """
+    Tests that validate that topics properties whose controlling cluster config
+    is disabled do not cause any issues in regards to license enforcement.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.rpk = RpkTool(self.redpanda)
+
+    def setUp(self):
+        pass
+
+    @cluster(num_nodes=3)
+    @matrix(enable_cloud_storage=[False, True])
+    def test_cloud_storage_topic_params(self, enable_cloud_storage):
+        """
+        This test verifies that if a license isn't installed and `cloud_storage_enabled`
+        is set to `False`, then topics may be created with TS settingss set to true, e.g.
+        `redpanda.remote.write`.
+        """
+        if enable_cloud_storage:
+            si_settings = SISettings(self.test_context)
+            self.redpanda.set_si_settings(si_settings)
+
+        super().setUp()
+
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=60,
+                                 backoff_sec=1,
+                                 err_msg="The cluster hasn't stabilized")
+
+        try:
+            self.rpk.create_topic("test",
+                                  config={"redpanda.remote.write": "true"})
+            assert not enable_cloud_storage, "Should have failed to create topic with redpanda.remote.write set and cloud_storage_enabled set to True"
+        except RpkException as e:
+            assert enable_cloud_storage, f"Should not have failed to create topic with redpanda.remote.write set and cloud_storage_enabled set to False: {e}"
+
+    @cluster(num_nodes=3)
+    def test_upgrade_with_topic_configs(self):
+        """
+        This test verifies that if a license isn't installed and `cloud_storage_enabled`
+        is set to `False` and topics exist with tiered storage capabilities, the upgrade
+        will still succeed
+        """
+        installer = self.redpanda._installer
+        prev_version = installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+        latest_version = installer.head_version()
+        self.logger.info(
+            f"Testing with versions: {prev_version=} {latest_version=}")
+
+        self.logger.info(f"Starting all nodes with version: {prev_version}")
+        installer.install(self.redpanda.nodes, prev_version)
+        self.redpanda.start(nodes=self.redpanda.nodes,
+                            omit_seeds_on_idx_one=False)
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=60,
+                                 backoff_sec=1,
+                                 err_msg="The cluster hasn't stabilized")
+        self.logger.debug(
+            "Creating a topic with redpanda.remote.write set to true")
+        self.rpk.create_topic("test", config={"redpanda.remote.write": "true"})
+        self.logger.info(
+            "Disabling the trial license to simulate that the license expired")
+        self.redpanda.set_environment(
+            {'__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE': True})
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_until(self.redpanda.healthy,
+                                 timeout_sec=60,
+                                 backoff_sec=1,
+                                 err_msg="The cluster hasn't stabilized")
+
+        installer.install(self.redpanda.nodes, latest_version)
+        self.redpanda.start(nodes=self.redpanda.nodes,
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)

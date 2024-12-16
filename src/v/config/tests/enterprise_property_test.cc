@@ -109,4 +109,34 @@ TEST(EnterprisePropertyTest, TestTypeName) {
     EXPECT_EQ(cfg.enterprise_enum.type_name(), "string");
 }
 
+TEST(EnterprisePropertyTest, TestIsRestricted) {
+    test_config cfg;
+    cfg.enterprise_bool.set_value(false);
+    EXPECT_FALSE(cfg.enterprise_bool.is_restricted());
+    cfg.enterprise_bool.set_value(true);
+    EXPECT_TRUE(cfg.enterprise_bool.is_restricted());
+
+    cfg.enterprise_str_enum.set_value("foo");
+    EXPECT_FALSE(cfg.enterprise_str_enum.is_restricted());
+    cfg.enterprise_str_enum.set_value("bar");
+    EXPECT_TRUE(cfg.enterprise_str_enum.is_restricted());
+
+    cfg.enterprise_str_vec.set_value(
+      std::vector<ss::sstring>{"foo", "bar", "baz"});
+    EXPECT_FALSE(cfg.enterprise_str_vec.is_restricted());
+    cfg.enterprise_str_vec.set_value(
+      std::vector<ss::sstring>{"foo", "bar", "baz", "GSSAPI"});
+    EXPECT_TRUE(cfg.enterprise_str_vec.is_restricted());
+
+    cfg.enterprise_opt_int.set_value(10);
+    EXPECT_FALSE(cfg.enterprise_opt_int.is_restricted());
+    cfg.enterprise_opt_int.set_value(10000);
+    EXPECT_TRUE(cfg.enterprise_opt_int.is_restricted());
+
+    cfg.enterprise_enum.set_value(tls_version::v1_0);
+    EXPECT_FALSE(cfg.enterprise_enum.is_restricted());
+    cfg.enterprise_enum.set_value(tls_version::v1_3);
+    EXPECT_TRUE(cfg.enterprise_enum.is_restricted());
+}
+
 } // namespace config

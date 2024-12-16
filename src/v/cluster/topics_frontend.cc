@@ -74,18 +74,30 @@ std::vector<std::string_view>
 get_enterprise_features(const cluster::topic_configuration& cfg) {
     std::vector<std::string_view> features;
     const auto si_disabled = model::shadow_indexing_mode::disabled;
-    if (cfg.properties.shadow_indexing.value_or(si_disabled) != si_disabled) {
-        features.emplace_back("tiered storage");
+    // Only enforce tiered storage topic config sanctions when cloud storage is
+    // enabled for the cluster
+    if (config::shard_local_cfg().cloud_storage_enabled.is_restricted()) {
+        if (
+          cfg.properties.shadow_indexing.value_or(si_disabled) != si_disabled) {
+            features.emplace_back("tiered storage");
+        }
+        if (cfg.is_recovery_enabled()) {
+            features.emplace_back("topic recovery");
+        }
+        if (cfg.is_read_replica()) {
+            features.emplace_back("remote read replicas");
+        }
     }
-    if (cfg.is_recovery_enabled()) {
-        features.emplace_back("topic recovery");
+
+    // Only enforce schema ID validation topic configs if Schema ID validation
+    // is enabled for the cluster
+    if (config::shard_local_cfg().enable_schema_id_validation.is_restricted()) {
+        if (cfg.is_schema_id_validation_enabled()) {
+            features.emplace_back("schema ID validation");
+        }
     }
-    if (cfg.is_read_replica()) {
-        features.emplace_back("remote read replicas");
-    }
-    if (cfg.is_schema_id_validation_enabled()) {
-        features.emplace_back("schema ID validation");
-    }
+
+    // We are always enforcing leadership preference restrictions
     if (const auto& leaders_pref = cfg.properties.leaders_preference;
         leaders_pref.has_value()
         && config::shard_local_cfg()
@@ -111,11 +123,15 @@ std::vector<std::string_view> get_enterprise_features(
 
     std::vector<std::string_view> features;
     const auto si_disabled = model::shadow_indexing_mode::disabled;
-    if (
-      (properties.shadow_indexing.value_or(si_disabled)
-       < updated_properties.shadow_indexing.value_or(si_disabled))
-      || (properties.remote_delete < updated_properties.remote_delete)) {
-        features.emplace_back("tiered storage");
+    // Only enforce tiered storage topic config sanctions when cloud storage is
+    // enabled for the cluster
+    if (config::shard_local_cfg().cloud_storage_enabled.is_restricted()) {
+        if (
+          (properties.shadow_indexing.value_or(si_disabled)
+           < updated_properties.shadow_indexing.value_or(si_disabled))
+          || (properties.remote_delete < updated_properties.remote_delete)) {
+            features.emplace_back("tiered storage");
+        }
     }
 
     static constexpr auto key_schema_id_validation_enabled =
@@ -163,12 +179,16 @@ std::vector<std::string_view> get_enterprise_features(
             up.record_value_subject_name_strategy_compat));
     };
 
-    if (
-      ((key_schema_id_validation_enabled(properties)
-        < key_schema_id_validation_enabled(updated_properties))
-       || (value_schema_id_validation_enabled(properties) < value_schema_id_validation_enabled(updated_properties)))
-      || (schema_id_validation_enabled(updated_properties) && sns_modified())) {
-        features.emplace_back("schema id validation");
+    // Only enforce schema ID validation topic configs if Schema ID validation
+    // is enabled for the cluster
+    if (config::shard_local_cfg().enable_schema_id_validation.is_restricted()) {
+        if (
+          ((key_schema_id_validation_enabled(properties)
+            < key_schema_id_validation_enabled(updated_properties))
+           || (value_schema_id_validation_enabled(properties) < value_schema_id_validation_enabled(updated_properties)))
+          || (schema_id_validation_enabled(updated_properties) && sns_modified())) {
+            features.emplace_back("schema id validation");
+        }
     }
 
     if (const auto& updated_pref = updated_properties.leaders_preference;
