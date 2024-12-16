@@ -126,6 +126,22 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "seed_server_property_test",
+    timeout = "short",
+    srcs = [
+        "seed_server_property_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/config",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:unresolved_address",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "enterprise_property_test",
     timeout = "short",
