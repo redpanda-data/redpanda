@@ -190,6 +190,24 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "node_override_test",
+    timeout = "short",
+    srcs = [
+        "node_override_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:uuid",
+        "@seastar",
+        "@seastar//:testing",
+        "@yaml-cpp",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "enterprise_property_test",
     timeout = "short",
