@@ -62,7 +62,7 @@ raft::reply_result random_reply_status() {
     return random_generators::random_choice(std::vector<raft::reply_result>{
       raft::reply_result::success,
       raft::reply_result::failure,
-      raft::reply_result::timeout,
+      raft::reply_result::follower_busy,
       raft::reply_result::group_unavailable});
 }
 

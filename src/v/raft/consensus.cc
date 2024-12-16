@@ -374,7 +374,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    if (unlikely(reply.result == reply_result::timeout)) {
+    if (unlikely(reply.result == reply_result::follower_busy)) {
         // ignore this response, timed out on the receiver node
         vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
         return success_reply::no;

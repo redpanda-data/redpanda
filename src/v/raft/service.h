@@ -411,7 +411,7 @@ private:
               return ss::with_timeout(timeout, std::move(f))
                 .handle_exception_type([group](const ss::timed_out_error&) {
                     return append_entries_reply{
-                      .group = group, .result = reply_result::timeout};
+                      .group = group, .result = reply_result::follower_busy};
                 });
           });
 
@@ -447,11 +447,11 @@ private:
             auto f = dispatch_full_heartbeat(
               source_node, target_node, m, full_hb);
             f = ss::with_timeout(timeout, std::move(f))
-                  .handle_exception_type(
-                    [group = full_hb.group](const ss::timed_out_error&) {
-                        return full_heartbeat_reply{
-                          .group = group, .result = reply_result::timeout};
-                    });
+                  .handle_exception_type([group = full_hb.group](
+                                           const ss::timed_out_error&) {
+                      return full_heartbeat_reply{
+                        .group = group, .result = reply_result::follower_busy};
+                  });
             futures.push_back(std::move(f));
         }
 

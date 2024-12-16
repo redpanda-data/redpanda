@@ -374,7 +374,7 @@ void heartbeat_manager::process_reply(
             return;
         }
 
-        if (unlikely(result == reply_result::timeout)) {
+        if (unlikely(result == reply_result::follower_busy)) {
             vlog(
               hbeatlog.debug,
               "Heartbeat request for group {} timed out on the node {}",
@@ -439,7 +439,7 @@ void heartbeat_manager::process_reply(
             continue;
         }
 
-        if (unlikely(m.result == reply_result::timeout)) {
+        if (unlikely(m.result == reply_result::follower_busy)) {
             vlog(
               hbeatlog.debug,
               "Heartbeat request for group {} timed out on the node {}",
@@ -555,7 +555,7 @@ void heartbeat_manager::process_reply(
             continue;
         }
 
-        if (unlikely(m.result == reply_result::timeout)) {
+        if (unlikely(m.result == reply_result::follower_busy)) {
             vlog(
               hbeatlog.debug,
               "Heartbeat request for group {} timed out on the node {}",
