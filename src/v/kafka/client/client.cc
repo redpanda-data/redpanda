@@ -237,7 +237,7 @@ ss::future<produce_response::partition> client::produce_record_batch(
 }
 
 ss::future<produce_response> client::produce_records(
-  model::topic topic, std::vector<record_essence> records) {
+  model::topic topic, chunked_vector<record_essence> records) {
     absl::node_hash_map<model::partition_id, storage::record_batch_builder>
       partition_builders;
 
