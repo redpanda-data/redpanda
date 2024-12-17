@@ -256,8 +256,8 @@ static constexpr msg_type map_msg_type() {
 }
 
 template<typename ReqT, typename RespT>
-ss::future<result<RespT>>
-in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
+ss::future<result<RespT>> in_memory_test_protocol::dispatch(
+  model::node_id id, ReqT req, rpc::client_opts opts) {
     _gate.hold();
     auto it = _channels.find(id);
     if (it == _channels.end()) {
@@ -287,54 +287,61 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
     }
 
     try {
-        auto resp = co_await node_channel.exchange(msg_type, std::move(buffer));
+        auto f = node_channel.exchange(msg_type, std::move(buffer));
+        opts.resource_units.release();
+        auto resp = co_await ss::with_timeout(
+          opts.timeout.timeout_at(), std::move(f));
         iobuf_parser parser(std::move(resp));
         co_return co_await serde::read_async<RespT>(parser);
+    } catch (const ss::timed_out_error&) {
+        co_return rpc::errc::client_request_timeout;
     } catch (const seastar::gate_closed_exception&) {
         co_return errc::shutting_down;
     }
 }
 
 ss::future<result<vote_reply>> in_memory_test_protocol::vote(
-  model::node_id id, vote_request req, rpc::client_opts) {
-    return dispatch<vote_request, vote_reply>(id, req);
+  model::node_id id, vote_request req, rpc::client_opts opts) {
+    return dispatch<vote_request, vote_reply>(id, req, std::move(opts));
 };
 
 ss::future<result<append_entries_reply>>
 in_memory_test_protocol::append_entries(
-  model::node_id id, append_entries_request req, rpc::client_opts) {
+  model::node_id id, append_entries_request req, rpc::client_opts opts) {
     return dispatch<append_entries_request, append_entries_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 };
 
 ss::future<result<heartbeat_reply>> in_memory_test_protocol::heartbeat(
-  model::node_id id, heartbeat_request req, rpc::client_opts) {
-    return dispatch<heartbeat_request, heartbeat_reply>(id, std::move(req));
+  model::node_id id, heartbeat_request req, rpc::client_opts opts) {
+    return dispatch<heartbeat_request, heartbeat_reply>(
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<heartbeat_reply_v2>> in_memory_test_protocol::heartbeat_v2(
-  model::node_id id, heartbeat_request_v2 req, rpc::client_opts) {
+  model::node_id id, heartbeat_request_v2 req, rpc::client_opts opts) {
     return dispatch<heartbeat_request_v2, heartbeat_reply_v2>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<install_snapshot_reply>>
 in_memory_test_protocol::install_snapshot(
-  model::node_id id, install_snapshot_request req, rpc::client_opts) {
+  model::node_id id, install_snapshot_request req, rpc::client_opts opts) {
     return dispatch<install_snapshot_request, install_snapshot_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<timeout_now_reply>> in_memory_test_protocol::timeout_now(
-  model::node_id id, timeout_now_request req, rpc::client_opts) {
-    return dispatch<timeout_now_request, timeout_now_reply>(id, std::move(req));
+  model::node_id id, timeout_now_request req, rpc::client_opts opts) {
+    return dispatch<timeout_now_request, timeout_now_reply>(
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<transfer_leadership_reply>>
 in_memory_test_protocol::transfer_leadership(
-  model::node_id id, transfer_leadership_request req, rpc::client_opts) {
+  model::node_id id, transfer_leadership_request req, rpc::client_opts opts) {
     return dispatch<transfer_leadership_request, transfer_leadership_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 raft_node_instance::raft_node_instance(
