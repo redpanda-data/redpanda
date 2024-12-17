@@ -227,3 +227,22 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "get_schema_types",
+    timeout = "short",
+    srcs = [
+        "get_schema_types.cc",
+    ],
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/http",
+        "//src/v/pandaproxy/test:fixture",
+        "//src/v/pandaproxy/test:utils",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:beast",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
