@@ -732,7 +732,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
     vlog(
       clusterlog.info,
       "balancer iteration finished: "
-      "total error: {:.4}, number of muted groups: {}, "
+      "objective: {:.4}, number of muted groups: {}, "
       "number in flight: {}, dispatched in this tick: {}",
       strategy->error(),
       _muted.size(),
