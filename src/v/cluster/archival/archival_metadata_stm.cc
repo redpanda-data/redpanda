@@ -1335,7 +1335,8 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
       .last_partition_scrub = _manifest->last_partition_scrub(),
       .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies(),
-      .highest_producer_id = _manifest->highest_producer_id()});
+      .highest_producer_id = _manifest->highest_producer_id(),
+      .applied_offset = _manifest->get_applied_offset()});
     auto snapshot_offset = last_applied_offset();
     apply_units.return_all();
 
