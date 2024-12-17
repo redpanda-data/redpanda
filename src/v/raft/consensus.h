@@ -352,6 +352,7 @@ public:
             if (_leader_id) {
                 _leader_id = std::nullopt;
                 trigger_leadership_notification();
+                ssx::spawn_with_gate(_bg, [this] { return notify_stepdown(); });
             }
         });
     }
@@ -452,9 +453,11 @@ public:
 
     // precondition: is_elected_leader() must be true.
     inflight_appends_guard track_append_inflight(vnode);
-
-    void update_heartbeat_status(vnode, bool);
-
+    void leave_quiescent_state();
+    void enter_quiescent_state();
+    void update_heartbeat_status(
+      vnode, bool, in_quiescent_state = in_quiescent_state::no);
+    ss::future<> notify_stepdown();
     bool should_reconnect_follower(const follower_index_metadata&);
 
     std::vector<follower_metrics> get_follower_metrics() const;
@@ -932,6 +935,7 @@ private:
     ss::timer<ss::lowres_clock> _deferred_flusher;
 
     replication_monitor _replication_monitor;
+    in_quiescent_state _quiescent = in_quiescent_state::no;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

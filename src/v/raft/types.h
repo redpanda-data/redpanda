@@ -65,7 +65,7 @@ struct protocol_metadata
           dirty_offset);
     }
 };
-
+using in_quiescent_state = ss::bool_class<struct in_quiescent_state_tag>;
 // The sequence used to track the order of follower append entries request
 using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
 struct follower_index_metadata {
@@ -182,6 +182,7 @@ struct follower_index_metadata {
     size_t inflight_append_request_count = 0;
 
     std::optional<protocol_metadata> last_sent_protocol_meta;
+    in_quiescent_state quiescent = in_quiescent_state::no;
 
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);

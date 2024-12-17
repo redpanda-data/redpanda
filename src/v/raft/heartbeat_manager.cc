@@ -414,7 +414,7 @@ void heartbeat_manager::process_reply(
         }
 
         consensus->update_heartbeat_status(
-          meta_it->second.follower_vnode, true);
+          meta_it->second.follower_vnode, true, in_quiescent_state::yes);
     });
 
     for (auto& m : reply.full_replies()) {
