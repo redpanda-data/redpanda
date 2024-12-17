@@ -338,6 +338,12 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
+
+    // do not process follower busy replies further
+    if (r.value().result == reply_result::follower_busy) {
+        return success_reply::no;
+    }
+
     const auto& config = _configuration_manager.get_latest();
     if (!config.contains(node)) {
         // We might have sent an append_entries just before removing
