@@ -292,3 +292,24 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "delete_subject_endpoints",
+    timeout = "short",
+    srcs = [
+        "delete_subject_endpoints.cc",
+    ],
+    tags = ["exclusive"],
+    deps = [
+        ":avro_payloads",
+        ":client_utils",
+        "//src/v/pandaproxy",
+        "//src/v/pandaproxy/test:fixture",
+        "//src/v/pandaproxy/test:utils",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:beast",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
