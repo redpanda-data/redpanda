@@ -1404,30 +1404,6 @@ void archival_metadata_stm::maybe_notify_waiter(std::exception_ptr e) noexcept {
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto meta = segment.meta;
-    bool disable_safe_add
-      = config::shard_local_cfg()
-          .cloud_storage_disable_metadata_consistency_checks.value();
-    if (
-      !disable_safe_add && segment.is_validated == segment_validated::yes
-      && !_manifest->safe_segment_meta_to_add(meta)) {
-        // We're only validating segment metadata records if they're validated.
-        // It goes like this
-        // - npt_archiver_service validates segment_meta instances before
-        //   replication
-        // - replicated add_segment commands have 'is_validated' field set to
-        //   'yes'
-        // - old records in the log have 'is_validated' field set to 'no'
-        // - the 'apply_add_segment' will only validate new commands and add old
-        //   ones unconditionally
-        auto last = _manifest->last_segment();
-        vlog(
-          _logger.error,
-          "Can't add segment: {}, previous segment: {}",
-          meta,
-          last);
-        maybe_notify_waiter(errc::inconsistent_stm_update);
-        return;
-    }
     if (meta.ntp_revision == model::initial_revision_id{}) {
         // metadata serialized by old versions of redpanda doesn't have the
         // ntp_revision field.
