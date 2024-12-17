@@ -829,6 +829,26 @@ partition_manifest::add(const segment_name& name, const segment_meta& meta) {
     return add(m);
 }
 
+namespace {
+static bool has_fatal_anomalies(const segment_meta_anomalies& anomalies) {
+    for (const auto& a : anomalies) {
+        switch (a.type) {
+        case anomaly_type::non_monotonical_delta:
+        case anomaly_type::end_delta_smaller:
+            // There will be no data loss but it will look as if there is
+            // a gap in the Kafka offsets.
+            continue;
+        case anomaly_type::missing_delta:
+        case anomaly_type::committed_smaller:
+        case anomaly_type::offset_gap:
+        case anomaly_type::offset_overlap:
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 size_t partition_manifest::safe_segment_meta_to_add(
   std::vector<segment_meta> meta_list) const {
     struct manifest_substitute {
@@ -897,7 +917,7 @@ size_t partition_manifest::safe_segment_meta_to_add(
 
                 segment_meta_anomalies anomalies;
                 scrub_segment_meta(m, last_seg, anomalies);
-                if (!anomalies.empty()) {
+                if (has_fatal_anomalies(anomalies)) {
                     vlog(
                       cst_log.error,
                       "[{}] New segment does not line up with previous "
@@ -905,6 +925,17 @@ size_t partition_manifest::safe_segment_meta_to_add(
                       display_name(),
                       format_seg_meta_anomalies(anomalies));
                     break;
+                } else if (!anomalies.empty()) {
+                    // We're allowing uploads with delta-offset anomalies to
+                    // proceed because this usually mean that ntp_archiver
+                    // is reading these delta values from the offset translator
+                    // and it's impossible to move forward without accepting
+                    // the current values.
+                    vlog(
+                      cst_log.error,
+                      "[{}] New segment adds anomalies: {}",
+                      display_name(),
+                      format_seg_meta_anomalies(anomalies));
                 }
                 // Only update if we extending the log
                 subst.last_offset = m.committed_offset;
