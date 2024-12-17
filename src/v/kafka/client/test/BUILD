@@ -24,6 +24,7 @@ redpanda_test_cc_library(
         "//src/v/random:generators",
     ],
     include_prefix = "kafka/client/test",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/reflection:adl",
         "//src/v/storage:record_batch_builder",
