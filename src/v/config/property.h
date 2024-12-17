@@ -1091,6 +1091,11 @@ public:
         return std::nullopt;
     }
 
+    /**
+     * @brief Checks current value of property to see if it is restricted
+     */
+    bool is_restricted() const { return do_check_restricted(this->value()); }
+
 private:
     bool do_check_restricted(const T& setting) const final {
         // depending on how the restriction was defined, construct an applicable
