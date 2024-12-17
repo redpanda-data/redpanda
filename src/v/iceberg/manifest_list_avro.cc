@@ -96,10 +96,9 @@ avrogen::manifest_file file_to_avro(const manifest_file& f) {
     ret.min_sequence_number = f.min_seq_number();
     ret.added_snapshot_id = f.added_snapshot_id();
 
-    ret.added_data_files_count = static_cast<int32_t>(f.added_files_count);
-    ret.existing_data_files_count = static_cast<int32_t>(
-      f.existing_files_count);
-    ret.deleted_data_files_count = static_cast<int32_t>(f.deleted_files_count);
+    ret.added_files_count = static_cast<int32_t>(f.added_files_count);
+    ret.existing_files_count = static_cast<int32_t>(f.existing_files_count);
+    ret.deleted_files_count = static_cast<int32_t>(f.deleted_files_count);
 
     ret.added_rows_count = static_cast<int32_t>(f.added_rows_count);
     ret.existing_rows_count = static_cast<int32_t>(f.existing_rows_count);
@@ -128,9 +127,9 @@ manifest_file file_from_avro(const avrogen::manifest_file& f) {
     ret.min_seq_number = sequence_number{f.min_sequence_number};
     ret.added_snapshot_id = snapshot_id{f.added_snapshot_id};
 
-    ret.added_files_count = f.added_data_files_count;
-    ret.existing_files_count = f.existing_data_files_count;
-    ret.deleted_files_count = f.deleted_data_files_count;
+    ret.added_files_count = f.added_files_count;
+    ret.existing_files_count = f.existing_files_count;
+    ret.deleted_files_count = f.deleted_files_count;
 
     ret.added_rows_count = f.added_rows_count;
     ret.existing_rows_count = f.existing_rows_count;
