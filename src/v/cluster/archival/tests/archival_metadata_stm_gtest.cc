@@ -550,10 +550,12 @@ TEST_F_CORO(
 
     repl_err = co_await get_leader_stm()
                  .batch_start(deadline, never_abort)
+                 // Invalid rw-fence to simulate concurent update
+                 .read_write_fence(model::offset(33))
                  .add_segments(
                    std::move(poisoned_segment), cluster::segment_validated::yes)
                  .replicate();
-    ASSERT_EQ_CORO(repl_err, cluster::errc::inconsistent_stm_update);
+    ASSERT_EQ_CORO(repl_err, cluster::errc::concurrent_modification_error);
 
     // Check that it still works with consistent updates
     good_segment.clear();

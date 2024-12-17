@@ -81,7 +81,7 @@ enum class errc : int16_t {
     transform_count_limit_exceeded,
     role_exists,
     role_does_not_exist,
-    inconsistent_stm_update,
+    inconsistent_stm_update [[deprecated]],
     waiting_for_shard_placement_update,
     topic_invalid_partitions_core_limit,
     topic_invalid_partitions_memory_limit,
@@ -255,8 +255,6 @@ struct errc_category final : public std::error_category {
             return "Role already exists";
         case errc::role_does_not_exist:
             return "Role does not exist";
-        case errc::inconsistent_stm_update:
-            return "STM command can't be applied";
         case errc::waiting_for_shard_placement_update:
             return "Waiting for shard placement table update to finish";
         case errc::topic_invalid_partitions_core_limit:
