@@ -24,6 +24,7 @@
 #include "raft/fwd.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/recovery_memory_quota.h"
+#include "raft/service.h"
 #include "raft/state_machine_manager.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
@@ -60,6 +61,20 @@ struct msg {
     ss::promise<iobuf> resp_data;
 };
 class raft_node_instance;
+/**
+ * Dummy shard and group managers for the fixture to be used
+ * with Raft rpc service implementation.
+ */
+struct fixture_group_manager {
+    ss::lw_shared_ptr<consensus> consensus_for(raft::group_id) { return raft; }
+    ss::lw_shared_ptr<consensus> raft;
+};
+
+struct fixture_shard_manager {
+    std::optional<ss::shard_id> shard_for(raft::group_id) {
+        return ss::this_shard_id();
+    }
+};
 
 struct channel {
     explicit channel(raft_node_instance&);
@@ -73,7 +88,8 @@ struct channel {
     bool is_valid() const;
 
 private:
-    ss::lw_shared_ptr<consensus> raft();
+    ss::future<> do_dispatch_message(msg);
+    raft::service<fixture_group_manager, fixture_shard_manager>& get_service();
     ss::weak_ptr<raft_node_instance> _node;
     ss::chunked_fifo<msg> _messages;
     ss::gate _gate;
@@ -147,6 +163,8 @@ inline model::timeout_clock::time_point default_timeout() {
  */
 class raft_node_instance : public ss::weakly_referencable<raft_node_instance> {
 public:
+    using service_t
+      = raft::service<fixture_group_manager, fixture_shard_manager>;
     using leader_update_clb_t
       = ss::noncopyable_function<void(leadership_status)>;
     raft_node_instance(
@@ -246,6 +264,9 @@ public:
 
     storage::kvstore& get_kvstore() { return _storage.local().kvs(); }
 
+
+    service_t& get_service() { return _service; }
+
 private:
     model::node_id _id;
     model::revision_id _revision;
@@ -268,6 +289,9 @@ private:
     config::binding<std::chrono::milliseconds> _election_timeout;
     config::binding<std::chrono::milliseconds> _heartbeat_interval;
     bool _with_offset_translation;
+    ss::sharded<fixture_group_manager> _group_manager;
+    fixture_shard_manager _shard_manager{};
+    service_t _service;
 };
 
 class raft_fixture
