@@ -23,7 +23,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, PandaproxyConfig, SISettings, SchemaRegistryConfig
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, LoggingConfig, PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode, skip_fips_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
@@ -62,6 +62,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             node_prealloc_count=3,
             schema_registry_config=SchemaRegistryConfig(),
             pandaproxy_config=PandaproxyConfig(),
+            log_config=LoggingConfig(
+                'info', {
+                    'storage-resources': 'warn',
+                    'storage-gc': 'warn',
+                    'raft': 'debug',
+                    'cluster': 'debug',
+                    'datalake': 'debug',
+                }),
             *args,
             **kwargs)
         self.nodes_with_prev_version = []
