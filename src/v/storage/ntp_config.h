@@ -365,6 +365,17 @@ public:
                           : default_cloud_topic_enabled;
     }
 
+    ntp_config copy() const {
+        return {
+          _ntp,
+          _base_dir,
+          _overrides ? std::make_unique<default_overrides>(*_overrides)
+                     : nullptr,
+          _revision_id,
+          _topic_rev,
+          _remote_rev};
+    }
+
 private:
     model::ntp _ntp;
     /// \brief currently this is the basedir. In the future
