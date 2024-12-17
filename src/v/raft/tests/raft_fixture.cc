@@ -28,6 +28,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/heartbeats.h"
 #include "raft/state_machine_manager.h"
+#include "raft/tests/failure_injectable_log.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -447,13 +448,13 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       test_group,
       _with_offset_translation ? model::offset_translator_batch_types()
                                : std::vector<model::record_batch_type>{});
-
+    _f_log = ss::make_shared<raft::failure_injectable_log>(std::move(log));
     _raft = ss::make_lw_shared<consensus>(
       _id,
       test_group,
       raft::group_configuration(std::move(initial_nodes), _revision),
       timeout_jitter(_election_timeout),
-      log,
+      _f_log,
       scheduling_config(
         ss::default_scheduling_group(), ss::default_priority_class()),
       config::mock_binding<std::chrono::milliseconds>(1s),
@@ -489,6 +490,8 @@ ss::future<> raft_node_instance::stop() {
         vlog(_logger.debug, "stopping protocol");
         co_await _buffered_protocol->stop();
         co_await _protocol->stop();
+        // release f_log pointer before stopping raft
+        _f_log = nullptr;
         vlog(_logger.debug, "stopping raft");
         co_await _raft->stop();
         vlog(_logger.debug, "stopping recovery throttle");
