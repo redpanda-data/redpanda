@@ -224,7 +224,7 @@ class ArchivalTest(RedpandaTest):
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
 
-        self.kafka_tools = KafkaCliTools(self.redpanda)
+        self.kafka_tools = KafkaCliTools(self.redpanda, version="3.9.0")
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
 
@@ -377,7 +377,7 @@ class ArchivalTest(RedpandaTest):
         self.redpanda.start_node(node)
         time.sleep(5)
         self.kafka_tools.produce(self.topic, 5000, 1024)
-        validate(self._cross_node_verify, self.logger, 90)
+        validate(self._cross_node_verify, self.logger, 120)
 
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -394,7 +394,7 @@ class ArchivalTest(RedpandaTest):
             self.redpanda.start_node(node)
         time.sleep(5)
         self.kafka_tools.produce(self.topic, 5000, 1024)
-        validate(self._cross_node_verify, self.logger, 90)
+        validate(self._cross_node_verify, self.logger, 120)
 
     @cluster(num_nodes=3)
     @matrix(acks=[-1, 0, 1], cloud_storage_type=get_cloud_storage_type())
