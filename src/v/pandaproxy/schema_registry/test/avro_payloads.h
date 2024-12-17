@@ -11,9 +11,6 @@
 
 #include "pandaproxy/schema_registry/avro.h"
 
-namespace pp = pandaproxy;
-namespace pps = pp::schema_registry;
-
 const ss::sstring avro_string_payload{
   R"(
 {

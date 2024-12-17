@@ -1,6 +1,33 @@
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
+    name = "avro_payloads",
+    hdrs = [
+        "avro_payloads.h",
+    ],
+    include_prefix = "pandaproxy/schema_registry/test",
+    deps = [
+        "//src/v/pandaproxy",
+    ],
+)
+
+redpanda_test_cc_library(
+    name = "client_utils",
+    hdrs = [
+        "client_utils.h",
+    ],
+    include_prefix = "pandaproxy/schema_registry/test",
+    deps = [
+        "//src/v/http",
+        "//src/v/json",
+        "//src/v/pandaproxy",
+        "//src/v/pandaproxy/test:utils",
+        "@abseil-cpp//absl/algorithm:container",
+        "@boost//:beast",
+    ],
+)
+
+redpanda_test_cc_library(
     name = "compatibility_avro",
     hdrs = [
         "compatibility_avro.h",
@@ -242,6 +269,25 @@ redpanda_cc_btest(
         "//src/v/test_utils:seastar_boost",
         "@boost//:beast",
         "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
+    name = "post_subjects_subject_version",
+    timeout = "short",
+    srcs = [
+        "post_subjects_subject_version.cc",
+    ],
+    tags = ["exclusive"],
+    deps = [
+        ":avro_payloads",
+        ":client_utils",
+        "//src/v/pandaproxy",
+        "//src/v/pandaproxy/test:fixture",
+        "//src/v/pandaproxy/test:utils",
+        "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",
     ],
