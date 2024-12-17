@@ -16,3 +16,20 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "httpd",
+    timeout = "short",
+    srcs = [
+        "httpd.cc",
+    ],
+    deps = [
+        "//src/v/pandaproxy",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@boost//:tuple",
+        "@boost//:utility",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
