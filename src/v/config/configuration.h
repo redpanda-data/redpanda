@@ -468,7 +468,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       cloud_storage_topic_purge_grace_period_ms;
     property<bool> cloud_storage_disable_upload_consistency_checks;
-    property<bool> cloud_storage_disable_metadata_consistency_checks;
+    deprecated_property cloud_storage_disable_metadata_consistency_checks;
     property<std::chrono::milliseconds> cloud_storage_hydration_timeout_ms;
     property<bool> cloud_storage_disable_remote_labels_for_tests;
 
