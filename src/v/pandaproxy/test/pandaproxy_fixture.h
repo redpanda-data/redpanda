@@ -11,12 +11,7 @@
 
 #pragma once
 
-#include "config/configuration.h"
 #include "http/client.h"
-#include "kafka/client/client.h"
-#include "kafka/client/configuration.h"
-#include "kafka/protocol/metadata.h"
-#include "pandaproxy/rest/configuration.h"
 #include "redpanda/tests/fixture.h"
 
 class pandaproxy_test_fixture : public redpanda_thread_fixture {

@@ -14,6 +14,22 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "fixture",
+    hdrs = [
+        "pandaproxy_fixture.h",
+    ],
+    implementation_deps = [
+    ],
+    include_prefix = "pandaproxy/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/http",
+        "//src/v/pandaproxy",
+        "//src/v/redpanda/tests:fixture_btest",
+    ],
+)
+
 redpanda_cc_btest(
     name = "errors_test",
     timeout = "short",
