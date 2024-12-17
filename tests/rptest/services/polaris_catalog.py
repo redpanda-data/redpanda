@@ -137,12 +137,14 @@ class PolarisCatalog(Service):
             self.logger.debug(
                 f"Querying polaris healthcheck on http://{node.account.hostname}:8182/healthcheck"
             )
-            r = requests.get(
-                f"http://{node.account.hostname}:8182/healthcheck", timeout=10)
 
-            self.logger.info(
-                f"health check result status code: {r.status_code}")
-            return r.status_code == 200
+            out = node.account.ssh_output(
+                "curl -s -m 10 -o /dev/null -w '%{http_code}' http://localhost:8182/healthcheck"
+            )
+            status_code = int(out.decode('utf-8'))
+            self.logger.debug(
+                f"health check result status code: {status_code}")
+            return status_code == 200
 
         wait_until(_polaris_ready,
                    timeout_sec=timeout_sec,
