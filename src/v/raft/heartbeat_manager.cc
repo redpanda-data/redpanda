@@ -373,14 +373,18 @@ void heartbeat_manager::process_reply(
               n);
             return;
         }
-
+        /**
+         * This is here for completeness, it should never be triggered as the
+         * follower do not reply with busy error code when processing
+         * lightweight heartbeats
+         */
         if (unlikely(result == reply_result::follower_busy)) {
             vlog(
-              hbeatlog.debug,
-              "Heartbeat request for group {} timed out on the node {}",
+              hbeatlog.error,
+              "Follower reported busy for group {} on node {} when processing "
+              "lightweight heartbeat",
               group,
               n);
-            return;
         }
         if (unlikely(target != consensus->self().id())) {
             vlog(
@@ -438,14 +442,17 @@ void heartbeat_manager::process_reply(
               n);
             continue;
         }
-
+        /**
+         * Follower being busy is updating the last received reply timestamp as
+         * it is indicating the receiving replica is alive and is able to
+         * process request, it may simply be slow and its oplock is contended.
+         */
         if (unlikely(m.result == reply_result::follower_busy)) {
             vlog(
-              hbeatlog.debug,
-              "Heartbeat request for group {} timed out on the node {}",
+              hbeatlog.trace,
+              "Follower busy when processing full heartbeat for group {} on {}",
               m.group,
               n);
-            continue;
         }
 
         if (unlikely(reply.target() != consensus->self().id())) {
