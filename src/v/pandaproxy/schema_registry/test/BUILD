@@ -159,6 +159,7 @@ redpanda_cc_btest(
     srcs = [
         "sharded_store.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/pandaproxy",
         "//src/v/pandaproxy/schema_registry/test:compatibility_protobuf",
@@ -175,6 +176,7 @@ redpanda_cc_btest(
     srcs = [
         "consume_to_store.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/model",
         "//src/v/pandaproxy",
@@ -191,6 +193,7 @@ redpanda_cc_btest(
     srcs = [
         "compatibility_store.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/pandaproxy",
         "//src/v/pandaproxy/schema_registry/test:compatibility_avro",
@@ -207,6 +210,7 @@ redpanda_cc_btest(
     srcs = [
         "compatibility_3rdparty.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/model",
         "//src/v/pandaproxy",
@@ -223,6 +227,7 @@ redpanda_cc_btest(
     srcs = [
         "compatibility_avro.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/pandaproxy",
         "//src/v/pandaproxy/schema_registry/test:compatibility_avro",
@@ -242,6 +247,7 @@ redpanda_cc_btest(
     srcs = [
         "test_json_schema.cc",
     ],
+    cpu = 1,
     deps = [
         "//src/v/pandaproxy",
         "//src/v/pandaproxy/schema_registry/test:compatibility_common",
