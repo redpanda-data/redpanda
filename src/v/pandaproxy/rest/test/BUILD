@@ -21,3 +21,23 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
+
+redpanda_cc_btest(
+    name = "fetch",
+    timeout = "short",
+    srcs = [
+        "fetch.cc",
+    ],
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/http",
+        "//src/v/pandaproxy",
+        "//src/v/pandaproxy/test:fixture",
+        "//src/v/pandaproxy/test:utils",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:beast",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
