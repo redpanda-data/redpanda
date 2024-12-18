@@ -29,8 +29,8 @@ namespace datalake {
 
 namespace {
 
-static std::unique_ptr<type_resolver>
-make_type_resolver(model::iceberg_mode mode, schema::registry& sr) {
+static std::unique_ptr<type_resolver> make_type_resolver(
+  model::iceberg_mode mode, schema::registry& sr, schema_cache_t& cache) {
     switch (mode) {
     case model::iceberg_mode::disabled:
         vassert(
@@ -39,7 +39,7 @@ make_type_resolver(model::iceberg_mode mode, schema::registry& sr) {
     case model::iceberg_mode::key_value:
         return std::make_unique<binary_type_resolver>();
     case model::iceberg_mode::value_schema_id_prefix:
-        return std::make_unique<record_schema_resolver>(sr);
+        return std::make_unique<record_schema_resolver>(sr, cache);
     }
 }
 
@@ -89,6 +89,10 @@ datalake_manager::datalake_manager(
   , _schema_registry(schema::registry::make_default(sr_api))
   , _catalog_factory(std::move(catalog_factory))
   , _type_resolver(std::make_unique<record_schema_resolver>(*_schema_registry))
+  // TODO: The cache size is currently arbitrary. Figure out a more reasoned
+  // size and allocate a share of the datalake memory semaphore to this cache.
+  , _schema_cache(std::make_unique<schema_cache_t>(
+      schema_cache_t::config{.cache_size = 100, .small_size = 10}))
   , _as(as)
   , _sg(sg)
   , _effective_max_translator_buffered_data(
@@ -247,7 +251,7 @@ void datalake_manager::start_translator(
       _features,
       &_cloud_data_io,
       _schema_mgr.get(),
-      make_type_resolver(mode, *_schema_registry),
+      make_type_resolver(mode, *_schema_registry, *_schema_cache),
       make_record_translator(mode),
       translation_interval_ms(),
       _sg,

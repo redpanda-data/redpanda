@@ -13,6 +13,7 @@
 #include "datalake/schema_identifier.h"
 #include "iceberg/datatypes.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "utils/chunked_kv_cache.h"
 
 #include <seastar/core/future.hh>
 
@@ -26,18 +27,33 @@ class Descriptor;
 
 namespace datalake {
 
-struct wrapped_protobuf_descriptor {
-    std::reference_wrapper<const google::protobuf::Descriptor> descriptor;
-    // `descriptor` references an object owned by `schema_def`.
-    pandaproxy::schema_registry::protobuf_schema_definition schema_def;
-};
+using schema_cache_t = utils::chunked_kv_cache<
+  pandaproxy::schema_registry::schema_id,
+  pandaproxy::schema_registry::valid_schema>;
+using shared_schema_t
+  = ss::shared_ptr<pandaproxy::schema_registry::valid_schema>;
 
 // Represents an object that can be converted into an Iceberg schema.
 // NOTE: these aren't exactly just the schemas from the registry: Protobuf
 // schemas are FileDescriptors in the registry rather than Descriptors, and
 // require additional information to get the Descriptors.
-using resolved_schema
-  = std::variant<wrapped_protobuf_descriptor, avro::ValidSchema>;
+class resolved_schema {
+public:
+    using resolved_schema_t = std::variant<
+      std::reference_wrapper<const google::protobuf::Descriptor>,
+      std::reference_wrapper<const avro::ValidSchema>>;
+
+    resolved_schema(resolved_schema_t schema, shared_schema_t shared_schema)
+      : schema_(schema)
+      , shared_schema_(std::move(shared_schema)) {}
+
+    resolved_schema_t get_schema_ref() const noexcept { return schema_; }
+
+private:
+    // Note that `schema_` is a reference to data owned by `shared_schema_`.
+    resolved_schema_t schema_;
+    shared_schema_t shared_schema_;
+};
 
 struct resolved_type {
     // The resolved schema that corresponds to the type.
@@ -92,8 +108,11 @@ public:
 
 class record_schema_resolver : public type_resolver {
 public:
-    explicit record_schema_resolver(schema::registry& sr)
-      : sr_(sr) {}
+    explicit record_schema_resolver(
+      schema::registry& sr,
+      std::optional<std::reference_wrapper<schema_cache_t>> sc = std::nullopt)
+      : sr_(sr)
+      , cache_(sc) {}
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
@@ -104,6 +123,10 @@ public:
 
 private:
     schema::registry& sr_;
+    std::optional<std::reference_wrapper<schema_cache_t>> cache_;
+
+    ss::future<checked<shared_schema_t, type_resolver::errc>>
+      get_schema(pandaproxy::schema_registry::schema_id) const;
 };
 
 } // namespace datalake

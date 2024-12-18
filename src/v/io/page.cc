@@ -22,7 +22,7 @@ page::page(uint64_t offset, seastar::temporary_buffer<char> data)
 page::page(
   uint64_t offset,
   seastar::temporary_buffer<char> data,
-  const class cache_hook& hook)
+  const class utils::s3_fifo::cache_hook& hook)
   : cache_hook(hook)
   , offset_(offset)
   , size_(data.size())
