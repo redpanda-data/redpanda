@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/translation/state_machine.h"
+#include "datalake/translation/utils.h"
 #include "raft/tests/stm_test_fixture.h"
 #include "storage/disk_log_impl.h"
 #include "test_utils/scoped_config.h"
@@ -74,8 +75,11 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
         auto& stms = node_stms[node(leader_id.value()).get_vnode()];
         auto stm = std::get<0>(stms);
         ss::abort_source as;
+        auto log = stm->raft()->log();
+        auto log_update = datalake::translation::get_translated_log_offset(
+          log, update);
         co_return co_await stm->reset_highest_translated_offset(
-          update, stm->raft()->term(), 5s, as);
+          update, log_update, stm->raft()->term(), 5s, as);
     }
 
     ss::future<> check_max_collectible_offset(model::offset expected) {
@@ -123,6 +127,14 @@ TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
     co_await check_highest_translated_offset(std::nullopt);
 
     auto new_translated_offset = kafka::offset{10};
+    model::offset max_collectible_offset{};
+    {
+        auto log = std::get<0>(node_stms.begin()->second)->raft()->log();
+        max_collectible_offset
+          = datalake::translation::get_translated_log_offset(
+            log, new_translated_offset);
+    }
+
     // update highest_translated offset;
     RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, new_translated_offset] {
         return set_highest_translated_offset(new_translated_offset)
