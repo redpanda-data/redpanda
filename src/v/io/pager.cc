@@ -45,8 +45,8 @@ seastar::future<> pager::close() noexcept {
     }
 }
 
-seastar::lw_shared_ptr<page>
-pager::alloc_page(uint64_t offset, std::optional<cache_hook> hook) noexcept {
+seastar::lw_shared_ptr<page> pager::alloc_page(
+  uint64_t offset, std::optional<utils::s3_fifo::cache_hook> hook) noexcept {
     auto buf = seastar::temporary_buffer<char>::aligned(page_size, page_size);
     if (hook.has_value()) {
         return seastar::make_lw_shared<page>(
