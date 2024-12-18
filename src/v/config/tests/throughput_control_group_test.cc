@@ -21,10 +21,7 @@
 #include <yaml-cpp/emitterstyle.h>
 #include <yaml-cpp/exceptions.h>
 
-#include <algorithm>
-#include <exception>
 #include <iterator>
-#include <locale>
 #include <vector>
 
 using namespace std::string_literals;
