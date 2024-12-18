@@ -65,6 +65,10 @@ inline ss::http::reply& set_reply_too_many_requests(ss::http::reply& rep) {
       .add_header("Retry-After", "0");
 }
 
+inline ss::http::reply& set_reply_payload_too_large(ss::http::reply& rep) {
+    return rep.set_status(ss::http::reply::status_type::payload_too_large);
+}
+
 inline std::unique_ptr<ss::http::reply> reply_unavailable() {
     auto rep = std::make_unique<ss::http::reply>(ss::http::reply{});
     set_reply_unavailable(*rep);
