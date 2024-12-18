@@ -12,6 +12,7 @@
 #pragma once
 
 #include "metrics/metrics.h"
+#include "pandaproxy/server.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -76,6 +77,24 @@ private:
 private:
     http_status_metric _request_metrics;
     const ss::httpd::path_description& _path;
+    const ss::sstring& _group_name;
+    metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
+};
+
+class server_probe {
+public:
+    server_probe(server::context_t& ctx, const ss::sstring& group_name);
+    server_probe(const server_probe&) = delete;
+    server_probe& operator=(const server_probe&) = delete;
+    server_probe(server_probe&&) = delete;
+    server_probe& operator=(server_probe&&) = delete;
+    ~server_probe() = default;
+
+private:
+    void setup_metrics();
+
+    server::context_t& _ctx;
     const ss::sstring& _group_name;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
