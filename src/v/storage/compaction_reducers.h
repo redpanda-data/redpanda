@@ -15,6 +15,7 @@
 #include "bytes/bytes.h"
 #include "container/fragmented_vector.h"
 #include "hashing/xx.h"
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -271,6 +272,32 @@ private:
     stats _stats;
     // Set if a transactional stm is attached to this partition.
     std::optional<storage::stm_type> _transactional_stm_type;
+};
+
+// Builds up a key_offset_map for a segment, starting from the offset
+// start_offset_inclusive. Intended to be used for chunked compaction,
+// in which it is expected that the map will not be able to fit the entire
+// key set of the segment at once due to memory constraints.
+// As many keys as possible will be added to the map from start_offset_inclusive
+// onwards until the capacity limit is reached, or the end of the segment is
+// reached.
+//
+// end_of_stream() returns a bool value indicating whether the segment was fully
+// indexed or not.
+class map_building_reducer : public compaction_reducer {
+public:
+    explicit map_building_reducer(
+      key_offset_map* map, model::offset start_offset_inclusive)
+      : _map(map)
+      , _start_offset(start_offset_inclusive) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch);
+    bool end_of_stream() { return _fully_indexed_segment; }
+
+private:
+    key_offset_map* _map;
+    model::offset _start_offset;
+    bool _fully_indexed_segment = true;
 };
 
 } // namespace storage::internal

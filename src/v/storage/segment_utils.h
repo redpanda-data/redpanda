@@ -191,7 +191,8 @@ model::record_batch_reader create_segment_full_reader(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  ss::rwlock::holder);
+  ss::rwlock::holder,
+  std::optional<model::offset> start_offset = std::nullopt);
 
 ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,

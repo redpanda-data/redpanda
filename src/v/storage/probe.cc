@@ -221,6 +221,14 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of rounds of sliding window compaction that "
                           "have been driven to completion."),
           labels),
+        sm::make_counter(
+          "chunked_compaction_runs",
+          [this] { return _num_chunked_compaction_runs; },
+          sm::description(
+            "Number of times chunked compaction was ran. This metric also "
+            "corresponds to the number of times the compaction key-offset map "
+            "was unable to be built for a single segment."),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});

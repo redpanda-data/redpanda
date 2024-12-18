@@ -60,4 +60,16 @@ ss::future<index_state> deduplicate_segment(
   ss::sharded<features::feature_table>&,
   bool inject_reader_failure = false);
 
+// Creates a reader for the segment starting from the last_indexed_offset
+// (exclusive) in order to index the next "chunk" of the segment (using the
+// map_building_reducer) for use in deduplication during chunked compaction.
+//
+// Returns true if the segment has been fully indexed, false otherwise.
+ss::future<bool> index_chunk_of_segment_for_map(
+  const compaction_config& compact_cfg,
+  ss::lw_shared_ptr<segment> seg,
+  key_offset_map& map,
+  probe& pb,
+  model::offset& last_indexed_offset);
+
 } // namespace storage
