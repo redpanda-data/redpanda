@@ -17,14 +17,18 @@ namespace datalake::translation {
 
 struct translation_state
   : serde::
-      envelope<translation_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<translation_state, serde::version<1>, serde::compat_version<0>> {
     // highest offset that has been successfully translated (inclusive)
     // The translation process encompasses datalake format conversion, upload
     // to a cloud bucket and a subsequent notification to the datalake
     // coordinator of it's availablity.
     kafka::offset highest_translated_offset;
+    model::offset highest_translated_log_offset;
 
-    auto serde_fields() { return std::tie(highest_translated_offset); }
+    auto serde_fields() {
+        return std::tie(
+          highest_translated_offset, highest_translated_log_offset);
+    }
 };
 
 }; // namespace datalake::translation
