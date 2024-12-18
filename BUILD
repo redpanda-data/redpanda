@@ -39,18 +39,18 @@ alias(
 
 refresh_compile_commands(
     name = "refresh_compile_commands_clang_19",
-    targets = {
-      "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-19",
-    },
-    exclude_headers = "all",
     exclude_external_sources = True,
+    exclude_headers = "all",
+    targets = {
+        "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-19",
+    },
 )
 
 refresh_compile_commands(
     name = "refresh_compile_commands_clang_18",
-    targets = {
-      "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-18",
-    },
-    exclude_headers = "all",
     exclude_external_sources = True,
+    exclude_headers = "all",
+    targets = {
+        "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-18",
+    },
 )
