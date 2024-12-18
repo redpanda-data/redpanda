@@ -66,6 +66,15 @@ translation_stm::highest_translated_offset(
     co_return _highest_translated_offset;
 }
 
+ss::future<std::optional<model::offset>>
+translation_stm::highest_translated_log_offset(
+  model::timeout_clock::duration timeout) {
+    if (!_raft->log_config().iceberg_enabled() || !co_await sync(timeout)) {
+        co_return std::nullopt;
+    }
+    co_return _highest_translated_log_offset;
+}
+
 ss::future<std::error_code> translation_stm::reset_highest_translated_offset(
   kafka::offset new_translated_offset,
   model::term_id term,
@@ -123,15 +132,18 @@ model::offset translation_stm::max_collectible_offset() {
 
 ss::future<> translation_stm::apply_local_snapshot(
   raft::stm_snapshot_header, iobuf&& bytes) {
-    _highest_translated_offset
-      = serde::from_iobuf<snapshot>(std::move(bytes)).highest_translated_offset;
+    const auto snap = serde::from_iobuf<snapshot>(std::move(bytes));
+    _highest_translated_offset = snap.highest_translated_offset;
+    _highest_translated_log_offset = snap.highest_translated_log_offset;
     co_return;
 }
 
 ss::future<raft::stm_snapshot>
 translation_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
     auto snapshot_offset = last_applied_offset();
-    snapshot snap{.highest_translated_offset = _highest_translated_offset};
+    snapshot snap{
+      .highest_translated_offset = _highest_translated_offset,
+      .highest_translated_log_offset = _highest_translated_log_offset};
     apply_units.return_all();
     iobuf result;
     co_await serde::write_async(result, snap);
@@ -144,6 +156,7 @@ ss::future<> translation_stm::apply_raft_snapshot(const iobuf&) {
     // with the snapshot.
     vlog(_log.debug, "Applying raft snapshot, resetting state");
     _highest_translated_offset = kafka::offset{};
+    _highest_translated_log_offset = model::offset{};
     co_return;
 }
 
