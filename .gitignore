@@ -45,6 +45,8 @@ _helm_e2e_artifacts/
 
 # bazel
 bazel-*
+user.bazelrc
+/external
 
 # Vagrant
 .vagrant/
@@ -263,9 +265,6 @@ vbuild/
 
 #asdf tool version file
 .tool-versions
-
-# bazel
-user.bazelrc
 
 # Ctest
 /Testing
