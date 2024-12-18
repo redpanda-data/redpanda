@@ -3301,18 +3301,23 @@ ntp_archiver::get_housekeeping_jobs() {
     return res;
 }
 
-ss::future<std::pair<
-  std::optional<ssx::semaphore_units>,
-  std::optional<upload_candidate_with_locks>>>
+ss::future<ntp_archiver::find_reupload_candidate_result>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     ss::gate::holder holder(_gate);
+    archival_stm_fence rw_fence{
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      .unsafe_add = false,
+    };
     if (!may_begin_uploads()) {
-        co_return std::make_pair(std::nullopt, std::nullopt);
+        co_return find_reupload_candidate_result{
+          std::nullopt, std::nullopt, {}};
     }
     auto run = scanner(_parent.raft_start_offset(), manifest());
     if (!run.has_value()) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
-        co_return std::make_pair(std::nullopt, std::nullopt);
+        co_return find_reupload_candidate_result{
+          std::nullopt, std::nullopt, {}};
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
@@ -3331,18 +3336,16 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
         auto candidate = co_await collector.make_upload_candidate(
           _conf->upload_io_priority, _conf->segment_upload_timeout());
 
-        using ret_t = std::pair<
-          std::optional<ssx::semaphore_units>,
-          std::optional<upload_candidate_with_locks>>;
         co_return ss::visit(
           candidate,
-          [](std::monostate) -> ret_t {
+          [](std::monostate) -> find_reupload_candidate_result {
               vassert(
                 false,
                 "unexpected default re-upload candidate creation result");
           },
-          [this, &run, units = std::move(units)](
-            upload_candidate_with_locks& upload_candidate) mutable -> ret_t {
+          [this, &run, &rw_fence, units = std::move(units)](
+            upload_candidate_with_locks& upload_candidate) mutable
+          -> find_reupload_candidate_result {
               if (
                 upload_candidate.candidate.content_length
                   != run->meta.size_bytes
@@ -3357,27 +3360,28 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                     "{}, run: {}",
                     upload_candidate.candidate,
                     run->meta);
-                  return std::make_pair(std::nullopt, std::nullopt);
+                  return {std::nullopt, std::nullopt, {}};
               }
 
-              return std::make_pair(
-                std::move(units), std::move(upload_candidate));
+              return {std::move(units), std::move(upload_candidate), rw_fence};
           },
-          [this](skip_offset_range& skip_offsets) -> ret_t {
+          [this](
+            skip_offset_range& skip_offsets) -> find_reupload_candidate_result {
               vlog(
                 _rtclog.warn,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
-              return std::make_pair(std::nullopt, std::nullopt);
+              return {std::nullopt, std::nullopt, {}};
           },
-          [this](candidate_creation_error& error) -> ret_t {
+          [this](
+            candidate_creation_error& error) -> find_reupload_candidate_result {
               const auto log_level = log_level_for_error(error);
               vlogl(
                 _rtclog,
                 log_level,
                 "Failed to make reupload candidate: {}",
                 error);
-              return std::make_pair(std::nullopt, std::nullopt);
+              return {std::nullopt, std::nullopt, {}};
           });
     }
     // segment_name exposed_name;
@@ -3395,18 +3399,26 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
       = cloud_storage::partition_manifest::generate_remote_segment_name(
         run->meta);
     // Create a remote upload candidate
-    co_return std::make_pair(
-      std::move(units), upload_candidate_with_locks{std::move(candidate)});
+    co_return find_reupload_candidate_result{
+      std::move(units),
+      upload_candidate_with_locks{std::move(candidate)},
+      rw_fence};
 }
 
 ss::future<bool> ntp_archiver::upload(
-  ssx::semaphore_units archiver_units,
-  upload_candidate_with_locks upload_locks,
+  find_reupload_candidate_result find_res,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     ss::gate::holder holder(_gate);
-    auto units = std::move(archiver_units);
-    if (upload_locks.candidate.sources.size() > 0) {
-        co_return co_await do_upload_local(std::move(upload_locks), source_rtc);
+    if (!find_res.locks.has_value() || !find_res.units.has_value()) {
+        // The method shouldn't be called if this is the case
+        co_return false;
+    }
+    auto units = std::move(find_res.units);
+    if (find_res.locks->candidate.sources.size() > 0) {
+        co_return co_await do_upload_local(
+          find_res.read_write_fence,
+          std::move(find_res.locks.value()),
+          source_rtc);
     }
     // Currently, the uploading of remote segments is disabled and
     // the only reason why the list of locks is empty is truncation.
@@ -3417,6 +3429,7 @@ ss::future<bool> ntp_archiver::upload(
 }
 
 ss::future<bool> ntp_archiver::do_upload_local(
+  archival_stm_fence fence,
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     if (!may_begin_uploads()) {
@@ -3531,14 +3544,27 @@ ss::future<bool> ntp_archiver::do_upload_local(
           ? _parent.highest_producer_id()
           : model::producer_id{};
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout();
-    auto error = co_await _parent.archival_meta_stm()->add_segments(
+
+    auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    if (!fence.unsafe_add) {
+        vlog(
+          archival_log.debug,
+          "(2) fence value is: {}, unsafe add: {}, manifest last applied "
+          "offset: {}, manifest in-sync offset: {}",
+          fence.read_write_fence,
+          fence.unsafe_add,
+          _parent.archival_meta_stm()->manifest().get_applied_offset(),
+          _parent.archival_meta_stm()->get_insync_offset());
+        builder.read_write_fence(fence.read_write_fence);
+    }
+    builder.add_segments(
       {meta},
-      std::nullopt,
-      highest_producer_id,
-      deadline,
-      _as,
       checks_disabled ? cluster::segment_validated::no
                       : cluster::segment_validated::yes);
+    builder.update_highest_producer_id(highest_producer_id);
+
+    auto error = co_await builder.replicate();
+
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
         vlog(
           _rtclog.warn,
