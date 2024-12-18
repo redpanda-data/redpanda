@@ -509,8 +509,8 @@ prepare_avro_test(std::string_view schema) {
     // Convert to iceberg schema
     auto iceberg_struct_res = datalake::type_to_iceberg(valid_schema.root());
     // Generate random generic datum
-    generator_state state{0};
-    avro::GenericDatum datum = generate_datum(valid_schema.root(), state, 10);
+    avro_generator gen({});
+    avro::GenericDatum datum = gen.generate_datum(valid_schema.root());
 
     // Serialize using avro library
     auto buffer = serialize_with_avro(datum, valid_schema);

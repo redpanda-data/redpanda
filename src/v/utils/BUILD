@@ -677,3 +677,15 @@ redpanda_cc_library(
         "@boost//:intrusive",
     ],
 )
+
+redpanda_cc_library(
+    name = "null_output_stream",
+    hdrs = [
+        "null_output_stream.h",
+    ],
+    include_prefix = "utils",
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
