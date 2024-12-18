@@ -28,6 +28,7 @@
 
 #include <charconv>
 #include <exception>
+#include <memory>
 
 namespace pandaproxy {
 
@@ -104,6 +105,12 @@ struct handler_adaptor : ss::httpd::handler_base {
             co_return std::move(rp.rep);
         }
         auto req_size = get_request_size(*rq.req);
+        if (req_size > _ctx.max_memory) {
+            set_reply_payload_too_large(*rp.rep);
+            rp.mime_type = _exceptional_mime_type;
+            set_and_measure_response(rp);
+            co_return std::move(rp.rep);
+        }
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
@@ -150,7 +157,8 @@ server::server(
   , _api20(std::move(api20))
   , _has_routes(false)
   , _ctx(ctx)
-  , _exceptional_mime_type(exceptional_mime_type) {
+  , _exceptional_mime_type(exceptional_mime_type)
+  , _probe{} {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
@@ -195,6 +203,9 @@ ss::future<> server::start(
   const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(
       exception_replier{ss::sstring{name(_exceptional_mime_type)}});
+
+    _probe = std::make_unique<server_probe>(_ctx, _public_metrics_group_name);
+
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await net::resolve_dns(server_endpoint.address);
@@ -234,13 +245,18 @@ ss::future<> server::start(
         }
         co_await _server.listen(addr, cred);
     }
+
     co_return;
 }
 
 ss::future<> server::stop() {
-    return _pending_reqs.close()
-      .finally([this]() { return _ctx.as.request_abort(); })
-      .finally([this]() mutable { return _server.stop(); });
+    return _pending_reqs.close().finally([this]() {
+        _ctx.as.request_abort();
+        _probe.reset(nullptr);
+        return _server.stop();
+    });
 }
+
+server::~server() noexcept = default;
 
 } // namespace pandaproxy

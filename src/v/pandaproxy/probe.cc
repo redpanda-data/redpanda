@@ -131,4 +131,79 @@ void probe::setup_metrics() {
     }
 }
 
+server_probe::server_probe(
+  server::context_t& ctx, const ss::sstring& group_name)
+  : _ctx(ctx)
+  , _group_name(group_name)
+  , _metrics()
+  , _public_metrics() {
+    setup_metrics();
+}
+
+void server_probe::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    auto setup_common = [this]<typename MetricDef>() {
+        const auto usage = [](const size_t current, const size_t max) {
+            constexpr double divide_by_zero = -1.;
+            constexpr double invalid_values = -2.;
+            if (max == 0) {
+                return divide_by_zero;
+            }
+            if (current > max) {
+                return invalid_values;
+            }
+            const auto max_d = static_cast<double>(max);
+            const auto current_d = static_cast<double>(current);
+            return (max_d - current_d) / max_d;
+        };
+
+        std::vector<MetricDef> defs;
+        defs.reserve(3);
+        defs.emplace_back(
+          sm::make_gauge(
+            "inflight_requests_usage_ratio",
+            [this, usage] {
+                return usage(_ctx.inflight_sem.current(), _ctx.max_inflight);
+            },
+            sm::description(ssx::sformat(
+              "Usage ratio of in-flight requests in the {}", _group_name)))
+            .aggregate({}));
+        defs.emplace_back(
+          sm::make_gauge(
+            "inflight_requests_memory_usage_ratio",
+            [this, usage] {
+                return usage(_ctx.mem_sem.current(), _ctx.max_memory);
+            },
+            sm::description(ssx::sformat(
+              "Memory usage ratio of in-flight requests in the {}",
+              _group_name)))
+            .aggregate({}));
+        defs.emplace_back(
+          sm::make_gauge(
+            "queued_requests_memory_blocked",
+            [this] { return _ctx.mem_sem.waiters(); },
+            sm::description(ssx::sformat(
+              "Number of requests queued in {}, due to memory limitations",
+              _group_name)))
+            .aggregate({}));
+        return defs;
+    };
+
+    if (!config::shard_local_cfg().disable_metrics()) {
+        _metrics.add_group(
+          _group_name,
+          setup_common
+            .template operator()<ss::metrics::impl::metric_definition_impl>(),
+          {},
+          {});
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        _public_metrics.add_group(
+          _group_name,
+          setup_common.template operator()<ss::metrics::metric_definition>());
+    }
+}
+
 } // namespace pandaproxy

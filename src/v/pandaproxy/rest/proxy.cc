@@ -113,7 +113,7 @@ proxy::proxy(
   , _inflight_config_binding(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard.bind())
   , _client(client)
   , _client_cache(client_cache)
-  , _ctx{{{{}, _mem_sem, _inflight_sem, {}, smp_sg}, *this},
+  , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
         {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
         _config.pandaproxy_api.value()}
   , _server(
@@ -126,8 +126,11 @@ proxy::proxy(
       json::serialization_format::application_json)
   , _ensure_started{[this]() { return do_start(); }}
   , _controller(controller) {
-    _inflight_config_binding.watch(
-      [this]() { _inflight_sem.set_capacity(_inflight_config_binding()); });
+    _inflight_config_binding.watch([this]() {
+        const size_t capacity = _inflight_config_binding();
+        _inflight_sem.set_capacity(capacity);
+        _ctx.max_inflight = capacity;
+    });
 }
 
 ss::future<> proxy::start() {
