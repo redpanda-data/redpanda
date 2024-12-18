@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "http/client.h"
-#include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
 
