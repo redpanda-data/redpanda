@@ -155,7 +155,7 @@ status, run:
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&jobID, "job-id", "", "ID of the job to start debug bundle in")
+	f.StringVar(&jobID, "job-id", "", "Custom UUID to assign to the job that generates the debug bundle")
 	f.BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
 	// Debug bundle options:
 	opts.InstallFlags(f)
