@@ -82,8 +82,8 @@ log_config::log_config(
   , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
   , compaction_priority(compaction_priority)
   , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
-  , compaction_interval(
-      config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
+  , compaction_interval(config::mock_binding<std::chrono::milliseconds>(
+      std::chrono::seconds(1)))
   , log_retention(
       config::mock_binding<std::optional<std::chrono::milliseconds>>(
         std::chrono::minutes(10080)))
