@@ -44,6 +44,7 @@ public:
 
     ss::future<std::error_code> reset_highest_translated_offset(
       kafka::offset new_translated_offset,
+      model::offset new_log_translated_offset,
       model::term_id term,
       model::timeout_clock::duration timeout,
       ss::abort_source&);

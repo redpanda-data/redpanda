@@ -20,9 +20,11 @@ raft::replicate_options make_replicate_options() {
     return opts;
 }
 
-model::record_batch_reader make_translation_state_batch(kafka::offset offset) {
+model::record_batch_reader
+make_translation_state_batch(kafka::offset offset, model::offset log_offset) {
     auto val = datalake::translation::translation_state{
-      .highest_translated_offset = offset};
+      .highest_translated_offset = offset,
+      .highest_translated_log_offset = log_offset};
     storage::record_batch_builder builder(
       model::record_batch_type::datalake_translation_state, model::offset(0));
     builder.add_raw_kv(std::nullopt, serde::to_iobuf(val));
@@ -50,10 +52,14 @@ ss::future<> translation_stm::do_apply(const model::record_batch& batch) {
           record.release_value());
         vlog(
           _log.trace,
-          "updating highest translated offset to {}",
-          value.highest_translated_offset);
+          "updating highest translated offset to {} and highest translated log "
+          "offset to {}",
+          value.highest_translated_offset,
+          value.highest_translated_log_offset);
         _highest_translated_offset = std::max(
           _highest_translated_offset, value.highest_translated_offset);
+        _highest_translated_log_offset = std::max(
+          _highest_translated_log_offset, value.highest_translated_log_offset);
     }
 }
 
@@ -77,6 +83,7 @@ translation_stm::highest_translated_log_offset(
 
 ss::future<std::error_code> translation_stm::reset_highest_translated_offset(
   kafka::offset new_translated_offset,
+  model::offset new_log_translated_offset,
   model::term_id term,
   model::timeout_clock::duration timeout,
   ss::abort_source& as) {
@@ -85,19 +92,25 @@ ss::future<std::error_code> translation_stm::reset_highest_translated_offset(
     }
     vlog(
       _log.debug,
-      "Reset-ing highest translated offset to {} from {} in term: {}",
+      "Reset-ing highest translated offset to {} from {} and highest "
+      "translated log offset to {} from {} in term: {}",
       new_translated_offset,
       _highest_translated_offset,
+      new_log_translated_offset,
+      _highest_translated_log_offset,
       term);
     auto current_term = _insync_term;
     // We are at a newer or equal term than the entry, so likely the
     // stm has gotten out of sync
-    if (_highest_translated_offset >= new_translated_offset) {
+    if (
+      _highest_translated_offset >= new_translated_offset
+      && _highest_translated_log_offset >= new_log_translated_offset) {
         co_return raft::errc::success;
     }
     auto result = co_await _raft->replicate(
       current_term,
-      make_translation_state_batch(new_translated_offset),
+      make_translation_state_batch(
+        new_translated_offset, new_log_translated_offset),
       make_replicate_options());
     auto deadline = model::timeout_clock::now() + timeout;
     if (
@@ -126,8 +139,7 @@ model::offset translation_stm::max_collectible_offset() {
     if (_highest_translated_offset == kafka::offset{}) {
         return model::offset{};
     }
-    return _raft->log()->to_log_offset(
-      kafka::offset_cast(_highest_translated_offset));
+    return _highest_translated_log_offset;
 }
 
 ss::future<> translation_stm::apply_local_snapshot(
