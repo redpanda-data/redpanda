@@ -57,6 +57,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 # set disk timeout to value greater than max suspend time
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
+                "compacted_log_segment_size": 1024 * 1024,
+                "log_segment_size": 2 * 1024 * 1024,
             },
             # 2 nodes for kgo producer/consumer workloads
             node_prealloc_count=3,
