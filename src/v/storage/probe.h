@@ -97,6 +97,8 @@ public:
         _cached_batches_read += batches;
     }
 
+    void add_removed_tombstone() { ++_tombstones_removed; }
+
     void batch_parse_error() { ++_batch_parse_errors; }
 
     void setup_metrics(const model::ntp&);
@@ -137,6 +139,7 @@ private:
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
     double _compaction_ratio = 1.0;
+    uint64_t _tombstones_removed = 0;
 
     ssize_t _compaction_removed_bytes = 0;
 
