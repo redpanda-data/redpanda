@@ -741,15 +741,21 @@ health_monitor_backend::get_cluster_health_overview(
             }
         }
         auto report_it = _reports.find(id);
-        if (
-          report_it != _reports.end()
-          && report_it->second->local_state.recovery_mode_enabled) {
-            ret.nodes_in_recovery_mode.push_back(id);
+        if (report_it != _reports.end()) {
+            if (report_it->second->local_state.recovery_mode_enabled) {
+                ret.nodes_in_recovery_mode.push_back(id);
+            }
+            if (
+              report_it->second->local_state.data_disk.alert
+              == storage::disk_space_alert::degraded) {
+                ret.data_disk_degraded.push_back(id);
+            }
         }
     }
 
     std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
     std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
+    std::sort(ret.data_disk_degraded.begin(), ret.data_disk_degraded.end());
     std::sort(
       ret.nodes_in_recovery_mode.begin(), ret.nodes_in_recovery_mode.end());
 
@@ -771,6 +777,11 @@ health_monitor_backend::get_cluster_health_overview(
     // cluster is not healthy if some nodes are down
     if (!ret.nodes_down.empty()) {
         ret.unhealthy_reasons.emplace_back("nodes_down");
+    }
+
+    // cluster is not healthy if some node have degraded disk
+    if (!ret.data_disk_degraded.empty()) {
+        ret.unhealthy_reasons.emplace_back("data_disk_degraded");
     }
 
     // cluster is not healthy if some partitions do not have leaders
