@@ -319,11 +319,11 @@ public:
               .last_seq = spec.count - 1,
               .record_count = spec.count,
               .is_transactional = true};
-            auto reader = model::make_memory_record_batch_reader(
-              std::move(batches[0]));
+            chunked_vector<model::record_batch> batches_v;
+            batches_v.push_back(std::move(batches[0]));
             auto result = co_await _ctx._stm->replicate(
               bid,
-              std::move(reader),
+              std::move(batches_v),
               raft::replicate_options(raft::consistency_level::quorum_ack));
             if (!result.has_value()) {
                 vlog(clusterlog.error, "Error {}", result.error());

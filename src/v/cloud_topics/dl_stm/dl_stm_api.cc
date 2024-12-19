@@ -127,11 +127,9 @@ ss::future<checked<model::offset, dl_stm_api_errc>>
 dl_stm_api::replicated_apply(model::record_batch&& batch) {
     model::term_id term = _stm->_raft->term();
 
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-
     auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
     opts.set_force_flush();
-    auto res = co_await _stm->_raft->replicate(term, std::move(reader), opts);
+    auto res = co_await _stm->_raft->replicate(term, std::move(batch), opts);
 
     if (res.has_error()) {
         throw std::runtime_error(

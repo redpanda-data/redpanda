@@ -83,8 +83,7 @@ coordinator_stm::replicate_and_wait(
   model::term_id term, model::record_batch batch, ss::abort_source& as) {
     auto opts = raft::replicate_options{raft::consistency_level::quorum_ack};
     opts.set_force_flush();
-    auto res = co_await _raft->replicate(
-      term, model::make_memory_record_batch_reader(std::move(batch)), opts);
+    auto res = co_await _raft->replicate(term, std::move(batch), opts);
     if (res.has_error()) {
         co_return errc::raft_error;
     }

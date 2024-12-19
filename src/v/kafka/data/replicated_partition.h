@@ -63,11 +63,13 @@ public:
     timequery(storage::timequery_config cfg) final;
 
     ss::future<result<model::offset>>
-      replicate(model::record_batch_reader, raft::replicate_options) final;
+      replicate(model::record_batch, raft::replicate_options) final;
 
+    ss::future<result<model::offset>> replicate(
+      chunked_vector<model::record_batch>, raft::replicate_options) final;
     raft::replicate_stages replicate(
       model::batch_identity,
-      model::record_batch_reader&&,
+      model::record_batch,
       raft::replicate_options) final;
 
     ss::future<storage::translating_reader> make_reader(

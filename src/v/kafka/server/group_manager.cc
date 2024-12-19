@@ -332,12 +332,11 @@ ss::future<size_t> group_manager::delete_offsets(
      * already cleaned up.
      */
     auto batch = std::move(builder).build();
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
     try {
         auto result = co_await group->partition()->raft()->replicate(
           group->term(),
-          std::move(reader),
+          std::move(batch),
           raft::replicate_options(raft::consistency_level::leader_ack));
 
         if (result) {
@@ -1024,12 +1023,11 @@ ss::future<> group_manager::write_version_fence(
         // cluster v9 is where offset retention is enabled
         auto batch = _feature_table.local().encode_version_fence(
           to_cluster_version(features::release_version::v23_1_1));
-        auto reader = model::make_memory_record_batch_reader(std::move(batch));
 
         try {
             auto result = co_await p->partition->raft()->replicate(
               term,
-              std::move(reader),
+              std::move(batch),
               raft::replicate_options(raft::consistency_level::quorum_ack));
 
             if (result) {

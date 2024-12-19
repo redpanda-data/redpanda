@@ -568,30 +568,20 @@ private:
     size_t _segment_size;
 };
 
-inline ss::future<model::record_batch_reader>
-random_batches_reader(int max_batches) {
+inline ss::future<chunked_vector<model::record_batch>>
+random_batches(int max_batches) {
     auto batches = co_await model::test::make_random_batches(
       model::test::record_batch_spec{
         .offset = model::offset(0),
         .allow_compression = true,
         .count = max_batches});
-    co_return model::make_memory_record_batch_reader(std::move(batches));
+    co_return chunked_vector<model::record_batch>::from(std::move(batches));
 }
 
-inline model::record_batch_reader
-random_batch_reader(model::test::record_batch_spec spec) {
-    auto batch = model::test::make_random_batch(spec);
-    ss::circular_buffer<model::record_batch> batches;
-    batches.reserve(1);
-    batch.set_term(model::term_id(0));
-    batches.push_back(std::move(batch));
-    return model::make_memory_record_batch_reader(std::move(batches));
-}
-
-inline ss::future<model::record_batch_reader>
-random_batches_reader(model::test::record_batch_spec spec) {
-    auto batches = co_await model::test::make_random_batches(spec);
-    co_return model::make_memory_record_batch_reader(std::move(batches));
+inline ss::future<chunked_vector<model::record_batch>>
+random_batches(model::test::record_batch_spec spec) {
+    co_return chunked_vector<model::record_batch>::from(
+      co_await model::test::make_random_batches(spec));
 }
 
 template<typename Rep, typename Period, typename Pred>
@@ -805,10 +795,11 @@ inline ss::future<bool> replicate_random_batches(
   model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(
       gr, 5, tout, [count, c_lvl](raft_node& leader_node) {
-          return random_batches_reader(count).then(
-            [&leader_node, c_lvl](auto rdr) {
+          return random_batches(count).then(
+            [&leader_node, c_lvl](chunked_vector<model::record_batch> batches) {
                 raft::replicate_options opts(c_lvl);
-                return leader_node.consensus->replicate(std::move(rdr), opts)
+                return leader_node.consensus
+                  ->replicate(std::move(batches), opts)
                   .then([](result<raft::replicate_result> res) {
                       if (!res) {
                           return false;
@@ -827,12 +818,13 @@ inline ss::future<bool> replicate_random_batches(
   model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(
       gr, 5, tout, [count, expected_term, c_lvl](raft_node& leader_node) {
-          auto rdr = random_batches_reader(count);
-          return random_batches_reader(count).then(
-            [&leader_node, c_lvl, expected_term](auto rdr) {
+          auto rdr = random_batches(count);
+          return random_batches(count).then(
+            [&leader_node, c_lvl, expected_term](
+              chunked_vector<model::record_batch> batches) {
                 raft::replicate_options opts(c_lvl);
                 return leader_node.consensus
-                  ->replicate(expected_term, std::move(rdr), opts)
+                  ->replicate(expected_term, std::move(batches), opts)
                   .then([](result<raft::replicate_result> res) {
                       if (!res) {
                           return false;
@@ -846,9 +838,9 @@ inline ss::future<bool> replicate_random_batches(
 /**
  * Makes compactible batches, having one record per batch
  */
-inline model::record_batch_reader
+inline chunked_vector<model::record_batch>
 make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
-    ss::circular_buffer<model::record_batch> ret;
+    chunked_vector<model::record_batch> ret;
     for (size_t b = 0; b < batches; b++) {
         int k = random_generators::get_int(0, keys);
         storage::record_batch_builder builder(
@@ -866,7 +858,7 @@ make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
         b.header().first_timestamp = ts;
         b.header().max_timestamp = ts;
     }
-    return model::make_memory_record_batch_reader(std::move(ret));
+    return ret;
 }
 
 inline ss::future<bool> replicate_compactible_batches(

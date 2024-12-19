@@ -553,4 +553,15 @@ TEST(ChunkedVector, ShrinkToFit) {
     EXPECT_EQ(vec.capacity(), 10);
 }
 
+TEST(ChunkedVector, FromOther) {
+    std::vector<int32_t> buffer;
+    buffer.reserve(10);
+    for (int i = 0; i < 10; ++i) {
+        buffer.push_back(i);
+    }
+
+    auto vec = chunked_vector<int32_t>::from(buffer);
+    EXPECT_THAT(vec, ElementsAreArray(buffer));
+}
+
 } // namespace
