@@ -3411,30 +3411,35 @@ class RedpandaService(RedpandaServiceBase):
         )
 
         if self.si_settings.cloud_storage_cleanup_strategy == CloudStorageCleanupStrategy.ALWAYS_SMALL_BUCKETS_ONLY:
-            bucket_is_small = True
-            max_object_count = 3000
-
-            # See if the bucket is small enough
-            t = time.time()
-            for i, m in enumerate(
-                    self.cloud_storage_client.list_objects(
-                        self.si_settings.cloud_storage_bucket)):
-                if i >= max_object_count:
-                    bucket_is_small = False
-                    break
-            self.logger.info(
-                f"Determining bucket count for {self.si_settings.cloud_storage_bucket} up to {max_object_count} objects took {time.time() - t}s"
-            )
-            if bucket_is_small:
-                # Log grep hint: "a small bucket"
+            if self.si_settings.cloud_storage_type == CloudStorageType.ABS and not self.dedicated_nodes:
                 self.logger.info(
-                    f"Bucket {self.si_settings.cloud_storage_bucket} is a small bucket (deleting it)"
+                    "Always deleting ABS bucket when using Azurite to avoid slowdowns of a single threaded Azurite"
                 )
             else:
+                bucket_is_small = True
+                max_object_count = 3000
+
+                # See if the bucket is small enough
+                t = time.time()
+                for i, m in enumerate(
+                        self.cloud_storage_client.list_objects(
+                            self.si_settings.cloud_storage_bucket)):
+                    if i >= max_object_count:
+                        bucket_is_small = False
+                        break
                 self.logger.info(
-                    f"Bucket {self.si_settings.cloud_storage_bucket} is NOT a small bucket (NOT deleting it)"
+                    f"Determining bucket count for {self.si_settings.cloud_storage_bucket} up to {max_object_count} objects took {time.time() - t}s"
                 )
-                return
+                if bucket_is_small:
+                    # Log grep hint: "a small bucket"
+                    self.logger.info(
+                        f"Bucket {self.si_settings.cloud_storage_bucket} is a small bucket (deleting it)"
+                    )
+                else:
+                    self.logger.info(
+                        f"Bucket {self.si_settings.cloud_storage_bucket} is NOT a small bucket (NOT deleting it)"
+                    )
+                    return
 
         elif self.si_settings.cloud_storage_cleanup_strategy == CloudStorageCleanupStrategy.IF_NOT_USING_LIFECYCLE_RULE:
             if self.si_settings.use_bucket_cleanup_policy:
