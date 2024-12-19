@@ -75,7 +75,7 @@ private:
 
 public:
     using Ch = typename Encoding::Ch;
-    using rjson_parse_result = std::vector<kafka::client::record_essence>;
+    using rjson_parse_result = chunked_vector<kafka::client::record_essence>;
     rjson_parse_result result;
 
     explicit produce_request_handler(serialization_format fmt)
