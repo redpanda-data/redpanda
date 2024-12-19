@@ -746,6 +746,12 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
     // - if the host in the Host header matches one of our advertised kafka
     //   addresses, then assume that the peer's advertised kafka address
     //   with the same index will also be their public admin API address.
+    //   - a match in this case might be an exact match or the appearance
+    //     that the advertised address is a subdomain of request hostname.
+    //     this allows redirection of requests made through a headless service
+    //     in a k8s environment, but is not intended to cover all such cases,
+    //     since the service hostname could be anything. Context:
+    //     https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-hostname-and-subdomain-fields
     // - Assume that the peer is listening on the same port that the client
     //   used to make this request (i.e. the port in Host)
     //
@@ -792,8 +798,25 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
           kafka_endpoints.begin(),
           kafka_endpoints.end(),
           [req_hostname](const model::broker_endpoint& be) {
-              return be.address.host() == req_hostname;
+              std::string_view be_host{be.address.host()};
+
+              // exact match suggests that the request was directed to this
+              // particular broker
+              if (be_host == req_hostname) {
+                  return true;
+              }
+
+              // otherwise if the advertised host appears to be a subdomain of
+              // the request host, asume the request came through a headless
+              // service and call that a match
+              auto idx = be_host.find_first_of('.');
+              if (
+                idx == std::string_view::npos || idx + 1 == be_host.length()) {
+                  return false;
+              }
+              return be_host.substr(idx + 1) == req_hostname;
           });
+
         if (match_i != kafka_endpoints.end()) {
             auto listener_idx = size_t(
               std::distance(kafka_endpoints.begin(), match_i));
