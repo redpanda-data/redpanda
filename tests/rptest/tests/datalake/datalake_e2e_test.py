@@ -135,6 +135,31 @@ class DatalakeE2ETests(RedpandaTest):
                     spark_describe_out)
 
     @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=[CloudStorageType.S3])
+    def test_upload_after_external_update(self, cloud_storage_type):
+        table_name = f"redpanda.{self.topic_name}"
+        with DatalakeServices(self.test_ctx,
+                              redpanda=self.redpanda,
+                              filesystem_catalog_mode=True,
+                              include_query_engines=[QueryEngineType.SPARK
+                                                     ]) as dl:
+            count = 100
+            dl.create_iceberg_enabled_topic(self.topic_name, partitions=1)
+            dl.produce_to_topic(self.topic_name, 1024, count)
+            dl.wait_for_translation(self.topic_name, count)
+            spark = dl.spark()
+            spark.make_client().cursor().execute(f"delete from {table_name}")
+            count_after_del = spark.count_table("redpanda", self.topic_name)
+            assert count_after_del == 0, f"{count_after_del} rows, expected 0"
+
+            dl.produce_to_topic(self.topic_name, 1024, count)
+            dl.wait_for_translation_until_offset(self.topic_name,
+                                                 2 * count - 1)
+            count_after_produce = spark.count_table("redpanda",
+                                                    self.topic_name)
+            assert count_after_produce == count, f"{count_after_produce} rows, expected {count}"
+
+    @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types(),
             filesystem_catalog_mode=[True, False])
     def test_topic_lifecycle(self, cloud_storage_type,
