@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <seastar/util/log.hh>
+
 #include <cstddef>
 #include <optional>
 
@@ -31,6 +33,12 @@ struct compaction_memory_reservation {
     double max_limit_pct{100.0};
 };
 
+struct partitions_memory_reservation {
+    size_t max_limit_pct;
+
+    size_t reserved_bytes(size_t total_memory) const;
+};
+
 /**
  * Centralized unit for memory management.
  *
@@ -44,7 +52,8 @@ public:
       size_t total_available_memory,
       compaction_memory_reservation compaction,
       bool wasm_enabled,
-      bool datalake_enabled);
+      bool datalake_enabled,
+      partitions_memory_reservation partitions);
 
     size_t kafka_total_memory() const;
 
@@ -79,6 +88,14 @@ public:
 
     size_t datalake_max_memory() const;
 
+    // Absolute memory in bytes reserved for partitions
+    size_t partitions_max_memory() const;
+
+    // Share of the total memory reserved for partitions
+    double partitions_max_memory_share() const;
+
+    void log_memory_group_allocations(seastar::logger&);
+
 private:
     /**
      * Total memory for a core after the user's Wasm and compaction
@@ -93,6 +110,7 @@ private:
     size_t subsystem_memory() const;
 
     size_t _compaction_reserved_memory;
+    size_t _partitions_reserved_memory;
     size_t _total_system_memory;
     bool _wasm_enabled;
     bool _datalake_enabled;
@@ -102,3 +120,7 @@ private:
  * Grab the shard local, lazily initialized, system memory groups.
  */
 system_memory_groups& memory_groups();
+
+// Grabs the actual storage for the above. Useful to reset for tests such that
+// the above will reinit using the latest config
+std::optional<system_memory_groups>& memory_groups_holder();

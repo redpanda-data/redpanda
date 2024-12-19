@@ -949,6 +949,7 @@ void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::node().developer_mode());
+    memory_groups().log_memory_group_allocations(_log);
     storage::directories::initialize(
       config::node().data_directory().as_sstring())
       .get();
