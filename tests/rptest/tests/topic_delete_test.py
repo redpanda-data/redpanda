@@ -86,7 +86,10 @@ def get_kvstore_topic_key_counts(redpanda):
                 if k['data'].get('ntp', {}).get('topic', None) == 'controller':
                     # Controller storage item
                     continue
-
+                if k['data'].get('ntp', {}).get('namespace',
+                                                None) == 'kafka_internal':
+                    # Internal topic storage item
+                    continue
                 excess_keys.append(k)
 
             redpanda.logger.info(
