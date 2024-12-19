@@ -75,17 +75,25 @@ type (
 		Value string `json:"value"`
 	}
 	AqueryAction struct {
-		TargetID    int        `json:"targetId"`
-		Arguments   []string   `json:"arguments"`
-		Environment []KeyValue `json:"environmentVariables"`
+		TargetID        int        `json:"targetId"`
+		ConfigurationID int        `json:"configurationId"`
+		Arguments       []string   `json:"arguments"`
+		Environment     []KeyValue `json:"environmentVariables"`
 	}
 	AqueryTarget struct {
 		ID    int    `json:"id"`
 		Label string `json:"label"`
 	}
+	AqueryConfiguration struct {
+		ID           int    `json:"id"`
+		Mnemonic     string `json:"mnemenic"`
+		PlatformName string `json:"platformName"`
+		IsTool       bool   `json:"isTool,omitempty"`
+	}
 	AqueryOutput struct {
-		Actions []AqueryAction `json:"actions"`
-		Targets []AqueryTarget `json:"targets"`
+		Actions       []AqueryAction        `json:"actions"`
+		Targets       []AqueryTarget        `json:"targets"`
+		Configuration []AqueryConfiguration `json:"configuration"`
 	}
 )
 
@@ -197,8 +205,18 @@ func (g *CompileCommandGenerator) ConvertCompileCommands(output AqueryOutput) ([
 	if err != nil {
 		return nil, fmt.Errorf("unable to get cwd: %w", err)
 	}
+	// Ignore tools (which lead to duplicates) - we only need to
+	// generate entries for code that we build as part of Redpanda or
+	// it's tests.
+	isToolConfig := map[int]bool{}
+	for _, config := range output.Configuration {
+		isToolConfig[config.ID] = config.IsTool
+	}
 	cmds := make([]CompileCommand, 0, len(output.Actions))
 	for _, action := range output.Actions {
+		if isToolConfig[action.ConfigurationID] {
+			continue
+		}
 		src, args, err := g.GetCppCommandForFiles(action)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get cpp command: %w", err)
@@ -227,7 +245,7 @@ func GetCommands(extraArgs ...string) ([]CompileCommand, error) {
 		// rather than just those that would be run by a build to produce a given output.
 		// This mostly isn't a problem, but can sometimes surface extra, unnecessary, misconfigured actions.
 		// See: https://github.com/bazelbuild/bazel/issues/14156
-		`mnemonic('CppCompile', filter('^(//|@//)', deps(//...)))`,
+		`mnemonic('CppCompile', //... union @seastar//...)`,
 		// We switched to jsonproto instead of proto because of https://github.com/bazelbuild/bazel/issues/13404.
 		// We could change back when fixed--reverting most of the commit that added this line and tweaking the
 		// build file to depend on the target in that issue. That said, it's kinda nice to be free of the dependency,
