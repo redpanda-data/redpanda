@@ -117,7 +117,7 @@ public:
       model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<produce_response>
-    produce_records(model::topic topic, std::vector<record_essence> batch);
+    produce_records(model::topic topic, chunked_vector<record_essence> batch);
 
     ss::future<list_offsets_response> list_offsets(model::topic_partition tp);
 
