@@ -7,15 +7,19 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "base/units.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/constraints.h"
+#include "cluster/scheduling/topic_memory_per_partition_default.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_groups.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sharded.hh>
@@ -87,8 +91,7 @@ FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
 }
 
 FIXTURE_TEST(allocation_over_core_capacity, partition_allocator_fixture) {
-    const auto partition_count
-      = partition_allocator_fixture::partitions_per_shard + 1;
+    const auto partition_count = this->partitions_per_shard + 1;
     register_node(0, 1);
 
     {
@@ -116,20 +119,126 @@ FIXTURE_TEST(allocation_over_core_capacity, partition_allocator_fixture) {
 }
 
 FIXTURE_TEST(
-  allocation_over_memory_capacity, partition_allocator_memory_limited_fixture) {
+  allocation_memory_limited, partition_allocator_memory_limited_fixture) {
+    memory_groups_holder().reset();
+    const auto partitions_share = 10;
+    ss::smp::invoke_on_all([partitions_share] {
+        config::shard_local_cfg()
+          .topic_partitions_memory_allocation_percent.set_value(
+            partitions_share);
+        config::shard_local_cfg().topic_memory_per_partition.set_value(200_KiB);
+    }).get();
+
     register_node(0, 1);
 
+    const auto allowed_partitions
+      = gb_per_core * GiB / 100.0 * partitions_share
+        / config::shard_local_cfg().topic_memory_per_partition().value();
+
     {
-        auto result = allocator().allocate(make_allocation_request(1, 1)).get();
+        auto result = allocator()
+                        .allocate(
+                          make_allocation_request(allowed_partitions + 1, 1))
+                        .get();
         BOOST_REQUIRE(result.has_error());
         BOOST_REQUIRE_EQUAL(
           result.assume_error(),
           cluster::make_error_code(
             cluster::errc::topic_invalid_partitions_memory_limit));
     }
+
     {
-        auto result
-          = allocator().allocate(make_simple_allocation_request(1, 1)).get();
+        auto result = allocator()
+                        .allocate(make_simple_allocation_request(
+                          allowed_partitions + 1, 1))
+                        .get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_memory_limit));
+    }
+}
+
+FIXTURE_TEST(
+  allocation_memory_limited_legacy_config_overwrites,
+  partition_allocator_memory_limited_fixture) {
+    memory_groups_holder().reset();
+    const auto partitions_share = 1;
+    ss::smp::invoke_on_all([partitions_share] {
+        config::shard_local_cfg()
+          .topic_partitions_memory_allocation_percent.set_value(
+            partitions_share);
+        config::shard_local_cfg().topic_memory_per_partition.set_value(1_MiB);
+    }).get();
+
+    register_node(0, 1);
+
+    const auto allowed_partitions
+      = gb_per_core * GiB / 100.0 * partitions_share
+        / config::shard_local_cfg().topic_memory_per_partition().value();
+
+    const auto legacy_allowed_partitions
+      = gb_per_core * GiB
+        / config::shard_local_cfg().topic_memory_per_partition().value();
+
+    BOOST_REQUIRE_GT(legacy_allowed_partitions, allowed_partitions);
+
+    {
+        auto result = allocator()
+                        .allocate(
+                          make_allocation_request(allowed_partitions + 1, 1))
+                        .get();
+        BOOST_REQUIRE(!result.has_error());
+    }
+
+    {
+        auto result = allocator()
+                        .allocate(make_simple_allocation_request(
+                          allowed_partitions + 1, 1))
+                        .get();
+        BOOST_REQUIRE(!result.has_error());
+    }
+}
+
+FIXTURE_TEST(
+  allocation_memory_limited_lowering_mem_limit,
+  partition_allocator_memory_limited_fixture) {
+    memory_groups_holder().reset();
+    const auto partitions_share = 5;
+    const auto topic_memory_per_partition
+      = cluster::DEFAULT_TOPIC_MEMORY_PER_PARTITION / 2;
+
+    ss::smp::invoke_on_all([partitions_share, topic_memory_per_partition] {
+        config::shard_local_cfg()
+          .topic_partitions_memory_allocation_percent.set_value(
+            partitions_share);
+        config::shard_local_cfg().topic_memory_per_partition.set_value(
+          topic_memory_per_partition);
+    }).get();
+
+    register_node(0, 1);
+
+    const auto allowed_partitions = gb_per_core * GiB / 100.0 * partitions_share
+                                    / topic_memory_per_partition;
+
+    {
+        auto result = allocator()
+                        .allocate(
+                          make_allocation_request(allowed_partitions + 1, 1))
+                        .get();
+        BOOST_REQUIRE(result.has_error());
+        BOOST_REQUIRE_EQUAL(
+          result.assume_error(),
+          cluster::make_error_code(
+            cluster::errc::topic_invalid_partitions_memory_limit));
+    }
+
+    {
+        auto result = allocator()
+                        .allocate(make_simple_allocation_request(
+                          allowed_partitions + 1, 1))
+                        .get();
         BOOST_REQUIRE(result.has_error());
         BOOST_REQUIRE_EQUAL(
           result.assume_error(),
@@ -546,8 +655,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(it->second->allocated_partitions(), allocated);
     BOOST_REQUIRE_EQUAL(
       it->second->max_capacity(),
-      10 * partition_allocator_fixture::partitions_per_shard
-        - partitions_reserve_shard0());
+      10 * this->partitions_per_shard - partitions_reserve_shard0());
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {

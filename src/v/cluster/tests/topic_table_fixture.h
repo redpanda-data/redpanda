@@ -20,6 +20,7 @@
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
+#include "config/configuration.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
@@ -44,13 +45,14 @@ struct topic_table_fixture {
           .start_single(
             std::ref(members),
             std::ref(features),
-            config::mock_binding<std::optional<size_t>>(std::nullopt),
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<std::vector<ss::sstring>>({}),
             config::mock_binding<bool>(false))
           .get();
+        config::shard_local_cfg().topic_memory_per_partition.set_value(
+          std::nullopt);
         allocator.local().register_node(
           create_allocation_node(model::node_id(1), 8));
         allocator.local().register_node(

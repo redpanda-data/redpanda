@@ -17,6 +17,7 @@
 
 #include <seastar/core/memory.hh>
 
+#include <cstdint>
 #include <stdexcept>
 
 namespace {
@@ -59,14 +60,24 @@ compaction_memory_reservation::reserved_bytes(size_t total_memory) const {
     return std::min(max_bytes, bytes_limit);
 }
 
+size_t
+partitions_memory_reservation::reserved_bytes(size_t total_memory) const {
+    return total_memory * (max_limit_pct / 100.0);
+}
+
 system_memory_groups::system_memory_groups(
   size_t total_available_memory,
   compaction_memory_reservation compaction,
   bool wasm_enabled,
-  bool datalake_enabled)
+  bool datalake_enabled,
+  partitions_memory_reservation partitions)
   : _compaction_reserved_memory(
       compaction.reserved_bytes(total_available_memory))
-  , _total_system_memory(total_available_memory - _compaction_reserved_memory)
+  , _partitions_reserved_memory(
+      partitions.reserved_bytes(total_available_memory))
+  , _total_system_memory(
+      total_available_memory - _compaction_reserved_memory
+      - _partitions_reserved_memory)
   , _wasm_enabled(wasm_enabled)
   , _datalake_enabled(datalake_enabled) {}
 
@@ -108,6 +119,15 @@ size_t system_memory_groups::datalake_max_memory() const {
     return subsystem_memory<memory_shares::datalake>();
 }
 
+size_t system_memory_groups::partitions_max_memory() const {
+    return _partitions_reserved_memory;
+}
+
+double system_memory_groups::partitions_max_memory_share() const {
+    return _partitions_reserved_memory
+           / static_cast<double>(ss::memory::stats().total_memory());
+}
+
 template<size_t shares>
 size_t system_memory_groups::subsystem_memory() const {
     size_t per_share_amount = total_memory()
@@ -120,8 +140,13 @@ size_t system_memory_groups::total_memory() const {
     return _total_system_memory;
 }
 
-system_memory_groups& memory_groups() {
+std::optional<system_memory_groups>& memory_groups_holder() {
     static thread_local std::optional<system_memory_groups> groups;
+    return groups;
+}
+
+system_memory_groups& memory_groups() {
+    auto& groups = memory_groups_holder();
     if (groups) {
         return *groups;
     }
@@ -139,6 +164,8 @@ system_memory_groups& memory_groups() {
         compaction.max_limit_pct
           = cfg.storage_compaction_key_map_memory_limit_percent.value();
     }
-    groups.emplace(total, compaction, wasm, datalake_enabled());
+    partitions_memory_reservation partitions{
+      .max_limit_pct = cfg.topic_partitions_memory_allocation_percent()};
+    groups.emplace(total, compaction, wasm, datalake_enabled(), partitions);
     return *groups;
 }
