@@ -423,16 +423,17 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
             _base_directory,
             std::nullopt);
       },
-      [this] { return storage::log_config(_base_directory, 8_MiB); },
+      [this] { return storage::log_config(_base_directory, 1_MiB); },
       std::ref(_features));
     co_await _storage.invoke_on_all(&storage::api::start);
     storage::ntp_config ntp_cfg(ntp(), _base_directory);
+    storage::ntp_config::default_overrides ov;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    ov.segment_size = 1_MiB;
+    ntp_cfg.set_overrides(ov);
 
     auto log = co_await _storage.local().log_mgr().manage(
-      std::move(ntp_cfg),
-      test_group,
-      _with_offset_translation ? model::offset_translator_batch_types()
-                               : std::vector<model::record_batch_type>{});
+      std::move(ntp_cfg), test_group, model::offset_translator_batch_types());
 
     _raft = ss::make_lw_shared<consensus>(
       _id,
