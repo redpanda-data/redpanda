@@ -113,6 +113,9 @@ private:
     /// overlap.
     void align_end_offset_to_manifest(model::offset compacted_segment_end);
 
+    /// Make sure that reupload begins and ends in the same term.
+    void align_with_term_boundary();
+
     /// Finds the offset which the collection needs to progress upto in order to
     /// replace at least one manifest segment. The collection is valid if it
     /// reaches the replacement boundary.

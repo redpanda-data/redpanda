@@ -10,6 +10,7 @@
 
 #include "segment_reupload.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
 #include "config/configuration.h"
 #include "logger.h"
@@ -202,6 +203,8 @@ void segment_collector::do_collect(segment_collector_mode mode) {
 
     align_end_offset_to_manifest(
       _target_end_inclusive.value_or(current_segment_end));
+
+    align_with_term_boundary();
 }
 
 model::offset segment_collector::find_replacement_boundary() const {
@@ -271,6 +274,42 @@ void segment_collector::align_end_offset_to_manifest(
             _end_inclusive = it->base_offset - model::offset{1};
         }
     }
+}
+
+void segment_collector::align_with_term_boundary() {
+    auto opt_term = _log.get_term(_begin_inclusive);
+    if (!opt_term.has_value()) {
+        vlog(
+          archival_log.warn,
+          "Can't find term for offset {}, the log could be truncated",
+          _begin_inclusive);
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Can't find term for offset {}", _begin_inclusive));
+    }
+    auto opt_max_offset = _log.get_term_last_offset(opt_term.value());
+    if (!opt_max_offset.has_value()) {
+        vlog(
+          archival_log.warn,
+          "Can't find last offset for term {}",
+          opt_term.value());
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Can't find last offset for term {}", opt_term.value()));
+    }
+    vlog(
+      archival_log.debug,
+      "align_with_term_boundary, begin={}, end={}, term={}, "
+      "last-term-offset={}",
+      _begin_inclusive,
+      _end_inclusive,
+      opt_term.value(),
+      opt_max_offset.value());
+    // Invariant: 'max_offset' can't be in the middle of the segment
+    // because we're rolling a segment when new term starts.
+    auto max_offset = opt_max_offset.value();
+    // NOTE: if the segment lookup overshoots we can return max_offset
+    // because it's guaranteed to be a committed offset of some segment
+    // in the manifest.
+    _end_inclusive = std::min(max_offset, _end_inclusive);
 }
 
 segment_collector::lookup_result segment_collector::find_next_segment(
