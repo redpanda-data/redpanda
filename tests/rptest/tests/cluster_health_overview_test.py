@@ -13,8 +13,11 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.utils.full_disk import FullDiskHelper
 
 from ducktape.utils.util import wait_until
+
+FDT_LOG_ALLOW_LIST = [".*cluster - storage space alert: free space.*"]
 
 
 class ClusterHealthOverviewTest(RedpandaTest):
@@ -47,6 +50,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         # these invariants should always hold
         if hov['is_healthy']:
+            assert len(hov['data_disk_degraded']) == 0
             assert len(hov['nodes_down']) == 0
             assert len(hov['leaderless_partitions']) == 0
             assert hov['leaderless_count'] == 0
@@ -124,4 +128,36 @@ class ClusterHealthOverviewTest(RedpandaTest):
         self.redpanda.start_node(first_down)
         self.redpanda.start_node(second_down)
 
+        self.wait_until_healthy()
+
+    @cluster(num_nodes=5, log_allow_list=FDT_LOG_ALLOW_LIST)
+    def test_cluster_health_data_disk_degraded(self):
+        # Should be healthy at start.
+        self.wait_until_healthy()
+
+        # Trigger low space on all nodes.
+        h = FullDiskHelper(self.logger, self.redpanda)
+        h.trigger_low_space()
+
+        def disk_degraded():
+            hov = self.get_health()
+
+            assert not hov['is_healthy'], hov
+            assert 'data_disk_degraded' in hov['unhealthy_reasons'], hov
+
+            expected_degraded_nodes = list(
+                range(1,
+                      len(self.redpanda.nodes) + 1))
+
+            assert hov['data_disk_degraded'] == expected_degraded_nodes, hov
+
+            return True
+
+        self.logger.info("Waiting for disk degraded health report")
+        wait_until(disk_degraded, 30, 2, retry_on_exc=True)
+
+        self.logger.info("Clearing low space")
+        h.clear_low_space()
+
+        self.logger.info("Waiting for healthy health report")
         self.wait_until_healthy()
