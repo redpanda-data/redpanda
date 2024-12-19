@@ -142,7 +142,9 @@ private:
                && _am_controller_leader;
     }
 
-    ss::future<> maybe_log_license_check_info();
+    ss::future<> maybe_log_periodic_reminders();
+    void maybe_log_license_nag();
+    void maybe_log_security_nag();
     bool need_to_verify_enterprise_license();
 
     // Compose a command struct, replicate it via raft and wait for apply.

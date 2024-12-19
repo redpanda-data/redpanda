@@ -29,6 +29,7 @@ v_cc_library(
     oidc_authenticator.cc
     oidc_principal_mapping_applicator.cc
     oidc_service.cc
+    plain_authenticator.cc
     request_auth.cc
     role.cc
     scram_algorithm.cc

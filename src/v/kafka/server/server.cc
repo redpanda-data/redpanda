@@ -65,6 +65,7 @@
 #include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
 #include "security/oidc_authenticator.h"
+#include "security/plain_authenticator.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
@@ -716,6 +717,16 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
           == security::scram_sha512_authenticator::name) {
             ctx.sasl()->set_mechanism(
               std::make_unique<security::scram_sha512_authenticator::auth>(
+                ctx.credentials()));
+        }
+    }
+
+    if (supports("PLAIN")) {
+        supported_sasl_mechanisms.emplace_back(
+          security::plain_authenticator::name);
+        if (request.data.mechanism == security::plain_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::plain_authenticator>(
                 ctx.credentials()));
         }
     }

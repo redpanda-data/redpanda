@@ -72,6 +72,7 @@ class KafkaCliTools:
                  version: str | None = None,
                  user: str | None = None,
                  passwd: str | None = None,
+                 algorithm: str | None = 'SCRAM-SHA-256',
                  protocol: str = 'SASL_PLAINTEXT',
                  oauth_cfg: OAuthConfig | None = None):
         self._redpanda = redpanda
@@ -94,7 +95,7 @@ class KafkaCliTools:
             if user:
                 security = security.override(user,
                                              passwd,
-                                             'SCRAM-SHA-256',
+                                             algorithm,
                                              tls_enabled=None)
 
             if sasl := security.simple_credentials():

@@ -137,4 +137,22 @@ scram_authenticator<T>::authenticate(bytes auth_bytes) {
 template class scram_authenticator<scram_sha256>;
 template class scram_authenticator<scram_sha512>;
 
+std::optional<std::string_view> validate_scram_credential(
+  const scram_credential& cred, const credential_password& password) {
+    std::optional<std::string_view> sasl_mechanism;
+    if (
+      cred.stored_key().size() == security::scram_sha256::key_size
+      && security::scram_sha256::validate_password(
+        password, cred.stored_key(), cred.salt(), cred.iterations())) {
+        sasl_mechanism = security::scram_sha256_authenticator::name;
+    } else if (
+      cred.stored_key().size() == security::scram_sha512::key_size
+      && security::scram_sha512::validate_password(
+        password, cred.stored_key(), cred.salt(), cred.iterations())) {
+        sasl_mechanism = security::scram_sha512_authenticator::name;
+    }
+
+    return sasl_mechanism;
+}
+
 } // namespace security

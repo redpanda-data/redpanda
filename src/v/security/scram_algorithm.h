@@ -196,6 +196,8 @@ public:
     static constexpr int min_iterations = MinIterations;
     static_assert(min_iterations > 0, "Minimum iterations must be positive");
 
+    static constexpr auto key_size = HashType::digest_size;
+
     static bytes client_signature(
       bytes_view stored_key,
       const client_first_message& client_first,
