@@ -125,6 +125,15 @@ public:
      */
     seastar::metrics::histogram client_quota_histogram_logform() const;
 
+    /*
+     * Generates a Prometheus histogram with 4 buckets. The first bucket has an
+     * upper bound of 2.
+     *
+     * This is the histogram type used for the tracking number of participants
+     * involved in a single transaction.
+     */
+    seastar::metrics::histogram tx_participants_histogram_logform() const;
+
 private:
     std::array<uint64_t, number_of_buckets> _counts;
     uint64_t _sample_sum{0};
@@ -285,3 +294,12 @@ using log_hist_read_dist = latency_log_hist<std::chrono::minutes, 16, 4ul>;
  */
 using log_hist_client_quota
   = latency_log_hist<std::chrono::milliseconds, 15, 1ul>;
+
+/*
+ * This histogram measures the number of participants in a transaction. The
+ * participants are either data partitions or consumer offset partitions.
+ * This histogram helps estimate how 'wide' a transaction is in terms of
+ * number of participants. Number of partitions is usually in low single
+ * digits and that is reflected in the template definition below.
+ */
+using log_hist_tx_participants = log_hist<4, 2ul>;
