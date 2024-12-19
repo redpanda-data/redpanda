@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -97,8 +98,57 @@ type CompileCommand struct {
 	Directory string `json:"directory"`
 }
 
+type CompileCommandGenerator struct {
+	compilerPathCache map[string]string
+}
+
+// When using toolchains llvm (our Bazel provided toolchain), the compiler is actually a shell
+// script that invokes the compiler (cc_wrapper.sh). This messes up clangd, as it assumes the
+// compiler is at that same directory, and this results in the stdlib headers not being found
+// (because the shell script invokes a clang binary that is in another directory). So remap
+// the first argument to be the actual clang binary the shell script invokes, so that clangd
+// can find the headers in libc++
+func (g *CompileCommandGenerator) RemapCompilerPath(path string) (mapped string, err error) {
+	if mapped, ok := g.compilerPathCache[path]; ok {
+		return mapped, nil
+	}
+	// Cache a successful result
+	defer func() {
+		if err == nil {
+			g.compilerPathCache[path] = mapped
+		}
+	}()
+	dir, file := filepath.Split(path)
+	if file != "cc_wrapper.sh" {
+		mapped = path
+		return
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(dir, "clang-cpp"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			mapped = path
+			err = nil
+		} else {
+			err = fmt.Errorf("unable to determine compiler location, unable to resolve clang-cpp: %w", err)
+		}
+		return
+	}
+	binDir, _ := filepath.Split(resolved)
+	mapped = filepath.Join(binDir, "clang")
+	if _, err = os.Lstat(mapped); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			mapped = path
+			err = nil
+		} else {
+			err = fmt.Errorf("unable to determine compiler location, unable to find clang binary: %w", err)
+		}
+		return
+	}
+	return
+}
+
 // ConvertCompileCommands converts from Bazel's aquery format to de-Bazeled compile_commands.json entries.
-func GetCppCommandForFiles(action AqueryAction) (src string, args []string, err error) {
+func (g *CompileCommandGenerator) GetCppCommandForFiles(action AqueryAction) (src string, args []string, err error) {
 	if len(action.Arguments) == 0 {
 		err = errors.New("empty arguments for compiler action")
 		return
@@ -106,7 +156,11 @@ func GetCppCommandForFiles(action AqueryAction) (src string, args []string, err 
 	args = make([]string, 0, len(action.Arguments)+2)
 	// TODO(bazel): We might need to preprocess the compiler location if it's a llvm_toolchain one
 	// because in the current form, the compiler headers are in the wrong place.
-	args = append(args, action.Arguments[0])
+	compilerPath, err := g.RemapCompilerPath(action.Arguments[0])
+	if err != nil {
+		return
+	}
+	args = append(args, compilerPath)
 	for i, curr := range action.Arguments[1:] {
 		prev := action.Arguments[i]
 		// NOTE: if additionally add src/v as a search path *first* so that we
@@ -138,14 +192,14 @@ func GetCppCommandForFiles(action AqueryAction) (src string, args []string, err 
 }
 
 // ConvertCompileCommands converts from Bazel's aquery format to de-Bazeled compile_commands.json entries.
-func ConvertCompileCommands(output AqueryOutput) ([]CompileCommand, error) {
+func (g *CompileCommandGenerator) ConvertCompileCommands(output AqueryOutput) ([]CompileCommand, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get cwd: %w", err)
 	}
 	cmds := make([]CompileCommand, 0, len(output.Actions))
 	for _, action := range output.Actions {
-		src, args, err := GetCppCommandForFiles(action)
+		src, args, err := g.GetCppCommandForFiles(action)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get cpp command: %w", err)
 		}
@@ -230,7 +284,10 @@ func GetCommands(extraArgs ...string) ([]CompileCommand, error) {
 	if len(output.Actions) == 0 {
 		return nil, errors.New("unable to find any actions from `bazel aquery`, likely there are BUILD file errors")
 	}
-	return ConvertCompileCommands(output)
+	generator := CompileCommandGenerator{
+		compilerPathCache: map[string]string{},
+	}
+	return generator.ConvertCompileCommands(output)
 }
 
 func RunTool(args []string) error {
