@@ -3957,6 +3957,8 @@ class SchemaRegistryConfluentClient(SchemaRegistryEndpoints):
         result = self.sr_client.get_versions(test_subject)
         assert result == [1], f"Result: {result}"
 
+        # reinitialize client to drop the cache
+        self.sr_client = SchemaRegistryClient({'url': self._base_uri()})
         with expect_exception(SchemaRegistryError, lambda e: True):
             self.sr_client.get_version(test_subject, 2)
 
