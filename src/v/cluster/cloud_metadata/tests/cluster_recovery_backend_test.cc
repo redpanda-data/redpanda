@@ -180,7 +180,10 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
         }
         auto& archiver = p->archiver().value().get();
         archiver.sync_for_tests().get();
-        auto res = archiver.upload_next_candidates().get();
+        auto res = archiver
+                     .upload_next_candidates(
+                       archival::archival_stm_fence{.unsafe_add = true})
+                     .get();
         ASSERT_GT(res.non_compacted_upload_result.num_succeeded, 0);
         archiver.upload_topic_manifest().get();
         archiver.upload_manifest("test").get();
