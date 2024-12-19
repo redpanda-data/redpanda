@@ -279,8 +279,8 @@ std::ostream& operator<<(std::ostream& o, const reply_result& r) {
     case reply_result::group_unavailable:
         o << "group_unavailable";
         return o;
-    case reply_result::timeout:
-        o << "timeout";
+    case reply_result::follower_busy:
+        o << "follower_busy";
         return o;
     }
     __builtin_unreachable();

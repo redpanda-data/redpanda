@@ -299,7 +299,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_with_failures) {
       .last_flushed_log_index = model::offset{},
       .last_dirty_log_index = model::offset{},
       .last_term_base_offset = model::offset{},
-      .result = raft::reply_result::timeout});
+      .result = raft::reply_result::follower_busy});
 
     /**
      * Two other replies are successful
