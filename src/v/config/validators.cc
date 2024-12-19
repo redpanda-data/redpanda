@@ -115,7 +115,7 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
     constexpr auto supported = std::to_array<std::string_view>(
-      {"GSSAPI", "SCRAM", "OAUTHBEARER"});
+      {"GSSAPI", "SCRAM", "OAUTHBEARER", "PLAIN"});
 
     // Validate results
     for (const auto& m : mechanisms) {
@@ -124,6 +124,12 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
+
+    if (mechanisms.size() == 1 && mechanisms[0] == "PLAIN") {
+        return "When PLAIN is enabled, at least one other mechanism must be "
+               "enabled";
+    }
+
     return std::nullopt;
 }
 
