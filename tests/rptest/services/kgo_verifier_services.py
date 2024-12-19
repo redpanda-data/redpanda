@@ -111,8 +111,10 @@ class KgoVerifierService(Service):
         else:
             timeout_kwargs = {}
 
+        clean = kwargs.pop('clean', False)
+
         inst = cls(*args, **kwargs)
-        inst.start()
+        inst.start(clean=clean)
         inst.wait(**timeout_kwargs)
         inst.free()
         return inst
