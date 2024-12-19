@@ -23,7 +23,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 )
 
@@ -100,25 +99,41 @@ type CompileCommand struct {
 
 // ConvertCompileCommands converts from Bazel's aquery format to de-Bazeled compile_commands.json entries.
 func GetCppCommandForFiles(action AqueryAction) (src string, args []string, err error) {
-	env := map[string]string{}
-	for _, kv := range action.Environment {
-		env[kv.Key] = kv.Value
+	if len(action.Arguments) == 0 {
+		err = errors.New("empty arguments for compiler action")
+		return
 	}
-	// This needs to be inherited from the shell
-	if _, ok := env["PATH"]; !ok {
-		env["PATH"] = os.Getenv("PATH")
+	args = make([]string, 0, len(action.Arguments)+2)
+	// TODO(bazel): We might need to preprocess the compiler location if it's a llvm_toolchain one
+	// because in the current form, the compiler headers are in the wrong place.
+	args = append(args, action.Arguments[0])
+	for i, curr := range action.Arguments[1:] {
+		prev := action.Arguments[i]
+		// NOTE: if additionally add src/v as a search path *first* so that we
+		// don't find virtual included symlink'd headers by default for our source
+		// code. This is a slight hack, but does mirror what we used to do in CMake.
+		// Bazel itself has this repo root include that a normal "bazel" project would
+		// use. Bazel enforces only the right headers are available at build time via
+		// the sandbox anyways. This prevents jumping to a sandbox location for one of
+		// the headers in the redpanda repo.
+		if curr == "." && prev == "-iquote" {
+			args = append(args, "src/v", "-iquote")
+		}
+		// We're transfering the commands as though they were compiled in place in the workspace; no need for prefix maps, so we'll remove them. This eliminates some postentially confusing Bazel variables, though I think clangd just ignores them anyway.
+		// Some example:
+		// -fdebug-prefix-map=__BAZEL_EXECUTION_ROOT__=.
+		if strings.HasPrefix(curr, "-fdebug-prefix-map") {
+			continue
+		}
+		if prev == "-c" {
+			src = curr
+		}
+		args = append(args, curr)
 	}
-	args = slices.Clone(action.Arguments)
-	// We're transfering the commands as though they were compiled in place in the workspace; no need for prefix maps, so we'll remove them. This eliminates some postentially confusing Bazel variables, though I think clangd just ignores them anyway.
-	// Some example:
-	// -fdebug-prefix-map=__BAZEL_EXECUTION_ROOT__=.
-	args = slices.DeleteFunc(args, func(arg string) bool { return strings.HasPrefix(arg, "-fdebug-prefix-map") })
-	compileFlagIndex := slices.Index(args, "-c")
-	if compileFlagIndex == -1 {
+	if src == "" {
 		err = fmt.Errorf("unable to find source .cc file for targetId %d", action.TargetID)
 		return
 	}
-	src = args[compileFlagIndex+1]
 	return
 }
 
