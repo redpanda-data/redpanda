@@ -15,6 +15,17 @@ v_cc_library(
 )
 
 rp_test(
+  UNIT_TEST
+  GTEST
+  BINARY_NAME iceberg_compatibility
+  SOURCES
+    compatibility_test.cc
+  LIBRARIES
+    v::gtest_main
+    v::iceberg_test_utils
+)
+
+rp_test(
   FIXTURE_TEST
   GTEST
   USE_CWD

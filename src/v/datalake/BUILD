@@ -12,6 +12,7 @@ redpanda_cc_library(
         ":logger",
         ":table_definition",
         "//src/v/base",
+        "//src/v/iceberg:compatibility",
         "//src/v/iceberg:field_collecting_visitor",
         "//src/v/iceberg:schema",
         "//src/v/iceberg:transaction",
