@@ -35,3 +35,8 @@ alias(
     name = "rpk",
     actual = "//src/go/rpk/cmd/rpk:rpk",
 )
+
+alias(
+    name = "cc_gen",
+    actual = "//bazel/compilation_database_generator",
+)
