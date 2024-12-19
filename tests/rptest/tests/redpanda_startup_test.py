@@ -17,6 +17,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint, MetricSamples, RedpandaServiceBase
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import in_fips_environment
 
 
@@ -243,23 +244,18 @@ class RedpandaFIPSStartupLicenseTest(RedpandaFIPSStartupTestBase):
                              fips_mode=RedpandaServiceBase.FIPSMode.disabled)
 
         self.redpanda.set_environment({
-            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            '__REDPANDA_PERIODIC_REMINDER_INTERVAL_SEC':
             f'{self.LICENSE_CHECK_INTERVAL_SEC}',
             '__REDPANDA_DISABLE_BUILTIN_TRIAL_LICENSE':
             True
         })
 
-    def _license_nag_is_set(self) -> bool:
-        return self.redpanda.search_log_all(
-            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
-        )
-
     @ignore  # https://redpandadata.atlassian.net/browse/CORE-4283
     @cluster(num_nodes=3)
     def test_fips_license_nag(self):
-        wait_until(self._license_nag_is_set,
-                   timeout_sec=30,
-                   err_msg="Failed to set license nag interval")
+        wait_until_nag_is_set(
+            redpanda=self.redpanda,
+            check_interval_sec=self.LICENSE_CHECK_INTERVAL_SEC)
 
         self.logger.debug("Ensuring no license nag")
         sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)

@@ -39,6 +39,7 @@ from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception, inject_remote_script, search_logs_with_timeout
+from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
 
@@ -3839,23 +3840,18 @@ class SchemaRegistryLicenseTest(RedpandaTest):
                              schema_registry_config=SchemaRegistryConfig(),
                              **kwargs)
         self.redpanda.set_environment({
-            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            '__REDPANDA_PERIODIC_REMINDER_INTERVAL_SEC':
             f'{self.LICENSE_CHECK_INTERVAL_SEC}',
         })
-
-    def _license_nag_is_set(self):
-        return self.redpanda.search_log_all(
-            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
-        )
 
     @cluster(num_nodes=3)
     @skip_fips_mode  # See NOTE below
     @parametrize(mode=SchemaIdValidationMode.REDPANDA)
     @parametrize(mode=SchemaIdValidationMode.COMPAT)
     def test_license_nag(self, mode):
-        wait_until(self._license_nag_is_set,
-                   timeout_sec=30,
-                   err_msg="Failed to set license nag internal")
+        wait_until_nag_is_set(
+            redpanda=self.redpanda,
+            check_interval_sec=self.LICENSE_CHECK_INTERVAL_SEC)
 
         self.logger.debug("Ensuring no license nag")
         time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
@@ -3871,9 +3867,9 @@ class SchemaRegistryLicenseTest(RedpandaTest):
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             use_maintenance_mode=False)
 
-        wait_until(self._license_nag_is_set,
-                   timeout_sec=30,
-                   err_msg="Failed to set license nag internal")
+        wait_until_nag_is_set(
+            redpanda=self.redpanda,
+            check_interval_sec=self.LICENSE_CHECK_INTERVAL_SEC)
 
         self.logger.debug("Waiting for license nag")
         wait_until(self.redpanda.has_license_nag,

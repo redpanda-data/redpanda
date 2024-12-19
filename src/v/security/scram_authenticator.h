@@ -13,6 +13,7 @@
 #include "security/fwd.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
+#include "security/types.h"
 
 namespace security {
 
@@ -79,5 +80,8 @@ struct scram_sha512_authenticator {
     using auth = scram_authenticator<scram_sha512>;
     static constexpr const char* name = "SCRAM-SHA-512";
 };
+
+std::optional<std::string_view> validate_scram_credential(
+  const scram_credential& cred, const credential_password& password);
 
 } // namespace security

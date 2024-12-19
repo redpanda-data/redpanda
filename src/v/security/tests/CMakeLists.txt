@@ -19,6 +19,19 @@ rp_test(
 
 rp_test(
   UNIT_TEST
+  GTEST
+  BINARY_NAME test_authenticators
+  SOURCES
+    plain_authenticator_test.cc
+  LIBRARIES
+    v::security
+    v::gtest_main
+  LABELS kafka
+  ARGS "-- -c 1"
+)
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME test_kafka_security_single_thread
   SOURCES
     ephemeral_credential_store_test.cc
