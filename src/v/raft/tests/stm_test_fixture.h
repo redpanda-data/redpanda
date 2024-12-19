@@ -178,7 +178,7 @@ struct state_machine_fixture : raft_fixture {
           [b = std::move(builder).build()](
             raft_node_instance& leader_node) mutable {
               return leader_node.raft()->replicate(
-                model::make_memory_record_batch_reader(b.share()),
+                b.share(),
                 raft::replicate_options(raft::consistency_level::quorum_ack));
           });
     }

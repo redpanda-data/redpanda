@@ -813,28 +813,43 @@ consensus::chain_stages(replicate_stages stages) {
       });
 }
 
+ss::future<result<replicate_result>> consensus::replicate(
+  chunked_vector<model::record_batch> batches, replicate_options opts) {
+    return chain_stages(do_replicate({}, std::move(batches), opts));
+}
 ss::future<result<replicate_result>>
-consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
-    return chain_stages(do_replicate({}, std::move(rdr), opts));
+consensus::replicate(model::record_batch batch, replicate_options opts) {
+    chunked_vector<model::record_batch> batches;
+    batches.push_back(std::move(batch));
+    return chain_stages(do_replicate({}, std::move(batches), opts));
 }
 
 ss::future<result<replicate_result>> consensus::replicate(
   model::term_id expected_term,
-  model::record_batch_reader&& rdr,
+  model::record_batch batch,
   replicate_options opts) {
-    return chain_stages(do_replicate(expected_term, std::move(rdr), opts));
+    chunked_vector<model::record_batch> batches;
+    batches.push_back(std::move(batch));
+    return chain_stages(do_replicate(expected_term, std::move(batches), opts));
+}
+
+ss::future<result<replicate_result>> consensus::replicate(
+  model::term_id expected_term,
+  chunked_vector<model::record_batch> batches,
+  replicate_options opts) {
+    return chain_stages(do_replicate(expected_term, std::move(batches), opts));
 }
 
 replicate_stages consensus::replicate_in_stages(
-  model::record_batch_reader&& rdr, replicate_options opts) {
-    return do_replicate({}, std::move(rdr), opts);
+  chunked_vector<model::record_batch> batches, replicate_options opts) {
+    return do_replicate({}, std::move(batches), opts);
 }
 
 replicate_stages consensus::replicate_in_stages(
   model::term_id expected_term,
-  model::record_batch_reader&& rdr,
+  chunked_vector<model::record_batch> batches,
   replicate_options opts) {
-    return do_replicate(expected_term, std::move(rdr), opts);
+    return do_replicate(expected_term, std::move(batches), opts);
 }
 
 replicate_stages
@@ -851,7 +866,7 @@ wrap_stages_with_gate(ss::gate& gate, replicate_stages stages) {
 }
 replicate_stages consensus::do_replicate(
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader&& rdr,
+  chunked_vector<model::record_batch> batches,
   replicate_options opts) {
     // if gate is closed return fast, after this check we are certain that
     // `ss::with_gate` will succeed
@@ -881,7 +896,7 @@ replicate_stages consensus::do_replicate(
     }
 
     return wrap_stages_with_gate(
-      _bg, _batcher.replicate(expected_term, std::move(rdr), opts));
+      _bg, _batcher.replicate(expected_term, std::move(batches), opts));
 }
 
 ss::future<model::record_batch_reader>
