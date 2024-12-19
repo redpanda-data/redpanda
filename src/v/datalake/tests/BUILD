@@ -149,6 +149,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/cloud_storage/tests:s3_imposter_gtest",
         "//src/v/datalake:catalog_schema_manager",
+        "//src/v/iceberg:datatypes",
         "//src/v/iceberg:field_collecting_visitor",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:table_identifier",

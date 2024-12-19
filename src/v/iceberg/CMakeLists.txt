@@ -30,6 +30,7 @@ v_cc_library(
     ${avro_hdrs}
     action.cc
     catalog.cc
+    compatibility.cc
     datatypes.cc
     datatypes_json.cc
     filesystem_catalog.cc

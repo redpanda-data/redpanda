@@ -11,6 +11,7 @@
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "datalake/catalog_schema_manager.h"
+#include "iceberg/datatypes.h"
 #include "iceberg/field_collecting_visitor.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/table_identifier.h"
@@ -271,4 +272,64 @@ TEST_F(CatalogSchemaManagerTest, TestTypeMismatch) {
     auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
+}
+
+TEST_F(CatalogSchemaManagerTest, AcceptsValidTypePromotion) {
+    auto original_type = std::get<struct_type>(test_nested_schema_type());
+    original_type.fields.emplace_back(
+      nested_field::create(18, "some_field", field_required::yes, int_type{}));
+    create_table(original_type);
+
+    auto type = original_type.copy();
+    // int->long is a valid primitive type promotion
+    type.fields.back()->type = long_type{};
+    reset_field_ids(type);
+
+    // so schema_mgr should accept the new schema
+    auto ensure_res
+      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(ensure_res.has_error()) << ensure_res.error();
+
+    auto fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    ASSERT_FALSE(fill_res.has_error()) << fill_res.error();
+
+    auto loaded_table = load_table_schema(table_ident).get();
+    ASSERT_TRUE(loaded_table.has_value());
+    ASSERT_EQ(loaded_table.value().schema_struct, type);
+}
+
+TEST_F(CatalogSchemaManagerTest, RejectsInvalidTypePromotion) {
+    auto original_type = std::get<struct_type>(test_nested_schema_type());
+    original_type.fields.emplace_back(
+      nested_field::create(18, "some_field", field_required::yes, int_type{}));
+    create_table(original_type);
+
+    auto type = original_type.copy();
+    // int->string is not a valid primitive type promotion
+    type.fields.back()->type = string_type{};
+    reset_field_ids(type);
+
+    // so schema_mgr should reject the new schema
+    auto ensure_res
+      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    ASSERT_TRUE(ensure_res.has_error());
+    EXPECT_EQ(ensure_res.error(), schema_manager::errc::not_supported)
+      << ensure_res.error();
+
+    auto fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    ASSERT_TRUE(fill_res.has_error());
+    EXPECT_EQ(fill_res.error(), schema_manager::errc::not_supported)
+      << fill_res.error();
+
+    // check that the table still holds the original schema
+    reset_field_ids(original_type);
+    fill_res
+      = schema_mgr.get_registered_ids(model::topic{"foo"}, original_type).get();
+    ASSERT_FALSE(fill_res.has_error()) << fill_res.error();
+
+    auto loaded_table = load_table_schema(table_ident).get();
+    ASSERT_TRUE(loaded_table.has_value());
+    ASSERT_EQ(loaded_table.value().schema_struct, original_type);
 }

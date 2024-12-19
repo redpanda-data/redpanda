@@ -12,6 +12,8 @@
 #include "base/vlog.h"
 #include "datalake/logger.h"
 #include "datalake/table_definition.h"
+#include "iceberg/compatibility.h"
+#include "iceberg/datatypes.h"
 #include "iceberg/field_collecting_visitor.h"
 #include "iceberg/table_identifier.h"
 #include "iceberg/transaction.h"
@@ -36,10 +38,13 @@ schema_manager::errc log_and_convert_catalog_err(
 }
 enum class fill_errc {
     // There is a mismatch in a field's type, name, or required.
-    mismatch,
+    invalid_schema,
     // We couldn't fill all the columns, but the ones we could all matched.
-    incomplete,
+    // Or one or more columns were type-promoted (legally), so we'll need to
+    // push an update into the catalog.
+    schema_evolution_needed,
 };
+
 // Performs a simultaneous, depth-first iteration through fields of the two
 // schemas, filling dest's field IDs with those from the source. Returns
 // successfully if all the field IDs in the destination type are filled.
@@ -56,23 +61,28 @@ fill_field_ids(iceberg::struct_type& dest, const iceberg::struct_type& source) {
     for (auto& f : std::ranges::reverse_view(source.fields)) {
         source_stack.emplace_back(f.get());
     }
+    bool has_primitive_type_promotion{false};
     while (!source_stack.empty() && !dest_stack.empty()) {
         auto* dst = dest_stack.back();
         auto* src = source_stack.back();
-        if (
-          dst->name != src->name || dst->required != src->required
-          || dst->type.index() != src->type.index()) {
-            return fill_errc::mismatch;
+        if (auto compatibility = check_types(src->type, dst->type);
+            dst->name != src->name || dst->required != src->required
+            || compatibility.has_error()) {
+            return fill_errc::invalid_schema;
+        } else if (compatibility.value() == type_promoted::yes) {
+            has_primitive_type_promotion = true;
         }
+
         dst->id = src->id;
         dest_stack.pop_back();
         source_stack.pop_back();
         std::visit(reverse_field_collecting_visitor(dest_stack), dst->type);
         std::visit(reverse_field_collecting_visitor(source_stack), src->type);
     }
-    if (!dest_stack.empty()) {
+
+    if (!dest_stack.empty() || has_primitive_type_promotion) {
         // There are more fields to fill.
-        return fill_errc::incomplete;
+        return fill_errc::schema_evolution_needed;
     }
     // We successfully filled all the fields in the destination.
     return std::nullopt;
@@ -212,10 +222,10 @@ catalog_schema_manager::get_ids_from_table_meta(
     auto fill_res = fill_field_ids(dest_type, schema_iter->schema_struct);
     if (fill_res.has_error()) {
         switch (fill_res.error()) {
-        case fill_errc::mismatch:
+        case fill_errc::invalid_schema:
             vlog(datalake_log.warn, "Type mismatch with table {}", table_id);
             return errc::not_supported;
-        case fill_errc::incomplete:
+        case fill_errc::schema_evolution_needed:
             return false;
         }
     }

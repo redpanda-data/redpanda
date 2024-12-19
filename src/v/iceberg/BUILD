@@ -121,6 +121,25 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "compatibility",
+    srcs = [
+        "compatibility.cc",
+    ],
+    hdrs = [
+        "compatibility.h",
+    ],
+    include_prefix = "iceberg",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":datatypes",
+        "//src/v/base",
+        "@abseil-cpp//absl/container:btree",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "datatypes_json",
     srcs = [
         "datatypes_json.cc",
