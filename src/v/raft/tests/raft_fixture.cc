@@ -28,6 +28,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/heartbeats.h"
 #include "raft/state_machine_manager.h"
+#include "raft/tests/failure_injectable_log.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -85,13 +86,29 @@ ss::future<iobuf> channel::exchange(msg_type type, iobuf request) {
 }
 bool channel::is_valid() const { return _node && _node->raft() != nullptr; }
 
-ss::lw_shared_ptr<consensus> channel::raft() {
+raft::service<fixture_group_manager, fixture_shard_manager>&
+channel::get_service() {
     if (!_node || _node->raft() == nullptr) {
         throw std::runtime_error("no raft group");
     }
-    return _node->raft();
+    return _node->get_service();
 }
 
+namespace {
+struct test_ctx : rpc::streaming_context {
+    test_ctx()
+      : _sem(std::numeric_limits<size_t>::max(), "test_ctx_sem") {}
+    ss::future<ssx::semaphore_units> reserve_memory(size_t) final {
+        return ss::get_units(_sem, 1);
+    }
+    const rpc::header& get_header() const final { return _header; };
+
+    void signal_body_parse() final {}
+    void body_parse_exception(std::exception_ptr) final {}
+    ssx::named_semaphore<> _sem;
+    rpc::header _header{};
+};
+} // namespace
 ss::future<> channel::dispatch_loop() {
     while (!_as.abort_requested()) {
         co_await _new_messages.wait([this] { return !_messages.empty(); });
@@ -100,107 +117,90 @@ ss::future<> channel::dispatch_loop() {
         }
         auto msg = std::move(_messages.front());
         _messages.pop_front();
-        iobuf_parser req_parser(std::move(msg.req_data));
-
-        try {
-            switch (msg.type) {
-            case msg_type::vote: {
-                auto req = co_await serde::read_async<vote_request>(req_parser);
-                auto resp = co_await raft()->vote(std::move(req));
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(resp));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::append_entries: {
-                auto req = co_await serde::read_async<append_entries_request>(
-                  req_parser);
-                auto resp = co_await raft()->append_entries(std::move(req));
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(resp));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::heartbeat: {
-                auto req = co_await serde::read_async<heartbeat_request>(
-                  req_parser);
-                heartbeat_reply reply;
-                for (auto& hb : req.heartbeats) {
-                    auto resp = co_await raft()->append_entries(
-                      append_entries_request(
-                        hb.node_id,
-                        hb.meta,
-                        model::make_memory_record_batch_reader(
-                          ss::circular_buffer<model::record_batch>{}),
-                        0,
-                        flush_after_append::no));
-                    reply.meta.push_back(resp);
-                }
-
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(reply));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::heartbeat_v2: {
-                auto req = co_await serde::read_async<heartbeat_request_v2>(
-                  req_parser);
-                heartbeat_reply_v2 reply(raft()->self().id(), req.source());
-
-                for (auto& hb : req.full_heartbeats()) {
-                    auto resp = co_await raft()->full_heartbeat(
-                      hb.group, req.source(), req.target(), hb.data);
-
-                    reply.add(resp.group, resp.result, resp.data);
-                }
-                req.for_each_lw_heartbeat(
-                  [this, &req, &reply](raft::group_id g) {
-                      auto result = raft()->lightweight_heartbeat(
-                        req.source(), req.target());
-                      reply.add(g, result);
-                  });
-
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(reply));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::install_snapshot: {
-                auto req = co_await serde::read_async<install_snapshot_request>(
-                  req_parser);
-                auto resp = co_await raft()->install_snapshot(std::move(req));
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(resp));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::timeout_now: {
-                auto req = co_await serde::read_async<timeout_now_request>(
-                  req_parser);
-                auto resp = co_await raft()->timeout_now(std::move(req));
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(resp));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            case msg_type::transfer_leadership: {
-                auto req
-                  = co_await serde::read_async<transfer_leadership_request>(
-                    req_parser);
-                auto resp = co_await raft()->transfer_leadership(
-                  std::move(req));
-                iobuf resp_buf;
-                co_await serde::write_async(resp_buf, std::move(resp));
-                msg.resp_data.set_value(std::move(resp_buf));
-                break;
-            }
-            }
-        } catch (...) {
-            msg.resp_data.set_to_current_exception();
-        }
+        ssx::spawn_with_gate(_gate, [this, msg = std::move(msg)]() mutable {
+            return do_dispatch_message(std::move(msg));
+        });
     }
 }
+ss::future<> channel::do_dispatch_message(msg msg) {
+    try {
+        iobuf_parser req_parser(std::move(msg.req_data));
+        test_ctx ctx{};
+        switch (msg.type) {
+        case msg_type::vote: {
+            auto req = co_await serde::read_async<vote_request>(req_parser);
+            auto resp = co_await get_service().vote(std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::append_entries: {
+            auto req = co_await serde::read_async<append_entries_request>(
+              req_parser);
+            auto resp = co_await get_service().append_entries(
+              std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::heartbeat: {
+            auto req = co_await serde::read_async<heartbeat_request>(
+              req_parser);
 
+            auto reply = co_await get_service().heartbeat(std::move(req), ctx);
+
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(reply));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::heartbeat_v2: {
+            auto req = co_await serde::read_async<heartbeat_request_v2>(
+              req_parser);
+            auto reply = co_await get_service().heartbeat_v2(
+              std::move(req), ctx);
+
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(reply));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::install_snapshot: {
+            auto req = co_await serde::read_async<install_snapshot_request>(
+              req_parser);
+            auto resp = co_await get_service().install_snapshot(
+              std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::timeout_now: {
+            auto req = co_await serde::read_async<timeout_now_request>(
+              req_parser);
+            auto resp = co_await get_service().timeout_now(std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        case msg_type::transfer_leadership: {
+            auto req = co_await serde::read_async<transfer_leadership_request>(
+              req_parser);
+            auto resp = co_await get_service().transfer_leadership(
+              std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
+        }
+    } catch (...) {
+        msg.resp_data.set_to_current_exception();
+    }
+}
 in_memory_test_protocol::in_memory_test_protocol(
   raft_node_map& node_map, prefix_logger& logger)
   : _nodes(node_map)
@@ -257,8 +257,8 @@ static constexpr msg_type map_msg_type() {
 }
 
 template<typename ReqT, typename RespT>
-ss::future<result<RespT>>
-in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
+ss::future<result<RespT>> in_memory_test_protocol::dispatch(
+  model::node_id id, ReqT req, rpc::client_opts opts) {
     _gate.hold();
     auto it = _channels.find(id);
     if (it == _channels.end()) {
@@ -288,54 +288,61 @@ in_memory_test_protocol::dispatch(model::node_id id, ReqT req) {
     }
 
     try {
-        auto resp = co_await node_channel.exchange(msg_type, std::move(buffer));
+        auto f = node_channel.exchange(msg_type, std::move(buffer));
+        opts.resource_units.release();
+        auto resp = co_await ss::with_timeout(
+          opts.timeout.timeout_at(), std::move(f));
         iobuf_parser parser(std::move(resp));
         co_return co_await serde::read_async<RespT>(parser);
+    } catch (const ss::timed_out_error&) {
+        co_return rpc::errc::client_request_timeout;
     } catch (const seastar::gate_closed_exception&) {
         co_return errc::shutting_down;
     }
 }
 
 ss::future<result<vote_reply>> in_memory_test_protocol::vote(
-  model::node_id id, vote_request req, rpc::client_opts) {
-    return dispatch<vote_request, vote_reply>(id, req);
+  model::node_id id, vote_request req, rpc::client_opts opts) {
+    return dispatch<vote_request, vote_reply>(id, req, std::move(opts));
 };
 
 ss::future<result<append_entries_reply>>
 in_memory_test_protocol::append_entries(
-  model::node_id id, append_entries_request req, rpc::client_opts) {
+  model::node_id id, append_entries_request req, rpc::client_opts opts) {
     return dispatch<append_entries_request, append_entries_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 };
 
 ss::future<result<heartbeat_reply>> in_memory_test_protocol::heartbeat(
-  model::node_id id, heartbeat_request req, rpc::client_opts) {
-    return dispatch<heartbeat_request, heartbeat_reply>(id, std::move(req));
+  model::node_id id, heartbeat_request req, rpc::client_opts opts) {
+    return dispatch<heartbeat_request, heartbeat_reply>(
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<heartbeat_reply_v2>> in_memory_test_protocol::heartbeat_v2(
-  model::node_id id, heartbeat_request_v2 req, rpc::client_opts) {
+  model::node_id id, heartbeat_request_v2 req, rpc::client_opts opts) {
     return dispatch<heartbeat_request_v2, heartbeat_reply_v2>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<install_snapshot_reply>>
 in_memory_test_protocol::install_snapshot(
-  model::node_id id, install_snapshot_request req, rpc::client_opts) {
+  model::node_id id, install_snapshot_request req, rpc::client_opts opts) {
     return dispatch<install_snapshot_request, install_snapshot_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<timeout_now_reply>> in_memory_test_protocol::timeout_now(
-  model::node_id id, timeout_now_request req, rpc::client_opts) {
-    return dispatch<timeout_now_request, timeout_now_reply>(id, std::move(req));
+  model::node_id id, timeout_now_request req, rpc::client_opts opts) {
+    return dispatch<timeout_now_request, timeout_now_reply>(
+      id, std::move(req), std::move(opts));
 }
 
 ss::future<result<transfer_leadership_reply>>
 in_memory_test_protocol::transfer_leadership(
-  model::node_id id, transfer_leadership_request req, rpc::client_opts) {
+  model::node_id id, transfer_leadership_request req, rpc::client_opts opts) {
     return dispatch<transfer_leadership_request, transfer_leadership_reply>(
-      id, std::move(req));
+      id, std::move(req), std::move(opts));
 }
 
 raft_node_instance::raft_node_instance(
@@ -395,12 +402,20 @@ raft_node_instance::raft_node_instance(
   , _enable_longest_log_detection(enable_longest_log_detection)
   , _election_timeout(std::move(election_timeout))
   , _heartbeat_interval(std::move(heartbeat_interval))
-  , _with_offset_translation(with_offset_translation) {
+  , _with_offset_translation(with_offset_translation)
+  , _service(
+      ss::default_scheduling_group(),
+      ss::default_smp_service_group(),
+      std::ref(_group_manager),
+      _shard_manager,
+      _heartbeat_interval(),
+      _id) {
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
 ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
+    co_await _group_manager.start_single();
     _hb_manager = std::make_unique<heartbeat_manager>(
       _heartbeat_interval,
       consensus_client_protocol(_buffered_protocol),
@@ -433,13 +448,13 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       test_group,
       _with_offset_translation ? model::offset_translator_batch_types()
                                : std::vector<model::record_batch_type>{});
-
+    _f_log = ss::make_shared<raft::failure_injectable_log>(std::move(log));
     _raft = ss::make_lw_shared<consensus>(
       _id,
       test_group,
       raft::group_configuration(std::move(initial_nodes), _revision),
       timeout_jitter(_election_timeout),
-      log,
+      _f_log,
       scheduling_config(
         ss::default_scheduling_group(), ss::default_priority_class()),
       config::mock_binding<std::chrono::milliseconds>(1s),
@@ -451,6 +466,7 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       _recovery_mem_quota,
       _recovery_scheduler,
       _features.local());
+    _group_manager.local().raft = _raft;
     co_await _hb_manager->register_group(_raft);
 }
 
@@ -474,6 +490,8 @@ ss::future<> raft_node_instance::stop() {
         vlog(_logger.debug, "stopping protocol");
         co_await _buffered_protocol->stop();
         co_await _protocol->stop();
+        // release f_log pointer before stopping raft
+        _f_log = nullptr;
         vlog(_logger.debug, "stopping raft");
         co_await _raft->stop();
         vlog(_logger.debug, "stopping recovery throttle");
@@ -484,6 +502,10 @@ ss::future<> raft_node_instance::stop() {
         co_await _hb_manager->stop();
         vlog(_logger.debug, "stopping feature table");
         _raft = nullptr;
+
+        // group manager must be stopped before storage as consensus stores the
+        // units of the storage resources semaphore.
+        co_await _group_manager.stop();
         vlog(_logger.debug, "stopping storage");
         co_await _storage.stop();
     }

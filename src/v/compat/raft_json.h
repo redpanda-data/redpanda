@@ -106,7 +106,7 @@ inline void read_value(const json::Value& rd, raft::append_entries_reply& out) {
         obj.result = raft::reply_result::group_unavailable;
         break;
     case 3:
-        obj.result = raft::reply_result::timeout;
+        obj.result = raft::reply_result::follower_busy;
         break;
     default:
         vassert(false, "invalid result {}", result);
