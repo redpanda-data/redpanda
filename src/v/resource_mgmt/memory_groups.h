@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <seastar/util/log.hh>
+
 #include <cstddef>
 #include <optional>
 
@@ -91,6 +93,8 @@ public:
 
     // Share of the total memory reserved for partitions
     double partitions_max_memory_share() const;
+
+    void log_memory_group_allocations(seastar::logger&);
 
 private:
     /**

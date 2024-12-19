@@ -83,6 +83,9 @@ redpanda_cc_library(
     hdrs = [
         "memory_groups.h",
     ],
+    implementation_deps = [
+        "//src/v/utils:human",
+    ],
     include_prefix = "resource_mgmt",
     visibility = ["//visibility:public"],
     deps = [

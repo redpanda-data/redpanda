@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "utils/human.h"
 
 #include <seastar/core/memory.hh>
 
@@ -138,6 +139,26 @@ size_t system_memory_groups::subsystem_memory() const {
 
 size_t system_memory_groups::total_memory() const {
     return _total_system_memory;
+}
+
+void system_memory_groups::log_memory_group_allocations(seastar::logger& log) {
+    log.info(
+      "Per shard memory group allocations: total memory: {}, "
+      "total memory minus pre-share reservations: {}, chunk cache: {}, kafka: "
+      "{}, rpc: {}, recovery: {}, "
+      "tiered storage: {}, data transforms: {}, compaction: {}, datalake: {}, "
+      "partitions: {}",
+      human::bytes(ss::memory::stats().total_memory()),
+      human::bytes(total_memory()),
+      human::bytes(chunk_cache_max_memory()),
+      human::bytes(kafka_total_memory()),
+      human::bytes(rpc_total_memory()),
+      human::bytes(recovery_max_memory()),
+      human::bytes(tiered_storage_max_memory()),
+      human::bytes(data_transforms_max_memory()),
+      human::bytes(compaction_reserved_memory()),
+      human::bytes(datalake_max_memory()),
+      human::bytes(partitions_max_memory()));
 }
 
 std::optional<system_memory_groups>& memory_groups_holder() {
