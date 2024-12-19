@@ -442,7 +442,7 @@ read_result::memory_units_t reserve_memory_units(
 static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
-  const std::vector<op_context::response_placeholder_ptr>& responses,
+  const chunked_vector<op_context::response_placeholder_ptr>& responses,
   op_context::latency_point start_time,
   bool record_latency = true) {
     auto range = boost::irange<size_t>(0, results.size());
@@ -553,7 +553,7 @@ static void fill_fetch_responses(
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
-  std::vector<ntp_fetch_config> ntp_fetch_configs,
+  chunked_vector<ntp_fetch_config> ntp_fetch_configs,
   read_distribution_probe& read_probe,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline,
@@ -721,7 +721,7 @@ public:
         std::optional<model::timeout_clock::time_point> deadline;
         // The fetch sub-requests of partitions local to the shard this worker
         // is running on.
-        std::vector<ntp_fetch_config> requests;
+        chunked_vector<ntp_fetch_config> requests;
 
         // References to services local to the shard this worker is running on.
         // They are protected from deletion by the coordinator.
@@ -789,7 +789,7 @@ private:
     };
 
     ss::future<query_results>
-    query_requests(std::vector<ntp_fetch_config> requests) {
+    query_requests(chunked_vector<ntp_fetch_config> requests) {
         // The last visible indexes need to be populated before partitions
         // are read. If they are populated afterwards then the
         // last_visible_index could be updated after the partition is read,
@@ -910,10 +910,10 @@ private:
         size_t total_size{0};
 
         for (;;) {
-            std::vector<ntp_fetch_config> requests;
+            chunked_vector<ntp_fetch_config> requests;
 
             if (first_run) {
-                requests = _ctx.requests;
+                requests = _ctx.requests.copy();
             } else {
                 requests_map.clear();
 
@@ -1191,7 +1191,7 @@ private:
              shard = fetch.shard,
              min_fetch_bytes,
              foreign_read,
-             configs = fetch.requests,
+             configs = fetch.requests.copy(),
              &octx](cluster::partition_manager& mgr) mutable
             -> ss::future<fetch_worker::worker_result> {
                 // Although this and octx are captured by reference across
