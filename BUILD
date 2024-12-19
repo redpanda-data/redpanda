@@ -1,7 +1,6 @@
 # Increment to trigger bazel build in CI: 0
 
 load("@gazelle//:def.bzl", "gazelle", "gazelle_test")
-load("@hedron_compile_commands//:refresh_compile_commands.bzl", "refresh_compile_commands")
 
 # gazelle:prefix github.com/redpanda-data/redpanda
 # Exclude cmake based setup
@@ -37,20 +36,7 @@ alias(
     actual = "//src/go/rpk/cmd/rpk:rpk",
 )
 
-refresh_compile_commands(
-    name = "refresh_compile_commands_clang_19",
-    exclude_external_sources = True,
-    exclude_headers = "all",
-    targets = {
-        "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-19",
-    },
-)
-
-refresh_compile_commands(
-    name = "refresh_compile_commands_clang_18",
-    exclude_external_sources = True,
-    exclude_headers = "all",
-    targets = {
-        "//...": "--features=-parse_headers --host_features=-parse_headers --config=system-clang-18",
-    },
+alias(
+    name = "cc_gen",
+    actual = "//bazel/compilation_database_generator",
 )
