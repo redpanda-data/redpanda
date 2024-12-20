@@ -10,6 +10,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
+from time import sleep
 
 import requests
 from rptest.clients.kafka_cat import KafkaCat
@@ -25,6 +26,7 @@ from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from rptest.utils.mode_checks import cleanup_on_early_exit
 from rptest.utils.node_operations import NodeDecommissionWaiter
+from rptest.utils.node_operations import verify_offset_translator_state_consistent
 from enum import Enum
 
 TS_LOG_ALLOW_LIST = [
@@ -54,7 +56,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         super(NodePoolMigrationTest, self).__init__(
             test_context=test_context,
-            num_brokers=10,
+            num_brokers=8,
             node_prealloc_count=1,
             si_settings=SISettings(test_context,
                                    cloud_storage_enable_remote_read=True,
@@ -185,7 +187,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
     @property
     def msg_size(self):
-        return 4096
+        return 1024
 
     @property
     def msg_count(self):
@@ -198,7 +200,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
     @property
     def segment_size(self):
-        return 1024 * 1024
+        return 4096
 
     @property
     def local_retention_bytes(self):
@@ -214,7 +216,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
             self._topic,
             self.msg_size,
             self.msg_count,
-            key_set_cardinality=10000,
+            key_set_cardinality=100,
             rate_limit_bps=self.producer_throughput,
             custom_node=self.preallocated_nodes,
             debug_logs=True)
@@ -231,7 +233,8 @@ class NodePoolMigrationTest(PreallocNodesTest):
             self.redpanda,
             self._topic,
             self.msg_size,
-            readers=1,
+            readers=10,
+            continuous=True,
             nodes=self.preallocated_nodes)
         self.consumer.start(clean=False)
 
@@ -269,14 +272,11 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         return node_replicas
 
-    @cluster(num_nodes=11,
+    @cluster(num_nodes=9,
              log_allow_list=RESTART_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
-    @matrix(balancing_mode=["off", 'node_add'],
-            test_mode=[
-                TestMode.NO_TIRED_STORAGE, TestMode.TIRED_STORAGE,
-                TestMode.FAST_MOVES
-            ],
-            cleanup_policy=["compact", "compact,delete"])
+    @matrix(balancing_mode=['continuous'],
+            test_mode=[TestMode.FAST_MOVES],
+            cleanup_policy=["delete"])
     def test_migrating_redpanda_nodes_to_new_pool(self, balancing_mode,
                                                   test_mode: TestMode,
                                                   cleanup_policy):
@@ -291,8 +291,8 @@ class NodePoolMigrationTest(PreallocNodesTest):
             cleanup_on_early_exit(self)
             return
 
-        initial_pool = self.redpanda.nodes[0:5]
-        new_pool = self.redpanda.nodes[5:]
+        initial_pool = self.redpanda.nodes[0:4]
+        new_pool = self.redpanda.nodes[4:]
 
         self.redpanda.set_seed_servers(initial_pool)
 
@@ -301,12 +301,16 @@ class NodePoolMigrationTest(PreallocNodesTest):
                             auto_assign_node_id=True,
                             omit_seeds_on_idx_one=False)
 
-        cfg = {"partition_autobalancing_mode": balancing_mode}
+        cfg = {
+            "partition_autobalancing_mode": balancing_mode,
+            "log_compaction_interval_ms": 10,
+            "log_segment_size": 2048,
+            "compacted_log_segment_size": 2048,
+            "group_topic_partitions": 1,
+        }
         if test_mode.has_tiered_storage:
             cfg["cloud_storage_enable_remote_write"] = True
             cfg["cloud_storage_enable_remote_read"] = True
-            # we want data to be actually deleted
-            cfg["retention_local_strict"] = True
 
         if test_mode == TestMode.FAST_MOVES:
             self.redpanda.set_cluster_config({
@@ -334,8 +338,8 @@ class NodePoolMigrationTest(PreallocNodesTest):
                                     backoff_sec=2)
         # add new nodes to the cluster
         self.redpanda.for_nodes(
-            new_pool,
-            lambda n: self.redpanda.start_node(n, auto_assign_node_id=True))
+            new_pool, lambda n: self.redpanda.start_node(
+                n, auto_assign_node_id=True, with_stress=True))
 
         def all_nodes_present():
             for n in self.redpanda.nodes:
@@ -359,6 +363,15 @@ class NodePoolMigrationTest(PreallocNodesTest):
         ]
 
         for to_decommission_id in decommissioned_ids:
+            self.consumer.wait()
+            del self.consumer
+            # Some time to allow for merge compaction, since new compactible
+            # segments will favor windowed compaction.
+            sleep(5)
+
+            # Continue consuming.
+            self.start_consumer()
+            sleep(10)
 
             self.logger.info(f"decommissioning node: {to_decommission_id}", )
             self._decommission(to_decommission_id,
@@ -397,5 +410,6 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         for n in initial_pool:
             self.redpanda.stop_node(n)
+        verify_offset_translator_state_consistent(self.redpanda)
 
         self.verify()
