@@ -212,6 +212,7 @@ class TestRunner():
         # fails.  Locally, use INFO to improve runtime: the developer can
         # selectively re-run failing tests with more logging if needed.
         log_level = 'trace' if self.ci else 'info'
+        log_level = 'trace'
 
         def has_flag(flag, *synonyms):
             """Check if the args list already contains a particularly CLI flag,
