@@ -836,3 +836,29 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
     ASSERT_LE_CORO(election_time * 1.0, transfer_time * tolerance_multiplier);
     ASSERT_GE_CORO(election_time * 1.0, transfer_time / tolerance_multiplier);
 }
+
+TEST_F_CORO(raft_fixture, test_no_stepdown_on_append_entries_timeout) {
+    config::shard_local_cfg().replicate_append_timeout_ms.set_value(1s);
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    for (auto& [id, n] : nodes()) {
+        if (id != leader_id) {
+            n->f_injectable_log()->set_append_delay([]() { return 5s; });
+        }
+    }
+
+    auto& leader_node = node(leader_id);
+    auto term_before = leader_node.raft()->term();
+    auto r = co_await leader_node.raft()->replicate(
+      make_batches(1, 10, 128),
+      replicate_options(consistency_level::quorum_ack, 10s));
+    ASSERT_FALSE_CORO(r.has_error());
+    for (auto& [_, n] : nodes()) {
+        n->f_injectable_log()->set_append_delay(std::nullopt);
+    }
+
+    leader_id = co_await wait_for_leader(10s);
+    auto& new_leader_node = node(leader_id);
+    ASSERT_EQ_CORO(term_before, new_leader_node.raft()->term());
+    ASSERT_TRUE_CORO(new_leader_node.raft()->is_leader());
+}

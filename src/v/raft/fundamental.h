@@ -32,7 +32,7 @@ enum class reply_result : uint8_t {
     success,
     failure,
     group_unavailable,
-    timeout
+    follower_busy
 };
 
 /**
