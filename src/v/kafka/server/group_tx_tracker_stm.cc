@@ -52,12 +52,30 @@ ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
 
 model::offset group_tx_tracker_stm::max_collectible_offset() {
     auto result = last_applied_offset();
-    for (const auto& [_, group_state] : _all_txs) {
+    for (const auto& [gid, group_state] : _all_txs) {
         if (!group_state.begin_offsets.empty()) {
-            result = std::min(
-              result, model::prev_offset(*group_state.begin_offsets.begin()));
+            auto group_least_begin = *group_state.begin_offsets.begin();
+            result = std::min(result, model::prev_offset(group_least_begin));
+            vlog(
+              klog.trace,
+              "[{}] group: {}, earliest tx begin offset: {}",
+              _raft->ntp(),
+              gid,
+              group_least_begin);
+            if (klog.is_enabled(ss::log_level::trace)) {
+                for (auto& [pid, offset] : group_state.producer_to_begin) {
+                    vlog(
+                      klog.trace,
+                      "[{}] group: {}, producer: {}, begin: {}",
+                      _raft->ntp(),
+                      gid,
+                      pid,
+                      offset);
+                }
+            }
         }
     }
+
     return result;
 }
 
