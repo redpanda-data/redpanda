@@ -48,8 +48,7 @@ This command prints detailed information about topics. The output contains
 up to three sections: a summary of the topic, the topic configs, and a detailed
 partitions section. By default, the summary and configs sections are printed.
 
-Using the --format flag with either JSON or YAML will default in printing
-all the topic information (--all).
+Using the --format flag with either JSON or YAML prints all the topic information.
 
 The --regex flag (-r) parses arguments as regular expressions
 and describes topics that match any of the expressions.
