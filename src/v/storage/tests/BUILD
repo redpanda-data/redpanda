@@ -541,3 +541,25 @@ redpanda_cc_btest(
         "@seastar",
     ],
 )
+
+redpanda_cc_btest(
+    name = "compaction_fuzz_test",
+    timeout = "short",
+    srcs = [
+        "compaction_fuzz_test.cc",
+    ],
+    deps = [
+        ":disk_log_builder",
+        "//src/v/base",
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/random:generators",
+        "//src/v/storage",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:btree",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
