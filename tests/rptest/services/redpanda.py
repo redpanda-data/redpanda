@@ -3189,7 +3189,8 @@ class RedpandaService(RedpandaServiceBase):
                    omit_seeds_on_idx_one: bool = True,
                    skip_readiness_check: bool = False,
                    node_id_override: int | None = None,
-                   extra_cli: list[str] = []):
+                   extra_cli: list[str] = [],
+                   with_stress=False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -3248,6 +3249,15 @@ class RedpandaService(RedpandaServiceBase):
         self.start_service(node, start_rp)
         if not expect_fail:
             self._started.add(node)
+
+        if with_stress:
+
+            def start_stress_fiber(node):
+                count, min_ms, max_ms = self.get_stress_fiber_params()
+                self.start_stress_fiber(node, count, min_ms, max_ms)
+
+            self.logger.info("Starting stress fiber for node")
+            start_stress_fiber(node)
 
     def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
