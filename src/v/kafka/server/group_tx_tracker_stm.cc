@@ -118,14 +118,9 @@ ss::future<> group_tx_tracker_stm::handle_raft_data(model::record_batch) {
 }
 
 ss::future<> group_tx_tracker_stm::handle_tx_offsets(
-  model::record_batch_header header, kafka::group_tx::offsets_metadata data) {
-    // in case the fence got truncated, try to start the transaction from
-    // this point on. This is not possible today but may help if delete
-    // retention is implemented for consumer topics.
-    maybe_add_tx_begin_offset(
-      std::move(data.group_id),
-      model::producer_identity{header.producer_id, header.producer_epoch},
-      header.base_offset);
+  model::record_batch_header, kafka::group_tx::offsets_metadata) {
+    // Transaction boundaries are determined by fence/commit or abort
+    // batches
     return ss::now();
 }
 

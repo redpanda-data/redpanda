@@ -30,7 +30,7 @@ void group_stm::update_tx_offset(
       it == _producers.end() || it->second.tx == nullptr
       || offset_md.pid.epoch != it->second.epoch) {
         vlog(
-          cluster::txlog.warn,
+          cluster::txlog.debug,
           "producer {} not found, skipping offsets update",
           offset_md.pid);
         return;
@@ -57,7 +57,7 @@ void group_stm::commit(model::producer_identity pid) {
       || pid.epoch != it->second.epoch) {
         // missing prepare may happen when the consumer log gets truncated
         vlog(
-          cluster::txlog.warn,
+          cluster::txlog.debug,
           "unable to find ongoing transaction for producer: {}, skipping "
           "commit",
           pid);
