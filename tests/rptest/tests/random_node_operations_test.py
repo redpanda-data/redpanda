@@ -26,7 +26,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsum
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, LoggingConfig, PandaproxyConfig, SISettings, SchemaRegistryConfig, get_cloud_storage_type
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode, skip_fips_mode
-from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
+from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload, verify_offset_translator_state_consistent
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.tests.datalake.utils import supported_storage_types
@@ -58,6 +58,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 # set disk timeout to value greater than max suspend time
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
+                "compacted_log_segment_size": 1024 * 1024,
+                "log_segment_size": 2 * 1024 * 1024,
             },
             # 2 nodes for kgo producer/consumer workloads
             node_prealloc_count=3,
@@ -593,6 +595,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 err_msg="Error waiting for cluster to report consistent version"
             )
 
+        verify_offset_translator_state_consistent(self.redpanda)
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():
