@@ -787,6 +787,9 @@ private:
     }
 
     void try_updating_configuration_version(group_configuration& cfg);
+
+    void validate_offset_translator_delta(
+      const protocol_metadata&, const storage::offset_stats& lstats);
     // args
     vnode _self;
     raft::group_id _group;
