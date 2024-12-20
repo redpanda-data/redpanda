@@ -613,6 +613,24 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "compatibility_test",
+    timeout = "short",
+    srcs = [
+        "compatibility_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/iceberg:compatibility",
+        "//src/v/iceberg:datatypes",
+        "//src/v/iceberg:field_collecting_visitor",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_bench(
     name = "uri_bench",
     timeout = "short",
