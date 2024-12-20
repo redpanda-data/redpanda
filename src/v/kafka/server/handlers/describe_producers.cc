@@ -17,6 +17,8 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/describe_producers_response.h"
+#include "kafka/server/group_manager.h"
+#include "kafka/server/group_router.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -41,8 +43,8 @@ make_error_response(model::partition_id id, kafka::error_code ec) {
     return partition_response{.partition_index = id, .error_code = ec};
 }
 
-partition_response
-do_get_producers_for_partition(cluster::partition_manager& pm, model::ktp ntp) {
+partition_response do_get_producers_for_data_partition(
+  cluster::partition_manager& pm, model::ktp ntp) {
     auto partition = pm.get(ntp);
     if (!partition || !partition->is_leader()) {
         return make_error_response(
@@ -97,9 +99,16 @@ get_producers_for_partition(request_context& ctx, model::ktp ntp) {
           ntp.get_partition(), kafka::error_code::not_leader_for_partition);
     }
 
+    if (ntp.get_topic() == model::kafka_consumer_offsets_topic) {
+        co_return co_await ctx.groups().get_group_manager().invoke_on(
+          *shard, [ktp = std::move(ntp)](kafka::group_manager& gm) mutable {
+              return gm.describe_partition_producers(ktp.to_ntp());
+          });
+    }
+
     co_return co_await ctx.partition_manager().invoke_on(
       *shard, [ntp = std::move(ntp)](cluster::partition_manager& pm) mutable {
-          return do_get_producers_for_partition(pm, std::move(ntp));
+          return do_get_producers_for_data_partition(pm, std::move(ntp));
       });
 }
 

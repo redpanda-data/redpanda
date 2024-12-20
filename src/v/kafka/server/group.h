@@ -204,6 +204,8 @@ public:
         std::unique_ptr<ongoing_transaction> transaction;
     };
 
+    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
+
     struct offset_metadata {
         model::offset log_offset;
         model::offset offset;
@@ -661,6 +663,8 @@ public:
         }
     }
 
+    const producers_map& producers() const { return _producers; }
+
     // helper for the kafka api: describe groups
     described_group describe() const;
 
@@ -717,7 +721,6 @@ public:
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
-    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 

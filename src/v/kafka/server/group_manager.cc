@@ -29,6 +29,7 @@
 #include "kafka/server/group.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
+#include "kafka/server/group_tx_tracker_stm.h"
 #include "kafka/server/logger.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -1618,6 +1619,94 @@ group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
     }
 
     return group->describe();
+}
+
+partition_response
+group_manager::describe_partition_producers(const model::ntp& ntp) {
+    vlog(klog.debug, "describe producers: {}", ntp);
+    partition_response response;
+    response.partition_index = ntp.tp.partition;
+    auto it = _partitions.find(ntp);
+    if (it == _partitions.end() || !it->second->partition->is_leader()) {
+        response.error_code = error_code::not_leader_for_partition;
+        return response;
+    }
+    response.error_code = kafka::error_code::none;
+    // snapshot the list of groups attached to this partition
+    fragmented_vector<std::pair<group_id, group_ptr>> groups;
+    std::copy_if(
+      _groups.begin(),
+      _groups.end(),
+      std::back_inserter(groups),
+      [&ntp](auto g_pair) {
+          const auto& [group_id, group] = g_pair;
+          return group->partition()->ntp() == ntp;
+      });
+    for (auto& [gid, group] : groups) {
+        if (group->in_state(group_state::dead)) {
+            continue;
+        }
+        auto partition = group->partition();
+        if (!partition) {
+            // unlikely, conservative check
+            continue;
+        }
+        for (const auto& [id, state] : group->producers()) {
+            auto& tx = state.transaction;
+            int64_t start_offset = -1;
+            if (tx && tx->begin_offset >= model::offset{0}) {
+                start_offset = partition->get_offset_translator_state()
+                                 ->from_log_offset(tx->begin_offset);
+            }
+            int64_t last_timetamp = -1;
+            if (tx) {
+                auto time_since_last_update = model::timeout_clock::now()
+                                              - tx->last_update;
+                auto last_update_ts
+                  = (model::timestamp_clock::now() - time_since_last_update);
+                last_timetamp = last_update_ts.time_since_epoch() / 1ms;
+            }
+            response.active_producers.push_back({
+              .producer_id = id,
+              .producer_epoch = state.epoch,
+              .last_sequence = tx ? tx->tx_seq : -1,
+              .last_timestamp = last_timetamp,
+              .coordinator_epoch = -1,
+              .current_txn_start_offset = start_offset,
+            });
+        }
+        // check if there any any additional producers being tracked by
+        // the stm, the list should be empty in most cases unless there is
+        // some bug.
+        auto stm = partition->raft()
+                     ->stm_manager()
+                     ->get<kafka::group_tx_tracker_stm>();
+        if (!stm) {
+            continue;
+        }
+        const auto& group_producers = group->producers();
+        const auto& stm_txes = stm->inflight_transactions();
+        auto it = stm_txes.find(gid);
+        if (it == stm_txes.end()) {
+            continue;
+        }
+        for (const auto& [pid, begin_offset] : it->second.producer_to_begin) {
+            auto p_it = group_producers.find(pid.id);
+            if (
+              p_it == group_producers.end()
+              || pid.epoch != p_it->second.epoch) {
+                response.active_producers.push_back({
+                  .producer_id = pid.id,
+                  .producer_epoch = pid.epoch,
+                  .last_sequence = -2,
+                  .last_timestamp = -2,
+                  .coordinator_epoch = -2,
+                  .current_txn_start_offset = begin_offset,
+                });
+            }
+        }
+    }
+    return response;
 }
 
 ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
