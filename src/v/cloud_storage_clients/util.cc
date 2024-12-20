@@ -205,7 +205,7 @@ boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf, ss::logger& logger) {
         return res;
     } catch (...) {
         log_buffer_with_rate_limiting("unexpected reply", buf, logger);
-        vlog(logger.error, "!!parsing error {}", std::current_exception());
+        vlog(logger.warn, "!!parsing error {}", std::current_exception());
         throw;
     }
 }

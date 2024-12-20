@@ -42,7 +42,7 @@ configuration::configuration()
        .example = "2147483648",
        .visibility = visibility::tunable},
       128_MiB,
-      {.min = 1_MiB})
+      {.min = 1_KiB})
   , log_segment_size_min(
       *this,
       "log_segment_size_min",
@@ -51,7 +51,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "16777216",
        .visibility = visibility::tunable},
-      1_MiB)
+      1_KiB)
   , log_segment_size_max(
       *this,
       "log_segment_size_max",
@@ -78,7 +78,7 @@ configuration::configuration()
        .example = "268435456",
        .visibility = visibility::tunable},
       256_MiB,
-      {.min = 1_MiB})
+      {.min = 1_KiB})
   , readers_cache_eviction_timeout_ms(
       *this,
       "readers_cache_eviction_timeout_ms",

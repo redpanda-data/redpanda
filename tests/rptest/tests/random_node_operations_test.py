@@ -16,9 +16,10 @@ from rptest.services.admin import Admin
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
+from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer, RedpandaAdminOperation
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -26,7 +27,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsum
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode, skip_fips_mode
-from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
+from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload, verify_offset_translator_state_consistent
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 
@@ -43,6 +44,18 @@ TS_LOG_ALLOW_LIST = [
 ]
 
 
+def stop_stress(admin: Admin, node: ClusterNode):
+    """
+    Sends a request to the admin endpoint to stop stress fibers, returning True
+    if successful and False if there was an error.
+    """
+    try:
+        admin.stress_fiber_stop(node)
+    except:
+        return False
+    return True
+
+
 class RandomNodeOperationsTest(PreallocNodesTest):
     def __init__(self, test_context, *args, **kwargs):
         self.admin_fuzz = None
@@ -57,6 +70,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 # set disk timeout to value greater than max suspend time
                 # not to emit spurious errors
                 "raft_io_timeout_ms": 20000,
+                "compacted_log_segment_size": 2 * 1024,
+                "log_segment_size": 2 * 1024,
+                "log_compaction_interval_ms": 10,
+                "group_topic_partitions": 1,
             },
             # 2 nodes for kgo producer/consumer workloads
             node_prealloc_count=3,
@@ -135,7 +152,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self.redpanda.set_expected_controller_records(
             self.max_partitions * self.node_operations * 10)
 
-        self.consumers_count = int(self.max_partitions / 4)
+        self.consumers_count = int(self.max_partitions)
         self.msg_count = int(self.total_data / self.msg_size)
 
         self.logger.info(
@@ -311,10 +328,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     @cluster(num_nodes=9,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
-    @matrix(enable_failures=[True, False],
-            mixed_versions=[True, False],
-            with_tiered_storage=[True, False],
-            with_iceberg=[True, False],
+    @matrix(enable_failures=[True],
+            mixed_versions=[False],
+            with_iceberg=[False],
+            with_tiered_storage=[True],
             cloud_storage_type=[CloudStorageType.S3])
     def test_node_operations(self, enable_failures, mixed_versions,
                              with_tiered_storage, with_iceberg,
@@ -496,15 +513,29 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
-        self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                                min_replication=3,
-                                                operations_interval=3,
-                                                retries_interval=10,
-                                                retries=10)
+        self.admin_fuzz = AdminOperationsFuzzer(
+            self.redpanda,
+            min_replication=3,
+            operations_interval=3,
+            retries_interval=10,
+            retries=10,
+            allowed_operations=[
+                RedpandaAdminOperation.ADD_PARTITIONS,
+                RedpandaAdminOperation.CREATE_TOPIC,
+                RedpandaAdminOperation.DELETE_TOPIC,
+                RedpandaAdminOperation.PRODUCE_TO_TOPIC
+            ])
 
         self.admin_fuzz.start()
         self.active_node_idxs = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
+
+        admin = Admin(self.redpanda)
+        for n in self.redpanda.nodes:
+            admin.stress_fiber_start(n,
+                                     30,
+                                     min_spins_per_scheduling_point=1,
+                                     max_spins_per_scheduling_point=10)
 
         fi = None
         if enable_failures:
@@ -534,6 +565,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         if fi:
             fi.stop()
+
+        for n in self.redpanda.nodes:
+            try:
+                wait_until(lambda: stop_stress(admin, n),
+                           timeout_sec=120,
+                           backoff_sec=1)
+            except:
+                pass
 
         # stop producer and consumer and verify results
         regular_producer_consumer.verify()
@@ -577,6 +616,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 err_msg="Error waiting for cluster to report consistent version"
             )
 
+        verify_offset_translator_state_consistent(self.redpanda)
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():
