@@ -10,6 +10,7 @@
 from collections import defaultdict
 from enum import Enum
 import random
+import re
 import threading
 import time
 import requests
@@ -20,6 +21,7 @@ from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
 from rptest.services.redpanda_installer import VERSION_RE, int_tuple
+from rptest.util import wait_until_result
 
 
 class OperationType(Enum):
@@ -77,6 +79,51 @@ def generate_random_workload(available_nodes):
                 idx = random.choice(decommissioned_nodes)
                 add(idx)
                 yield NodeOperation(op, idx, random.choice([True, False]))
+
+
+def verify_offset_translator_state_consistent(redpanda: RedpandaService):
+    logger = redpanda.logger
+    last_delta_pattern = re.compile('^\\{.*, last delta: (?P<delta>\\d+)\\}$')
+    admin = Admin(redpanda)
+
+    for n in redpanda.started_nodes():
+        node_id = redpanda.node_id(n)
+        all_partitions = admin.get_partitions(node=n)
+
+        def _state_consistent(ns, topic, partition):
+
+            state = admin.get_partition_state(ns, topic, partition, node=n)
+            dirty_offset = state['replicas'][0]['dirty_offset']
+            if all(r['dirty_offset'] == dirty_offset
+                   for r in state['replicas']):
+                return True, state
+            return False, None
+
+        for p in all_partitions:
+            namespace = p['ns']
+            topic = p['topic']
+            partition = p['partition_id']
+            partition_name = f"{namespace}/{topic}/{partition}"
+            state = wait_until_result(
+                lambda: _state_consistent(namespace, topic, partition),
+                timeout_sec=180,
+                backoff_sec=1,
+                err_msg="Error waiting for offsets to be consistent")
+
+            logger.debug(
+                f"debug state of {partition_name} replica on node {node_id}: {state}"
+            )
+            last_deltas = set()
+            for r_state in state['replicas']:
+                ot_state = r_state['raft_state']['offset_translator_state']
+                if "empty" in ot_state:
+                    continue
+                m = last_delta_pattern.match(ot_state)
+                assert m, f"offset translator state {ot_state} does not match expected pattern"
+                last_deltas.add(m['delta'])
+            assert len(
+                last_deltas
+            ) <= 1, f"partition {p} has inconsistent offset translation. Last deltas: {last_deltas}"
 
 
 class NodeDecommissionWaiter():
