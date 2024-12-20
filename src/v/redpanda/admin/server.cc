@@ -103,6 +103,7 @@
 #include <seastar/core/map_reduce.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/shard_id.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
@@ -4347,6 +4348,14 @@ admin_server::delete_cloud_storage_lifecycle(
 ss::future<ss::json::json_return_type>
 admin_server::post_cloud_storage_cache_trim(
   std::unique_ptr<ss::http::request> req) {
+    co_await ss::smp::submit_to(ss::shard_id{0}, [this] {
+        if (!_cloud_storage_cache.local_is_initialized()) {
+            throw ss::httpd::bad_request_exception(
+              "Cloud Storage Cache is not available. Is cloud storage "
+              "enabled?");
+        }
+    });
+
     auto max_objects = get_integer_query_param(*req, "objects");
     auto max_bytes = static_cast<std::optional<size_t>>(
       get_integer_query_param(*req, "bytes"));
