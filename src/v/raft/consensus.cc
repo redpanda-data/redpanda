@@ -658,6 +658,8 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<model::offset>>
 consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
+    auto holder = _bg.hold();
+
     using ret_t = result<model::offset>;
     ssx::semaphore_units u;
     try {
@@ -695,12 +697,8 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
      */
 
     absl::flat_hash_map<vnode, follower_req_seq> sequences;
-    std::vector<ss::future<>> send_futures;
-    send_futures.reserve(cfg.unique_voter_count());
-    cfg.for_each_voter([this,
-                        dirty_offset = offsets.dirty_offset,
-                        &sequences,
-                        &send_futures](vnode target) {
+    cfg.for_each_voter([this, dirty_offset = offsets.dirty_offset, &sequences](
+                         vnode target) {
         // do not send request to self
         if (target == _self) {
             return;
@@ -720,29 +718,36 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
         update_node_append_timestamp(target);
         vlog(
           _ctxlog.trace, "Sending empty append entries request to {}", target);
-        auto f = _client_protocol
-                   .append_entries(
-                     target.id(),
-                     std::move(req),
-                     rpc::client_opts(_replicate_append_timeout))
-                   .then([this, id = target.id(), seq, dirty_offset](
-                           result<append_entries_reply> reply) {
-                       process_append_entries_reply(
-                         id, reply, seq, dirty_offset);
-                   });
 
-        send_futures.push_back(std::move(f));
+        ssx::background
+          = ssx::spawn_with_gate_then(
+              _bg,
+              [this,
+               target,
+               req = std::move(req),
+               seq,
+               dirty_offset]() mutable {
+                  return _client_protocol
+                    .append_entries(
+                      target.id(),
+                      std::move(req),
+                      rpc::client_opts(_replicate_append_timeout))
+                    .then([this, id = target.id(), seq, dirty_offset](
+                            result<append_entries_reply> reply) {
+                        process_append_entries_reply(
+                          id, reply, seq, dirty_offset);
+                    });
+              })
+              .handle_exception(
+                [holder = _bg.hold(), this](const std::exception_ptr& e) {
+                    vlog(_ctxlog.warn, "append entries dispatch failed: {}", e);
+                });
     });
     // release semaphore
     // term snapshot taken under the semaphore
     auto term = _term;
 
     u.return_all();
-
-    // wait for responses in background
-    ssx::spawn_with_gate(_bg, [futures = std::move(send_futures)]() mutable {
-        return ss::when_all_succeed(futures.begin(), futures.end());
-    });
 
     auto majority_sequences_updated = [&cfg, &sequences, this] {
         return cfg.majority([this, &sequences](vnode id) {
