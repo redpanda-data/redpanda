@@ -203,7 +203,22 @@
           "summary": "Invoke trimming on the local cache of tiered storage objects",
           "operationId": "cloud_storage_cache_trim",
           "nickname": "post_cloud_storage_cache_trim",
-          "parameters": []
+          "parameters": [
+            {
+              "name": "objects",
+              "in": "query",
+              "required": false,
+              "type": "integer",
+              "description": "Target number of objects to retain in the cache"
+            },
+            {
+              "name": "bytes",
+              "in": "query",
+              "required": false,
+              "type": "integer",
+              "description": "Target number of bytes to retain in the cache"
+            }
+          ]
         }
       ]
     },
