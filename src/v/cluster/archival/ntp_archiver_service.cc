@@ -10,6 +10,7 @@
 
 #include "cluster/archival/ntp_archiver_service.h"
 
+#include "archival/replica_state_validator.h"
 #include "base/vlog.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
@@ -398,6 +399,27 @@ ss::future<> ntp_archiver::upload_until_abort(bool legacy_mode) {
           sync_timeout);
         if (!is_synced.has_value()) {
             continue;
+        }
+
+        replica_state_validator validator(_parent);
+        if (validator.has_anomalies()) {
+            // The validation and printing of anomalies is happening
+            // every time we start an archiver
+            validator.maybe_print_scarry_log_message();
+            // Disable uploads and housekeeping if consistency
+            // checks are not disabled
+            if (!config::shard_local_cfg()
+                   .cloud_storage_disable_upload_consistency_checks()) {
+                // Consistency checks will not let us do anything anyway
+                vlog(
+                  _rtclog.warn,
+                  "upload loop stalled for {}ms in term {} because of "
+                  "anomalies",
+                  sync_timeout.count(),
+                  _start_term);
+                co_await ss::sleep_abortable(sync_timeout, _as);
+                continue;
+            }
         }
 
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);

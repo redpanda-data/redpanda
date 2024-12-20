@@ -212,6 +212,7 @@ v_cc_library(
     archival/archival_metadata_stm.cc
     archival/archival_policy.cc
     archival/ntp_archiver_service.cc
+    archival/replica_state_validator.cc
     archival/probe.cc
     archival/types.cc
     archival/upload_controller.cc
