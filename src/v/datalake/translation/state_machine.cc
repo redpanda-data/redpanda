@@ -20,14 +20,13 @@ raft::replicate_options make_replicate_options() {
     return opts;
 }
 
-model::record_batch_reader make_translation_state_batch(kafka::offset offset) {
+model::record_batch make_translation_state_batch(kafka::offset offset) {
     auto val = datalake::translation::translation_state{
       .highest_translated_offset = offset};
     storage::record_batch_builder builder(
       model::record_batch_type::datalake_translation_state, model::offset(0));
     builder.add_raw_kv(std::nullopt, serde::to_iobuf(val));
-    auto batch = std::move(builder).build();
-    return model::make_memory_record_batch_reader(std::move(batch));
+    return std::move(builder).build();
 }
 
 } // namespace

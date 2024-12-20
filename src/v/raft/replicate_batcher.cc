@@ -31,13 +31,13 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
 
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader r,
+  chunked_vector<model::record_batch> batches,
   replicate_options opts) {
     ss::promise<> enqueued;
     auto enqueued_f = enqueued.get_future();
 
     auto f = cache_and_wait_for_result(
-      std::move(enqueued), expected_term, std::move(r), opts);
+      std::move(enqueued), expected_term, std::move(batches), opts);
     return {std::move(enqueued_f), std::move(f)};
 }
 
@@ -45,7 +45,7 @@ ss::future<result<replicate_result>>
 replicate_batcher::cache_and_wait_for_result(
   ss::promise<> enqueued,
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader r,
+  chunked_vector<model::record_batch> r,
   replicate_options opts) {
     item_ptr item;
     try {
@@ -109,13 +109,8 @@ ss::future<> replicate_batcher::stop() {
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
-  model::record_batch_reader r,
+  chunked_vector<model::record_batch> batches,
   replicate_options opts) {
-    auto batches = co_await model::consume_reader_to_chunked_vector(
-      std::move(r),
-      opts.timeout ? model::timeout_clock::now() + opts.timeout.value()
-                   : model::no_timeout);
-
     size_t bytes = std::accumulate(
       batches.cbegin(),
       batches.cend(),

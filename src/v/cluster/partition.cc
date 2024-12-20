@@ -338,15 +338,15 @@ ss::future<storage::translating_reader> partition::make_cloud_reader(
 }
 
 ss::future<result<kafka_result>> partition::replicate(
-  model::record_batch_reader&& r, raft::replicate_options opts) {
+  chunked_vector<model::record_batch> batches, raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
-    auto reader = std::move(r);
 
     auto maybe_units = co_await hold_writes_enabled();
     if (!maybe_units) {
         co_return ret_t(maybe_units.error());
     }
-    auto res = co_await _raft->replicate(std::move(reader), opts);
+
+    auto res = co_await _raft->replicate(std::move(batches), opts);
     if (!res) {
         co_return ret_t(res.error());
     }
@@ -402,7 +402,7 @@ kafka_stages stages_with_units(
 
 kafka_stages partition::replicate_in_stages(
   model::batch_identity bid,
-  model::record_batch_reader&& r,
+  chunked_vector<model::record_batch> batches,
   raft::replicate_options opts) {
     using ret_t = result<kafka_result>;
 
@@ -430,12 +430,13 @@ kafka_stages partition::replicate_in_stages(
       hold_writes_enabled(),
       [this,
        bid = std::move(bid),
-       r = std::move(r),
+       batches = std::move(batches),
        opts = std::move(opts)]() mutable {
           if (_rm_stm) {
-              return _rm_stm->replicate_in_stages(bid, std::move(r), opts);
+              return _rm_stm->replicate_in_stages(
+                bid, std::move(batches), opts);
           }
-          auto res = _raft->replicate_in_stages(std::move(r), opts);
+          auto res = _raft->replicate_in_stages(std::move(batches), opts);
           auto replicate_finished = res.replicate_finished.then(
             [this](result<raft::replicate_result> r) {
                 if (!r) {

@@ -222,7 +222,7 @@ ss::future<tx_manager_read_reply> tx_manager_read_handler::do_read(
     reader_cfg.max_bytes = 128_KiB;
     auto reader = co_await partition->make_reader(std::move(reader_cfg));
 
-    auto batches = co_await model::consume_reader_to_fragmented_memory(
+    auto batches = co_await model::consume_reader_to_chunked_vector(
       std::move(reader), model::no_timeout);
 
     co_return tx_manager_read_reply(
@@ -233,7 +233,7 @@ ss::future<tx_manager_replicate_reply>
 tx_manager_replicate_handler::do_replicate(
   partition_manager& pm,
   model::ntp ntp,
-  fragmented_vector<model::record_batch> batches) {
+  chunked_vector<model::record_batch> batches) {
     vlog(
       logger.info,
       "Requested replication of {} batches to {}",
@@ -245,7 +245,7 @@ tx_manager_replicate_handler::do_replicate(
     }
 
     auto r = co_await partition->replicate(
-      model::make_fragmented_memory_record_batch_reader(std::move(batches)),
+      std::move(batches),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (r.has_error()) {
@@ -549,17 +549,16 @@ tx_manager_migrator::rehash_and_write_partition_data(
       std::move(source_ntp),
       default_timeout,
       _as,
-      [this,
-       source_partition_id](fragmented_vector<model::record_batch> batches) {
+      [this, source_partition_id](chunked_vector<model::record_batch> batches) {
           return rehash_chunk(source_partition_id, std::move(batches));
       });
 }
 
 ss::future<std::error_code> tx_manager_migrator::rehash_chunk(
   model::partition_id source_partition_id,
-  fragmented_vector<model::record_batch> batches) {
+  chunked_vector<model::record_batch> batches) {
     absl::
-      flat_hash_map<model::partition_id, fragmented_vector<model::record_batch>>
+      flat_hash_map<model::partition_id, chunked_vector<model::record_batch>>
         target_partition_batches;
     target_partition_batches.reserve(_requested_partition_count);
     for (auto& b : batches) {
@@ -632,8 +631,8 @@ tx_manager_migrator::copy_from_temporary_to_tx_manager_topic(
       default_timeout,
       _as,
       [this, target_ntp = std::move(target_ntp)](
-        fragmented_vector<model::record_batch> all_batches) {
-          fragmented_vector<model::record_batch> tx_batches;
+        chunked_vector<model::record_batch> all_batches) {
+          chunked_vector<model::record_batch> tx_batches;
           for (auto& b : all_batches) {
               if (b.header().type == model::record_batch_type::tm_update) {
                   tx_batches.push_back(std::move(b));

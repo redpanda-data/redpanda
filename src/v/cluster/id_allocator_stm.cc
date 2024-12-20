@@ -104,10 +104,9 @@ ss::future<bool> id_allocator_stm::set_state(
   int64_t value, model::timeout_clock::duration timeout) {
     auto batch = serialize_cmd(
       state_cmd{.next_state = value}, model::record_batch_type::id_allocator);
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _raft->replicate(
       _insync_term,
-      std::move(reader),
+      std::move(batch),
       raft::replicate_options(raft::consistency_level::quorum_ack));
     if (!r) {
         co_return false;

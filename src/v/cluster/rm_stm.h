@@ -197,12 +197,12 @@ public:
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch> batches,
       raft::replicate_options);
 
     ss::future<result<kafka_result>> replicate(
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch> batches,
       raft::replicate_options);
 
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
@@ -274,28 +274,28 @@ private:
 
     ss::future<result<kafka_result>> do_replicate(
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
     ss::future<result<kafka_result>> transactional_replicate(
-      model::batch_identity, model::record_batch_reader);
+      model::batch_identity, chunked_vector<model::record_batch>);
 
     ss::future<result<kafka_result>> transactional_replicate(
       model::term_id,
       tx::producer_ptr,
       model::batch_identity,
-      model::record_batch_reader);
+      chunked_vector<model::record_batch>);
 
     ss::future<result<kafka_result>> do_transactional_replicate(
       model::term_id,
       tx::producer_ptr,
       model::batch_identity,
-      model::record_batch_reader);
+      chunked_vector<model::record_batch>);
 
     ss::future<result<kafka_result>> idempotent_replicate(
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 
@@ -303,7 +303,7 @@ private:
       model::term_id,
       tx::producer_ptr,
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>,
       ssx::semaphore_units&,
@@ -313,14 +313,14 @@ private:
       model::term_id,
       tx::producer_ptr,
       model::batch_identity,
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>,
       ssx::semaphore_units,
       producer_previously_known);
 
     ss::future<result<kafka_result>> replicate_msg(
-      model::record_batch_reader,
+      chunked_vector<model::record_batch>,
       raft::replicate_options,
       ss::lw_shared_ptr<available_promise<>>);
 

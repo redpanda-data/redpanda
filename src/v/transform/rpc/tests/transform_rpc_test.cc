@@ -623,9 +623,8 @@ private:
         }
 
         ss::future<result<model::offset>> replicate(
-          model::record_batch_reader rdr, raft::replicate_options) final {
-            auto batches = co_await model::consume_reader_to_memory(
-              std::move(rdr), model::no_timeout);
+          chunked_vector<model::record_batch> batches,
+          raft::replicate_options) final {
             auto offset = latest_offset();
             for (const auto& batch : batches) {
                 auto b = batch.copy();
@@ -637,11 +636,15 @@ private:
 
         raft::replicate_stages replicate(
           model::batch_identity,
-          model::record_batch_reader&&,
+          model::record_batch,
           raft::replicate_options) final {
             throw std::runtime_error("unimplemented");
         }
 
+        ss::future<result<model::offset>>
+        replicate(model::record_batch, raft::replicate_options) final {
+            throw std::runtime_error("unimplemented");
+        }
         result<kafka::partition_info> get_partition_info() const override {
             throw std::runtime_error("unimplemented");
         }

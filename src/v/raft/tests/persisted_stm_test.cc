@@ -261,15 +261,13 @@ public:
         co_return serde::to_iobuf(std::move(inc_state));
     };
 
-    model::record_batch_reader
-    build_batch(std::vector<kv_operation> operations) {
+    model::record_batch build_batch(std::vector<kv_operation> operations) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
         for (auto& op : operations) {
             builder.add_raw_kv(iobuf{}, serde::to_iobuf(std::move(op)));
         }
-        auto batch = std::move(builder).build();
-        return model::make_memory_record_batch_reader({std::move(batch)});
+        return std::move(builder).build();
     }
 
     kv_state state;

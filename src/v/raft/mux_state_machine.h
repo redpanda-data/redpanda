@@ -254,12 +254,12 @@ ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
           if (term) {
               return _c->replicate(
                 term.value(),
-                model::make_memory_record_batch_reader(std::move(batch)),
+                std::move(batch),
                 raft::replicate_options{raft::consistency_level::quorum_ack});
           }
 
           return _c->replicate(
-            model::make_memory_record_batch_reader(std::move(batch)),
+            std::move(batch),
             raft::replicate_options{raft::consistency_level::quorum_ack});
       });
 }

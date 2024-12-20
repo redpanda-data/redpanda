@@ -332,7 +332,7 @@ public:
 
     ss::future<> create_simple_group(size_t number_of_nodes);
 
-    model::record_batch_reader
+    chunked_vector<model::record_batch>
     make_batches(std::vector<std::pair<ss::sstring, ss::sstring>> batch_spec) {
         const auto sz = batch_spec.size();
         return make_batches(sz, [spec = std::move(batch_spec)](size_t idx) {
@@ -346,21 +346,21 @@ public:
     }
 
     template<typename Generator>
-    model::record_batch_reader
+    chunked_vector<model::record_batch>
     make_batches(size_t batch_count, Generator&& generator) {
-        ss::circular_buffer<model::record_batch> batches;
+        chunked_vector<model::record_batch> batches;
         batches.reserve(batch_count);
         for (auto b_idx : boost::irange(batch_count)) {
             batches.push_back(generator(b_idx));
         }
 
-        return model::make_memory_record_batch_reader(std::move(batches));
+        return batches;
     }
-    model::record_batch_reader make_batches(
+    chunked_vector<model::record_batch> make_batches(
       size_t batch_count,
       size_t batch_record_count,
       size_t record_payload_size) {
-        ss::circular_buffer<model::record_batch> batches;
+        chunked_vector<model::record_batch> batches;
         batches.reserve(batch_count);
         for (auto b_idx : boost::irange(batch_count)) {
             storage::record_batch_builder builder(
@@ -374,7 +374,7 @@ public:
             batches.push_back(std::move(builder).build());
         }
 
-        return model::make_memory_record_batch_reader(std::move(batches));
+        return batches;
     }
 
     ss::future<>
