@@ -92,6 +92,46 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/transaction/{group_id}/unsafe_abort_group_transaction",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Unsafely abort a transaction from a group, only for debugging",
+                    "type": "void",
+                    "nickname": "unsafe_abort_group_transaction",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "group_id",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "producer_id",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "producer_epoch",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "sequence",
+                            "in": "int",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

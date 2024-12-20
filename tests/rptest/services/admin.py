@@ -1849,3 +1849,15 @@ class Admin:
     def delete_debug_bundle_file(self, filename: str, node: MaybeNode = None):
         path = f"debug/bundle/file/{filename}"
         return self._request("DELETE", path, node=node)
+
+    def unsafe_abort_group_transaction(self, group_id: str, pid: int,
+                                       epoch: int, sequence: int):
+        params = {
+            "producer_id": pid,
+            "producer_epoch": epoch,
+            "sequence": sequence,
+        }
+        params = "&".join([f"{k}={v}" for k, v in params.items()])
+        return self._request(
+            'POST',
+            f"transaction/{group_id}/unsafe_abort_group_transaction?{params}")

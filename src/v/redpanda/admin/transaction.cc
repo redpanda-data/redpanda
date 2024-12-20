@@ -11,6 +11,8 @@
 #include "cluster/partition_manager.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "container/lw_shared_container.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/server.h"
 #include "redpanda/admin/api-doc/transaction.json.hh"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/util.h"
@@ -35,6 +37,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::find_coordinator,
       [this](std::unique_ptr<ss::http::request> req) {
           return find_tx_coordinator_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::transaction_json::unsafe_abort_group_transaction,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return unsafe_abort_group_transaction(std::move(req));
       });
 }
 
@@ -211,5 +219,75 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto res = co_await _tx_gateway_frontend.local().delete_partition_from_tx(
       tid, partition_for_delete);
     co_await throw_on_error(*req, res, ntp);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::unsafe_abort_group_transaction(
+  std::unique_ptr<ss::http::request> request) {
+    if (!_tx_gateway_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    auto group_id = request->get_path_param("group_id");
+    auto pid_str = request->get_query_param("producer_id");
+    auto epoch_str = request->get_query_param("producer_epoch");
+    auto sequence_str = request->get_query_param("sequence");
+
+    if (group_id.empty()) {
+        throw ss::httpd::bad_param_exception("group_id cannot be empty");
+    }
+
+    if (pid_str.empty() || epoch_str.empty() || sequence_str.empty()) {
+        throw ss::httpd::bad_param_exception(
+          "invalid producer_id/epoch, should be >= 0");
+    }
+
+    std::optional<model::producer_id> pid;
+    try {
+        auto parsed_pid = boost::lexical_cast<model::producer_id::type>(
+          pid_str);
+        pid = model::producer_id{parsed_pid};
+    } catch (const boost::bad_lexical_cast& e) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("invalid producer_id, should be >= 0: {}", e));
+    }
+
+    std::optional<model::producer_epoch> epoch;
+    try {
+        auto parsed_epoch = boost::lexical_cast<model::producer_epoch::type>(
+          epoch_str);
+        epoch = model::producer_epoch{parsed_epoch};
+    } catch (const boost::bad_lexical_cast& e) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("invalid producer_epoch, should be >= 0: {}", e));
+    }
+
+    std::optional<model::tx_seq> seq;
+    try {
+        auto parsed_seq = boost::lexical_cast<model::tx_seq::type>(
+          sequence_str);
+        seq = model::tx_seq{parsed_seq};
+    } catch (const boost::bad_lexical_cast& e) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("invalid transaction sequence, should be >= 0: {}", e));
+    }
+
+    auto& mapper = _kafka_server.local().coordinator_mapper();
+    auto kafka_gid = kafka::group_id{group_id};
+    auto group_ntp = mapper.ntp_for(kafka::group_id{group_id});
+    if (!group_ntp) {
+        throw ss::httpd::server_error_exception(
+          "consumer_offsets topic now found");
+    }
+
+    auto result
+      = co_await _tx_gateway_frontend.local().unsafe_abort_group_transaction(
+        std::move(kafka_gid),
+        model::producer_identity{pid.value(), epoch.value()},
+        seq.value(),
+        5s);
+
+    co_await throw_on_error(*request, result, group_ntp.value());
     co_return ss::json::json_return_type(ss::json::json_void());
 }

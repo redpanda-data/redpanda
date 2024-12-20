@@ -555,6 +555,8 @@ private:
       delete_partition_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       find_tx_coordinator_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      unsafe_abort_group_transaction(std::unique_ptr<ss::http::request>);
 
     /// Cluster routes
     ss::future<ss::json::json_return_type>
