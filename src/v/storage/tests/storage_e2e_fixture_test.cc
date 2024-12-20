@@ -195,3 +195,23 @@ FIXTURE_TEST(test_concurrent_segment_roll_and_close, storage_e2e_fixture) {
       std::move(release_holder_fut))
       .get();
 }
+
+FIXTURE_TEST(test_concurrent_segment_roll_and_ntp_remove, storage_e2e_fixture) {
+    const auto topic_name = model::topic("tapioca");
+    const auto ntp = model::ntp(model::kafka_namespace, topic_name, 0);
+
+    cluster::topic_properties props;
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto& partition_manager = app.partition_manager.local();
+    auto partition = partition_manager.get(ntp);
+    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+
+    auto roll_fut = ss::sleep(100ms).then(
+      [log] { return force_roll_log(log); });
+    auto remove_ntp_fut = partition_manager.remove(
+      ntp, cluster::partition_removal_mode::local_only);
+
+    ss::when_all(std::move(roll_fut), std::move(remove_ntp_fut)).get();
+}

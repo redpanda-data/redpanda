@@ -162,6 +162,12 @@ size_t disk_log_impl::compute_max_segment_size() {
 
 ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
+
+    // To prevent racing with a new segment being rolled, obtain the mutex here,
+    // and indicate it as broken for any future waiters.
+    auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
+    _segments_rolling_lock.broken();
+
     _closed = true;
     // wait for compaction to finish
     _compaction_as.request_abort();
@@ -209,6 +215,12 @@ disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
+
+    // To prevent racing with a new segment being rolled, obtain the mutex here,
+    // and indicate it as broken for any future waiters.
+    auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
+    _segments_rolling_lock.broken();
+
     vlog(stlog.debug, "closing log {}", *this);
     _closed = true;
     if (
