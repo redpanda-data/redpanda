@@ -377,7 +377,8 @@ ss::future<> create_raft_state_for_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<model::broker> initial_nodes) {
+  std::vector<model::broker> initial_nodes,
+  model::offset_delta log_start_delta) {
     // Prepare Raft state in kvstore
     vlog(
       raftlog.debug,
@@ -403,7 +404,7 @@ ss::future<> create_raft_state_for_pre_existing_partition(
       .version = raft::snapshot_metadata::current_version,
       .latest_configuration = std::move(group_config),
       .cluster_time = ss::lowres_clock::now(),
-      .log_start_delta = raft::offset_translator_delta{0},
+      .log_start_delta = offset_translator_delta{log_start_delta},
     };
 
     vlog(
@@ -458,7 +459,8 @@ ss::future<> bootstrap_pre_existing_partition(
       min_rp_offset,
       max_rp_offset,
       last_included_term,
-      initial_nodes);
+      initial_nodes,
+      model::offset_delta{ot_state->delta(min_rp_offset)});
 }
 
 } // namespace raft::details
