@@ -2201,7 +2201,7 @@ consensus::do_append_entries(append_entries_request&& r) {
             // the leader vote timeout
             _hbeat = clock_type::now();
         });
-
+        validate_offset_translator_delta(request_metadata, lstats);
         storage::append_result ofs = co_await disk_append(
           std::move(r).release_batches(), update_last_quorum_index::no);
         auto last_visible = std::min(
@@ -2247,6 +2247,31 @@ consensus::do_append_entries(append_entries_request&& r) {
           std::current_exception());
         reply.result = reply_result::failure;
         co_return reply;
+    }
+}
+
+void consensus::validate_offset_translator_delta(
+  const protocol_metadata& meta, const storage::offset_stats& lstats) {
+    // do not validate if prev_log_delta is not set
+    if (meta.prev_log_delta < model::offset_delta{0}) {
+        return;
+    }
+    /**
+     * If request contain valid information and it is about to be appended
+     * to the log validate the offset translator delta consistency.
+     */
+    const auto last_delta = get_offset_delta(lstats, meta.prev_log_index);
+    if (
+      last_delta >= model::offset_delta{0}
+      && last_delta != meta.prev_log_delta) {
+        vlog(
+          _ctxlog.error,
+          "Offset translator state inconsistency detected. Received "
+          "append entries request {} with last offset delta different "
+          "than expected: {}",
+          meta,
+          last_delta);
+        _probe->offset_translator_inconsistency_error();
     }
 }
 
@@ -2923,7 +2948,18 @@ protocol_metadata consensus::meta() const {
       .prev_log_index = lstats.dirty_offset,
       .prev_log_term = prev_log_term,
       .last_visible_index = last_visible_index(),
-      .dirty_offset = lstats.dirty_offset};
+      .dirty_offset = lstats.dirty_offset,
+      .prev_log_delta = get_offset_delta(lstats, lstats.dirty_offset),
+    };
+}
+
+model::offset_delta consensus::get_offset_delta(
+  const storage::offset_stats& lstats, model::offset offset) const {
+    if (offset < model::offset{0} || offset < lstats.start_offset) {
+        return model::offset_delta{};
+    }
+
+    return _log->offset_delta(offset);
 }
 
 void consensus::update_node_append_timestamp(vnode id) {

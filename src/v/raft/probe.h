@@ -63,6 +63,9 @@ public:
 
     void full_heartbeat() { ++_full_heartbeat_requests; }
     void lw_heartbeat() { ++_lw_heartbeat_requests; }
+    void offset_translator_inconsistency_error() {
+        ++_offset_translator_inconsistency_error;
+    }
 
     void clear() {
         _metrics.clear();
@@ -89,7 +92,7 @@ private:
     uint64_t _recovery_request_error = 0;
     uint64_t _full_heartbeat_requests = 0;
     uint64_t _lw_heartbeat_requests = 0;
-
+    uint64_t _offset_translator_inconsistency_error = 0;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };
