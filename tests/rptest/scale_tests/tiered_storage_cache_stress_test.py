@@ -65,6 +65,10 @@ class TieredStorageCacheStressTest(RedpandaTest):
             self.manifest_upload_interval,
             'disable_public_metrics': False,
             'cloud_storage_cache_check_interval': 500,
+            # We're consuming from leader node and expect specific changes in
+            # its local cache. Disable leader balancer so that our expectations
+            # are valid.
+            "enable_leader_balancer": False,
         }
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
 
