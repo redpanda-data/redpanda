@@ -39,7 +39,7 @@ using election_success = ss::bool_class<struct election_success_tag>;
 
 struct protocol_metadata
   : serde::
-      envelope<protocol_metadata, serde::version<1>, serde::compat_version<0>> {
+      envelope<protocol_metadata, serde::version<2>, serde::compat_version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
@@ -47,6 +47,8 @@ struct protocol_metadata
     model::term_id prev_log_term;
     model::offset last_visible_index;
     model::offset dirty_offset;
+    // offset delta corresponding to the prev_log_index
+    model::offset_delta prev_log_delta{};
 
     friend std::ostream&
     operator<<(std::ostream& o, const protocol_metadata& m);
@@ -62,7 +64,8 @@ struct protocol_metadata
           prev_log_index,
           prev_log_term,
           last_visible_index,
-          dirty_offset);
+          dirty_offset,
+          prev_log_delta);
     }
 };
 

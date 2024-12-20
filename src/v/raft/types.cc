@@ -247,14 +247,16 @@ std::ostream& operator<<(std::ostream& o, const protocol_metadata& m) {
     fmt::print(
       o,
       "{{group: {}, commit_index: {}, term: {}, prev_log_index: {}, "
-      "prev_log_term: {}, last_visible_index: {}, dirty_offset: {}}}",
+      "prev_log_term: {}, last_visible_index: {}, dirty_offset: {}, "
+      "prev_log_delta: {}}}",
       m.group,
       m.commit_index,
       m.term,
       m.prev_log_index,
       m.prev_log_term,
       m.last_visible_index,
-      m.dirty_offset);
+      m.dirty_offset,
+      m.prev_log_delta);
     return o;
 }
 

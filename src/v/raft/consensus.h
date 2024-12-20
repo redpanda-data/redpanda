@@ -662,6 +662,8 @@ private:
     template<typename Func>
     ss::future<std::error_code> change_configuration(Func&&);
 
+    model::offset_delta
+    get_offset_delta(const storage::offset_stats&, model::offset) const;
     template<typename Func>
     ss::future<std::error_code>
       interrupt_configuration_change(model::revision_id, Func);
