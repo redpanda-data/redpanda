@@ -38,18 +38,11 @@ class FetchAfterDeleteTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=3)
-    @parametrize(transactions_enabled=True)
-    @parametrize(transactions_enabled=False)
-    def test_fetch_after_committed_offset_was_removed(self,
-                                                      transactions_enabled):
+    def test_fetch_after_committed_offset_was_removed(self):
         """
         Test fetching when consumer offset was deleted by retention
         """
 
-        self.redpanda._extra_rp_conf[
-            "enable_transactions"] = transactions_enabled
-        self.redpanda._extra_rp_conf[
-            "enable_idempotence"] = transactions_enabled
         self.redpanda.start()
 
         topic = TopicSpec(partition_count=1,

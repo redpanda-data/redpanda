@@ -17,7 +17,7 @@ setup(
         'prometheus-client==0.9.0',
         'kafka-python==2.0.2',
         'crc32c==2.2',
-        'confluent-kafka==2.2.0',
+        'confluent-kafka==2.6.1',
         'zstandard==0.15.2',
         'xxhash==2.0.2',
         'protobuf==4.21.8',

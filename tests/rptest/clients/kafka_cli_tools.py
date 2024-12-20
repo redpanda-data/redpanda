@@ -65,7 +65,8 @@ class KafkaCliTools:
     """
 
     # See tests/docker/Dockerfile to add new versions
-    VERSIONS = ("3.0.0", "2.7.0", "2.5.0", "2.4.1", "2.3.1")
+    VERSIONS = ("3.9.0", "3.8.0", "3.7.0", "3.0.0", "2.7.0", "2.5.0", "2.4.1",
+                "2.3.1")
 
     def __init__(self,
                  redpanda: RedpandaServiceForClients,
@@ -329,7 +330,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
                 acks: int = -1,
                 throughput: int = -1,
                 batch_size: int = 81960,
-                linger_ms: int = 0):
+                linger_ms: int = 0,
+                enable_idempotence: bool = True):
         self._redpanda.logger.debug("Producing to topic: %s", topic)
         cmd = [self._script("kafka-producer-perf-test.sh")]
         cmd += ["--topic", topic]
@@ -344,6 +346,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
             "bootstrap.servers=%s" % self._redpanda.brokers(),
             "linger.ms=%d" % linger_ms,
         ]
+        if enable_idempotence is False:
+            cmd += ["enable.idempotence=false"]
         if self._command_config:
             cmd += ["--producer.config", self._command_config.name]
         return self._execute(cmd, "produce")
@@ -387,6 +391,8 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         assert split_str[-1] == ""
         partition_watermark_lines = split_str[2:-1]
         for partition_watermark_line in partition_watermark_lines:
+            if not partition_watermark_line.startswith("partition: "):
+                continue
             topic_partition_str, result_str = partition_watermark_line.strip(
             ).split('\t')
             topic_partition_str_split = topic_partition_str.split(
