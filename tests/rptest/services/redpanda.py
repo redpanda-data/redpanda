@@ -623,7 +623,7 @@ class SISettings:
         self.skip_end_of_test_scrubbing = skip_end_of_test_scrubbing
 
         if fast_uploads:
-            self.cloud_storage_segment_max_upload_interval_sec = 10
+            self.cloud_storage_segment_max_upload_interval_sec = 1
             self.cloud_storage_manifest_max_upload_interval_sec = 1
 
         self._expected_damage_types = set()
