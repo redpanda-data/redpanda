@@ -335,7 +335,7 @@ private:
     /// and have to decide whether to block writes, or exceed our configured
     /// limit.
     /// (shard 0 only)
-    uint64_t _free_space{0};
+    std::optional<uint64_t> _free_space;
 
     ssx::semaphore _cleanup_sm{1, "cloud/cache"};
     std::set<std::filesystem::path> _files_in_progress;
