@@ -103,7 +103,8 @@ void group_stm::try_set_fence(
   model::producer_epoch epoch,
   model::tx_seq txseq,
   model::timeout_clock::duration transaction_timeout_ms,
-  model::partition_id tm_partition) {
+  model::partition_id tm_partition,
+  model::offset fence_offset) {
     auto [it, _] = _producers.try_emplace(id, epoch);
     if (it->second.epoch <= epoch) {
         it->second.epoch = epoch;
@@ -111,6 +112,7 @@ void group_stm::try_set_fence(
           .tx_seq = txseq,
           .tm_partition = tm_partition,
           .timeout = transaction_timeout_ms,
+          .begin_offset = fence_offset,
           .offsets = {},
         });
     }

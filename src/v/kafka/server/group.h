@@ -168,7 +168,10 @@ public:
      */
     struct ongoing_transaction {
         ongoing_transaction(
-          model::tx_seq, model::partition_id, model::timeout_clock::duration);
+          model::tx_seq,
+          model::partition_id,
+          model::timeout_clock::duration,
+          model::offset);
 
         model::tx_seq tx_seq;
         model::partition_id coordinator_partition;
@@ -177,6 +180,7 @@ public:
         model::timeout_clock::time_point last_update;
 
         bool is_expiration_requested{false};
+        model::offset begin_offset{-1};
 
         model::timeout_clock::time_point deadline() const {
             return last_update + timeout;

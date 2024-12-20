@@ -978,7 +978,7 @@ ss::future<> group_manager::do_recover_group(
             if (session.tx) {
                 auto& tx = *session.tx;
                 group::ongoing_transaction group_tx(
-                  tx.tx_seq, tx.tm_partition, tx.timeout);
+                  tx.tx_seq, tx.tm_partition, tx.timeout, tx.begin_offset);
                 for (auto& [tp, o_md] : tx.offsets) {
                     group_tx.offsets[tp] = group::pending_tx_offset{
                   .offset_metadata = group_tx::partition_offset{
