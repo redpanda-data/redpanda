@@ -2291,7 +2291,8 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
             // batch.
             vlog(
               archival_log.debug,
-              "fence value is: {}, unsafe add: {}, manifest last "
+              "add_segments, read-write fence: {}, unsafe add: {}, manifest "
+              "last "
               "applied offset: {}, manifest in-sync offset: {}",
               fence.read_write_fence,
               fence.unsafe_add,
