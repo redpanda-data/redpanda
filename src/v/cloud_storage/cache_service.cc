@@ -356,6 +356,10 @@ ss::future<> cache::trim(
         target_size *= _cache_size_low_watermark;
     }
 
+    if (!_free_space.has_value()) {
+        throw std::runtime_error("Free space information is not available.");
+    }
+
     // In the extreme case where even trimming to the low watermark wouldn't
     // free enough space to enable writing to the cache, go even further.
     if (_free_space < config::shard_local_cfg().storage_min_free_bytes()) {
@@ -1533,7 +1537,7 @@ bool cache::may_exceed_limits(uint64_t bytes, size_t objects) {
 
     auto would_fit_in_cache = _current_cache_size + bytes <= _max_bytes;
 
-    return !_block_puts && _free_space > bytes * 10
+    return !_block_puts && _free_space.value_or(0) > bytes * 10
            && _current_cache_objects + _reserved_cache_objects + objects
                 < _max_objects()
            && !would_fit_in_cache;
@@ -1871,7 +1875,12 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                     // all skipping the cache limit based on the same apparent
                     // free bytes.  This counter will get reset to ground
                     // truth the next time we get a disk status notification.
-                    _free_space -= bytes;
+                    if (unlikely(!_free_space.has_value())) {
+                        throw std::runtime_error(
+                          "Free space information must be available by the "
+                          "time we execute this code path");
+                    }
+                    *_free_space -= bytes;
                     break;
                 } else {
                     // No allowance, and the disk does not have a lot of
