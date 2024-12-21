@@ -5019,8 +5019,11 @@ public:
 
     size_t max_step_size() const {
         fragmented_vector<size_t> diffs;
-        chunked_vector<uint64_t> pos
-          = _index._state.index.copy_position_index();
+        chunked_vector<uint64_t> pos;
+        for (auto ix = 0; ix < _index._state.index->size(); ix++) {
+            auto [offs, ts, p] = _index._state.index->get_entry(ix);
+            pos.push_back(p);
+        }
         diffs.reserve(pos.size() + 1);
         std::adjacent_difference(
           pos.begin(), pos.end(), std::back_inserter(diffs));
