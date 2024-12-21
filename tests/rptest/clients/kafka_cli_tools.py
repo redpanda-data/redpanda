@@ -486,7 +486,7 @@ sasl.login.callback.handler.class=io.strimzi.kafka.oauth.client.JaasClientOauthL
         split_str = res.split("\n")
         info_str = split_str[0]
         info_key = info_str.strip().split("\t")
-        assert info_key == expected_columns, f"{info_key}"
+        assert info_key == expected_columns, f"{info_key} vs {expected_columns}"
 
         assert split_str[-1] == ""
 

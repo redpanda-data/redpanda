@@ -2974,4 +2974,23 @@ ss::future<tx::errc> tx_gateway_frontend::do_delete_partition_from_tx(
     co_return tx::errc::none;
 }
 
+ss::future<tx::errc> tx_gateway_frontend::unsafe_abort_group_transaction(
+  kafka::group_id group,
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  model::timeout_clock::duration timeout) {
+    auto holder = _gate.hold();
+    vlog(
+      txlog.warn,
+      "Issuing an unsafe abort of group transaction, group: {}, pid: {}, seq: "
+      "{}, timeout: {}",
+      group,
+      pid,
+      tx_seq,
+      timeout);
+    auto result = co_await _rm_group_proxy->abort_group_tx(
+      std::move(group), pid, tx_seq, timeout);
+    co_return result.ec;
+}
+
 } // namespace cluster

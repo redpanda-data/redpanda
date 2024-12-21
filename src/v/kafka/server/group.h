@@ -168,7 +168,10 @@ public:
      */
     struct ongoing_transaction {
         ongoing_transaction(
-          model::tx_seq, model::partition_id, model::timeout_clock::duration);
+          model::tx_seq,
+          model::partition_id,
+          model::timeout_clock::duration,
+          model::offset);
 
         model::tx_seq tx_seq;
         model::partition_id coordinator_partition;
@@ -177,6 +180,7 @@ public:
         model::timeout_clock::time_point last_update;
 
         bool is_expiration_requested{false};
+        model::offset begin_offset{-1};
 
         model::timeout_clock::time_point deadline() const {
             return last_update + timeout;
@@ -199,6 +203,8 @@ public:
         model::producer_epoch epoch;
         std::unique_ptr<ongoing_transaction> transaction;
     };
+
+    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
 
     struct offset_metadata {
         model::offset log_offset;
@@ -657,6 +663,8 @@ public:
         }
     }
 
+    const producers_map& producers() const { return _producers; }
+
     // helper for the kafka api: describe groups
     described_group describe() const;
 
@@ -713,7 +721,6 @@ public:
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
-    using producers_map = chunked_hash_map<model::producer_id, tx_producer>;
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 

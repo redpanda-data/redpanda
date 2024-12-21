@@ -225,11 +225,13 @@ bool group::valid_previous_state(group_state s) const {
 group::ongoing_transaction::ongoing_transaction(
   model::tx_seq tx_seq,
   model::partition_id coordinator_partition,
-  model::timeout_clock::duration tx_timeout)
+  model::timeout_clock::duration tx_timeout,
+  model::offset begin_offset)
   : tx_seq(tx_seq)
   , coordinator_partition(coordinator_partition)
   , timeout(tx_timeout)
-  , last_update(model::timeout_clock::now()) {}
+  , last_update(model::timeout_clock::now())
+  , begin_offset(begin_offset) {}
 
 group::tx_producer::tx_producer(model::producer_epoch epoch)
   : epoch(epoch) {}
@@ -1934,7 +1936,8 @@ group::begin_tx(cluster::begin_group_tx_request r) {
       r.pid.get_id(), r.pid.get_epoch());
     producer_it->second.epoch = r.pid.get_epoch();
     producer_it->second.transaction = std::make_unique<ongoing_transaction>(
-      ongoing_transaction(r.tx_seq, r.tm_partition, r.timeout));
+      ongoing_transaction(
+        r.tx_seq, r.tm_partition, r.timeout, result.value().last_offset));
 
     try_arm(producer_it->second.transaction->deadline());
 

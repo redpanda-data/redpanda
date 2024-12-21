@@ -945,6 +945,92 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
 
         assert num_consumed == expected_records
 
+    @cluster(num_nodes=3)
+    def unsafe_abort_group_transaction_test(self):
+        def random_group_name():
+            return ''.join(
+                random.choice(string.ascii_uppercase) for _ in range(16))
+
+        def wait_for_active_producers(count: int):
+            def describe_active_producers():
+                active_producers = []
+                for partition in range(0, 16):
+                    desc = self.kafka_cli.describe_producers(
+                        "__consumer_offsets", partition)
+                    for producer in desc:
+                        tx_start_offset = producer[
+                            'CurrentTransactionStartOffset']
+                        if 'None' in tx_start_offset:
+                            continue
+                        if int(tx_start_offset) >= 0:
+                            active_producers.append(producer)
+                return active_producers
+
+            wait_until(
+                lambda: len(describe_active_producers()) == count,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg=f"Timed out waiting for producer count to reach {count}"
+            )
+
+        group_name = random_group_name()
+        input_records = 10
+        self.generate_data(self.input_t, input_records)
+
+        # setup consumer offsets
+        rpk = RpkTool(self.redpanda)
+        rpk.consume(topic=self.input_t.name, n=1, group="test-group")
+
+        wait_for_active_producers(0)
+
+        # Setup a consumer to consume from ^^ topic and
+        # produce to a target topic.
+        producer_conf = {
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': 'test-repro',
+            # Large-ish timeout
+            'transaction.timeout.ms': 300000,
+        }
+        producer = ck.Producer(producer_conf)
+        consumer_conf = {
+            'bootstrap.servers': self.redpanda.brokers(),
+            'group.id': group_name,
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+        }
+        consumer = ck.Consumer(consumer_conf)
+        consumer.subscribe([self.input_t])
+
+        # Consume - identity transform - produce
+        producer.init_transactions()
+        _ = self.consume(consumer)
+        # Start a transaction and flush some offsets
+        producer.begin_transaction()
+        producer.send_offsets_to_transaction(
+            consumer.position(consumer.assignment()),
+            consumer.consumer_group_metadata())
+        producer.flush()
+
+        wait_until(lambda: len(self.admin.get_all_transactions()) == 1,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Timed out waiting for transaction to appear")
+
+        wait_for_active_producers(1)
+
+        self.admin.unsafe_abort_group_transaction(group_id=group_name,
+                                                  pid=1,
+                                                  epoch=0,
+                                                  sequence=0)
+        wait_for_active_producers(0)
+        producer.commit_transaction()
+
+        wait_until(
+            lambda: self.no_running_transactions(),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timed out waiting for running transactions to wind down.")
+
 
 class TransactionsStreamsTest(RedpandaTest, TransactionsMixin):
     topics = (TopicSpec(partition_count=1, replication_factor=3),

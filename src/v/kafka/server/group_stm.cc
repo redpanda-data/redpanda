@@ -30,7 +30,7 @@ void group_stm::update_tx_offset(
       it == _producers.end() || it->second.tx == nullptr
       || offset_md.pid.epoch != it->second.epoch) {
         vlog(
-          cluster::txlog.warn,
+          cluster::txlog.debug,
           "producer {} not found, skipping offsets update",
           offset_md.pid);
         return;
@@ -57,7 +57,7 @@ void group_stm::commit(model::producer_identity pid) {
       || pid.epoch != it->second.epoch) {
         // missing prepare may happen when the consumer log gets truncated
         vlog(
-          cluster::txlog.warn,
+          cluster::txlog.debug,
           "unable to find ongoing transaction for producer: {}, skipping "
           "commit",
           pid);
@@ -103,7 +103,8 @@ void group_stm::try_set_fence(
   model::producer_epoch epoch,
   model::tx_seq txseq,
   model::timeout_clock::duration transaction_timeout_ms,
-  model::partition_id tm_partition) {
+  model::partition_id tm_partition,
+  model::offset fence_offset) {
     auto [it, _] = _producers.try_emplace(id, epoch);
     if (it->second.epoch <= epoch) {
         it->second.epoch = epoch;
@@ -111,6 +112,7 @@ void group_stm::try_set_fence(
           .tx_seq = txseq,
           .tm_partition = tm_partition,
           .timeout = transaction_timeout_ms,
+          .begin_offset = fence_offset,
           .offsets = {},
         });
     }

@@ -52,12 +52,30 @@ ss::future<> group_tx_tracker_stm::do_apply(const model::record_batch& b) {
 
 model::offset group_tx_tracker_stm::max_collectible_offset() {
     auto result = last_applied_offset();
-    for (const auto& [_, group_state] : _all_txs) {
+    for (const auto& [gid, group_state] : _all_txs) {
         if (!group_state.begin_offsets.empty()) {
-            result = std::min(
-              result, model::prev_offset(*group_state.begin_offsets.begin()));
+            auto group_least_begin = *group_state.begin_offsets.begin();
+            result = std::min(result, model::prev_offset(group_least_begin));
+            vlog(
+              klog.trace,
+              "[{}] group: {}, earliest tx begin offset: {}",
+              _raft->ntp(),
+              gid,
+              group_least_begin);
+            if (klog.is_enabled(ss::log_level::trace)) {
+                for (auto& [pid, offset] : group_state.producer_to_begin) {
+                    vlog(
+                      klog.trace,
+                      "[{}] group: {}, producer: {}, begin: {}",
+                      _raft->ntp(),
+                      gid,
+                      pid,
+                      offset);
+                }
+            }
         }
     }
+
     return result;
 }
 
@@ -100,14 +118,9 @@ ss::future<> group_tx_tracker_stm::handle_raft_data(model::record_batch) {
 }
 
 ss::future<> group_tx_tracker_stm::handle_tx_offsets(
-  model::record_batch_header header, kafka::group_tx::offsets_metadata data) {
-    // in case the fence got truncated, try to start the transaction from
-    // this point on. This is not possible today but may help if delete
-    // retention is implemented for consumer topics.
-    maybe_add_tx_begin_offset(
-      std::move(data.group_id),
-      model::producer_identity{header.producer_id, header.producer_epoch},
-      header.base_offset);
+  model::record_batch_header, kafka::group_tx::offsets_metadata) {
+    // Transaction boundaries are determined by fence/commit or abort
+    // batches
     return ss::now();
 }
 

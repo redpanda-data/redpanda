@@ -71,7 +71,8 @@ ss::future<> group_recovery_consumer::handle_fence_v1(
       pid.get_epoch(),
       data.tx_seq,
       data.transaction_timeout_ms,
-      model::partition_id(0));
+      model::partition_id(0),
+      header.base_offset);
     co_return;
 }
 
@@ -92,7 +93,8 @@ ss::future<> group_recovery_consumer::handle_fence(
       pid.get_epoch(),
       data.tx_seq,
       data.transaction_timeout_ms,
-      data.tm_partition);
+      data.tm_partition,
+      header.base_offset);
     co_return;
 }
 

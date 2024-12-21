@@ -26,6 +26,30 @@ class group_tx_tracker_stm final
   , public group_data_parser<group_tx_tracker_stm> {
 public:
     static constexpr std::string_view name = "group_tx_tracker_stm";
+    struct per_group_state
+      : serde::envelope<
+          per_group_state,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        per_group_state() = default;
+
+        per_group_state(model::producer_identity pid, model::offset offset) {
+            maybe_add_tx_begin(pid, offset);
+        }
+
+        void
+        maybe_add_tx_begin(model::producer_identity pid, model::offset offset);
+
+        absl::btree_set<model::offset> begin_offsets;
+
+        absl::btree_map<model::producer_identity, model::offset>
+          producer_to_begin;
+
+        auto serde_fields() {
+            return std::tie(begin_offsets, producer_to_begin);
+        }
+    };
+    using all_txs_t = absl::btree_map<kafka::group_id, per_group_state>;
 
     group_tx_tracker_stm(ss::logger&, raft::consensus*);
 
@@ -72,31 +96,9 @@ public:
       model::record_batch_header, kafka::group_tx::commit_metadata);
     ss::future<> handle_version_fence(features::feature_table::version_fence);
 
+    const all_txs_t& inflight_transactions() const { return _all_txs; }
+
 private:
-    struct per_group_state
-      : serde::envelope<
-          per_group_state,
-          serde::version<0>,
-          serde::compat_version<0>> {
-        per_group_state() = default;
-
-        per_group_state(model::producer_identity pid, model::offset offset) {
-            maybe_add_tx_begin(pid, offset);
-        }
-
-        void
-        maybe_add_tx_begin(model::producer_identity pid, model::offset offset);
-
-        absl::btree_set<model::offset> begin_offsets;
-
-        absl::btree_map<model::producer_identity, model::offset>
-          producer_to_begin;
-
-        auto serde_fields() {
-            return std::tie(begin_offsets, producer_to_begin);
-        }
-    };
-    using all_txs_t = absl::btree_map<kafka::group_id, per_group_state>;
     struct snapshot
       : serde::envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
         all_txs_t transactions;

@@ -26,6 +26,7 @@
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/schemata/delete_groups_response.h"
+#include "kafka/protocol/schemata/describe_producers_response.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
@@ -184,6 +185,8 @@ public:
     list_groups(const list_groups_filter_data& filter_data = {}) const;
 
     described_group describe_group(const model::ntp&, const kafka::group_id&);
+
+    partition_response describe_partition_producers(const model::ntp&);
 
     ss::future<std::vector<deletable_group_result>>
       delete_groups(std::vector<std::pair<model::ntp, group_id>>);

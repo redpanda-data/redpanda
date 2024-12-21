@@ -72,6 +72,12 @@ public:
     ss::future<find_coordinator_reply>
       find_coordinator(kafka::transactional_id);
 
+    ss::future<tx::errc> unsafe_abort_group_transaction(
+      kafka::group_id,
+      model::producer_identity,
+      model::tx_seq,
+      model::timeout_clock::duration);
+
     ss::future<> stop();
 
 private:
