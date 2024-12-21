@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/rm_stm.h"
+#include "container/fragmented_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
@@ -329,8 +330,10 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
-    explicit shard_fetch(op_context::latency_point start_time)
-      : start_time{start_time} {}
+    explicit shard_fetch(
+      ss::shard_id shard_id, op_context::latency_point start_time)
+      : shard(shard_id)
+      , start_time{start_time} {}
 
     void push_back(
       ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
@@ -345,8 +348,8 @@ struct shard_fetch {
     }
 
     ss::shard_id shard;
-    std::vector<ntp_fetch_config> requests;
-    std::vector<op_context::response_placeholder_ptr> responses;
+    chunked_vector<ntp_fetch_config> requests;
+    chunked_vector<op_context::response_placeholder_ptr> responses;
     op_context::latency_point start_time;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
@@ -359,9 +362,10 @@ struct fetch_plan {
     explicit fetch_plan(
       size_t shards,
       op_context::latency_point start_time = op_context::latency_clock::now())
-      : fetches_per_shard(shards, shard_fetch(start_time)) {
-        for (size_t i = 0; i < fetches_per_shard.size(); i++) {
-            fetches_per_shard[i].shard = i;
+      : fetches_per_shard() {
+        fetches_per_shard.reserve(shards);
+        for (size_t i = 0; i < shards; i++) {
+            fetches_per_shard.emplace_back(i, start_time);
         }
     }
 
