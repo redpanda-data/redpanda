@@ -14,6 +14,7 @@
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
+#include "ssx/sformat.h"
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
@@ -106,6 +107,28 @@ FIXTURE_TEST(
     }
 }
 
+ss::sstring make_schema(
+  ss::sstring type,
+  std::optional<pps::schema_id> id,
+  std::optional<pps::schema_version> version = std::nullopt) {
+    return ssx::sformat(
+      R"({{
+  "schema": "\"{}\""{}{},
+  "schemaType": "AVRO"
+}})",
+      type,
+      id ? ssx::sformat(
+             R"(,
+  "id": {})",
+             *id)
+         : "",
+      version ? ssx::sformat(
+                  R"(,
+  "version": {})",
+                  *version)
+              : "");
+};
+
 FIXTURE_TEST(
   schema_registry_post_subjects_subject_version_with_id,
   pandaproxy_test_fixture) {
@@ -114,40 +137,19 @@ FIXTURE_TEST(
     info("Connecting client");
     auto client = make_schema_reg_client();
 
-    const ss::sstring schema_2{
-      R"({
-  "schema": "\"string\"",
-  "id": 2,
-  "schemaType": "AVRO"
-})"};
-
-    const ss::sstring schema_2_as_4{
-      R"({
-  "schema": "\"string\"",
-  "id": 4,
-  "schemaType": "AVRO"
-})"};
-
-    const ss::sstring schema_4{
-      R"({
-  "schema": "\"int\"",
-  "id": 4,
-  "schemaType": "AVRO"
-})"};
-
-    const ss::sstring schema_4_as_2{
-      R"({
-  "schema": "\"int\"",
-  "id": 2,
-  "schemaType": "AVRO"
-})"};
+    constexpr auto i2 = pps::schema_id{2};
+    constexpr auto i3 = pps::schema_id{3};
+    constexpr auto i4 = pps::schema_id{4};
+    constexpr auto v1 = pps::schema_version{1};
+    constexpr auto v5 = pps::schema_version{5};
 
     const pps::subject subject{"test-key"};
+    const pps::subject subject2{"test2-key"};
     put_config(client, subject, pps::compatibility_level::none);
 
     {
-        info("Post schema 4 as key with id 4 (higher than next_id)");
-        auto res = post_schema(client, subject, schema_4);
+        info("Post int schema as key with id 4 (higher than next_id)");
+        auto res = post_schema(client, subject, make_schema("int", i4));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
@@ -156,28 +158,60 @@ FIXTURE_TEST(
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
 
-        std::vector<pps::schema_version> expected{pps::schema_version{1}};
+        std::vector<pps::schema_version> expected{v1};
         auto versions = get_body_versions(res.body);
         BOOST_REQUIRE_EQUAL(versions, expected);
     }
 
     {
-        info("Post schema 4 as key with id 2 (expect error 42205)");
-        auto res = post_schema(client, subject, schema_2_as_4);
+        info("Repost schema 4 with id 4 - expect same version");
+        auto res = post_schema(client, subject, make_schema("int", i4));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{v1};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post int schema as key with id 4 on a different subject");
+        auto res = post_schema(client, subject2, make_schema("int", i4));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
+
+        res = get_subject_versions(client, subject2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{v1};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post different schema as key with id 4 (expect error 42205)");
+        auto res = post_schema(client, subject, make_schema("string", i4));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(),
           boost::beast::http::status::unprocessable_entity);
         auto eb = get_error_body(res.body);
         BOOST_REQUIRE(
           eb.ec
-          == pp::reply_error_code::subject_version_schema_id_already_exists);
+          == pp::reply_error_code::subject_version_operation_not_permitted);
         BOOST_REQUIRE_EQUAL(
           eb.message, R"(Overwrite new schema with id 4 is not permitted.)");
     }
 
     {
-        info("Post schema 2 as key with id 2 (lower than next id)");
-        auto res = post_schema(client, subject, schema_2);
+        info("Post string schema as key with id 2 (lower than next id)");
+        auto res = post_schema(client, subject, make_schema("string", i2));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
@@ -193,18 +227,25 @@ FIXTURE_TEST(
     }
 
     {
-        info("Post schema 4 as key with id 2 (expect error 42207)");
-        auto res = post_schema(client, subject, schema_4_as_2);
+        info("Post int schema as key with id 2 (expect error 42205)");
+        auto res = post_schema(client, subject, make_schema("int", i2));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(),
           boost::beast::http::status::unprocessable_entity);
         auto eb = get_error_body(res.body);
         BOOST_REQUIRE(
           eb.ec
-          == pp::reply_error_code::subject_version_schema_id_already_exists);
+          == pp::reply_error_code::subject_version_operation_not_permitted);
         BOOST_REQUIRE_EQUAL(
-          eb.message,
-          R"(Schema already registered with id 4 instead of input id 2)");
+          eb.message, R"(Overwrite new schema with id 2 is not permitted.)");
+    }
+
+    {
+        info("Post int schema as key with id 3 (expect success)");
+        auto res = post_schema(client, subject2, make_schema("int", i3, v5));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":3})");
     }
 }
 
