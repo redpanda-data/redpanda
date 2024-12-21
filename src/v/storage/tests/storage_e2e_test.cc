@@ -4061,7 +4061,7 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
     auto& first_seg = log.segments().front();
     BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
 
-    b.apply_compaction(cfg.compact, *new_start_offset).get();
+    b.apply_adjacent_merge_compaction(cfg.compact, *new_start_offset).get();
 
     BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
 

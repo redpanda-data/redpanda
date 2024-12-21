@@ -311,7 +311,10 @@ public:
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
     ss::future<std::optional<model::offset>> apply_retention(gc_config cfg);
-    ss::future<> apply_compaction(
+    ss::future<> apply_adjacent_merge_compaction(
+      compaction_config cfg,
+      std::optional<model::offset> new_start_offset = std::nullopt);
+    ss::future<bool> apply_sliding_window_compaction(
       compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
     ss::future<bool> update_start_offset(model::offset start_offset);
