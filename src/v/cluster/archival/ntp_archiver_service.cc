@@ -2672,7 +2672,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     if (!fence.unsafe_add) {
         vlog(
           _rtclog.debug,
-          "apply_archive_retention, read_write_fence: {}",
+          "truncate_archive_init, read-write fence: {}",
           fence.read_write_fence);
         batch.read_write_fence(fence.read_write_fence);
     }
@@ -2888,7 +2888,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         if (!fence.unsafe_add) {
             vlog(
               _rtclog.debug,
-              "garbage_collect_archive, read_write_fence: {}",
+              "cleanup_archive, read-write fence: {}",
               fence.read_write_fence);
             builder.read_write_fence(fence.read_write_fence);
         }
@@ -3205,7 +3205,7 @@ ss::future<> ntp_archiver::apply_retention() {
             // good to have this condition in case if this will be changed.
             vlog(
               _rtclog.debug,
-              "apply_retention, read_write_fence {}",
+              "truncate, read-write fence: {}",
               fence.read_write_fence);
             builder.read_write_fence(fence.read_write_fence);
         }
@@ -3312,7 +3312,7 @@ ss::future<> ntp_archiver::garbage_collect() {
         if (!fence.unsafe_add) {
             vlog(
               _rtclog.debug,
-              "garbage_collect, read-write fence: {}",
+              "cleanup_metadata, read-write fence: {}",
               fence.read_write_fence);
             builder.read_write_fence(fence.read_write_fence);
         }
