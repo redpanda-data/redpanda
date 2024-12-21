@@ -261,3 +261,21 @@ TEST(HashKeyOffsetMapTest, Initialize) {
         ASSERT_EQ(val.value(), model::offset(99));
     }
 }
+
+TEST(HashKeyOffsetMapTest, Capacity) {
+    storage::hash_key_offset_map map_1b;
+    map_1b.initialize(1).get();
+
+    storage::hash_key_offset_map map_1kb;
+    map_1kb.initialize(1_KiB).get();
+
+    storage::hash_key_offset_map map_1mb;
+    map_1mb.initialize(1_MiB).get();
+
+    storage::hash_key_offset_map map_10mb;
+    map_10mb.initialize(10_MiB).get();
+
+    ASSERT_LT(map_1b.capacity(), map_1kb.capacity());
+    ASSERT_LT(map_1kb.capacity(), map_1mb.capacity());
+    ASSERT_LT(map_1mb.capacity(), map_10mb.capacity());
+}

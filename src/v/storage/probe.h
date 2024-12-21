@@ -106,6 +106,11 @@ public:
         ++_num_rounds_window_compaction;
     }
 
+    void add_chunked_compaction_run() { ++_num_chunked_compaction_runs; }
+    auto get_chunked_compaction_runs() const {
+        return _num_chunked_compaction_runs;
+    }
+
     void batch_parse_error() { ++_batch_parse_errors; }
 
     void setup_metrics(const model::ntp&);
@@ -145,12 +150,13 @@ private:
     uint32_t _log_segments_active = 0;
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
+
     double _compaction_ratio = 1.0;
     uint64_t _tombstones_removed = 0;
     uint64_t _segment_cleanly_compacted = 0;
     uint64_t _segments_marked_tombstone_free = 0;
     uint64_t _num_rounds_window_compaction = 0;
-
+    uint64_t _num_chunked_compaction_runs = 0;
     ssize_t _compaction_removed_bytes = 0;
 
     metrics::internal_metric_groups _metrics;

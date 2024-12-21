@@ -12,6 +12,7 @@
 #include "model/timestamp.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/exceptions.h"
 #include "storage/index_state.h"
 #include "storage/key_offset_map.h"
 #include "storage/probe.h"
@@ -20,6 +21,8 @@
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
 #include "storage/types.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <exception>
 
@@ -159,7 +162,7 @@ ss::future<model::offset> build_offset_map(
     if (!min_segment_fully_indexed.has_value()) {
         // If we broke out without setting an offset, we failed to index even a
         // single segment, likely because it had too many keys.
-        throw std::runtime_error(
+        throw zero_segments_indexed_exception(
           fmt::format("Couldn't index {}", iter->get()->path()));
     }
     co_return min_segment_fully_indexed.value();
@@ -252,6 +255,40 @@ ss::future<index_state> deduplicate_segment(
     }
 
     co_return new_idx;
+}
+
+ss::future<bool> index_chunk_of_segment_for_map(
+  const compaction_config& compact_cfg,
+  ss::lw_shared_ptr<segment> seg,
+  key_offset_map& map,
+  probe& pb,
+  model::offset& last_indexed_offset) {
+    co_await map.reset();
+    auto read_holder = co_await seg->read_lock();
+    auto start_offset_inclusive = model::next_offset(last_indexed_offset);
+    auto rdr = internal::create_segment_full_reader(
+      seg, compact_cfg, pb, std::move(read_holder), start_offset_inclusive);
+    internal::map_building_reducer reducer(&map, start_offset_inclusive);
+
+    bool fully_indexed_segment = co_await std::move(rdr).consume(
+      reducer, model::no_timeout);
+
+    last_indexed_offset = map.max_offset();
+    if (fully_indexed_segment) {
+        vlog(
+          gclog.trace,
+          "Finished building offset map for segment {}",
+          seg->reader().filename());
+    } else {
+        vlog(
+          gclog.trace,
+          "Built offset map up to offset {}/{} for segment {}",
+          last_indexed_offset,
+          seg->offsets().get_dirty_offset(),
+          seg->reader().filename());
+    }
+
+    co_return fully_indexed_segment;
 }
 
 } // namespace storage

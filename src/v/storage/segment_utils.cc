@@ -473,10 +473,13 @@ model::record_batch_reader create_segment_full_reader(
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
   storage::probe& pb,
-  ss::rwlock::holder h) {
+  ss::rwlock::holder h,
+  std::optional<model::offset> start_offset) {
     auto o = s->offsets();
     auto reader_cfg = log_reader_config(
-      o.get_base_offset(), o.get_dirty_offset(), cfg.iopc);
+      start_offset.value_or(o.get_base_offset()),
+      o.get_dirty_offset(),
+      cfg.iopc);
     reader_cfg.skip_batch_cache = true;
     segment_set::underlying_t set;
     set.reserve(1);

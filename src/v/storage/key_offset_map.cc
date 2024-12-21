@@ -48,6 +48,11 @@ model::offset simple_key_offset_map::max_offset() const { return _max_offset; }
 
 size_t simple_key_offset_map::size() const { return _map.size(); }
 size_t simple_key_offset_map::capacity() const { return _max_keys; }
+ss::future<> simple_key_offset_map::reset() {
+    _map.clear();
+    _max_offset = model::offset{};
+    return ss::now();
+};
 
 seastar::future<std::optional<model::offset>>
 hash_key_offset_map::get(const compaction_key& key) const {
@@ -182,7 +187,12 @@ size_t hash_key_offset_map::capacity() const { return capacity_; }
 seastar::future<> hash_key_offset_map::initialize(size_t size_bytes) {
     co_await fragmented_vector_clear_async(entries_);
     while (entries_.memory_size() < size_bytes) {
-        for (size_t i = 0; i < entries_.elements_per_fragment(); ++i) {
+        const auto required_size = size_bytes - entries_.memory_size();
+        const auto required_entries = std::max(
+          required_size / sizeof(entries_t::value_type), 1UL);
+        const auto num_elements = std::min(
+          required_entries, entries_.elements_per_fragment());
+        for (size_t i = 0; i < num_elements; ++i) {
             entries_.push_back(entry{});
         }
         if (seastar::need_preempt()) {
