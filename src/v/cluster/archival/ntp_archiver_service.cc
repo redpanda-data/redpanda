@@ -2625,6 +2625,13 @@ ss::future<> ntp_archiver::apply_archive_retention() {
         vlog(_rtclog.trace, "NTP is not collectable");
         co_return;
     }
+
+    archival_stm_fence fence = {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      .unsafe_add = false,
+    };
+
     std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
     std::optional<std::chrono::milliseconds> retention_ms
       = ntp_conf.retention_duration();
@@ -2661,6 +2668,13 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     auto deadline = ss::lowres_clock::now() + sync_timeout;
 
     auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    if (!fence.unsafe_add) {
+        vlog(
+          _rtclog.debug,
+          "apply_archive_retention, read_write_fence: {}",
+          fence.read_write_fence);
+        batch.read_write_fence(fence.read_write_fence);
+    }
     batch.truncate_archive_init(res.value().offset, res.value().delta);
     auto error = co_await batch.replicate();
 
@@ -2682,6 +2696,11 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     if (!may_begin_uploads()) {
         co_return;
     }
+    archival_stm_fence fence = {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      .unsafe_add = false,
+    };
     auto backlog = co_await _manifest_view->get_retention_backlog();
     if (backlog.has_failure()) {
         if (backlog.error() == cloud_storage::error_outcome::shutting_down) {
@@ -2864,8 +2883,16 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _parent.archival_meta_stm()->cleanup_archive(
-          new_clean_offset, bytes_to_remove, deadline, _as);
+        auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        if (!fence.unsafe_add) {
+            vlog(
+              _rtclog.debug,
+              "garbage_collect_archive, read_write_fence: {}",
+              fence.read_write_fence);
+            builder.read_write_fence(fence.read_write_fence);
+        }
+        builder.cleanup_archive(new_clean_offset, bytes_to_remove);
+        auto error = co_await builder.replicate();
 
         if (error != cluster::errc::success) {
             vlog(
@@ -3118,6 +3145,11 @@ ss::future<> ntp_archiver::apply_retention() {
     if (!may_begin_uploads()) {
         co_return;
     }
+    archival_stm_fence fence = {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      .unsafe_add = false,
+    };
     auto arch_so = manifest().get_archive_start_offset();
     auto stm_so = manifest().get_start_offset();
     if (arch_so != model::offset{} && arch_so != stm_so) {
@@ -3164,8 +3196,22 @@ ss::future<> ntp_archiver::apply_retention() {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _parent.archival_meta_stm()->truncate(
-          *next_start_offset, deadline, _as);
+
+        auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        if (!fence.unsafe_add) {
+            // Currently, the 'unsafe_add' is always set to 'false'
+            // because the fence is generated inside this method. It's still
+            // good to have this condition in case if this will be changed.
+            vlog(
+              _rtclog.debug,
+              "apply_retention, read_write_fence {}",
+              fence.read_write_fence);
+            builder.read_write_fence(fence.read_write_fence);
+        }
+        builder.truncate(*next_start_offset);
+
+        auto error = co_await builder.replicate();
+
         if (error != cluster::errc::success) {
             vlog(
               _rtclog.warn,
@@ -3193,6 +3239,12 @@ ss::future<> ntp_archiver::garbage_collect() {
     if (to_remove.size() == 0) {
         co_return;
     }
+
+    archival_stm_fence fence = {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      .unsafe_add = false,
+    };
 
     // If we are about to delete segments, we must ensure that the remote
     // manifest is fully up to date, so that it is definitely not referring
@@ -3254,8 +3306,17 @@ ss::future<> ntp_archiver::garbage_collect() {
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        auto error = co_await _parent.archival_meta_stm()->cleanup_metadata(
-          deadline, _as);
+
+        auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        if (!fence.unsafe_add) {
+            vlog(
+              _rtclog.debug,
+              "garbage_collect, read-write fence: {}",
+              fence.read_write_fence);
+            builder.read_write_fence(fence.read_write_fence);
+        }
+        builder.cleanup_metadata();
+        auto error = co_await builder.replicate();
 
         if (error != cluster::errc::success) {
             vlog(
