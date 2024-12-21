@@ -358,10 +358,14 @@ ss::future<std::optional<std::error_code>> get_file_range(
         upl->max_timestamp = seek.ts;
     }
     // Recompute content_length based on file offsets
-    vassert(
-      upl->file_offset <= upl->final_file_offset,
-      "Invalid upload candidate {}",
-      upl);
+    if (upl->file_offset > upl->final_file_offset) {
+        // This could potentially happen if the log was truncated after
+        // file_offset is set. In this case the index could become empty which
+        // will trigger the condition above. The operation could be retried
+        // later so throwing makes more sense then the assertion.
+        throw std::runtime_error(
+          fmt_with_ctx(fmt::format, "Invalid upload candidate {}", upl));
+    }
     upl->content_length = upl->final_file_offset - upl->file_offset;
     if (upl->content_length > segment->reader().file_size()) {
         throw std::runtime_error(fmt_with_ctx(
