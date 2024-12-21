@@ -417,7 +417,9 @@ FIXTURE_TEST(
     while (produced_kafka_base_offset > stm_manifest.get_next_kafka_offset()) {
         BOOST_REQUIRE(archiver->sync_for_tests().get());
         BOOST_REQUIRE_EQUAL(
-          archiver->upload_next_candidates()
+          archiver
+            ->upload_next_candidates(
+              archival::archival_stm_fence{.unsafe_add = true})
             .get()
             .non_compacted_upload_result.num_failed,
           0);
@@ -497,7 +499,9 @@ FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
     // Upload more and truncate the manifest past the override.
     BOOST_REQUIRE(archiver->sync_for_tests().get());
     BOOST_REQUIRE_EQUAL(
-      archiver->upload_next_candidates()
+      archiver
+        ->upload_next_candidates(
+          archival::archival_stm_fence{.unsafe_add = true})
         .get()
         .non_compacted_upload_result.num_failed,
       0);

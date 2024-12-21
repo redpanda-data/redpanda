@@ -213,29 +213,32 @@ adjacent_segment_merger::run(run_quota_t quota) {
                          const cloud_storage::partition_manifest& manifest) {
             return scan_manifest(local_start_offset, manifest);
         };
-        auto [archiver_units, upl] = co_await _archiver.find_reupload_candidate(
-          scanner);
-        if (!upl.has_value()) {
+        auto find_res = co_await _archiver.find_reupload_candidate(scanner);
+        if (!find_res.locks.has_value()) {
             vlog(_ctxlog.debug, "No more upload candidates");
             co_return result;
         }
-        vassert(archiver_units.has_value(), "Must take archiver units");
-        auto next = model::next_offset(upl->candidate.final_offset);
+        vassert(find_res.units.has_value(), "Must take archiver units");
+        auto next = model::next_offset(find_res.locks->candidate.final_offset);
         vlog(
           _ctxlog.debug,
-          "Going to upload segment {}, num source segments {}, last offset {}",
-          upl->candidate.exposed_name,
-          upl->candidate.sources.size(),
-          upl->candidate.final_offset);
-        for (const auto& src : upl->candidate.sources) {
+          "Going to upload segment {}, num source segments {}, last offset {}, "
+          "read-write-fence value: {}",
+          find_res.locks->candidate.exposed_name,
+          find_res.locks->candidate.sources.size(),
+          find_res.locks->candidate.final_offset,
+          find_res.read_write_fence.read_write_fence);
+        for (const auto& src : find_res.locks->candidate.sources) {
             vlog(
               _ctxlog.debug,
               "Local log segment {} found, size {}",
               src->filename(),
               src->size_bytes());
         }
+
         auto uploaded = co_await _archiver.upload(
-          std::move(*archiver_units), std::move(*upl), std::ref(_root_rtc));
+          std::move(find_res), std::ref(_root_rtc));
+
         if (uploaded) {
             _last = next;
             result.status = run_status::ok;
@@ -246,14 +249,14 @@ adjacent_segment_merger::run(run_quota_t quota) {
             result.remaining = result.remaining - run_quota_t{1};
             vlog(
               _ctxlog.debug,
-              "Successfuly uploaded segment, new last offfset is {}",
+              "Successfully uploaded segment, new last offset is {}",
               _last);
         } else {
             // Upload failed
             result.status = run_status::failed;
             vlog(
               _ctxlog.debug,
-              "Failed to upload segment, last offfset is {}",
+              "Failed to upload segment, last offset is {}",
               _last);
         }
     }

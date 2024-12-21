@@ -1041,6 +1041,11 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 }
 
 ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
+    /*TODO: remove*/ vlog(
+      _log.debug,
+      "NEEDLE do_apply applying batch {} ({})",
+      b.base_offset(),
+      b.header().type);
     if (
       b.header().type != model::record_batch_type::archival_metadata
       && b.header().type != model::record_batch_type::prefix_truncate) {
@@ -1071,14 +1076,24 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
               }
           });
     } else {
-        auto on_exit = ss::defer(
-          [this] { maybe_notify_waiter(errc::success); });
+        /*TODO: remove*/ vlog(_log.debug, "NEEDLE do_apply called");
+        auto on_exit = ss::defer([this] {
+            maybe_notify_waiter(errc::success);
+            /*TODO: remove*/ vlog(_log.debug, "NEEDLE do_apply completed");
+        });
         try {
             b.for_each_record([this, base_offset = b.base_offset()](
                                 model::record&& r) {
                 auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
+                /*TODO: remove*/ vlog(
+                  _log.debug, "NEEDLE do_apply command key {}", key);
+
                 if (key != read_write_fence_cmd::key) {
+                    /*TODO: remove*/ vlog(
+                      _log.debug,
+                      "NEEDLE do_apply advance applied offset: {}",
+                      base_offset + model::offset{r.offset_delta()});
                     _manifest->advance_applied_offset(
                       base_offset + model::offset{r.offset_delta()});
                 }
@@ -1152,6 +1167,10 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
                     if (apply_read_write_fence(
                           serde::from_iobuf<read_write_fence_cmd>(
                             r.release_value()))) {
+                        /*TODO: remove*/ vlog(
+                          _log.debug,
+                          "NEEDLE do_apply rw-fence concurrency violation {}",
+                          r.release_value());
                         // This means that there is a concurrency violation. The
                         // fence was created before some other command was
                         // applied. We can't apply the commands from this batch.
@@ -1335,7 +1354,8 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
       .last_partition_scrub = _manifest->last_partition_scrub(),
       .last_scrubbed_offset = _manifest->last_scrubbed_offset(),
       .detected_anomalies = _manifest->detected_anomalies(),
-      .highest_producer_id = _manifest->highest_producer_id()});
+      .highest_producer_id = _manifest->highest_producer_id(),
+      .applied_offset = _manifest->get_applied_offset()});
     auto snapshot_offset = last_applied_offset();
     apply_units.return_all();
 
@@ -1403,30 +1423,6 @@ void archival_metadata_stm::maybe_notify_waiter(std::exception_ptr e) noexcept {
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto meta = segment.meta;
-    bool disable_safe_add
-      = config::shard_local_cfg()
-          .cloud_storage_disable_metadata_consistency_checks.value();
-    if (
-      !disable_safe_add && segment.is_validated == segment_validated::yes
-      && !_manifest->safe_segment_meta_to_add(meta)) {
-        // We're only validating segment metadata records if they're validated.
-        // It goes like this
-        // - npt_archiver_service validates segment_meta instances before
-        //   replication
-        // - replicated add_segment commands have 'is_validated' field set to
-        //   'yes'
-        // - old records in the log have 'is_validated' field set to 'no'
-        // - the 'apply_add_segment' will only validate new commands and add old
-        //   ones unconditionally
-        auto last = _manifest->last_segment();
-        vlog(
-          _logger.error,
-          "Can't add segment: {}, previous segment: {}",
-          meta,
-          last);
-        maybe_notify_waiter(errc::inconsistent_stm_update);
-        return;
-    }
     if (meta.ntp_revision == model::initial_revision_id{}) {
         // metadata serialized by old versions of redpanda doesn't have the
         // ntp_revision field.

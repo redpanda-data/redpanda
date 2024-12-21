@@ -114,6 +114,17 @@ enum class wait_result { not_in_progress, complete, lost_leadership, failed };
 
 std::ostream& operator<<(std::ostream& os, wait_result wr);
 
+/// Fence value for the archival STM.
+/// The value is used to implement optimistic
+/// concurrency control.
+struct archival_stm_fence {
+    // Offset of the last command added to the
+    // archival STM
+    model::offset read_write_fence;
+    // Disable fencing in tests
+    bool unsafe_add{false};
+};
+
 /// This class performs per-ntp archival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
 /// 'ntp_archiver' instances that the shard possesses are supposed to be
@@ -225,6 +236,7 @@ public:
     ///        offset.
     /// \return future that returns number of uploaded/failed segments
     virtual ss::future<batch_result> upload_next_candidates(
+      archival_stm_fence fence,
       std::optional<model::offset> unsafe_max_offset_override_exclusive
       = std::nullopt);
 
@@ -324,6 +336,12 @@ public:
         model::offset local_start_offset,
         const cloud_storage::partition_manifest& manifest)>;
 
+    struct find_reupload_candidate_result {
+        std::optional<ssx::semaphore_units> units;
+        std::optional<upload_candidate_with_locks> locks;
+        archival_stm_fence read_write_fence;
+    };
+
     /// Find upload candidate
     ///
     /// Depending on the output of the 'scanner' the upload candidate
@@ -333,9 +351,7 @@ public:
     ///
     /// \param scanner is a user provided function used to find upload candidate
     /// \return {nullopt, nullopt} or the archiver lock and upload candidate
-    ss::future<std::pair<
-      std::optional<ssx::semaphore_units>,
-      std::optional<upload_candidate_with_locks>>>
+    ss::future<find_reupload_candidate_result>
     find_reupload_candidate(manifest_scanner_t scanner);
 
     /**
@@ -354,8 +370,7 @@ public:
      * \return true on success and false otherwise
      */
     ss::future<bool> upload(
-      ssx::semaphore_units archiver_units,
-      upload_candidate_with_locks candidate,
+      find_reupload_candidate_result find_res,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
 
     /// Return reference to partition manifest from archival STM
@@ -433,6 +448,7 @@ private:
     ss::future<> maybe_complete_flush();
 
     ss::future<bool> do_upload_local(
+      archival_stm_fence fence,
       upload_candidate_with_locks candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
     ss::future<bool> do_upload_remote(
@@ -498,6 +514,7 @@ private:
     ///
     /// Update the probe and manifest
     ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
+      archival_stm_fence fence,
       std::vector<ntp_archiver::scheduled_upload> scheduled);
 
     /// Waits for scheduled segment uploads. The uploaded segments could be
@@ -505,6 +522,7 @@ private:
     /// cases with the major difference being the probe updates done after
     /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
+      archival_stm_fence fence,
       std::vector<scheduled_upload> scheduled,
       segment_upload_kind segment_kind,
       bool inline_manifest);

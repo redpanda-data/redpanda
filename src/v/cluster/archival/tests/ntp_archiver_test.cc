@@ -404,7 +404,9 @@ FIXTURE_TEST(
     });
 
     retry_chain_node fib(never_abort);
-    auto res = archiver.upload_next_candidates().get();
+    auto res = archiver
+                 .upload_next_candidates(archival_stm_fence{.unsafe_add = true})
+                 .get();
 
     auto&& [non_compacted_result, compacted_result] = res;
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
