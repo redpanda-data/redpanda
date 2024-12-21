@@ -3,13 +3,6 @@ module(
     repo_name = "com_github_redpanda_data_redpanda",
 )
 
-bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
-git_override(
-    module_name = "hedron_compile_commands",
-    commit = "a14ad3a64e7bf398ab48105aaa0348e032ac87f8",
-    remote = "https://github.com/hedronvision/bazel-compile-commands-extractor.git",
-)
-
 bazel_dep(name = "rules_boost", repo_name = "com_github_nelhage_rules_boost")
 archive_override(
     module_name = "rules_boost",
