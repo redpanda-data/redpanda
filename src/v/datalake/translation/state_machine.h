@@ -39,19 +39,28 @@ public:
     ss::future<std::optional<kafka::offset>>
     highest_translated_offset(model::timeout_clock::duration timeout);
 
+    ss::future<std::optional<model::offset>>
+    highest_translated_log_offset(model::timeout_clock::duration timeout);
+
     ss::future<std::error_code> reset_highest_translated_offset(
       kafka::offset new_translated_offset,
+      model::offset new_log_translated_offset,
       model::term_id term,
       model::timeout_clock::duration timeout,
       ss::abort_source&);
 
 private:
     struct snapshot
-      : serde::envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
+      : serde::envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
         kafka::offset highest_translated_offset;
-        auto serde_fields() { return std::tie(highest_translated_offset); }
+        model::offset highest_translated_log_offset;
+        auto serde_fields() {
+            return std::tie(
+              highest_translated_offset, highest_translated_log_offset);
+        }
     };
     kafka::offset _highest_translated_offset{};
+    model::offset _highest_translated_log_offset{};
 };
 
 class stm_factory : public cluster::state_machine_factory {

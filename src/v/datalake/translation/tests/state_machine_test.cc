@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/translation/state_machine.h"
+#include "datalake/translation/utils.h"
 #include "raft/tests/stm_test_fixture.h"
 #include "storage/disk_log_impl.h"
 #include "test_utils/scoped_config.h"
@@ -65,6 +66,16 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
         co_return co_await std::get<0>(stms)->highest_translated_offset(5s);
     }
 
+    ss::future<result<std::optional<model::offset>, raft::errc>>
+    get_highest_translated_log_offset() {
+        auto leader_id = get_leader();
+        if (!leader_id) {
+            co_return raft::errc::not_leader;
+        }
+        auto& stms = node_stms[node(leader_id.value()).get_vnode()];
+        co_return co_await std::get<0>(stms)->highest_translated_log_offset(5s);
+    }
+
     ss::future<std::error_code>
     set_highest_translated_offset(kafka::offset update) {
         auto leader_id = get_leader();
@@ -74,8 +85,11 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
         auto& stms = node_stms[node(leader_id.value()).get_vnode()];
         auto stm = std::get<0>(stms);
         ss::abort_source as;
+        auto log = stm->raft()->log();
+        auto log_update = datalake::translation::get_translated_log_offset(
+          log, update);
         co_return co_await stm->reset_highest_translated_offset(
-          update, stm->raft()->term(), 5s, as);
+          update, log_update, stm->raft()->term(), 5s, as);
     }
 
     ss::future<> check_max_collectible_offset(model::offset expected) {
@@ -109,6 +123,18 @@ struct translator_stm_fixture : stm_raft_fixture<stm> {
               });
         });
     }
+
+    ss::future<>
+    check_highest_translated_log_offset(std::optional<model::offset> expected) {
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, expected] {
+            return get_highest_translated_log_offset().then(
+              [expected](
+                result<std::optional<model::offset>, raft::errc> result) {
+                  return ss::make_ready_future<bool>(
+                    result.has_value() && result.value() == expected);
+              });
+        });
+    }
 };
 
 TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
@@ -121,8 +147,17 @@ TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
     // is max()
     co_await check_max_collectible_offset(model::offset::max());
     co_await check_highest_translated_offset(std::nullopt);
+    co_await check_highest_translated_log_offset(std::nullopt);
 
     auto new_translated_offset = kafka::offset{10};
+    model::offset max_collectible_offset{};
+    {
+        auto log = std::get<0>(node_stms.begin()->second)->raft()->log();
+        max_collectible_offset
+          = datalake::translation::get_translated_log_offset(
+            log, new_translated_offset);
+    }
+
     // update highest_translated offset;
     RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this, new_translated_offset] {
         return set_highest_translated_offset(new_translated_offset)
@@ -132,23 +167,20 @@ TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
     // iceberg is still disabled, max_collectible offset shouldn't change.
     co_await check_max_collectible_offset(model::offset::max());
     co_await check_highest_translated_offset(std::nullopt);
+    co_await check_highest_translated_log_offset(std::nullopt);
 
     // enable iceberg.
     co_await enable_iceberg();
 
-    model::offset max_collectible_offset{};
-    {
-        auto log = std::get<0>(node_stms.begin()->second)->raft()->log();
-        max_collectible_offset = log->to_log_offset(
-          kafka::offset_cast(new_translated_offset));
-    }
     co_await check_max_collectible_offset(max_collectible_offset);
     co_await check_highest_translated_offset(new_translated_offset);
+    co_await check_highest_translated_log_offset(max_collectible_offset);
 
     co_await disable_iceberg();
 
     co_await check_max_collectible_offset(model::offset::max());
     co_await check_highest_translated_offset(std::nullopt);
+    co_await check_highest_translated_log_offset(std::nullopt);
 
     // test snapshots
     // write a snapshot.
@@ -160,4 +192,5 @@ TEST_F_CORO(translator_stm_fixture, state_machine_ops) {
     co_await enable_iceberg();
     co_await check_max_collectible_offset(max_collectible_offset);
     co_await check_highest_translated_offset(new_translated_offset);
+    co_await check_highest_translated_log_offset(max_collectible_offset);
 }

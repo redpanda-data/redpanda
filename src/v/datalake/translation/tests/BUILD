@@ -9,6 +9,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         "//src/v/datalake/translation:stm",
+        "//src/v/datalake/translation:utils",
         "//src/v/raft/tests:stm_test_fixture",
         "//src/v/random:generators",
         "//src/v/storage",

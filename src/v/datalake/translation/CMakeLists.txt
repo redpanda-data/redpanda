@@ -3,6 +3,7 @@ v_cc_library(
     SRCS
         partition_translator.cc
         state_machine.cc
+	utils.cc
     DEPS
         v::cluster
         v::datalake_writer

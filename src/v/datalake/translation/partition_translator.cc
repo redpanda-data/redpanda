@@ -22,8 +22,10 @@
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
 #include "datalake/translation/state_machine.h"
+#include "datalake/translation/utils.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
+#include "model/fundamental.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 #include "utils/lazy_abort_source.h"
@@ -293,6 +295,16 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
     }
     auto read_end_offset = max_offset.value();
     if (read_end_offset < read_begin_offset) {
+        // Detect that redpanda offset has changed from last translation, but no
+        // kafka offsets were found.
+        auto highest_translated_log_offset = get_translated_log_offset(
+          _partition->raft()->log(), read_end_offset);
+        auto reset_error = co_await _stm->reset_highest_translated_offset(
+          read_end_offset,
+          highest_translated_log_offset,
+          _term,
+          wait_timeout,
+          _as);
         vlog(
           _logger.debug,
           "translation up to date, next begin : {}, max readable kafka offset: "
@@ -301,7 +313,7 @@ partition_translator::do_translate_once(retry_chain_node& parent_rcn) {
           read_end_offset,
           _partition->last_stable_offset());
         _partition->probe().update_iceberg_translation_offset_lag(0);
-        co_return translation_success::yes;
+        co_return !reset_error;
     }
     // We have some data to translate, make a reader
     // and dispatch to the iceberg translator
@@ -407,9 +419,12 @@ partition_translator::checkpoint_translated_data(
           return can_continue() && is_retriable(result.errc);
       });
     vlog(_logger.trace, "Adding translated data file, result: {}", result);
+    model::offset last_log_offset = get_translated_log_offset(
+      _partition->raft()->log(), last_offset);
+
     co_return result.errc == coordinator::errc::ok
       && !(co_await _stm->reset_highest_translated_offset(
-        last_offset, _term, wait_timeout, _as));
+        last_offset, last_log_offset, _term, wait_timeout, _as));
 }
 
 ss::future<std::optional<kafka::offset>>
@@ -434,8 +449,11 @@ partition_translator::reconcile_with_coordinator() {
                                ? resp.last_added_offset.value()
                                : kafka::prev_offset(
                                    min_offset_for_translation());
+
+    model::offset translated_log_offset = get_translated_log_offset(
+      _partition->raft()->log(), translated_offset);
     auto reset_error = co_await _stm->reset_highest_translated_offset(
-      translated_offset, _term, wait_timeout, _as);
+      translated_offset, translated_log_offset, _term, wait_timeout, _as);
     if (reset_error) {
         co_return std::nullopt;
     }
