@@ -1050,6 +1050,38 @@ ss::future<> archival_metadata_stm::do_apply(const model::record_batch& b) {
         _manifest->advance_insync_offset(b.last_offset());
         co_return;
     }
+    if (
+      !_raft->log_config().is_read_replica_mode_enabled()
+      && b.last_offset() < _manifest->get_insync_offset()) {
+        // Archival STM commands are not idempotent. Applying same command twice
+        // may cause a problem. This branch is used to deduplicate the commands.
+        // It's only applied to non-data batches that can affect the state of
+        // this STM.
+        // We're assuming that commands are applied in all or nothing
+        // fashion and there is no need to track in-sync offset within the
+        // record batch.
+        //
+        // The corner cases are:
+        // - When recovery is used to recreate the partition the
+        //   archival_metadata_stm is seeded using the last uploaded offset and
+        //   not insync offset. This is because the recovery assumes that the
+        //   data above the last uploaded offset is lost. This means that if
+        //   we're using Tiered-Storage recovery to restore a replica (force
+        //   reconfiguration or fast partition movement) and the data is not
+        //   lost and will be copied later into the restored replica we may see
+        //   this error message. The insync offset can only move back in this
+        //   case.
+        // - In RRR the insync offset of the manifest corresponds to the
+        // original
+        //   cluster and not the one running Read-Replica.
+        vlog(
+          _logger.error,
+          "Command with offset {} (type: {}) is already applied to the "
+          "archival_metadata_stm",
+          b.base_offset(),
+          b.header().type);
+        co_return;
+    }
 
     if (b.header().type == model::record_batch_type::prefix_truncate) {
         // Special case handling for prefix_truncate batches: these
