@@ -528,6 +528,40 @@ private:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    struct reconcile_upload_result {
+        ss::input_stream<char> stream;
+        cloud_storage::segment_meta meta;
+
+        /// Contains 'no' if the method can be called another time or 'yes'
+        /// if it shouldn't be called (if there is no data to upload).
+        /// If the 'stop' is 'no' the 'result' might be 'nullopt'. In this
+        /// case the upload is not started but the method might be called
+        /// again anyway.
+        ss::stop_iteration stop;
+        segment_upload_kind upload_kind;
+    };
+
+    ss::future<scheduled_upload>
+    schedule_single_upload_v2(const upload_context& upload_ctx);
+
+    /// Reconcile with storage log and find upload candidate
+    ss::future<result<reconcile_upload_result>>
+    reconcile_upload(const upload_context& upload_ctx);
+
+    /// Upload the segment and its index and tx-manifest to S3.
+    ss::future<ntp_archiver_upload_result>
+    upload_segment(reconcile_upload_result param);
+
+    /// Upload tx-manifest
+    /// Return error-code if the manifest was uploaded or upload was attempted
+    /// and failed. Return nullopt if there are no aborted transactions in the
+    /// provided offset range.
+    ss::future<std::optional<cloud_storage::upload_result>>
+    maybe_upload_aborted_tx(
+      cloud_storage::remote_segment_path path,
+      model::offset base,
+      model::offset last);
+
     /// Isolates segment upload and accepts a stream reference, so that if the
     /// upload fails the exception can be handled in the caller and the stream
     /// can be closed.

@@ -27,6 +27,7 @@
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archival_policy.h"
 #include "cluster/archival/archiver_operations_api.h"
+#include "cluster/archival/async_data_uploader.h"
 #include "cluster/archival/logger.h"
 #include "cluster/archival/retention_calculator.h"
 #include "cluster/archival/scrubber.h"
@@ -40,6 +41,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/fundamental.h"
+#include "random/fast_prng.h"
 #include "ssx/future-util.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
@@ -47,6 +49,7 @@
 #include "storage/parser.h"
 #include "utils/human.h"
 #include "utils/lazy_abort_source.h"
+#include "utils/move_canary.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_provider.h"
 #include "utils/stream_utils.h"
@@ -62,6 +65,7 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -1467,6 +1471,36 @@ split_segment_stream(
       std::move(std::get<0>(res)), std::move(std::get<1>(res)));
 }
 
+// This struct wraps a stream object and exposes the stream_provider
+// interface for compatibility with the remote object API.
+struct one_time_stream_wrapper final : public stream_provider {
+    std::optional<ss::input_stream<char>> stream;
+
+    one_time_stream_wrapper(const one_time_stream_wrapper&) = delete;
+    one_time_stream_wrapper(one_time_stream_wrapper&&) = default;
+    one_time_stream_wrapper& operator=(const one_time_stream_wrapper&) = delete;
+    one_time_stream_wrapper& operator=(one_time_stream_wrapper&&) = default;
+
+    ~one_time_stream_wrapper() override = default;
+
+    explicit one_time_stream_wrapper(ss::input_stream<char> s)
+      : stream(std::move(s)) {}
+
+    ss::input_stream<char> take_stream() override {
+        vassert(stream.has_value(), "no stream to take");
+        ss::input_stream<char> s = std::move(stream.value());
+        stream = std::nullopt;
+        return s;
+    }
+
+    ss::future<> close() override {
+        if (stream.has_value()) {
+            co_await stream.value().close();
+        }
+        co_return;
+    }
+};
+
 ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
   const remote_segment_path& path,
   upload_candidate candidate,
@@ -1485,43 +1519,13 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
       [this]() { return upload_should_abort(); },
     };
 
-    // This struct wraps a stream object and exposes the stream_provider
-    // interface for compatibility with the remote object API.
-    struct stream_wrapper final : public stream_provider {
-        std::optional<ss::input_stream<char>> stream;
-
-        stream_wrapper(const stream_wrapper&) = delete;
-        stream_wrapper(stream_wrapper&&) = default;
-        stream_wrapper& operator=(const stream_wrapper&) = delete;
-        stream_wrapper& operator=(stream_wrapper&&) = default;
-
-        ~stream_wrapper() override = default;
-
-        explicit stream_wrapper(ss::input_stream<char> s)
-          : stream(std::move(s)) {}
-
-        ss::input_stream<char> take_stream() override {
-            vassert(stream.has_value(), "no stream to take");
-            ss::input_stream<char> s = std::move(stream.value());
-            stream = std::nullopt;
-            return s;
-        }
-
-        ss::future<> close() override {
-            if (stream.has_value()) {
-                co_await stream.value().close();
-            }
-            co_return;
-        }
-    };
-
     std::optional<ss::input_stream<char>> stream_state = std::move(stream);
     auto reset_func = [this, candidate, &stream_state] {
         using provider_t = std::unique_ptr<stream_provider>;
         // On first attempt to upload, the stream-ref passed in is used.
         if (stream_state.has_value()) {
             auto f = ss::make_ready_future<provider_t>(
-              std::make_unique<stream_wrapper>(
+              std::make_unique<one_time_stream_wrapper>(
                 std::move(stream_state.value())));
             stream_state = std::nullopt;
             return f;
@@ -1878,6 +1882,486 @@ ntp_archiver::do_schedule_single_upload(
     };
 }
 
+static cloud_storage::segment_meta convert_segment_meta(
+  const upload_reconciliation_result& meta,
+  const cluster::partition& parent,
+  model::initial_revision_id rev,
+  model::term_id start_term) {
+    return cloud_storage::segment_meta{
+      .is_compacted = meta.is_compacted,
+      .size_bytes = meta.size_bytes,
+      .base_offset = meta.offsets.base,
+      .committed_offset = meta.offsets.last,
+      // Timestamps will be populated during the upload
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = parent.log()->offset_delta(meta.offsets.base),
+      .ntp_revision = rev,
+      .archiver_term = start_term,
+      .segment_term
+      = parent.log()->get_term(meta.offsets.base).value_or(model::term_id{}),
+      .delta_offset_end = parent.log()->offset_delta(meta.offsets.last),
+      .sname_format = cloud_storage::segment_name_format::v3,
+      /// Size of the tx-range (in v3 format)
+      .metadata_size_hint = 0,
+    };
+}
+
+static std::tuple<size_t, size_t> upload_size_jitter(size_t sz) {
+    if (sz < 1_MiB) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Invalid upload size target: {}, can't be less than 1MiB",
+          sz));
+    }
+    // We want to guarantee that there is always some spread and
+    // that its width is limited to some reasonable value. This
+    // implementation will try to keep it in 2-4KiB range for
+    // small segments (<20MiB) and 2-4MiB range for large segments.
+    fast_prng rng;
+    size_t min_size = 0, max_size = 0;
+    if (sz < 20_MiB) {
+        min_size = sz - 1_KiB - (rng() & (1_KiB - 1));
+        max_size = sz - 1_KiB - (rng() & (1_KiB - 1));
+    } else {
+        min_size = sz - 1_MiB - (rng() & (1_MiB - 1));
+        max_size = sz - 1_MiB - (rng() & (1_MiB - 1));
+    }
+    return std::make_tuple(min_size, max_size);
+}
+
+ss::future<result<ntp_archiver::reconcile_upload_result>>
+ntp_archiver::reconcile_upload(const upload_context& upload_ctx) {
+    // TODO: use proper deadline
+    auto deadline = ss::lowres_clock::now() + 3s;
+    // We're not doing any retries here so initial backoff could be any
+    retry_chain_node op_rtc(
+      deadline, 100ms, retry_strategy::disallow, &_rtcnode);
+
+    vlog(
+      _rtclog.debug,
+      "reconcile_uploads, start: {}, end: {}, kind: {}, archiver_term: {}",
+      upload_ctx.start_offset,
+      upload_ctx.end_offset_exclusive,
+      upload_ctx.upload_kind,
+      upload_ctx.archiver_term);
+
+    auto gate = _gate.hold();
+
+    // Sizing rules:
+    // * the goal is to have something close to target segment size;
+    // * we're defining a size range jitter - target size +- some random values
+    // * regular uploads should fit within the range
+    auto local_segment_size = config::shard_local_cfg().log_segment_size();
+    auto target_size
+      = config::shard_local_cfg().cloud_storage_segment_size_target().value_or(
+        local_segment_size);
+
+    auto [min_size, max_size] = upload_size_jitter(target_size);
+
+    vlog(
+      _rtclog.debug,
+      "start collecting segments, start offset {}, min size {}, target "
+      "size {}, max_size {}",
+      upload_ctx.start_offset,
+      min_size,
+      target_size,
+      max_size);
+
+    // NOTE: the reconciliation process has following steps:
+    // 1. check if base offset is below LSO-1, if not - abort
+    // 2. calculate the term of the segment (log.get_term(base-offset))
+    // 3. calculate last offset of the term
+    // 4. calculate committed offset of the segment as min(LSO, last offset of
+    //    the term)
+    // 5. (scheduling point 1) try to create offset based upload
+    // (base-committed)
+    // 6. (scheduling point 3) if the size of the upload is within the specified
+    //    range - return
+    // 7. (scheduling point 2) otherwise fallback to create size based upload
+    // 8. validate that the segment starts and ends in the same term to avoid
+    //    races with compaction (if the offset range was compacted between the
+    //    scheduling points 1 and 2)
+    //
+    // This guarantees that the we will not upload anything above LSO and that
+    // the segment will have one term.
+
+    // (step 1) Sanity check parameters
+    if (upload_ctx.start_offset >= _parent.last_stable_offset()) {
+        // NOTE: it should be possible to start upload of the
+        // segment that has last offset which is right below LSO.
+        // So basically if N is an offset [..N][LSO...] then we're
+        // good.
+        vlog(
+          _rtclog.debug,
+          "Invalid upload context, requested start offset {}, LSO: {}",
+          upload_ctx.start_offset,
+          _parent.last_stable_offset());
+        co_return error_outcome::not_enough_data;
+    }
+
+    // (steps 2-4)
+    // If this value is set to true - allow upload even if it's too small.
+    // This value is set if the upload boundary is limited by term boundary.
+    // We will not be able to create a large upload in this case.
+    bool force_upload = false;
+    auto base_offset = upload_ctx.start_offset;
+    auto committed_offset = model::prev_offset(upload_ctx.end_offset_exclusive);
+    auto base_term = _parent.get_term(base_offset);
+    auto committed_term = _parent.get_term(committed_offset);
+    vlog(
+      _rtclog.debug,
+      "base offset: {}, base term: {}, committed offset: {}, committed term: "
+      "{}",
+      base_offset,
+      base_term,
+      committed_offset,
+      committed_term);
+    if (base_term != committed_term) {
+        // In this case we can be forced to make small upload.
+        // The upload sizes are detached from the segment sizes but they
+        // still can't cross term boundaries.
+        force_upload = true;
+        auto term_last_offset = _parent.get_term_last_offset(base_term);
+        if (!term_last_offset.has_value()) {
+            // This could happen if base-offset belongs to the current term. In
+            // this case we shouldn't go into this branch because of the
+            // condition above (base_term != committed_term)
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "can't calculate last term offset for offset {}",
+              base_offset));
+        }
+        committed_offset = model::prev_offset(term_last_offset.value());
+        committed_term = _parent.get_term(committed_offset);
+        vlog(
+          _rtclog.debug,
+          "base offset: {}, base term: {}, adjusted committed offset: {}, "
+          "adjusted committed term: "
+          "{}",
+          base_offset,
+          base_term,
+          committed_offset,
+          committed_term);
+    }
+    // sanity check
+    if (_parent.get_term(base_offset) != _parent.get_term(committed_offset)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "base ({}) and committed ({}) offsets are from different terms",
+          base_offset,
+          committed_offset));
+    }
+
+    // (step 5) Make size based upload
+    inclusive_offset_range range(base_offset, committed_offset);
+
+    auto read_buffer_size
+      = config::shard_local_cfg().storage_read_buffer_size();
+    auto upl = co_await segment_upload::make_segment_upload(
+      &_parent,
+      range,
+      read_buffer_size,
+      _conf->upload_scheduling_group,
+      op_rtc.get_deadline());
+
+    if (upl.has_error()) {
+        if (upl.error() != archival::error_outcome::not_enough_data) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate: {}",
+              upl.error().message());
+        }
+        co_return upl.error();
+    }
+
+    // (step 6)
+    if (
+      (upl.value()->get_size_bytes() <= target_size
+       && upl.value()->get_size_bytes() >= min_size)
+      || (force_upload && upl.value()->get_size_bytes() <= target_size)) {
+        // Upload is within the size range already
+        auto m = upl.value()->get_meta();
+        auto s = co_await std::move(*upl.value()).detach_stream();
+        // This is a path which is supposed to be taken by most uploads.
+        // When the uploads are happening in time most of the time the
+        // committed offset will be approaching LSO. If this is the case
+        // this code path will be taken or the one above which returns
+        // 'not_enough_data' error.
+        co_return reconcile_upload_result{
+          .stream = std::move(s),
+          .meta = convert_segment_meta(
+            m, _parent, _rev, upload_ctx.archiver_term),
+          .stop = max_uploadable_offset_exclusive() == m.offsets.last
+                    ? ss::stop_iteration::yes
+                    : ss::stop_iteration::no,
+          .upload_kind = upload_ctx.upload_kind,
+        };
+        // TODO: handle situation when there is no data batches in the segment
+    } else {
+        co_await upl.value()->close();
+    }
+
+    // (steps 7-8) Fallback if the upload size is not correct
+
+    size_limited_offset_range sz_range(
+      base_offset,
+      max_size,
+      min_size); // TODO: tweak min_size for timeboxed uploads
+
+    auto sz_upl = co_await segment_upload::make_segment_upload(
+      &_parent,
+      sz_range,
+      read_buffer_size,
+      _conf->upload_scheduling_group,
+      op_rtc.get_deadline());
+
+    if (sz_upl.has_error()) {
+        vlog(
+          archival_log.error,
+          "Can't find upload candidate: {}",
+          sz_upl.error().message());
+        co_return sz_upl.error();
+    }
+    // TODO: add logging and sanity checks
+
+    auto upl_meta = sz_upl.value()->get_meta();
+    auto payload_stream = co_await std::move(*sz_upl.value()).detach_stream();
+    auto meta = convert_segment_meta(
+      upl_meta, _parent, _rev, upload_ctx.archiver_term);
+
+    co_return reconcile_upload_result{
+      .stream = std::move(payload_stream),
+      .meta = meta,
+      .stop = max_uploadable_offset_exclusive() == upl_meta.offsets.last
+                ? ss::stop_iteration::yes
+                : ss::stop_iteration::no,
+      .upload_kind = upload_ctx.upload_kind,
+    };
+}
+
+ss::future<std::optional<cloud_storage::upload_result>>
+ntp_archiver::maybe_upload_aborted_tx(
+  cloud_storage::remote_segment_path path,
+  model::offset starting_offset,
+  model::offset final_offset) {
+    // TODO: use proper deadline
+    auto deadline = ss::lowres_clock::now() + 3s;
+    // We're not doing any retries here so initial backoff could be any
+    retry_chain_node rtc(deadline, 100ms, retry_strategy::disallow, &_rtcnode);
+    auto tx = co_await _parent.aborted_transactions(
+      starting_offset, final_offset);
+    if (!tx.empty()) {
+        cloud_storage::tx_range_manifest manifest(path, std::move(tx));
+        auto result = co_await _remote.upload_manifest(
+          get_bucket_name(), manifest, manifest.get_manifest_path(), rtc);
+        co_return result;
+    }
+    co_return std::nullopt;
+}
+
+ss::future<ntp_archiver_upload_result>
+ntp_archiver::upload_segment(ntp_archiver::reconcile_upload_result param) {
+    // TODO: use proper deadline
+    auto deadline = ss::lowres_clock::now() + 3s;
+    // We're not doing any retries here so initial backoff could be any
+    retry_chain_node rtc(deadline, 100ms, retry_strategy::disallow, &_rtcnode);
+    auto h = _gate.hold();
+    // Do not make attempts to re-upload in case of failure.
+    auto path = manifest().generate_segment_path(
+      param.meta, remote_path_provider());
+    auto index_path = make_index_path(path);
+    auto lazy_abort = lazy_abort_source{
+      [this]() { return upload_should_abort(); },
+    };
+    auto [upload_stream, indexing_stream] = input_stream_fanout<2>(
+      std::move(param.stream),
+      config::shard_local_cfg().storage_read_readahead_count());
+
+    auto tx_upload_started = maybe_upload_aborted_tx(
+      path, param.meta.base_offset, param.meta.committed_offset);
+
+    auto make_index_started = make_segment_index(
+      param.meta.base_offset,
+      param.meta.base_timestamp,
+      _rtclog,
+      index_path,
+      std::move(indexing_stream));
+
+    std::optional<ss::input_stream<char>> stream_state = std::move(
+      upload_stream);
+
+    auto get_stream = [&stream_state] {
+        // On first attempt to upload, the stream-ref passed in is used.
+        using provider_t = std::unique_ptr<stream_provider>;
+        auto prov = std::make_unique<one_time_stream_wrapper>(
+          std::move(stream_state.value()));
+        stream_state = std::nullopt;
+        return ss::make_ready_future<provider_t>(std::move(prov));
+    };
+
+    // Upload segment in foreground and upload tx-manifest and build an
+    // index in the background.
+    auto upload_segment_ready = co_await ss::coroutine::as_future(
+      _remote.upload_segment(
+        get_bucket_name(),
+        path,
+        param.meta.size_bytes,
+        get_stream,
+        rtc,
+        lazy_abort,
+        1));
+
+    if (stream_state.has_value()) {
+        co_await stream_state->close();
+    }
+
+    // This future should be ready at the moment or will
+    // be ready very soon. The segment building is tied to
+    // the segment upload through the fanout stream.
+    auto make_index_ready = co_await ss::coroutine::as_future(
+      std::move(make_index_started));
+    auto tx_upload_ready = co_await ss::coroutine::as_future(
+      std::move(tx_upload_started));
+
+    struct error_state {
+        ss::sstring source;
+        std::exception_ptr e_ptr;
+    };
+    std::vector<error_state> e_ptr;
+    if (upload_segment_ready.failed()) {
+        auto e = upload_segment_ready.get_exception();
+        e_ptr.push_back({.source = "Segment upload", .e_ptr = e});
+    }
+    if (make_index_ready.failed()) {
+        auto e = make_index_ready.get_exception();
+        e_ptr.push_back({.source = "Index construction", .e_ptr = e});
+    }
+    if (tx_upload_ready.failed()) {
+        auto e = tx_upload_ready.get_exception();
+        e_ptr.push_back({.source = "Tx-manifest upload", .e_ptr = e});
+    }
+    size_t shutdown_error = 0;
+    size_t other_failure = 0;
+    if (!e_ptr.empty()) {
+        for (auto [src, e] : e_ptr) {
+            if (ssx::is_shutdown_exception(e)) {
+                vlog(
+                  _rtclog.debug,
+                  "{} ({}) failed due to shutdown error",
+                  src,
+                  path);
+                shutdown_error++;
+            } else {
+                vlog(_rtclog.info, "{} ({}) upload failed: {}", src, path, e);
+                other_failure++;
+            }
+        }
+    }
+    if (shutdown_error) {
+        co_return ntp_archiver_upload_result(
+          cloud_storage::upload_result::cancelled);
+    }
+    if (other_failure) {
+        co_return ntp_archiver_upload_result(
+          cloud_storage::upload_result::failed);
+    }
+    auto upload_result = upload_segment_ready.get();
+    switch (upload_result) {
+    case cloud_storage::upload_result::failed:
+    case cloud_storage::upload_result::timedout:
+        vlog(
+          _rtclog.info,
+          "Segment upload failed: {}, error: {}",
+          path,
+          upload_result);
+        [[fallthrough]];
+    case cloud_storage::upload_result::cancelled:
+        co_return ntp_archiver_upload_result(upload_result);
+    case cloud_storage::upload_result::success:
+        break;
+    }
+    auto index_res = make_index_ready.get();
+    if (!index_res.has_value()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format, "Failed to construct segment for {}", path));
+    }
+
+    auto [index, index_stats] = std::move(index_res.value());
+
+    // If we fail to upload the index but successfully upload the segment,
+    // the read path will create the index on the fly while downloading the
+    // segment, so it is okay to ignore the index upload failure, we still
+    // want to advance the offsets because the segment did get uploaded.
+    std::ignore = co_await _remote.upload_index(
+      _conf->bucket_name,
+      cloud_storage_clients::object_key{index_path},
+      index,
+      rtc);
+    // Note: this operation can be started in the background.
+    // In order to do this the context should be associated with the
+    // background operation. We can't background it as is because the
+    // 'upload_index' call is taking 'rtc' as a reference. So there should be
+    // some wrapper for this call.
+
+    co_return ntp_archiver_upload_result(index_stats);
+}
+
+ss::future<ntp_archiver::scheduled_upload>
+ntp_archiver::schedule_single_upload_v2(const upload_context& upload_ctx) {
+    auto reconcile_ready = co_await ss::coroutine::as_future(
+      reconcile_upload(upload_ctx));
+    if (reconcile_ready.failed()) {
+        auto e = reconcile_ready.get_exception();
+        vlog(_rtclog.info, "Failed to reconcile upload: {}", e);
+        std::rethrow_exception(e);
+    }
+    auto reconcile_res = std::move(reconcile_ready.get());
+    if (reconcile_res.has_error()) {
+        if (reconcile_res.error() == error_outcome::not_enough_data) {
+            // Happy path.. Most of the time this call will result in
+            // 'not_enough_data' error.
+            // TODO: check this code path
+            co_return scheduled_upload{
+              .stop = ss::stop_iteration::yes,
+              .upload_kind = upload_ctx.upload_kind,
+            };
+        }
+        vlog(
+          _rtclog.info,
+          "Failed to reconcile upload: {}",
+          reconcile_res.error().message());
+        throw std::system_error(reconcile_res.error());
+    }
+    // Upload segment but first save some metadata for later reuse.
+    auto meta = reconcile_res.value().meta;
+    auto stop = reconcile_res.value().stop;
+    auto kind = reconcile_res.value().upload_kind;
+    auto sname = manifest().generate_remote_segment_name(
+      meta); // TODO: check that this is correct
+
+    vlog(
+      _rtclog.debug,
+      "Starting segment upload in the background, name: {}, meta: {}",
+      sname,
+      meta);
+
+    auto background_upload = upload_segment(std::move(reconcile_res.value()));
+
+    // Happy path, we have found upload candidate and started uploading.
+    // The upload is running in the background at the moment or will be
+    // running soon.
+    co_return scheduled_upload{
+      .result = std::move(background_upload),
+      .inclusive_last_offset = meta.committed_offset,
+      .meta = meta,
+      .name = sname, // TODO: check correctness
+      .delta = meta.committed_offset - meta.base_offset,
+      .stop = stop,
+      .upload_kind = kind,
+    };
+}
+
 ss::future<ntp_archiver::scheduled_upload>
 ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto start_upload_offset = upload_ctx.start_offset;
@@ -2034,7 +2518,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
         std::exception_ptr ep;
         try {
             while (uploads_remaining > 0 && may_begin_uploads()) {
-                auto scheduled = co_await schedule_single_upload(ctx);
+                auto scheduled = co_await schedule_single_upload_v2(ctx);
                 ctx.start_offset = model::next_offset(
                   scheduled.inclusive_last_offset);
                 scheduled_uploads.push_back(std::move(scheduled));
