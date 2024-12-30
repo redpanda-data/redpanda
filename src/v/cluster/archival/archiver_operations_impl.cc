@@ -1194,7 +1194,7 @@ class upload_builder : public detail::segment_upload_builder_api {
         auto cp = wrapper->underlying();
         //
         auto upl = co_await segment_upload::make_segment_upload(
-          cp, range, read_buffer_size, sg, deadline);
+          cp.get(), range, read_buffer_size, sg, deadline);
         if (upl.has_error()) {
             if (upl.error() != archival::error_outcome::not_enough_data) {
                 vlog(
