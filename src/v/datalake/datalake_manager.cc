@@ -183,6 +183,7 @@ ss::future<> datalake_manager::start() {
 ss::future<> datalake_manager::stop() {
     auto f = _gate.close();
     _deregistrations.clear();
+    _parallel_translations->broken();
     co_await ss::max_concurrent_for_each(
       _translators, 32, [](auto& entry) mutable {
           return entry.second->stop();
