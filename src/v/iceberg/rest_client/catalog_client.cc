@@ -313,6 +313,13 @@ ss::future<expected<load_table_result>> catalog_client::create_table(
         co_return tl::unexpected(auth_result.error());
     }
 
+    auto json_buf = serialize_payload_as_json(req);
+    ss::sstring json_str;
+    for (const auto& frag : json_buf) {
+        json_str.append(frag.get(), frag.size());
+    }
+    vlog(log.info, "FFF {}", json_str);
+
     co_return (co_await perform_request(
                  rtc,
                  http_request,
@@ -377,14 +384,35 @@ ss::future<expected<commit_table_response>> catalog_client::commit_table_update(
         co_return tl::unexpected(auth_result.error());
     }
 
-    co_return (co_await perform_request(
-                 rtc,
-                 http_request,
-                 client_probe::endpoint::commit_table_update,
-                 serialize_payload_as_json(commit_request)))
-      .and_then(parse_json)
-      .and_then(
-        parse_as_expected("commit_table_update", parse_commit_table_response));
+    auto json_buf = serialize_payload_as_json(commit_request);
+    ss::sstring json_str;
+    for (const auto& frag : json_buf) {
+        json_str.append(frag.get(), frag.size());
+    }
+    // vlog(log.info, "FFF COMMIT {}", json_str);
+
+    auto res = (co_await perform_request(
+                  rtc,
+                  http_request,
+                  client_probe::endpoint::commit_table_update,
+                  serialize_payload_as_json(commit_request)))
+                 .and_then(parse_json)
+                 .and_then(parse_as_expected(
+                   "commit_table_update", parse_commit_table_response));
+
+    {
+        auto get_request = table(root_path(), commit_request.identifier.ns)
+                             .get(commit_request.identifier.table);
+        auto res = co_await perform_request(
+          rtc, get_request, client_probe::endpoint::load_table);
+        ss::sstring json_str;
+        for (const auto& frag : *res) {
+            json_str.append(frag.get(), frag.size());
+        }
+        vlog(log.info, "FFF TABLE AFTER COMMIT {}", json_str);
+    }
+
+    co_return res;
 }
 
 path_components::path_components(

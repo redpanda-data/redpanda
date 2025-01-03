@@ -64,6 +64,10 @@ redpanda_cc_library(
     hdrs = [
         "retry_policy.h",
     ],
+    implementation_deps = [
+        "//src/v/base",
+        "//src/v/iceberg:logger",
+    ],
     include_prefix = "iceberg/rest_client",
     deps = [
         ":error",
