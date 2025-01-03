@@ -45,8 +45,8 @@ set(CMAKE_CXX_STANDARD
   STRING
   "C++ standard to build with.")
 fetch_dep(seastar
-  REPO https://github.com/redpanda-data/seastar.git
-  TAG v24.3.x
+  REPO https://github.com/bashtanov/seastar
+  TAG ba7a220f1e40d3fddc6b280907c5e05ea2d2e9b3
   PATCH_COMMAND sed -i "s/add_subdirectory (tests/# add_subdirectory (tests/g" CMakeLists.txt)
 
 fetch_dep(avro
