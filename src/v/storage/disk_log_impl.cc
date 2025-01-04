@@ -2376,9 +2376,10 @@ disk_log_impl::offset_range_size(
 
     vlog(
       stlog.debug,
-      "Discovered offset size: {}, last included offset: {}",
+      "Discovered offset size: {}, last included offset: {}, log offsets: {}",
       current_size,
-      last_included_offset);
+      last_included_offset,
+      offsets());
 
     if (current_size < target.min_size) {
         vlog(stlog.debug, "Discovered offset range is not large enough");
