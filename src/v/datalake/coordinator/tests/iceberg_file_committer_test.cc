@@ -100,7 +100,8 @@ public:
     void create_table() {
         auto res = schema_mgr
                      .ensure_table_schema(
-                       topic, datalake::schemaless_struct_type())
+                       schema_mgr.table_id_for_topic(topic),
+                       datalake::schemaless_struct_type())
                      .get();
         ASSERT_FALSE(res.has_error());
     }

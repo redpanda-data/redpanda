@@ -168,7 +168,7 @@ record_multiplexer::operator()(model::record_batch batch) {
             }
 
             auto get_ids_res = co_await _schema_mgr.get_registered_ids(
-              _ntp.tp.topic, record_type.type);
+              _schema_mgr.table_id_for_topic(_ntp.tp.topic), record_type.type);
             if (get_ids_res.has_error()) {
                 auto e = get_ids_res.error();
                 switch (e) {

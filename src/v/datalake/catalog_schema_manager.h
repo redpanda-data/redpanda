@@ -29,10 +29,11 @@ public:
     friend std::ostream& operator<<(std::ostream&, const errc&);
 
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table_schema(
-      const model::topic&, const iceberg::struct_type& desired_type)
+      const iceberg::table_identifier&,
+      const iceberg::struct_type& desired_type)
       = 0;
-    virtual ss::future<checked<std::nullopt_t, errc>>
-    get_registered_ids(const model::topic&, iceberg::struct_type& desired_type)
+    virtual ss::future<checked<std::nullopt_t, errc>> get_registered_ids(
+      const iceberg::table_identifier&, iceberg::struct_type& desired_type)
       = 0;
     virtual ~schema_manager() = default;
 
@@ -43,10 +44,12 @@ class simple_schema_manager : public schema_manager {
 public:
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     ensure_table_schema(
-      const model::topic&, const iceberg::struct_type& desired_type) override;
+      const iceberg::table_identifier&,
+      const iceberg::struct_type& desired_type) override;
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     get_registered_ids(
-      const model::topic&, iceberg::struct_type& desired_type) override;
+      const iceberg::table_identifier&,
+      iceberg::struct_type& desired_type) override;
     ~simple_schema_manager() override = default;
 };
 
@@ -64,13 +67,15 @@ public:
     // schema is updated to the desired type.
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     ensure_table_schema(
-      const model::topic&, const iceberg::struct_type& desired_type) override;
+      const iceberg::table_identifier&,
+      const iceberg::struct_type& desired_type) override;
 
     // Loads the table metadata for the given topic and fills the field IDs of
     // the given type with those in the current schema.
     ss::future<checked<std::nullopt_t, schema_manager::errc>>
     get_registered_ids(
-      const model::topic&, iceberg::struct_type& desired_type) override;
+      const iceberg::table_identifier&,
+      iceberg::struct_type& desired_type) override;
 
 private:
     // Attempts to fill the field ids in the given type with those from the

@@ -102,13 +102,13 @@ std::ostream& operator<<(std::ostream& o, const schema_manager::errc& e) {
 
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 simple_schema_manager::ensure_table_schema(
-  const model::topic&, const iceberg::struct_type&) {
+  const iceberg::table_identifier&, const iceberg::struct_type&) {
     co_return std::nullopt;
 }
 
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 simple_schema_manager::get_registered_ids(
-  const model::topic&, iceberg::struct_type& desired_type) {
+  const iceberg::table_identifier&, iceberg::struct_type& desired_type) {
     iceberg::schema s{
       .schema_struct = std::move(desired_type),
       .schema_id = {},
@@ -121,8 +121,8 @@ simple_schema_manager::get_registered_ids(
 
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 catalog_schema_manager::ensure_table_schema(
-  const model::topic& topic, const iceberg::struct_type& desired_type) {
-    auto table_id = table_id_for_topic(topic);
+  const iceberg::table_identifier& table_id,
+  const iceberg::struct_type& desired_type) {
     auto load_res = co_await catalog_.load_or_create_table(
       table_id, desired_type, hour_partition_spec());
     if (load_res.has_error()) {
@@ -177,8 +177,7 @@ catalog_schema_manager::ensure_table_schema(
 
 ss::future<checked<std::nullopt_t, schema_manager::errc>>
 catalog_schema_manager::get_registered_ids(
-  const model::topic& topic, iceberg::struct_type& dest_type) {
-    auto table_id = table_id_for_topic(topic);
+  const iceberg::table_identifier& table_id, iceberg::struct_type& dest_type) {
     auto load_res = co_await catalog_.load_table(table_id);
     if (load_res.has_error()) {
         co_return log_and_convert_catalog_err(

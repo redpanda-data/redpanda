@@ -48,7 +48,7 @@ direct_table_creator::ensure_table(
 
     auto record_type = default_translator{}.build_type(std::move(val_type));
     auto ensure_res = co_await schema_mgr_.ensure_table_schema(
-      topic, record_type.type);
+      table_id, record_type.type);
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case schema_manager::errc::not_supported:

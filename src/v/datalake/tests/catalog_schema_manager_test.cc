@@ -92,14 +92,20 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
     auto type = std::get<struct_type>(test_nested_schema_type());
     reset_field_ids(type);
 
+    auto topic = model::topic("foo");
+
     // Create the table
-    auto create_res
-      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    auto create_res = schema_mgr
+                        .ensure_table_schema(
+                          schema_mgr.table_id_for_topic(topic), type)
+                        .get();
     ASSERT_FALSE(create_res.has_error());
 
     // Fill the field IDs in `type`.
-    auto fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto fill_res = schema_mgr
+                      .get_registered_ids(
+                        schema_mgr.table_id_for_topic(topic), type)
+                      .get();
     ASSERT_FALSE(fill_res.has_error());
 
     auto table_ident = table_identifier{.ns = {"redpanda"}, .table = "foo"};
@@ -117,7 +123,7 @@ TEST_F(CatalogSchemaManagerTest, TestFillFromExistingTable) {
     // without trouble.
     auto type = std::get<struct_type>(test_nested_schema_type());
     reset_field_ids(type);
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(res.has_error());
     EXPECT_EQ(type, schema.value().schema_struct);
 }
@@ -132,7 +138,7 @@ TEST_F(CatalogSchemaManagerTest, TestFillSubset) {
     reset_field_ids(type);
     type.fields.pop_back();
 
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(res.has_error());
 
     schema.value().schema_struct.fields.pop_back();
@@ -149,7 +155,7 @@ TEST_F(CatalogSchemaManagerTest, TestFillNestedSubset) {
     reset_field_ids(type);
     std::get<struct_type>(type.fields.back()->type).fields.pop_back();
 
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(res.has_error());
 
     std::get<struct_type>(schema.value().schema_struct.fields.back()->type)
@@ -179,13 +185,11 @@ TEST_F(CatalogSchemaManagerTest, TestFillSuperset) {
           std::move(nested)));
     }
     // Alter the table schema
-    auto ensure_res
-      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    auto ensure_res = schema_mgr.ensure_table_schema(table_ident, type).get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // Fill the ids in `type`
-    auto fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto fill_res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(fill_res.has_error());
 
     // Check the resulting schema.
@@ -217,13 +221,11 @@ TEST_F(CatalogSchemaManagerTest, TestFillSupersetSubtype) {
             int_type{}));
     }
     // Alter the table schema
-    auto ensure_res
-      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    auto ensure_res = schema_mgr.ensure_table_schema(table_ident, type).get();
     ASSERT_FALSE(ensure_res.has_error());
 
     // Fill the ids
-    auto fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto fill_res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(fill_res.has_error());
 
     // Check the resulting schema.
@@ -250,14 +252,14 @@ TEST_F(CatalogSchemaManagerTest, TestOptionalMismatch) {
 
     // Make the destinations both optional.
     type.fields[0]->required = field_required::no;
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 
     // Make the destinations both required.
     type.fields[0]->required = field_required::yes;
     type.fields[1]->required = field_required::yes;
-    res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 }
@@ -269,7 +271,7 @@ TEST_F(CatalogSchemaManagerTest, TestTypeMismatch) {
     reset_field_ids(type);
     std::swap(type.fields.front(), type.fields.back());
 
-    auto res = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), schema_manager::errc::not_supported);
 }
@@ -286,12 +288,10 @@ TEST_F(CatalogSchemaManagerTest, AcceptsValidTypePromotion) {
     reset_field_ids(type);
 
     // so schema_mgr should accept the new schema
-    auto ensure_res
-      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    auto ensure_res = schema_mgr.ensure_table_schema(table_ident, type).get();
     ASSERT_FALSE(ensure_res.has_error()) << ensure_res.error();
 
-    auto fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto fill_res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_FALSE(fill_res.has_error()) << fill_res.error();
 
     auto loaded_table = load_table_schema(table_ident).get();
@@ -311,22 +311,19 @@ TEST_F(CatalogSchemaManagerTest, RejectsInvalidTypePromotion) {
     reset_field_ids(type);
 
     // so schema_mgr should reject the new schema
-    auto ensure_res
-      = schema_mgr.ensure_table_schema(model::topic{"foo"}, type).get();
+    auto ensure_res = schema_mgr.ensure_table_schema(table_ident, type).get();
     ASSERT_TRUE(ensure_res.has_error());
     EXPECT_EQ(ensure_res.error(), schema_manager::errc::not_supported)
       << ensure_res.error();
 
-    auto fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, type).get();
+    auto fill_res = schema_mgr.get_registered_ids(table_ident, type).get();
     ASSERT_TRUE(fill_res.has_error());
     EXPECT_EQ(fill_res.error(), schema_manager::errc::not_supported)
       << fill_res.error();
 
     // check that the table still holds the original schema
     reset_field_ids(original_type);
-    fill_res
-      = schema_mgr.get_registered_ids(model::topic{"foo"}, original_type).get();
+    fill_res = schema_mgr.get_registered_ids(table_ident, original_type).get();
     ASSERT_FALSE(fill_res.has_error()) << fill_res.error();
 
     auto loaded_table = load_table_schema(table_ident).get();
