@@ -193,15 +193,7 @@ record_multiplexer::operator()(model::record_batch batch) {
             writer_iter = iter;
         }
 
-        // TODO: we want to ensure we're using an offset translating reader so
-        // that these will be Kafka offsets, not Raft offsets.
-        if (!_result.has_value()) {
-            _result = write_result{
-              .start_offset = offset,
-            };
-        }
-
-        _result.value().last_offset = offset;
+        advance_result_offset(offset);
 
         auto& writer = writer_iter->second;
         auto write_result = co_await writer->add_data(
@@ -246,6 +238,24 @@ record_multiplexer::end_of_stream() {
         co_return *_error;
     }
     co_return std::move(*_result);
+}
+
+void record_multiplexer::advance_result_offset(kafka::offset offset) {
+    vassert(!_error.has_value(), "Cannot advance result offset after error");
+
+    // TODO: we want to ensure we're using an offset translating reader so
+    // that these will be Kafka offsets, not Raft offsets.
+    if (!_result.has_value()) {
+        _result = write_result{
+          .start_offset = offset,
+        };
+    }
+
+    vassert(
+      _result.value().last_offset <= offset,
+      "Cannot advance result offset backwards");
+
+    _result.value().last_offset = offset;
 }
 
 ss::future<result<std::nullopt_t, writer_error>>

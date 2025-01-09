@@ -56,6 +56,8 @@ public:
     ss::future<result<write_result, writer_error>> end_of_stream();
 
 private:
+    void advance_result_offset(kafka::offset offset);
+
     // Handles the given record components of a record that is invalid for the
     // target table.
     // TODO: this just drops the data. Consider a separate table entirely.
