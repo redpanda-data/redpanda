@@ -61,12 +61,8 @@ private:
     // Handles the given record components of a record that is invalid for the
     // target table.
     // TODO: this just drops the data. Consider a separate table entirely.
-    ss::future<result<std::nullopt_t, writer_error>> handle_invalid_record(
-      kafka::offset,
-      std::optional<iobuf>,
-      std::optional<iobuf>,
-      model::timestamp,
-      chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>);
+    ss::future<result<void, writer_error>>
+    handle_invalid_record(const model::record_batch_header&, model::record&&);
 
     prefix_logger _log;
     const model::ntp& _ntp;

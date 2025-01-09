@@ -67,6 +67,7 @@ record_multiplexer::operator()(model::record_batch batch) {
             co_return ss::stop_iteration::yes;
         }
         auto record = it.next();
+
         auto key = record.share_key_opt();
         auto val = record.share_value_opt();
         auto timestamp = model::timestamp{
@@ -90,11 +91,7 @@ record_multiplexer::operator()(model::record_batch batch) {
             case type_resolver::errc::bad_input:
             case type_resolver::errc::translation_error:
                 auto invalid_res = co_await handle_invalid_record(
-                  offset,
-                  record.share_key(),
-                  record.share_value(),
-                  timestamp,
-                  std::move(header_kvs));
+                  batch.header(), std::move(record));
                 if (invalid_res.has_error()) {
                     _error = invalid_res.error();
                     co_return ss::stop_iteration::yes;
@@ -121,11 +118,7 @@ record_multiplexer::operator()(model::record_batch batch) {
                   offset,
                   record_data_res.error());
                 auto invalid_res = co_await handle_invalid_record(
-                  offset,
-                  record.share_key(),
-                  record.share_value(),
-                  timestamp,
-                  std::move(header_kvs));
+                  batch.header(), std::move(record));
                 if (invalid_res.has_error()) {
                     _error = invalid_res.error();
                     co_return ss::stop_iteration::yes;
@@ -144,11 +137,7 @@ record_multiplexer::operator()(model::record_batch batch) {
                 switch (e) {
                 case table_creator::errc::incompatible_schema: {
                     auto invalid_res = co_await handle_invalid_record(
-                      offset,
-                      record.share_key(),
-                      record.share_value(),
-                      timestamp,
-                      std::move(header_kvs));
+                      batch.header(), std::move(record));
                     if (invalid_res.has_error()) {
                         _error = invalid_res.error();
                         co_return ss::stop_iteration::yes;
@@ -258,16 +247,16 @@ void record_multiplexer::advance_result_offset(kafka::offset offset) {
     _result.value().last_offset = offset;
 }
 
-ss::future<result<std::nullopt_t, writer_error>>
+ss::future<result<void, writer_error>>
 record_multiplexer::handle_invalid_record(
-  kafka::offset offset,
-  std::optional<iobuf>,
-  std::optional<iobuf>,
-  model::timestamp,
-  chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>) {
-    vlog(_log.debug, "Dropping invalid record at offset {}", offset);
+  const model::record_batch_header& batch_header, model::record&& record) {
+    vlog(
+      _log.debug,
+      "Dropping invalid record at offset {}",
+      batch_header.base_offset() + record.offset_delta());
     // TODO: add a metric!
     // TODO: dead-letter table?
-    co_return std::nullopt;
+    co_return outcome::success();
 }
+
 } // namespace datalake
