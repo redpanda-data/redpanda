@@ -56,6 +56,9 @@ public:
     ss::future<result<write_result, writer_error>> end_of_stream();
 
 private:
+    ss::future<result<void, writer_error>>
+    mux_record(const model::record_batch_header&, model::record&&);
+
     void advance_result_offset(kafka::offset offset);
 
     // Handles the given record components of a record that is invalid for the

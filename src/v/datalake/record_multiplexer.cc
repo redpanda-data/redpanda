@@ -54,7 +54,6 @@ record_multiplexer::operator()(model::record_batch batch) {
     if (batch.compressed()) {
         batch = co_await storage::internal::decompress_batch(std::move(batch));
     }
-    auto first_timestamp = batch.header().first_timestamp.value();
 
     auto it = model::record_batch_iterator::create(batch);
 
@@ -68,135 +67,9 @@ record_multiplexer::operator()(model::record_batch batch) {
         }
         auto record = it.next();
 
-        auto key = record.share_key_opt();
-        auto val = record.share_value_opt();
-        auto timestamp = model::timestamp{
-          first_timestamp + record.timestamp_delta()};
-        kafka::offset offset{batch.base_offset()() + record.offset_delta()};
-        int64_t estimated_size = (key ? key->size_bytes() : 0)
-                                 + (val ? val->size_bytes() : 0);
-        chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
-          header_kvs;
-        for (auto& hdr : record.headers()) {
-            header_kvs.emplace_back(hdr.share_key_opt(), hdr.share_value_opt());
-        }
-
-        auto val_type_res = co_await _type_resolver.resolve_buf_type(
-          std::move(val));
-        if (val_type_res.has_error()) {
-            switch (val_type_res.error()) {
-            case type_resolver::errc::registry_error:
-                _error = writer_error::parquet_conversion_error;
-                co_return ss::stop_iteration::yes;
-            case type_resolver::errc::bad_input:
-            case type_resolver::errc::translation_error:
-                auto invalid_res = co_await handle_invalid_record(
-                  batch.header(), std::move(record));
-                if (invalid_res.has_error()) {
-                    _error = invalid_res.error();
-                    co_return ss::stop_iteration::yes;
-                }
-                continue;
-            }
-        }
-
-        auto record_data_res = co_await _record_translator.translate_data(
-          _ntp.tp.partition,
-          offset,
-          std::move(key),
-          val_type_res.value().type,
-          std::move(val_type_res.value().parsable_buf),
-          timestamp,
-          header_kvs);
-        if (record_data_res.has_error()) {
-            switch (record_data_res.error()) {
-            case record_translator::errc::unexpected_schema:
-            case record_translator::errc::translation_error:
-                vlog(
-                  _log.debug,
-                  "Error translating data for record {}: {}",
-                  offset,
-                  record_data_res.error());
-                auto invalid_res = co_await handle_invalid_record(
-                  batch.header(), std::move(record));
-                if (invalid_res.has_error()) {
-                    _error = invalid_res.error();
-                    co_return ss::stop_iteration::yes;
-                }
-                continue;
-            }
-        }
-        auto record_type = _record_translator.build_type(
-          std::move(val_type_res.value().type));
-        auto writer_iter = _writers.find(record_type.comps);
-        if (writer_iter == _writers.end()) {
-            auto ensure_res = co_await _table_creator.ensure_table(
-              _ntp.tp.topic, _topic_revision, record_type.comps);
-            if (ensure_res.has_error()) {
-                auto e = ensure_res.error();
-                switch (e) {
-                case table_creator::errc::incompatible_schema: {
-                    auto invalid_res = co_await handle_invalid_record(
-                      batch.header(), std::move(record));
-                    if (invalid_res.has_error()) {
-                        _error = invalid_res.error();
-                        co_return ss::stop_iteration::yes;
-                    }
-                    continue;
-                }
-                case table_creator::errc::failed:
-                    vlog(
-                      _log.warn,
-                      "Error ensuring table schema for record {}",
-                      offset);
-                    [[fallthrough]];
-                case table_creator::errc::shutting_down:
-                    _error = writer_error::parquet_conversion_error;
-                }
-                co_return ss::stop_iteration::yes;
-            }
-
-            auto get_ids_res = co_await _schema_mgr.get_registered_ids(
-              _table_id_provider.table_id(_ntp.tp.topic), record_type.type);
-            if (get_ids_res.has_error()) {
-                auto e = get_ids_res.error();
-                switch (e) {
-                case schema_manager::errc::not_supported:
-                case schema_manager::errc::failed:
-                    vlog(
-                      _log.warn,
-                      "Error getting field IDs for record {}: {}",
-                      offset,
-                      get_ids_res.error());
-                    [[fallthrough]];
-                case schema_manager::errc::shutting_down:
-                    _error = writer_error::parquet_conversion_error;
-                }
-                co_return ss::stop_iteration::yes;
-            }
-
-            auto [iter, _] = _writers.emplace(
-              record_type.comps,
-              std::make_unique<partitioning_writer>(
-                *_writer_factory, std::move(record_type.type)));
-            writer_iter = iter;
-        }
-
-        advance_result_offset(offset);
-
-        auto& writer = writer_iter->second;
-        auto write_result = co_await writer->add_data(
-          std::move(record_data_res.value()), estimated_size);
-
-        if (write_result != writer_error::ok) {
-            vlog(
-              _log.warn,
-              "Error adding data to writer for record {}: {}",
-              offset,
-              write_result);
-            _error = write_result;
-            // If a write fails, the writer is left in an indeterminate state,
-            // we cannot continue in this case.
+        auto mux_res = co_await mux_record(batch.header(), std::move(record));
+        if (mux_res.has_error()) {
+            _error = mux_res.error();
             co_return ss::stop_iteration::yes;
         }
     }
@@ -227,6 +100,124 @@ record_multiplexer::end_of_stream() {
         co_return *_error;
     }
     co_return std::move(*_result);
+}
+
+ss::future<result<void, writer_error>> record_multiplexer::mux_record(
+  const model::record_batch_header& batch_header, model::record&& record) {
+    auto key = record.share_key_opt();
+    auto val = record.share_value_opt();
+    auto first_timestamp = batch_header.first_timestamp.value();
+    auto timestamp = model::timestamp{
+      first_timestamp + record.timestamp_delta()};
+    kafka::offset offset{batch_header.base_offset() + record.offset_delta()};
+    int64_t estimated_size = (key ? key->size_bytes() : 0)
+                             + (val ? val->size_bytes() : 0);
+    chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
+      header_kvs;
+    for (auto& hdr : record.headers()) {
+        header_kvs.emplace_back(hdr.share_key_opt(), hdr.share_value_opt());
+    }
+
+    auto val_type_res = co_await _type_resolver.resolve_buf_type(
+      std::move(val));
+    if (val_type_res.has_error()) {
+        switch (val_type_res.error()) {
+        case type_resolver::errc::registry_error:
+            co_return writer_error::parquet_conversion_error;
+        case type_resolver::errc::bad_input:
+        case type_resolver::errc::translation_error:
+            co_return co_await handle_invalid_record(
+              batch_header, std::move(record));
+        }
+    }
+
+    auto record_data_res = co_await _record_translator.translate_data(
+      _ntp.tp.partition,
+      offset,
+      std::move(key),
+      val_type_res.value().type,
+      std::move(val_type_res.value().parsable_buf),
+      timestamp,
+      header_kvs);
+    if (record_data_res.has_error()) {
+        switch (record_data_res.error()) {
+        case record_translator::errc::unexpected_schema:
+        case record_translator::errc::translation_error:
+            vlog(
+              _log.debug,
+              "Error translating data for record {}: {}",
+              offset,
+              record_data_res.error());
+            co_return co_await handle_invalid_record(
+              batch_header, std::move(record));
+        }
+    }
+    auto record_type = _record_translator.build_type(
+      std::move(val_type_res.value().type));
+    auto writer_iter = _writers.find(record_type.comps);
+    if (writer_iter == _writers.end()) {
+        auto ensure_res = co_await _table_creator.ensure_table(
+          _ntp.tp.topic, _topic_revision, record_type.comps);
+        if (ensure_res.has_error()) {
+            auto e = ensure_res.error();
+            switch (e) {
+            case table_creator::errc::incompatible_schema:
+                co_return co_await handle_invalid_record(
+                  batch_header, std::move(record));
+            case table_creator::errc::failed:
+                vlog(
+                  _log.warn,
+                  "Error ensuring table schema for record {}",
+                  offset);
+                [[fallthrough]];
+            case table_creator::errc::shutting_down:
+                co_return writer_error::parquet_conversion_error;
+            }
+        }
+
+        auto get_ids_res = co_await _schema_mgr.get_registered_ids(
+          _table_id_provider.table_id(_ntp.tp.topic), record_type.type);
+        if (get_ids_res.has_error()) {
+            auto e = get_ids_res.error();
+            switch (e) {
+            case schema_manager::errc::not_supported:
+            case schema_manager::errc::failed:
+                vlog(
+                  _log.warn,
+                  "Error getting field IDs for record {}: {}",
+                  offset,
+                  get_ids_res.error());
+                [[fallthrough]];
+            case schema_manager::errc::shutting_down:
+                co_return writer_error::parquet_conversion_error;
+            }
+        }
+
+        auto [iter, _] = _writers.emplace(
+          record_type.comps,
+          std::make_unique<partitioning_writer>(
+            *_writer_factory, std::move(record_type.type)));
+        writer_iter = iter;
+    }
+
+    advance_result_offset(offset);
+
+    auto& writer = writer_iter->second;
+    auto write_result = co_await writer->add_data(
+      std::move(record_data_res.value()), estimated_size);
+
+    if (write_result != writer_error::ok) {
+        vlog(
+          _log.warn,
+          "Error adding data to writer for record {}: {}",
+          offset,
+          write_result);
+        co_return write_result;
+        // If a write fails, the writer is left in an indeterminate state,
+        // we cannot continue in this case.
+    }
+
+    co_return outcome::success();
 }
 
 void record_multiplexer::advance_result_offset(kafka::offset offset) {
