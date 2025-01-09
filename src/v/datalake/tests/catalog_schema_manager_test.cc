@@ -11,6 +11,7 @@
 #include "cloud_io/tests/scoped_remote.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "datalake/catalog_schema_manager.h"
+#include "datalake/table_identifier_provider.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/field_collecting_visitor.h"
 #include "iceberg/filesystem_catalog.h"
@@ -85,6 +86,7 @@ public:
 
     std::unique_ptr<cloud_io::scoped_remote> sr;
     filesystem_catalog catalog;
+    table_identifier_provider table_id_provider;
     catalog_schema_manager schema_mgr;
 };
 
@@ -95,17 +97,15 @@ TEST_F(CatalogSchemaManagerTest, TestCreateTable) {
     auto topic = model::topic("foo");
 
     // Create the table
-    auto create_res = schema_mgr
-                        .ensure_table_schema(
-                          schema_mgr.table_id_for_topic(topic), type)
-                        .get();
+    auto create_res
+      = schema_mgr.ensure_table_schema(table_id_provider.table_id(topic), type)
+          .get();
     ASSERT_FALSE(create_res.has_error());
 
     // Fill the field IDs in `type`.
-    auto fill_res = schema_mgr
-                      .get_registered_ids(
-                        schema_mgr.table_id_for_topic(topic), type)
-                      .get();
+    auto fill_res
+      = schema_mgr.get_registered_ids(table_id_provider.table_id(topic), type)
+          .get();
     ASSERT_FALSE(fill_res.has_error());
 
     auto table_ident = table_identifier{.ns = {"redpanda"}, .table = "foo"};

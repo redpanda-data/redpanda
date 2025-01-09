@@ -34,7 +34,7 @@ direct_table_creator::ensure_table(
   const model::topic& topic,
   model::revision_id,
   record_schema_components comps) const {
-    auto table_id = schema_mgr_.table_id_for_topic(topic);
+    auto table_id = table_id_provider_.table_id(topic);
 
     std::optional<resolved_type> val_type;
     if (comps.val_identifier) {

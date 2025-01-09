@@ -13,6 +13,7 @@
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/table_identifier_provider.h"
 #include "iceberg/catalog.h"
 #include "iceberg/manifest_io.h"
 
@@ -51,11 +52,10 @@ public:
     drop_table(const model::topic&) const final;
 
 private:
-    // TODO: pull this out into some helper? Seems useful for other actions.
-    iceberg::table_identifier table_id_for_topic(const model::topic& t) const;
-
     ss::future<checked<iceberg::table_metadata, errc>>
     load_table(const iceberg::table_identifier&) const;
+
+    table_identifier_provider table_id_provider_;
 
     // Must outlive this committer.
     iceberg::catalog& catalog_;

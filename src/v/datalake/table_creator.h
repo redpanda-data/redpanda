@@ -11,6 +11,7 @@
 
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/record_schema_resolver.h"
+#include "datalake/table_identifier_provider.h"
 
 namespace datalake {
 
@@ -45,6 +46,7 @@ public:
       record_schema_components) const final;
 
 private:
+    datalake::table_identifier_provider table_id_provider_;
     datalake::type_resolver& type_resolver_;
     datalake::schema_manager& schema_mgr_;
 };

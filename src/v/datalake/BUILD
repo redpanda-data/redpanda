@@ -214,6 +214,7 @@ redpanda_cc_library(
         ":cloud_data_io",
         ":logger",
         ":record_multiplexer",
+        ":table_identifier_provider",
         ":types",
         ":writer",
         "//src/v/base",
@@ -354,6 +355,7 @@ redpanda_cc_library(
     deps = [
         ":partitioning_writer",
         ":schema_identifier",
+        ":table_identifier_provider",
         ":types",
         ":writer",
         "//src/v/container:chunked_hash_map",
@@ -553,5 +555,19 @@ redpanda_cc_library(
     deps = [
         ":catalog_schema_manager",
         ":record_schema_resolver",
+        ":table_identifier_provider",
+    ],
+)
+
+redpanda_cc_library(
+    name = "table_identifier_provider",
+    hdrs = [
+        "table_identifier_provider.h",
+    ],
+    include_prefix = "datalake",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/iceberg:table_identifier",
+        "//src/v/model",
     ],
 )

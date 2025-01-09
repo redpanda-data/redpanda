@@ -12,6 +12,7 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/container:fragmented_vector",
         "//src/v/datalake:table_creator",
+        "//src/v/datalake:table_identifier_provider",
         "//src/v/datalake/coordinator:file_committer",
         "//src/v/datalake/coordinator:state",
         "//src/v/datalake/coordinator:translated_offset_range",
@@ -62,6 +63,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_storage/tests:s3_imposter_gtest",
         "//src/v/datalake:logger",
         "//src/v/datalake:table_definition",
+        "//src/v/datalake:table_identifier_provider",
         "//src/v/datalake/coordinator:iceberg_file_committer",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/iceberg:manifest_entry",

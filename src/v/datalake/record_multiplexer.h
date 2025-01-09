@@ -14,6 +14,7 @@
 #include "datalake/fwd.h"
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
+#include "datalake/table_identifier_provider.h"
 #include "model/record.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/prefix_logger.h"
@@ -69,6 +70,7 @@ private:
     const model::ntp& _ntp;
     model::revision_id _topic_revision;
     std::unique_ptr<parquet_file_writer_factory> _writer_factory;
+    table_identifier_provider _table_id_provider;
     schema_manager& _schema_mgr;
     type_resolver& _type_resolver;
     record_translator& _record_translator;

@@ -13,6 +13,7 @@
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
 #include "datalake/table_definition.h"
+#include "datalake/table_identifier_provider.h"
 #include "iceberg/filesystem_catalog.h"
 #include "iceberg/manifest_entry.h"
 #include "iceberg/manifest_io.h"
@@ -100,7 +101,7 @@ public:
     void create_table() {
         auto res = schema_mgr
                      .ensure_table_schema(
-                       schema_mgr.table_id_for_topic(topic),
+                       datalake::table_identifier_provider{}.table_id(topic),
                        datalake::schemaless_struct_type())
                      .get();
         ASSERT_FALSE(res.has_error());

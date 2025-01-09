@@ -231,13 +231,4 @@ catalog_schema_manager::get_ids_from_table_meta(
     return true;
 }
 
-iceberg::table_identifier
-schema_manager::table_id_for_topic(const model::topic& t) const {
-    return iceberg::table_identifier{
-      // TODO: namespace as a topic property? Keep it in the table metadata?
-      .ns = {"redpanda"},
-      .table = t,
-    };
-}
-
 } // namespace datalake
