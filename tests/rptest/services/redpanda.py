@@ -5338,6 +5338,9 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.info(f"Set up failure injection config for nodes: {nodes}")
 
+    def set_tolerate_crashes(self, tolerate_crashes: bool):
+        self._tolerate_crashes = tolerate_crashes
+
     def validate_controller_log(self):
         """
         This method is for use at end of tests, to detect issues that might

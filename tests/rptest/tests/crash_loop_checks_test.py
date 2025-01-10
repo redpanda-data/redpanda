@@ -7,9 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import signal
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RedpandaService
+from ducktape.utils.util import wait_until
 
 
 class CrashLoopChecksTest(RedpandaTest):
@@ -19,7 +21,8 @@ class CrashLoopChecksTest(RedpandaTest):
 
     CRASH_LOOP_LOG = [
         "Crash loop detected. Too many consecutive crashes.*",
-        ".*Failure during startup: std::runtime_error \(Crash loop detected, aborting startup.\).*"
+        ".*Failure during startup: crash_tracker::crash_loop_limit_reached \(Crash loop detected, aborting startup.\).*",
+        "Aborting on "
     ]
 
     # main - application.cc:348 - Failure during startup: std::__1::system_error (error C-Ares:4, unreachable_host.com: Not found)
@@ -51,6 +54,15 @@ class CrashLoopChecksTest(RedpandaTest):
             self.redpanda.start_node(broker)
         self.redpanda.signal_redpanda(node=broker)
         self.redpanda.start_node(node=broker, expect_fail=True)
+
+    def wait_for_redpanda_stop(self, broker, timeout=10):
+        wait_until(
+            lambda: self.redpanda.redpanda_pid(broker) == None,
+            timeout_sec=timeout,
+            backoff_sec=0.2,
+            err_msg=
+            f"Redpanda processes did not terminate on {broker.name} in {timeout} sec"
+        )
 
     @cluster(num_nodes=1, log_allow_list=CRASH_LOOP_LOG)
     def test_crash_loop_checks_with_tracker_file(self):
@@ -108,3 +120,27 @@ class CrashLoopChecksTest(RedpandaTest):
         # stop + restart without recovery mode.
         self.redpanda.stop_node(broker)
         self.redpanda.start_node(broker)
+
+    @cluster(num_nodes=1, log_allow_list=CRASH_LOOP_LOG + HOSTNAME_ERRORS)
+    def test_crash_file_recording(self):
+        self.redpanda.set_tolerate_crashes(True)
+        broker = self.redpanda.nodes[0]
+
+        for _ in range(CrashLoopChecksTest.CRASH_LOOP_LIMIT):
+            self.redpanda.signal_redpanda(broker, signal.SIGABRT)
+            self.wait_for_redpanda_stop(broker)
+            self.redpanda.start_node(broker)
+
+        # None of the attempts so far should be considered a crash loop.
+        assert not self.redpanda.search_log_node(
+            broker, "Too many consecutive crashes")
+
+        # Start again, crash loop should be detected.
+        self.redpanda.signal_redpanda(broker, signal.SIGABRT)
+        self.wait_for_redpanda_stop(broker)
+        self.redpanda.start_node(broker, expect_fail=True)
+
+        assert self.redpanda.search_log_node(broker,
+                                             "Too many consecutive crashes")
+        assert self.redpanda.search_log_node(
+            broker, "Crash #4 at .* - Aborting on shard")
