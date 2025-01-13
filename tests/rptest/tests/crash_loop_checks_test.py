@@ -10,6 +10,9 @@
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RedpandaService
+from rptest.util import expect_exception
+from rptest.services.redpanda import LoggingConfig
+from ducktape.errors import TimeoutError
 
 
 class CrashLoopChecksTest(RedpandaTest):
@@ -32,14 +35,15 @@ class CrashLoopChecksTest(RedpandaTest):
     CRASH_LOOP_TRACKER_FILE = f"{RedpandaService.DATA_DIR}/startup_log"
 
     def __init__(self, test_context):
-        super(CrashLoopChecksTest,
-              self).__init__(test_context=test_context,
-                             num_brokers=1,
-                             extra_node_conf={
-                                 "crash_loop_limit":
-                                 CrashLoopChecksTest.CRASH_LOOP_LIMIT,
-                                 "developer_mode": False
-                             })
+        super(CrashLoopChecksTest, self).__init__(
+            test_context=test_context,
+            num_brokers=1,
+            extra_node_conf={
+                "crash_loop_limit": CrashLoopChecksTest.CRASH_LOOP_LIMIT,
+                "developer_mode": False
+            },
+            log_config=LoggingConfig('info', logger_levels={'main': 'debug'}),
+        )
 
     def remove_crash_loop_tracker_file(self, broker):
         broker.account.ssh(
@@ -108,3 +112,22 @@ class CrashLoopChecksTest(RedpandaTest):
         # stop + restart without recovery mode.
         self.redpanda.stop_node(broker)
         self.redpanda.start_node(broker)
+
+    @cluster(num_nodes=1, log_allow_list=CRASH_LOOP_LOG)
+    def test_crash_loop_sleep(self):
+        broker = self.redpanda.nodes[0]
+
+        self.redpanda.add_extra_node_conf(broker, {"crash_loop_sleep_sec": 3})
+        self.redpanda.restart_nodes(broker)
+
+        for _ in range(CrashLoopChecksTest.CRASH_LOOP_LIMIT):
+            self.redpanda.signal_redpanda(node=broker)
+            self.redpanda.start_node(broker)
+        self.redpanda.signal_redpanda(node=broker)
+
+        # Expect the redpanda process to sleep for crash_loop_sleep_sec
+        self.redpanda.start_node(node=broker, expect_fail=True)
+        assert self.redpanda.search_log_node(broker,
+                                             "Too many consecutive crashes")
+        assert self.redpanda.search_log_node(
+            broker, "Sleeping for 3 seconds before terminating...")

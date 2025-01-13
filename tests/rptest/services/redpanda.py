@@ -2310,6 +2310,10 @@ class RedpandaService(RedpandaServiceBase):
         assert node in self.nodes, f"Node {node.account.hostname} is not started"
         self._extra_node_conf[node] = conf
 
+    def add_extra_node_conf(self, node, conf):
+        assert node in self.nodes, f"Node {node.account.hostname} is not started"
+        self._extra_node_conf[node] = {**self._extra_node_conf[node], **conf}
+
     def set_security_settings(self, settings):
         self._security = settings
         self._init_tls()
