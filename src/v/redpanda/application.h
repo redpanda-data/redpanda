@@ -91,7 +91,7 @@ public:
     void wire_up_and_start(::stop_signal&, bool test_mode = false);
     void post_start_tasks();
 
-    void check_for_crash_loop();
+    void check_for_crash_loop(ss::abort_source&);
     void schedule_crash_tracker_file_cleanup();
 
     explicit application(ss::sstring = "main");

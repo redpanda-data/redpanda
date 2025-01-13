@@ -67,6 +67,7 @@ public:
     deprecated_property enable_central_config;
 
     property<std::optional<uint32_t>> crash_loop_limit;
+    property<std::optional<std::chrono::seconds>> crash_loop_sleep_sec;
 
     // If true, permit any version of redpanda to start, even
     // if potentially incompatible with existing system state.

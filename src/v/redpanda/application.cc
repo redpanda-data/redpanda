@@ -136,6 +136,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/json/json_elements.hh>
@@ -461,7 +462,7 @@ int application::run(int ac, char** av) {
                 hydrate_config(cfg);
                 initialize();
                 check_environment();
-                check_for_crash_loop();
+                check_for_crash_loop(app_signal.abort_source());
                 setup_metrics();
                 wire_up_and_start(app_signal);
                 post_start_tasks();
@@ -922,7 +923,7 @@ void application::check_environment() {
 /// the broker last failed to start. This metadata is tracked in the
 /// tracker file. This is to prevent on disk state from piling up in
 /// each unclean run and creating more state to recover for the next run.
-void application::check_for_crash_loop() {
+void application::check_for_crash_loop(ss::abort_source& as) {
     if (config::node().developer_mode()) {
         // crash loop tracking has value only in long running clusters
         // that can potentially accumulate state across restarts.
@@ -979,6 +980,17 @@ void application::check_for_crash_loop() {
               config::node().crash_loop_limit.name(),
               limit.value(),
               file_path);
+
+            const auto crash_loop_sleep_val
+              = config::node().crash_loop_sleep_sec.value();
+            if (crash_loop_sleep_val) {
+                vlog(
+                  _log.info,
+                  "Sleeping for {} seconds before terminating...",
+                  *crash_loop_sleep_val / 1s);
+                ss::sleep_abortable(*crash_loop_sleep_val, as).get();
+            }
+
             throw std::runtime_error("Crash loop detected, aborting startup.");
         }
 

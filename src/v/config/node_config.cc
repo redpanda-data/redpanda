@@ -146,6 +146,16 @@ node_config::node_config() noexcept
       "enforced in developer mode.",
       {.visibility = visibility::user},
       5)
+  , crash_loop_sleep_sec(
+      *this,
+      "crash_loop_sleep_sec",
+      "The amount of time the broker sleeps before terminating the process "
+      "when it reaches the number of consecutive times a broker can crash. For "
+      "more information, see "
+      "https://docs.redpanda.com/current/reference/properties/"
+      "broker-properties/#crash_loop_limit.",
+      {.visibility = visibility::user},
+      std::nullopt)
   , upgrade_override_checks(
       *this,
       "upgrade_override_checks",
