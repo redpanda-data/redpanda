@@ -33,19 +33,18 @@
 namespace experimental::cloud_topics {
 
 resolver::resolver(
-  core::read_pipeline<>* pipeline,
+  core::read_pipeline<>::stage pipeline_stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* remote,
   cloud_io::basic_cache_service_api<>* cache,
   ss::shared_ptr<cluster_partition_manager_api> pm)
-  : _pipeline(pipeline)
-  , _bucket(std::move(bucket))
+  : _bucket(std::move(bucket))
   , _remote(remote)
   , _cache(cache)
   , _pm(std::move(pm))
-  , _rtc(&_pipeline->get_root_rtc())
+  , _rtc(&pipeline_stage.get_root_rtc())
   , _logger(cd_log, _rtc, "ct:resolver")
-  , _my_stage(_pipeline->register_pipeline_stage()) {}
+  , _pipeline_stage(pipeline_stage) {}
 
 ss::future<> resolver::start() {
     ssx::spawn_with_gate(_gate, [this] { return bg_resolve_pipeline(); });
@@ -56,20 +55,6 @@ ss::future<> resolver::stop() { co_await _gate.close(); }
 
 ss::future<> resolver::bg_resolve_pipeline() {
     while (!_rtc.root_abort_source().abort_requested()) {
-        core::event_filter<> filter(
-          core::event_type::new_read_request, _my_stage);
-        auto event = co_await _pipeline->subscribe(
-          filter, _rtc.root_abort_source());
-        switch (event.type) {
-        case core::event_type::shutting_down:
-            co_return;
-        case core::event_type::err_timedout:
-        case core::event_type::new_write_request:
-        case core::event_type::none:
-            unreachable();
-        case core::event_type::new_read_request:
-            break;
-        }
         auto fut = co_await ss::coroutine::as_future(process_requests());
         if (fut.failed()) {
             auto e = fut.get_exception();
@@ -86,7 +71,8 @@ ss::future<> resolver::bg_resolve_pipeline() {
                   _logger.error,
                   "Got unexpected failure while resolving the request: {}",
                   e);
-                _pipeline->register_pipeline_error(errc::unexpected_failure);
+                _pipeline_stage.register_pipeline_error(
+                  errc::unexpected_failure);
             }
         } else {
             auto res = fut.get();
@@ -97,7 +83,7 @@ ss::future<> resolver::bg_resolve_pipeline() {
                 } else {
                     // Other types of errors are logged inside
                     // the 'process_request'
-                    _pipeline->register_pipeline_error(res.error());
+                    _pipeline_stage.register_pipeline_error(res.error());
                 }
             } else {
                 auto msg = res.value() ? "no work, resolver will be suspended"
@@ -280,18 +266,21 @@ ss::future<checked<bool, errc>> resolver::process_requests() {
     // but it should only be used to avoid OOM'ing on read_request
     // instances.
     // TODO: use proper limit
-    auto to_process = _pipeline->get_fetch_requests(100_MiB, _my_stage);
+    auto to_process = co_await _pipeline_stage.pull_fetch_requests(100_MiB);
+    if (to_process.has_error()) {
+        co_return to_process.error().value();
+    }
     vlog(
       _logger.trace,
       "got {} requests from the pipeline, completeness: {}",
-      to_process.ready.size(),
-      to_process.complete);
+      to_process.value().requests.size(),
+      to_process.value().complete);
     chunked_vector<ss::future<>> bg;
-    for (auto& req : to_process.ready) {
+    for (auto& req : to_process.value().requests) {
         bg.push_back(process_single_request(&req));
     }
     co_await ss::when_all_succeed(bg.begin(), bg.end());
-    co_return to_process.complete;
+    co_return to_process.value().complete;
 }
 
 } // namespace experimental::cloud_topics

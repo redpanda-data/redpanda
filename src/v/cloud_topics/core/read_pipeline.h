@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/core/base_pipeline.h"
 #include "cloud_topics/core/circuit_breaker.h"
 #include "cloud_topics/core/event_filter.h"
 #include "cloud_topics/core/pipeline_stage.h"
@@ -27,32 +28,17 @@
 
 namespace experimental::cloud_topics::core {
 
-//
-class pipeline_abort_requested : public ss::abort_requested_exception {
-public:
-    const char* what() const noexcept override {
-        return "pipeline abort requested";
-    }
-};
-
 struct read_pipeline_accessor;
 
 template<class Clock = ss::lowres_clock>
-class read_pipeline {
+class read_pipeline
+  : public base_pipeline<read_request<Clock>, read_pipeline<Clock>, Clock> {
     friend struct read_pipeline_accessor;
 
 public:
     read_pipeline();
 
     ss::future<model::record_batch_reader> make_reader();
-
-    /// Subscribe to events of certain type
-    ///
-    /// The returned future will become ready when new data will be added to the
-    /// pipeline or when the shutdown even will occur.
-    ss::future<event> subscribe(event_filter<Clock>& flt) noexcept;
-    ss::future<event>
-    subscribe(event_filter<Clock>& flt, ss::abort_source& as) noexcept;
 
     /// Make log reader config
     ss::future<result<read_request_fetch_result>> make_reader(
@@ -68,37 +54,77 @@ public:
 
     // TODO: add metadata requests (last term for offset, start offset, etc)
 
-    pipeline_stage register_pipeline_stage() noexcept;
+    using read_requests_list
+      = requests_list<read_pipeline<Clock>, read_request<Clock>>;
 
-    struct read_requests_list {
-        core::read_request_list<Clock> ready;
-        bool complete{true};
+    ss::sstring pipeline_name() const noexcept { return "read_pipeline"; }
+
+    /// The stage of the pipeline that should be used by a single
+    class stage {
+    public:
+        explicit stage(pipeline_stage ps, read_pipeline<Clock>* parent)
+          : _ps(ps)
+          , _parent(parent) {}
+
+        explicit operator pipeline_stage() const { return _ps; }
+
+        /// Wait until fetch requests are available in the pipeline
+        /// stage and return them (the requests are pulled out of
+        /// the pipeline).
+        ss::future<checked<read_requests_list>>
+        pull_fetch_requests(size_t max_bytes) {
+            core::event_filter<Clock> filter(
+              core::event_type::new_read_request, _ps);
+            auto event = co_await _parent->subscribe(
+              filter, _parent->get_abort_source());
+            switch (event.type) {
+            case core::event_type::shutting_down:
+                co_return errc::shutting_down;
+            case core::event_type::err_timedout:
+                co_return errc::timeout;
+            case core::event_type::new_write_request:
+            case core::event_type::none:
+                vassert(false, "Unexpected event type in the read_pipeline");
+            case core::event_type::new_read_request:
+                break;
+            }
+            auto list = _parent->get_fetch_requests(max_bytes, _ps);
+            co_return list;
+        }
+
+        bool stopped() const noexcept { return _parent->stopped(); }
+
+        basic_retry_chain_node<Clock>& get_root_rtc() noexcept {
+            return _parent->get_root_rtc();
+        }
+
+        void register_pipeline_error(errc e) {
+            _parent->register_pipeline_error(e);
+        }
+
+    private:
+        pipeline_stage _ps;
+        read_pipeline<Clock>* _parent;
     };
 
-    /// Get list of read requests which are ready to be processed.
-    /// Limit by memory required to handle these requests.
+    /// Register new pipeline stage
+    stage register_read_pipeline_stage() noexcept {
+        return stage(this->register_pipeline_stage(), this);
+    }
+
+    void signal(pipeline_stage stage);
+
+private:
+    ss::abort_source& get_abort_source() {
+        return this->get_root_rtc().root_abort_source();
+    }
+
+    /// Return list of fetch requests that can be processed immediately
     read_requests_list
     get_fetch_requests(size_t max_bytes, pipeline_stage stage);
 
-    /// Get root retry chain node to use with async
-    /// operations.
-    basic_retry_chain_node<Clock>& get_root_rtc() { return _root_rtc; }
-
     /// Register read-path errors
     void register_pipeline_error(errc);
-
-    ss::future<> stop();
-
-private:
-    /// Find all timed out fetch requests and remove them from the list
-    /// atomically.
-    void remove_timed_out_fetch_requests();
-
-    /// Signal all active filters
-    void signal(pipeline_stage stage);
-
-    core::read_request_list<Clock> _pending;
-    ss::gate _gate;
 
     // Total size of all fetch requests (estimated using max_bytes)
     size_t _current_size{0};
@@ -108,13 +134,6 @@ private:
 
     ssx::named_semaphore<Clock> _mem_quota;
 
-    ss::abort_source _as;
-    basic_retry_chain_node<Clock> _root_rtc;
-    basic_retry_chain_logger<Clock> _logger;
-
-    event_filter<Clock>::event_filter_list _filters;
-
-    pipeline_stage_container _stages;
     circuit_breaker<Clock> _breaker;
 };
 } // namespace experimental::cloud_topics::core

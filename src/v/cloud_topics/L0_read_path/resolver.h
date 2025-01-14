@@ -28,7 +28,7 @@ namespace experimental::cloud_topics {
 class resolver {
 public:
     explicit resolver(
-      core::read_pipeline<>*,
+      core::read_pipeline<>::stage,
       cloud_storage_clients::bucket_name,
       cloud_io::remote_api<>*,
       cloud_io::basic_cache_service_api<>*,
@@ -45,7 +45,6 @@ private:
     /// Process single request
     ss::future<> process_single_request(core::read_request<>* req);
 
-    core::read_pipeline<>* _pipeline;
     cloud_storage_clients::bucket_name _bucket;
     cloud_io::remote_api<>* _remote;
     cloud_io::basic_cache_service_api<>* _cache;
@@ -53,6 +52,6 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _logger;
     ss::gate _gate;
-    core::pipeline_stage _my_stage;
+    core::read_pipeline<>::stage _pipeline_stage;
 };
 } // namespace experimental::cloud_topics

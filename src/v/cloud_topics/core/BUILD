@@ -72,9 +72,9 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/cloud_topics:types",
         "//src/v/container:fragmented_vector",
-        "//src/v/utils:retry_chain_node",
         "//src/v/model",
         "//src/v/storage",
+        "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
 )
@@ -116,6 +116,23 @@ redpanda_cc_library(
     include_prefix = "cloud_topics/core",
     deps = [
         "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "base_pipeline",
+    hdrs = [
+        "base_pipeline.h",
+    ],
+    include_prefix = "cloud_topics/core",
+    deps = [
+        ":pipeline_stage",
+        "//src/v/base",
+        "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/core:event_filter",
+        "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
 )
@@ -169,6 +186,7 @@ redpanda_cc_library(
     ],
     include_prefix = "cloud_topics/core",
     deps = [
+        ":base_pipeline",
         ":pipeline_stage",
         "//src/v/base",
         "//src/v/bytes",

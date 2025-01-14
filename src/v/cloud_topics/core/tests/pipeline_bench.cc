@@ -29,7 +29,7 @@ namespace ct = ::experimental::cloud_topics;
 
 struct read_pipeline_sink {
     explicit read_pipeline_sink(ct::core::read_pipeline<>& p)
-      : _my_stage(p.register_pipeline_stage())
+      : _my_stage(p.register_read_pipeline_stage())
       , _pipeline(&p) {}
 
     void start() { ssx::background = bg_loop(); }
@@ -38,23 +38,18 @@ struct read_pipeline_sink {
 
     ss::future<> bg_loop() {
         auto h = _gate.hold();
-        while (
-          !_pipeline->get_root_rtc().root_abort_source().abort_requested()) {
-            ct::core::event_filter<> flt(
-              ct::core::event_type::new_read_request, _my_stage);
-            auto event = co_await _pipeline->subscribe(
-              flt, _pipeline->get_root_rtc().root_abort_source());
-            if (event.type == ct::core::event_type::shutting_down) {
-                break;
+        while (!_pipeline->stopped()) {
+            auto res = co_await _my_stage.pull_fetch_requests(0x100000);
+            if (res.has_error()) {
+                throw std::system_error(res.error());
             }
-            auto res = _pipeline->get_fetch_requests(0x100000, _my_stage);
-            for (auto& req : res.ready) {
+            for (auto& req : res.value().requests) {
                 req.set_value(ct::errc::success);
             }
         }
     }
 
-    ct::core::pipeline_stage _my_stage;
+    ct::core::read_pipeline<>::stage _my_stage;
     ct::core::read_pipeline<>* _pipeline;
     ss::gate _gate;
 };

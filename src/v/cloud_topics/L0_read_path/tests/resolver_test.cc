@@ -71,7 +71,7 @@ TEST_F_CORO(placeholder_extent_fixture, resolver_test) {
     cloud_topics::core::read_pipeline<> pipeline;
 
     cloud_topics::resolver resolver(
-      &pipeline,
+      pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
@@ -127,7 +127,7 @@ ss::future<> aborted_tx_failure_test(
     cloud_topics::core::read_pipeline<> pipeline;
 
     cloud_topics::resolver resolver(
-      &pipeline,
+      pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
@@ -187,7 +187,7 @@ get_partition_failure(placeholder_extent_fixture& fx, bool shutdown) {
     cloud_topics::core::read_pipeline<> pipeline;
 
     cloud_topics::resolver resolver(
-      &pipeline,
+      pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
@@ -248,7 +248,7 @@ ss::future<> make_reader_failed(
     cloud_topics::core::read_pipeline<> pipeline;
 
     cloud_topics::resolver resolver(
-      &pipeline,
+      pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
@@ -315,7 +315,7 @@ TEST_F_CORO(placeholder_extent_fixture, request_cancel_test) {
     cloud_topics::core::read_pipeline<> pipeline;
 
     cloud_topics::resolver resolver(
-      &pipeline,
+      pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
