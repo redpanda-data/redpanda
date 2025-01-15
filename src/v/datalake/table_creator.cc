@@ -10,7 +10,6 @@
 #include "datalake/table_creator.h"
 
 #include "datalake/record_translator.h"
-#include "datalake/table_id_provider.h"
 
 namespace datalake {
 
@@ -32,11 +31,10 @@ direct_table_creator::direct_table_creator(
 
 ss::future<checked<std::nullopt_t, table_creator::errc>>
 direct_table_creator::ensure_table(
-  const model::topic& topic,
+  const model::topic&,
   model::revision_id,
+  const iceberg::table_identifier& table_id,
   record_schema_components comps) const {
-    auto table_id = table_id_provider::table_id(topic);
-
     std::optional<resolved_type> val_type;
     if (comps.val_identifier) {
         auto type_res = co_await type_resolver_.resolve_identifier(

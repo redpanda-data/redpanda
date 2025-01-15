@@ -14,6 +14,7 @@
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/errors.h"
 #include "datalake/schema_identifier.h"
+#include "iceberg/table_identifier.h"
 #include "model/fundamental.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
@@ -62,8 +63,8 @@ struct ensure_table_exists_reply
 struct ensure_table_exists_request
   : serde::envelope<
       ensure_table_exists_request,
-      serde::version<0>,
-      serde::compat_version<0>> {
+      serde::version<1>,
+      serde::compat_version<1>> {
     using rpc_adl_exempt = std::true_type;
     using resp_t = ensure_table_exists_reply;
 
@@ -71,13 +72,16 @@ struct ensure_table_exists_request
     ensure_table_exists_request(
       model::topic topic,
       model::revision_id topic_revision,
+      iceberg::table_identifier table_id,
       record_schema_components schema_components)
       : topic(std::move(topic))
       , topic_revision(topic_revision)
+      , table_id(std::move(table_id))
       , schema_components(std::move(schema_components)) {}
 
     model::topic topic;
     model::revision_id topic_revision;
+    iceberg::table_identifier table_id;
     record_schema_components schema_components;
 
     friend std::ostream&
@@ -86,7 +90,7 @@ struct ensure_table_exists_request
     const model::topic& get_topic() const { return topic; }
 
     auto serde_fields() {
-        return std::tie(topic, topic_revision, schema_components);
+        return std::tie(topic, topic_revision, table_id, schema_components);
     }
 };
 

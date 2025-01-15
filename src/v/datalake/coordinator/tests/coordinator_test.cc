@@ -16,6 +16,7 @@
 #include "datalake/coordinator/state_update.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
 #include "datalake/logger.h"
+#include "datalake/table_id_provider.h"
 #include "raft/tests/raft_fixture.h"
 #include "random/generators.h"
 #include "test_utils/async.h"
@@ -80,7 +81,10 @@ struct coordinator_node {
     void ensure_table(const model::topic& topic, model::revision_id rev) {
         auto res = crd
                      .sync_ensure_table_exists(
-                       topic, rev, datalake::record_schema_components{})
+                       topic,
+                       rev,
+                       datalake::table_id_provider::table_id(topic),
+                       datalake::record_schema_components{})
                      .get();
         ASSERT_FALSE(res.has_error()) << res.error();
     }
@@ -122,7 +126,10 @@ ss::future<> file_adder_loop(
             continue;
         }
         auto ensure_res = co_await n.crd.sync_ensure_table_exists(
-          tp.topic, topic_rev, datalake::record_schema_components{});
+          tp.topic,
+          topic_rev,
+          datalake::table_id_provider::table_id(tp.topic),
+          datalake::record_schema_components{});
         if (ensure_res.has_error()) {
             continue;
         }

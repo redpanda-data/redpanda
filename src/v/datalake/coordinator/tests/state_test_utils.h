@@ -26,6 +26,7 @@ class noop_table_creator : public table_creator {
     ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
       model::revision_id,
+      const iceberg::table_identifier&,
       record_schema_components) const final {
         co_return std::nullopt;
     }

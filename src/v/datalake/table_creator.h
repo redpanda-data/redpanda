@@ -11,6 +11,7 @@
 
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/record_schema_resolver.h"
+#include "iceberg/table_identifier.h"
 
 namespace datalake {
 
@@ -28,6 +29,7 @@ public:
     virtual ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
       model::revision_id topic_revision,
+      const iceberg::table_identifier&,
       record_schema_components) const
       = 0;
 
@@ -42,6 +44,7 @@ public:
     ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic&,
       model::revision_id topic_revision,
+      const iceberg::table_identifier&,
       record_schema_components) const final;
 
 private:

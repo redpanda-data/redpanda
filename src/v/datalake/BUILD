@@ -553,13 +553,13 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         ":record_translator",
-        ":table_id_provider",
     ],
     include_prefix = "datalake",
     visibility = [":__subpackages__"],
     deps = [
         ":catalog_schema_manager",
         ":record_schema_resolver",
+        "//src/v/iceberg:table_identifier",
     ],
 )
 

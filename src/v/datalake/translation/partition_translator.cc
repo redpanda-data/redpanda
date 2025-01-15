@@ -86,11 +86,13 @@ public:
     ss::future<checked<std::nullopt_t, errc>> ensure_table(
       const model::topic& topic,
       model::revision_id topic_revision,
+      const iceberg::table_identifier& table_id,
       record_schema_components comps) const final {
         auto ensure_res = co_await coordinator_fe_.ensure_table_exists(
           coordinator::ensure_table_exists_request{
             topic,
             topic_revision,
+            table_id.copy(),
             comps,
           });
         switch (ensure_res.errc) {

@@ -51,7 +51,10 @@ ss::future<ensure_table_exists_reply> do_ensure_table_exists(
         co_return ensure_table_exists_reply{errc::not_leader};
     }
     auto ret = co_await crd->sync_ensure_table_exists(
-      req.topic, req.topic_revision, std::move(req.schema_components));
+      req.topic,
+      req.topic_revision,
+      std::move(req.table_id),
+      std::move(req.schema_components));
     if (ret.has_error()) {
         co_return to_rpc_errc(ret.error());
     }

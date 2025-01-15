@@ -13,6 +13,7 @@
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
+#include "datalake/table_id_provider.h"
 #include "raft/tests/stm_test_fixture.h"
 
 using coordinator = std::unique_ptr<datalake::coordinator::coordinator>;
@@ -171,7 +172,10 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
                     }
                     return coordinator
                       ->sync_ensure_table_exists(
-                        tp.topic, rev, datalake::record_schema_components{})
+                        tp.topic,
+                        rev,
+                        datalake::table_id_provider::table_id(tp.topic),
+                        datalake::record_schema_components{})
                       .then([this, tp, offset_pairs, &coordinator](
                               auto ensure_res) {
                           if (!ensure_res) {

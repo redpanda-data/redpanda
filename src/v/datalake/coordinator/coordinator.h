@@ -16,6 +16,7 @@
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/coordinator/state_update.h"
 #include "datalake/fwd.h"
+#include "iceberg/table_identifier.h"
 #include "model/fundamental.h"
 
 namespace datalake::coordinator {
@@ -58,6 +59,7 @@ public:
     ss::future<checked<std::nullopt_t, errc>> sync_ensure_table_exists(
       model::topic topic,
       model::revision_id topic_revision,
+      iceberg::table_identifier table_id,
       record_schema_components);
 
     ss::future<checked<std::nullopt_t, errc>> sync_add_files(

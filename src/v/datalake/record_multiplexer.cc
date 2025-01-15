@@ -138,8 +138,10 @@ record_multiplexer::operator()(model::record_batch batch) {
           std::move(val_type_res.value().type));
         auto writer_iter = _writers.find(record_type.comps);
         if (writer_iter == _writers.end()) {
+            auto table_id = table_id_provider::table_id(_ntp.tp.topic);
+
             auto ensure_res = co_await _table_creator.ensure_table(
-              _ntp.tp.topic, _topic_revision, record_type.comps);
+              _ntp.tp.topic, _topic_revision, table_id, record_type.comps);
             if (ensure_res.has_error()) {
                 auto e = ensure_res.error();
                 switch (e) {
@@ -168,7 +170,6 @@ record_multiplexer::operator()(model::record_batch batch) {
                 co_return ss::stop_iteration::yes;
             }
 
-            auto table_id = table_id_provider::table_id(_ntp.tp.topic);
             auto load_res = co_await _schema_mgr.get_table_info(table_id);
             if (load_res.has_error()) {
                 auto e = load_res.error();

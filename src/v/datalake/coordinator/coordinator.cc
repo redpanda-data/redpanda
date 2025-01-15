@@ -15,6 +15,7 @@
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
 #include "datalake/table_creator.h"
+#include "iceberg/table_identifier.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "ssx/future-util.h"
@@ -230,6 +231,7 @@ ss::future<checked<std::nullopt_t, coordinator::errc>>
 coordinator::sync_ensure_table_exists(
   model::topic topic,
   model::revision_id topic_revision,
+  iceberg::table_identifier table_id,
   record_schema_components comps) {
     auto gate = maybe_gate();
     if (gate.has_error()) {
@@ -281,7 +283,7 @@ coordinator::sync_ensure_table_exists(
     // TODO: verify stm state after replication
 
     auto ensure_res = co_await table_creator_.ensure_table(
-      topic, topic_revision, std::move(comps));
+      topic, topic_revision, table_id, std::move(comps));
     if (ensure_res.has_error()) {
         switch (ensure_res.error()) {
         case table_creator::errc::incompatible_schema:
