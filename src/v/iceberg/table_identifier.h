@@ -10,13 +10,18 @@
 
 #include "base/seastarx.h"
 #include "container/fragmented_vector.h"
+#include "serde/envelope.h"
+#include "serde/rw/sstring.h"
+#include "serde/rw/vector.h"
 
 #include <seastar/core/sstring.hh>
 
 #include <boost/container_hash/hash.hpp>
 
 namespace iceberg {
-struct table_identifier {
+struct table_identifier
+  : serde::
+      envelope<table_identifier, serde::version<0>, serde::compat_version<0>> {
     chunked_vector<ss::sstring> ns;
     ss::sstring table;
 
@@ -28,6 +33,8 @@ struct table_identifier {
     }
 
     bool operator==(const table_identifier& other) const = default;
+
+    auto serde_fields() { return std::tie(ns, table); }
 };
 std::ostream& operator<<(std::ostream& o, const table_identifier& id);
 } // namespace iceberg

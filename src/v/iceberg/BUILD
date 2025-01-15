@@ -716,6 +716,9 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/container:fragmented_vector",
+        "//src/v/serde",
+        "//src/v/serde:sstring",
+        "//src/v/serde:vector",
         "@boost//:container_hash",
         "@seastar",
     ],

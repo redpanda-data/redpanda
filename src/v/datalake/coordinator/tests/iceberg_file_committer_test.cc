@@ -245,7 +245,7 @@ TEST_P(FileCommitterPartitionTest, TestFilesGetPartitionKey) {
                         chunked_vector<manifest_file>& ret) {
         auto load_res = catalog
                           .load_table(iceberg::table_identifier{
-                            {"redpanda"}, "test-topic"})
+                            .ns = {"redpanda"}, .table = "test-topic"})
                           .get();
         ASSERT_FALSE(load_res.has_error());
         auto lb_matcher = [min_hour, max_hour](const manifest_file& file) {

@@ -158,9 +158,10 @@ public:
 
     // Returns the current schema.
     std::optional<iceberg::schema> get_current_schema() {
-        auto load_res
-          = catalog.load_table(iceberg::table_identifier{{"redpanda"}, "t"})
-              .get();
+        auto load_res = catalog
+                          .load_table(iceberg::table_identifier{
+                            .ns = {"redpanda"}, .table = "t"})
+                          .get();
         EXPECT_FALSE(load_res.has_error()) << load_res.error();
         if (load_res.has_error()) {
             return std::nullopt;
