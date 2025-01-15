@@ -153,6 +153,7 @@ redpanda_cc_library(
     ],
     include_prefix = "cloud_topics/core",
     deps = [
+        ":base_pipeline",
         ":pipeline_stage",
         "//src/v/base",
         "//src/v/bytes",

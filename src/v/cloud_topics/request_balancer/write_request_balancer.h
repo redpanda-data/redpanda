@@ -69,7 +69,7 @@ class write_request_balancer
 
 public:
     write_request_balancer(
-      core::write_pipeline<>& pipeline,
+      core::write_pipeline<>::stage s,
       std::unique_ptr<balancing_policy> policy);
 
     ss::future<> start();
@@ -96,8 +96,7 @@ private:
     ss::future<> roundtrip(ss::shard_id shard, core::write_request<>& req);
 
     std::vector<shard_resource_utilization> _shards;
-    core::write_pipeline<>& _pipeline;
-    core::pipeline_stage _my_stage;
+    core::write_pipeline<>::stage _stage;
     std::unique_ptr<balancing_policy> _policy;
     ss::gate _gate;
     ss::abort_source _as;

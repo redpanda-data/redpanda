@@ -33,12 +33,12 @@ namespace experimental::cloud_topics::core {
 struct write_pipeline_accessor {
     // Returns true if the write request is in the `_pending` collection
     bool write_requests_pending(size_t n) const {
-        return pipeline->_pending.size() == n;
+        return pipeline->get_pending().size() == n;
     }
 
     // Returns true if `_filters` collection has right amount of filters
     bool event_filters_subscribed(size_t n) const {
-        return pipeline->_filters.size() == n;
+        return pipeline->get_filters().size() == n;
     }
 
     core::write_pipeline<ss::lowres_clock>* pipeline;
@@ -95,17 +95,17 @@ TEST_CORO(EventFilterTest, filter_triggered_once) {
     size_t reader_size_bytes = get_serialized_size(batches);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     core::write_pipeline<ss::lowres_clock> pipeline;
-    auto stage = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
     core::event_filter<ss::lowres_clock> flt(
-      core::event_type::new_write_request, stage);
+      core::event_type::new_write_request, stage.id());
     auto sub = pipeline.subscribe(flt);
     auto write = pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader), 1s);
     auto event = co_await std::move(sub);
     ASSERT_EQ_CORO(event.pending_write_bytes, reader_size_bytes);
-    auto pending = pipeline.get_write_requests(
-      std::numeric_limits<size_t>::max(), stage);
-    for (auto& req : pending.ready) {
+    auto pending = stage.pull_write_requests(
+      std::numeric_limits<size_t>::max());
+    for (auto& req : pending.requests) {
         req.set_value(ss::circular_buffer<model::record_batch>());
     }
     std::ignore = co_await std::move(write);
@@ -129,7 +129,7 @@ TEST_CORO(EventFilterTest, filter_has_memory) {
     size_t reader_size_bytes = get_serialized_size(batches);
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     core::write_pipeline<ss::lowres_clock> pipeline;
-    auto stage = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
     auto write = pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader), 1s);
     // wait until submitted
@@ -140,12 +140,12 @@ TEST_CORO(EventFilterTest, filter_has_memory) {
         return accessor.write_requests_pending(1);
     });
     core::event_filter<ss::lowres_clock> flt(
-      core::event_type::new_write_request, stage);
+      core::event_type::new_write_request, stage.id());
     auto event = co_await pipeline.subscribe(flt);
     ASSERT_EQ_CORO(event.pending_write_bytes, reader_size_bytes);
-    auto pending = pipeline.get_write_requests(
-      std::numeric_limits<size_t>::max(), stage);
-    for (auto& req : pending.ready) {
+    auto pending = stage.pull_write_requests(
+      std::numeric_limits<size_t>::max());
+    for (auto& req : pending.requests) {
         req.set_value(ss::circular_buffer<model::record_batch>());
     }
     std::ignore = co_await std::move(write);
@@ -154,10 +154,10 @@ TEST_CORO(EventFilterTest, filter_has_memory) {
 
 TEST_CORO(EventFilterTest, filter_shutdown) {
     core::write_pipeline<ss::lowres_clock> pipeline;
-    auto stage = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
     // The subscription mechanism uses external abort source
     core::event_filter<ss::lowres_clock> flt(
-      core::event_type::new_write_request, stage);
+      core::event_type::new_write_request, stage.id());
     ss::abort_source as;
     auto sub = pipeline.subscribe(flt, as);
     co_await ss::sleep(10ms);
@@ -169,11 +169,11 @@ TEST_CORO(EventFilterTest, filter_shutdown) {
 
 TEST_CORO(EventFilterTest, filter_timedout) {
     core::write_pipeline<ss::lowres_clock> pipeline;
-    auto stage = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
     // The subscription mechanism can be aborted by timeout
     core::event_filter<ss::lowres_clock> flt(
       core::event_type::new_write_request,
-      stage,
+      stage.id(),
       ss::lowres_clock::now() + 1ms);
     auto sub = pipeline.subscribe(flt);
     co_await ss::sleep(10ms);

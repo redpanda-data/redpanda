@@ -97,7 +97,7 @@ namespace experimental::cloud_topics::core {
 struct write_pipeline_accessor {
     // Returns true if the write request is in the `_pending` collection
     bool write_requests_pending(size_t n) {
-        return pipeline->_pending.size() == n;
+        return pipeline->get_pending().size() == n;
     }
 
     cloud_topics::core::write_pipeline<ss::manual_clock>* pipeline;
@@ -138,7 +138,8 @@ TEST_CORO(batcher_test, single_write_request) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
-    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(), bucket, mock);
     cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
     };
@@ -185,7 +186,8 @@ TEST_CORO(batcher_test, many_write_requests) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
-    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(), bucket, mock);
     cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
     };
@@ -265,7 +267,8 @@ TEST_CORO(batcher_test, expired_write_request) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
     cloud_topics::core::write_pipeline<ss::manual_clock> pipeline;
-    cloud_topics::batcher<ss::manual_clock> batcher(pipeline, bucket, mock);
+    cloud_topics::batcher<ss::manual_clock> batcher(
+      pipeline.register_write_pipeline_stage(), bucket, mock);
     cloud_topics::batcher_accessor batcher_accessor{
       .batcher = &batcher,
     };

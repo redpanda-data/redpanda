@@ -74,7 +74,7 @@ PERF_TEST_C(read_pipeline_bench, propagation_latency) {
 
 struct write_pipeline_sink {
     explicit write_pipeline_sink(ct::core::write_pipeline<>& p)
-      : _my_stage(p.register_pipeline_stage())
+      : _my_stage(p.register_write_pipeline_stage())
       , _pipeline(&p) {}
 
     void start() { ssx::background = bg_loop(); }
@@ -88,19 +88,19 @@ struct write_pipeline_sink {
         auto h = _gate.hold();
         while (!_as.abort_requested()) {
             ct::core::event_filter<> flt(
-              ct::core::event_type::new_write_request, _my_stage);
+              ct::core::event_type::new_write_request, _my_stage.id());
             auto event = co_await _pipeline->subscribe(flt, _as);
             if (event.type == ct::core::event_type::shutting_down) {
                 break;
             }
-            auto res = _pipeline->get_write_requests(1, _my_stage);
-            for (auto& req : res.ready) {
+            auto res = _my_stage.pull_write_requests(1);
+            for (auto& req : res.requests) {
                 req.set_value(ct::errc::success);
             }
         }
     }
 
-    ct::core::pipeline_stage _my_stage;
+    ct::core::write_pipeline<>::stage _my_stage;
     ct::core::write_pipeline<>* _pipeline;
     ss::gate _gate;
     ss::abort_source _as;

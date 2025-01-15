@@ -17,6 +17,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:types",
+        "//src/v/cloud_topics/core:base_pipeline",
         "//src/v/cloud_topics/core:event_filter",
         "//src/v/cloud_topics/core:write_pipeline",
         "//src/v/cloud_topics/core:write_request",

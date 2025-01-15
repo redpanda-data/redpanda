@@ -11,6 +11,7 @@
 #include "cloud_topics/request_balancer/write_request_balancer.h"
 
 #include "base/unreachable.h"
+#include "cloud_topics/core/base_pipeline.h"
 #include "cloud_topics/core/write_pipeline.h"
 #include "cloud_topics/core/write_request.h"
 #include "cloud_topics/logger.h"
@@ -42,9 +43,8 @@ void dummy_balancing_policy::rebalance(
 }
 
 write_request_balancer::write_request_balancer(
-  core::write_pipeline<>& pipeline, std::unique_ptr<balancing_policy> policy)
-  : _pipeline(pipeline)
-  , _my_stage(_pipeline.register_pipeline_stage())
+  core::write_pipeline<>::stage s, std::unique_ptr<balancing_policy> policy)
+  : _stage(s)
   , _policy(std::move(policy)) {
     for (auto cpu : ss::smp::all_cpus()) {
         _shards.push_back({.shard = cpu});
@@ -63,18 +63,10 @@ ss::future<> write_request_balancer::stop() {
 }
 
 ss::future<> write_request_balancer::run_bg() noexcept {
-    core::event_filter<ss::lowres_clock> filter(
-      core::event_type::new_write_request, _my_stage);
-    auto event = co_await _pipeline.subscribe(filter, _as);
-    switch (event.type) {
-    case core::event_type::shutting_down:
+    auto ev = co_await _stage.wait_next(&_as);
+    if (ev.has_error()) {
+        vlog(cd_log.info, "Pipeline interrupted: {}", ev.error());
         co_return;
-    case core::event_type::err_timedout:
-    case core::event_type::new_read_request:
-    case core::event_type::none:
-        unreachable();
-    case core::event_type::new_write_request:
-        break;
     }
     auto fut = co_await ss::coroutine::as_future(run_once());
     if (fut.failed()) {
@@ -109,26 +101,19 @@ ss::future<checked<bool, errc>> write_request_balancer::run_once() noexcept {
     _policy->rebalance(_shards);
     if (_shards.front().shard == ss::this_shard_id()) {
         // Fast path, no need to rebalance requests.
-        _pipeline.process_stage(
-          [](core::write_request<>&) noexcept
-          -> checked<core::write_request_process_result, errc> {
-              return core::write_request_process_result{
-                .stop_iteration = ss::stop_iteration::no,
-                .advance_next_stage = true,
-              };
-          },
-          _my_stage);
+        _stage.process([](core::write_request<>&) noexcept {
+            return core::request_processing_result::advance_and_continue;
+        });
         co_return false;
     }
-    auto requests = _pipeline.get_write_requests(
-      std::numeric_limits<size_t>::max(), _my_stage);
+    auto res = _stage.pull_write_requests(std::numeric_limits<size_t>::max());
     // For every request:
     // - make a proxy on a target shard
     // - submit it to the pipeline on that shard bypassing
     //   the load balancer
     // - extract result from the proxy request and put it
     //   into the original one
-    for (auto& request : requests.ready) {
+    for (auto& request : res.requests) {
         // The request is stored on the stack of one of the fibers and its
         // lifetime is defined by the promise that it contains. The request will
         // be alive until the promise is set. After its set all bets are off.
@@ -159,9 +144,9 @@ write_request_balancer::proxy_write_request(const core::write_request<>* req) {
     auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
       req->expiration_time - req->ingestion_time);
     core::write_request<> proxy(
-      req->ntp, deep_copy(req->data_chunk), timeout, req->stage);
+      req->ntp, deep_copy(req->data_chunk), timeout, _stage.id());
     auto fut = proxy.response.get_future();
-    _pipeline.reenqueue(proxy);
+    _stage.push_next_stage(proxy);
     auto batches_fut = co_await ss::coroutine::as_future(std::move(fut));
     if (batches_fut.failed()) {
         vlog(

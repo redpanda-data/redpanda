@@ -35,7 +35,7 @@ namespace experimental::cloud_topics {
 
 template<class Clock>
 batcher<Clock>::batcher(
-  core::write_pipeline<Clock>& pipeline,
+  core::write_pipeline<Clock>::stage stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<Clock>& remote_api)
   : _remote(remote_api)
@@ -45,10 +45,9 @@ batcher<Clock>::batcher(
   , _upload_interval(config::shard_local_cfg()
                        .cloud_storage_upload_loop_initial_backoff_ms
                        .bind()) // TODO: use different config
-  , _pipeline(pipeline)
   , _rtc(_as)
   , _logger(cd_log, _rtc)
-  , _my_stage(_pipeline.register_pipeline_stage()) {}
+  , _stage(std::move(stage)) {}
 
 template<class Clock>
 ss::future<> batcher<Clock>::start() {
@@ -130,42 +129,6 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
 }
 
 template<class Clock>
-ss::future<errc> batcher<Clock>::wait_for_next_upload() noexcept {
-    auto deadline = Clock::now() + _upload_interval();
-    while (true) {
-        core::event_filter<Clock> filter(
-          core::event_type::new_write_request, _my_stage, deadline);
-        auto event_fut = co_await ss::coroutine::as_future(
-          _pipeline.subscribe(filter));
-        if (event_fut.failed()) {
-            auto err = event_fut.get_exception();
-            if (ssx::is_shutdown_exception(err)) {
-                co_return errc::shutting_down;
-            }
-            co_return errc::unexpected_failure;
-        }
-        auto event = event_fut.get();
-        switch (event.type) {
-        case core::event_type::shutting_down:
-            co_return errc::shutting_down;
-        case core::event_type::new_write_request:
-            if (event.pending_write_bytes < 10_MiB) {
-                // Ignore all write requests until timed
-                // out or enough data.
-                break;
-            }
-            [[fallthrough]];
-        case core::event_type::err_timedout:
-            co_return errc::success;
-        case core::event_type::new_read_request:
-        case core::event_type::none:
-            unreachable();
-        }
-    }
-    co_return errc::success;
-}
-
-template<class Clock>
 ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
     try {
         // NOTE: the main workflow looks like this:
@@ -190,16 +153,16 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
         // by the strict order in which the ack() method is called
         // explicitly after the operation is either committed or failed.
 
-        auto list = _pipeline.get_write_requests(
-          10_MiB, _my_stage); // TODO: use configuration parameter
+        auto list = _stage.pull_write_requests(
+          10_MiB); // TODO: use configuration parameter
 
-        if (list.ready.empty()) {
+        if (list.requests.empty()) {
             co_return true;
         }
 
         aggregator<Clock> aggregator;
-        while (!list.ready.empty()) {
-            auto& wr = list.ready.back();
+        while (!list.requests.empty()) {
+            auto& wr = list.requests.back();
             wr._hook.unlink();
             aggregator.add(wr);
         }
@@ -236,13 +199,14 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
     bool more_work = false;
     while (!_as.abort_requested()) {
         if (!more_work) {
-            auto wait_res = co_await wait_for_next_upload();
-            if (wait_res != errc::success) {
+            auto wait_res = co_await _stage.wait_until(
+              10_MiB, Clock::now() + _upload_interval(), &_as);
+            if (wait_res.has_error()) {
                 // Shutting down
                 vlog(
                   _logger.info,
                   "Batcher upload loop is shutting down {}",
-                  wait_res);
+                  wait_res.error());
                 co_return;
             }
         }

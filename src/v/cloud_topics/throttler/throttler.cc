@@ -22,15 +22,15 @@
 #include <seastar/coroutine/as_future.hh>
 
 #include <exception>
+#include <limits>
 
 namespace experimental::cloud_topics {
 
 template<class Clock>
 throttler<Clock>::throttler(
-  size_t tput_limit, core::write_pipeline<Clock>& pipeline)
-  : _pipeline(pipeline)
-  , _write_tput_tb(tput_limit, "ct:throttler")
-  , _my_stage(_pipeline.register_pipeline_stage()) {}
+  size_t tput_limit, core::write_pipeline<Clock>::stage s)
+  : _write_tput_tb(tput_limit, "ct:throttler")
+  , _my_stage(std::move(s)) {}
 
 template<class Clock>
 ss::future<> throttler<Clock>::start() {
@@ -47,9 +47,9 @@ ss::future<> throttler<Clock>::stop() {
 
 template<class Clock>
 void throttler<Clock>::throttle_tput(size_t overshoot) {
-    auto list = _pipeline.get_write_requests(overshoot, _my_stage);
+    auto list = _my_stage.pull_write_requests(overshoot);
     chunked_vector<write_req_ptr> tmp;
-    for (auto& wr : list.ready) {
+    for (auto& wr : list.requests) {
         tmp.push_back(wr.weak_from_this());
     }
 
@@ -75,7 +75,7 @@ void throttler<Clock>::throttle_tput(size_t overshoot) {
                             .finally([this, req, h = _gate.hold()]() noexcept {
                                 auto r = req.get();
                                 if (r != nullptr) {
-                                    _pipeline.reenqueue(*r);
+                                    _my_stage.push_next_stage(*r);
                                 }
                                 _outstanding_throttled_requests--;
                             });
@@ -86,19 +86,12 @@ template<class Clock>
 ss::future<result<size_t>>
 throttler<Clock>::throttle_write_pipeline_once(size_t prev_total_size) {
     size_t total_bytes = prev_total_size;
-    core::event_filter<Clock> filter(
-      core::event_type::new_write_request, _my_stage);
-    auto event = co_await _pipeline.subscribe(filter, _as);
-    switch (event.type) {
-    case core::event_type::shutting_down:
-        co_return errc::shutting_down;
-    case core::event_type::err_timedout:
-    case core::event_type::new_read_request:
-    case core::event_type::none:
-        unreachable();
-    case core::event_type::new_write_request:
-        break;
+    auto ev = co_await _my_stage.wait_next(&_as);
+    if (ev.has_error()) {
+        co_return ev.error();
     }
+
+    auto event = ev.value();
 
     // We got the write_request notification
     vassert(
@@ -131,15 +124,11 @@ size_t throttler<Clock>::apply_throttle(
         throttle_tput(new_bytes);
     }
     // Advance all write requests which are not throttled to next stage
-    _pipeline.process_stage(
+    _my_stage.process(
       [](const core::write_request<Clock>&) noexcept
-      -> checked<core::write_request_process_result, errc> {
-          return outcome::success(core::write_request_process_result{
-            .stop_iteration = ss::stop_iteration::no,
-            .advance_next_stage = true,
-          });
-      },
-      _my_stage);
+      -> checked<core::request_processing_result, errc> {
+          return core::request_processing_result::advance_and_continue;
+      });
     _total_events++;
     return total_bytes;
 }

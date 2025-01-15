@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/core/base_pipeline.h"
 #include "cloud_topics/core/event_filter.h"
 #include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/core/write_request.h"
@@ -20,8 +21,10 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/util/optimized_optional.hh>
 
 #include <exception>
+#include <functional>
 #include <type_traits>
 
 namespace experimental::cloud_topics::core {
@@ -37,12 +40,15 @@ struct write_request_process_result {
 struct write_pipeline_accessor;
 
 template<class Clock = ss::lowres_clock>
-class write_pipeline {
+class write_pipeline
+  : public base_pipeline<write_request<Clock>, write_pipeline<Clock>, Clock> {
     friend struct write_pipeline_accessor;
 
 public:
     write_pipeline();
     ~write_pipeline();
+
+    ss::sstring pipeline_name() const { return "write_pipeline"; }
 
     /// Add write request to the pipeline
     ss::future<result<model::record_batch_reader>> write_and_debounce(
@@ -50,68 +56,112 @@ public:
       model::record_batch_reader r,
       std::chrono::milliseconds timeout);
 
-    /// List of write requests which are ready to be uploaded
-    struct size_limited_write_req_list {
-        /// Write requests list which are ready for
-        /// upload or expired.
-        core::write_request_list<Clock> ready;
-        /// If the batcher contains more write requests which
-        /// were not included because the size limit was reached
-        /// this field will be set to false.
-        bool complete{true};
-        /// Total size of all listed write requests.
-        size_t size_bytes{0};
+    using write_requests_list
+      = requests_list<write_pipeline<Clock>, write_request<Clock>>;
+
+    struct stage {
+        stage(write_pipeline<Clock>*, pipeline_stage);
+
+        bool stopped() const noexcept;
+
+        /// Return write request back into the pipeline.
+        /// The write request advances to the next stage of the
+        /// pipeline.
+        void push_next_stage(write_request<Clock>&);
+
+        /// Extract write requests out of the pipeline atomically.
+        /// The caller is responsible for handling each write request.
+        /// The request could be either returned using 'push_next_stage'
+        /// method.
+        write_requests_list pull_write_requests(size_t max_bytes);
+
+        /// Wait until either the 'deadline' is reached or the pipeline
+        /// accumulated 'max_bytes' bytes
+        ss::future<checked<event, errc>> wait_until(
+          size_t max_bytes,
+          Clock::time_point deadline,
+          ss::abort_source* as = nullptr) noexcept;
+
+        /// Wait until the next write_request is added to the pipeline
+        ss::future<checked<event, errc>>
+        wait_next(ss::abort_source* as = nullptr) noexcept;
+
+        /// Apply lambda function to every write request at certain stage.
+        /// The lambda should return 'write_request_processing_result'.
+        /// The 'drop_error_code' is used to ack write requests which has to be
+        /// dropped. The write request is not removed but instead the error
+        /// is acknowledged which makes the write request go out of scope.
+        /// When this happens the write request is unlinked from the list.
+        template<class Fn>
+        requires std::is_nothrow_invocable_r_v<
+          checked<request_processing_result, errc>,
+          Fn,
+          write_request<Clock>&>
+        void process(Fn&& fn) {
+            auto next_stage = _parent->next_stage(_ps);
+            uint32_t count = 0;
+            for (auto& req : _parent->get_pending()) {
+                if (req.stage == _ps) {
+                    checked<request_processing_result, errc> r = fn(req);
+                    if (r.has_error()) {
+                        // Drop write request using the error code from the
+                        // result
+                        req.set_value(r.error());
+                        continue;
+                    }
+                    switch (r.value()) {
+                    case request_processing_result::advance_and_continue:
+                        req.stage = _parent->next_stage(req.stage);
+                        count++;
+                        continue;
+                    case request_processing_result::advance_and_stop:
+                        req.stage = _parent->next_stage(req.stage);
+                        count++;
+                        break;
+                    case request_processing_result::ignore_and_continue:
+                        continue;
+                    case request_processing_result::ignore_and_stop:
+                        break;
+                    }
+                }
+            }
+            // Notify event filters
+            if (count) {
+                _parent->signal(next_stage);
+            }
+        }
+
+        pipeline_stage id() const noexcept { return _ps; }
+
+    private:
+        /// Pick the right abort source to use.
+        ///
+        /// If the 'maybe_as' is not null use it but also subscribe to the root
+        /// abort_source so it'd be aborted if the root is aborted. If
+        /// 'maybe_as' is null then use root abort source. The subscription is
+        /// nullopt in this case.
+        /// The caller should keep the subscription for the duration of the
+        /// async call that uses the abort source.
+        std::pair<
+          ss::optimized_optional<ss::abort_source::subscription>,
+          ss::abort_source*>
+        choose_abort_source(ss::abort_source* maybe_as);
+
+        write_pipeline<Clock>* _parent;
+        pipeline_stage _ps;
     };
 
+    /// Get next pipeline stage id
+    stage register_write_pipeline_stage() noexcept;
+
+    void signal(pipeline_stage stage);
+
+private:
     /// Get write requests atomically.
     /// The total size of returned write requests and the stage to which they
     /// belong to should be specified.
-    size_limited_write_req_list
+    write_requests_list
     get_write_requests(size_t max_bytes, pipeline_stage stage);
-
-    /// Apply lambda function to every write request at certain stage.
-    /// The lambda should return 'write_request_processing_result'.
-    /// The 'drop_error_code' is used to ack write requests which has to be
-    /// dropped. The write request is not removed but instead the error
-    /// is acknowledged which makes the write request go out of scope.
-    /// When this happens the write request is unlinked from the list.
-    template<class Fn>
-    requires std::is_nothrow_invocable_r_v<
-      checked<write_request_process_result, errc>,
-      Fn,
-      write_request<Clock>&>
-    void process_stage(Fn&& fn, pipeline_stage stage) {
-        std::set<pipeline_stage> stages;
-        for (auto& req : _pending) {
-            if (req.stage == stage) {
-                checked<write_request_process_result, errc> r = fn(req);
-                if (r.has_error()) {
-                    // Drop write request using the error code from the result
-                    req.set_value(r.error());
-                    continue;
-                }
-                if (r.value().advance_next_stage) {
-                    req.stage = _stages.next_stage(req.stage);
-                    stages.insert(req.stage);
-                }
-                if (r.value().stop_iteration == ss::stop_iteration::yes) {
-                    break;
-                }
-            }
-        }
-        // Notify event filters
-        for (const auto stage : stages) {
-            signal(stage);
-        }
-    }
-
-    /// Subscribe to events of certain type
-    ///
-    /// The returned future will become ready when new data will be added to the
-    /// pipeline or when the shutdown even will occur.
-    ss::future<event> subscribe(event_filter<Clock>& flt) noexcept;
-    ss::future<event>
-    subscribe(event_filter<Clock>& flt, ss::abort_source& as) noexcept;
 
     /// Return write request which was already been in the pipeline
     /// before back into the pipeline.
@@ -119,29 +169,11 @@ public:
     /// method.
     void reenqueue(write_request<Clock>&);
 
-    /// Get next pipeline stage id
-    pipeline_stage register_pipeline_stage() noexcept;
-
-private:
-    /// Find all timed out write requests and remove them from the list
-    /// atomically.
-    void remove_timed_out_write_requests();
-
-    /// Signal all active filters
-    void signal(pipeline_stage stage);
-
-    core::write_request_list<Clock> _pending;
-    ss::gate _gate;
-    ss::abort_source _as;
     // Current bytes (gauge)
     size_t _current_size{0};
     // Total bytes went through the pipeline
     size_t _bytes_total{0};
     // Semaphore that represents memory budget that we have
     ssx::named_semaphore<Clock> _mem_budget;
-    // All waiters
-    event_filter<Clock>::event_filter_list _filters;
-    // Pipeline stages
-    pipeline_stage_container _stages;
 };
 } // namespace experimental::cloud_topics::core

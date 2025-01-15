@@ -21,6 +21,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/optimized_optional.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -28,13 +29,10 @@
 
 namespace experimental::cloud_topics::core {
 
-static constexpr size_t max_pipeline_stages = 10;
-
 template<class Clock>
 write_pipeline<Clock>::write_pipeline()
   // TODO: use configuration parameter and binding
-  : _mem_budget(10_MiB, "write-pipeline")
-  , _stages(max_pipeline_stages) {}
+  : _mem_budget(10_MiB, "write-pipeline") {}
 
 template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
@@ -45,7 +43,7 @@ write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
   model::record_batch_reader r,
   std::chrono::milliseconds timeout) {
-    auto h = _gate.hold();
+    auto h = this->hold_gate();
     // The write request is stored on the stack of the
     // fiber until the 'response' promise is set. The
     // promise can be set by any fiber that completed
@@ -56,11 +54,12 @@ write_pipeline<Clock>::write_and_debounce(
     // Grab the semaphore after the size of the write request
     // is known. It's impossible to do this in advance because
     // the memory is actually allocated before this call.
-    auto units = co_await ss::get_units(_mem_budget, sz, _as);
+    auto units = co_await ss::get_units(
+      _mem_budget, sz, this->get_root_rtc().root_abort_source());
     _current_size += sz;
     _bytes_total += sz;
     auto d = ss::defer([this, sz] { _current_size -= sz; });
-    auto stage = _stages.first_stage();
+    auto stage = this->first_stage();
     core::write_request<Clock> request(
       std::move(ntp), std::move(data_chunk), timeout, stage);
     vlog(
@@ -70,10 +69,10 @@ write_pipeline<Clock>::write_and_debounce(
       sz,
       std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count());
     auto fut = request.response.get_future();
-    _pending.push_back(request);
+    this->get_pending().push_back(request);
 
     // Notify all active event_filter instances
-    signal(stage);
+    this->signal(stage);
 
     auto res = co_await std::move(fut);
     if (res.has_error()) {
@@ -100,28 +99,36 @@ void write_pipeline<Clock>::reenqueue(write_request<Clock>& r) {
           r.stage);
         // Move all re-enqueued requests to the next stage automatically
         // and notify the corresponding event filter.
-        r.stage = _stages.next_stage(r.stage);
-        _pending.push_back(r);
-        signal(r.stage);
+        r.stage = this->next_stage(r.stage);
+        this->get_pending().push_back(r);
+        this->signal(r.stage);
     }
 }
 
 template<class Clock>
-typename write_pipeline<Clock>::size_limited_write_req_list
+write_pipeline<Clock>::stage::stage(write_pipeline<Clock>* p, pipeline_stage s)
+  : _parent(p)
+  , _ps(s) {}
+
+template<class Clock>
+typename write_pipeline<Clock>::write_requests_list
 write_pipeline<Clock>::get_write_requests(
   size_t max_bytes, pipeline_stage stage) {
     // First remove timed out write request to avoid returning them
-    remove_timed_out_write_requests();
+    this->remove_timed_out_requests();
 
     vlog(
       cd_log.debug, "get_write_requests called with max_bytes = {}", max_bytes);
 
-    size_limited_write_req_list result;
+    auto& pending = this->get_pending();
+
+    write_requests_list result(this, stage, {});
+
     size_t acc_size = 0;
 
     // The elements in the list are in the insertion order.
-    auto it = _pending.begin();
-    for (; it != _pending.end(); it++) {
+    auto it = pending.begin();
+    for (; it != pending.end(); it++) {
         if (it->stage != stage) {
             continue;
         }
@@ -133,111 +140,120 @@ write_pipeline<Clock>::get_write_requests(
             break;
         }
     }
-    result.ready.splice(result.ready.end(), _pending, _pending.begin(), it);
-    result.size_bytes = acc_size;
-    result.complete = _pending.empty();
+    result.requests.splice(result.requests.end(), pending, pending.begin(), it);
+    result.complete = pending.empty();
     vlog(
       cd_log.debug,
       "get_write_requests returned {} elements, containing {} ({}B)",
-      result.ready.size(),
-      human::bytes(result.size_bytes),
-      result.size_bytes);
+      result.requests.size(),
+      human::bytes(acc_size),
+      acc_size);
     return result;
 }
 
 template<class Clock>
-ss::future<event> write_pipeline<Clock>::subscribe(
-  event_filter<Clock>& flt, ss::abort_source& as) noexcept {
-    auto sub = as.subscribe(
-      [&flt](const std::optional<std::exception_ptr>&) noexcept {
-          // This code just cancels event subscription but it can be improved
-          // by transferring exception to the subscriber.
-          flt.cancel();
-      });
-    co_return co_await subscribe(flt);
-}
-
-template<class Clock>
-ss::future<event>
-write_pipeline<Clock>::subscribe(event_filter<Clock>& flt) noexcept {
-    _filters.push_back(flt);
-    // If the pipeline already has some requests we need to set the future
-    // eagerly
-    bool found = false;
-    for (auto& wr : _pending) {
-        if (wr.stage == flt.get_stage()) {
-            found = true;
-            break;
-        }
-    }
-    if (found) {
-        signal(flt.get_stage());
-    }
-    auto ev = co_await ss::coroutine::as_future(flt.get_future());
-    if (ev.failed()) {
-        auto ep = ev.get_exception();
-        if (ssx::is_shutdown_exception(ep)) {
-            co_return event{.type = event_type::shutting_down};
-        }
-        // The only exception that can be thrown here is a shutdown
-        // exception (broken_promise). We never set the promise to
-        // any other exception.
-        vassert(false, "Unexpected failure in the event subscription: {}", ep);
-    }
-    co_return ev.get();
-}
-
-template<class Clock>
-void write_pipeline<Clock>::remove_timed_out_write_requests() {
-    chunked_vector<ss::weak_ptr<core::write_request<Clock>>> expired;
-    for (auto& wr : _pending) {
-        if (wr.has_expired()) {
-            expired.push_back(wr.weak_from_this());
-        }
-    }
-    if (!expired.empty()) {
-        vlog(cd_log.debug, "{}B write requests have expired", expired.size());
-    }
-    for (auto& wp : expired) {
-        if (wp != nullptr) {
-            vlog(
-              cd_log.debug,
-              "{}B write requests have expired",
-              wp->size_bytes());
-            wp->_hook.unlink();
-            wp->set_value(errc::timeout);
-        }
-    }
+write_pipeline<Clock>::stage
+write_pipeline<Clock>::register_write_pipeline_stage() noexcept {
+    return stage{this, this->register_pipeline_stage()};
 }
 
 template<class Clock>
 void write_pipeline<Clock>::signal(pipeline_stage stage) {
-    vlog(cd_log.debug, "write_pipeline:signal, stage: {}", stage);
-    event ev{
-      .stage = stage,
-      .type = event_type::new_write_request,
-      .pending_write_bytes = _current_size,
-      .total_write_bytes = _bytes_total,
-    };
-    for (auto& f : _filters) {
-        if (
-          f.get_type() == event_type::new_write_request
-          && f.get_stage() == stage) {
-            vlog(
-              cd_log.debug,
-              "write_pipeline.signal, pending_write_bytes: {}, "
-              "total_write_bytes: {}",
-              ev.pending_write_bytes,
-              ev.total_write_bytes);
-            f.trigger(ev);
+    this->do_signal(
+      stage, event_type::new_write_request, _current_size, _bytes_total);
+}
+
+template<class Clock>
+bool write_pipeline<Clock>::stage::stopped() const noexcept {
+    return _parent->stopped();
+}
+
+template<class Clock>
+void write_pipeline<Clock>::stage::push_next_stage(write_request<Clock>& req) {
+    _parent->reenqueue(req);
+}
+
+template<class Clock>
+write_pipeline<Clock>::write_requests_list
+write_pipeline<Clock>::stage::pull_write_requests(size_t max_bytes) {
+    return _parent->get_write_requests(max_bytes, _ps);
+}
+
+template<class Clock>
+ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
+  size_t max_bytes,
+  typename Clock::time_point deadline,
+  ss::abort_source* maybe_as) noexcept {
+    auto [sub, as] = choose_abort_source(maybe_as);
+    while (true) {
+        core::event_filter<Clock> filter(
+          core::event_type::new_write_request, _ps, deadline);
+        auto event_fut = co_await ss::coroutine::as_future(
+          _parent->subscribe(filter, *as));
+        if (event_fut.failed()) {
+            auto err = event_fut.get_exception();
+            if (ssx::is_shutdown_exception(err)) {
+                co_return errc::shutting_down;
+            }
+            co_return errc::unexpected_failure;
         }
-        // The cleanup is performed by the subscriber
+        auto event = event_fut.get();
+        switch (event.type) {
+        case core::event_type::shutting_down:
+            co_return errc::shutting_down;
+        case core::event_type::new_write_request:
+            if (event.pending_write_bytes < max_bytes) {
+                // Ignore all write requests until timed
+                // out or enough data.
+                break;
+            }
+            [[fallthrough]];
+        case core::event_type::err_timedout:
+            co_return errc::success;
+        case core::event_type::new_read_request:
+        case core::event_type::none:
+            vassert(false, "Read request added to the write pipeline");
+        }
+        co_return event;
     }
 }
 
 template<class Clock>
-pipeline_stage write_pipeline<Clock>::register_pipeline_stage() noexcept {
-    return _stages.register_pipeline_stage();
+ss::future<checked<event, errc>>
+write_pipeline<Clock>::stage::wait_next(ss::abort_source* maybe_as) noexcept {
+    core::event_filter<Clock> filter(core::event_type::new_write_request, _ps);
+    auto [sub, as] = choose_abort_source(maybe_as);
+    auto event = co_await _parent->subscribe(filter, *as);
+    switch (event.type) {
+    case core::event_type::shutting_down:
+        co_return errc::shutting_down;
+    case core::event_type::err_timedout:
+    case core::event_type::new_read_request:
+    case core::event_type::none:
+        vassert(false, "Read request added to the write pipeline");
+    case core::event_type::new_write_request:
+        break;
+    }
+    co_return event;
+}
+
+template<class Clock>
+
+std::pair<
+  ss::optimized_optional<ss::abort_source::subscription>,
+  ss::abort_source*>
+write_pipeline<Clock>::stage::choose_abort_source(ss::abort_source* maybe_as) {
+    auto as = maybe_as;
+    ss::optimized_optional<ss::abort_source::subscription> sub;
+    if (as == nullptr) {
+        as = &_parent->get_root_rtc().root_abort_source();
+    } else {
+        sub = _parent->get_root_rtc().root_abort_source().subscribe(
+          [as](const std::optional<std::exception_ptr>&) noexcept {
+              as->request_abort();
+          });
+    }
+    return std::make_pair(std::move(sub), as);
 }
 
 template class write_pipeline<ss::lowres_clock>;

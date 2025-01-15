@@ -37,8 +37,9 @@ namespace experimental::cloud_topics {
 // in the pipeline.
 struct pipeline_sink {
     explicit pipeline_sink(core::write_pipeline<>& p)
-      : pipeline(p)
-      , _id(pipeline.register_pipeline_stage()) {}
+      : stage(p.register_write_pipeline_stage()) {
+        vlog(test_log.info, "pipeline_sink stage: {}", stage.id());
+    }
 
     ss::future<> start() {
         ssx::background = bg_run();
@@ -53,41 +54,39 @@ struct pipeline_sink {
     ss::future<> bg_run() {
         auto h = _gate.hold();
         while (!_as.abort_requested()) {
-            vlog(test_log.debug, "pipeline_sink subscribe, stage id {}", _id);
-            core::event_filter<> flt(core::event_type::new_write_request, _id);
-            auto sub = _as.subscribe(
-              [&flt](const std::optional<std::exception_ptr>&) noexcept {
-                  flt.cancel();
-              });
-            auto fut = co_await ss::coroutine::as_future(
-              pipeline.subscribe(flt));
+            vlog(
+              test_log.debug,
+              "pipeline_sink subscribe, stage id {}",
+              stage.id());
+            auto res = co_await stage.wait_next(&_as);
             vlog(test_log.debug, "pipeline_sink event");
-            if (fut.failed()) {
+            if (res.has_error()) {
                 vlog(
-                  test_log.error,
-                  "Event subscription failed: {}",
-                  fut.get_exception());
+                  test_log.error, "Event subscription failed: {}", res.error());
                 continue;
             }
-            auto event = fut.get();
+            auto event = res.value();
             if (event.type != core::event_type::new_write_request) {
                 co_return;
             }
             // Vacuum all write requests
-            auto result = pipeline.get_write_requests(
-              std::numeric_limits<size_t>::max(), _id);
-            for (auto& r : result.ready) {
+            auto result = stage.pull_write_requests(
+              std::numeric_limits<size_t>::max());
+            for (auto& r : result.requests) {
                 // Set empty result to unblock the caller
                 r.set_value(
                   ss::circular_buffer<
                     model::record_batch>{}); // TODO: return some random batch
                 write_requests_acked++;
+                vlog(
+                  test_log.debug,
+                  "Write request acknowledged, total ack: {}",
+                  write_requests_acked);
             }
         }
     }
 
-    core::write_pipeline<>& pipeline;
-    core::pipeline_stage _id;
+    core::write_pipeline<>::stage stage;
     ss::gate _gate;
     ss::abort_source _as;
     size_t write_requests_acked{0};
@@ -113,7 +112,9 @@ public:
         // Start the balancer
         vlog(test_log.info, "Creating balancer");
         co_await balancer.start(
-          ss::sharded_parameter([this] { return std::ref(pipeline.local()); }),
+          ss::sharded_parameter([this] {
+              return pipeline.local().register_write_pipeline_stage();
+          }),
           ss::sharded_parameter([] {
               return std::make_unique<
                 cloud_topics::shard_one_balancing_policy>();

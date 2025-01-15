@@ -64,7 +64,7 @@ class batcher {
 
 public:
     explicit batcher(
-      core::write_pipeline<Clock>& pipeline,
+      core::write_pipeline<Clock>::stage stage,
       cloud_storage_clients::bucket_name bucket,
       cloud_io::remote_api<Clock>& remote_api);
 
@@ -90,10 +90,6 @@ private:
     /// The method should only be invoked on shard 0
     ss::future<> bg_controller_loop();
 
-    /// Wait until upload interval elapses or until
-    /// enough bytes are accumulated
-    ss::future<errc> wait_for_next_upload() noexcept;
-
     /// Upload L0 object based on placeholders
     ///
     /// Collect data from every shard and upload stream of data to S3.
@@ -109,14 +105,12 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
 
-    core::write_pipeline<Clock>& _pipeline;
-
     static constexpr size_t max_buffer_size = 16_MiB;
     static constexpr size_t max_cardinality = 1000;
 
     basic_retry_chain_node<Clock> _rtc;
     basic_retry_chain_logger<Clock> _logger;
 
-    core::pipeline_stage _my_stage;
+    core::write_pipeline<Clock>::stage _stage;
 };
 } // namespace experimental::cloud_topics

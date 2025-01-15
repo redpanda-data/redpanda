@@ -34,7 +34,7 @@ namespace experimental::cloud_topics::core {
 struct write_pipeline_accessor {
     // Returns true if the write request is in the `_pending` collection
     bool write_requests_pending(size_t n) {
-        return pipeline->_pending.size() == n;
+        return pipeline->get_pending().size() == n;
     }
 
     write_pipeline<ss::manual_clock>* pipeline;
@@ -63,7 +63,7 @@ TEST_CORO(write_pipeline_test, single_write_request) {
     auto reader = model::make_empty_record_batch_reader();
     // Expect single upload to be made
 
-    std::ignore = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
 
     const auto timeout = 1s;
     auto fut = pipeline.write_and_debounce(
@@ -73,13 +73,11 @@ TEST_CORO(write_pipeline_test, single_write_request) {
     co_await sleep_until(
       10ms, [&] { return accessor.write_requests_pending(1); });
 
-    auto res = pipeline.get_write_requests(
-      1, cloud_topics::core::unassigned_pipeline_stage);
+    auto res = stage.pull_write_requests(1);
     ASSERT_TRUE_CORO(res.complete);
-    ASSERT_TRUE_CORO(res.size_bytes == 0);
-    ASSERT_TRUE_CORO(res.ready.size() == 1);
+    ASSERT_TRUE_CORO(res.requests.size() == 1);
 
-    res.ready.front().set_value(ss::circular_buffer<model::record_batch>{});
+    res.requests.front().set_value(ss::circular_buffer<model::record_batch>{});
 
     auto write_res = co_await std::move(fut);
     ASSERT_TRUE_CORO(write_res.has_value());
@@ -93,7 +91,7 @@ TEST_CORO(batcher_test, expired_write_request) {
       .pipeline = &pipeline,
     };
 
-    std::ignore = pipeline.register_pipeline_stage();
+    auto stage = pipeline.register_write_pipeline_stage();
 
     const auto timeout = 1s;
     auto expect_fail_fut = pipeline.write_and_debounce(
@@ -111,12 +109,11 @@ TEST_CORO(batcher_test, expired_write_request) {
     co_await sleep_until(
       10ms, [&] { return accessor.write_requests_pending(2); });
 
-    auto res = pipeline.get_write_requests(
-      1, cloud_topics::core::unassigned_pipeline_stage);
+    auto res = stage.pull_write_requests(1);
 
     // One req has already expired at this point
-    ASSERT_EQ_CORO(res.ready.size(), 1);
-    res.ready.back().set_value(ss::circular_buffer<model::record_batch>{});
+    ASSERT_EQ_CORO(res.requests.size(), 1);
+    res.requests.back().set_value(ss::circular_buffer<model::record_batch>{});
 
     auto [pass_result, fail_result] = co_await ss::when_all_succeed(
       std::move(expect_pass_fut), std::move(expect_fail_fut));

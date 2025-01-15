@@ -60,12 +60,12 @@ namespace experimental::cloud_topics::core {
 struct write_pipeline_accessor {
     // Returns true if the write request is in the `_pending` collection
     bool write_requests_pending(size_t n) const {
-        return pipeline->_pending.size() == n;
+        return pipeline->get_pending().size() == n;
     }
 
     // Returns true if `_filters` collection has right amount of filters
     bool event_filters_subscribed(size_t n) const {
-        return pipeline->_filters.size() == n;
+        return pipeline->get_filters().size() == n;
     }
 
     // Ack all write requests in the pipeline
@@ -73,13 +73,13 @@ struct write_pipeline_accessor {
         std::vector<core::pipeline_stage> stages;
         auto stage = unassigned_pipeline_stage;
         for (int i = 0; i < 10; i++) {
-            stage = pipeline->_stages.next_stage(stage);
+            stage = pipeline->next_stage(stage);
             stages.emplace_back(stage);
         }
         for (auto stage : stages) {
             auto list0 = pipeline->get_write_requests(
               std::numeric_limits<size_t>::max(), stage);
-            for (auto& r : list0.ready) {
+            for (auto& r : list0.requests) {
                 r.set_value(ss::circular_buffer<model::record_batch>());
             }
         }
@@ -148,17 +148,15 @@ TEST_CORO(throttler_test, no_throttling) {
       reader_size_bytes,
       tput_limit);
 
-    cloud_topics::throttler<ss::manual_clock> throttler(tput_limit, pipeline);
+    cloud_topics::throttler<ss::manual_clock> throttler(
+      tput_limit, pipeline.register_write_pipeline_stage());
     cloud_topics::throttler_accessor throttler_accessor{
       .throttler = &throttler,
     };
     cloud_topics::core::write_pipeline_accessor pipeline_accessor{
       .pipeline = &pipeline,
     };
-    vlog(
-      test_log.info,
-      "Register pipeline sink: {}",
-      pipeline.register_pipeline_stage());
+    std::ignore = pipeline.register_write_pipeline_stage();
     ASSERT_EQ_CORO(throttler_accessor.units_available(), tput_limit);
 
     // This fut will become ready when something will be added to
@@ -184,6 +182,9 @@ TEST_CORO(throttler_test, no_throttling) {
 
     auto throttle_res = co_await std::move(throttle_fut);
     ASSERT_TRUE_CORO(throttle_res.has_value());
+
+    co_await throttler.stop();
+    co_await pipeline.stop();
 }
 
 TEST_CORO(throttler_test, tput_limit_reached) {
@@ -209,7 +210,8 @@ TEST_CORO(throttler_test, tput_limit_reached) {
       reader_size_bytes,
       tput_limit);
 
-    cloud_topics::throttler<ss::manual_clock> throttler(tput_limit, pipeline);
+    cloud_topics::throttler<ss::manual_clock> throttler(
+      tput_limit, pipeline.register_write_pipeline_stage());
     cloud_topics::throttler_accessor throttler_accessor{
       .throttler = &throttler,
     };
@@ -217,10 +219,7 @@ TEST_CORO(throttler_test, tput_limit_reached) {
       .pipeline = &pipeline,
     };
 
-    vlog(
-      test_log.info,
-      "Register pipeline sink: {}",
-      pipeline.register_pipeline_stage());
+    std::ignore = pipeline.register_write_pipeline_stage();
 
     auto throttle_fut = throttler_accessor.run_once(0);
     co_await sleep_until(1ms, [pipeline_accessor] {
@@ -256,6 +255,7 @@ TEST_CORO(throttler_test, tput_limit_reached) {
     ASSERT_TRUE_CORO(write_res.has_value());
 
     co_await throttler.stop();
+    co_await pipeline.stop();
 }
 
 TEST_CORO(throttler_test, tput_limit_reached_req_timed_out) {
@@ -282,7 +282,8 @@ TEST_CORO(throttler_test, tput_limit_reached_req_timed_out) {
       reader_size_bytes,
       tput_limit);
 
-    cloud_topics::throttler<ss::manual_clock> throttler(tput_limit, pipeline);
+    cloud_topics::throttler<ss::manual_clock> throttler(
+      tput_limit, pipeline.register_write_pipeline_stage());
     cloud_topics::throttler_accessor throttler_accessor{
       .throttler = &throttler,
     };
@@ -290,10 +291,7 @@ TEST_CORO(throttler_test, tput_limit_reached_req_timed_out) {
       .pipeline = &pipeline,
     };
 
-    vlog(
-      test_log.info,
-      "Register pipeline sink: {}",
-      pipeline.register_pipeline_stage());
+    std::ignore = pipeline.register_write_pipeline_stage();
 
     auto throttle_fut = throttler_accessor.run_once(0);
     co_await sleep_until(1ms, [pipeline_accessor] {
@@ -323,6 +321,7 @@ TEST_CORO(throttler_test, tput_limit_reached_req_timed_out) {
     ASSERT_TRUE_CORO(write_res.error() == cloud_topics::errc::timeout);
 
     co_await throttler.stop();
+    co_await pipeline.stop();
 }
 
 TEST_CORO(throttler_test, graceful_shutdown) {
@@ -337,12 +336,10 @@ TEST_CORO(throttler_test, graceful_shutdown) {
 
     size_t tput_limit = 100;
 
-    cloud_topics::throttler<ss::manual_clock> throttler(tput_limit, pipeline);
+    cloud_topics::throttler<ss::manual_clock> throttler(
+      tput_limit, pipeline.register_write_pipeline_stage());
 
-    vlog(
-      test_log.info,
-      "Register pipeline sink: {}",
-      pipeline.register_pipeline_stage());
+    std::ignore = pipeline.register_write_pipeline_stage();
 
     cloud_topics::throttler_accessor throttler_accessor{
       .throttler = &throttler,
@@ -364,4 +361,6 @@ TEST_CORO(throttler_test, graceful_shutdown) {
     auto throttle_res = co_await std::move(throttle_fut);
     ASSERT_TRUE_CORO(throttle_res.has_error());
     ASSERT_EQ_CORO(throttle_res.error(), cloud_topics::errc::shutting_down);
+
+    co_await pipeline.stop();
 }
