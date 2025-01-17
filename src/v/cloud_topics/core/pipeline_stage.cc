@@ -46,8 +46,8 @@ pipeline_stage pipeline_stage_container::first_stage() const {
 }
 
 pipeline_stage pipeline_stage_container::register_pipeline_stage() noexcept {
-    vassert(!_stages.empty(), "No pipeline stages registered");
-    return pipeline_stage(&_stages.front());
+    vassert(!_stages.empty(), "No pipeline stages allocated");
+    return pipeline_stage(&_stages.at(_registered++));
 }
 
 } // namespace experimental::cloud_topics::core

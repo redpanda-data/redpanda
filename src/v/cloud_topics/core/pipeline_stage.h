@@ -48,6 +48,7 @@ public:
 
 private:
     std::vector<const pipeline_stage_id> _stages;
+    size_t _registered{0};
 };
 
 } // namespace experimental::cloud_topics::core
