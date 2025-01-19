@@ -10,7 +10,10 @@
  */
 #pragma once
 
+#include "model/fundamental.h"
+
 #include <seastar/core/future.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 
 #include <memory>
@@ -21,17 +24,23 @@ class partition_manager;
 
 namespace cloud_io {
 class remote;
+} // namespace cloud_io
+
+namespace cloud_storage {
+class cache;
 }
 
-namespace experimental::cloud_topics::reconciler {
-
-class reconciler;
+namespace experimental::cloud_topics {
 
 class app {
+    class impl;
+
 public:
     app(
       seastar::sharded<cluster::partition_manager>*,
-      seastar::sharded<cloud_io::remote>*);
+      seastar::sharded<cloud_io::remote>*,
+      seastar::sharded<cloud_storage::cache>*,
+      cloud_storage_clients::bucket_name bucket);
 
     app(const app&) = delete;
     app& operator=(const app&) = delete;
@@ -43,7 +52,7 @@ public:
     seastar::future<> stop();
 
 private:
-    std::unique_ptr<reconciler> _reconciler;
+    std::unique_ptr<impl> _impl;
 };
 
-} // namespace experimental::cloud_topics::reconciler
+} // namespace experimental::cloud_topics

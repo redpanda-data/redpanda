@@ -1969,7 +1969,13 @@ void application::wire_up_redpanda_services(
         vassert(
           archival_storage_enabled(),
           "cloud topics currently requires archival storage to be enabled");
-        construct_service(_reconciler, &partition_manager, &cloud_io).get();
+        construct_service(
+          _reconciler,
+          &partition_manager,
+          &cloud_io,
+          &shadow_index_cache,
+          bucket)
+          .get();
     }
 
     // group membership

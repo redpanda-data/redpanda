@@ -2,6 +2,20 @@
 v_cc_library(
   NAME cloud_topics_base
   SRCS
+    batcher/aggregator.cc
+    batcher/batcher.cc
+    core/pipeline_stage.cc
+    core/read_pipeline.cc
+    core/read_request.cc
+    core/serializer.cc
+    core/write_pipeline.cc
+    core/write_request.cc
+    interfaces/cluster_partition_manager.cc
+    L0_read_path/L0_fetch_handler.cc
+    L0_read_path/placeholder_extent_reader.cc
+    L0_read_path/placeholder_extent.cc
+    request_balancer/write_request_balancer.cc
+    throttler/throttler.cc
     dl_overlay.cc
     dl_snapshot.cc
     logger.cc

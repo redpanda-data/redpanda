@@ -191,7 +191,7 @@ public:
     kafka::server_app _kafka_server;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<experimental::cloud_topics::reconciler::app> _reconciler;
+    ss::sharded<experimental::cloud_topics::app> _reconciler;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;

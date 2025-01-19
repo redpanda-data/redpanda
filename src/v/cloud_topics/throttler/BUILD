@@ -1,6 +1,9 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//src/v/cloud_topics/throttler/tests:__pkg__"])
+package(default_visibility = [
+    "//src/v/cloud_topics:__pkg__",
+    "//src/v/cloud_topics/throttler/tests:__pkg__",
+])
 
 redpanda_cc_library(
     name = "throttler",
