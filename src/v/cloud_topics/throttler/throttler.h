@@ -16,6 +16,7 @@
 #include "utils/token_bucket.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
 
 namespace experimental::cloud_topics {
@@ -30,7 +31,7 @@ struct throttler_accessor;
 /// some write requests out of the pipeline temporarily
 /// and then returns them back. The request which was withheld
 /// by the throttler could expire.
-template<class Clock>
+template<class Clock = ss::lowres_clock>
 class throttler {
     friend struct throttler_accessor;
 
