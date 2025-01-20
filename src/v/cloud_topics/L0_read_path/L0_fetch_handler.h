@@ -23,11 +23,11 @@
 
 namespace experimental::cloud_topics {
 
-/// Read request resolver.
+/// Read request handler.
 /// This component can only process
-class resolver {
+class l0_fetch_handler {
 public:
-    explicit resolver(
+    explicit l0_fetch_handler(
       core::read_pipeline<>::stage,
       cloud_storage_clients::bucket_name,
       cloud_io::remote_api<>*,

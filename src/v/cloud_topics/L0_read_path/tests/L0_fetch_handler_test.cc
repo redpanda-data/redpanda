@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cloud_topics/L0_read_path/resolver.h"
+#include "cloud_topics/L0_read_path/L0_fetch_handler.h"
 #include "cloud_topics/L0_read_path/tests/placeholder_extent_fixture.h"
 #include "cloud_topics/core/read_pipeline.h"
 #include "cloud_topics/errc.h"
@@ -34,7 +34,7 @@
 
 namespace cloud_topics = experimental::cloud_topics;
 
-ss::logger test_log("resolver_test_log");
+ss::logger test_log("L0_fetch_handler_test");
 
 struct fragmented_vector_consumer {
     ss::future<ss::stop_iteration> operator()(model::record_batch rb) {
@@ -47,7 +47,7 @@ struct fragmented_vector_consumer {
     fragmented_vector<model::record_batch>* target;
 };
 
-TEST_F_CORO(placeholder_extent_fixture, resolver_test) {
+TEST_F_CORO(placeholder_extent_fixture, l0_fetch_handler_test) {
     const int num_batches = 1;
     co_await add_random_batches(num_batches);
     produce_placeholders(true, 1);
@@ -70,14 +70,14 @@ TEST_F_CORO(placeholder_extent_fixture, resolver_test) {
 
     cloud_topics::core::read_pipeline<> pipeline;
 
-    cloud_topics::resolver resolver(
+    cloud_topics::l0_fetch_handler l0_fetch_handler(
       pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
       std::move(pm));
 
-    co_await resolver.start();
+    co_await l0_fetch_handler.start();
 
     auto cfg = storage::log_reader_config(
       base, last, ss::default_priority_class());
@@ -97,7 +97,7 @@ TEST_F_CORO(placeholder_extent_fixture, resolver_test) {
     ASSERT_TRUE_CORO(actual.back() == expected.back());
 
     co_await pipeline.stop();
-    co_await resolver.stop();
+    co_await l0_fetch_handler.stop();
 }
 
 ss::future<> aborted_tx_failure_test(
@@ -126,14 +126,14 @@ ss::future<> aborted_tx_failure_test(
 
     cloud_topics::core::read_pipeline<> pipeline;
 
-    cloud_topics::resolver resolver(
+    cloud_topics::l0_fetch_handler l0_fetch_handler(
       pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
       std::move(pm));
 
-    co_await resolver.start();
+    co_await l0_fetch_handler.start();
 
     auto cfg = storage::log_reader_config(
       base, last, ss::default_priority_class());
@@ -144,7 +144,7 @@ ss::future<> aborted_tx_failure_test(
     ASSERT_TRUE_CORO(reader_tx.error() == resulting_error);
 
     co_await pipeline.stop();
-    co_await resolver.stop();
+    co_await l0_fetch_handler.stop();
 }
 
 TEST_F_CORO(placeholder_extent_fixture, aborted_transactions_failed) {
@@ -186,14 +186,14 @@ get_partition_failure(placeholder_extent_fixture& fx, bool shutdown) {
 
     cloud_topics::core::read_pipeline<> pipeline;
 
-    cloud_topics::resolver resolver(
+    cloud_topics::l0_fetch_handler l0_fetch_handler(
       pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
       std::move(pm));
 
-    co_await resolver.start();
+    co_await l0_fetch_handler.start();
 
     auto cfg = storage::log_reader_config(
       base, last, ss::default_priority_class());
@@ -211,7 +211,7 @@ get_partition_failure(placeholder_extent_fixture& fx, bool shutdown) {
     }
 
     co_await pipeline.stop();
-    co_await resolver.stop();
+    co_await l0_fetch_handler.stop();
 }
 
 TEST_F_CORO(placeholder_extent_fixture, partition_moved) {
@@ -247,14 +247,14 @@ ss::future<> make_reader_failed(
 
     cloud_topics::core::read_pipeline<> pipeline;
 
-    cloud_topics::resolver resolver(
+    cloud_topics::l0_fetch_handler l0_fetch_handler(
       pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &fx.remote,
       &fx.cache,
       std::move(pm));
 
-    co_await resolver.start();
+    co_await l0_fetch_handler.start();
 
     auto cfg = storage::log_reader_config(
       base, last, ss::default_priority_class());
@@ -265,7 +265,7 @@ ss::future<> make_reader_failed(
     ASSERT_TRUE_CORO(reader_tx.error() == expected_error);
 
     co_await pipeline.stop();
-    co_await resolver.stop();
+    co_await l0_fetch_handler.stop();
 }
 
 TEST_F_CORO(placeholder_extent_fixture, partition_make_reader_failure) {
@@ -314,14 +314,14 @@ TEST_F_CORO(placeholder_extent_fixture, request_cancel_test) {
 
     cloud_topics::core::read_pipeline<> pipeline;
 
-    cloud_topics::resolver resolver(
+    cloud_topics::l0_fetch_handler l0_fetch_handler(
       pipeline.register_read_pipeline_stage(),
       cloud_storage_clients::bucket_name("foo"),
       &remote,
       &cache,
       std::move(pm));
 
-    co_await resolver.start();
+    co_await l0_fetch_handler.start();
 
     auto cfg = storage::log_reader_config(
       base, last, ss::default_priority_class());
@@ -334,5 +334,5 @@ TEST_F_CORO(placeholder_extent_fixture, request_cancel_test) {
     auto res = co_await std::move(reader_fut);
     ASSERT_TRUE_CORO(res.has_error());
 
-    co_await resolver.stop();
+    co_await l0_fetch_handler.stop();
 }

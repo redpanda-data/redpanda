@@ -72,15 +72,15 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_gtest(
-    name = "resolver_test",
+    name = "L0_fetch_handler_test",
     timeout = "short",
     srcs = [
-        "resolver_test.cc",
+        "L0_fetch_handler_test.cc",
     ],
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:types",
-        "//src/v/cloud_topics/L0_read_path:resolver",
+        "//src/v/cloud_topics/L0_read_path:L0_fetch_handler",
         "//src/v/cloud_topics/L0_read_path/tests:placeholder_extent_fixture",
         "//src/v/cloud_topics/core:read_pipeline",
         "//src/v/cloud_topics/interfaces/tests:mocks",

@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/L0_read_path/resolver.h"
+#include "cloud_topics/L0_read_path/L0_fetch_handler.h"
 
 #include "base/unreachable.h"
 #include "cloud_topics/L0_read_path/placeholder_extent_reader.h"
@@ -32,7 +32,7 @@
 
 namespace experimental::cloud_topics {
 
-resolver::resolver(
+l0_fetch_handler::l0_fetch_handler(
   core::read_pipeline<>::stage pipeline_stage,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* remote,
@@ -43,17 +43,17 @@ resolver::resolver(
   , _cache(cache)
   , _pm(std::move(pm))
   , _rtc(&pipeline_stage.get_root_rtc())
-  , _logger(cd_log, _rtc, "ct:resolver")
+  , _logger(cd_log, _rtc, "ct:l0_fetch_handler")
   , _pipeline_stage(pipeline_stage) {}
 
-ss::future<> resolver::start() {
+ss::future<> l0_fetch_handler::start() {
     ssx::spawn_with_gate(_gate, [this] { return bg_resolve_pipeline(); });
     return ss::now();
 }
 
-ss::future<> resolver::stop() { co_await _gate.close(); }
+ss::future<> l0_fetch_handler::stop() { co_await _gate.close(); }
 
-ss::future<> resolver::bg_resolve_pipeline() {
+ss::future<> l0_fetch_handler::bg_resolve_pipeline() {
     while (!_rtc.root_abort_source().abort_requested()) {
         auto fut = co_await ss::coroutine::as_future(process_requests());
         if (fut.failed()) {
@@ -86,8 +86,9 @@ ss::future<> resolver::bg_resolve_pipeline() {
                     _pipeline_stage.register_pipeline_error(res.error());
                 }
             } else {
-                auto msg = res.value() ? "no work, resolver will be suspended"
-                                       : "resolver will not be suspended";
+                auto msg = res.value()
+                             ? "no work, l0_fetch_handler will be suspended"
+                             : "l0_fetch_handler will not be suspended";
                 vlog(_logger.trace, "{}", msg);
             }
         }
@@ -180,7 +181,8 @@ struct materializing_consumer {
     fragmented_vector<model::record_batch>* target;
 };
 
-ss::future<> resolver::process_single_request(core::read_request<>* req) {
+ss::future<>
+l0_fetch_handler::process_single_request(core::read_request<>* req) {
     auto h = _gate.hold();
     auto auto_dispose = ss::defer([req] {
         // Handle situation when the request is not handled correctly
@@ -260,7 +262,7 @@ ss::future<> resolver::process_single_request(core::read_request<>* req) {
     vlog(req->rtc_logger.debug, "Request processing completed");
 }
 
-ss::future<checked<bool, errc>> resolver::process_requests() {
+ss::future<checked<bool, errc>> l0_fetch_handler::process_requests() {
     // The limit here defines how much memory can be used by all
     // fetch requests on a shard. The pipeline has its own limit
     // but it should only be used to avoid OOM'ing on read_request

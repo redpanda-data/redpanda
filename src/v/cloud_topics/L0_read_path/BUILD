@@ -1,6 +1,7 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 package(default_visibility = [
+    "//src/v/cloud_topics:__pkg__",
     "//src/v/cloud_topics/L0_read_path:__pkg__",
     "//src/v/cloud_topics/L0_read_path/tests:__pkg__",
 ])
@@ -65,12 +66,12 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "resolver",
+    name = "L0_fetch_handler",
     srcs = [
-        "resolver.cc",
+        "L0_fetch_handler.cc",
     ],
     hdrs = [
-        "resolver.h",
+        "L0_fetch_handler.h",
     ],
     include_prefix = "cloud_topics/L0_read_path",
     deps = [
