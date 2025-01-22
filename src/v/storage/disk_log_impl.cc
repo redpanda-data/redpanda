@@ -15,6 +15,7 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/offset_interval.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -1917,12 +1918,23 @@ ss::future<size_t> disk_log_impl::get_file_offset(
 ss::future<std::optional<log::offset_range_size_result_t>>
 disk_log_impl::offset_range_size(
   model::offset first, model::offset last, ss::io_priority_class io_priority) {
+    auto log_offsets = offsets();
     vlog(
       stlog.debug,
       "Offset range size, first: {}, last: {}, lstat: {}",
       first,
       last,
-      offsets());
+      log_offsets);
+    auto log_interval = model::bounded_offset_interval::optional(
+      log_offsets.start_offset, log_offsets.committed_offset);
+    if (!log_interval.has_value()) {
+        vlog(stlog.debug, "Log is empty, returning early");
+        co_return std::nullopt;
+    }
+    if (!log_interval->contains(first) || !log_interval->contains(last)) {
+        vlog(stlog.debug, "Log does not include entire range");
+        co_return std::nullopt;
+    }
 
     // build the collection
     const auto segments = [&] {
@@ -2085,13 +2097,25 @@ disk_log_impl::offset_range_size(
   model::offset first,
   offset_range_size_requirements_t target,
   ss::io_priority_class io_priority) {
+    auto log_offsets = offsets();
     vlog(
       stlog.debug,
       "Offset range size, first: {}, target size: {}/{}, lstat: {}",
       first,
       target.target_size,
       target.min_size,
-      offsets());
+      log_offsets);
+    auto log_interval = model::bounded_offset_interval::optional(
+      log_offsets.start_offset, log_offsets.committed_offset);
+    if (!log_interval.has_value()) {
+        vlog(stlog.debug, "Log is empty, returning early");
+        co_return std::nullopt;
+    }
+    if (!log_interval->contains(first)) {
+        vlog(stlog.debug, "Log does not include offset {}", first);
+        co_return std::nullopt;
+    }
+
     auto base_it = _segs.lower_bound(first);
 
     // Invariant: 'first' offset should be present in the log. If the segment is
