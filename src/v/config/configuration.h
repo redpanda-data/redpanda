@@ -545,7 +545,8 @@ struct configuration final : public config_store {
     property<uint64_t> cloud_storage_inventory_max_hash_size_during_parse;
 
     one_or_many_property<ss::sstring> superusers;
-
+    // kafka
+    property<std::optional<size_t>> max_concurrent_produce_requests;
     // kakfa queue depth control: latency ewma
     property<double> kafka_qdc_latency_alpha;
     property<std::chrono::milliseconds> kafka_qdc_window_size_ms;

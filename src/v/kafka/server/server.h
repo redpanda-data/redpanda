@@ -35,6 +35,7 @@
 #include "security/gssapi_principal_mapper.h"
 #include "security/krb5_configurator.h"
 #include "security/mtls.h"
+#include "utils/adjustable_semaphore.h"
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
@@ -162,13 +163,7 @@ public:
         }
     }
 
-    ss::future<ssx::semaphore_units> get_request_unit() {
-        if (_qdc_mon) {
-            return _qdc_mon->qdc.get_unit();
-        }
-        return ss::make_ready_future<ssx::semaphore_units>(
-          ssx::semaphore_units());
-    }
+    ss::future<ssx::semaphore_units> get_request_unit(api_key);
 
     cluster::controller_api& controller_api() {
         return _controller_api.local();
@@ -259,6 +254,8 @@ private:
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
     ssx::semaphore _memory_fetch_sem;
+    config::binding<std::optional<size_t>> _max_concurrent_produce_requests;
+    adjustable_semaphore _produce_requests_sem;
 
     handler_probe_manager _handler_probes;
     metrics::internal_metric_groups _metrics;

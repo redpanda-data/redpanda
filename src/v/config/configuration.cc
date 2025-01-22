@@ -2893,6 +2893,13 @@ configuration::configuration()
       "List of superuser usernames.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {})
+  , max_concurrent_produce_requests(
+      *this,
+      "max_concurrent_produce_requests",
+      "Maximum number of requests that results in Raft replication that may be "
+      "pending in Kafka server",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , kafka_qdc_latency_alpha(
       *this,
       "kafka_qdc_latency_alpha",

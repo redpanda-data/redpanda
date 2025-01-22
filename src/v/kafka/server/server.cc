@@ -20,6 +20,7 @@
 #include "features/enterprise_feature_messages.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -182,6 +183,11 @@ server::server(
         cfg->local().max_service_memory_per_core
         * config::shard_local_cfg().kafka_memory_share_for_fetch()),
       "kafka/server-mem-fetch")
+  , _max_concurrent_produce_requests(
+      config::shard_local_cfg().max_concurrent_produce_requests.bind())
+  , _produce_requests_sem(
+      _max_concurrent_produce_requests().value_or(ss::semaphore::max_counter()),
+      "kafka/max-produce-requests")
   , _probe(std::make_unique<class kafka_probe>())
   , _sasl_probe(std::make_unique<class sasl_probe>())
   , _read_dist_probe(std::make_unique<read_distribution_probe>())
@@ -202,6 +208,13 @@ server::server(
 
     _sasl_probe->setup_metrics(cfg->local().name);
     _read_dist_probe->setup_metrics();
+    _max_concurrent_produce_requests.watch([this] {
+        // when max concurrent produce requests is not set we use the max
+        // capacity
+        _produce_requests_sem.set_capacity(
+          _max_concurrent_produce_requests().value_or(
+            ss::semaphore::max_counter()));
+    });
 }
 
 void server::setup_metrics() {
@@ -221,9 +234,27 @@ void server::setup_metrics() {
       });
 }
 
+ss::future<ssx::semaphore_units> server::get_request_unit(api_key key) {
+    if (_qdc_mon) [[unlikely]] {
+        return _qdc_mon->qdc.get_unit();
+    }
+    if (
+      key == produce_api::key || key == offset_commit_api::key
+      || key == txn_offset_commit_api::key) {
+        return _produce_requests_sem.get_units(1);
+    }
+    return ss::make_ready_future<ssx::semaphore_units>(ssx::semaphore_units());
+}
+
 ss::scheduling_group server::fetch_scheduling_group() const {
     return config::shard_local_cfg().use_fetch_scheduler_group()
              ? _fetch_scheduling_group
+             : ss::default_scheduling_group();
+}
+
+ss::scheduling_group server::produce_scheduling_group() const {
+    return config::shard_local_cfg().use_produce_scheduler_group()
+             ? _produce_scheduling_group
              : ss::default_scheduling_group();
 }
 

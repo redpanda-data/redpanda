@@ -632,7 +632,7 @@ ss::future<session_resources> connection_context::throttle_request(
     auto mem_units = co_await reserve_request_units(
       r_data.request_key, request_size);
 
-    auto qd_units = co_await server().get_request_unit();
+    auto qd_units = co_await server().get_request_unit(r_data.request_key);
 
     auto& h_probe = _server.handler_probe(r_data.request_key);
     auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
