@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "avro_payloads",
@@ -340,5 +340,37 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+filegroup(
+    name = "test_protos",
+    srcs = glob([
+        "testdata/protobuf/*.proto",
+    ]),
+)
+
+redpanda_cc_gtest(
+    name = "protobuf_rendering_test",
+    timeout = "short",
+    srcs = [
+        "protobuf_rendering.cc",
+    ],
+    cpu = 1,
+    data = [
+        ":test_protos",
+    ],
+    deps = [
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/pandaproxy",
+        "//src/v/pandaproxy/schema_registry/test:compatibility_common",
+        "//src/v/pandaproxy/schema_registry/test:compatibility_protobuf",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:runfiles",
+        "//src/v/utils:file_io",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
     ],
 )
