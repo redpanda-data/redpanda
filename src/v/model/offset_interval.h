@@ -27,10 +27,19 @@ public:
     unchecked(model::offset min, model::offset max) noexcept {
         return {min, max};
     }
-
+    // Returns std::nullopt if the range is invalid (e.g. invalid start,
+    // invalid end, or end > start).
+    static std::optional<bounded_offset_interval>
+    optional(model::offset min, model::offset max) {
+        if (min < model::offset(0) || max < model::offset(0) || min > max) {
+            return std::nullopt;
+        }
+        return unchecked(min, max);
+    }
     static bounded_offset_interval
     checked(model::offset min, model::offset max) {
-        if (min < model::offset(0) || max < model::offset(0) || min > max) {
+        auto ret = optional(min, max);
+        if (!ret.has_value()) {
             throw std::invalid_argument(fmt::format(
               "Invalid arguments for constructing a non-empty bounded offset "
               "interval: min({}) <= max({})",
@@ -38,7 +47,7 @@ public:
               max));
         }
 
-        return {min, max};
+        return ret.value();
     }
 
     inline bool overlaps(const bounded_offset_interval& other) const noexcept {
