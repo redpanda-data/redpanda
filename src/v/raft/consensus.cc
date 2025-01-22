@@ -508,38 +508,37 @@ consensus::success_reply consensus::update_follower_index(
 }
 
 void consensus::maybe_promote_to_voter(vnode id) {
+    const auto& latest_cfg = _configuration_manager.get_latest();
+
+    // node is no longer part of current configuration, skip promotion
+    if (!latest_cfg.current_config().contains(id)) {
+        return;
+    }
+
+    // is voter already
+    if (latest_cfg.is_voter(id)) {
+        return;
+    }
+    auto it = _fstats.find(id);
+
+    // already removed
+    if (it == _fstats.end()) {
+        return;
+    }
+
+    // do not promote to voter, learner is not up to date
+    if (it->second.match_index < _flushed_offset) {
+        return;
+    }
+
+    // do not promote if the previous configuration is still uncommitted,
+    // otherwise we may add several new voters in quick succession, that the
+    // old voters will not know of, resulting in a possibility of
+    // non-intersecting quorums.
+    if (_configuration_manager.get_latest_offset() > _commit_index) {
+        return;
+    }
     ssx::spawn_with_gate(_bg, [this, id] {
-        const auto& latest_cfg = _configuration_manager.get_latest();
-
-        // node is no longer part of current configuration, skip promotion
-        if (!latest_cfg.current_config().contains(id)) {
-            return ss::now();
-        }
-
-        // is voter already
-        if (latest_cfg.is_voter(id)) {
-            return ss::now();
-        }
-        auto it = _fstats.find(id);
-
-        // already removed
-        if (it == _fstats.end()) {
-            return ss::now();
-        }
-
-        // do not promote to voter, learner is not up to date
-        if (it->second.match_index < _flushed_offset) {
-            return ss::now();
-        }
-
-        // do not promote if the previous configuration is still uncommitted,
-        // otherwise we may add several new voters in quick succession, that the
-        // old voters will not know of, resulting in a possibility of
-        // non-intersecting quorums.
-        if (_configuration_manager.get_latest_offset() > _commit_index) {
-            return ss::now();
-        }
-
         return _op_lock.get_units().then([this,
                                           id](ssx::semaphore_units u) mutable {
             // check once more under _op_lock to protect against races with
