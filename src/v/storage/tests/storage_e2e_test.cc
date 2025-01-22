@@ -4641,6 +4641,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
         BOOST_REQUIRE(result->on_disk_size >= target_size);
     }
 
+    info("Prefix truncating");
     auto new_start_offset = model::next_offset(first_segment_last_offset);
     log
       ->truncate_prefix(storage::truncate_prefix_config(
@@ -4652,6 +4653,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
 
     // Check that out of range access triggers exception.
 
+    info("Checking for null on out-of-range");
     BOOST_REQUIRE(
       log
         ->offset_range_size(
@@ -4693,6 +4695,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
         .get()
       == std::nullopt);
 
+    info("Checking the last batch");
     // Check that the last batch can be measured independently
     auto res = log
                  ->offset_range_size(
@@ -4714,6 +4717,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
     size_t tail_length = 5;
 
     for (size_t i = 0; i < tail_length; i++) {
+        info("Checking i = {}", i);
         auto ix_batch = c_summaries.size() - 1 - i;
         res = log
                 ->offset_range_size(
@@ -4731,6 +4735,7 @@ FIXTURE_TEST(test_offset_range_size2_compacted, storage_test_fixture) {
     }
 
     // Check that the min_size is respected
+    info("Checking the back segment");
     BOOST_REQUIRE(
       log
         ->offset_range_size(
