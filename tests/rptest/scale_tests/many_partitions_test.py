@@ -762,6 +762,14 @@ class ManyPartitionsTest(PreallocNodesTest):
             replication_factor=3,
             mib_per_partition=DEFAULT_MIB_PER_PARTITION,
             topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
+
+        self.redpanda.add_extra_rp_conf({
+            'topic_partitions_per_shard':
+            DEFAULT_PARTITIONS_PER_SHARD,
+            'topic_memory_per_partition':
+            DEFAULT_MIB_PER_PARTITION * 1024 * 1024,
+        })
+
         self.redpanda.start()
 
         # We have other OMB benchmark tests, but this one runs at the
