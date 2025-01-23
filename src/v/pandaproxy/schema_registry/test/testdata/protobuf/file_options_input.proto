@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+
+option java_package = "com.java.package";
+option java_outer_classname = "TestProtos";
+option optimize_for = SPEED;
+option java_multiple_files = true;
+option go_package = "path/to/go/package";
+option cc_generic_services = false;
+option java_generic_services = false;
+option py_generic_services = false;
+option deprecated = true;
+option java_string_check_utf8 = true;
+option cc_enable_arenas = false;
+option objc_class_prefix = "objc_pref";
+option csharp_namespace = "csharp.ns";
+option swift_prefix = "swift_pref";
+option php_class_prefix = "php_pref";
+option php_namespace = "php_namespace";
+option php_metadata_namespace = "php_meta\ns";
+option (my_repeated_file_option) = 2;
+option ruby_package = "ruby::package";
+option (my_file_option_a) = "my file option";
+option (my_repeated_file_option) = 1;
+option (my_repeated_file_option) = 3;
+
+extend google.protobuf.FileOptions {
+  optional string my_file_option_a = 50000;
+  repeated uint32 my_repeated_file_option = 50001;
+}
