@@ -108,6 +108,8 @@ std::ostream& operator<<(std::ostream& os, const SchemaType st) {
 TEST(ProtoRendering, test_protobuf_rendering) {
     const std::vector<std::string> test_cases{
       "empty_proto",
+      "syntax_proto2",
+      "syntax_proto3",
     };
 
     auto test_path = test_utils::get_runfile_path(
