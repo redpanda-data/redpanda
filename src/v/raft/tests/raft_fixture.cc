@@ -419,6 +419,7 @@ ss::future<>
 raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     co_await _group_manager.start_single();
     _hb_manager = std::make_unique<heartbeat_manager>(
+      ss::default_scheduling_group(),
       _heartbeat_interval,
       consensus_client_protocol(_buffered_protocol),
       _id,

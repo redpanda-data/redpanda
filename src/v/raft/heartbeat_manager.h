@@ -124,6 +124,7 @@ public:
     };
 
     heartbeat_manager(
+      ss::scheduling_group scheduling_group,
       config::binding<std::chrono::milliseconds> heartbeat_interval,
       consensus_client_protocol client_protocol,
       model::node_id self_node_id,
@@ -192,6 +193,7 @@ private:
 
     mutex _lock{"heartbeat_manager"};
     clock_type::time_point _hbeat = clock_type::now();
+    ss::scheduling_group _scheduling_group;
     config::binding<std::chrono::milliseconds> _heartbeat_interval;
     config::binding<std::chrono::milliseconds> _heartbeat_timeout;
     timer_type _heartbeat_timer;

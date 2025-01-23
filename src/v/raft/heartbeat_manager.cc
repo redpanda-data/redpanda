@@ -213,13 +213,15 @@ bool heartbeat_manager::needs_full_heartbeat(
 }
 
 heartbeat_manager::heartbeat_manager(
+  ss::scheduling_group scheduling_group,
   config::binding<std::chrono::milliseconds> interval,
   consensus_client_protocol proto,
   model::node_id self,
   config::binding<std::chrono::milliseconds> heartbeat_timeout,
   config::binding<bool> enable_lw_heartbeat,
   features::feature_table& ft)
-  : _heartbeat_interval(std::move(interval))
+  : _scheduling_group(scheduling_group)
+  , _heartbeat_interval(std::move(interval))
   , _heartbeat_timeout(std::move(heartbeat_timeout))
   , _client_protocol(std::move(proto))
   , _self(self)
@@ -606,18 +608,20 @@ void heartbeat_manager::process_reply(
 }
 
 void heartbeat_manager::dispatch_heartbeats() {
-    ssx::background = ssx::spawn_with_gate_then(_bghbeats, [this] {
-                          return _lock.with([this] {
-                              return do_dispatch_heartbeats().finally([this] {
-                                  if (!_bghbeats.is_closed()) {
-                                      _heartbeat_timer.arm(
-                                        next_heartbeat_timeout());
-                                  }
-                              });
-                          });
-                      }).handle_exception([](const std::exception_ptr& e) {
-        vlog(hbeatlog.warn, "Error dispatching heartbeats - {}", e);
-    });
+    ssx::background
+      = ssx::spawn_with_gate_then(_bghbeats, [this] {
+            return ss::with_scheduling_group(_scheduling_group, [this] {
+                return _lock.with([this] {
+                    return do_dispatch_heartbeats().finally([this] {
+                        if (!_bghbeats.is_closed()) {
+                            _heartbeat_timer.arm(next_heartbeat_timeout());
+                        }
+                    });
+                });
+            });
+        }).handle_exception([](const std::exception_ptr& e) {
+            vlog(hbeatlog.warn, "Error dispatching heartbeats - {}", e);
+        });
     // update last
     _hbeat = clock_type::now();
 }

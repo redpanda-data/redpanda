@@ -42,6 +42,7 @@ group_manager::group_manager(
       _configuration.max_inflight_requests_per_node,
       _configuration.max_buffered_bytes_per_node))
   , _heartbeats(
+      _raft_sg,
       _configuration.heartbeat_interval,
       consensus_client_protocol(_buffered_protocol),
       _self,
