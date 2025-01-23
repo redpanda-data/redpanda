@@ -121,6 +121,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "service_proto2",
       "service_proto3",
       "extension_ranges",
+      "composite_extension",
     };
 
     auto test_path = test_utils::get_runfile_path(

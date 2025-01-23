@@ -1,0 +1,17 @@
+syntax = "proto3";
+import "google/protobuf/descriptor.proto";
+
+message Metadata {
+  int32 foo = 1;
+  string bar = 2;
+}
+message MyMessage {
+  int32 composite_a = 1 [(data) = { foo: 1, bar: "text_a" }];
+  string separate_a = 3 [(data).foo = 3, (data).bar = "text_c"];
+  string separate_b = 4 [(data).bar = "text_d", (data).foo = 4];
+  int32 composite_b = 2 [(data) = { bar: "text_b", foo: 2 }];
+}
+
+extend google.protobuf.FieldOptions {
+  optional Metadata data = 50010;
+}
