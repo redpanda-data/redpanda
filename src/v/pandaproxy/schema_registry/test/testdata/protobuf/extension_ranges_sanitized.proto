@@ -1,0 +1,45 @@
+syntax = "proto2";
+
+import "google/protobuf/descriptor.proto";
+message SimpleMessage {
+  optional int32 foo = 1;
+}
+
+message ExtendableMessage {
+  extensions 1 to 9;
+  extensions 11 to 99 [verification = UNVERIFIED];
+  extensions 111 to 222 [verification = DECLARATION];
+  extensions 333 to 444 [declaration = {
+    number: 334
+    full_name: ".some_int"
+    type: "int32"
+    repeated: true
+  }];
+  extensions 777 [(.my_range_option_a) = "some other value", (.my_range_option_b) = "some value"];
+  extensions 555 to 666 [declaration = {
+    number: 555
+    full_name: ".some_other_int32"
+    type: "int32"
+  }, declaration = {
+    number: 557
+    full_name: ".my_message"
+    type: ".SimpleMessage"
+    reserved: true
+    repeated: false
+  }, declaration = {
+    number: 556
+    full_name: ".some_double"
+    type: "double"
+    reserved: true
+  }];
+}
+
+extend .ExtendableMessage {
+  optional int32 some_int = 3;
+}
+
+extend .google.protobuf.ExtensionRangeOptions {
+  optional string my_range_option_b = 50008;
+  optional string my_range_option_a = 50000;
+}
+

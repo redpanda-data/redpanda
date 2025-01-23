@@ -120,6 +120,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "message_proto3",
       "service_proto2",
       "service_proto3",
+      "extension_ranges",
     };
 
     auto test_path = test_utils::get_runfile_path(
