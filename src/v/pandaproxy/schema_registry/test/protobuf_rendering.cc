@@ -118,6 +118,8 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       // These are covering message and field
       "message_proto2",
       "message_proto3",
+      "service_proto2",
+      "service_proto3",
     };
 
     auto test_path = test_utils::get_runfile_path(

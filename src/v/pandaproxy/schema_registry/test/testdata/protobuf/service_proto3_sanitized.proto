@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+message Request {
+}
+
+message Response {
+}
+
+service MyService {
+  option deprecated = false;
+  option (.my_service_option_a) = "some string";
+  option (.my_service_option_b) = "some other string";
+  rpc Rpc_b(stream .Request) returns (stream .Response);
+  rpc Rpc_a(.Request) returns (.Response) {
+    option deprecated = true;
+    option idempotency_level = IDEMPOTENCY_UNKNOWN;
+    option (.my_method_option_a) = "Some string";
+    option (.my_method_option_b) = "Some other string";
+  }
+}
+
+extend .google.protobuf.ServiceOptions {
+  optional string my_service_option_b = 50014;
+  optional string my_service_option_a = 50006;
+}
+
+extend .google.protobuf.MethodOptions {
+  optional string my_method_option_b = 50015;
+  optional string my_method_option_a = 50007;
+}
+
