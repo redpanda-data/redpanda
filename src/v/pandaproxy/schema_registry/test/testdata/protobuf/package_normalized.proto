@@ -1,0 +1,4 @@
+syntax = "proto3";
+
+package my.test_package;
+

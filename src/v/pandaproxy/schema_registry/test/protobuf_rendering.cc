@@ -111,6 +111,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "syntax_proto2",
       "syntax_proto3",
       "imports",
+      "package",
     };
 
     auto test_path = test_utils::get_runfile_path(
