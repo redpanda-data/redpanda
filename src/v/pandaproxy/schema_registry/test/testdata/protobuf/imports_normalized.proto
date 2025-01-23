@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+import weak "google/protobuf/descriptor.proto";
+import public "google/protobuf/any.proto";
