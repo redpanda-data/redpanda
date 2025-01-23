@@ -113,6 +113,8 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "imports",
       "package",
       "file_options",
+      "enum_proto2",
+      "enum_proto3",
     };
 
     auto test_path = test_utils::get_runfile_path(

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+enum MyEnum {
+  option allow_alias = true;
+  option deprecated = false;
+  option (.my_enum_option_a) = true;
+  option (.my_enum_option_b) = false;
+  VALUE_1 = 0 [deprecated = false];
+  VALUE_2 = 1 [debug_redact = false, (.my_enum_value_option_a) = 321, (.my_enum_value_option_b) = 432];
+  VALUE_4 = 10;
+  VALUE_5 = 10;
+  VALUE_M1 = -1 [deprecated = true];
+  reserved 2, 3 to 8;
+  reserved "bar", "foo";
+}
+
+extend .google.protobuf.EnumOptions {
+  optional bool my_enum_option_a = 50004;
+  optional bool my_enum_option_b = 50012;
+}
+
+extend .google.protobuf.EnumValueOptions {
+  optional uint32 my_enum_value_option_a = 50005;
+  optional uint32 my_enum_value_option_b = 50013;
+}
+
