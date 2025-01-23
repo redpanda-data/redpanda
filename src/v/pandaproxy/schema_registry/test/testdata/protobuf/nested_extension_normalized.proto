@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+enum MyEnum {
+  VALUE_0 = 0;
+  VALUE_1 = 1 [(.Metadata.metadata) = {
+    some_bool: true
+    some_string: "test_string"
+  }];
+}
+
+enum Definition {
+  FOO = 0;
+}
+
+message Properties {
+  optional string foo = 1 [(.Properties.definition) = FOO];
+  extend .google.protobuf.FieldOptions {
+    .Definition definition = 1026;
+  }
+}
+
+message Metadata {
+  message InnerMetadata {
+    bool some_bool = 1;
+    string some_string = 2;
+  }
+  extend .google.protobuf.EnumValueOptions {
+    .Metadata.InnerMetadata metadata = 50001 [(.Properties.definition) = FOO];
+  }
+}
+
