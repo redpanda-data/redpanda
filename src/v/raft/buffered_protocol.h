@@ -35,6 +35,7 @@ public:
       model::node_id,
       consensus_client_protocol,
       ss::gate::holder,
+      ss::scheduling_group scheduling_group,
       config::binding<size_t> max_inflight_requests,
       config::binding<size_t> max_buffered_bytes);
     append_entries_queue(append_entries_queue&&) = delete;
@@ -87,6 +88,7 @@ private:
     ss::condition_variable _new_requests;
     ss::condition_variable _dispatched;
 
+    ss::scheduling_group _scheduling_group;
     size_t _current_max_inflight_requests;
     config::binding<size_t> _max_inflight_requests;
     config::binding<size_t> _max_buffered_bytes;
@@ -122,6 +124,7 @@ public:
      */
     buffered_protocol(
       consensus_client_protocol base,
+      ss::scheduling_group scheduling_group,
       config::binding<size_t> max_inflight_requests,
       config::binding<size_t> max_buffered_bytes);
 
@@ -162,8 +165,10 @@ private:
       _append_entries_queues;
 
     consensus_client_protocol _base_protocol;
+    ss::scheduling_group _scheduling_group;
     config::binding<size_t> _max_inflight_requests;
     config::binding<size_t> _max_buffered_bytes;
+
     ss::gate _gate;
     ss::timer<> _gc_timer;
 };

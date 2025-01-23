@@ -39,6 +39,7 @@ group_manager::group_manager(
   , _configuration(cfg())
   , _buffered_protocol(ss::make_shared<buffered_protocol>(
       make_rpc_client_protocol(self, clients),
+      raft_sg,
       _configuration.max_inflight_requests_per_node,
       _configuration.max_buffered_bytes_per_node))
   , _heartbeats(

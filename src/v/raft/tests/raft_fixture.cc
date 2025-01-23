@@ -388,6 +388,7 @@ raft_node_instance::raft_node_instance(
   , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
   , _buffered_protocol(ss::make_shared<buffered_protocol>(
       consensus_client_protocol(_protocol),
+      ss::default_scheduling_group(),
       _max_inflight_requests.bind(),
       _max_queued_bytes.bind()))
   , _features(feature_table)

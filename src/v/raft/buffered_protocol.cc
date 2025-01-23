@@ -72,9 +72,11 @@ ss::future<result<Ret>> apply_with_gate(
 
 buffered_protocol::buffered_protocol(
   consensus_client_protocol base,
+  ss::scheduling_group scheduling_group,
   config::binding<size_t> max_inflight_requests,
   config::binding<size_t> max_buffered_bytes)
   : _base_protocol(std::move(base))
+  , _scheduling_group(scheduling_group)
   , _max_inflight_requests(std::move(max_inflight_requests))
   , _max_buffered_bytes(std::move(max_buffered_bytes))
   , _gc_timer([this] { garbage_collect_unused_queues(); }) {
@@ -113,6 +115,7 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
                   target_node,
                   _base_protocol,
                   _gate.hold(),
+                  _scheduling_group,
                   _max_inflight_requests,
                   _max_buffered_bytes));
           }
@@ -230,11 +233,13 @@ append_entries_queue::append_entries_queue(
   model::node_id target_node,
   consensus_client_protocol base_protocol,
   ss::gate::holder gate_holder,
+  ss::scheduling_group scheduling_group,
   config::binding<size_t> max_inflight_requests,
   config::binding<size_t> max_buffered_bytes)
   : _target_node(target_node)
   , _base_protocol(std::move(base_protocol))
   , _logger(raftlog, fmt::format("[node: {}]", _target_node))
+  , _scheduling_group(scheduling_group)
   , _current_max_inflight_requests(max_inflight_requests())
   , _max_inflight_requests(std::move(max_inflight_requests))
   , _max_buffered_bytes(std::move(max_buffered_bytes))
@@ -256,8 +261,10 @@ append_entries_queue::append_entries_queue(
     setup_internal_metrics();
     // start dispatch loop
     ssx::repeat_until_gate_closed(
-      _gate,
-      [this, gate_holder = std::move(gate_holder)] { return dispatch_loop(); });
+      _gate, [this, gate_holder = std::move(gate_holder)] {
+          return ss::with_scheduling_group(
+            _scheduling_group, [this] { return dispatch_loop(); });
+      });
 };
 
 ss::future<> append_entries_queue::dispatch_loop() {
