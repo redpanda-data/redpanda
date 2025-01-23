@@ -115,6 +115,9 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "file_options",
       "enum_proto2",
       "enum_proto3",
+      // These are covering message and field
+      "message_proto2",
+      "message_proto3",
     };
 
     auto test_path = test_utils::get_runfile_path(

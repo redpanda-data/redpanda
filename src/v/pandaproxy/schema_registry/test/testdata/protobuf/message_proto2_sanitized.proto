@@ -1,0 +1,84 @@
+syntax = "proto2";
+
+import "google/protobuf/descriptor.proto";
+enum OuterEnum {
+  VALUE_1 = 0;
+  VALUE_2 = 1;
+}
+
+message Outer {
+  optional double d = 1;
+  extensions 100 to 199;
+}
+
+message MyMessage {
+  option message_set_wire_format = false;
+  option no_standard_descriptor_accessor = false;
+  option deprecated = false;
+  option (.my_message_option_a) = 1234;
+  option (.my_message_option_b) = 2345;
+  message Inner {
+    optional double inner_d = 1;
+    extensions 100 to 199;
+  }
+  enum InnerEnum {
+    IVALUE_1 = 1;
+    IVALUE_2 = 2;
+  }
+  repeated double d = 1 [packed = true, deprecated = true];
+  required float f = 2 [ctype = STRING];
+  optional uint64 ui64 = 6 [weak = false];
+  optional sint32 si32 = 7 [debug_redact = false];
+  optional sint64 si64 = 8 [retention = RETENTION_UNKNOWN];
+  optional fixed32 f32 = 9 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
+  optional int32 i32 = 3 [jstype = JS_NORMAL];
+  optional int64 i64 = 4 [lazy = false];
+  optional uint32 ui32 = 5 [unverified_lazy = false];
+  optional fixed64 f64 = 20;
+  optional sfixed32 sf32 = 21;
+  optional sfixed64 sf64 = 22;
+  optional bool bl = 23;
+  optional string str = 24;
+  optional bytes bs = 25;
+  oneof var {    option (.my_oneof_option_a) = 42;
+    option (.my_oneof_option_b) = 43;
+
+    double var_d = 30;
+    float var_f = 31;
+  }
+  map<string, uint32> map_field = 32;
+  required group G = 33 {
+    required string str_a = 1;
+    optional string str_b = 2;
+    repeated string str_c = 3;
+  }
+  optional .Outer outer = 26;
+  optional .OuterEnum e = 27;
+  optional .MyMessage.Inner inner = 28;
+  optional .MyMessage.InnerEnum ie = 29;
+  extend .MyMessage.Inner {
+    optional double inner_ext = 100;
+  }
+  reserved 11, 17 to 19;
+  reserved "foo", "bar";
+}
+
+extend .Outer {
+  optional double outer_ext = 100;
+}
+
+extend .google.protobuf.MessageOptions {
+  optional int32 my_message_option_b = 50009;
+  optional int32 my_message_option_a = 50001;
+}
+
+extend .google.protobuf.FieldOptions {
+  optional float my_field_option_b = 50010;
+  optional float my_field_option_a = 50002;
+}
+
+extend .google.protobuf.OneofOptions {
+  optional int64 my_oneof_option_b = 50011;
+  optional int64 my_oneof_option_a = 50003;
+}
+

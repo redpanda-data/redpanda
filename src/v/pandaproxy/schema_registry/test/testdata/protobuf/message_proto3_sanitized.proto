@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+enum OuterEnum {
+  VALUE_1 = 0;
+  VALUE_2 = 1;
+}
+
+message Outer {
+}
+
+message MyMessage {
+  option message_set_wire_format = false;
+  option no_standard_descriptor_accessor = false;
+  option deprecated = false;
+  option (.my_message_option_a) = 1234;
+  option (.my_message_option_b) = 2345;
+  message Inner {
+    double inner_d = 1;
+  }
+  enum InnerEnum {
+    IVALUE_1 = 0;
+    IVALUE_2 = 1;
+  }
+  repeated double d = 1 [packed = true, deprecated = true];
+  optional float f = 2 [ctype = STRING];
+  int32 i32 = 3 [jstype = JS_NORMAL];
+  int64 i64 = 4 [lazy = false];
+  uint32 ui32 = 5 [unverified_lazy = false];
+  uint64 ui64 = 6 [weak = false];
+  sint32 si32 = 7 [debug_redact = false];
+  sint64 si64 = 8 [retention = RETENTION_UNKNOWN];
+  fixed32 f32 = 9 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
+  map<string, uint32> map_field = 32;
+  fixed64 f64 = 20;
+  sfixed32 sf32 = 21;
+  sfixed64 sf64 = 22;
+  bool bl = 23;
+  string str = 24;
+  oneof var {    option (.my_oneof_option_a) = 42;
+    option (.my_oneof_option_b) = 43;
+
+    double var_d = 30;
+    float var_f = 31;
+  }
+  bytes bs = 25;
+  .Outer outer = 26;
+  .OuterEnum e = 27;
+  .MyMessage.Inner inner = 28;
+  .MyMessage.InnerEnum ie = 29;
+  reserved 11, 17 to 19;
+  reserved "foo", "bar";
+}
+
+extend .google.protobuf.MessageOptions {
+  optional int32 my_message_option_b = 50009;
+  optional int32 my_message_option_a = 50001;
+}
+
+extend .google.protobuf.FieldOptions {
+  optional float my_field_option_b = 50010;
+  optional float my_field_option_a = 50002;
+}
+
+extend .google.protobuf.OneofOptions {
+  optional int64 my_oneof_option_b = 50011;
+  optional int64 my_oneof_option_a = 50003;
+}
+
