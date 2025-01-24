@@ -9,6 +9,8 @@ package(default_visibility = [
     "//src/v/cloud_topics/core/tests:__pkg__",
     "//src/v/cloud_topics/dl_stm:__pkg__",
     "//src/v/cloud_topics/dl_stm/tests:__pkg__",
+    "//src/v/cloud_topics/reconciler:__pkg__",
+    "//src/v/cloud_topics/reconciler/tests:__pkg__",
     "//src/v/cloud_topics/request_balancer:__pkg__",
     "//src/v/cloud_topics/request_balancer/tests:__pkg__",
     "//src/v/cloud_topics/tests:__pkg__",

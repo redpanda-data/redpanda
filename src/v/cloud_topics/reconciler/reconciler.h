@@ -69,7 +69,7 @@ private:
          * the partition for new data. In later versions of the system this will
          * be stored in and queried from the partition itself.
          */
-        model::offset lro;
+        kafka::offset lro;
     };
 
     using attached_partition = ss::lw_shared_ptr<attached_partition_info>;

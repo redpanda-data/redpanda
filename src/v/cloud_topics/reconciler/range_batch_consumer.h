@@ -10,9 +10,11 @@
  */
 #pragma once
 
+#include "absl/container/btree_map.h"
 #include "bytes/iobuf.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -25,8 +27,13 @@ namespace experimental::cloud_topics::reconciler {
  * metadata about a range of batches.
  */
 struct range_info {
-    model::offset base_offset;
-    model::offset last_offset;
+    kafka::offset base_offset;
+    kafka::offset last_offset;
+    model::timestamp base_timestamp;
+    model::timestamp last_timestamp;
+    // 'range_info' is not aligned by term boundary so this
+    // map is used to track term changes
+    absl::btree_map<model::term_id, kafka::offset> terms;
 };
 
 /*
@@ -47,7 +54,7 @@ public:
 
 private:
     range _range;
-    std::optional<model::offset> _base_offset;
+    std::optional<kafka::offset> _base_offset;
 };
 
 } // namespace experimental::cloud_topics::reconciler
