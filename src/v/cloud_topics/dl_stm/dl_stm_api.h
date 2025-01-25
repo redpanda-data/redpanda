@@ -45,7 +45,7 @@ public:
 
 public:
     /// Attempt to add a new overlay.
-    ss::future<result<bool, dl_stm_api_errc>> push_overlay(dl_overlay overlay);
+    ss::future<checked<bool, dl_stm_api_errc>> push_overlay(dl_overlay overlay);
 
     /// Find an overlay that contains the given offset. If no overlay
     /// contains the offset, find the overlay covering the next closest

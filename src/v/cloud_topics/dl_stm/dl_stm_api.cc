@@ -36,7 +36,7 @@ dl_stm_api::dl_stm_api(ss::logger& logger, ss::shared_ptr<dl_stm> stm)
 
 ss::future<> dl_stm_api::stop() { co_await _gate.close(); }
 
-ss::future<result<bool, dl_stm_api_errc>>
+ss::future<checked<bool, dl_stm_api_errc>>
 dl_stm_api::push_overlay(dl_overlay overlay) {
     vlog(_logger.debug, "Replicating dl_stm_cmd::push_overlay_cmd");
     auto h = _gate.hold();
