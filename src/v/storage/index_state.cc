@@ -362,7 +362,12 @@ void compressed_index_columns::pop_back(int n) {
     assert_column_sizes();
 }
 
-void compressed_index_columns::shrink_to_fit() { assert_column_sizes(); }
+void compressed_index_columns::shrink_to_fit() {
+    assert_column_sizes();
+    _relative_offset_index.shrink_to_fit();
+    _relative_time_index.shrink_to_fit();
+    _position_index.shrink_to_fit();
+}
 
 std::unique_ptr<index_columns_base> compressed_index_columns::copy() const {
     auto res = std::make_unique<compressed_index_columns>();
