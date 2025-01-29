@@ -271,6 +271,9 @@ struct deltafor_stream_pos_t
     auto serde_fields() { return std::tie(initial, offset, num_rows); }
 };
 
+/// This type is used as a tag type to invoke deep copy c-tor
+struct deltafor_deep_copy_tag {};
+
 /** \brief Delta-FOR encoder
  *
  * The algorithm uses differential encoding followed by the
@@ -401,6 +404,15 @@ public:
       : _initial(other->_initial)
       , _last(other->_last)
       , _data(other->_data.share(0, other->_data.size_bytes()))
+      , _cnt(other->_cnt)
+      , _delta(other->_delta) {}
+
+    // Deep copy c-tor
+    explicit deltafor_encoder(
+      const deltafor_encoder* other, deltafor_deep_copy_tag)
+      : _initial(other->_initial)
+      , _last(other->_last)
+      , _data(other->_data.copy())
       , _cnt(other->_cnt)
       , _delta(other->_delta) {}
 
@@ -1002,6 +1014,18 @@ public:
         return tmp;
     }
 
+    /// Makes deep copy
+    auto copy() const -> self_t {
+        auto tmp = self_t{};
+        tmp._head = _head;
+        if (_tail.has_value()) {
+            tmp._tail = encoder_t(&_tail.value(), deltafor_deep_copy_tag{});
+        }
+        tmp._size = _size;
+        tmp._last_row = _last_row;
+        return tmp;
+    }
+
 private:
     template<class PredT>
     const_iterator pred_search(value_t value) const {
@@ -1463,6 +1487,13 @@ public:
             tmp._frames.push_back(e.unsafe_alias());
         }
         return tmp;
+    }
+
+    void shrink_to_fit() {
+        std::list<frame_t> tmp;
+        for (auto& e : _frames) {
+            tmp.push_back(e.copy());
+        }
     }
 
 protected:
