@@ -101,7 +101,7 @@ configuration::configuration()
       "log_segment_index_compression",
       "Enables in-memory compression for log segment indexes.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      false)
+      true)
   , log_segment_ms(
       *this,
       "log_segment_ms",
