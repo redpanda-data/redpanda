@@ -2852,9 +2852,6 @@ class RedpandaService(RedpandaServiceBase):
         if first_start:
             self._start_time = time.time()
 
-            if self._si_settings and self._si_settings.cloud_storage_type is CloudStorageType.ABS and self._si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
-                self.setup_azurite_dns()
-
         self.logger.debug(
             self.who_am_i() +
             ": killing processes and attempting to clean up before starting")
@@ -3403,6 +3400,9 @@ class RedpandaService(RedpandaServiceBase):
             self.logger.debug(
                 f"Creating S3 bucket: {self.si_settings.cloud_storage_bucket}")
         elif self.si_settings.cloud_storage_type == CloudStorageType.ABS:
+            if self.si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
+                self.setup_azurite_dns()
+
             # Make sure that use_bucket_cleanup_policy if False for ABS
             self.logger.warning("Turning off use_bucket_cleanup_policy "
                                 "as it is not implemented for Azure/ABS")
