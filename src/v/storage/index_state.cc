@@ -190,7 +190,7 @@ compressed_index_columns::read_nested(iobuf_parser& p) {
     serde::read_nested(p, timestamps, 0U);
     serde::read_nested(p, positions, 0U);
     if (!valid_offsets_and_positions(offsets, positions)) {
-        auto fallback = std::make_unique<index_columns>(
+        auto fallback = std::make_unique<chunked_vec_index_columns>(
           std::move(offsets), std::move(timestamps), std::move(positions));
         return fallback;
     }
@@ -223,7 +223,7 @@ compressed_index_columns::from(iobuf_parser& parser) {
         positions.push_back(reflection::adl<uint64_t>{}.from(parser));
     }
     if (!valid_offsets_and_positions(offsets, positions)) {
-        auto fallback = std::make_unique<index_columns>(
+        auto fallback = std::make_unique<chunked_vec_index_columns>(
           std::move(offsets), std::move(timestamps), std::move(positions));
         return fallback;
     }
@@ -385,7 +385,7 @@ std::ostream& operator<<(std::ostream& o, const compressed_index_columns& s) {
     return o;
 }
 
-index_columns::index_columns(
+chunked_vec_index_columns::chunked_vec_index_columns(
   chunked_vector<uint32_t> offsets,
   chunked_vector<uint32_t> timestamps,
   chunked_vector<uint64_t> positions)
@@ -394,7 +394,7 @@ index_columns::index_columns(
   , _position_index(std::move(positions)) {}
 
 std::optional<int>
-index_columns::offset_lower_bound(uint32_t needle) const noexcept {
+chunked_vec_index_columns::offset_lower_bound(uint32_t needle) const noexcept {
     auto it = std::lower_bound(
       std::begin(_relative_offset_index),
       std::end(_relative_offset_index),
@@ -406,8 +406,8 @@ index_columns::offset_lower_bound(uint32_t needle) const noexcept {
     return std::distance(std::begin(_relative_offset_index), it);
 }
 
-std::optional<int>
-index_columns::position_upper_bound(uint64_t needle) const noexcept {
+std::optional<int> chunked_vec_index_columns::position_upper_bound(
+  uint64_t needle) const noexcept {
     auto it = std::upper_bound(
       std::begin(_position_index),
       std::end(_position_index),
@@ -420,7 +420,7 @@ index_columns::position_upper_bound(uint64_t needle) const noexcept {
 }
 
 std::optional<int>
-index_columns::time_lower_bound(uint32_t needle) const noexcept {
+chunked_vec_index_columns::time_lower_bound(uint32_t needle) const noexcept {
     auto it = std::lower_bound(
       std::begin(_relative_time_index),
       std::end(_relative_time_index),
@@ -432,7 +432,7 @@ index_columns::time_lower_bound(uint32_t needle) const noexcept {
     return std::distance(std::begin(_relative_time_index), it);
 }
 
-bool index_columns::try_reset_relative_time_index(
+bool chunked_vec_index_columns::try_reset_relative_time_index(
   chunked_vector<uint32_t> input) {
     if (_relative_time_index.size() != input.size() || input.empty()) {
         return false;
@@ -441,14 +441,14 @@ bool index_columns::try_reset_relative_time_index(
     return true;
 }
 
-void index_columns::write(iobuf& buf) const {
+void chunked_vec_index_columns::write(iobuf& buf) const {
     serde::write(buf, _relative_offset_index.copy());
     serde::write(buf, _relative_time_index.copy());
     serde::write(buf, _position_index.copy());
 }
 
 std::unique_ptr<index_columns_base>
-index_columns::read_nested(iobuf_parser& p) {
+chunked_vec_index_columns::read_nested(iobuf_parser& p) {
     _relative_offset_index = {};
     _relative_time_index = {};
     _position_index = {};
@@ -458,7 +458,7 @@ index_columns::read_nested(iobuf_parser& p) {
     return nullptr;
 }
 
-size_t index_columns::size() const noexcept {
+size_t chunked_vec_index_columns::size() const noexcept {
     vassert(
       _relative_offset_index.size() == _relative_time_index.size()
         && _relative_offset_index.size() == _position_index.size(),
@@ -467,7 +467,8 @@ size_t index_columns::size() const noexcept {
     return _relative_offset_index.size();
 }
 
-std::unique_ptr<index_columns_base> index_columns::from(iobuf_parser& parser) {
+std::unique_ptr<index_columns_base>
+chunked_vec_index_columns::from(iobuf_parser& parser) {
     const uint32_t vsize = ss::le_to_cpu(
       reflection::adl<uint32_t>{}.from(parser));
 
@@ -493,7 +494,7 @@ std::unique_ptr<index_columns_base> index_columns::from(iobuf_parser& parser) {
     return nullptr;
 }
 
-void index_columns::to(iobuf& out) const {
+void chunked_vec_index_columns::to(iobuf& out) const {
     auto sz = size();
     reflection::adl<uint32_t>{}.to(out, sz);
 
@@ -508,7 +509,7 @@ void index_columns::to(iobuf& out) const {
     }
 }
 
-void index_columns::checksum(incremental_xxhash64& xx) const {
+void chunked_vec_index_columns::checksum(incremental_xxhash64& xx) const {
     for (const auto o : _relative_offset_index) {
         xx.update(o);
     }
@@ -520,20 +521,20 @@ void index_columns::checksum(incremental_xxhash64& xx) const {
     }
 }
 
-void index_columns::assign_relative_offset_index(
+void chunked_vec_index_columns::assign_relative_offset_index(
   chunked_vector<uint32_t> xs) noexcept {
     _relative_offset_index = std::move(xs);
 }
-void index_columns::assign_relative_time_index(
+void chunked_vec_index_columns::assign_relative_time_index(
   chunked_vector<uint32_t> xs) noexcept {
     _relative_time_index = std::move(xs);
 }
-void index_columns::assign_position_index(
+void chunked_vec_index_columns::assign_position_index(
   chunked_vector<uint64_t> xs) noexcept {
     _position_index = std::move(xs);
 }
 
-void index_columns::add_entry(
+void chunked_vec_index_columns::add_entry(
   uint32_t relative_offset, uint32_t relative_time, uint64_t pos) {
     _relative_offset_index.push_back(relative_offset);
     _relative_time_index.push_back(relative_time);
@@ -541,14 +542,14 @@ void index_columns::add_entry(
 }
 
 std::tuple<uint32_t, uint32_t, uint64_t>
-index_columns::get_entry(size_t i) const {
+chunked_vec_index_columns::get_entry(size_t i) const {
     uint32_t offset = _relative_offset_index.at(i);
     uint32_t timestamp = _relative_time_index.at(i);
     uint64_t pos = _position_index.at(i);
     return std::make_tuple(offset, timestamp, pos);
 }
 
-void index_columns::shrink_to_fit() {
+void chunked_vec_index_columns::shrink_to_fit() {
     vassert(
       _relative_offset_index.size() == _relative_time_index.size()
         && _relative_offset_index.size() == _position_index.size(),
@@ -559,26 +560,26 @@ void index_columns::shrink_to_fit() {
     _position_index.shrink_to_fit();
 }
 
-std::unique_ptr<index_columns_base> index_columns::copy() const {
+std::unique_ptr<index_columns_base> chunked_vec_index_columns::copy() const {
     vassert(
       _relative_offset_index.size() == _relative_time_index.size()
         && _relative_offset_index.size() == _position_index.size(),
       "ALL indexes must match in size. {}",
       *this);
-    auto c = std::make_unique<index_columns>();
+    auto c = std::make_unique<chunked_vec_index_columns>();
     c->assign_relative_offset_index(_relative_offset_index.copy());
     c->assign_relative_time_index(_relative_time_index.copy());
     c->assign_position_index(_position_index.copy());
     return c;
 }
 
-void index_columns::pop_back(int n) {
+void chunked_vec_index_columns::pop_back(int n) {
     _relative_offset_index.pop_back_n(n);
     _relative_time_index.pop_back_n(n);
     _position_index.pop_back_n(n);
 }
 
-std::ostream& operator<<(std::ostream& o, const index_columns& s) {
+std::ostream& operator<<(std::ostream& o, const chunked_vec_index_columns& s) {
     fmt::print(
       o,
       "index({}, {}, {})",
@@ -628,7 +629,7 @@ index_state::index_state() {
     if (config::shard_local_cfg().log_segment_index_compression.value()) {
         index = std::make_unique<compressed_index_columns>();
     } else {
-        index = std::make_unique<index_columns>();
+        index = std::make_unique<chunked_vec_index_columns>();
     }
 }
 

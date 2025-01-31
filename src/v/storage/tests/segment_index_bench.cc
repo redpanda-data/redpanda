@@ -53,7 +53,7 @@ struct test_data {
         std::shuffle(sampling_seq.begin(), sampling_seq.end(), g);
 
         // Report memory usage
-        storage::index_columns ix;
+        storage::chunked_vec_index_columns ix;
         storage::compressed_index_columns ixz;
         populate(ix);
         populate(ixz);
@@ -107,7 +107,7 @@ PERF_TEST(segment_index_bench, append_compressed) {
 }
 
 PERF_TEST(segment_index_bench, append_non_compressed) {
-    storage::index_columns ix;
+    storage::chunked_vec_index_columns ix;
 
     for (size_t i = 0; i < td.offsets.size(); i++) {
         perf_tests::start_measuring_time();
@@ -130,7 +130,7 @@ PERF_TEST(segment_index_bench, materialize_compressed) {
 }
 
 PERF_TEST(segment_index_bench, materialize_non_compressed) {
-    storage::index_columns ix;
+    storage::chunked_vec_index_columns ix;
 
     td.populate(ix);
 
@@ -156,7 +156,7 @@ PERF_TEST(segment_index_bench, find_compressed) {
 }
 
 PERF_TEST(segment_index_bench, find_non_compressed) {
-    storage::index_columns ix;
+    storage::chunked_vec_index_columns ix;
 
     td.populate(ix);
 

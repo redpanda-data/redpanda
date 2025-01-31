@@ -233,12 +233,12 @@ private:
     hint_map_t _hints;
 };
 
-class index_columns : public index_columns_base {
+class chunked_vec_index_columns : public index_columns_base {
     friend struct test_data;
 
 public:
-    index_columns() = default;
-    index_columns(
+    chunked_vec_index_columns() = default;
+    chunked_vec_index_columns(
       chunked_vector<uint32_t> offsets,
       chunked_vector<uint32_t> timestamps,
       chunked_vector<uint64_t> positions);
@@ -286,7 +286,8 @@ public:
     /// Make deep copy
     std::unique_ptr<index_columns_base> copy() const override;
 
-    friend std::ostream& operator<<(std::ostream&, const index_columns&);
+    friend std::ostream&
+    operator<<(std::ostream&, const chunked_vec_index_columns&);
 
 private:
     void assign_relative_offset_index(chunked_vector<uint32_t>) noexcept;

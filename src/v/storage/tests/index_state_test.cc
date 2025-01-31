@@ -419,7 +419,7 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
 }
 
 auto make_random_index_columns() {
-    storage::index_columns col;
+    storage::chunked_vec_index_columns col;
     storage::compressed_index_columns zip;
 
     uint32_t offset = random_generators::get_int<uint32_t>(1, 10000);
@@ -503,9 +503,9 @@ BOOST_AUTO_TEST_CASE(index_columns_AB) {
     }
 }
 
-static storage::index_columns
+static storage::chunked_vec_index_columns
 make_random_non_monotonic_index_columns(bool offset_anomaly, bool pos_anomaly) {
-    storage::index_columns st;
+    storage::chunked_vec_index_columns st;
 
     auto offset = random_generators::get_int<uint32_t>(1, 10000);
     auto tx = random_generators::get_int<uint32_t>(1, 10000);
