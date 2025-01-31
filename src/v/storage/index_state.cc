@@ -37,7 +37,7 @@
 
 namespace storage {
 
-bool operator==(
+bool checksums_equal(
   const std::unique_ptr<index_columns_base>& lhs,
   const std::unique_ptr<index_columns_base>& rhs) {
     // This comparison operator is used only in tests.
@@ -51,6 +51,37 @@ bool operator==(
     lhs->checksum(lhs_xx);
     rhs->checksum(rhs_xx);
     return lhs_xx.digest() == rhs_xx.digest();
+}
+
+bool test_only_compare_equal(const index_state& lhs, const index_state& rhs) {
+    auto sum_equal = checksums_equal(lhs.index, rhs.index);
+    auto lhs_fields = std::tie(
+      lhs.bitflags,
+      lhs.base_offset,
+      lhs.max_offset,
+      lhs.base_timestamp,
+      lhs.max_timestamp,
+      lhs.batch_timestamps_are_monotonic,
+      lhs.with_offset,
+      lhs.non_data_timestamps,
+      lhs.broker_timestamp,
+      lhs.num_compactible_records_appended,
+      lhs.clean_compact_timestamp,
+      lhs.may_have_tombstone_records);
+    auto rhs_fields = std::tie(
+      rhs.bitflags,
+      rhs.base_offset,
+      rhs.max_offset,
+      rhs.base_timestamp,
+      rhs.max_timestamp,
+      rhs.batch_timestamps_are_monotonic,
+      rhs.with_offset,
+      rhs.non_data_timestamps,
+      rhs.broker_timestamp,
+      rhs.num_compactible_records_appended,
+      rhs.clean_compact_timestamp,
+      rhs.may_have_tombstone_records);
+    return sum_equal && lhs_fields == rhs_fields;
 }
 
 uint32_t

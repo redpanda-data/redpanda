@@ -107,9 +107,13 @@ public:
 };
 
 /// Operator to use in tests
-bool operator==(
+bool checksums_equal(
   const std::unique_ptr<index_columns_base>& lhs,
   const std::unique_ptr<index_columns_base>& rhs);
+
+struct index_state;
+/// This function is only used in tests
+bool test_only_compare_equal(const index_state&, const index_state&);
 
 class compressed_index_columns : public index_columns_base {
     friend struct test_data;
@@ -456,7 +460,7 @@ struct index_state
 
     void update_batch_timestamps_are_monotonic(bool pred);
 
-    friend bool operator==(const index_state&, const index_state&) = default;
+    friend bool test_only_compare_equal(const index_state&, const index_state&);
 
     friend std::ostream& operator<<(std::ostream&, const index_state&);
 

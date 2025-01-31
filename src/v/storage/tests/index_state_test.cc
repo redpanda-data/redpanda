@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(serde_basic) {
         for (int i = 0; i < num_test_runs; ++i) {
             auto input = make_random_index_state();
             const auto input_copy = input.copy();
-            BOOST_REQUIRE_EQUAL(input, input_copy);
+            BOOST_REQUIRE(storage::test_only_compare_equal(input, input_copy));
 
             // objects are equal
             const auto buf = serde::to_iobuf(std::move(input));
@@ -100,7 +100,7 @@ BOOST_AUTO_TEST_CASE(serde_basic) {
             BOOST_REQUIRE(
               output.with_offset == storage::offset_delta_time::yes);
 
-            BOOST_REQUIRE_EQUAL(output, input_copy);
+            BOOST_REQUIRE(storage::test_only_compare_equal(output, input_copy));
 
             // round trip back to equal iobufs
             const auto buf2 = serde::to_iobuf(std::move(output));
@@ -129,13 +129,14 @@ BOOST_AUTO_TEST_CASE(serde_no_time_offseting_for_existing_indices) {
 
             auto output_copy = output.copy();
 
-            BOOST_REQUIRE_EQUAL(input_copy, output);
+            BOOST_REQUIRE(storage::test_only_compare_equal(input_copy, output));
 
             // Re-encode with version 5 and verify that there is still no
             // offsetting
             const auto buf2 = serde::to_iobuf(std::move(output));
             auto output2 = serde::from_iobuf<storage::index_state>(buf2.copy());
-            BOOST_REQUIRE_EQUAL(output_copy, output2);
+            BOOST_REQUIRE(
+              storage::test_only_compare_equal(output_copy, output2));
 
             BOOST_REQUIRE(output2.batch_timestamps_are_monotonic == false);
             BOOST_REQUIRE(
@@ -158,7 +159,7 @@ BOOST_AUTO_TEST_CASE(serde_supported_deprecated) {
             BOOST_REQUIRE(output.batch_timestamps_are_monotonic == false);
             BOOST_REQUIRE(output.with_offset == storage::offset_delta_time::no);
 
-            BOOST_REQUIRE_EQUAL(input, output);
+            BOOST_REQUIRE(storage::test_only_compare_equal(input, output));
         }
     }
 }
@@ -506,7 +507,6 @@ BOOST_AUTO_TEST_CASE(index_columns_AB) {
 static storage::chunked_vec_index_columns
 make_random_non_monotonic_index_columns(bool offset_anomaly, bool pos_anomaly) {
     storage::chunked_vec_index_columns st;
-
     auto offset = random_generators::get_int<uint32_t>(1, 10000);
     auto tx = random_generators::get_int<uint32_t>(1, 10000);
     auto pos = random_generators::get_int<uint64_t>(1, 10000);
