@@ -138,17 +138,21 @@ ss::future<> throttler<Clock>::bg_throttle_write_pipeline() {
     auto h = _gate.hold();
     size_t total_bytes{0};
     while (!_as.abort_requested()) {
-        auto res = co_await ss::coroutine::as_future(
+        auto fut = co_await ss::coroutine::as_future(
           throttle_write_pipeline_once(total_bytes));
-        if (res.failed()) {
+        if (fut.failed()) {
             vlog(
               cd_log.error,
               "Pipeline throttling error: {}",
-              res.get_exception());
-        } else if (res.get().has_error()) {
-            vlog(cd_log.error, "Pipeline throttling error: {}", res.get());
+              fut.get_exception());
         } else {
-            total_bytes = res.get().value();
+            auto res = fut.get();
+            if (res.has_error()) {
+                vlog(
+                  cd_log.error, "Pipeline throttling error: {}", res.error());
+            } else {
+                total_bytes = res.value();
+            }
         }
     }
 }
