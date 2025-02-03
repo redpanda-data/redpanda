@@ -23,6 +23,8 @@
 
 namespace experimental::cloud_topics {
 
+/*TODO: remove*/
+static ss::logger dbg_log("cloud_topics_debug");
 class app::impl {
 public:
     impl(
@@ -58,12 +60,12 @@ public:
     }
     seastar::future<> stop() {
         // Read path
-        co_await _l0_resolver->stop();
         co_await _read_pipeline->stop();
+        co_await _l0_resolver->stop();
         // Write path
+        co_await _write_pipeline->stop();
         co_await _batcher->stop();
         co_await _throttler->stop();
-        co_await _write_pipeline->stop();
         // Reconciler
         co_await _reconciler->stop();
     }
