@@ -32,12 +32,6 @@ namespace iceberg {
  */
 using uri = named_type<ss::sstring, struct iceberg_uri_tag>;
 
-/**
- * Parses a path from valid Iceberg URI. It uses regex to parse out the path,
- * throws an exception if URI is malformed.
- */
-std::filesystem::path path_from_uri(const uri&);
-
 /// An adapter to convert between Iceberg URI and filesystem path to
 /// interoperate with our cloud_io::remote abstraction.
 ///
