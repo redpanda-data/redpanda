@@ -106,7 +106,8 @@ public:
       = empty_seed_starts_cluster::yes,
       bool enable_data_transforms = false,
       bool enable_legacy_upload_mode = true,
-      bool iceberg_enabled = false)
+      bool iceberg_enabled = false,
+      bool development_enable_cloud_topics = false)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -126,7 +127,8 @@ public:
           empty_seed_starts_cluster_val,
           enable_data_transforms,
           enable_legacy_upload_mode,
-          iceberg_enabled);
+          iceberg_enabled,
+          development_enable_cloud_topics);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -226,6 +228,34 @@ public:
           get_s3_config(port, url_style),
           get_archival_config(),
           get_cloud_config(port, url_style)) {}
+
+    struct init_cloud_topics_tag {};
+
+    // Start redpanda with shadow indexing enabled
+    explicit redpanda_thread_fixture(
+      init_cloud_topics_tag,
+      std::optional<uint16_t> port = std::nullopt,
+      cloud_storage_clients::s3_url_style url_style = default_url_style,
+      model::node_id node_id = model::node_id(1))
+      : redpanda_thread_fixture(
+          node_id,
+          9092,
+          33145,
+          8082,
+          8081,
+          {},
+          ssx::sformat("test.dir_{}", time(0)),
+          std::nullopt,
+          true,
+          get_s3_config(port, url_style),
+          get_archival_config(),
+          get_cloud_config(port, url_style),
+          configure_node_id::yes,
+          empty_seed_starts_cluster::yes,
+          false,
+          true,
+          false,
+          true) {}
 
     struct init_cloud_storage_no_archiver_tag {};
 
@@ -337,7 +367,8 @@ public:
       = empty_seed_starts_cluster::yes,
       bool data_transforms_enabled = false,
       bool legacy_upload_mode_enabled = true,
-      bool iceberg_enabled = false) {
+      bool iceberg_enabled = false,
+      bool development_enable_cloud_topics = false) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([=]() {
             auto& config = config::shard_local_cfg();
@@ -430,6 +461,17 @@ public:
             config.get("cloud_storage_disable_archiver_manager")
               .set_value(legacy_upload_mode_enabled);
             config.get("iceberg_enabled").set_value(iceberg_enabled);
+
+            if (development_enable_cloud_topics) {
+                const auto time_since_epoch
+                  = std::chrono::system_clock::now().time_since_epoch();
+                config
+                  .get("enable_developmental_unrecoverable_data_corrupting_"
+                       "features")
+                  .set_value(ssx::sformat("{}", time_since_epoch));
+
+                config.get("development_enable_cloud_topics").set_value(true);
+            }
         }).get();
     }
 
