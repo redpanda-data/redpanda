@@ -45,6 +45,7 @@ coordinator_manager::coordinator_manager(
   , topics_fe_(topics_fe)
   , schema_registry_(schema::registry::make_default(sr_api))
   , manifest_io_(io.local(), bucket)
+  , location_provider_(io.local().provider(), bucket)
   , catalog_factory_(std::move(catalog_factory))
   , type_resolver_(
       std::make_unique<record_schema_resolver>(*schema_registry_)) {}
@@ -55,7 +56,7 @@ ss::future<> coordinator_manager::start() {
     catalog_ = co_await catalog_factory_->create_catalog();
     schema_mgr_ = std::make_unique<catalog_schema_manager>(*catalog_);
     file_committer_ = std::make_unique<iceberg_file_committer>(
-      *catalog_, manifest_io_);
+      *catalog_, manifest_io_, location_provider_);
     snapshot_remover_ = std::make_unique<iceberg_snapshot_remover>(
       *catalog_, manifest_io_);
 

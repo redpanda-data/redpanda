@@ -71,4 +71,13 @@ v_cc_library(
     v::serde_parquet
 )
 
+
+v_cc_library(
+  NAME datalake_location
+  SRCS
+    location.cc
+  DEPS
+    v::iceberg
+)
+
 add_subdirectory(tests)

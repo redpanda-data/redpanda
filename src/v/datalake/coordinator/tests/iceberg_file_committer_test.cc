@@ -13,6 +13,7 @@
 #include "datalake/catalog_schema_manager.h"
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/tests/state_test_utils.h"
+#include "datalake/location.h"
 #include "datalake/table_definition.h"
 #include "datalake/tests/test_utils.h"
 #include "iceberg/filesystem_catalog.h"
@@ -95,7 +96,8 @@ public:
       , catalog(remote(), bucket_name, ss::sstring(base_location))
       , schema_mgr(catalog)
       , manifest_io(remote(), bucket_name)
-      , committer(catalog, manifest_io) {
+      , loc_provider(remote().provider(), bucket_name)
+      , committer(catalog, manifest_io, loc_provider) {
         set_expectations_and_listen({});
     }
     cloud_io::remote& remote() { return sr->remote.local(); }
@@ -114,6 +116,7 @@ public:
     iceberg::filesystem_catalog catalog;
     datalake::catalog_schema_manager schema_mgr;
     iceberg::manifest_io manifest_io;
+    datalake::location_provider loc_provider;
     iceberg_file_committer committer;
 };
 

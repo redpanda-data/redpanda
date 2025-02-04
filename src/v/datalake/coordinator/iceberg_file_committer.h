@@ -13,6 +13,7 @@
 #include "container/fragmented_vector.h"
 #include "datalake/coordinator/file_committer.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/location.h"
 #include "iceberg/catalog.h"
 #include "iceberg/manifest_io.h"
 
@@ -22,9 +23,13 @@ namespace datalake::coordinator {
 
 class iceberg_file_committer : public file_committer {
 public:
-    iceberg_file_committer(iceberg::catalog& catalog, iceberg::manifest_io& io)
+    iceberg_file_committer(
+      iceberg::catalog& catalog,
+      iceberg::manifest_io& io,
+      location_provider& loc_provider)
       : catalog_(catalog)
-      , io_(io) {}
+      , io_(io)
+      , loc_provider_(loc_provider) {}
     ~iceberg_file_committer() override = default;
 
     // Commits the given files to the table, creating the table if necessary.
@@ -54,6 +59,7 @@ private:
     // Must outlive this committer.
     iceberg::catalog& catalog_;
     iceberg::manifest_io& io_;
+    datalake::location_provider& loc_provider_;
 };
 
 } // namespace datalake::coordinator

@@ -9,7 +9,6 @@
  */
 #pragma once
 
-#include "cloud_io/provider.h"
 #include "datalake/base_types.h"
 #include "iceberg/uri.h"
 #include "model/fundamental.h"

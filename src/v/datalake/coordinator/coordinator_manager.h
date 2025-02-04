@@ -14,6 +14,7 @@
 #include "cluster/notification.h"
 #include "datalake/coordinator/coordinator.h"
 #include "datalake/fwd.h"
+#include "datalake/location.h"
 #include "iceberg/catalog.h"
 #include "model/fundamental.h"
 #include "pandaproxy/schema_registry/fwd.h"
@@ -74,6 +75,7 @@ private:
 
     // Underlying IO is expected to outlive this class.
     iceberg::manifest_io manifest_io_;
+    datalake::location_provider location_provider_;
     std::unique_ptr<catalog_factory> catalog_factory_;
     std::unique_ptr<iceberg::catalog> catalog_;
     std::unique_ptr<schema_manager> schema_mgr_;

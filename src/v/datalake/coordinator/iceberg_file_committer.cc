@@ -14,6 +14,7 @@
 #include "datalake/coordinator/commit_offset_metadata.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/coordinator/state_update.h"
+#include "datalake/location.h"
 #include "datalake/logger.h"
 #include "datalake/table_id_provider.h"
 #include "iceberg/catalog.h"
@@ -210,7 +211,9 @@ checked<iceberg::partition_key, file_committer::errc> build_partition_key(
 class table_commit_builder {
 public:
     static checked<table_commit_builder, file_committer::errc> create(
-      iceberg::table_identifier table_id, iceberg::table_metadata&& table) {
+      iceberg::table_identifier table_id,
+      iceberg::table_metadata&& table,
+      scoped_location table_location) {
         auto meta_res = get_iceberg_committed_offset(table);
         if (meta_res.has_error()) {
             vlog(
@@ -223,14 +226,16 @@ public:
         }
 
         return table_commit_builder(
-          std::move(table_id), std::move(table), meta_res.value());
+          std::move(table_id),
+          std::move(table),
+          std::move(table_location),
+          meta_res.value());
     }
 
 public:
     checked<std::nullopt_t, file_committer::errc> process_pending_entry(
       const model::topic& topic,
       model::revision_id topic_revision,
-      const iceberg::manifest_io& io,
       const model::offset added_pending_at,
       const chunked_vector<data_file>& files) {
         if (should_skip_entry(added_pending_at)) {
@@ -256,12 +261,23 @@ public:
                     return pk.error();
                 }
 
+                auto file_uri = table_location_
+                                  .replace_path(
+                                    std::filesystem::path(f.remote_path))
+                                  .to_uri();
+                vlog(
+                  datalake_log.trace,
+                  "Adding file {} to Iceberg table {} {}",
+                  f.remote_path,
+                  table_id_,
+                  file_uri());
+
                 // TODO: pass schema_id and pspec_id to merge_append_action
                 // (currently it assumes that the files were serialized with the
                 // current schema and a single partition spec).
                 icb_files_.push_back({
                   .content_type = iceberg::data_file_content_type::data,
-                  .file_path = io.to_uri(std::filesystem::path(f.remote_path)),
+                  .file_path = file_uri,
                   .file_format = iceberg::data_file_format::parquet,
                   .partition = std::move(pk.value()),
                   .record_count = f.row_count,
@@ -332,9 +348,11 @@ private:
     table_commit_builder(
       iceberg::table_identifier table_id,
       iceberg::table_metadata&& table,
+      datalake::scoped_location table_location,
       std::optional<model::offset> table_commit_offset)
       : table_id_(std::move(table_id))
       , table_(std::move(table))
+      , table_location_(std::move(table_location))
       , table_commit_offset_(table_commit_offset) {}
 
 private:
@@ -346,6 +364,7 @@ private:
 private:
     iceberg::table_identifier table_id_;
     iceberg::table_metadata table_;
+    datalake::scoped_location table_location_;
     std::optional<model::offset> table_commit_offset_;
 
     // State accumulated.
@@ -393,8 +412,21 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                     topic));
             }
         } else {
+            auto table_location = loc_provider_.make_scoped_location(
+              main_table_res.value().location);
+            if (!table_location) {
+                vlog(
+                  datalake_log.error,
+                  "Failed to resolve location for table {} {}",
+                  main_table_id,
+                  main_table_res.value().location);
+                co_return file_committer::errc::failed;
+            }
+
             auto main_table_commit_builder_res = table_commit_builder::create(
-              std::move(main_table_id), std::move(main_table_res.value()));
+              std::move(main_table_id),
+              std::move(main_table_res.value()),
+              std::move(*table_location));
             if (main_table_commit_builder_res.has_error()) {
                 co_return main_table_commit_builder_res.error();
             }
@@ -434,8 +466,21 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                     topic));
             }
         } else {
+            auto table_location = loc_provider_.make_scoped_location(
+              dlq_table_res.value().location);
+            if (!table_location) {
+                vlog(
+                  datalake_log.error,
+                  "Failed to resolve location for table {} {}",
+                  dlq_table_id,
+                  dlq_table_res.value().location);
+                co_return file_committer::errc::failed;
+            }
+
             auto dlq_table_commit_builder_res = table_commit_builder::create(
-              std::move(dlq_table_id), std::move(dlq_table_res.value()));
+              std::move(dlq_table_id),
+              std::move(dlq_table_res.value()),
+              std::move(*table_location));
             if (dlq_table_commit_builder_res.has_error()) {
                 co_return dlq_table_commit_builder_res.error();
             }
@@ -477,7 +522,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 }
 
                 auto res = main_table_commit_builder->process_pending_entry(
-                  topic, topic_revision, io_, e.added_pending_at, e.data.files);
+                  topic, topic_revision, e.added_pending_at, e.data.files);
                 if (res.has_error()) {
                     co_return res.error();
                 }
@@ -495,11 +540,7 @@ iceberg_file_committer::commit_topic_files_to_catalog(
                 }
 
                 auto dlq_res = dlq_table_commit_builder->process_pending_entry(
-                  topic,
-                  topic_revision,
-                  io_,
-                  e.added_pending_at,
-                  e.data.dlq_files);
+                  topic, topic_revision, e.added_pending_at, e.data.dlq_files);
                 if (dlq_res.has_error()) {
                     co_return dlq_res.error();
                 }
