@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message Value {
+   string string = 1;
+}
+
+message HasMap {
+  repeated PropertiesEntry properties = 1;
+  repeated TimestampsEntry timestamps = 2;
+
+  message PropertiesEntry {
+    // This notation is illegal, but we have to support it.
+    // This will be accepted and parsed as a map due to
+    // a patch we apply to the protobuf.
+    option map_entry = true;
+    string key = 1;
+    Value value = 2;
+  }
+  message TimestampsEntry {
+    option map_entry = true;
+    string key = 1;
+    google.protobuf.Timestamp value = 2;
+  }
+}

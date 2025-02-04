@@ -123,6 +123,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "extension_ranges",
       "composite_extension",
       "nested_extension",
+      "map_entry_hack",
     };
 
     auto test_path = test_utils::get_runfile_path(

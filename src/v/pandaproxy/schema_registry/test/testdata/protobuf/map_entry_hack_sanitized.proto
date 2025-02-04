@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+message Value {
+  string string = 1;
+}
+
+message HasMap {
+  map<string, .Value> properties = 1;
+  map<string, .google.protobuf.Timestamp> timestamps = 2;
+}
+
