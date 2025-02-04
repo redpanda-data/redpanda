@@ -591,6 +591,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "location",
+    srcs = [
+        "location.cc",
+    ],
     hdrs = [
         "location.h",
     ],
@@ -598,6 +601,7 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":base_types",
+        "//src/v/cloud_io:provider",
         "//src/v/iceberg:uri",
         "//src/v/model",
     ],

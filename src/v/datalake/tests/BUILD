@@ -419,3 +419,20 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "location_test",
+    timeout = "short",
+    srcs = [
+        "location_test.cc",
+    ],
+    deps = [
+        "//src/v/cloud_io:provider",
+        "//src/v/datalake:location",
+        "//src/v/iceberg:uri",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
