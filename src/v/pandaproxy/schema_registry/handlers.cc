@@ -422,9 +422,11 @@ post_subject(server::request_t rq, server::reply_t rp) {
     co_await rq.service().schema_store().get_versions(sub, inc_del);
 
     canonical_schema schema;
+    unparsed_schema raw_unparsed_schema;
     try {
         auto unparsed = co_await ppj::rjson_parse(
           std::move(rq.req), post_subject_versions_request_handler<>{sub});
+        raw_unparsed_schema = unparsed.def.share();
         schema = co_await rq.service().schema_store().make_canonical_schema(
           std::move(unparsed.def), norm);
     } catch (const exception& e) {
@@ -434,6 +436,24 @@ post_subject(server::request_t rq, server::reply_t rp) {
         throw;
     } catch (const ppj::parse_error&) {
         throw as_exception(invalid_subject_schema(sub));
+    }
+
+    try {
+        // We are going to check to see if the raw unparsed schema exists in the
+        // registry first and see if we get lucky
+        auto sub_schema = co_await rq.service().schema_store().has_raw_schema(
+          std::move(raw_unparsed_schema), inc_del);
+        vlog(plog.debug, "Found matching raw schema");
+        rp.rep->write_body(
+          "json",
+          ppj::rjson_serialize(post_subject_versions_version_response{
+            .schema{std::move(sub_schema.schema)},
+            .id{sub_schema.id},
+            .version{sub_schema.version}}));
+        co_return rp;
+    } catch (...) {
+        // We don't care if we can't find it here, we will then check the
+        // sanitized or normalized versions
     }
 
     auto sub_schema = co_await rq.service().schema_store().has_schema(

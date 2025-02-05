@@ -74,6 +74,8 @@ public:
       canonical_schema schema,
       include_deleted inc_del = include_deleted::no,
       normalize norm = normalize::no);
+    ss::future<subject_schema> has_raw_schema(
+      unparsed_schema schema, include_deleted inc_del = include_deleted::no);
 
     ///\brief Return a schema definition by id.
     ss::future<canonical_schema_definition>

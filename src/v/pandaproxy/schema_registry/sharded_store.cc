@@ -280,6 +280,33 @@ ss::future<> sharded_store::delete_schema(schema_id id) {
       shard_for(id), _smp_opts, [id](store& s) { s.delete_schema(id); });
 }
 
+ss::future<subject_schema>
+sharded_store::has_raw_schema(unparsed_schema schema, include_deleted inc_del) {
+    auto versions = co_await get_versions(schema.sub(), inc_del);
+
+    std::optional<subject_schema> sub_schema;
+    for (auto ver : versions) {
+        try {
+            auto res = co_await get_subject_schema(schema.sub(), ver, inc_del);
+            if (schema.def().raw()() == res.schema.def().raw()()) {
+                sub_schema.emplace(std::move(res));
+                break;
+            }
+        } catch (const exception& e) {
+            if (
+              e.code() == error_code::subject_not_found
+              || e.code() == error_code::subject_version_not_found) {
+            } else {
+                throw;
+            }
+        }
+    };
+    if (!sub_schema.has_value()) {
+        throw as_exception(schema_not_found());
+    }
+    co_return std::move(sub_schema).value();
+}
+
 ss::future<subject_schema> sharded_store::has_schema(
   canonical_schema schema, include_deleted inc_del, normalize norm) {
     auto versions = co_await get_versions(schema.sub(), inc_del);
