@@ -36,6 +36,7 @@ record_multiplexer::record_multiplexer(
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
   location_provider location_provider,
+  translation_probe& translation_probe,
   lazy_abort_source& as)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
@@ -47,6 +48,7 @@ record_multiplexer::record_multiplexer(
   , _table_creator(table_creator)
   , _invalid_record_action(invalid_record_action)
   , _location_provider(std::move(location_provider))
+  , _translation_probe(translation_probe)
   , _as(as) {}
 
 ss::future<ss::stop_iteration>
@@ -306,7 +308,8 @@ record_multiplexer::handle_invalid_record(
   model::timestamp ts,
   chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
     headers) {
-    // TODO: add a metric!
+    _translation_probe.increment_invalid_record_action();
+
     switch (_invalid_record_action) {
     case model::iceberg_invalid_record_action::drop:
         vlog(_log.debug, "Dropping invalid record at offset {}", offset);

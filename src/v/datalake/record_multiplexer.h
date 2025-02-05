@@ -15,6 +15,7 @@
 #include "datalake/location.h"
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
+#include "datalake/translation/translation_probe.h"
 #include "model/record.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/prefix_logger.h"
@@ -54,6 +55,7 @@ public:
       table_creator&,
       model::iceberg_invalid_record_action,
       location_provider,
+      translation_probe&,
       lazy_abort_source& as);
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
@@ -80,6 +82,7 @@ private:
     table_creator& _table_creator;
     model::iceberg_invalid_record_action _invalid_record_action;
     location_provider _location_provider;
+    translation_probe& _translation_probe;
     lazy_abort_source& _as;
     chunked_hash_map<
       record_schema_components,

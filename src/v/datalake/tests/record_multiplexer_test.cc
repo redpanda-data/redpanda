@@ -17,6 +17,7 @@
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
+#include "datalake/translation/translation_probe.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -144,6 +145,7 @@ public:
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
+          probe,
           as);
         auto res = reader.consume(std::move(mux), model::no_timeout).get();
         if (expect_error) {
@@ -194,6 +196,7 @@ public:
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
     direct_table_creator t_creator;
+    translation_probe probe;
     lazy_abort_source as;
 
     static constexpr records_param default_param = {

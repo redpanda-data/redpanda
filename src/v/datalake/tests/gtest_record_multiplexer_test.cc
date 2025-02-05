@@ -19,6 +19,7 @@
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
+#include "datalake/translation/translation_probe.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -40,6 +41,7 @@ const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
 const model::revision_id rev{123};
 default_translator translator;
+translation_probe probe;
 lazy_abort_source as([] { return std::nullopt; });
 } // namespace
 
@@ -61,6 +63,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
+      probe,
       as);
 
     model::test::record_batch_spec batch_spec;
@@ -107,6 +110,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
+      probe,
       as);
 
     model::test::record_batch_spec batch_spec;
@@ -153,6 +157,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
         cloud_storage_clients::bucket_name{"bucket"}),
+      probe,
       as);
 
     model::test::record_batch_spec batch_spec;
@@ -274,6 +279,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
       location_provider(scoped_remote->remote.local().provider(), bucket_name),
+      probe,
       as);
     auto res = reader.consume(std::move(mux), model::no_timeout).get();
     ASSERT_FALSE(res.has_error()) << res.error();

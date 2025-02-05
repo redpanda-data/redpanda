@@ -18,6 +18,7 @@ from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (
+    MetricsEndpoint,
     PandaproxyConfig,
     SchemaRegistryConfig,
     SISettings,
@@ -345,6 +346,12 @@ class DatalakeDLQTest(RedpandaTest):
                                     30,
                                     5,
                                     table_override=f"{self.topic_name}~dlq")
+
+            # In case of retries, the counter may be incremented multiple times for the same record.
+            invalid_record_metric_value = self.redpanda.metric_sum(
+                'redpanda_iceberg_translation_invalid_records_total',
+                MetricsEndpoint.PUBLIC_METRICS, "kafka", self.topic_name)
+            assert invalid_record_metric_value >= num_invalid_per_iter * num_iter
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types(),

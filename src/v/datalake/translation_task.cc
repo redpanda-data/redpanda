@@ -178,14 +178,16 @@ translation_task::translation_task(
   record_translator& record_translator,
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
-  location_provider location_provider)
+  location_provider location_provider,
+  translation_probe& probe)
   : _cloud_io(&cloud_io)
   , _schema_mgr(&schema_mgr)
   , _type_resolver(&type_resolver)
   , _record_translator(&record_translator)
   , _table_creator(&table_creator)
   , _invalid_record_action(invalid_record_action)
-  , _location_provider(std::move(location_provider)) {}
+  , _location_provider(std::move(location_provider))
+  , _translation_probe(&probe) {}
 
 ss::future<
   checked<coordinator::translated_offset_range, translation_task::errc>>
@@ -208,6 +210,7 @@ translation_task::translate(
       *_table_creator,
       _invalid_record_action,
       _location_provider,
+      *_translation_probe,
       lazy_as);
     // Write local files
     auto mux_result = co_await std::move(reader).consume(

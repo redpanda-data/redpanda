@@ -68,6 +68,7 @@ rp_test(
   LIBRARIES
     Boost::iostreams
     v::datalake_test_utils
+    v::datalake_translation_probe
     v::gtest_main
     v::datalake_writer
     v::cloud_io_utils

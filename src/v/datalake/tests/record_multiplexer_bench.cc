@@ -319,6 +319,7 @@ private:
     datalake::tests::record_generator _record_gen;
     datalake::default_translator _translator;
     datalake::direct_table_creator _table_creator;
+    datalake::translation_probe _translation_probe;
     chunked_vector<model::record_batch> _batch_data;
     lazy_abort_source _as;
 
@@ -338,6 +339,7 @@ private:
           model::iceberg_invalid_record_action::dlq_table,
           datalake::location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
+          _translation_probe,
           _as);
     }
 

@@ -16,4 +16,12 @@ v_cc_library(
         Seastar::seastar
 )
 
+v_cc_library(
+    NAME datalake_translation_probe
+    SRCS
+        translation_probe.cc
+    DEPS
+        v::metrics
+)
+
 add_subdirectory(tests)

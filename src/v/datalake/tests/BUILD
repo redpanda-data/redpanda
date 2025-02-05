@@ -264,6 +264,7 @@ redpanda_cc_gtest(
         "//src/v/datalake:record_translator",
         "//src/v/datalake:table_definition",
         "//src/v/datalake:table_id_provider",
+        "//src/v/datalake/translation:translation_probe",
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/model",
         "//src/v/pandaproxy",

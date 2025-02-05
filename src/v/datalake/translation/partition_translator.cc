@@ -23,6 +23,7 @@
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
 #include "datalake/translation/state_machine.h"
+#include "datalake/translation/translation_probe.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
 #include "model/fundamental.h"
@@ -289,6 +290,7 @@ partition_translator::do_translation_for_range(
       *_table_creator,
       _invalid_record_action,
       _location_provider,
+      _partition->probe().probe_part<translation_probe>(),
     };
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{

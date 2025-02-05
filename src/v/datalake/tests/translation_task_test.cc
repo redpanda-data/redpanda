@@ -19,6 +19,7 @@
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
 #include "datalake/tests/test_utils.h"
+#include "datalake/translation/translation_probe.h"
 #include "datalake/translation_task.h"
 #include "iceberg/uri.h"
 #include "model/record_batch_reader.h"
@@ -133,6 +134,18 @@ public:
         co_return ret;
     }
 
+    translation_task create_task() {
+        return translation_task(
+          cloud_io,
+          *schema_mgr,
+          *schema_resolver,
+          *translator,
+          *t_creator,
+          model::iceberg_invalid_record_action::dlq_table,
+          location_provider,
+          probe);
+    }
+
     ss::abort_source as;
     temporary_dir tmp_dir;
     retry_chain_node test_rcn;
@@ -140,6 +153,7 @@ public:
     std::unique_ptr<simple_schema_manager> schema_mgr;
     std::unique_ptr<table_creator> t_creator;
     datalake::location_provider location_provider;
+    datalake::translation_probe probe;
 };
 
 struct deleter {
@@ -171,16 +185,7 @@ private:
 };
 
 TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
-    datalake::translation_task task(
-      cloud_io,
-      *schema_mgr,
-      *schema_resolver,
-      *translator,
-      *t_creator,
-      model::iceberg_invalid_record_action::dlq_table,
-      location_provider);
-
-    auto result = task
+    auto result = create_task()
                     .translate(
                       ntp,
                       rev,
@@ -207,19 +212,11 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
 }
 
 TEST_F(TranslateTaskTest, TestDataFileMissing) {
-    datalake::translation_task task(
-      cloud_io,
-      *schema_mgr,
-      *schema_resolver,
-      *translator,
-      *t_creator,
-      model::iceberg_invalid_record_action::dlq_table,
-      location_provider);
     // create deleting task to cause local io error
     deleter del(tmp_dir.get_path().string());
     del.start();
     auto stop_deleter = ss::defer([&del] { del.stop().get(); });
-    auto result = task
+    auto result = create_task()
                     .translate(
                       ntp,
                       rev,
@@ -236,14 +233,6 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
 }
 
 TEST_F(TranslateTaskTest, TestUploadError) {
-    datalake::translation_task task(
-      cloud_io,
-      *schema_mgr,
-      *schema_resolver,
-      *translator,
-      *t_creator,
-      model::iceberg_invalid_record_action::dlq_table,
-      location_provider);
     // fail all PUT requests
     fail_request_if(
       [](const http_test_utils::request_info& req) -> bool {
@@ -253,7 +242,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
         .body = "failed!",
         .status = ss::http::reply::status_type::internal_server_error});
 
-    auto result = task
+    auto result = create_task()
                     .translate(
                       ntp,
                       model::revision_id{123},
