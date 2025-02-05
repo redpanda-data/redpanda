@@ -772,7 +772,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "nested_partition_probe",
+    name = "partition_probe",
+    srcs = [
+        "partition_probe.cc",
+    ],
+    hdrs = [
+        "partition_probe.h",
+    ],
+    implementation_deps = [
+        "//src/v/cluster",
+        "//src/v/config",
+        "//src/v/pandaproxy:config",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":partition_probe_part",
+        "//src/v/config",
+        "//src/v/metrics",
+        "//src/v/model",
+        "@abseil-cpp//absl/container:flat_hash_map",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_probe_part",
     hdrs = [
         "partition_probe_part.h",
     ],
