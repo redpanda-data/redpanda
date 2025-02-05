@@ -10,13 +10,19 @@
  */
 
 #pragma once
+
+#include "cluster/partition_probe_part.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <cstdint>
+#include <type_traits>
+#include <typeindex>
 
 namespace cluster {
 
@@ -35,6 +41,10 @@ public:
         virtual void update_iceberg_translation_offset_lag(int64_t) = 0;
         virtual void update_iceberg_commit_offset_lag(int64_t) = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
+        virtual partition_probe_part* find_probe_part(std::type_index) = 0;
+        virtual partition_probe_part* register_probe_part(
+          std::type_index, std::unique_ptr<partition_probe_part>)
+          = 0;
         virtual void clear_metrics() = 0;
         virtual ~impl() noexcept = default;
     };
@@ -81,6 +91,27 @@ public:
         _impl->update_iceberg_commit_offset_lag(new_lag);
     }
 
+    /// Get a probe part by type (class name). The probe is created on the first
+    /// call and then reused. The probe will be destroyed together with the
+    /// partition probe.
+    ///
+    /// Actual metric registration should be done in the virtual method \c
+    /// partition_probe_part::setup_public_metrics which is called with the
+    /// public metric group.
+    template<typename T>
+    requires std::is_default_constructible_v<T>
+             && std::derived_from<T, partition_probe_part>
+    T& probe_part() {
+        auto type_index = std::type_index(typeid(T));
+        if (auto probe = _impl->find_probe_part(type_index); probe) {
+            return static_cast<T&>(*probe);
+        } else {
+            auto* ptr = _impl->register_probe_part(
+              type_index, std::make_unique<T>());
+            return static_cast<T&>(*ptr);
+        }
+    }
+
     void clear_metrics() { _impl->clear_metrics(); }
 
 private:
@@ -112,6 +143,17 @@ public:
         _iceberg_commit_offset_lag = new_lag;
     }
 
+    partition_probe_part* find_probe_part(std::type_index type_index) final {
+        if (auto it = _parts.find(type_index); it != _parts.end()) {
+            return it->second.get();
+        }
+        return nullptr;
+    }
+
+    partition_probe_part* register_probe_part(
+      std::type_index type_index,
+      std::unique_ptr<partition_probe_part> probe) final;
+
     void clear_metrics() final;
 
 private:
@@ -138,6 +180,17 @@ private:
     int64_t _iceberg_commit_offset_lag{metric_default_initialized_state};
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
+
+    // Tracks whether metric setup is pending. If pending then we skip
+    // initializing nested probe metrics on registration and let the next
+    // setup_metrics call handle it.
+    bool _metrics_setup_pending{true};
+
+    // Probe parts by type index to allow other parts of the system to
+    // register "singleton" probes lifetime of which is tied to the
+    // partition_probe.
+    absl::flat_hash_map<std::type_index, std::unique_ptr<partition_probe_part>>
+      _parts;
 };
 
 } // namespace cluster

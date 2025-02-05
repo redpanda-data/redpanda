@@ -638,6 +638,7 @@ redpanda_cc_library(
         ":nt_revision",
         ":offsets_recovery_rpc",
         ":partition_balancer_rpc",
+        ":partition_probe_part",
         ":run_quota",
         ":self_test_rpc",
         ":state_machine_registry",
@@ -767,5 +768,18 @@ redpanda_cc_library(
         "@rapidjson",
         "@roaring",
         "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "nested_partition_probe",
+    hdrs = [
+        "partition_probe_part.h",
+    ],
+    include_prefix = "cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/metrics",
+        "//src/v/model",
     ],
 )

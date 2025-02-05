@@ -38,14 +38,37 @@ void replicated_partition_probe::reconfigure_metrics() {
     setup_metrics(_partition.ntp());
 }
 
+partition_probe_part* replicated_partition_probe::register_probe_part(
+  std::type_index type_index, std::unique_ptr<partition_probe_part> probe) {
+    auto [it, inserted] = _parts.emplace(type_index, std::move(probe));
+    vassert(inserted, "Duplicate nested probe");
+
+    if (!config::shard_local_cfg().disable_public_metrics) {
+        if (!_metrics_setup_pending) {
+            it->second->setup_public_metrics(_partition.ntp(), _public_metrics);
+        }
+    }
+
+    return it->second.get();
+}
+
 void replicated_partition_probe::clear_metrics() {
     _metrics.clear();
     _public_metrics.clear();
+    _metrics_setup_pending = true;
 }
 
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     setup_internal_metrics(ntp);
     setup_public_metrics(ntp);
+
+    if (!config::shard_local_cfg().disable_public_metrics) {
+        for (auto& [_, nested_probe] : _parts) {
+            nested_probe->setup_public_metrics(ntp, _public_metrics);
+        }
+    }
+
+    _metrics_setup_pending = false;
 }
 
 int64_t replicated_partition_probe::iceberg_translation_offset_lag() const {
