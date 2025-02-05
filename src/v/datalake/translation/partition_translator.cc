@@ -13,6 +13,7 @@
 #include "cluster/archival/types.h"
 #include "cluster/notification.h"
 #include "cluster/partition.h"
+#include "config/node_config.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/data_writer_interface.h"
@@ -192,7 +193,7 @@ partition_translator::partition_translator(
   , _max_bytes_per_reader(reader_max_bytes)
   , _parallel_translations(parallel_translations)
   , _invalid_record_action(invalid_record_action)
-  , _writer_scratch_space(std::filesystem::temp_directory_path())
+  , _writer_scratch_space(config::node().datalake_staging_path())
   , _logger(prefix_logger{
       datalake_log, fmt::format("{}-term-{}", _partition->ntp(), _term)}) {
     vassert(_stm, "No translation stm found for {}", _partition->ntp());

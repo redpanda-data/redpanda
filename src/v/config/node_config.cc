@@ -167,6 +167,12 @@ node_config::node_config() noexcept
       "scrubber",
       {.visibility = visibility::user},
       std::nullopt)
+  , datalake_staging_directory(
+      *this,
+      "datalake_staging_directory",
+      "Directory for datalake temporary storage.",
+      {.visibility = visibility::user},
+      std::nullopt)
   , enable_central_config(*this, "enable_central_config")
   , crash_loop_limit(
       *this,

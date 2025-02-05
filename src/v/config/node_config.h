@@ -67,6 +67,9 @@ public:
     // Path to store inventory file hashes for cloud storage scrubber
     property<std::optional<ss::sstring>> cloud_storage_inventory_hash_store;
 
+    // Datalake scratch space directory
+    property<std::optional<ss::sstring>> datalake_staging_directory;
+
     deprecated_property enable_central_config;
 
     property<std::optional<uint32_t>> crash_loop_limit;
@@ -144,6 +147,14 @@ public:
               cloud_storage_inventory_hash_store().value()};
         }
         return data_directory().path / "cloud_storage_inventory";
+    }
+
+    std::filesystem::path datalake_staging_path() const {
+        if (datalake_staging_directory().has_value()) {
+            return std::string(datalake_staging_directory().value());
+        } else {
+            return data_directory().path / "datalake_staging";
+        }
     }
 
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
