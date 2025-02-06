@@ -158,38 +158,8 @@ inline cluster::tx::tx_data_snapshot random_tx_data_snapshot() {
       tests::random_named_int<model::partition_id>()};
 }
 
-inline cluster::tx::expiration_snapshot random_expiration_snapshot() {
-    return {
-      model::random_producer_identity(),
-      tests::random_duration<cluster::tx::duration_type>()};
-}
-
-inline cluster::tx::prepare_marker random_prepare_marker() {
-    return {
-      tests::random_named_int<model::partition_id>(),
-      tests::random_named_int<model::tx_seq>(),
-      model::random_producer_identity()};
-}
-
 inline cluster::tx::abort_index random_abort_index() {
     return tx::abort_index{model::random_offset(), model::random_offset()};
-}
-
-inline cluster::tx::deprecated_seq_entry::deprecated_seq_cache_entry
-random_seq_cache_entry() {
-    return {
-      random_generators::get_int<int32_t>(),
-      tests::random_named_int<kafka::offset>()};
-}
-
-inline cluster::tx::deprecated_seq_entry random_seq_entry() {
-    cluster::tx::deprecated_seq_entry entry;
-    entry.pid = model::random_producer_identity(),
-    entry.seq = random_generators::get_int<int32_t>(),
-    entry.last_offset = tests::random_named_int<kafka::offset>(),
-    entry.seq_cache = tests::random_circular_buffer(random_seq_cache_entry),
-    entry.last_write_timestamp = random_generators::get_int<int64_t>();
-    return entry;
 }
 
 } // namespace cluster

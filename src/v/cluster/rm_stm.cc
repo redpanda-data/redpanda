@@ -1808,16 +1808,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       hdr.offset);
     tx_snapshot_v6 data;
     iobuf_parser data_parser(std::move(tx_ss_buf));
-    if (hdr.version == tx_snapshot_v4::version) {
-        tx_snapshot_v4 data_v4
-          = co_await reflection::async_adl<tx_snapshot_v4>{}.from(data_parser);
-        data = tx_snapshot_v6(
-          tx_snapshot_v5(std::move(data_v4), _raft->group()), _raft->group());
-    } else if (hdr.version == tx_snapshot_v5::version) {
-        data = tx_snapshot_v6(
-          co_await reflection::async_adl<tx_snapshot_v5>{}.from(data_parser),
-          _raft->group());
-    } else if (hdr.version == tx_snapshot_v6::version) {
+    if (hdr.version == tx_snapshot_v6::version) {
         data = co_await serde::read_async<tx_snapshot_v6>(data_parser);
     } else {
         vlog(_ctx_log.error, "Ignored snapshot version {}", hdr.version);
@@ -1909,12 +1900,7 @@ rm_stm::apply_local_snapshot(raft::stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     co_return raft::local_snapshot_applied::yes;
 }
 
-uint8_t rm_stm::active_snapshot_version() {
-    if (_feature_table.local().is_active(features::feature::unified_tx_state)) {
-        return tx_snapshot_v6::version;
-    }
-    return tx_snapshot_v5::version;
-}
+uint8_t rm_stm::active_snapshot_version() { return tx_snapshot_v6::version; }
 
 ss::future<raft::stm_snapshot>
 rm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
@@ -1925,7 +1911,7 @@ rm_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
 ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
   uint8_t version, ssx::semaphore_units apply_units) {
     vassert(
-      version == tx_snapshot_v5::version || version == tx_snapshot_v6::version,
+      version == tx_snapshot_v6::version,
       "Unsupported snapshot version requested: {}",
       version);
 
@@ -2077,13 +2063,8 @@ ss::future<raft::stm_snapshot> rm_stm::do_take_local_snapshot(
       stm_snapshot,
       snapshot_offset);
     iobuf snapshot_buf;
-    if (version == tx_snapshot_v6::version) {
-        co_await serde::write_async(snapshot_buf, std::move(stm_snapshot));
-    } else {
-        co_await reflection::async_adl<tx_snapshot_v5>{}.to(
-          snapshot_buf, std::move(stm_snapshot).downgrade_to_v5());
-    }
 
+    co_await serde::write_async(snapshot_buf, std::move(stm_snapshot));
     co_return raft::stm_snapshot::create(
       version, snapshot_offset, std::move(snapshot_buf));
 }

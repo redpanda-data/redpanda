@@ -251,84 +251,9 @@ struct tx_data_snapshot {
     bool operator==(const tx_data_snapshot&) const = default;
 };
 
-// note: support for tx_snapshot::version[0-3] was dropped
-// in v24.1.x
-
-struct expiration_snapshot {
-    model::producer_identity pid;
-    duration_type timeout;
-
-    bool operator==(const expiration_snapshot&) const = default;
-};
-
-// only retained for snapshot backward compatibility purposes
-// during rollback of an upgrade.
-struct deprecated_seq_entry {
-    static const int seq_cache_size = 5;
-
-    struct deprecated_seq_cache_entry {
-        int32_t seq{-1};
-        kafka::offset offset;
-
-        bool operator==(const deprecated_seq_cache_entry&) const = default;
-    };
-
-    model::producer_identity pid;
-    int32_t seq{-1};
-    kafka::offset last_offset{-1};
-    ss::circular_buffer<deprecated_seq_cache_entry> seq_cache;
-    model::timestamp::type last_write_timestamp;
-
-    bool operator==(const deprecated_seq_entry& other) const;
-
-    static deprecated_seq_entry
-    from_producer_state_snapshot(producer_state_snapshot&);
-};
-
-struct tx_snapshot_v4 {
-    static constexpr uint8_t version = 4;
-
-    fragmented_vector<model::producer_identity> fenced;
-    fragmented_vector<tx_range> ongoing;
-    fragmented_vector<prepare_marker> prepared;
-    fragmented_vector<tx_range> aborted;
-    fragmented_vector<abort_index> abort_indexes;
-    model::offset offset;
-    fragmented_vector<deprecated_seq_entry> seqs;
-    fragmented_vector<tx_data_snapshot> tx_data;
-    fragmented_vector<expiration_snapshot> expiration;
-
-    bool operator==(const tx_snapshot_v4&) const = default;
-};
-
-struct tx_snapshot_v5 {
-    static constexpr uint8_t version = 5;
-
-    tx_snapshot_v5() = default;
-    explicit tx_snapshot_v5(tx_snapshot_v4, raft::group_id);
-
-    model::offset offset;
-    // NOTE:
-    // Currently producer_state only encapsulates idempotency
-    // related state, hence the snapshot contains separate data
-    // members for transactional state. Once transactional state
-    // is ported into producer_state, these data members can
-    // be removed.
-    fragmented_vector<producer_state_snapshot_deprecated> producers;
-
-    // transactional state
-    fragmented_vector<model::producer_identity> fenced;
-    fragmented_vector<tx_range> ongoing;
-    fragmented_vector<prepare_marker> prepared;
-    fragmented_vector<tx_range> aborted;
-    fragmented_vector<abort_index> abort_indexes;
-
-    fragmented_vector<tx_data_snapshot> tx_data;
-    fragmented_vector<expiration_snapshot> expiration;
-    model::producer_id highest_producer_id{};
-
-    bool operator==(const tx_snapshot_v5&) const = default;
-};
+// note:
+// * support for tx_snapshot::version[0-3] was dropped in v24.1.x
+// * support for tx_snapshot::version[4-5] was dropped in v25.1.x
 
 struct tx_snapshot_v6
   : serde::
@@ -336,14 +261,10 @@ struct tx_snapshot_v6
     static constexpr uint8_t version = 6;
 
     tx_snapshot_v6() = default;
-    explicit tx_snapshot_v6(tx_snapshot_v5, raft::group_id);
-
     fragmented_vector<producer_state_snapshot> producers;
     fragmented_vector<tx_range> aborted;
     fragmented_vector<abort_index> abort_indexes;
     model::producer_id highest_producer_id;
-
-    tx_snapshot_v5 downgrade_to_v5() &&;
 
     friend std::ostream& operator<<(std::ostream&, const tx_snapshot_v6&);
 
@@ -359,20 +280,6 @@ using tx_snapshot = tx_snapshot_v6;
 }; // namespace cluster::tx
 
 namespace reflection {
-
-using tx_snapshot_v4 = cluster::tx::tx_snapshot_v4;
-template<>
-struct async_adl<tx_snapshot_v4> {
-    ss::future<> to(iobuf&, tx_snapshot_v4);
-    ss::future<tx_snapshot_v4> from(iobuf_parser&);
-};
-
-using tx_snapshot_v5 = cluster::tx::tx_snapshot_v5;
-template<>
-struct async_adl<tx_snapshot_v5> {
-    ss::future<> to(iobuf&, tx_snapshot_v5);
-    ss::future<tx_snapshot_v5> from(iobuf_parser&);
-};
 
 template<>
 struct async_adl<cluster::tx::abort_index> {
@@ -391,5 +298,4 @@ struct async_adl<model::tx_range> {
     ss::future<> to(iobuf& out, model::tx_range t);
     ss::future<model::tx_range> from(iobuf_parser& in);
 };
-
 }; // namespace reflection
