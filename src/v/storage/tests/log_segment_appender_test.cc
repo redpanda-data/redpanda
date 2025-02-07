@@ -13,7 +13,6 @@
 #include "bytes/random.h"
 #include "config/configuration.h"
 #include "random/generators.h"
-#include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
 
@@ -122,8 +121,6 @@ iobuf make_iobuf_with_char(size_t len, unsigned char c) {
     ret.append(buf.data(), buf.size());
     return ret;
 }
-
-size_t default_chunk_size() { return storage::internal::chunks().chunk_size(); }
 
 } // namespace
 
@@ -272,7 +269,7 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     // but is zero currently because the chunk size goes evenly into 1 MiB
     auto expected_writes
       = iterations
-        * (one_meg / default_chunk_size() + !!(one_meg % default_chunk_size()));
+        * (one_meg / appender.chunk_size() + !!(one_meg % appender.chunk_size()));
     auto write_count = access(appender).total_dispatched();
     BOOST_CHECK_EQUAL(write_count, expected_writes);
 
