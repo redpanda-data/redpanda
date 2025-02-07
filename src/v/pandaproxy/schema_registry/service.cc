@@ -661,4 +661,6 @@ kafka::client::configuration& service::client_config() {
     return _client.local().config();
 }
 
+ss::logger& service::access_logger() { return schema_registry_access; }
+
 } // namespace pandaproxy::schema_registry

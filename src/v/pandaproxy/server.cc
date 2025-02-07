@@ -148,7 +148,7 @@ struct handler_adaptor : ss::httpd::handler_base {
         }
         set_and_measure_response(rp);
         vlog(
-          _log.info,
+          _log.trace,
           "{} {} {}",
           access_log,
           static_cast<std::underlying_type_t<ss::http::reply::status_type>>(
