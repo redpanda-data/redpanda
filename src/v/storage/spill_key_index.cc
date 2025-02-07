@@ -62,7 +62,7 @@ spill_key_index::spill_key_index(
   , _pc(ss::default_priority_class())
   , _appender(storage::segment_appender(
       std::move(dummy_file),
-      segment_appender::options(_pc, 1, std::nullopt, _resources)))
+      segment_appender::options(_pc, std::nullopt, _resources)))
   , _max_mem(max_mem) {}
 
 spill_key_index::~spill_key_index() {
@@ -358,7 +358,7 @@ ss::future<> spill_key_index::open() {
 
     _appender.emplace(storage::segment_appender(
       std::move(index_file),
-      segment_appender::options(_pc, 1, std::nullopt, _resources)));
+      segment_appender::options(_pc, std::nullopt, _resources)));
 }
 
 ss::future<> spill_key_index::close() {

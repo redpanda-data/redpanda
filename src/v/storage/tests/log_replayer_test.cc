@@ -66,7 +66,7 @@ public:
         auto appender = std::make_unique<segment_appender>(
           fd,
           segment_appender::options(
-            ss::default_priority_class(), 1, std::nullopt, resources));
+            ss::default_priority_class(), std::nullopt, resources));
         auto indexer = segment_index(
           segment_full_path::mock(base_name + ".index"),
           std::move(fidx),

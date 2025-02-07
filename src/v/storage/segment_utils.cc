@@ -21,7 +21,6 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
-#include "storage/chunk_cache.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
@@ -164,14 +163,12 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const segment_full_path& path,
-  size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
   storage_resources& resources,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     return internal::make_writer_handle(path, std::nullopt)
-      .then([number_of_chunks,
-             iopc,
+      .then([iopc,
              path,
              segment_size,
              &resources,
@@ -196,8 +193,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
               // 1MB of memory aligned buffers
               auto appender_ptr = std::make_unique<segment_appender>(
                 writer,
-                segment_appender::options(
-                  iopc, number_of_chunks, segment_size, resources));
+                segment_appender::options(iopc, segment_size, resources));
 
               if (sanitized_writer) {
                   sanitized_writer->set_pointer_to_appender(appender_ptr.get());
@@ -213,20 +209,6 @@ ss::future<segment_appender_ptr> make_segment_appender(
               });
           }
       });
-}
-
-size_t number_of_chunks_from_config(const ntp_config& ntpc) {
-    auto def = segment_appender::write_behind_memory
-               / internal::chunks().chunk_size();
-
-    if (!ntpc.has_overrides()) {
-        return def;
-    }
-    auto& o = ntpc.get_overrides();
-    if (o.compaction_strategy) {
-        return def / 2;
-    }
-    return def;
 }
 
 ss::future<roaring::Roaring>
@@ -390,7 +372,6 @@ ss::future<storage::index_state> do_copy_segment_data(
 
     auto appender = co_await make_segment_appender(
       tmpname,
-      segment_appender::write_behind_memory / internal::chunks().chunk_size(),
       std::nullopt,
       cfg.iopc,
       resources,

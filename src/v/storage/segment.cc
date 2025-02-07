@@ -824,7 +824,6 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              feature_table,
              ntp_sanitizer_config)
       .then([path,
-             &ntpc,
              pc,
              segment_size_hint,
              &resources,
@@ -832,7 +831,6 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
           return with_segment(
             std::move(seg),
             [path,
-             &ntpc,
              pc,
              segment_size_hint,
              &resources,
@@ -840,7 +838,6 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
               const ss::lw_shared_ptr<segment>& seg) mutable {
                 return internal::make_segment_appender(
                          path,
-                         internal::number_of_chunks_from_config(ntpc),
                          segment_size_hint,
                          pc,
                          resources,

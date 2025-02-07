@@ -13,7 +13,6 @@
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
-#include "storage/chunk_cache.h"
 #include "storage/disk_log_impl.h"
 #include "storage/key_offset_map.h"
 #include "storage/segment_deduplication_utils.h"
@@ -479,8 +478,6 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
     const auto tmpname = first_seg->reader().path().to_compaction_staging();
     auto appender = storage::internal::make_segment_appender(
                       tmpname,
-                      segment_appender::write_behind_memory
-                        / storage::internal::chunks().chunk_size(),
                       std::nullopt,
                       cfg.iopc,
                       disk_log.resources(),

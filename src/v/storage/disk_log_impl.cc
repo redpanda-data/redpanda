@@ -22,7 +22,6 @@
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
-#include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/compaction_reducers.h"
 #include "storage/disk_log_appender.h"
@@ -1359,12 +1358,7 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
       cfg.files_to_cleanup, {tmpname, cmp_idx_tmpname}};
 
     auto appender = co_await internal::make_segment_appender(
-      tmpname,
-      segment_appender::write_behind_memory / internal::chunks().chunk_size(),
-      std::nullopt,
-      cfg.iopc,
-      resources(),
-      cfg.sanitizer_config);
+      tmpname, std::nullopt, cfg.iopc, resources(), cfg.sanitizer_config);
 
     auto cmp_idx_name = seg->path().to_compacted_index();
     auto compacted_idx_writer = make_file_backed_compacted_index(

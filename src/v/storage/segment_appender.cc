@@ -692,8 +692,7 @@ bool segment_appender::inflight_write::try_merge(
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
-    return o << "{no_of_chunks:" << a._opts.number_of_chunks
-             << ", closed:" << a._closed
+    return o << "{closed:" << a._closed
              << ", fallocation_offset:" << a._fallocation_offset
              << ", stable_offset:" << a._stable_offset
              << ", flushed_offset:" << a._flushed_offset
