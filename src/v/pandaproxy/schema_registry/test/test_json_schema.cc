@@ -24,6 +24,7 @@
 #include <boost/test/tools/context.hpp>
 #include <fmt/core.h>
 #include <jsoncons/json.hpp>
+#include <jsoncons/uri.hpp>
 #include <jsoncons_ext/jsonpatch/jsonpatch.hpp>
 
 namespace pp = pandaproxy;
@@ -199,6 +200,38 @@ static const auto error_test_cases = std::to_array({
     pps::error_info{
       pps::error_code::schema_invalid,
       R"(bundled schema is invalid. Invalid json schema: '{"$comment":"schema is invalid","$id":"https://example.com/mismatch_id","type":"potato"}'. Error: '/type: Must be valid against at least one schema, but found no matching schemas')"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "bundled schema has an id that clashes with the root id",
+  "$id": "https://example.com/clashing_id",
+  "$defs": {
+      "clashing": {
+          "$id": "/clashing_id"
+      }
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(bundled schema with duplicate id 'https://example.com/clashing_id' at '/$defs/clashing')"}},
+  error_test_case{
+    R"(
+{
+  "$comment": "multiple bundled schema with the same id",
+  "$defs": {
+      "a": {
+          "$id": "https://example.com/clashing_id"
+      },
+      "b": {
+          "$id": "https://example.com/clashing_id"
+      }
+  }
+}
+)",
+    pps::error_info{
+      pps::error_code::schema_invalid,
+      R"(bundled schema with duplicate id 'https://example.com/clashing_id' at '/$defs/b')"}},
 });
 SEASTAR_THREAD_TEST_CASE(test_make_invalid_json_schema) {
     for (const auto& data : error_test_cases) {
@@ -2356,7 +2389,8 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
     // local ref
     "giga": {"$ref": "#/properties/mega"},
     // absolute ref to bundled schema
-    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"},
+    "external": {"$ref": "an.external.schema.json"}
   },
   "$defs": {
     "bundled": {
@@ -2379,7 +2413,10 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
         "another_schema_frag": { "$ref": "/schemas/address#/name" },
 
         // recursive ref
-        "recursive": { "$ref": "#/properties/recursive" }
+        "recursive": { "$ref": "#/properties/recursive" },
+
+        // external ref
+        "external": { "$ref": "an.external.schema.json#/$defs/name" }
       },
       "$defs": {
         "bundled": {
@@ -2427,7 +2464,7 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
     auto expected_schema = R"({
   "properties": {
     "giga": {"$ref": "#/properties/mega"},
-    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"}
+    "mega": {"$ref": "https://example.com/schemas/customer#/properties/local"},
   },
   "$defs": {
     "bundled": {
@@ -2438,7 +2475,10 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
         "another_schema": { "$ref": "https://example.com/schemas/address" },
         "another_schemas_absolute": { "$ref": "https://example.com/schemas/address#/name" },
         "another_schema_frag": { "$ref": "https://example.com/schemas/address#/name" },
-        "recursive": { "$ref": "https://example.com/schemas/customer#/properties/recursive" }
+        "recursive": { "$ref": "https://example.com/schemas/customer#/properties/recursive" },
+        // external refs are eagerly resolved against the base uri,
+        // but they will be resolved against the external ref name at runtime
+        "external": { "$ref": "https://example.com/schemas/an.external.schema.json#/$defs/name" }
       },
       "$defs": {
         "bundled": {
@@ -2473,5 +2513,249 @@ SEASTAR_THREAD_TEST_CASE(test_refs_fixing) {
           fmt::format(
             "differences expected_schema-processed_schema:\n{}\n",
             jsoncons::pretty_print(jpatch)));
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_external_ref_resolution_jsoncons) {
+    using namespace jsoncons::literals;
+    auto input_subject = pps::subject{"test"};
+    auto external_subject = pps::subject{"external"};
+    auto input_schema = pps::canonical_schema_definition{
+      R"(
+{
+  "type": "object",
+  "properties": {
+    "local_ref": { "$ref": "#/$defs/a_property" },
+    "bundled_ref": { "$ref": "https://example.com/schemas/negative_num" },
+    "external_ref": { "$ref": "an.external.schema.json" }
+  },
+  "$defs": {
+    "a_property": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "this_is_a_bundled_schema": {
+      "$id": "https://example.com/schemas/negative_num",
+      "type": "number",
+      "exclusiveMaximum": 0
+    }
+  }
+}
+)",
+      pps::schema_type::json,
+      {{"an.external.schema.json", external_subject, pps::schema_version{2}}}};
+
+    auto resolved = jsoncons::uri{"#/$defs_a_property"}.resolve(
+      jsoncons::uri{"https", "", "an.external.schema.json", "", "", "", ""});
+
+    fmt::print(
+      "\nresolved '{}', host '{}', path '{}'\n",
+      resolved.string(),
+      resolved.host(),
+      resolved.path());
+
+    auto uri = jsoncons::uri{"/an.external.schema.json"};
+    fmt::print(
+      "\nuri '{}', host '{}', path '{}', fragment '{}'\n",
+      uri.string(),
+      uri.host(),
+      uri.path(),
+      uri.fragment());
+
+    auto path = jsoncons::jsonpointer::json_pointer{uri.path()};
+    fmt::print(
+      "\n adjusted '{}'\n",
+      jsoncons::uri{"https", "", *(--path.end()), "", "", "", ""}.string());
+
+    auto an_external_schema_json = pps::canonical_schema_definition{
+      R"(
+{
+  // note: no explicit $id, will disambiguate with the external ref name
+  "type": "object",
+  "properties": {
+    "local_ref": { "$ref": "#/$defs/a_property" },
+    "bundled_ref": { "$ref": "https://example.com/schemas/abool" },
+    "external_ref": { "$ref": "another.external.schema.json" }
+  },
+  "$defs": {
+    "a_property": {
+      // this has the same json pointer as the root schema but does not clash with it
+      "type": "string"
+    },
+    "this_is_a_bundled_schema": {
+      "$id": "https://example.com/schemas/abool",
+      "type": "boolean"
+    }
+  }
+}
+)",
+      pps::schema_type::json,
+      {{"another.external.schema.json",
+        external_subject,
+        pps::schema_version{1}}}};
+
+    fmt::print("--line{}\n", __LINE__);
+    auto another_external_schema_json = pps::canonical_schema_definition{
+      R"(
+{
+  // no explicit $id
+  "type": "array"
+}
+)",
+      pps::schema_type::json};
+
+    fmt::print("--line{}\n", __LINE__);
+    auto equivalent_schema = pps::canonical_schema_definition{
+      R"(
+{
+  "type": "object",
+  "properties": {
+    "local_ref": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "bundled_ref": { 
+      "type": "number",
+      "exclusiveMaximum": 0
+    },
+    "external_ref": {
+      "type": "object",
+      "properties": {
+        "local_ref": {
+          "type": "string"
+        },
+        "bundled_ref": {
+          "type": "boolean"
+        },
+        "external_ref": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}
+)",
+      pps::schema_type::json};
+
+    fmt::print("--line{}\n", __LINE__);
+    auto f = store_fixture{};
+    auto& store = f.store;
+
+    auto first_ref = pps::canonical_schema{
+      external_subject, another_external_schema_json.share()};
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt,
+          std::nullopt,
+          pps::schema_version{1},
+          pps::seq_marker_key_type::schema},
+        first_ref.share(),
+        pps::schema_id{1},
+        pps::schema_version{1},
+        pps::is_deleted::no)
+      .get();
+    fmt::print("--line{}\n", __LINE__);
+    auto second_ref = pps::canonical_schema{
+      external_subject, an_external_schema_json.share()};
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt,
+          std::nullopt,
+          pps::schema_version{2},
+          pps::seq_marker_key_type::schema},
+        second_ref.share(),
+        pps::schema_id{2},
+        pps::schema_version{2},
+        pps::is_deleted::no)
+      .get();
+    fmt::print("--line{}\n", __LINE__);
+
+    auto root_def = pps::canonical_schema{input_subject, input_schema.share()};
+    auto json_schema_def
+      = pps::make_json_schema_definition(store, root_def.share()).get();
+
+    fmt::print("--line{}\n", __LINE__);
+    BOOST_REQUIRE(
+      pps::check_compatible(json_schema_def, json_schema_def, pps::verbose::no)
+        .is_compat);
+    auto equivalent_def = pps::canonical_schema{
+      input_subject, equivalent_schema.share()};
+    auto equivalent_schema_def
+      = pps::make_json_schema_definition(store, equivalent_def.share()).get();
+
+    fmt::print("--line{}\n", __LINE__);
+    auto res = pps::check_compatible(
+      json_schema_def, equivalent_schema_def, pps::verbose::yes);
+    BOOST_REQUIRE_MESSAGE(
+      res.is_compat, fmt::format("{}", fmt::join(res.messages, ", ")));
+    fmt::print("--line{}\n", __LINE__);
+}
+
+BOOST_AUTO_TEST_CASE(test_jsoncons_uri_external_refs) {
+    constexpr static auto external_names = std::to_array<std::string_view>(
+      {"simplename",
+       " space\tcase ",
+       "dot.case",
+       "snake_case",
+       "kebab-case",
+       "CamelCase",
+       "slash/case",
+       "/startingwithslash",
+       "/startingwithslash/andmore",
+       // R"(percent%case)",     // check that this is not supported by
+       // confluent
+       "question?mark?case"});
+
+    auto candidates = [](std::string_view path) {
+        auto jp = jsoncons::jsonpointer::json_pointer{path};
+        auto res = std::vector<std::string>{};
+        for (auto it = jp.begin(); it != jp.end(); ++it) {
+            res.push_back(fmt::format("{}", fmt::join(it, jp.end(), "/")));
+        }
+        return res;
+    };
+
+    for (auto en : external_names) {
+        auto uri = jsoncons::uri{
+          "https", "", "schema-registry.com", "", en, "", ""};
+        BOOST_TEST_CONTEXT(fmt::format(
+          "en: '{}', uri '{}', host '{}', path '{}', fragment '{}'",
+          en,
+          uri.string(),
+          uri.host(),
+          uri.path(),
+          uri.fragment())) {
+            if (!en.starts_with('/')) {
+                // en is not an external reference name, really can't be
+                BOOST_CHECK_EQUAL(uri.host(), "schema-registry.com");
+                BOOST_CHECK_EQUAL(uri.path().substr(1), en);
+            }
+
+            for (auto f : external_names) {
+                if (f.starts_with('/')) {
+                    // f is not an external reference name, really can't be
+                    continue;
+                }
+                auto new_uri = jsoncons::uri{std::string{f}}.resolve(uri);
+                BOOST_TEST_CONTEXT(fmt::format(
+                  "f '{}', new uri '{}', host '{}', path '{}', fragment '{}', "
+                  "candidates '{}'",
+                  f,
+                  new_uri.string(),
+                  new_uri.host(),
+                  new_uri.path(),
+                  new_uri.fragment(),
+                  fmt::join(candidates(new_uri.path()), ", "))) {
+                    BOOST_CHECK_EQUAL(new_uri.host(), "schema-registry.com");
+                    BOOST_CHECK_MESSAGE(
+                      std::ranges::any_of(
+                        candidates(new_uri.path()),
+                        [&](std::string_view in) { return in == f; }),
+                      f);
+                }
+            }
+        }
     }
 }
