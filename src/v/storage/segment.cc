@@ -823,18 +823,11 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              resources,
              feature_table,
              ntp_sanitizer_config)
-      .then([path,
-             pc,
-             segment_size_hint,
-             &resources,
-             ntp_sanitizer_config](ss::lw_shared_ptr<segment> seg) mutable {
+      .then([path, pc, segment_size_hint, &resources, ntp_sanitizer_config](
+              ss::lw_shared_ptr<segment> seg) mutable {
           return with_segment(
             std::move(seg),
-            [path,
-             pc,
-             segment_size_hint,
-             &resources,
-             ntp_sanitizer_config](
+            [path, pc, segment_size_hint, &resources, ntp_sanitizer_config](
               const ss::lw_shared_ptr<segment>& seg) mutable {
                 return internal::make_segment_appender(
                          path,

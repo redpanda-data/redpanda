@@ -371,11 +371,7 @@ ss::future<storage::index_state> do_copy_segment_data(
     auto tmpname = seg->reader().path().to_staging();
 
     auto appender = co_await make_segment_appender(
-      tmpname,
-      std::nullopt,
-      cfg.iopc,
-      resources,
-      cfg.sanitizer_config);
+      tmpname, std::nullopt, cfg.iopc, resources, cfg.sanitizer_config);
 
     vlog(
       gclog.trace,
