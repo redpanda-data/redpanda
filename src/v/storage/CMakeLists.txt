@@ -42,7 +42,6 @@ v_cc_library(
     api.cc
     node.cc
     key_offset_map.cc
-    chunk_cache.cc
   DEPS
     Seastar::seastar
     v::bytes
