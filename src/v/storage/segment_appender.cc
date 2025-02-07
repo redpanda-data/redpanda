@@ -15,7 +15,6 @@
 #include "config/configuration.h"
 #include "reflection/adl.h"
 #include "ssx/semaphore.h"
-#include "storage/chunk_cache.h"
 #include "storage/logger.h"
 #include "storage/record_batch_utils.h"
 #include "storage/storage_resources.h"
@@ -61,12 +60,12 @@ segment_appender::segment_appender(ss::file f, options opts)
   , _concurrent_flushes(ss::semaphore::max_counter(), "s/append-flush")
   , _prev_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
   , _inactive_timer([this] { handle_inactive_timer(); })
-  , _chunk_size(internal::chunks().chunk_size()) {
+  , _chunk_size(config::shard_local_cfg().append_chunk_size()) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
-      internal::chunk_cache::alignment % alignment == 0,
+      _chunk_alignment % alignment == 0,
       "unexpected alignment {} % {} != 0",
-      internal::chunk_cache::alignment,
+      _chunk_alignment,
       alignment);
 }
 
@@ -81,9 +80,7 @@ segment_appender::~segment_appender() noexcept {
       _flush_ops.empty(),
       "Active flush operations on appender destroy {}",
       *this);
-    if (_head) {
-        internal::chunks().add(std::exchange(_head, nullptr));
-    }
+    _head = nullptr;
 }
 
 segment_appender::segment_appender(segment_appender&& o) noexcept
@@ -107,6 +104,11 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(o._chunk_size) {
     o._closed = true;
+}
+
+ss::lw_shared_ptr<segment_appender_chunk> segment_appender::alloc_chunk() {
+    return ss::make_lw_shared<segment_appender_chunk>(
+      _chunk_size, _chunk_alignment);
 }
 
 ss::future<> segment_appender::append(const model::record_batch& batch) {
@@ -154,7 +156,7 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
          * idle and its chunk was reclaimed into the chunk cache.
          */
         if (unlikely(!_head && _committed_offset > 0)) {
-            _head = co_await internal::chunks().get();
+            _head = alloc_chunk();
             co_await hydrate_last_half_page();
             continue;
         }
@@ -181,7 +183,7 @@ ss::future<> segment_appender::do_append(const char* buf, size_t n) {
         auto units = co_await ss::get_units(_concurrent_flushes, 1);
         units.return_all();
 
-        auto chunk = co_await internal::chunks().get();
+        auto chunk = alloc_chunk();
         vassert(!_head, "cannot overwrite existing chunk");
         _head = std::move(chunk);
 
@@ -216,7 +218,7 @@ void segment_appender::handle_inactive_timer() {
      */
     if (_concurrent_flushes.try_wait(ss::semaphore::max_counter())) {
         if (_head && !_head->bytes_pending()) {
-            internal::chunks().add(std::exchange(_head, nullptr));
+            _head = nullptr;
             vlog(
               stlog.debug, "reclaiming inactive chunk from appender {}", *this);
         }
@@ -304,20 +306,15 @@ ss::future<> segment_appender::truncate(size_t n) {
           _fallocation_offset = n;
           _flushed_offset = n;
           _stable_offset = n;
-          auto f = ss::now();
           if (_head) {
               // NOTE: Important to reset chunks for offset accounting.  reset
               // any partial state, since after the truncate, it makes no sense
               // to keep any old state/pointers/sizes, etc
               _head->reset();
           } else {
-              // https://github.com/redpanda-data/redpanda/issues/43
-              f = internal::chunks().get().then(
-                [this](ss::lw_shared_ptr<chunk> chunk) {
-                    _head = std::move(chunk);
-                });
+              _head = alloc_chunk();
           }
-          return f.then([this] { return hydrate_last_half_page(); });
+          return hydrate_last_half_page();
       });
 }
 
@@ -575,16 +572,6 @@ void segment_appender::dispatch_background_head_write() {
                     _opts.priority)
 #pragma clang diagnostic pop
                   .then([this, w](size_t got) {
-                      /*
-                       * the continuation that captured full=true is the end
-                       * of the dependency chain for this chunk. it can be
-                       * returned to cache.
-                       */
-                      if (w->full) {
-                          w->chunk->reset();
-                          internal::chunks().add(w->chunk);
-                      }
-
                       // release our reference to the chunk since this
                       // structure might hang around for a while in the
                       // _inflight list but we can free this chunk to re-use

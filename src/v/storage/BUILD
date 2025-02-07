@@ -247,6 +247,7 @@ redpanda_cc_library(
     ],
     hdrs = [
         "segment_appender.h",
+        "segment_appender_chunk.h",
     ],
     implementation_deps = [
         ":logger",
@@ -256,15 +257,16 @@ redpanda_cc_library(
     ],
     include_prefix = "storage",
     deps = [
-        ":chunk_cache",
         ":config",
         ":record_batch_utils",
         ":resources",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/container:fragmented_vector",
+        "//src/v/container:intrusive",
         "//src/v/model",
         "//src/v/ssx:semaphore",
+        "//src/v/utils:named_type",
         "@seastar",
     ],
 )

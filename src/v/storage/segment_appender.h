@@ -135,6 +135,8 @@ public:
         return _opts.priority;
     }
 
+    size_t chunk_size() const { return _chunk_size; }
+
 private:
     using chunk_ptr = ss::lw_shared_ptr<chunk>;
 
@@ -293,7 +295,9 @@ private:
 
     ss::timer<ss::lowres_clock> _inactive_timer;
     void handle_inactive_timer();
+    ss::lw_shared_ptr<segment_appender_chunk> alloc_chunk();
 
+    static constexpr const alignment _chunk_alignment{4_KiB};
     size_t _chunk_size{0};
 
     // Bit-map tracking the types of batches in the `_head` chunk that have
