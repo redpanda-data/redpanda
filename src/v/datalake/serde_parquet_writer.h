@@ -12,10 +12,18 @@ public:
     ss::future<writer_error>
       add_data_struct(iceberg::struct_value, size_t) final;
 
+    size_t buffered_bytes() const final;
+
+    size_t flushed_bytes() const final;
+
+    ss::future<> flush() final;
+
     ss::future<writer_error> finish() final;
 
 private:
     serde::parquet::writer _writer;
+    size_t _buffered_bytes{0};
+    size_t _flushed_bytes{0};
 };
 
 class serde_parquet_writer_factory : public parquet_ostream_factory {

@@ -39,6 +39,14 @@ public:
         return ss::make_ready_future<writer_error>(status);
     }
 
+    size_t buffered_bytes() const override { return 0; }
+
+    size_t flushed_bytes() const override { return 0; }
+
+    ss::future<writer_error> flush() override {
+        return ss::make_ready_future<writer_error>(writer_error::ok);
+    }
+
     ss::future<result<local_file_metadata, writer_error>> finish() override {
         return ss::make_ready_future<result<local_file_metadata, writer_error>>(
           _result);
@@ -78,6 +86,14 @@ public:
           std::move(data), sz);
         _result.row_count++;
         co_return write_result;
+    }
+
+    size_t buffered_bytes() const override { return _writer->buffered_bytes(); }
+
+    size_t flushed_bytes() const override { return _writer->flushed_bytes(); }
+
+    ss::future<writer_error> flush() override {
+        return ss::make_ready_future<writer_error>(writer_error::ok);
     }
 
     ss::future<result<local_file_metadata, writer_error>> finish() override {

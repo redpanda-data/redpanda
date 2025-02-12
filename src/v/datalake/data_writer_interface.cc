@@ -22,6 +22,8 @@ std::string data_writer_error_category::message(int ev) const {
         return "File IO Error";
     case writer_error::no_data:
         return "No data";
+    case writer_error::flush_error:
+        return "Flush failed";
     }
 }
 

@@ -32,6 +32,12 @@ public:
     ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) final;
 
+    size_t buffered_bytes() const final;
+
+    size_t flushed_bytes() const final;
+
+    ss::future<writer_error> flush() final;
+
     ss::future<result<local_file_metadata, writer_error>> finish() final;
 
 private:

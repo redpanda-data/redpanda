@@ -19,7 +19,9 @@ serde_parquet_writer::add_data_struct(iceberg::struct_value value, size_t) {
     auto group = std::get<serde::parquet::group_value>(
       std::move(conversion_result.value()));
     try {
-        co_await _writer.write_row(std::move(group));
+        auto stats = co_await _writer.write_row(std::move(group));
+        _buffered_bytes = stats.buffered_size;
+        _flushed_bytes = stats.flushed_size;
     } catch (...) {
         vlog(
           datalake_log.warn,
@@ -30,8 +32,23 @@ serde_parquet_writer::add_data_struct(iceberg::struct_value value, size_t) {
     co_return writer_error::ok;
 }
 
+size_t serde_parquet_writer::buffered_bytes() const { return _buffered_bytes; }
+size_t serde_parquet_writer::flushed_bytes() const { return _flushed_bytes; }
+
+ss::future<> serde_parquet_writer::flush() {
+    co_await _writer.flush_row_group();
+    auto stats = _writer.stats();
+    _buffered_bytes = stats.buffered_size;
+    _flushed_bytes = stats.flushed_size;
+    vassert(
+      _buffered_bytes == 0,
+      "Memory buffered in the writer after flush: {}",
+      _buffered_bytes);
+}
+
 ss::future<writer_error> serde_parquet_writer::finish() {
     co_await _writer.close();
+    _buffered_bytes = _flushed_bytes = 0;
     co_return writer_error::ok;
 }
 

@@ -25,6 +25,7 @@ enum class writer_error {
     parquet_conversion_error,
     file_io_error,
     no_data,
+    flush_error,
 };
 
 struct data_writer_error_category : std::error_category {
@@ -95,6 +96,20 @@ public:
     virtual ss::future<writer_error>
       add_data_struct(iceberg::struct_value, size_t) = 0;
 
+    /**
+     * Returns the total bytes buffered in the writer pending flush.
+     */
+    virtual size_t buffered_bytes() const = 0;
+    /**
+     * Returns the total bytes flushed to the ostream.
+     */
+    virtual size_t flushed_bytes() const = 0;
+    /**
+     * Forces a flush of bytes to ostream. Guarantees that all the buffered
+     * memory is released.
+     */
+    virtual ss::future<> flush() = 0;
+
     virtual ss::future<writer_error> finish() = 0;
 };
 
@@ -132,6 +147,17 @@ public:
     virtual ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
+
+    /**
+     * Returns the total bytes buffered in the writer pending flush.
+     */
+    virtual size_t buffered_bytes() const = 0;
+    /**
+     * Returns the total bytes flushed to the ostream.
+     */
+    virtual size_t flushed_bytes() const = 0;
+
+    virtual ss::future<writer_error> flush() = 0;
 
     virtual ss::future<result<local_file_metadata, writer_error>> finish() = 0;
 };

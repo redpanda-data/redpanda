@@ -83,6 +83,27 @@ ss::future<writer_error> local_parquet_file_writer::add_data_struct(
     co_return writer_error::ok;
 }
 
+size_t local_parquet_file_writer::buffered_bytes() const {
+    return _writer->buffered_bytes();
+}
+
+size_t local_parquet_file_writer::flushed_bytes() const {
+    return _writer->flushed_bytes();
+}
+
+ss::future<writer_error> local_parquet_file_writer::flush() {
+    if (!_initialized) {
+        co_return writer_error::flush_error;
+    }
+    auto result = co_await ss::coroutine::as_future(_writer->flush());
+    if (result.failed()) {
+        auto ex = result.get_exception();
+        vlog(datalake_log.warn, "Error flushing {}: {}", _output_file_path, ex);
+        co_return writer_error::flush_error;
+    }
+    co_return writer_error::ok;
+}
+
 ss::future<result<local_file_metadata, writer_error>>
 local_parquet_file_writer::finish() {
     if (!_initialized) {

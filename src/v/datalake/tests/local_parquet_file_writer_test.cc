@@ -37,6 +37,10 @@ struct test_writer : datalake::parquet_ostream {
         co_return datalake::writer_error::ok;
     };
 
+    size_t buffered_bytes() const final { return 0; };
+    size_t flushed_bytes() const final { return 0; }
+    ss::future<> flush() final { return ss::make_ready_future<>(); }
+
     ss::future<datalake::writer_error> finish() final {
         if (error_on_finish_) {
             co_return datalake::writer_error::file_io_error;
