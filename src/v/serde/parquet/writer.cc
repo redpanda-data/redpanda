@@ -66,17 +66,22 @@ public:
         co_await write_iobuf(iobuf::from("PAR1"));
     }
 
-    ss::future<> write_row(group_value row) {
+    ss::future<file_stats> write_row(group_value row) {
         co_await shred_record(
           _opts.schema, std::move(row), [this](shredded_value sv) {
               return write_value(std::move(sv));
           });
+        file_stats stats;
+        stats.buffered_size = 0;
         for (auto& [_, col] : _columns) {
             int64_t usage = col.writer.current_page_memory_usage();
             if (usage > _opts.page_buffer_size) {
                 co_await col.writer.next_page();
             }
+            stats.buffered_size += col.writer.current_page_memory_usage();
         }
+        stats.flushed_size = _flushed_bytes;
+        co_return stats;
     }
 
     file_stats stats() const {
@@ -218,7 +223,7 @@ writer::~writer() noexcept = default;
 
 ss::future<> writer::init() { return _impl->init(); }
 
-ss::future<> writer::write_row(group_value row) {
+ss::future<file_stats> writer::write_row(group_value row) {
     return _impl->write_row(std::move(row));
 }
 

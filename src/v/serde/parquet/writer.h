@@ -74,7 +74,7 @@ public:
     //
     // This method may not be called concurrently with other methods on this
     // class.
-    ss::future<> write_row(group_value);
+    ss::future<file_stats> write_row(group_value);
 
     // The current stats on the file being written.
     //
