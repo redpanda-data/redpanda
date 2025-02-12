@@ -21,9 +21,11 @@ namespace datalake {
 
 local_parquet_file_writer::local_parquet_file_writer(
   local_path output_file_path,
-  ss::shared_ptr<parquet_ostream_factory> writer_factory)
+  ss::shared_ptr<parquet_ostream_factory> writer_factory,
+  writer_mem_tracker& mem_tracker)
   : _output_file_path(std::move(output_file_path))
-  , _writer_factory(std::move(writer_factory)) {}
+  , _writer_factory(std::move(writer_factory))
+  , _mem_tracker(mem_tracker) {}
 
 ss::future<checked<std::nullopt_t, writer_error>>
 local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
@@ -56,17 +58,18 @@ local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
     }
 
     _writer = co_await _writer_factory->create_writer(
-      schema, std::move(fut.get()));
+      schema, std::move(fut.get()), _mem_tracker);
     _initialized = true;
     co_return std::nullopt;
 }
 
 ss::future<writer_error> local_parquet_file_writer::add_data_struct(
-  iceberg::struct_value data, int64_t sz) {
+  iceberg::struct_value data, int64_t sz, ss::abort_source& as) {
     if (!_initialized) {
         co_return writer_error::file_io_error;
     }
-    auto write_result = co_await _writer->add_data_struct(std::move(data), sz);
+    auto write_result = co_await _writer->add_data_struct(
+      std::move(data), sz, as);
     if (write_result != writer_error::ok) {
         vlog(
           datalake_log.warn,
@@ -154,16 +157,18 @@ local_path local_parquet_file_writer_factory::create_filename() const {
 local_parquet_file_writer_factory::local_parquet_file_writer_factory(
   local_path base_directory,
   ss::sstring file_name_prefix,
-  ss::shared_ptr<parquet_ostream_factory> writer_factory)
+  ss::shared_ptr<parquet_ostream_factory> writer_factory,
+  std::unique_ptr<writer_mem_tracker> mem_tracker)
   : _base_directory(std::move(base_directory))
   , _file_name_prefix(std::move(file_name_prefix))
-  , _writer_factory(std::move(writer_factory)) {}
+  , _writer_factory(std::move(writer_factory))
+  , _mem_tracker(std::move(mem_tracker)) {}
 
 ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
 local_parquet_file_writer_factory::create_writer(
   const iceberg::struct_type& schema) {
     auto writer = std::make_unique<local_parquet_file_writer>(
-      create_filename(), _writer_factory);
+      create_filename(), _writer_factory, *_mem_tracker);
 
     auto res = co_await writer->initialize(schema);
     if (res.has_error()) {

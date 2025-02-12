@@ -62,6 +62,8 @@ chunked_vector<struct_value> generate_values(
     return vals;
 }
 
+ss::abort_source as;
+
 } // namespace
 
 class PartitioningWriterExtraColumnsTest
@@ -88,7 +90,7 @@ TEST_P(PartitioningWriterExtraColumnsTest, TestSchemaHappyPath) {
 
     // Give the data to the partitioning writer.
     for (auto& v : source_vals) {
-        auto err = writer.add_data(std::move(v), /*approx_size=*/0).get();
+        auto err = writer.add_data(std::move(v), /*approx_size=*/0, as).get();
         EXPECT_EQ(err, writer_error::ok);
     }
 
@@ -131,7 +133,8 @@ TEST(PartitioningWriterTest, TestWriterError) {
     auto err = writer
                  .add_data(
                    val_with_timestamp(field, model::timestamp::now()),
-                   /*approx_size=*/0)
+                   /*approx_size=*/0,
+                   as)
                  .get();
     EXPECT_EQ(err, writer_error::parquet_conversion_error);
 }
@@ -149,7 +152,8 @@ TEST(PartitioningWriterTest, TestUnexpectedSchema) {
                  .add_data(
                    val_with_timestamp(
                      unexpected_field_type, model::timestamp::now()),
-                   /*approx_size=*/0)
+                   /*approx_size=*/0,
+                   as)
                  .get();
     EXPECT_EQ(err, writer_error::parquet_conversion_error);
 }
@@ -170,7 +174,7 @@ TEST(PartitioningWriterTest, TestEmptyKey) {
 
     // Give the data to the partitioning writer.
     for (auto& v : source_vals) {
-        auto err = writer.add_data(std::move(v), /*approx_size=*/0).get();
+        auto err = writer.add_data(std::move(v), /*approx_size=*/0, as).get();
         EXPECT_EQ(err, writer_error::ok);
     }
 
@@ -233,7 +237,7 @@ TEST(PartitioningWriterTest, TestCompositeKey) {
 
     // Give the data to the partitioning writer.
     for (auto& v : source_vals) {
-        auto err = writer.add_data(std::move(v), /*approx_size=*/0).get();
+        auto err = writer.add_data(std::move(v), /*approx_size=*/0, as).get();
         EXPECT_EQ(err, writer_error::ok);
     }
 

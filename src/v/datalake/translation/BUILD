@@ -109,6 +109,7 @@ redpanda_cc_library(
     deps = [
         ":model",
         ":stm",
+        ":translator_deps",
         ":utils",
         "//src/v/base",
         "//src/v/cluster",

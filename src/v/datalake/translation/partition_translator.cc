@@ -22,6 +22,7 @@
 #include "datalake/record_translator.h"
 #include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
+#include "datalake/translation/deps.h"
 #include "datalake/translation/state_machine.h"
 #include "datalake/translation_task.h"
 #include "kafka/utils/txn_reader.h"
@@ -283,7 +284,8 @@ partition_translator::do_translation_for_range(
     auto writer_factory = std::make_unique<local_parquet_file_writer_factory>(
       local_path{_writer_scratch_space},    // storage temp files are written to
       fmt::format("{}", read_begin_offset), // file prefix
-      ss::make_shared<serde_parquet_writer_factory>());
+      ss::make_shared<serde_parquet_writer_factory>(),
+      std::make_unique<noop_mem_tracker>());
 
     auto task = translation_task{
       **_cloud_io,

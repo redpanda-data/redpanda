@@ -139,7 +139,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
     auto writer_factory = std::make_unique<local_parquet_file_writer_factory>(
       datalake::local_path(tmp_dir.get_path()),
       "data",
-      ss::make_shared<datalake::serde_parquet_writer_factory>());
+      ss::make_shared<datalake::serde_parquet_writer_factory>(),
+      std::make_unique<noop_mem_tracker>());
 
     datalake::record_multiplexer multiplexer(
       ntp,
@@ -263,7 +264,8 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
     auto writer_factory = std::make_unique<local_parquet_file_writer_factory>(
       datalake::local_path(tmp_dir.get_path()),
       "data",
-      ss::make_shared<datalake::serde_parquet_writer_factory>());
+      ss::make_shared<datalake::serde_parquet_writer_factory>(),
+      std::make_unique<noop_mem_tracker>());
     record_multiplexer mux(
       ntp,
       rev,

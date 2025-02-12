@@ -41,8 +41,8 @@ ss::future<> partitioning_writer::flush() {
     });
 }
 
-ss::future<writer_error>
-partitioning_writer::add_data(iceberg::struct_value val, int64_t approx_size) {
+ss::future<writer_error> partitioning_writer::add_data(
+  iceberg::struct_value val, int64_t approx_size, ss::abort_source& as) {
     iceberg::partition_key pk;
     try {
         pk = iceberg::partition_key::create(val, accessors_, spec_);
@@ -70,7 +70,7 @@ partitioning_writer::add_data(iceberg::struct_value val, int64_t approx_size) {
     }
     auto& writer = writer_iter->second;
     auto write_res = co_await writer->add_data_struct(
-      std::move(val), approx_size);
+      std::move(val), approx_size, as);
     if (write_res != writer_error::ok) {
         vlog(datalake_log.error, "Failed to add data: {}", write_res);
         co_return write_res;

@@ -89,6 +89,10 @@ private:
 
     std::optional<writer_error> _error;
     std::optional<write_result> _result;
+
+    // a temporary unused abort_source, will be removed in the subsequent
+    // commits.
+    ss::abort_source _noop_as;
 };
 
 } // namespace datalake

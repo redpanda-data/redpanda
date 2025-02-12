@@ -21,6 +21,14 @@
 #include <cstdint>
 #include <memory>
 namespace datalake {
+class noop_mem_tracker : public writer_mem_tracker {
+public:
+    ss::future<> maybe_reserve_memory(size_t, ss::abort_source&) override {
+        return ss::make_ready_future<>();
+    }
+    void update_current_memory_usage(size_t) override {}
+    void release() override {}
+};
 
 class test_data_writer : public parquet_file_writer {
 public:
@@ -31,7 +39,9 @@ public:
       , _return_error{return_error} {}
 
     ss::future<writer_error> add_data_struct(
-      iceberg::struct_value /* data */, int64_t /* approx_size */) override {
+      iceberg::struct_value /* data */,
+      int64_t /* approx_size */,
+      ss::abort_source&) override {
         _result.row_count++;
         writer_error status = _return_error
                                 ? writer_error::parquet_conversion_error
@@ -80,10 +90,10 @@ public:
       : _writer(std::move(writer))
       , _result{} {}
 
-    ss::future<writer_error>
-    add_data_struct(iceberg::struct_value data, int64_t sz) override {
+    ss::future<writer_error> add_data_struct(
+      iceberg::struct_value data, int64_t sz, ss::abort_source& as) override {
         auto write_result = co_await _writer->add_data_struct(
-          std::move(data), sz);
+          std::move(data), sz, as);
         _result.row_count++;
         co_return write_result;
     }
@@ -114,7 +124,7 @@ public:
     ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
     create_writer(const iceberg::struct_type& schema) override {
         auto ostream_writer = co_await _serde_parquet_factory.create_writer(
-          schema, utils::make_null_output_stream());
+          schema, utils::make_null_output_stream(), _mem_tracker);
 
         co_return std::make_unique<test_serde_parquet_data_writer>(
           std::move(ostream_writer));
@@ -122,6 +132,7 @@ public:
 
 private:
     serde_parquet_writer_factory _serde_parquet_factory;
+    noop_mem_tracker _mem_tracker;
 };
 
 } // namespace datalake

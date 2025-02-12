@@ -16,8 +16,8 @@
 #include "datalake/location.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
-#include "datalake/serde_parquet_writer.h"
 #include "datalake/table_creator.h"
+#include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation_task.h"
 #include "iceberg/uri.h"
@@ -90,7 +90,8 @@ public:
         return std::make_unique<datalake::local_parquet_file_writer_factory>(
           datalake::local_path(tmp_dir.get_path()),
           "test-prefix",
-          ss::make_shared<datalake::serde_parquet_writer_factory>());
+          ss::make_shared<datalake::serde_parquet_writer_factory>(),
+          std::make_unique<datalake::noop_mem_tracker>());
     }
 
     lazy_abort_source& never_abort() {

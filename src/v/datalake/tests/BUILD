@@ -361,6 +361,7 @@ redpanda_cc_gtest(
         "local_parquet_file_writer_test.cc",
     ],
     deps = [
+        ":test_data_writer",
         "//src/v/datalake:local_parquet_file_writer",
         "//src/v/datalake/tests:test_data",
         "//src/v/iceberg:datatypes",
@@ -380,6 +381,7 @@ redpanda_cc_gtest(
         "serde_parquet_writer_test.cc",
     ],
     deps = [
+        ":test_data_writer",
         "//src/v/bytes:iostream",
         "//src/v/datalake:serde_parquet_writer",
         "//src/v/datalake/tests:test_data",

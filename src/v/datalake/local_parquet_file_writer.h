@@ -24,13 +24,15 @@ namespace datalake {
 class local_parquet_file_writer : public parquet_file_writer {
 public:
     local_parquet_file_writer(
-      local_path, ss::shared_ptr<parquet_ostream_factory>);
+      local_path, ss::shared_ptr<parquet_ostream_factory>, writer_mem_tracker&);
 
     ss::future<checked<std::nullopt_t, writer_error>>
     initialize(const iceberg::struct_type&);
 
     ss::future<writer_error> add_data_struct(
-      iceberg::struct_value /* data */, int64_t /* approx_size */) final;
+      iceberg::struct_value /* data */,
+      int64_t /* approx_size */,
+      ss::abort_source&) final;
 
     size_t buffered_bytes() const final;
 
@@ -50,6 +52,7 @@ private:
 
     std::unique_ptr<parquet_ostream> _writer;
     ss::shared_ptr<parquet_ostream_factory> _writer_factory;
+    writer_mem_tracker& _mem_tracker;
     bool _initialized{false};
 };
 
@@ -58,7 +61,8 @@ public:
     local_parquet_file_writer_factory(
       local_path base_directory,
       ss::sstring file_name_prefix,
-      ss::shared_ptr<parquet_ostream_factory>);
+      ss::shared_ptr<parquet_ostream_factory>,
+      std::unique_ptr<writer_mem_tracker>);
 
     ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
     create_writer(const iceberg::struct_type& schema) final;
@@ -69,6 +73,7 @@ private:
     local_path _base_directory;
     ss::sstring _file_name_prefix;
     ss::shared_ptr<parquet_ostream_factory> _writer_factory;
+    std::unique_ptr<writer_mem_tracker> _mem_tracker;
 };
 
 } // namespace datalake
