@@ -40,7 +40,7 @@ const model::ntp
   ntp(model::ns{"rp"}, model::topic{"t"}, model::partition_id{0});
 const model::revision_id rev{123};
 default_translator translator;
-lazy_abort_source as([] { return std::nullopt; });
+ss::abort_source as;
 } // namespace
 
 TEST(DatalakeMultiplexerTest, TestMultiplexer) {
@@ -60,8 +60,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
       model::iceberg_invalid_record_action::dlq_table,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
-        cloud_storage_clients::bucket_name{"bucket"}),
-      as);
+        cloud_storage_clients::bucket_name{"bucket"}));
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -76,8 +75,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
             std::move(batches));
       });
 
-    auto result
-      = reader.consume(std::move(multiplexer), model::no_timeout).get();
+    multiplexer.multiplex(std::move(reader), model::no_timeout, as).get();
+    auto result = std::move(multiplexer).finish().get();
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().data_files.size(), 1);
@@ -106,8 +105,7 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
       model::iceberg_invalid_record_action::dlq_table,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
-        cloud_storage_clients::bucket_name{"bucket"}),
-      as);
+        cloud_storage_clients::bucket_name{"bucket"}));
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -120,7 +118,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
           return ss::make_ready_future<model::record_batch_reader::data_t>(
             std::move(batches));
       });
-    auto res = reader.consume(std::move(multiplexer), model::no_timeout).get();
+    multiplexer.multiplex(std::move(reader), model::no_timeout, as).get();
+    auto res = std::move(multiplexer).finish().get();
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error(), datalake::writer_error::parquet_conversion_error);
 }
@@ -153,8 +152,7 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
       model::iceberg_invalid_record_action::dlq_table,
       location_provider(
         cloud_io::s3_compat_provider{"s3"},
-        cloud_storage_clients::bucket_name{"bucket"}),
-      as);
+        cloud_storage_clients::bucket_name{"bucket"}));
 
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
@@ -169,8 +167,8 @@ TEST(DatalakeMultiplexerTest, WritesDataFiles) {
             std::move(batches));
       });
 
-    auto result
-      = reader.consume(std::move(multiplexer), model::no_timeout).get();
+    multiplexer.multiplex(std::move(reader), model::no_timeout, as).get();
+    auto result = std::move(multiplexer).finish().get();
 
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().data_files.size(), 1);
@@ -275,9 +273,9 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
       translator,
       t_creator,
       model::iceberg_invalid_record_action::dlq_table,
-      location_provider(scoped_remote->remote.local().provider(), bucket_name),
-      as);
-    auto res = reader.consume(std::move(mux), model::no_timeout).get();
+      location_provider(scoped_remote->remote.local().provider(), bucket_name));
+    mux.multiplex(std::move(reader), model::no_timeout, as).get();
+    auto res = std::move(mux).finish().get();
     ASSERT_FALSE(res.has_error()) << res.error();
     EXPECT_EQ(res.value().start_offset(), start_offset());
 

@@ -249,12 +249,13 @@ share_batches(chunked_vector<model::record_batch>& batches) {
 struct counting_consumer {
     size_t total_bytes = 0;
     datalake::record_multiplexer mux;
+    ss::abort_source& as;
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
         total_bytes += batch.size_bytes();
-        return mux(std::move(batch));
+        return mux.do_multiplex(std::move(batch), as);
     }
     ss::future<counting_consumer> end_of_stream() {
-        auto res = co_await mux.end_of_stream();
+        auto res = co_await std::move(mux).finish();
         if (res.has_error()) [[unlikely]] {
             throw std::runtime_error(
               fmt::format("failed to end stream: {}", res.error()));
@@ -273,8 +274,7 @@ public:
       , _schema_mgr(catalog)
       , _type_resolver(registry, _schema_cache)
       , _record_gen(&registry)
-      , _table_creator(_type_resolver, _schema_mgr)
-      , _as([] { return std::nullopt; }) {}
+      , _table_creator(_type_resolver, _schema_mgr) {}
 
     template<typename T>
     requires std::same_as<T, ::testing::protobuf_generator_config>
@@ -301,7 +301,7 @@ public:
     ss::future<size_t> run_bench() {
         auto reader = model::make_fragmented_memory_record_batch_reader(
           share_batches(_batch_data));
-        auto consumer = counting_consumer{.mux = create_mux()};
+        auto consumer = counting_consumer{.mux = create_mux(), .as = _as};
 
         perf_tests::start_measuring_time();
         auto res = co_await reader.consume(
@@ -320,7 +320,7 @@ private:
     datalake::default_translator _translator;
     datalake::direct_table_creator _table_creator;
     chunked_vector<model::record_batch> _batch_data;
-    lazy_abort_source _as;
+    ss::abort_source _as;
 
     const model::ntp ntp{
       model::ns{"rp"}, model::topic{"t"}, model::partition_id{0}};
@@ -337,8 +337,7 @@ private:
           _table_creator,
           model::iceberg_invalid_record_action::dlq_table,
           datalake::location_provider(
-            scoped_remote->remote.local().provider(), bucket_name),
-          _as);
+            scoped_remote->remote.local().provider(), bucket_name));
     }
 
     ss::future<>

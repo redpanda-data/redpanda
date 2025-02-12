@@ -26,6 +26,26 @@
 
 namespace datalake {
 
+namespace {
+template<typename Func>
+requires requires(Func f, model::record_batch batch) {
+    { f(std::move(batch)) } -> std::same_as<ss::future<ss::stop_iteration>>;
+}
+class relaying_consumer {
+public:
+    explicit relaying_consumer(Func f)
+      : _func(std::move(f)) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+        return _func(std::move(b));
+    }
+    void end_of_stream() {}
+
+private:
+    Func _func;
+};
+} // namespace
+
 record_multiplexer::record_multiplexer(
   const model::ntp& ntp,
   model::revision_id topic_revision,
@@ -35,8 +55,7 @@ record_multiplexer::record_multiplexer(
   record_translator& record_translator,
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
-  location_provider location_provider,
-  lazy_abort_source& as)
+  location_provider location_provider)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
   , _topic_revision(topic_revision)
@@ -46,31 +65,29 @@ record_multiplexer::record_multiplexer(
   , _record_translator(record_translator)
   , _table_creator(table_creator)
   , _invalid_record_action(invalid_record_action)
-  , _location_provider(std::move(location_provider))
-  , _as(as) {}
+  , _location_provider(std::move(location_provider)) {}
 
-ss::future<ss::stop_iteration>
-record_multiplexer::operator()(model::record_batch batch) {
-    if (_as.abort_requested()) {
-        vlog(
-          _log.debug,
-          "Abort requested, stopping translation, reason: {}",
-          _as.abort_reason());
-        co_return ss::stop_iteration::yes;
-    }
+ss::future<> record_multiplexer::multiplex(
+  model::record_batch_reader reader,
+  model::timeout_clock::time_point deadline,
+  ss::abort_source& as) {
+    co_await std::move(reader).consume(
+      relaying_consumer{[this, &as](model::record_batch b) mutable {
+          return do_multiplex(std::move(b), as);
+      }},
+      deadline);
+}
+
+ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
+  model::record_batch batch, ss::abort_source& as) {
     if (batch.compressed()) {
         batch = co_await storage::internal::decompress_batch(std::move(batch));
     }
     auto first_timestamp = batch.header().first_timestamp.value();
-
     auto it = model::record_batch_iterator::create(batch);
-
     while (it.has_next()) {
-        if (_as.abort_requested()) {
-            vlog(
-              _log.debug,
-              "Abort requested, stopping translation, reason: {}",
-              _as.abort_reason());
+        if (as.abort_requested()) {
+            vlog(_log.debug, "Abort requested, stopping translation");
             co_return ss::stop_iteration::yes;
         }
         auto record = it.next();
@@ -101,7 +118,8 @@ record_multiplexer::operator()(model::record_batch batch) {
                   record.share_key(),
                   record.share_value(),
                   timestamp,
-                  std::move(header_kvs));
+                  std::move(header_kvs),
+                  as);
                 if (invalid_res.has_error()) {
                     _error = invalid_res.error();
                     co_return ss::stop_iteration::yes;
@@ -132,7 +150,8 @@ record_multiplexer::operator()(model::record_batch batch) {
                   record.share_key(),
                   record.share_value(),
                   timestamp,
-                  std::move(header_kvs));
+                  std::move(header_kvs),
+                  as);
                 if (invalid_res.has_error()) {
                     _error = invalid_res.error();
                     co_return ss::stop_iteration::yes;
@@ -155,7 +174,8 @@ record_multiplexer::operator()(model::record_batch batch) {
                       record.share_key(),
                       record.share_value(),
                       timestamp,
-                      std::move(header_kvs));
+                      std::move(header_kvs),
+                      as);
                     if (invalid_res.has_error()) {
                         _error = invalid_res.error();
                         co_return ss::stop_iteration::yes;
@@ -242,7 +262,7 @@ record_multiplexer::operator()(model::record_batch batch) {
 
         auto& writer = writer_iter->second;
         auto write_result = co_await writer->add_data(
-          std::move(record_data_res.value()), estimated_size, _noop_as);
+          std::move(record_data_res.value()), estimated_size, as);
 
         if (write_result != writer_error::ok) {
             vlog(
@@ -259,8 +279,22 @@ record_multiplexer::operator()(model::record_batch batch) {
     co_return ss::stop_iteration::no;
 }
 
+ss::future<writer_error> record_multiplexer::flush_writers() {
+    if (_error) {
+        co_return *_error;
+    }
+    auto result = co_await ss::coroutine::as_future(ss::max_concurrent_for_each(
+      _writers, 10, [](auto& entry) { return entry.second->flush(); }));
+    if (result.failed()) {
+        vlog(_log.warn, "Error flushing writers: {}", result.get_exception());
+        _error = writer_error::flush_error;
+        co_return _error.value();
+    }
+    co_return writer_error::ok;
+}
+
 ss::future<result<record_multiplexer::write_result, writer_error>>
-record_multiplexer::end_of_stream() {
+record_multiplexer::finish() && {
     if (_error) {
         co_return *_error;
     }
@@ -304,8 +338,8 @@ record_multiplexer::handle_invalid_record(
   std::optional<iobuf> key,
   std::optional<iobuf> val,
   model::timestamp ts,
-  chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>
-    headers) {
+  chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>> headers,
+  ss::abort_source& as) {
     // TODO: add a metric!
     switch (_invalid_record_action) {
     case model::iceberg_invalid_record_action::drop:
@@ -427,7 +461,7 @@ record_multiplexer::handle_invalid_record(
         _result.value().last_offset = offset;
 
         auto add_data_err = co_await _invalid_record_writer->add_data(
-          std::move(record_data_res.value()), estimated_size, _noop_as);
+          std::move(record_data_res.value()), estimated_size, as);
 
         if (add_data_err != writer_error::ok) {
             vlog(

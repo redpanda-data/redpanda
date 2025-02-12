@@ -16,7 +16,7 @@
 #include "datalake/partitioning_writer.h"
 #include "datalake/schema_identifier.h"
 #include "model/record.h"
-#include "utils/lazy_abort_source.h"
+#include "model/record_batch_reader.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/future.hh>
@@ -53,11 +53,36 @@ public:
       record_translator& record_translator,
       table_creator&,
       model::iceberg_invalid_record_action,
-      location_provider,
-      lazy_abort_source& as);
+      location_provider);
 
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-    ss::future<result<write_result, writer_error>> end_of_stream();
+    /**
+     * Multiplex the data from a reader into writers per schema and partition.
+     * Can be called multiple times in succession before calling finish().
+     */
+    ss::future<> multiplex(
+      model::record_batch_reader reader,
+      model::timeout_clock::time_point deadline,
+      ss::abort_source& as);
+
+    /**
+     * Abortable multiplexing on a single batch. Visible for testing.
+     */
+    ss::future<ss::stop_iteration>
+    do_multiplex(model::record_batch batch, ss::abort_source&);
+
+    /**
+     * Forces a flush on all the underlying file writers resulting in freeing
+     * up buffered in flight writes. May not be called in parallel with other
+     * methods.
+     */
+    ss::future<writer_error> flush_writers();
+
+    /**
+     * Cleanup and return the result. Should be the last operation to
+     * be called. May not be called in parallel while multiplexing is in
+     * progress.
+     */
+    ss::future<result<write_result, writer_error>> finish() &&;
 
 private:
     // Handles the given record components of a record that is invalid for the
@@ -68,7 +93,8 @@ private:
       std::optional<iobuf>,
       std::optional<iobuf>,
       model::timestamp,
-      chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>);
+      chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>,
+      ss::abort_source&);
 
     prefix_logger _log;
     const model::ntp& _ntp;
@@ -80,7 +106,6 @@ private:
     table_creator& _table_creator;
     model::iceberg_invalid_record_action _invalid_record_action;
     location_provider _location_provider;
-    lazy_abort_source& _as;
     chunked_hash_map<
       record_schema_components,
       std::unique_ptr<partitioning_writer>>
@@ -89,10 +114,6 @@ private:
 
     std::optional<writer_error> _error;
     std::optional<write_result> _result;
-
-    // a temporary unused abort_source, will be removed in the subsequent
-    // commits.
-    ss::abort_source _noop_as;
 };
 
 } // namespace datalake

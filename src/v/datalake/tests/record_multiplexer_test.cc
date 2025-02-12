@@ -100,8 +100,7 @@ public:
     RecordMultiplexerTestBase()
       : schema_mgr(catalog)
       , type_resolver(registry)
-      , t_creator(type_resolver, schema_mgr)
-      , as([] { return std::nullopt; }) {}
+      , t_creator(type_resolver, schema_mgr) {}
 
     // Runs the multiplexer on records generated with cb() based on the test
     // parameters.
@@ -143,9 +142,9 @@ public:
           t_creator,
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
-            scoped_remote->remote.local().provider(), bucket_name),
-          as);
-        auto res = reader.consume(std::move(mux), model::no_timeout).get();
+            scoped_remote->remote.local().provider(), bucket_name));
+        mux.multiplex(std::move(reader), model::no_timeout, as).get();
+        auto res = std::move(mux).finish().get();
         if (expect_error) {
             EXPECT_TRUE(res.has_error());
         } else {
@@ -194,7 +193,7 @@ public:
     catalog_schema_manager schema_mgr;
     record_schema_resolver type_resolver;
     direct_table_creator t_creator;
-    lazy_abort_source as;
+    ss::abort_source as;
 
     static constexpr records_param default_param = {
       .records_per_batch = 1,
