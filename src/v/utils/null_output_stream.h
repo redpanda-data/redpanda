@@ -9,8 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
+
 #include "base/seastarx.h"
-#include "base/units.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/util/later.hh>
@@ -19,25 +20,13 @@ namespace utils {
 // Data sink for noop output_stream instance
 // needed to implement scanning
 struct null_data_sink final : ss::data_sink_impl {
-    ss::future<> put(ss::net::packet data) final { return put(data.release()); }
-    ss::future<> put(std::vector<ss::temporary_buffer<char>> all) final {
-        return ss::do_with(
-          std::move(all), [this](std::vector<ss::temporary_buffer<char>>& all) {
-              return ss::do_for_each(
-                all, [this](ss::temporary_buffer<char>& buf) {
-                    return put(std::move(buf));
-                });
-          });
-    }
-    ss::future<> put(ss::temporary_buffer<char>) final { return ss::now(); }
-    ss::future<> flush() final { return ss::now(); }
-    ss::future<> close() final { return ss::now(); }
+    ss::future<> put(ss::net::packet data) final;
+    ss::future<> put(std::vector<ss::temporary_buffer<char>> all) final;
+    ss::future<> put(ss::temporary_buffer<char>) final;
+    ss::future<> flush() final;
+    ss::future<> close() final;
 };
 
-ss::output_stream<char> make_null_output_stream() {
-    auto ds = ss::data_sink(std::make_unique<null_data_sink>());
-    ss::output_stream<char> ostr(std::move(ds), 4_KiB);
-    return ostr;
-}
+ss::output_stream<char> make_null_output_stream();
 
 } // namespace utils

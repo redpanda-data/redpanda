@@ -680,6 +680,9 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "null_output_stream",
+    srcs = [
+        "null_output_stream.cc",
+    ],
     hdrs = [
         "null_output_stream.h",
     ],

@@ -15,6 +15,7 @@ v_cc_library(
     log_hist.cc
     xid.cc
     external_process.cc
+    null_output_stream.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
