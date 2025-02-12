@@ -299,11 +299,6 @@ partition_translator::do_translation_for_range(
     const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_data_path_prefix, ntp.path(), _term)};
-    lazy_abort_source las{[this] {
-        return can_continue() ? std::nullopt
-                              : std::make_optional("translator stopping");
-    }};
-
     vlog(
       _logger.debug,
       "translating data in kafka range: [{}, {}]",
@@ -338,7 +333,7 @@ partition_translator::do_translation_for_range(
       std::move(kafka_reader),
       remote_path_prefix,
       parent,
-      las);
+      _as);
     if (result.has_error()) {
         vlog(_logger.warn, "Error translating range {}", result.error());
         co_return std::nullopt;

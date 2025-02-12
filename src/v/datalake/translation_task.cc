@@ -197,7 +197,12 @@ translation_task::translate(
   model::record_batch_reader reader,
   const remote_path& remote_path_prefix,
   retry_chain_node& rcn,
-  lazy_abort_source& lazy_as) {
+  ss::abort_source& as) {
+    lazy_abort_source lazy_as{[&as]() {
+        return as.abort_requested()
+                 ? std::make_optional("translation task stop requested")
+                 : std::nullopt;
+    }};
     record_multiplexer mux(
       ntp,
       topic_revision,

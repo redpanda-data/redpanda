@@ -94,12 +94,6 @@ public:
           std::make_unique<datalake::noop_mem_tracker>());
     }
 
-    lazy_abort_source& never_abort() {
-        static thread_local lazy_abort_source noop = {
-          []() { return std::nullopt; }};
-        return noop;
-    }
-
     template<typename R>
     AssertionResult check_object_store_content(R range) {
         auto objects = remote().list_objects(bucket_name, test_rcn).get();
@@ -190,7 +184,7 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
                       test_rcn,
-                      never_abort())
+                      as)
                     .get();
 
     ASSERT_FALSE(result.has_error());
@@ -229,7 +223,7 @@ TEST_F(TranslateTaskTest, TestDataFileMissing) {
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
                       test_rcn,
-                      never_abort())
+                      as)
                     .get();
 
     ASSERT_TRUE(result.has_error());
@@ -263,7 +257,7 @@ TEST_F(TranslateTaskTest, TestUploadError) {
                       make_batches(10, 16),
                       datalake::remote_path("test/location/1"),
                       test_rcn,
-                      never_abort())
+                      as)
                     .get();
 
     ASSERT_TRUE(result.has_error());

@@ -56,7 +56,7 @@ public:
       model::record_batch_reader reader,
       const remote_path& remote_path_prefix,
       retry_chain_node& parent_rcn,
-      lazy_abort_source& lazy_as);
+      ss::abort_source& as);
 
 private:
     friend std::ostream& operator<<(std::ostream&, errc);
