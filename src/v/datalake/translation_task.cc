@@ -172,6 +172,9 @@ upload_files(
 
 } // namespace
 translation_task::translation_task(
+  const model::ntp& ntp,
+  model::revision_id topic_revision,
+  std::unique_ptr<parquet_file_writer_factory> writer_factory,
   cloud_data_io& cloud_io,
   schema_manager& schema_mgr,
   type_resolver& type_resolver,
@@ -185,20 +188,8 @@ translation_task::translation_task(
   , _record_translator(&record_translator)
   , _table_creator(&table_creator)
   , _invalid_record_action(invalid_record_action)
-  , _location_provider(std::move(location_provider)) {}
-
-ss::future<
-  checked<coordinator::translated_offset_range, translation_task::errc>>
-translation_task::translate(
-  const model::ntp& ntp,
-  model::revision_id topic_revision,
-  std::unique_ptr<parquet_file_writer_factory> writer_factory,
-  custom_partitioning_enabled is_custom_partitioning_enabled,
-  model::record_batch_reader reader,
-  const remote_path& remote_path_prefix,
-  retry_chain_node& rcn,
-  ss::abort_source& as) {
-    record_multiplexer mux(
+  , _location_provider(std::move(location_provider))
+  , _multiplexer(
       ntp,
       topic_revision,
       std::move(writer_factory),
@@ -207,13 +198,31 @@ translation_task::translate(
       *_record_translator,
       *_table_creator,
       _invalid_record_action,
-      _location_provider);
-    // Write local files
+      _location_provider) {}
 
-    co_await mux.multiplex(
+ss::future<> translation_task::translate_once(
+  model::record_batch_reader reader, ss::abort_source& as) {
+    return _multiplexer.multiplex(
       std::move(reader), _read_timeout + model::timeout_clock::now(), as);
+}
 
-    auto mux_result = co_await std::move(mux).finish();
+ss::future<checked<void, translation_task::errc>> translation_task::flush() {
+    auto result = co_await _multiplexer.flush_writers();
+    if (result != writer_error::ok) {
+        vlog(datalake_log.debug, "error flushing writers: {}", result);
+        co_return translation_task::errc::flush_error;
+    }
+    co_return outcome::success();
+}
+
+ss::future<
+  checked<coordinator::translated_offset_range, translation_task::errc>>
+translation_task::finish(
+  custom_partitioning_enabled is_custom_partitioning_enabled,
+  const remote_path& remote_path_prefix,
+  retry_chain_node& rcn,
+  ss::abort_source& as) && {
+    auto mux_result = co_await std::move(_multiplexer).finish();
     if (mux_result.has_error()) {
         vlog(
           datalake_log.warn,
@@ -281,6 +290,8 @@ std::ostream& operator<<(std::ostream& o, translation_task::errc ec) {
         return o << "local file IO error";
     case translation_task::errc::cloud_io_error:
         return o << "cloud IO error";
+    case translation_task::errc::flush_error:
+        return o << "writer flush error";
     }
 }
 } // namespace datalake
