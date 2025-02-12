@@ -1,11 +1,12 @@
 v_cc_library(
     NAME datalake_translation
     SRCS
+        deps.cc
         partition_translator.cc
         state_machine.cc
         scheduling_policies.cc
         scheduling.cc
-	utils.cc
+        utils.cc
     DEPS
         v::cluster
         v::datalake_writer

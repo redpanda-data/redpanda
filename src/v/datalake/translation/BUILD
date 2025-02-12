@@ -81,6 +81,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "translator_deps",
+    srcs = [
+        "deps.cc",
+    ],
+    hdrs = [
+        "deps.h",
+    ],
+    include_prefix = "datalake/translation",
+    visibility = [":__subpackages__"],
+    deps = [
+        ":scheduler",
+        "//src/v/datalake:writer",
+    ],
+)
+
+redpanda_cc_library(
     name = "partition_translator",
     srcs = [
         "partition_translator.cc",
