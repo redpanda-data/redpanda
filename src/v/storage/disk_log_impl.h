@@ -267,6 +267,8 @@ public:
     // total number of bytes in all closed segments in the log.
     double dirty_ratio() const;
 
+    bool has_cloud_gc_offset() const { return _cloud_gc_offset.has_value(); }
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
