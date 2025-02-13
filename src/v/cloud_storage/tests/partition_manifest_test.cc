@@ -2682,3 +2682,256 @@ SEASTAR_THREAD_TEST_CASE(
     BOOST_REQUIRE(restored == m);
     BOOST_REQUIRE(m.get_applied_offset() == model::offset{100});
 }
+
+struct manifest_mutator {
+    manifest_mutator()
+      : m(manifest_ntp, model::initial_revision_id(0))
+      , current_offset() {}
+
+    void add_new_segment(std::pair<int, int> params) {
+        auto [num_offsets, num_configs] = params;
+        BOOST_REQUIRE(num_offsets > 0);
+        BOOST_REQUIRE(num_configs >= 0);
+        BOOST_REQUIRE(num_offsets >= num_configs);
+        auto base = model::next_offset(current_offset);
+        auto last = base + model::offset(num_offsets - 1);
+        auto delta_end = current_delta + model::offset_delta(num_configs);
+        segment_meta meta{
+          .is_compacted = false,
+          .size_bytes = (size_t)num_offsets,
+          .base_offset = base,
+          .committed_offset = last,
+          .delta_offset = current_delta,
+          .ntp_revision = model::initial_revision_id{0},
+          .delta_offset_end = current_delta + model::offset_delta(num_configs),
+          .sname_format = segment_name_format::v3,
+        };
+        current_offset = last;
+        current_delta = delta_end;
+        m.add(meta);
+    }
+
+    void spill(model::offset so) {
+        if (so == model::offset{}) {
+            return;
+        }
+        cloud_storage::spillover_manifest tail(
+          manifest_ntp, model::initial_revision_id(0));
+        for (const auto& meta : m) {
+            if (meta.base_offset >= so) {
+                break;
+            }
+            tail.add(meta);
+        }
+        if (tail.empty() || tail.size() == m.size()) {
+            // Spillover manifest can not be empty but
+            // also we're not allowed to spill all segments
+            // from the manifest.
+            return;
+        }
+        const auto first = *tail.begin();
+        const auto sm = tail.make_manifest_metadata();
+        m.spillover(sm);
+        if (m.get_archive_start_offset() == model::offset{}) {
+            m.set_archive_start_offset(first.base_offset, first.delta_offset);
+            m.set_archive_clean_offset(first.base_offset, 0);
+        }
+    }
+
+    void retention(model::offset so) {
+        if (so == model::offset{}) {
+            return;
+        }
+        auto has_archive = m.get_archive_start_offset() != model::offset{};
+        if (has_archive) {
+            vlog(test_log.info, "Triggering archive retention");
+            size_t bytes_removed = 0;
+            model::offset aligned_so;
+            model::offset_delta aligned_delta;
+            for (auto i = m.get_spillover_map().begin();
+                 i != m.get_spillover_map().end();
+                 ++i) {
+                if (i->committed_offset < so) {
+                    bytes_removed += i->size_bytes;
+                    aligned_so = model::next_offset(i->committed_offset);
+                    aligned_delta = i->delta_offset_end;
+                } else {
+                    break;
+                }
+            }
+            if (aligned_so != model::offset{}) {
+                m.set_archive_start_offset(aligned_so, aligned_delta);
+                // GC archive area
+                m.set_archive_clean_offset(aligned_so, bytes_removed);
+            }
+        } else {
+            vlog(test_log.info, "Triggering manifest retention");
+            // apply manifest retention
+            model::offset aligned_so;
+            for (const auto& meta : m) {
+                if (meta.committed_offset < so) {
+                    aligned_so = model::next_offset(meta.committed_offset);
+                } else {
+                    break;
+                }
+            }
+            if (aligned_so != model::offset{}) {
+                m.advance_start_offset(aligned_so);
+            }
+        }
+        // garbage collect manifest
+        // in case of spillover we still need to do GC to
+        // get rid of replaced segments.
+        vlog(test_log.info, "GC");
+        m.delete_replaced_segments();
+        m.truncate();
+    }
+
+    void housekeeping(std::pair<model::offset, model::offset> so) {
+        auto [retention_so, archive_so] = so;
+        retention(retention_so);
+        spill(archive_so);
+    }
+
+    // Check manifest consistency
+    void validate() {
+        // Check that spillover start offset makes sense
+        BOOST_REQUIRE(
+          m.get_archive_start_offset()
+          <= m.get_start_offset().value_or(model::offset{}));
+
+        // Check that offsets are consistent between
+        // spillover and segment storage
+        model::offset expected_next;
+        model::offset_delta expected_delta;
+        for (const auto& spill : m.get_spillover_map()) {
+            if (expected_next != model::offset{}) {
+                BOOST_REQUIRE(spill.base_offset == expected_next);
+                BOOST_REQUIRE(spill.delta_offset == expected_delta);
+            }
+            expected_next = model::next_offset(spill.committed_offset);
+            expected_delta = spill.delta_offset_end;
+        }
+
+        for (const auto& meta : m) {
+            if (expected_next != model::offset{}) {
+                BOOST_REQUIRE(meta.base_offset == expected_next);
+                BOOST_REQUIRE(meta.delta_offset == expected_delta);
+            }
+            expected_next = model::next_offset(meta.committed_offset);
+            expected_delta = meta.delta_offset_end;
+        }
+    }
+
+    partition_manifest m;
+    model::offset current_offset;
+    model::offset_delta current_delta;
+};
+
+enum class fuzzer_commands {
+    add_new_segment,
+    housekeeping,
+};
+
+struct fuzzer {
+    static constexpr int max_segment_offsets = 100;
+    std::vector<fuzzer_commands> commands;
+
+    explicit fuzzer(size_t segments_per_housekeeping) {
+        for (size_t i = 0; i < segments_per_housekeeping; i++) {
+            commands.push_back(fuzzer_commands::add_new_segment);
+        }
+        commands.push_back(fuzzer_commands::housekeeping);
+    }
+
+    fuzzer_commands get_next() const {
+        return random_generators::random_choice(commands);
+    }
+
+    std::pair<int, int> add_new_segment(const manifest_mutator&) const {
+        int num_offsets = random_generators::get_int(1, max_segment_offsets);
+        int num_configs = random_generators::get_int(0, num_offsets);
+        return std::make_pair(num_offsets, num_configs);
+    }
+
+    std::pair<model::offset, model::offset>
+    housekeeping(const manifest_mutator& mr) const {
+        if (mr.m.empty()) {
+            // Special case, no need to run housekeeping
+            return std::make_pair(model::offset{}, model::offset{});
+        }
+        // The retention so should be smaller than archive so
+        auto so = mr.m.full_log_start_offset().value();
+        auto lo = mr.m.get_last_offset();
+        auto retention = random_generators::get_int(so(), lo());
+        auto spillover = random_generators::get_int(retention, lo());
+        return std::make_pair(
+          model::offset(retention), model::offset(spillover));
+    }
+};
+
+void manifest_operations_fuzz(
+  size_t num_segments_per_housekeeping, size_t num_iterations) {
+    manifest_mutator runner;
+
+    fuzzer f(num_segments_per_housekeeping);
+
+    runner.validate();
+    for (int i = 0; i < num_iterations; i++) {
+        switch (f.get_next()) {
+        case fuzzer_commands::add_new_segment:
+            runner.add_new_segment(f.add_new_segment(runner));
+            break;
+        case fuzzer_commands::housekeeping:
+            runner.housekeeping(f.housekeeping(runner));
+            break;
+        }
+        runner.validate();
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_manifest_fuzz) {
+    manifest_operations_fuzz(100, 10000);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_manifest_recycle) {
+    // 1. Add segments to the manifest.
+    // 2. Apply spillover.
+    // 3. Let retention remove everything.
+    // 4. Fill with data again,
+    // 5. Apply spillover.
+    manifest_mutator mr;
+    // 1.
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    BOOST_REQUIRE_EQUAL(mr.m.get_last_offset(), model::offset(499));
+    // 2.
+    mr.spill(model::offset(300));
+    BOOST_REQUIRE_EQUAL(mr.m.get_archive_start_offset(), model::offset(0));
+    BOOST_REQUIRE_EQUAL(mr.m.get_start_offset(), model::offset(300));
+    // 3.1.
+    // This should only remove
+    mr.retention(model::offset(500));
+    // This indicates that the archive is removed completely
+    BOOST_REQUIRE_EQUAL(mr.m.get_archive_start_offset(), model::offset());
+    // 3.2.
+    // This should get rid of the data in the manifest
+    mr.retention(model::offset(500));
+    BOOST_REQUIRE_EQUAL(mr.m.get_archive_start_offset(), model::offset());
+    BOOST_REQUIRE_EQUAL(mr.m.get_last_offset(), model::offset(499));
+    BOOST_REQUIRE(mr.m.get_start_offset() == std::nullopt);
+    // 4.
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    mr.add_new_segment(std::make_pair(100, 10));
+    BOOST_REQUIRE_EQUAL(mr.m.get_last_offset(), model::offset(999));
+    // 5.
+    mr.spill(model::offset(800));
+    BOOST_REQUIRE_EQUAL(mr.m.get_archive_start_offset(), model::offset(500));
+    BOOST_REQUIRE_EQUAL(mr.m.get_start_offset(), model::offset(800));
+}
