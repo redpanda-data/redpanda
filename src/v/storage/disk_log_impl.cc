@@ -584,7 +584,7 @@ segment_set disk_log_impl::find_sliding_range(
 
 ss::future<bool> disk_log_impl::sliding_window_compact(
   const compaction_config& cfg, std::optional<model::offset> new_start_offset) {
-    vlog(gclog.debug, "[{}] running sliding window compaction", config().ntp());
+    vlog(gclog.info, "[{}] running sliding window compaction", config().ntp());
     auto segs = find_sliding_range(cfg, new_start_offset);
     if (segs.empty()) {
         vlog(
@@ -661,7 +661,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         co_return has_self_compacted;
     }
     vlog(
-      gclog.debug,
+      gclog.info,
       "[{}] window compacting {} segments in interval [{}, {}]",
       config().ntp(),
       segs.size(),
