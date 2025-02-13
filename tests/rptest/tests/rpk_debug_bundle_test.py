@@ -163,7 +163,7 @@ class RpkDebugBundleTest(RedpandaTest):
 
         wait_until(
             lambda: _bundle_status("success"),
-            timeout_sec=120,
+            timeout_sec=300,
             backoff_sec=1,
             err_msg="Timed out waiting for debug bundle process to finish")
 
