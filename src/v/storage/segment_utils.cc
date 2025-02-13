@@ -549,9 +549,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   offset_delta_time apply_offset,
   ss::rwlock::holder read_holder,
   ss::sharded<features::feature_table>& feature_table) {
-    if (cfg.asrc) {
-        cfg.asrc->check();
-    }
+    cfg.maybe_abort_compaction();
 
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
     auto segment_generation = s->get_generation_id();
@@ -568,10 +566,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     auto staging_file = s->reader().path().to_staging();
     auto staging_to_clean = scoped_file_tracker{
       cfg.files_to_cleanup, {staging_file}};
-    // check the abort source after compacting segment index
-    if (cfg.asrc) {
-        cfg.asrc->check();
-    }
+    // check if compaction should be aborted after compacting segment index
+    cfg.maybe_abort_compaction();
     auto idx = co_await do_copy_segment_data(
       s,
       cfg,

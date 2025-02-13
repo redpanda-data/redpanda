@@ -593,9 +593,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     }
     bool has_self_compacted = false;
     for (auto& seg : segs) {
-        if (cfg.asrc) {
-            cfg.asrc->check();
-        }
+        cfg.maybe_abort_compaction();
 
         auto result = co_await storage::internal::self_compact_segment(
           seg,
@@ -688,6 +686,8 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // We failed to index even one segment (the last entry of the segs set).
         // Perform chunked compaction on it.
         needs_chunked_sliding_window_compact = true;
+    } catch (const gc_required_exception&) {
+        throw;
     } catch (...) {
         auto eptr = std::current_exception();
         if (ssx::is_shutdown_exception(eptr)) {
@@ -739,10 +739,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
 
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
     for (auto& seg : segs) {
-        if (cfg.asrc) {
-            cfg.asrc->check();
-        }
-
+        cfg.maybe_abort_compaction();
         // A segment is considered "clean" if it has been fully indexed (all
         // keys are de-duplicated)
         const bool is_finished_window_compaction = true;
@@ -1173,7 +1170,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
     auto new_start_offset = co_await do_gc(cfg.gc);
 
     /*
-     * comapction. could factor out into a public interface like gc/retention if
+     * compaction. could factor out into a public interface like gc/retention if
      * there is a need to run it separately.
      */
     if (config().is_compacted() && !_segs.empty()) {
@@ -1210,6 +1207,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
 ss::future<> disk_log_impl::do_compact(
   compaction_config compact_cfg,
   std::optional<model::offset> new_start_offset) {
+    compact_cfg.disk_log = this;
     if (!config::shard_local_cfg().log_compaction_use_sliding_window()) {
         co_return co_await adjacent_merge_compact(
           compact_cfg, new_start_offset);

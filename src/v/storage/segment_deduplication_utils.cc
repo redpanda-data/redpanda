@@ -109,9 +109,7 @@ ss::future<model::offset> build_offset_map(
     // Build the key offset map by iterating on older and older data.
     auto iter = std::prev(segs.end());
     while (true) {
-        if (cfg.asrc) {
-            cfg.asrc->check();
-        }
+        cfg.maybe_abort_compaction();
         auto seg = *iter;
         if (seg->index().has_clean_compact_timestamp()) {
             // This segment has already been fully deduplicated, so building the

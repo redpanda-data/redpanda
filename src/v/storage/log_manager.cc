@@ -278,16 +278,26 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         // NOTE: housekeeping holds _compaction_housekeeping_gate, that prevents
         // the removal of the parent object. this makes awaiting housekeeping
         // safe against removal of segments from _logs_list
-        co_await current_log.handle->housekeeping(housekeeping_config(
-          collection_threshold,
-          _config.retention_bytes(),
-          current_log.handle->stm_manager()->max_collectible_offset(),
-          current_log.handle->config().tombstone_retention_ms(),
-          _config.compaction_priority,
-          _abort_source,
-          std::move(ntp_sanitizer_cfg),
-          _compaction_hash_key_map.get()));
-        _probe->housekeeping_log_processed();
+        try {
+            co_await current_log.handle->housekeeping(housekeeping_config(
+              collection_threshold,
+              _config.retention_bytes(),
+              current_log.handle->stm_manager()->max_collectible_offset(),
+              current_log.handle->config().tombstone_retention_ms(),
+              _config.compaction_priority,
+              _abort_source,
+              std::move(ntp_sanitizer_cfg),
+              _compaction_hash_key_map.get(),
+              &_disk_space_alert));
+            _probe->housekeeping_log_processed();
+        } catch (const gc_required_exception& e) {
+            vlog(
+              gclog.debug,
+              "Compaction of {} stopped: {}",
+              current_log.handle->config().ntp(),
+              e.what());
+            co_return;
+        }
 
         // bail out of compaction early in order to get back to gc
         if (gc_required()) {
