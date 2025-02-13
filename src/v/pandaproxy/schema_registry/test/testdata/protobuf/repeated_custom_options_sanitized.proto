@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+message MyMessageA {
+  message Inner {
+    repeated int32 many_ints = 1;
+  }
+  repeated .MyMessageA.Inner inner = 1;
+  .MyMessageA.Inner inner2 = 2;
+  int32 myint = 3;
+}
+
+message MyMessageB {
+  option (.my_message_option) = {
+    inner {
+      many_ints: 4
+      many_ints: 5
+      many_ints: 6
+    }
+    inner {
+      many_ints: 1
+      many_ints: 2
+      many_ints: 3
+    }
+    inner2 {
+      many_ints: 1
+      many_ints: 2
+      many_ints: 3
+    }
+    myint: -3
+  };
+}
+
+extend .google.protobuf.MessageOptions {
+  optional .MyMessageA my_message_option = 50009;
+}
+
