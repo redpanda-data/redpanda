@@ -14,6 +14,7 @@
 #include "model/record_batch_types.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
+#include "storage/exceptions.h"
 #include "storage/tests/manual_mixin.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
@@ -225,7 +226,8 @@ public:
     ss::future<bool> do_sliding_window_compact(
       model::offset max_collect_offset,
       std::optional<std::chrono::milliseconds> tombstone_ret_ms,
-      std::optional<size_t> max_keys = std::nullopt) {
+      std::optional<size_t> max_keys = std::nullopt,
+      storage::disk_space_alert* space_alerter = nullptr) {
         // Compact, allowing the map to grow as large as we need.
         ss::abort_source never_abort;
         storage::compaction_config cfg(
@@ -236,10 +238,12 @@ public:
           std::nullopt,
           max_keys,
           nullptr,
-          nullptr);
+          nullptr,
+          space_alerter);
         auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
         // sliding_window_compact takes cfg by const&, so return will be a
         // use-after-free
+        cfg.disk_log = &disk_log;
         co_return co_await disk_log.sliding_window_compact(cfg);
     }
 
@@ -1336,3 +1340,78 @@ INSTANTIATE_TEST_SUITE_P(
   RandomDistributionMultiPass,
   CompactionFixtureTombstonesMultiPassRandomParamTest,
   ::testing::Combine(::testing::Bool(), ::testing::Values(10, 25, 100)));
+
+class CompactionFixtureSpaceAlertTest
+  : public CompactionFixtureTest
+  , public ::testing::WithParamInterface<storage::disk_space_alert> {};
+
+TEST_P(CompactionFixtureSpaceAlertTest, SpaceAlertEarlyAbortsCompaction) {
+    auto num_segments = 10;
+    auto total_records = 100;
+    auto cardinality = total_records;
+    size_t records_per_segment = total_records / num_segments;
+    generate_data(num_segments, cardinality, records_per_segment).get();
+
+    ss::abort_source never_abort;
+    storage::disk_space_alert disk_alert = GetParam();
+
+    if (
+      disk_alert == storage::disk_space_alert::low_space
+      || disk_alert == storage::disk_space_alert::degraded) {
+        ASSERT_THROW(
+          do_sliding_window_compact(
+            log->segments().back()->offsets().get_base_offset(),
+            std::nullopt,
+            std::nullopt,
+            &disk_alert)
+            .get(),
+          gc_required_exception);
+    } else {
+        bool did_compact
+          = do_sliding_window_compact(
+              log->segments().back()->offsets().get_base_offset(),
+              std::nullopt,
+              std::nullopt,
+              &disk_alert)
+              .get();
+        ASSERT_TRUE(did_compact);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  CompactionSpaceAlert,
+  CompactionFixtureSpaceAlertTest,
+  ::testing::Values(
+    storage::disk_space_alert::low_space,
+    storage::disk_space_alert::degraded,
+    storage::disk_space_alert::ok));
+
+class CompactionFixtureEvictionTest : public CompactionFixtureTest {
+public:
+    CompactionFixtureEvictionTest() {
+        // These need to be enabled in order to set the eviction offset
+        test_local_cfg.get("cloud_storage_enabled").set_value(true);
+        test_local_cfg.get("cloud_storage_enable_remote_write").set_value(true);
+    }
+};
+
+TEST_F(CompactionFixtureEvictionTest, EvictionEarlyAbortsCompaction) {
+    auto num_segments = 10;
+    auto total_records = 100;
+    auto cardinality = total_records;
+    size_t records_per_segment = total_records / num_segments;
+    generate_data(num_segments, cardinality, records_per_segment).get();
+
+    ss::abort_source never_abort;
+
+    // Set the eviction offset
+    log->set_cloud_gc_offset(model::offset{123456});
+
+    ASSERT_THROW(
+      do_sliding_window_compact(
+        log->segments().back()->offsets().get_base_offset(),
+        std::nullopt,
+        std::nullopt)
+        .get(),
+      gc_required_exception);
+}
