@@ -39,3 +39,14 @@ public:
 private:
     ss::sstring _msg;
 };
+
+class gc_required_exception : public std::exception {
+public:
+    explicit gc_required_exception(ss::sstring s)
+      : _msg(std::move(s)) {}
+
+    const char* what() const noexcept override { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
