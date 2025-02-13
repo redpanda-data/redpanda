@@ -467,6 +467,11 @@ struct gc_config {
     friend std::ostream& operator<<(std::ostream&, const gc_config&);
 };
 
+// Forward declaration for disk log impl (used in compaction_config)
+// TODO: remove this and put all variables that make up the
+// maybe_abort_compaction() heuristic into a struct.
+class disk_log_impl;
+
 struct compaction_config {
     compaction_config(
       model::offset max_collect_offset,
@@ -476,7 +481,8 @@ struct compaction_config {
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       hash_key_offset_map* key_map = nullptr,
-      scoped_file_tracker::set_t* to_clean = nullptr)
+      scoped_file_tracker::set_t* to_clean = nullptr,
+      disk_space_alert* alert = nullptr)
       : max_collectible_offset(max_collect_offset)
       , tombstone_retention_ms(tombstone_ret_ms)
       , iopc(p)
@@ -484,7 +490,8 @@ struct compaction_config {
       , key_offset_map_max_keys(max_keys)
       , hash_key_map(key_map)
       , files_to_cleanup(to_clean)
-      , asrc(&as) {}
+      , asrc(&as)
+      , disk_alert(alert) {}
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
     // records): that is, only offsets <= this may be compacted.
@@ -520,6 +527,24 @@ struct compaction_config {
     // abort source for compaction task
     ss::abort_source* asrc;
 
+    // Disk space indicator to help decide whether compaction should be aborted
+    // in a degraded or low disk space state to allow for emergency garbage
+    // collection
+    disk_space_alert* disk_alert;
+
+    // Used along with disk_space_alert to provide heuristics about whether
+    // compaction should be aborted early in a disk pressure situation or not.
+    // TODO: remove this and put all variables that make up the heuristic into a
+    // struct.
+    disk_log_impl* disk_log{nullptr};
+
+    // Checks if compaction should be aborted early, due to abort source being
+    // triggered or by a disk space alert.
+    //
+    // Will throw a ss::abort_requested_exception or a
+    // gc_required_exception in the case that compaction should be aborted.
+    void maybe_abort_compaction() const;
+
     friend std::ostream& operator<<(std::ostream&, const compaction_config&);
 };
 
@@ -538,7 +563,8 @@ struct housekeeping_config {
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
-      hash_key_offset_map* key_map = nullptr)
+      hash_key_offset_map* key_map = nullptr,
+      disk_space_alert* alert = nullptr)
       : compact(
           max_collect_offset,
           tombstone_retention_ms,
@@ -546,7 +572,9 @@ struct housekeeping_config {
           as,
           std::move(san_cfg),
           std::nullopt,
-          key_map)
+          key_map,
+          nullptr,
+          alert)
       , gc(upper, max_bytes_in_log) {}
 
     compaction_config compact;

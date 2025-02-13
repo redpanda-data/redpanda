@@ -11,6 +11,8 @@
 
 #include "base/vlog.h"
 #include "storage/compacted_index.h"
+#include "storage/disk_log_impl.h"
+#include "storage/exceptions.h"
 #include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
@@ -242,6 +244,37 @@ operator<<(std::ostream& o, compacted_index::recovery_state state) {
         return o << "index_recovered";
     }
     __builtin_unreachable();
+}
+
+void compaction_config::maybe_abort_compaction() const {
+    // Check the abort_source, this will throw if abort has been requested
+    if (asrc) {
+        asrc->check();
+    }
+
+    if (disk_log) {
+        const auto& log = *disk_log;
+        if (disk_alert) {
+            auto alert = *disk_alert;
+
+            // In a low or degraded disk space situation, bail out of
+            // compaction early to allow gc to quickly reclaim data.
+            if (
+              alert == disk_space_alert::degraded
+              || alert == disk_space_alert::low_space) {
+                throw gc_required_exception(fmt::format(
+                  "Bailing out of compaction due to {} disk state", alert));
+            }
+        }
+
+        // If resource management has set a cloud_gc_offset, bail out of
+        // compaction early to allow prefix truncation to quickly reclaim data.
+        if (log.has_cloud_gc_offset()) {
+            throw gc_required_exception(
+              fmt::format("Bailing out of compaction due to resource "
+                          "management setting cloud_gc_offset"));
+        }
+    }
 }
 
 } // namespace storage
