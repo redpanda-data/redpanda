@@ -21,6 +21,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -130,8 +131,6 @@ public:
                 batches.emplace_back(std::move(batch_builder).build());
             }
         }
-        auto reader = model::make_memory_record_batch_reader(
-          std::move(batches));
         record_multiplexer mux(
           ntp,
           topic_rev,
@@ -143,7 +142,24 @@ public:
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name));
-        mux.multiplex(std::move(reader), model::no_timeout, as).get();
+        // randomly split batches into multiple readers
+        size_t total_batches = batches.size();
+        size_t total_split_batches = 0;
+        while (!batches.empty()) {
+            auto subset_size = random_generators::get_int<size_t>(
+              1, batches.size());
+            ss::circular_buffer<model::record_batch> subset;
+            while (subset.size() != subset_size) {
+                subset.push_back(batches.front().share());
+                batches.pop_front();
+            }
+            total_split_batches += subset.size();
+            auto reader = model::make_memory_record_batch_reader(
+              std::move(subset));
+            mux.multiplex(std::move(reader), model::no_timeout, as).get();
+            mux.flush_writers().get();
+        }
+        EXPECT_EQ(total_batches, total_split_batches);
         auto res = std::move(mux).finish().get();
         if (expect_error) {
             EXPECT_TRUE(res.has_error());

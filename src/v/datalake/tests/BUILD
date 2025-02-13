@@ -267,6 +267,7 @@ redpanda_cc_gtest(
         "//src/v/iceberg:filesystem_catalog",
         "//src/v/model",
         "//src/v/pandaproxy",
+        "//src/v/random:generators",
         "//src/v/schema:registry",
         "//src/v/storage:record_batch_builder",
         "//src/v/test_utils:gtest",

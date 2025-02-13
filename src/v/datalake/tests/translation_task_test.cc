@@ -178,6 +178,8 @@ TEST_F(TranslateTaskTest, TestHappyPathTranslation) {
       model::iceberg_invalid_record_action::dlq_table,
       location_provider);
     task.translate_once(make_batches(10, 16), as).get();
+    auto flush_result = task.flush().get();
+    ASSERT_FALSE(flush_result.has_error());
     task.translate_once(make_batches(10, 16, model::offset{160}), as).get();
     auto result = std::move(task)
                     .finish(
