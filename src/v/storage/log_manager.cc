@@ -290,7 +290,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         _probe->housekeeping_log_processed();
 
         // bail out of compaction early in order to get back to gc
-        if (_gc_triggered) {
+        if (gc_required()) {
             co_return;
         }
     }
@@ -361,9 +361,7 @@ ss::future<> log_manager::housekeeping_loop() {
          * This amount can be estimated using the log::disk_usage(gc_config)
          * interface.
          */
-        if (
-          _gc_triggered || _disk_space_alert == disk_space_alert::degraded
-          || _disk_space_alert == disk_space_alert::low_space) {
+        if (gc_required()) {
             // it is expected that callers set the flag whenever they want the
             // next round of housekeeping to priortize gc.
             _gc_triggered = false;
@@ -893,6 +891,11 @@ void log_manager::update_log_count() {
 
     _resources.update_partition_count(count);
     _probe->set_log_count(count);
+}
+
+bool log_manager::gc_required() const {
+    return _gc_triggered || _disk_space_alert == disk_space_alert::degraded
+           || _disk_space_alert == disk_space_alert::low_space;
 }
 
 } // namespace storage

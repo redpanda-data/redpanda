@@ -286,6 +286,13 @@ private:
 
     void update_log_count();
 
+    /*
+      Returns true if garbage collection is required due to a low or degraded
+      disk space alert, or if it has been periodicially triggered.
+      Returns false if neither condition is met.
+      */
+    bool gc_required() const;
+
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
