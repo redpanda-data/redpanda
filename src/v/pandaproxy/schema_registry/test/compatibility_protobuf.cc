@@ -597,1251 +597,1263 @@ message Bar {
       foobar_proto);
 }
 
-// proto file heavily inspired from
-// https://protobuf.dev/programming-guides/proto2/#customoptions
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_custom_options) {
-    auto schema = R"(import "google/protobuf/descriptor.proto";
-
-extend google.protobuf.FileOptions {
-  optional string my_file_option_b = 50008 [(my_field_option_b) = 5.5, (my_field_option_a) = 4.5];
-  optional string my_file_option_a = 50000;
-  repeated uint32 my_repeated_file_option = 60000;
-}
-extend google.protobuf.MessageOptions {
-  optional int32 my_message_option_b = 50009;
-  optional int32 my_message_option_a = 50001;
-}
-extend google.protobuf.FileOptions {
-  optional string my_file_option_c = 50015;
-}
-extend google.protobuf.FieldOptions {
-  optional float my_field_option_b = 50010;
-  optional float my_field_option_a = 50002;
-}
-extend google.protobuf.OneofOptions {
-  optional int64 my_oneof_option_b = 50011;
-  optional int64 my_oneof_option_a = 50003;
-}
-extend google.protobuf.EnumOptions {
-  optional bool my_enum_option_b = 50012;
-  optional bool my_enum_option_a = 50004;
-}
-extend google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option_b = 50013;
-  optional uint32 my_enum_value_option_a = 50005;
-}
-extend google.protobuf.ServiceOptions {
-  optional MyEnum my_service_option_b = 50014;
-  optional MyEnum my_service_option_a = 50006;
-}
-extend google.protobuf.MethodOptions {
-  optional MyMessage my_method_option_b = 50015;
-  optional MyMessage my_method_option_a = 50007;
-}
-
-option (my_repeated_file_option) = 2;
-option (my_file_option_b) = "Some other string";
-option (my_repeated_file_option) = 1;
-option (my_repeated_file_option) = 3;
-option (my_file_option_a) = "Hello world!";
-
-message MyMessage {
-  option (my_message_option_b) = 2345;
-  option (my_message_option_a) = 1234;
-
-  optional int32 foo = 1 [(my_field_option_b) = 5.5, (my_field_option_a) = 4.5];
-  optional string bar = 2;
-  oneof qux {
-    option (my_oneof_option_b) = 43;
-    option (my_oneof_option_a) = 42;
-
-    string quux = 3;
-  }
-}
-
-enum MyEnum {
-  option (my_enum_option_b) = false;
-  option (my_enum_option_a) = true;
-
-  FOO = 1 [(my_enum_value_option_b) = 432, (my_enum_value_option_a) = 321];
-  BAR = 2;
-}
-
-message RequestType {}
-message ResponseType {}
-
-service MyService {
-  option (my_service_option_b) = BAR;
-  option (my_service_option_a) = FOO;
-
-  rpc MyMethod(RequestType) returns(ResponseType) {
-    // Note:  my_method_option_a has type MyMessage.  We can set each field
-    //   within it using a separate "option" line.
-    option (my_method_option_b).bar = "Some other string";
-    option (my_method_option_b).foo = 678;
-    option (my_method_option_a).foo = 567;
-    option (my_method_option_a).bar = "Some string";
-  }
-}
-)";
-
-    auto sanitized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-option (my_repeated_file_option) = 2;
-option (my_file_option_b) = "Some other string";
-option (my_repeated_file_option) = 1;
-option (my_repeated_file_option) = 3;
-option (my_file_option_a) = "Hello world!";
-
-message MyMessage {
-  option (my_message_option_b) = 2345;
-  option (my_message_option_a) = 1234;
-  optional int32 foo = 1 [
-    (my_field_option_b) = 5.5,
-    (my_field_option_a) = 4.5
-  ];
-  optional string bar = 2;
-
-  oneof qux {
-    option (my_oneof_option_b) = 43;
-    option (my_oneof_option_a) = 42;
-    string quux = 3;
-  }
-}
-message RequestType {
-}
-message ResponseType {
-}
-enum MyEnum {
-  option (my_enum_option_b) = false;
-  option (my_enum_option_a) = true;
-  FOO = 1 [(my_enum_value_option_b) = 432, (my_enum_value_option_a) = 321];
-  BAR = 2;
-}
-extend google.protobuf.FileOptions {
-  optional string my_file_option_b = 50008 [
-    (my_field_option_b) = 5.5,
-    (my_field_option_a) = 4.5
-  ];
-  optional string my_file_option_a = 50000;
-  repeated uint32 my_repeated_file_option = 60000;
-}
-extend google.protobuf.MessageOptions {
-  optional int32 my_message_option_b = 50009;
-  optional int32 my_message_option_a = 50001;
-}
-extend google.protobuf.FileOptions {
-  optional string my_file_option_c = 50015;
-}
-extend google.protobuf.FieldOptions {
-  optional float my_field_option_b = 50010;
-  optional float my_field_option_a = 50002;
-}
-extend google.protobuf.OneofOptions {
-  optional int64 my_oneof_option_b = 50011;
-  optional int64 my_oneof_option_a = 50003;
-}
-extend google.protobuf.EnumOptions {
-  optional bool my_enum_option_b = 50012;
-  optional bool my_enum_option_a = 50004;
-}
-extend google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option_b = 50013;
-  optional uint32 my_enum_value_option_a = 50005;
-}
-extend google.protobuf.ServiceOptions {
-  optional MyEnum my_service_option_b = 50014;
-  optional MyEnum my_service_option_a = 50006;
-}
-extend google.protobuf.MethodOptions {
-  optional MyMessage my_method_option_b = 50015;
-  optional MyMessage my_method_option_a = 50007;
-}
-
-service MyService {
-  option (my_service_option_b) = BAR;
-  option (my_service_option_a) = FOO;
-  rpc MyMethod (RequestType) returns (ResponseType) {
-    option (my_method_option_b).bar = "Some other string";
-    option (my_method_option_b).foo = 678;
-    option (my_method_option_a).foo = 567;
-    option (my_method_option_a).bar = "Some string";
-  }
-}
-
-)";
-
-    auto normalized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-option (my_file_option_a) = "Hello world!";
-option (my_file_option_b) = "Some other string";
-option (my_repeated_file_option) = 1;
-option (my_repeated_file_option) = 2;
-option (my_repeated_file_option) = 3;
-
-message MyMessage {
-  option (my_message_option_a) = 1234;
-  option (my_message_option_b) = 2345;
-  optional int32 foo = 1 [
-    (my_field_option_a) = 4.5,
-    (my_field_option_b) = 5.5
-  ];
-  optional string bar = 2;
-
-  oneof qux {
-    option (my_oneof_option_a) = 42;
-    option (my_oneof_option_b) = 43;
-    string quux = 3;
-  }
-}
-message RequestType {
-}
-message ResponseType {
-}
-enum MyEnum {
-  option (my_enum_option_a) = true;
-  option (my_enum_option_b) = false;
-  FOO = 1 [(my_enum_value_option_a) = 321, (my_enum_value_option_b) = 432];
-  BAR = 2;
-}
-extend .google.protobuf.EnumOptions {
-  optional bool my_enum_option_a = 50004;
-  optional bool my_enum_option_b = 50012;
-}
-extend .google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option_a = 50005;
-  optional uint32 my_enum_value_option_b = 50013;
-}
-extend .google.protobuf.FieldOptions {
-  optional float my_field_option_a = 50002;
-  optional float my_field_option_b = 50010;
-}
-extend .google.protobuf.FileOptions {
-  optional string my_file_option_a = 50000;
-  optional string my_file_option_b = 50008 [
-    (my_field_option_a) = 4.5,
-    (my_field_option_b) = 5.5
-  ];
-  optional string my_file_option_c = 50015;
-  repeated uint32 my_repeated_file_option = 60000;
-}
-extend .google.protobuf.MessageOptions {
-  optional int32 my_message_option_a = 50001;
-  optional int32 my_message_option_b = 50009;
-}
-extend .google.protobuf.MethodOptions {
-  optional .MyMessage my_method_option_a = 50007;
-  optional .MyMessage my_method_option_b = 50015;
-}
-extend .google.protobuf.OneofOptions {
-  optional int64 my_oneof_option_a = 50003;
-  optional int64 my_oneof_option_b = 50011;
-}
-extend .google.protobuf.ServiceOptions {
-  optional .MyEnum my_service_option_a = 50006;
-  optional .MyEnum my_service_option_b = 50014;
-}
-
-service MyService {
-  option (my_service_option_a) = FOO;
-  option (my_service_option_b) = BAR;
-  rpc MyMethod (.RequestType) returns (.ResponseType) {
-    option (my_method_option_a).bar = "Some string";
-    option (my_method_option_a).foo = 567;
-    option (my_method_option_b).bar = "Some other string";
-    option (my_method_option_b).foo = 678;
-  }
-}
-
-)";
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      sanitized);
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_nested_custom_options) {
-    auto schema = R"(import "google/protobuf/descriptor.proto";
-
-extend google.protobuf.MessageOptions {
-  optional int32 my_message_option = 50001;
-}
-extend google.protobuf.FieldOptions {
-  optional float my_field_option = 50002;
-}
-extend google.protobuf.EnumOptions {
-  optional bool my_enum_option = 50004;
-}
-extend google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option = 50005;
-}
-
-message MyMessage {
-  option (my_message_option) = 1234;
-
-  optional int32 foo = 1 [(my_field_option) = 4.5];
-  optional NestedMessage nested_msg = 2;
-  optional NestedEnum nested_enum = 3;
-
-  enum NestedEnum {
-    option (my_enum_option) = true;
-
-    FOO = 1 [(my_enum_value_option) = 432];
-    BAR = 2;
-  }
-  message NestedMessage {
-    option (my_message_option) = 2345;
-
-    optional int32 foo = 1 [(my_field_option) = 6.5];
-    optional string bar = 2;
-  }
-}
-
-)";
-
-    auto sanitized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-message MyMessage {
-  option (my_message_option) = 1234;
-  optional int32 foo = 1 [(my_field_option) = 4.5];
-  optional NestedMessage nested_msg = 2;
-  optional NestedEnum nested_enum = 3;
-
-  message NestedMessage {
-    option (my_message_option) = 2345;
-    optional int32 foo = 1 [(my_field_option) = 6.5];
-    optional string bar = 2;
-  }
-  enum NestedEnum {
-    option (my_enum_option) = true;
-    FOO = 1 [(my_enum_value_option) = 432];
-    BAR = 2;
-  }
-}
-extend google.protobuf.MessageOptions {
-  optional int32 my_message_option = 50001;
-}
-extend google.protobuf.FieldOptions {
-  optional float my_field_option = 50002;
-}
-extend google.protobuf.EnumOptions {
-  optional bool my_enum_option = 50004;
-}
-extend google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option = 50005;
-}
-
-)";
-
-    auto normalized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-message MyMessage {
-  option (my_message_option) = 1234;
-  optional int32 foo = 1 [(my_field_option) = 4.5];
-  optional .MyMessage.NestedMessage nested_msg = 2;
-  optional .MyMessage.NestedEnum nested_enum = 3;
-
-  message NestedMessage {
-    option (my_message_option) = 2345;
-    optional int32 foo = 1 [(my_field_option) = 6.5];
-    optional string bar = 2;
-  }
-  enum NestedEnum {
-    option (my_enum_option) = true;
-    FOO = 1 [(my_enum_value_option) = 432];
-    BAR = 2;
-  }
-}
-extend .google.protobuf.EnumOptions {
-  optional bool my_enum_option = 50004;
-}
-extend .google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option = 50005;
-}
-extend .google.protobuf.FieldOptions {
-  optional float my_field_option = 50002;
-}
-extend .google.protobuf.MessageOptions {
-  optional int32 my_message_option = 50001;
-}
-
-)";
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      sanitized);
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_message_custom_options) {
-    const auto schema = R"(syntax = "proto3";
-
-import "google/protobuf/descriptor.proto";
-
-enum MyEnum {
-  VALUE_0 = 0;
-  VALUE_1 = 1 [(metadata) = {
-    some_bool: true,
-    some_string: "test_string"
-  }];
-}
-
-message Metadata {
-    bool some_bool = 1;
-    string some_string = 2;
-}
-
-extend google.protobuf.EnumValueOptions {
-  Metadata metadata = 50001;
-}
-
-)";
-
-    const auto sanitized = R"(syntax = "proto3";
-
-import "google/protobuf/descriptor.proto";
-
-message Metadata {
-  bool some_bool = 1;
-  string some_string = 2;
-}
-enum MyEnum {
-  VALUE_0 = 0;
-  VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
-  }];
-}
-extend google.protobuf.EnumValueOptions {
-  Metadata metadata = 50001;
-}
-
-)";
-
-    const auto normalized = R"(syntax = "proto3";
-
-import "google/protobuf/descriptor.proto";
-
-message Metadata {
-  bool some_bool = 1;
-  string some_string = 2;
-}
-enum MyEnum {
-  VALUE_0 = 0;
-  VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
-  }];
-}
-extend .google.protobuf.EnumValueOptions {
-  .Metadata metadata = 50001;
-}
-
-)";
-
-    BOOST_REQUIRE_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      sanitized);
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_extension_ranges) {
-    const auto schema = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-message SimpleMessage {
-  optional int32 foo = 1;
-}
-message ExtendableMessage {
-  extensions 1 to 9;
-  extensions 11 to 99 [verification = UNVERIFIED];
-  extensions 111 to 222 [verification = DECLARATION];
-  extensions 333 to 444 [
-    declaration = {
-      number: 334,
-      full_name: ".some_int",
-      type: "int32",
-      repeated: true
-    }
-  ];
-  extensions 555 to 666 [
-    declaration = { full_name: ".some_other_int32", type: "int32", number: 555 },
-    declaration = { full_name: ".some_double", type: "double", number: 556, reserved: true },
-    declaration = { full_name: ".my_message", type: ".SimpleMessage", number: 557, reserved: true, repeated: false }
-  ];
-  extensions 777 [(my_range_option_b) = "some value", (my_range_option_a) = "some other value"];
-}
-extend ExtendableMessage {
-  optional int32 some_int = 3;
-}
-extend google.protobuf.ExtensionRangeOptions {
-  optional string my_range_option_b = 50008;
-  optional string my_range_option_a = 50000;
-}
-
-
-)";
-
-    const auto sanitized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-message SimpleMessage {
-  optional int32 foo = 1;
-}
-message ExtendableMessage {
-  extensions 1 to 9;
-  extensions 11 to 99 [verification = UNVERIFIED];
-  extensions 111 to 222 [verification = DECLARATION];
-  extensions 333 to 444 [declaration = {number : 334 , full_name : ".some_int" , type : "int32" , repeated : true
-  }];
-  extensions 555 to 666 [
-    declaration = {full_name : ".some_other_int32" , type : "int32" , number : 555
-  },
-    declaration = {full_name : ".some_double" , type : "double" , number : 556 , reserved : true
-  },
-    declaration = {full_name : ".my_message" , type : ".SimpleMessage" , number : 557 , reserved : true , repeated : false
-  }
-  ];
-  extensions 777 to 777 [
-    (my_range_option_b) = "some value",
-    (my_range_option_a) = "some other value"
-  ];
-}
-extend ExtendableMessage {
-  optional int32 some_int = 3;
-}
-extend google.protobuf.ExtensionRangeOptions {
-  optional string my_range_option_b = 50008;
-  optional string my_range_option_a = 50000;
-}
-
-)";
-
-    const auto normalized = R"(syntax = "proto2";
-
-import "google/protobuf/descriptor.proto";
-
-message SimpleMessage {
-  optional int32 foo = 1;
-}
-message ExtendableMessage {
-  extensions 1 to 9;
-  extensions 11 to 99 [verification = UNVERIFIED];
-  extensions 111 to 222 [verification = DECLARATION];
-  extensions 333 to 444 [declaration = {
-    full_name: ".some_int",
-    type: "int32",
-    number: 334,
-    repeated: true}];
-  extensions 555 to 666 [
-    declaration = {
-      full_name: ".some_other_int32",
-      type: "int32",
-      number: 555},
-    declaration = {
-      full_name: ".some_double",
-      type: "double",
-      number: 556,
-      reserved: true},
-    declaration = {
-      full_name: ".my_message",
-      type: ".SimpleMessage",
-      number: 557,
-      reserved: true,
-      repeated: false}
-  ];
-  extensions 777 to 777 [
-    (my_range_option_a) = "some other value",
-    (my_range_option_b) = "some value"
-  ];
-}
-extend .ExtendableMessage {
-  optional int32 some_int = 3;
-}
-extend .google.protobuf.ExtensionRangeOptions {
-  optional string my_range_option_a = 50000;
-  optional string my_range_option_b = 50008;
-}
-
-)";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      sanitized);
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax) {
-    BOOST_REQUIRE_EQUAL(
-      sanitize(R"(
-package foo;
-
-import "google/protobuf/timestamp.proto";
-
-message Bar {
-  optional google.protobuf.Timestamp timestamp = 1; //comment
-}
-)"),
-      R"(syntax = "proto2";
-package foo;
-
-import "google/protobuf/timestamp.proto";
-
-message Bar {
-  optional .google.protobuf.Timestamp timestamp = 1;
-}
-)");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_package) {
-    BOOST_REQUIRE_EQUAL(
-      sanitize(R"(syntax = "proto3";
-
-import "google/protobuf/timestamp.proto";
-
-message Bar {
-  google.protobuf.Timestamp timestamp = 1; //comment
-}
-)"),
-      R"(syntax = "proto3";
-
-import "google/protobuf/timestamp.proto";
-message Bar {
-  .google.protobuf.Timestamp timestamp = 1;
-}
-
-)");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax_package) {
-    BOOST_REQUIRE_EQUAL(
-      sanitize(R"(
-
-import "google/protobuf/timestamp.proto";
-
-message Bar {
-  optional google.protobuf.Timestamp timestamp = 1; //comment
-}
-)"),
-      R"(syntax = "proto2";
-
-import "google/protobuf/timestamp.proto";
-message Bar {
-  optional .google.protobuf.Timestamp timestamp = 1;
-}
-
-)");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_imports) {
-    BOOST_REQUIRE_EQUAL(
-      sanitize(R"(syntax = "proto3";
-package foo;
-
-message Bar {
-  int64 val = 1;
-}
-)"),
-      R"(syntax = "proto3";
-
-package foo;
-
-message Bar {
-  int64 val = 1;
-}
-
-)");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_multiple_imports) {
-    BOOST_REQUIRE_EQUAL(
-      sanitize(R"(syntax = "proto3";
-
-package foo;
-
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/any.proto";
-
-
-message Bar {
-  .google.protobuf.Timestamp timestamp = 1;
-  .google.protobuf.Any any = 2;
-}
-
-)"),
-      R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/any.proto";
-
-message Bar {
-  .google.protobuf.Timestamp timestamp = 1;
-  .google.protobuf.Any any = 2;
-}
-)");
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_imports) {
-    auto schema = R"(syntax = "proto3";
-package foo;
-// sanitize should maintain relative ordering of imports per group,
-// normalize should sort them
-import "google/protobuf/timestamp.proto";
-import public "google/protobuf/duration.proto";
-import weak "google/protobuf/any.proto";
-import "google/protobuf/api.proto";
-)";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/api.proto";
-import weak "google/protobuf/any.proto";
-import public "google/protobuf/duration.proto";
-
-)"));
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/api.proto";
-import "google/protobuf/timestamp.proto";
-import weak "google/protobuf/any.proto";
-import public "google/protobuf/duration.proto";
-
-)"));
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_map) {
-    auto schema = R"(syntax = "proto3";
-package foo;
-import "google/protobuf/struct.proto";
-import "google/protobuf/any.proto";
-message Value {
-  google.protobuf.Any any = 1;
-}
-message HasMap {
-  map<string, Value> map_string_value = 1;
-}
-message HasGoogleMap {
-  map<string, google.protobuf.Value> map_string_value = 1;
-}
-)";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/struct.proto";
-import "google/protobuf/any.proto";
-
-message Value {
-  google.protobuf.Any any = 1;
-}
-message HasMap {
-  map<string, foo.Value> map_string_value = 1;
-}
-message HasGoogleMap {
-  map<string, google.protobuf.Value> map_string_value = 1;
-}
-
-)"));
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/any.proto";
-import "google/protobuf/struct.proto";
-
-message Value {
-  .google.protobuf.Any any = 1;
-}
-message HasMap {
-  map<string, foo.Value> map_string_value = 1;
-}
-message HasGoogleMap {
-  map<string, google.protobuf.Value> map_string_value = 1;
-}
-
-)"));
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_legacy_map) {
-    auto schema = R"(syntax = "proto3";
-
-import "google/protobuf/timestamp.proto";
-
-message Value {
-   string string = 1;
-}
-
-message HasMap {
-  repeated PropertiesEntry properties = 1;
-  repeated TimestampsEntry timestamps = 2;
-
-  message PropertiesEntry {
-    option map_entry = true;
-    string key = 1;
-    Value value = 2;
-  }
-  message TimestampsEntry {
-    option map_entry = true;
-    string key = 1;
-    google.protobuf.Timestamp value = 2;
-  }
-}
-)";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      (R"(syntax = "proto3";
-
-import "google/protobuf/timestamp.proto";
-
-message Value {
-  string string = 1;
-}
-message HasMap {
-  map<string, Value> properties = 1;
-  map<string, google.protobuf.Timestamp> timestamps = 2;
-}
-
-)"));
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
-
-import "google/protobuf/timestamp.proto";
-
-message Value {
-  string string = 1;
-}
-message HasMap {
-  map<string, Value> properties = 1;
-  map<string, google.protobuf.Timestamp> timestamps = 2;
-}
-
-)"));
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_group) {
-    auto schema = R"(syntax = "proto2";
-message SearchResponse {
-  repeated group Result = 1 {
-    optional string title = 2;
-    optional string url = 1;
-    repeated string snippets = 3;
-    message SomeMessage {
-      optional string string = 1;
-    }
-    optional SomeMessage msg = 4;
-    repeated group InnerGroup = 5 {
-      optional int32 int32 = 1;
-    }
-    oneof nested_oneof {
-      string name = 6;
-    }
-  }
-})";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      (R"(syntax = "proto2";
-
-message SearchResponse {
-
-  repeated group Result = 1 {
-    optional string title = 2;
-    optional string url = 1;
-    repeated string snippets = 3;
-    optional SomeMessage msg = 4;
-
-    oneof nested_oneof {
-      string name = 6;
-    }
-
-    message SomeMessage {
-      optional string string = 1;
-    }
-    repeated group InnerGroup = 5 {
-      optional int32 int32 = 1;
-    }
-  }
-}
-
-)"));
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto2";
-
-message SearchResponse {
-
-  repeated group Result = 1 {
-    optional string url = 1;
-    optional string title = 2;
-    repeated string snippets = 3;
-    optional .SearchResponse.Result.SomeMessage msg = 4;
-
-    oneof nested_oneof {
-      string name = 6;
-    }
-
-    message SomeMessage {
-      optional string string = 1;
-    }
-    repeated group InnerGroup = 5 {
-      optional int32 int32 = 1;
-    }
-  }
-}
-
-)"));
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_synthetic_oneof) {
-    auto schema = R"(syntax = "proto3";
-package foo;
-message WithSynthetic {
-  optional int32 int32 = 1;
-}
-
-message WithOneOf {
-  oneof some_int {
-    int32 int32 = 1;
-  }
-}
-
-)";
-    auto expected_sanitized = R"(syntax = "proto3";
-package foo;
-
-message WithSynthetic {
-  optional int32 int32 = 1;
-}
-message WithOneOf {
-  oneof some_int {
-    int32 int32 = 1;
-  }
-}
-
-)";
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      expected_sanitized);
-    auto expected_normalized = R"(syntax = "proto3";
-package foo;
-
-message WithSynthetic {
-  optional int32 int32 = 1;
-}
-message WithOneOf {
-  oneof some_int {
-    int32 int32 = 1;
-  }
-}
-
-)";
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), expected_normalized);
-}
-
-SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize) {
-    auto schema = R"(
-syntax = "proto3";
-
-package foo;
-
-option java_package = "com.example.foo";
-option java_outer_classname = "FooService";
-option optimize_for = SPEED;
-option go_package = "foo.example.com/fooservice";
-option cc_enable_arenas = true;
-option objc_class_prefix = "FS";
-option csharp_namespace = "Foo.FooService";
-option php_namespace = "my_php\ns";
-
-
-// public should come last
-import public "google/protobuf/duration.proto";
-// imports should be sorted
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/any.proto";
-import "google/protobuf/descriptor.proto";
-
-// Baz is lexicographically after Bar
-message Baz {
-  .google.protobuf.Any any = 1;
-}
-
-enum Numbers {
-  ZERO=0;
-  MINUS_ONE =-1;
-  MINUS_TWO =-2;
-  TWO = 2;
-  ONE=1;
-  ALIAS = 1 [deprecated = true, debug_redact = false];
-  reserved 6;
-  reserved 3 to 5;
-  reserved "THREE", "FOUR", "FIVE";
-  reserved "SIX";
-
-  option allow_alias = true;
-}
-
-
-/**
- * Bar.timestamp type is not normalized
- * Bar.any should come second
- */
-message Bar {
-  .google.protobuf.Any any = 2;
-  google.protobuf.Timestamp timestamp = 1;
-
-  message NestedMessage {
-    string value = 1;
-  }
-
-  // reserved should be sorted
-  reserved 6;
-  reserved 3 to 5;
-
-  enum NestedEnum {
-    FOO = 0;
-    BAR = 1;
-  }
-
-  oneof string_or_byte {
-    bytes bytes = 21;
-    string string = 20;
-  }
-
-  oneof integral {
-    double double = 7;
-    float float = 8;
-    int32 int32 = 9;
-    int64 int64 = 10;
-    uint32 uint32 = 11;
-    uint64 uint64 = 12;
-    sint32 sint32 = 13;
-    sint64 sint64 = 14;
-    fixed32 fixed32 = 15;
-    fixed64 fixed64 = 16;
-    sfixed32 sfixed32 = 17;
-    sfixed64 sfixed64 = 18;
-    bool bool = 19 [deprecated = false, retention = RETENTION_SOURCE];
-  }
-
-  repeated bool repeated_bool = 22 [packed = true];
-  map<string, string> map_string_string = 23;
-  NestedEnum repeated_nested_enum = 24 [deprecated = false, retention = RETENTION_SOURCE];
-
-  message MessageOptions {
-    option message_set_wire_format = false;
-    option no_standard_descriptor_accessor = true;
-    option deprecated = true;
-  }
-
-}
-service FooService {
-  rpc Foo(Bar) returns (Baz);
-})";
-
-    BOOST_CHECK_EQUAL(
-      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
-      (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/any.proto";
-import "google/protobuf/descriptor.proto";
-import public "google/protobuf/duration.proto";
-
-option java_package = "com.example.foo";
-option java_outer_classname = "FooService";
-option optimize_for = SPEED;
-option go_package = "foo.example.com/fooservice";
-option cc_enable_arenas = true;
-option objc_class_prefix = "FS";
-option csharp_namespace = "Foo.FooService";
-option php_namespace = "my_php\ns";
-
-message Baz {
-  .google.protobuf.Any any = 1;
-}
-message Bar {
-  reserved 6;
-  reserved 3 to 5;
-
-  .google.protobuf.Any any = 2;
-  google.protobuf.Timestamp timestamp = 1;
-  repeated bool repeated_bool = 22 [packed = true];
-  map<string, string> map_string_string = 23;
-  NestedEnum repeated_nested_enum = 24 [
-    deprecated = false,
-    retention = RETENTION_SOURCE
-  ];
-
-  oneof string_or_byte {
-    bytes bytes = 21;
-    string string = 20;
-  }
-  oneof integral {
-    double double = 7;
-    float float = 8;
-    int32 int32 = 9;
-    int64 int64 = 10;
-    uint32 uint32 = 11;
-    uint64 uint64 = 12;
-    sint32 sint32 = 13;
-    sint64 sint64 = 14;
-    fixed32 fixed32 = 15;
-    fixed64 fixed64 = 16;
-    sfixed32 sfixed32 = 17;
-    sfixed64 sfixed64 = 18;
-    bool bool = 19 [
-      deprecated = false,
-      retention = RETENTION_SOURCE
-    ];
-  }
-
-  message NestedMessage {
-    string value = 1;
-  }
-  message MessageOptions {
-    option message_set_wire_format = false;
-    option no_standard_descriptor_accessor = true;
-    option deprecated = true;
-  }
-  enum NestedEnum {
-    FOO = 0;
-    BAR = 1;
-  }
-}
-enum Numbers {
-  reserved 6;
-  reserved 3 to 5;
-  reserved "THREE";
-  reserved "FOUR";
-  reserved "FIVE";
-  reserved "SIX";
-  option allow_alias = true;
-  ZERO = 0;
-  MINUS_ONE = -1;
-  MINUS_TWO = -2;
-  TWO = 2;
-  ONE = 1;
-  ALIAS = 1 [deprecated = true, debug_redact = false];
-}
-
-service FooService {
-  rpc Foo (Bar) returns (Baz);
-}
-
-)"));
-    BOOST_CHECK_EQUAL(
-      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
-package foo;
-
-import "google/protobuf/any.proto";
-import "google/protobuf/descriptor.proto";
-import "google/protobuf/timestamp.proto";
-import public "google/protobuf/duration.proto";
-
-option cc_enable_arenas = true;
-option csharp_namespace = "Foo.FooService";
-option go_package = "foo.example.com/fooservice";
-option java_outer_classname = "FooService";
-option java_package = "com.example.foo";
-option objc_class_prefix = "FS";
-option optimize_for = SPEED;
-option php_namespace = "my_php\ns";
-
-message Baz {
-  .google.protobuf.Any any = 1;
-}
-message Bar {
-  reserved 3 to 5;
-  reserved 6;
-
-  .google.protobuf.Timestamp timestamp = 1;
-  .google.protobuf.Any any = 2;
-  repeated bool repeated_bool = 22 [packed = true];
-  map<string, string> map_string_string = 23;
-  .foo.Bar.NestedEnum repeated_nested_enum = 24 [
-    deprecated = false,
-    retention = RETENTION_SOURCE
-  ];
-
-  oneof integral {
-    double double = 7;
-    float float = 8;
-    int32 int32 = 9;
-    int64 int64 = 10;
-    uint32 uint32 = 11;
-    uint64 uint64 = 12;
-    sint32 sint32 = 13;
-    sint64 sint64 = 14;
-    fixed32 fixed32 = 15;
-    fixed64 fixed64 = 16;
-    sfixed32 sfixed32 = 17;
-    sfixed64 sfixed64 = 18;
-    bool bool = 19 [
-      deprecated = false,
-      retention = RETENTION_SOURCE
-    ];
-  }
-  oneof string_or_byte {
-    string string = 20;
-    bytes bytes = 21;
-  }
-
-  message NestedMessage {
-    string value = 1;
-  }
-  message MessageOptions {
-    option deprecated = true;
-    option message_set_wire_format = false;
-    option no_standard_descriptor_accessor = true;
-  }
-  enum NestedEnum {
-    FOO = 0;
-    BAR = 1;
-  }
-}
-enum Numbers {
-  reserved 3 to 5;
-  reserved 6;
-  reserved "FIVE";
-  reserved "FOUR";
-  reserved "SIX";
-  reserved "THREE";
-  option allow_alias = true;
-  ZERO = 0;
-  ALIAS = 1 [deprecated = true, debug_redact = false];
-  ONE = 1;
-  TWO = 2;
-  MINUS_TWO = -2;
-  MINUS_ONE = -1;
-}
-
-service FooService {
-  rpc Foo (.foo.Bar) returns (.foo.Baz);
-}
-
-)"));
-}
+//// proto file heavily inspired from
+//// https://protobuf.dev/programming-guides/proto2/#customoptions
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_custom_options) {
+//     auto schema = R"(import "google/protobuf/descriptor.proto";
+//
+// extend google.protobuf.FileOptions {
+//   optional string my_file_option_b = 50008 [(my_field_option_b) = 5.5,
+//   (my_field_option_a) = 4.5]; optional string my_file_option_a = 50000;
+//   repeated uint32 my_repeated_file_option = 60000;
+// }
+// extend google.protobuf.MessageOptions {
+//   optional int32 my_message_option_b = 50009;
+//   optional int32 my_message_option_a = 50001;
+// }
+// extend google.protobuf.FileOptions {
+//   optional string my_file_option_c = 50015;
+// }
+// extend google.protobuf.FieldOptions {
+//   optional float my_field_option_b = 50010;
+//   optional float my_field_option_a = 50002;
+// }
+// extend google.protobuf.OneofOptions {
+//   optional int64 my_oneof_option_b = 50011;
+//   optional int64 my_oneof_option_a = 50003;
+// }
+// extend google.protobuf.EnumOptions {
+//   optional bool my_enum_option_b = 50012;
+//   optional bool my_enum_option_a = 50004;
+// }
+// extend google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option_b = 50013;
+//   optional uint32 my_enum_value_option_a = 50005;
+// }
+// extend google.protobuf.ServiceOptions {
+//   optional MyEnum my_service_option_b = 50014;
+//   optional MyEnum my_service_option_a = 50006;
+// }
+// extend google.protobuf.MethodOptions {
+//   optional MyMessage my_method_option_b = 50015;
+//   optional MyMessage my_method_option_a = 50007;
+// }
+//
+// option (my_repeated_file_option) = 2;
+// option (my_file_option_b) = "Some other string";
+// option (my_repeated_file_option) = 1;
+// option (my_repeated_file_option) = 3;
+// option (my_file_option_a) = "Hello world!";
+//
+// message MyMessage {
+//   option (my_message_option_b) = 2345;
+//   option (my_message_option_a) = 1234;
+//
+//   optional int32 foo = 1 [(my_field_option_b) = 5.5, (my_field_option_a)
+//   = 4.5]; optional string bar = 2; oneof qux {
+//     option (my_oneof_option_b) = 43;
+//     option (my_oneof_option_a) = 42;
+//
+//     string quux = 3;
+//   }
+// }
+//
+// enum MyEnum {
+//   option (my_enum_option_b) = false;
+//   option (my_enum_option_a) = true;
+//
+//   FOO = 1 [(my_enum_value_option_b) = 432, (my_enum_value_option_a) = 321];
+//   BAR = 2;
+// }
+//
+// message RequestType {}
+// message ResponseType {}
+//
+// service MyService {
+//   option (my_service_option_b) = BAR;
+//   option (my_service_option_a) = FOO;
+//
+//   rpc MyMethod(RequestType) returns(ResponseType) {
+//     // Note:  my_method_option_a has type MyMessage.  We can set each field
+//     //   within it using a separate "option" line.
+//     option (my_method_option_b).bar = "Some other string";
+//     option (my_method_option_b).foo = 678;
+//     option (my_method_option_a).foo = 567;
+//     option (my_method_option_a).bar = "Some string";
+//   }
+// }
+//)";
+//
+//     auto sanitized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// option (my_repeated_file_option) = 2;
+// option (my_file_option_b) = "Some other string";
+// option (my_repeated_file_option) = 1;
+// option (my_repeated_file_option) = 3;
+// option (my_file_option_a) = "Hello world!";
+//
+// message MyMessage {
+//   option (my_message_option_b) = 2345;
+//   option (my_message_option_a) = 1234;
+//   optional int32 foo = 1 [
+//     (my_field_option_b) = 5.5,
+//     (my_field_option_a) = 4.5
+//   ];
+//   optional string bar = 2;
+//
+//   oneof qux {
+//     option (my_oneof_option_b) = 43;
+//     option (my_oneof_option_a) = 42;
+//     string quux = 3;
+//   }
+// }
+// message RequestType {
+// }
+// message ResponseType {
+// }
+// enum MyEnum {
+//   option (my_enum_option_b) = false;
+//   option (my_enum_option_a) = true;
+//   FOO = 1 [(my_enum_value_option_b) = 432, (my_enum_value_option_a) = 321];
+//   BAR = 2;
+// }
+// extend google.protobuf.FileOptions {
+//   optional string my_file_option_b = 50008 [
+//     (my_field_option_b) = 5.5,
+//     (my_field_option_a) = 4.5
+//   ];
+//   optional string my_file_option_a = 50000;
+//   repeated uint32 my_repeated_file_option = 60000;
+// }
+// extend google.protobuf.MessageOptions {
+//   optional int32 my_message_option_b = 50009;
+//   optional int32 my_message_option_a = 50001;
+// }
+// extend google.protobuf.FileOptions {
+//   optional string my_file_option_c = 50015;
+// }
+// extend google.protobuf.FieldOptions {
+//   optional float my_field_option_b = 50010;
+//   optional float my_field_option_a = 50002;
+// }
+// extend google.protobuf.OneofOptions {
+//   optional int64 my_oneof_option_b = 50011;
+//   optional int64 my_oneof_option_a = 50003;
+// }
+// extend google.protobuf.EnumOptions {
+//   optional bool my_enum_option_b = 50012;
+//   optional bool my_enum_option_a = 50004;
+// }
+// extend google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option_b = 50013;
+//   optional uint32 my_enum_value_option_a = 50005;
+// }
+// extend google.protobuf.ServiceOptions {
+//   optional MyEnum my_service_option_b = 50014;
+//   optional MyEnum my_service_option_a = 50006;
+// }
+// extend google.protobuf.MethodOptions {
+//   optional MyMessage my_method_option_b = 50015;
+//   optional MyMessage my_method_option_a = 50007;
+// }
+//
+// service MyService {
+//   option (my_service_option_b) = BAR;
+//   option (my_service_option_a) = FOO;
+//   rpc MyMethod (RequestType) returns (ResponseType) {
+//     option (my_method_option_b).bar = "Some other string";
+//     option (my_method_option_b).foo = 678;
+//     option (my_method_option_a).foo = 567;
+//     option (my_method_option_a).bar = "Some string";
+//   }
+// }
+//
+//)";
+//
+//     auto normalized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// option (my_file_option_a) = "Hello world!";
+// option (my_file_option_b) = "Some other string";
+// option (my_repeated_file_option) = 1;
+// option (my_repeated_file_option) = 2;
+// option (my_repeated_file_option) = 3;
+//
+// message MyMessage {
+//   option (my_message_option_a) = 1234;
+//   option (my_message_option_b) = 2345;
+//   optional int32 foo = 1 [
+//     (my_field_option_a) = 4.5,
+//     (my_field_option_b) = 5.5
+//   ];
+//   optional string bar = 2;
+//
+//   oneof qux {
+//     option (my_oneof_option_a) = 42;
+//     option (my_oneof_option_b) = 43;
+//     string quux = 3;
+//   }
+// }
+// message RequestType {
+// }
+// message ResponseType {
+// }
+// enum MyEnum {
+//   option (my_enum_option_a) = true;
+//   option (my_enum_option_b) = false;
+//   FOO = 1 [(my_enum_value_option_a) = 321, (my_enum_value_option_b) = 432];
+//   BAR = 2;
+// }
+// extend .google.protobuf.EnumOptions {
+//   optional bool my_enum_option_a = 50004;
+//   optional bool my_enum_option_b = 50012;
+// }
+// extend .google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option_a = 50005;
+//   optional uint32 my_enum_value_option_b = 50013;
+// }
+// extend .google.protobuf.FieldOptions {
+//   optional float my_field_option_a = 50002;
+//   optional float my_field_option_b = 50010;
+// }
+// extend .google.protobuf.FileOptions {
+//   optional string my_file_option_a = 50000;
+//   optional string my_file_option_b = 50008 [
+//     (my_field_option_a) = 4.5,
+//     (my_field_option_b) = 5.5
+//   ];
+//   optional string my_file_option_c = 50015;
+//   repeated uint32 my_repeated_file_option = 60000;
+// }
+// extend .google.protobuf.MessageOptions {
+//   optional int32 my_message_option_a = 50001;
+//   optional int32 my_message_option_b = 50009;
+// }
+// extend .google.protobuf.MethodOptions {
+//   optional .MyMessage my_method_option_a = 50007;
+//   optional .MyMessage my_method_option_b = 50015;
+// }
+// extend .google.protobuf.OneofOptions {
+//   optional int64 my_oneof_option_a = 50003;
+//   optional int64 my_oneof_option_b = 50011;
+// }
+// extend .google.protobuf.ServiceOptions {
+//   optional .MyEnum my_service_option_a = 50006;
+//   optional .MyEnum my_service_option_b = 50014;
+// }
+//
+// service MyService {
+//   option (my_service_option_a) = FOO;
+//   option (my_service_option_b) = BAR;
+//   rpc MyMethod (.RequestType) returns (.ResponseType) {
+//     option (my_method_option_a).bar = "Some string";
+//     option (my_method_option_a).foo = 567;
+//     option (my_method_option_b).bar = "Some other string";
+//     option (my_method_option_b).foo = 678;
+//   }
+// }
+//
+//)";
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       sanitized);
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_nested_custom_options) {
+//     auto schema = R"(import "google/protobuf/descriptor.proto";
+//
+// extend google.protobuf.MessageOptions {
+//   optional int32 my_message_option = 50001;
+// }
+// extend google.protobuf.FieldOptions {
+//   optional float my_field_option = 50002;
+// }
+// extend google.protobuf.EnumOptions {
+//   optional bool my_enum_option = 50004;
+// }
+// extend google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option = 50005;
+// }
+//
+// message MyMessage {
+//   option (my_message_option) = 1234;
+//
+//   optional int32 foo = 1 [(my_field_option) = 4.5];
+//   optional NestedMessage nested_msg = 2;
+//   optional NestedEnum nested_enum = 3;
+//
+//   enum NestedEnum {
+//     option (my_enum_option) = true;
+//
+//     FOO = 1 [(my_enum_value_option) = 432];
+//     BAR = 2;
+//   }
+//   message NestedMessage {
+//     option (my_message_option) = 2345;
+//
+//     optional int32 foo = 1 [(my_field_option) = 6.5];
+//     optional string bar = 2;
+//   }
+// }
+//
+//)";
+//
+//     auto sanitized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message MyMessage {
+//   option (my_message_option) = 1234;
+//   optional int32 foo = 1 [(my_field_option) = 4.5];
+//   optional NestedMessage nested_msg = 2;
+//   optional NestedEnum nested_enum = 3;
+//
+//   message NestedMessage {
+//     option (my_message_option) = 2345;
+//     optional int32 foo = 1 [(my_field_option) = 6.5];
+//     optional string bar = 2;
+//   }
+//   enum NestedEnum {
+//     option (my_enum_option) = true;
+//     FOO = 1 [(my_enum_value_option) = 432];
+//     BAR = 2;
+//   }
+// }
+// extend google.protobuf.MessageOptions {
+//   optional int32 my_message_option = 50001;
+// }
+// extend google.protobuf.FieldOptions {
+//   optional float my_field_option = 50002;
+// }
+// extend google.protobuf.EnumOptions {
+//   optional bool my_enum_option = 50004;
+// }
+// extend google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option = 50005;
+// }
+//
+//)";
+//
+//     auto normalized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message MyMessage {
+//   option (my_message_option) = 1234;
+//   optional int32 foo = 1 [(my_field_option) = 4.5];
+//   optional .MyMessage.NestedMessage nested_msg = 2;
+//   optional .MyMessage.NestedEnum nested_enum = 3;
+//
+//   message NestedMessage {
+//     option (my_message_option) = 2345;
+//     optional int32 foo = 1 [(my_field_option) = 6.5];
+//     optional string bar = 2;
+//   }
+//   enum NestedEnum {
+//     option (my_enum_option) = true;
+//     FOO = 1 [(my_enum_value_option) = 432];
+//     BAR = 2;
+//   }
+// }
+// extend .google.protobuf.EnumOptions {
+//   optional bool my_enum_option = 50004;
+// }
+// extend .google.protobuf.EnumValueOptions {
+//   optional uint32 my_enum_value_option = 50005;
+// }
+// extend .google.protobuf.FieldOptions {
+//   optional float my_field_option = 50002;
+// }
+// extend .google.protobuf.MessageOptions {
+//   optional int32 my_message_option = 50001;
+// }
+//
+//)";
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       sanitized);
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_message_custom_options) {
+//     const auto schema = R"(syntax = "proto3";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// enum MyEnum {
+//   VALUE_0 = 0;
+//   VALUE_1 = 1 [(metadata) = {
+//     some_bool: true,
+//     some_string: "test_string"
+//   }];
+// }
+//
+// message Metadata {
+//     bool some_bool = 1;
+//     string some_string = 2;
+// }
+//
+// extend google.protobuf.EnumValueOptions {
+//   Metadata metadata = 50001;
+// }
+//
+//)";
+//
+//     const auto sanitized = R"(syntax = "proto3";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message Metadata {
+//   bool some_bool = 1;
+//   string some_string = 2;
+// }
+// enum MyEnum {
+//   VALUE_0 = 0;
+//   VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
+//   }];
+// }
+// extend google.protobuf.EnumValueOptions {
+//   Metadata metadata = 50001;
+// }
+//
+//)";
+//
+//     const auto normalized = R"(syntax = "proto3";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message Metadata {
+//   bool some_bool = 1;
+//   string some_string = 2;
+// }
+// enum MyEnum {
+//   VALUE_0 = 0;
+//   VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
+//   }];
+// }
+// extend .google.protobuf.EnumValueOptions {
+//   .Metadata metadata = 50001;
+// }
+//
+//)";
+//
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       sanitized);
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_extension_ranges) {
+//     const auto schema = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message SimpleMessage {
+//   optional int32 foo = 1;
+// }
+// message ExtendableMessage {
+//   extensions 1 to 9;
+//   extensions 11 to 99 [verification = UNVERIFIED];
+//   extensions 111 to 222 [verification = DECLARATION];
+//   extensions 333 to 444 [
+//     declaration = {
+//       number: 334,
+//       full_name: ".some_int",
+//       type: "int32",
+//       repeated: true
+//     }
+//   ];
+//   extensions 555 to 666 [
+//     declaration = { full_name: ".some_other_int32", type: "int32", number:
+//     555 }, declaration = { full_name: ".some_double", type: "double", number:
+//     556, reserved: true }, declaration = { full_name: ".my_message", type:
+//     ".SimpleMessage", number: 557, reserved: true, repeated: false }
+//   ];
+//   extensions 777 [(my_range_option_b) = "some value", (my_range_option_a) =
+//   "some other value"];
+// }
+// extend ExtendableMessage {
+//   optional int32 some_int = 3;
+// }
+// extend google.protobuf.ExtensionRangeOptions {
+//   optional string my_range_option_b = 50008;
+//   optional string my_range_option_a = 50000;
+// }
+//
+//
+//)";
+//
+//     const auto sanitized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message SimpleMessage {
+//   optional int32 foo = 1;
+// }
+// message ExtendableMessage {
+//   extensions 1 to 9;
+//   extensions 11 to 99 [verification = UNVERIFIED];
+//   extensions 111 to 222 [verification = DECLARATION];
+//   extensions 333 to 444 [declaration = {number : 334 , full_name :
+//   ".some_int" , type : "int32" , repeated : true
+//   }];
+//   extensions 555 to 666 [
+//     declaration = {full_name : ".some_other_int32" , type : "int32" , number
+//     : 555
+//   },
+//     declaration = {full_name : ".some_double" , type : "double" , number :
+//     556 , reserved : true
+//   },
+//     declaration = {full_name : ".my_message" , type : ".SimpleMessage" ,
+//     number : 557 , reserved : true , repeated : false
+//   }
+//   ];
+//   extensions 777 to 777 [
+//     (my_range_option_b) = "some value",
+//     (my_range_option_a) = "some other value"
+//   ];
+// }
+// extend ExtendableMessage {
+//   optional int32 some_int = 3;
+// }
+// extend google.protobuf.ExtensionRangeOptions {
+//   optional string my_range_option_b = 50008;
+//   optional string my_range_option_a = 50000;
+// }
+//
+//)";
+//
+//     const auto normalized = R"(syntax = "proto2";
+//
+// import "google/protobuf/descriptor.proto";
+//
+// message SimpleMessage {
+//   optional int32 foo = 1;
+// }
+// message ExtendableMessage {
+//   extensions 1 to 9;
+//   extensions 11 to 99 [verification = UNVERIFIED];
+//   extensions 111 to 222 [verification = DECLARATION];
+//   extensions 333 to 444 [declaration = {
+//     full_name: ".some_int",
+//     type: "int32",
+//     number: 334,
+//     repeated: true}];
+//   extensions 555 to 666 [
+//     declaration = {
+//       full_name: ".some_other_int32",
+//       type: "int32",
+//       number: 555},
+//     declaration = {
+//       full_name: ".some_double",
+//       type: "double",
+//       number: 556,
+//       reserved: true},
+//     declaration = {
+//       full_name: ".my_message",
+//       type: ".SimpleMessage",
+//       number: 557,
+//       reserved: true,
+//       repeated: false}
+//   ];
+//   extensions 777 to 777 [
+//     (my_range_option_a) = "some other value",
+//     (my_range_option_b) = "some value"
+//   ];
+// }
+// extend .ExtendableMessage {
+//   optional int32 some_int = 3;
+// }
+// extend .google.protobuf.ExtensionRangeOptions {
+//   optional string my_range_option_a = 50000;
+//   optional string my_range_option_b = 50008;
+// }
+//
+//)";
+//
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       sanitized);
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), normalized);
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax) {
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(R"(
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Bar {
+//   optional google.protobuf.Timestamp timestamp = 1; //comment
+// }
+//)"),
+//       R"(syntax = "proto2";
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Bar {
+//   optional .google.protobuf.Timestamp timestamp = 1;
+// }
+//)");
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_package) {
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(R"(syntax = "proto3";
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Bar {
+//   google.protobuf.Timestamp timestamp = 1; //comment
+// }
+//)"),
+//       R"(syntax = "proto3";
+//
+// import "google/protobuf/timestamp.proto";
+// message Bar {
+//   .google.protobuf.Timestamp timestamp = 1;
+// }
+//
+//)");
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax_package) {
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(R"(
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Bar {
+//   optional google.protobuf.Timestamp timestamp = 1; //comment
+// }
+//)"),
+//       R"(syntax = "proto2";
+//
+// import "google/protobuf/timestamp.proto";
+// message Bar {
+//   optional .google.protobuf.Timestamp timestamp = 1;
+// }
+//
+//)");
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_imports) {
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(R"(syntax = "proto3";
+// package foo;
+//
+// message Bar {
+//   int64 val = 1;
+// }
+//)"),
+//       R"(syntax = "proto3";
+//
+// package foo;
+//
+// message Bar {
+//   int64 val = 1;
+// }
+//
+//)");
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_multiple_imports) {
+//     BOOST_REQUIRE_EQUAL(
+//       sanitize(R"(syntax = "proto3";
+//
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/any.proto";
+//
+//
+// message Bar {
+//   .google.protobuf.Timestamp timestamp = 1;
+//   .google.protobuf.Any any = 2;
+// }
+//
+//)"),
+//       R"(syntax = "proto3";
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/any.proto";
+//
+// message Bar {
+//   .google.protobuf.Timestamp timestamp = 1;
+//   .google.protobuf.Any any = 2;
+// }
+//)");
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_imports) {
+//     auto schema = R"(syntax = "proto3";
+// package foo;
+//// sanitize should maintain relative ordering of imports per group,
+//// normalize should sort them
+// import "google/protobuf/timestamp.proto";
+// import public "google/protobuf/duration.proto";
+// import weak "google/protobuf/any.proto";
+// import "google/protobuf/api.proto";
+//)";
+//
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       (R"(syntax = "proto3";
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/api.proto";
+// import weak "google/protobuf/any.proto";
+// import public "google/protobuf/duration.proto";
+//
+//)"));
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax =
+//       "proto3";
+// package foo;
+//
+// import "google/protobuf/api.proto";
+// import "google/protobuf/timestamp.proto";
+// import weak "google/protobuf/any.proto";
+// import public "google/protobuf/duration.proto";
+//
+//)"));
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_map) {
+//     auto schema = R"(syntax = "proto3";
+// package foo;
+// import "google/protobuf/struct.proto";
+// import "google/protobuf/any.proto";
+// message Value {
+//   google.protobuf.Any any = 1;
+// }
+// message HasMap {
+//   map<string, Value> map_string_value = 1;
+// }
+// message HasGoogleMap {
+//   map<string, google.protobuf.Value> map_string_value = 1;
+// }
+//)";
+//
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       (R"(syntax = "proto3";
+// package foo;
+//
+// import "google/protobuf/struct.proto";
+// import "google/protobuf/any.proto";
+//
+// message Value {
+//   google.protobuf.Any any = 1;
+// }
+// message HasMap {
+//   map<string, foo.Value> map_string_value = 1;
+// }
+// message HasGoogleMap {
+//   map<string, google.protobuf.Value> map_string_value = 1;
+// }
+//
+//)"));
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax =
+//       "proto3";
+// package foo;
+//
+// import "google/protobuf/any.proto";
+// import "google/protobuf/struct.proto";
+//
+// message Value {
+//   .google.protobuf.Any any = 1;
+// }
+// message HasMap {
+//   map<string, foo.Value> map_string_value = 1;
+// }
+// message HasGoogleMap {
+//   map<string, google.protobuf.Value> map_string_value = 1;
+// }
+//
+//)"));
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_legacy_map) {
+//     auto schema = R"(syntax = "proto3";
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Value {
+//    string string = 1;
+// }
+//
+// message HasMap {
+//   repeated PropertiesEntry properties = 1;
+//   repeated TimestampsEntry timestamps = 2;
+//
+//   message PropertiesEntry {
+//     option map_entry = true;
+//     string key = 1;
+//     Value value = 2;
+//   }
+//   message TimestampsEntry {
+//     option map_entry = true;
+//     string key = 1;
+//     google.protobuf.Timestamp value = 2;
+//   }
+// }
+//)";
+//
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       (R"(syntax = "proto3";
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Value {
+//   string string = 1;
+// }
+// message HasMap {
+//   map<string, Value> properties = 1;
+//   map<string, google.protobuf.Timestamp> timestamps = 2;
+// }
+//
+//)"));
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax =
+//       "proto3";
+//
+// import "google/protobuf/timestamp.proto";
+//
+// message Value {
+//   string string = 1;
+// }
+// message HasMap {
+//   map<string, Value> properties = 1;
+//   map<string, google.protobuf.Timestamp> timestamps = 2;
+// }
+//
+//)"));
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize_group) {
+//     auto schema = R"(syntax = "proto2";
+// message SearchResponse {
+//   repeated group Result = 1 {
+//     optional string title = 2;
+//     optional string url = 1;
+//     repeated string snippets = 3;
+//     message SomeMessage {
+//       optional string string = 1;
+//     }
+//     optional SomeMessage msg = 4;
+//     repeated group InnerGroup = 5 {
+//       optional int32 int32 = 1;
+//     }
+//     oneof nested_oneof {
+//       string name = 6;
+//     }
+//   }
+// })";
+//
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       (R"(syntax = "proto2";
+//
+// message SearchResponse {
+//
+//   repeated group Result = 1 {
+//     optional string title = 2;
+//     optional string url = 1;
+//     repeated string snippets = 3;
+//     optional SomeMessage msg = 4;
+//
+//     oneof nested_oneof {
+//       string name = 6;
+//     }
+//
+//     message SomeMessage {
+//       optional string string = 1;
+//     }
+//     repeated group InnerGroup = 5 {
+//       optional int32 int32 = 1;
+//     }
+//   }
+// }
+//
+//)"));
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax =
+//       "proto2";
+//
+// message SearchResponse {
+//
+//   repeated group Result = 1 {
+//     optional string url = 1;
+//     optional string title = 2;
+//     repeated string snippets = 3;
+//     optional .SearchResponse.Result.SomeMessage msg = 4;
+//
+//     oneof nested_oneof {
+//       string name = 6;
+//     }
+//
+//     message SomeMessage {
+//       optional string string = 1;
+//     }
+//     repeated group InnerGroup = 5 {
+//       optional int32 int32 = 1;
+//     }
+//   }
+// }
+//
+//)"));
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_synthetic_oneof) {
+//     auto schema = R"(syntax = "proto3";
+// package foo;
+// message WithSynthetic {
+//   optional int32 int32 = 1;
+// }
+//
+// message WithOneOf {
+//   oneof some_int {
+//     int32 int32 = 1;
+//   }
+// }
+//
+//)";
+//     auto expected_sanitized = R"(syntax = "proto3";
+// package foo;
+//
+// message WithSynthetic {
+//   optional int32 int32 = 1;
+// }
+// message WithOneOf {
+//   oneof some_int {
+//     int32 int32 = 1;
+//   }
+// }
+//
+//)";
+//     BOOST_CHECK_EQUAL(
+//       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//       expected_sanitized);
+//     auto expected_normalized = R"(syntax = "proto3";
+// package foo;
+//
+// message WithSynthetic {
+//   optional int32 int32 = 1;
+// }
+// message WithOneOf {
+//   oneof some_int {
+//     int32 int32 = 1;
+//   }
+// }
+//
+//)";
+//     BOOST_CHECK_EQUAL(
+//       normalize(schema, pps::protobuf_renderer_v2::yes),
+//       expected_normalized);
+// }
+//
+// SEASTAR_THREAD_TEST_CASE(test_protobuf_normalize) {
+//     auto schema = R"(
+// syntax = "proto3";
+//
+// package foo;
+//
+// option java_package = "com.example.foo";
+// option java_outer_classname = "FooService";
+// option optimize_for = SPEED;
+// option go_package = "foo.example.com/fooservice";
+// option cc_enable_arenas = true;
+// option objc_class_prefix = "FS";
+// option csharp_namespace = "Foo.FooService";
+// option php_namespace = "my_php\ns";
+//
+//
+//// public should come last
+// import public "google/protobuf/duration.proto";
+//// imports should be sorted
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/any.proto";
+// import "google/protobuf/descriptor.proto";
+//
+//// Baz is lexicographically after Bar
+// message Baz {
+//   .google.protobuf.Any any = 1;
+// }
+//
+// enum Numbers {
+//   ZERO=0;
+//   MINUS_ONE =-1;
+//   MINUS_TWO =-2;
+//   TWO = 2;
+//   ONE=1;
+//   ALIAS = 1 [deprecated = true, debug_redact = false];
+//   reserved 6;
+//   reserved 3 to 5;
+//   reserved "THREE", "FOUR", "FIVE";
+//   reserved "SIX";
+//
+//   option allow_alias = true;
+// }
+//
+//
+///**
+// * Bar.timestamp type is not normalized
+// * Bar.any should come second
+// */
+// message Bar {
+//  .google.protobuf.Any any = 2;
+//  google.protobuf.Timestamp timestamp = 1;
+//
+//  message NestedMessage {
+//    string value = 1;
+//  }
+//
+//  // reserved should be sorted
+//  reserved 6;
+//  reserved 3 to 5;
+//
+//  enum NestedEnum {
+//    FOO = 0;
+//    BAR = 1;
+//  }
+//
+//  oneof string_or_byte {
+//    bytes bytes = 21;
+//    string string = 20;
+//  }
+//
+//  oneof integral {
+//    double double = 7;
+//    float float = 8;
+//    int32 int32 = 9;
+//    int64 int64 = 10;
+//    uint32 uint32 = 11;
+//    uint64 uint64 = 12;
+//    sint32 sint32 = 13;
+//    sint64 sint64 = 14;
+//    fixed32 fixed32 = 15;
+//    fixed64 fixed64 = 16;
+//    sfixed32 sfixed32 = 17;
+//    sfixed64 sfixed64 = 18;
+//    bool bool = 19 [deprecated = false, retention = RETENTION_SOURCE];
+//  }
+//
+//  repeated bool repeated_bool = 22 [packed = true];
+//  map<string, string> map_string_string = 23;
+//  NestedEnum repeated_nested_enum = 24 [deprecated = false, retention =
+//  RETENTION_SOURCE];
+//
+//  message MessageOptions {
+//    option message_set_wire_format = false;
+//    option no_standard_descriptor_accessor = true;
+//    option deprecated = true;
+//  }
+//
+//}
+// service FooService {
+//  rpc Foo(Bar) returns (Baz);
+//})";
+//
+//    BOOST_CHECK_EQUAL(
+//      sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
+//      (R"(syntax = "proto3";
+// package foo;
+//
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/any.proto";
+// import "google/protobuf/descriptor.proto";
+// import public "google/protobuf/duration.proto";
+//
+// option java_package = "com.example.foo";
+// option java_outer_classname = "FooService";
+// option optimize_for = SPEED;
+// option go_package = "foo.example.com/fooservice";
+// option cc_enable_arenas = true;
+// option objc_class_prefix = "FS";
+// option csharp_namespace = "Foo.FooService";
+// option php_namespace = "my_php\ns";
+//
+// message Baz {
+//  .google.protobuf.Any any = 1;
+//}
+// message Bar {
+//  reserved 6;
+//  reserved 3 to 5;
+//
+//  .google.protobuf.Any any = 2;
+//  google.protobuf.Timestamp timestamp = 1;
+//  repeated bool repeated_bool = 22 [packed = true];
+//  map<string, string> map_string_string = 23;
+//  NestedEnum repeated_nested_enum = 24 [
+//    deprecated = false,
+//    retention = RETENTION_SOURCE
+//  ];
+//
+//  oneof string_or_byte {
+//    bytes bytes = 21;
+//    string string = 20;
+//  }
+//  oneof integral {
+//    double double = 7;
+//    float float = 8;
+//    int32 int32 = 9;
+//    int64 int64 = 10;
+//    uint32 uint32 = 11;
+//    uint64 uint64 = 12;
+//    sint32 sint32 = 13;
+//    sint64 sint64 = 14;
+//    fixed32 fixed32 = 15;
+//    fixed64 fixed64 = 16;
+//    sfixed32 sfixed32 = 17;
+//    sfixed64 sfixed64 = 18;
+//    bool bool = 19 [
+//      deprecated = false,
+//      retention = RETENTION_SOURCE
+//    ];
+//  }
+//
+//  message NestedMessage {
+//    string value = 1;
+//  }
+//  message MessageOptions {
+//    option message_set_wire_format = false;
+//    option no_standard_descriptor_accessor = true;
+//    option deprecated = true;
+//  }
+//  enum NestedEnum {
+//    FOO = 0;
+//    BAR = 1;
+//  }
+//}
+// enum Numbers {
+//  reserved 6;
+//  reserved 3 to 5;
+//  reserved "THREE";
+//  reserved "FOUR";
+//  reserved "FIVE";
+//  reserved "SIX";
+//  option allow_alias = true;
+//  ZERO = 0;
+//  MINUS_ONE = -1;
+//  MINUS_TWO = -2;
+//  TWO = 2;
+//  ONE = 1;
+//  ALIAS = 1 [deprecated = true, debug_redact = false];
+//}
+//
+// service FooService {
+//  rpc Foo (Bar) returns (Baz);
+//}
+//
+//)"));
+//    BOOST_CHECK_EQUAL(
+//      normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax =
+//      "proto3";
+// package foo;
+//
+// import "google/protobuf/any.proto";
+// import "google/protobuf/descriptor.proto";
+// import "google/protobuf/timestamp.proto";
+// import public "google/protobuf/duration.proto";
+//
+// option cc_enable_arenas = true;
+// option csharp_namespace = "Foo.FooService";
+// option go_package = "foo.example.com/fooservice";
+// option java_outer_classname = "FooService";
+// option java_package = "com.example.foo";
+// option objc_class_prefix = "FS";
+// option optimize_for = SPEED;
+// option php_namespace = "my_php\ns";
+//
+// message Baz {
+//  .google.protobuf.Any any = 1;
+//}
+// message Bar {
+//  reserved 3 to 5;
+//  reserved 6;
+//
+//  .google.protobuf.Timestamp timestamp = 1;
+//  .google.protobuf.Any any = 2;
+//  repeated bool repeated_bool = 22 [packed = true];
+//  map<string, string> map_string_string = 23;
+//  .foo.Bar.NestedEnum repeated_nested_enum = 24 [
+//    deprecated = false,
+//    retention = RETENTION_SOURCE
+//  ];
+//
+//  oneof integral {
+//    double double = 7;
+//    float float = 8;
+//    int32 int32 = 9;
+//    int64 int64 = 10;
+//    uint32 uint32 = 11;
+//    uint64 uint64 = 12;
+//    sint32 sint32 = 13;
+//    sint64 sint64 = 14;
+//    fixed32 fixed32 = 15;
+//    fixed64 fixed64 = 16;
+//    sfixed32 sfixed32 = 17;
+//    sfixed64 sfixed64 = 18;
+//    bool bool = 19 [
+//      deprecated = false,
+//      retention = RETENTION_SOURCE
+//    ];
+//  }
+//  oneof string_or_byte {
+//    string string = 20;
+//    bytes bytes = 21;
+//  }
+//
+//  message NestedMessage {
+//    string value = 1;
+//  }
+//  message MessageOptions {
+//    option deprecated = true;
+//    option message_set_wire_format = false;
+//    option no_standard_descriptor_accessor = true;
+//  }
+//  enum NestedEnum {
+//    FOO = 0;
+//    BAR = 1;
+//  }
+//}
+// enum Numbers {
+//  reserved 3 to 5;
+//  reserved 6;
+//  reserved "FIVE";
+//  reserved "FOUR";
+//  reserved "SIX";
+//  reserved "THREE";
+//  option allow_alias = true;
+//  ZERO = 0;
+//  ALIAS = 1 [deprecated = true, debug_redact = false];
+//  ONE = 1;
+//  TWO = 2;
+//  MINUS_TWO = -2;
+//  MINUS_ONE = -1;
+//}
+//
+// service FooService {
+//  rpc Foo (.foo.Bar) returns (.foo.Baz);
+//}
+//
+//)"));
+//}
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_message_removed) {
     BOOST_REQUIRE(!check_compatible(
