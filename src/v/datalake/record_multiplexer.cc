@@ -332,6 +332,22 @@ record_multiplexer::finish() && {
     co_return std::move(*_result);
 }
 
+size_t record_multiplexer::buffered_bytes() const {
+    size_t result = 0;
+    for (const auto& [_, writer] : _writers) {
+        result += writer->buffered_bytes();
+    }
+    return result;
+}
+
+size_t record_multiplexer::flushed_bytes() const {
+    size_t result = 0;
+    for (const auto& [_, writer] : _writers) {
+        result += writer->flushed_bytes();
+    }
+    return result;
+}
+
 ss::future<result<std::nullopt_t, writer_error>>
 record_multiplexer::handle_invalid_record(
   kafka::offset offset,

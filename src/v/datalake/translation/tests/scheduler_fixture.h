@@ -39,6 +39,7 @@ public:
     translation_status status() const override;
     void start_translation(clock::duration translate_for) override;
     void stop_translation() override;
+    void reconcile_properties() noexcept override {}
 
 private:
     // Mock of a single parquet file writer.

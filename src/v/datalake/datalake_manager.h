@@ -19,12 +19,14 @@
 #include "datalake/fwd.h"
 #include "datalake/location.h"
 #include "datalake/record_schema_resolver.h"
-#include "datalake/translation/partition_translator.h"
+#include "datalake/translation/partition_translator_v2.h"
+#include "datalake/translation/scheduling.h"
 #include "features/fwd.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
 #include "ssx/semaphore.h"
+#include "ssx/work_queue.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
@@ -81,15 +83,9 @@ public:
 
 private:
     using translator = std::unique_ptr<translation::partition_translator>;
-    using translator_map = chunked_hash_map<model::ntp, translator>;
 
-    std::chrono::milliseconds translation_interval_ms() const;
-    void on_group_notification(const model::ntp&);
-    void start_translator(
-      ss::lw_shared_ptr<cluster::partition>,
-      model::iceberg_mode,
-      model::iceberg_invalid_record_action);
-    void stop_translator(const model::ntp&);
+    ss::future<> handle_translator_state_change(const model::ntp&);
+
     double average_translation_backlog();
     model::node_id _self;
     ss::sharded<raft::group_manager>* _group_mgr;
@@ -113,20 +109,13 @@ private:
     ss::scheduling_group _sg;
     ss::gate _gate;
 
-    size_t _effective_max_translator_buffered_data;
-    std::unique_ptr<ssx::semaphore> _parallel_translations;
-    translator_map _translators;
     using deferred_action = ss::deferred_action<std::function<void()>>;
     std::vector<deferred_action> _deregistrations;
-    config::binding<std::chrono::milliseconds> _iceberg_commit_interval;
     config::binding<model::iceberg_invalid_record_action>
       _iceberg_invalid_record_action;
     std::filesystem::path _writer_scratch_space;
-
-    // Translation requires buffering data batches in memory for efficient
-    // output representation, this controls the maximum bytes buffered in memory
-    // before the output is flushed.
-    static constexpr size_t max_translator_buffered_data = 64_MiB;
+    translation::scheduling::scheduler _scheduler;
+    ssx::work_queue _queue;
 };
 
 } // namespace datalake

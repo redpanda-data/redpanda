@@ -84,6 +84,10 @@ public:
      */
     ss::future<result<write_result, writer_error>> finish() &&;
 
+    size_t buffered_bytes() const;
+
+    size_t flushed_bytes() const;
+
 private:
     // Handles the given record components of a record that is invalid for the
     // target table.

@@ -42,7 +42,7 @@ redpanda_cc_library(
         "scheduling_policies.h",
     ],
     include_prefix = "datalake/translation",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
@@ -92,33 +92,10 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         ":scheduler",
-        "//src/v/datalake:writer",
-    ],
-)
-
-redpanda_cc_library(
-    name = "partition_translator",
-    srcs = [
-        "partition_translator.cc",
-    ],
-    hdrs = [
-        "partition_translator.h",
-    ],
-    include_prefix = "datalake/translation",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":model",
         ":stm",
-        ":translator_deps",
-        ":utils",
-        "//src/v/base",
         "//src/v/cluster",
-        "//src/v/cluster:notification",
-        "//src/v/datalake:cloud_data_io",
         "//src/v/datalake:local_parquet_file_writer",
         "//src/v/datalake:location",
-        "//src/v/datalake:logger",
-        "//src/v/datalake:record_multiplexer",
         "//src/v/datalake:record_schema_resolver",
         "//src/v/datalake:record_translator",
         "//src/v/datalake:serde_parquet_writer",
@@ -127,16 +104,39 @@ redpanda_cc_library(
         "//src/v/datalake:types",
         "//src/v/datalake:writer",
         "//src/v/datalake/coordinator:frontend",
-        "//src/v/datalake/coordinator:translated_offset_range",
+        "//src/v/datalake/coordinator:model",
         "//src/v/features",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/model",
-        "//src/v/random:time_jitter",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "partition_translator",
+    srcs = [
+        "partition_translator_v2.cc",
+    ],
+    hdrs = [
+        "partition_translator_v2.h",
+    ],
+    include_prefix = "datalake/translation",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        ":scheduler",
+        ":translator_deps",
+        ":utils",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/datalake:logger",
+        "//src/v/features",
+        "//src/v/model",
         "//src/v/resource_mgmt:io_priority",
         "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
-        "//src/v/utils:lazy_abort_source",
         "//src/v/utils:prefix_logger",
         "//src/v/utils:retry_chain_node",
         "@seastar",

@@ -272,7 +272,7 @@ redpanda_cc_library(
         "types.h",
     ],
     include_prefix = "datalake/coordinator",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":translated_offset_range",
         "//src/v/datalake:schema_identifier",
