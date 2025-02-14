@@ -688,87 +688,95 @@ service MyService {
     auto sanitized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
+option (.my_file_option_a) = "Hello world!";
+option (.my_file_option_b) = "Some other string";
+option (.my_repeated_file_option) = 2;
+option (.my_repeated_file_option) = 1;
+option (.my_repeated_file_option) = 3;
 
-option (my_repeated_file_option) = 2;
-option (my_file_option_b) = "Some other string";
-option (my_repeated_file_option) = 1;
-option (my_repeated_file_option) = 3;
-option (my_file_option_a) = "Hello world!";
+enum MyEnum {
+  option (.my_enum_option_a) = true;
+  option (.my_enum_option_b) = false;
+  FOO = 1 [(.my_enum_value_option_a) = 321, (.my_enum_value_option_b) = 432];
+  BAR = 2;
+}
 
 message MyMessage {
-  option (my_message_option_b) = 2345;
-  option (my_message_option_a) = 1234;
-  optional int32 foo = 1 [
-    (my_field_option_b) = 5.5,
-    (my_field_option_a) = 4.5
-  ];
+  option (.my_message_option_a) = 1234;
+  option (.my_message_option_b) = 2345;
+  optional int32 foo = 1 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
   optional string bar = 2;
+  oneof qux {    option (.my_oneof_option_a) = 42;
+    option (.my_oneof_option_b) = 43;
 
-  oneof qux {
-    option (my_oneof_option_b) = 43;
-    option (my_oneof_option_a) = 42;
     string quux = 3;
   }
 }
+
 message RequestType {
 }
+
 message ResponseType {
-}
-enum MyEnum {
-  option (my_enum_option_b) = false;
-  option (my_enum_option_a) = true;
-  FOO = 1 [(my_enum_value_option_b) = 432, (my_enum_value_option_a) = 321];
-  BAR = 2;
-}
-extend google.protobuf.FileOptions {
-  optional string my_file_option_b = 50008 [
-    (my_field_option_b) = 5.5,
-    (my_field_option_a) = 4.5
-  ];
-  optional string my_file_option_a = 50000;
-  repeated uint32 my_repeated_file_option = 60000;
-}
-extend google.protobuf.MessageOptions {
-  optional int32 my_message_option_b = 50009;
-  optional int32 my_message_option_a = 50001;
-}
-extend google.protobuf.FileOptions {
-  optional string my_file_option_c = 50015;
-}
-extend google.protobuf.FieldOptions {
-  optional float my_field_option_b = 50010;
-  optional float my_field_option_a = 50002;
-}
-extend google.protobuf.OneofOptions {
-  optional int64 my_oneof_option_b = 50011;
-  optional int64 my_oneof_option_a = 50003;
-}
-extend google.protobuf.EnumOptions {
-  optional bool my_enum_option_b = 50012;
-  optional bool my_enum_option_a = 50004;
-}
-extend google.protobuf.EnumValueOptions {
-  optional uint32 my_enum_value_option_b = 50013;
-  optional uint32 my_enum_value_option_a = 50005;
-}
-extend google.protobuf.ServiceOptions {
-  optional MyEnum my_service_option_b = 50014;
-  optional MyEnum my_service_option_a = 50006;
-}
-extend google.protobuf.MethodOptions {
-  optional MyMessage my_method_option_b = 50015;
-  optional MyMessage my_method_option_a = 50007;
 }
 
 service MyService {
-  option (my_service_option_b) = BAR;
-  option (my_service_option_a) = FOO;
-  rpc MyMethod (RequestType) returns (ResponseType) {
-    option (my_method_option_b).bar = "Some other string";
-    option (my_method_option_b).foo = 678;
-    option (my_method_option_a).foo = 567;
-    option (my_method_option_a).bar = "Some string";
+  option (.my_service_option_a) = FOO;
+  option (.my_service_option_b) = BAR;
+  rpc MyMethod(.RequestType) returns (.ResponseType) {
+    option (.my_method_option_a) = {
+      foo: 567
+      bar: "Some string"
+    };
+    option (.my_method_option_b) = {
+      foo: 678
+      bar: "Some other string"
+    };
   }
+}
+
+extend .google.protobuf.FileOptions {
+  optional string my_file_option_b = 50008 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
+  optional string my_file_option_a = 50000;
+  repeated uint32 my_repeated_file_option = 60000;
+}
+
+extend .google.protobuf.MessageOptions {
+  optional int32 my_message_option_b = 50009;
+  optional int32 my_message_option_a = 50001;
+}
+
+extend .google.protobuf.FileOptions {
+  optional string my_file_option_c = 50015;
+}
+
+extend .google.protobuf.FieldOptions {
+  optional float my_field_option_b = 50010;
+  optional float my_field_option_a = 50002;
+}
+
+extend .google.protobuf.OneofOptions {
+  optional int64 my_oneof_option_b = 50011;
+  optional int64 my_oneof_option_a = 50003;
+}
+
+extend .google.protobuf.EnumOptions {
+  optional bool my_enum_option_b = 50012;
+  optional bool my_enum_option_a = 50004;
+}
+
+extend .google.protobuf.EnumValueOptions {
+  optional uint32 my_enum_value_option_b = 50013;
+  optional uint32 my_enum_value_option_a = 50005;
+}
+
+extend .google.protobuf.ServiceOptions {
+  optional .MyEnum my_service_option_b = 50014;
+  optional .MyEnum my_service_option_a = 50006;
+}
+
+extend .google.protobuf.MethodOptions {
+  optional .MyMessage my_method_option_b = 50015;
+  optional .MyMessage my_method_option_a = 50007;
 }
 
 )";
@@ -776,85 +784,92 @@ service MyService {
     auto normalized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
+option (.my_file_option_a) = "Hello world!";
+option (.my_file_option_b) = "Some other string";
+option (.my_repeated_file_option) = 2;
+option (.my_repeated_file_option) = 1;
+option (.my_repeated_file_option) = 3;
 
-option (my_file_option_a) = "Hello world!";
-option (my_file_option_b) = "Some other string";
-option (my_repeated_file_option) = 1;
-option (my_repeated_file_option) = 2;
-option (my_repeated_file_option) = 3;
+enum MyEnum {
+  option (.my_enum_option_a) = true;
+  option (.my_enum_option_b) = false;
+  FOO = 1 [(.my_enum_value_option_a) = 321, (.my_enum_value_option_b) = 432];
+  BAR = 2;
+}
 
 message MyMessage {
-  option (my_message_option_a) = 1234;
-  option (my_message_option_b) = 2345;
-  optional int32 foo = 1 [
-    (my_field_option_a) = 4.5,
-    (my_field_option_b) = 5.5
-  ];
+  option (.my_message_option_a) = 1234;
+  option (.my_message_option_b) = 2345;
+  optional int32 foo = 1 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
   optional string bar = 2;
+  oneof qux {    option (.my_oneof_option_a) = 42;
+    option (.my_oneof_option_b) = 43;
 
-  oneof qux {
-    option (my_oneof_option_a) = 42;
-    option (my_oneof_option_b) = 43;
     string quux = 3;
   }
 }
+
 message RequestType {
 }
+
 message ResponseType {
 }
-enum MyEnum {
-  option (my_enum_option_a) = true;
-  option (my_enum_option_b) = false;
-  FOO = 1 [(my_enum_value_option_a) = 321, (my_enum_value_option_b) = 432];
-  BAR = 2;
+
+service MyService {
+  option (.my_service_option_a) = FOO;
+  option (.my_service_option_b) = BAR;
+  rpc MyMethod(.RequestType) returns (.ResponseType) {
+    option (.my_method_option_a) = {
+      foo: 567
+      bar: "Some string"
+    };
+    option (.my_method_option_b) = {
+      foo: 678
+      bar: "Some other string"
+    };
+  }
 }
+
 extend .google.protobuf.EnumOptions {
   optional bool my_enum_option_a = 50004;
   optional bool my_enum_option_b = 50012;
 }
+
 extend .google.protobuf.EnumValueOptions {
   optional uint32 my_enum_value_option_a = 50005;
   optional uint32 my_enum_value_option_b = 50013;
 }
+
 extend .google.protobuf.FieldOptions {
   optional float my_field_option_a = 50002;
   optional float my_field_option_b = 50010;
 }
+
 extend .google.protobuf.FileOptions {
   optional string my_file_option_a = 50000;
-  optional string my_file_option_b = 50008 [
-    (my_field_option_a) = 4.5,
-    (my_field_option_b) = 5.5
-  ];
+  optional string my_file_option_b = 50008 [(.my_field_option_a) = 4.5, (.my_field_option_b) = 5.5];
   optional string my_file_option_c = 50015;
   repeated uint32 my_repeated_file_option = 60000;
 }
+
 extend .google.protobuf.MessageOptions {
   optional int32 my_message_option_a = 50001;
   optional int32 my_message_option_b = 50009;
 }
+
 extend .google.protobuf.MethodOptions {
   optional .MyMessage my_method_option_a = 50007;
   optional .MyMessage my_method_option_b = 50015;
 }
+
 extend .google.protobuf.OneofOptions {
   optional int64 my_oneof_option_a = 50003;
   optional int64 my_oneof_option_b = 50011;
 }
+
 extend .google.protobuf.ServiceOptions {
   optional .MyEnum my_service_option_a = 50006;
   optional .MyEnum my_service_option_b = 50014;
-}
-
-service MyService {
-  option (my_service_option_a) = FOO;
-  option (my_service_option_b) = BAR;
-  rpc MyMethod (.RequestType) returns (.ResponseType) {
-    option (my_method_option_a).bar = "Some string";
-    option (my_method_option_a).foo = 567;
-    option (my_method_option_b).bar = "Some other string";
-    option (my_method_option_b).foo = 678;
-  }
 }
 
 )";
@@ -907,34 +922,36 @@ message MyMessage {
     auto sanitized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
-
 message MyMessage {
-  option (my_message_option) = 1234;
-  optional int32 foo = 1 [(my_field_option) = 4.5];
-  optional NestedMessage nested_msg = 2;
-  optional NestedEnum nested_enum = 3;
-
+  option (.my_message_option) = 1234;
   message NestedMessage {
-    option (my_message_option) = 2345;
-    optional int32 foo = 1 [(my_field_option) = 6.5];
+    option (.my_message_option) = 2345;
+    optional int32 foo = 1 [(.my_field_option) = 6.5];
     optional string bar = 2;
   }
   enum NestedEnum {
-    option (my_enum_option) = true;
-    FOO = 1 [(my_enum_value_option) = 432];
+    option (.my_enum_option) = true;
+    FOO = 1 [(.my_enum_value_option) = 432];
     BAR = 2;
   }
+  optional int32 foo = 1 [(.my_field_option) = 4.5];
+  optional .MyMessage.NestedMessage nested_msg = 2;
+  optional .MyMessage.NestedEnum nested_enum = 3;
 }
-extend google.protobuf.MessageOptions {
+
+extend .google.protobuf.MessageOptions {
   optional int32 my_message_option = 50001;
 }
-extend google.protobuf.FieldOptions {
+
+extend .google.protobuf.FieldOptions {
   optional float my_field_option = 50002;
 }
-extend google.protobuf.EnumOptions {
+
+extend .google.protobuf.EnumOptions {
   optional bool my_enum_option = 50004;
 }
-extend google.protobuf.EnumValueOptions {
+
+extend .google.protobuf.EnumValueOptions {
   optional uint32 my_enum_value_option = 50005;
 }
 
@@ -943,33 +960,35 @@ extend google.protobuf.EnumValueOptions {
     auto normalized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
-
 message MyMessage {
-  option (my_message_option) = 1234;
-  optional int32 foo = 1 [(my_field_option) = 4.5];
-  optional .MyMessage.NestedMessage nested_msg = 2;
-  optional .MyMessage.NestedEnum nested_enum = 3;
-
+  option (.my_message_option) = 1234;
   message NestedMessage {
-    option (my_message_option) = 2345;
-    optional int32 foo = 1 [(my_field_option) = 6.5];
+    option (.my_message_option) = 2345;
+    optional int32 foo = 1 [(.my_field_option) = 6.5];
     optional string bar = 2;
   }
   enum NestedEnum {
-    option (my_enum_option) = true;
-    FOO = 1 [(my_enum_value_option) = 432];
+    option (.my_enum_option) = true;
+    FOO = 1 [(.my_enum_value_option) = 432];
     BAR = 2;
   }
+  optional int32 foo = 1 [(.my_field_option) = 4.5];
+  optional .MyMessage.NestedMessage nested_msg = 2;
+  optional .MyMessage.NestedEnum nested_enum = 3;
 }
+
 extend .google.protobuf.EnumOptions {
   optional bool my_enum_option = 50004;
 }
+
 extend .google.protobuf.EnumValueOptions {
   optional uint32 my_enum_value_option = 50005;
 }
+
 extend .google.protobuf.FieldOptions {
   optional float my_field_option = 50002;
 }
+
 extend .google.protobuf.MessageOptions {
   optional int32 my_message_option = 50001;
 }
@@ -1009,18 +1028,21 @@ extend google.protobuf.EnumValueOptions {
     const auto sanitized = R"(syntax = "proto3";
 
 import "google/protobuf/descriptor.proto";
+enum MyEnum {
+  VALUE_0 = 0;
+  VALUE_1 = 1 [(.metadata) = {
+    some_bool: true
+    some_string: "test_string"
+  }];
+}
 
 message Metadata {
   bool some_bool = 1;
   string some_string = 2;
 }
-enum MyEnum {
-  VALUE_0 = 0;
-  VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
-  }];
-}
-extend google.protobuf.EnumValueOptions {
-  Metadata metadata = 50001;
+
+extend .google.protobuf.EnumValueOptions {
+  .Metadata metadata = 50001;
 }
 
 )";
@@ -1028,16 +1050,19 @@ extend google.protobuf.EnumValueOptions {
     const auto normalized = R"(syntax = "proto3";
 
 import "google/protobuf/descriptor.proto";
+enum MyEnum {
+  VALUE_0 = 0;
+  VALUE_1 = 1 [(.metadata) = {
+    some_bool: true
+    some_string: "test_string"
+  }];
+}
 
 message Metadata {
   bool some_bool = 1;
   string some_string = 2;
 }
-enum MyEnum {
-  VALUE_0 = 0;
-  VALUE_1 = 1 [(metadata) = {some_bool : true , some_string : "test_string"
-  }];
-}
+
 extend .google.protobuf.EnumValueOptions {
   .Metadata metadata = 50001;
 }
@@ -1092,33 +1117,44 @@ extend google.protobuf.ExtensionRangeOptions {
     const auto sanitized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
-
 message SimpleMessage {
   optional int32 foo = 1;
 }
+
 message ExtendableMessage {
   extensions 1 to 9;
   extensions 11 to 99 [verification = UNVERIFIED];
   extensions 111 to 222 [verification = DECLARATION];
-  extensions 333 to 444 [declaration = {number : 334 , full_name : ".some_int" , type : "int32" , repeated : true
+  extensions 333 to 444 [declaration = {
+    number: 334
+    full_name: ".some_int"
+    type: "int32"
+    repeated: true
   }];
-  extensions 555 to 666 [
-    declaration = {full_name : ".some_other_int32" , type : "int32" , number : 555
-  },
-    declaration = {full_name : ".some_double" , type : "double" , number : 556 , reserved : true
-  },
-    declaration = {full_name : ".my_message" , type : ".SimpleMessage" , number : 557 , reserved : true , repeated : false
-  }
-  ];
-  extensions 777 to 777 [
-    (my_range_option_b) = "some value",
-    (my_range_option_a) = "some other value"
-  ];
+  extensions 555 to 666 [declaration = {
+    number: 555
+    full_name: ".some_other_int32"
+    type: "int32"
+  }, declaration = {
+    number: 556
+    full_name: ".some_double"
+    type: "double"
+    reserved: true
+  }, declaration = {
+    number: 557
+    full_name: ".my_message"
+    type: ".SimpleMessage"
+    reserved: true
+    repeated: false
+  }];
+  extensions 777 [(.my_range_option_a) = "some other value", (.my_range_option_b) = "some value"];
 }
-extend ExtendableMessage {
+
+extend .ExtendableMessage {
   optional int32 some_int = 3;
 }
-extend google.protobuf.ExtensionRangeOptions {
+
+extend .google.protobuf.ExtensionRangeOptions {
   optional string my_range_option_b = 50008;
   optional string my_range_option_a = 50000;
 }
@@ -1128,44 +1164,43 @@ extend google.protobuf.ExtensionRangeOptions {
     const auto normalized = R"(syntax = "proto2";
 
 import "google/protobuf/descriptor.proto";
-
 message SimpleMessage {
   optional int32 foo = 1;
 }
+
 message ExtendableMessage {
   extensions 1 to 9;
   extensions 11 to 99 [verification = UNVERIFIED];
   extensions 111 to 222 [verification = DECLARATION];
   extensions 333 to 444 [declaration = {
-    full_name: ".some_int",
-    type: "int32",
-    number: 334,
-    repeated: true}];
-  extensions 555 to 666 [
-    declaration = {
-      full_name: ".some_other_int32",
-      type: "int32",
-      number: 555},
-    declaration = {
-      full_name: ".some_double",
-      type: "double",
-      number: 556,
-      reserved: true},
-    declaration = {
-      full_name: ".my_message",
-      type: ".SimpleMessage",
-      number: 557,
-      reserved: true,
-      repeated: false}
-  ];
-  extensions 777 to 777 [
-    (my_range_option_a) = "some other value",
-    (my_range_option_b) = "some value"
-  ];
+    number: 334
+    full_name: ".some_int"
+    type: "int32"
+    repeated: true
+  }];
+  extensions 555 to 666 [declaration = {
+    number: 555
+    full_name: ".some_other_int32"
+    type: "int32"
+  }, declaration = {
+    number: 556
+    full_name: ".some_double"
+    type: "double"
+    reserved: true
+  }, declaration = {
+    number: 557
+    full_name: ".my_message"
+    type: ".SimpleMessage"
+    reserved: true
+    repeated: false
+  }];
+  extensions 777 [(.my_range_option_a) = "some other value", (.my_range_option_b) = "some value"];
 }
+
 extend .ExtendableMessage {
   optional int32 some_int = 3;
 }
+
 extend .google.protobuf.ExtensionRangeOptions {
   optional string my_range_option_a = 50000;
   optional string my_range_option_b = 50008;
@@ -1312,6 +1347,7 @@ import "google/protobuf/api.proto";
 import weak "google/protobuf/any.proto";
 import public "google/protobuf/duration.proto";
 
+
 )"));
     BOOST_CHECK_EQUAL(
       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
@@ -1321,6 +1357,7 @@ import "google/protobuf/api.proto";
 import "google/protobuf/timestamp.proto";
 import weak "google/protobuf/any.proto";
 import public "google/protobuf/duration.proto";
+
 
 )"));
 }
@@ -1350,15 +1387,16 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/any.proto";
 
 message Value {
-  google.protobuf.Any any = 1;
-}
-message HasMap {
-  map<string, foo.Value> map_string_value = 1;
-}
-message HasGoogleMap {
-  map<string, google.protobuf.Value> map_string_value = 1;
+  .google.protobuf.Any any = 1;
 }
 
+message HasMap {
+  map<string, .foo.Value> map_string_value = 1;
+}
+
+message HasGoogleMap {
+  map<string, .google.protobuf.Value> map_string_value = 1;
+}
 )"));
     BOOST_CHECK_EQUAL(
       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
@@ -1370,13 +1408,14 @@ import "google/protobuf/struct.proto";
 message Value {
   .google.protobuf.Any any = 1;
 }
+
 message HasMap {
-  map<string, foo.Value> map_string_value = 1;
-}
-message HasGoogleMap {
-  map<string, google.protobuf.Value> map_string_value = 1;
+  map<string, .foo.Value> map_string_value = 1;
 }
 
+message HasGoogleMap {
+  map<string, .google.protobuf.Value> map_string_value = 1;
+}
 )"));
 }
 
@@ -1411,13 +1450,13 @@ message HasMap {
       (R"(syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
-
 message Value {
   string string = 1;
 }
+
 message HasMap {
-  map<string, Value> properties = 1;
-  map<string, google.protobuf.Timestamp> timestamps = 2;
+  map<string, .Value> properties = 1;
+  map<string, .google.protobuf.Timestamp> timestamps = 2;
 }
 
 )"));
@@ -1425,13 +1464,13 @@ message HasMap {
       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
 
 import "google/protobuf/timestamp.proto";
-
 message Value {
   string string = 1;
 }
+
 message HasMap {
-  map<string, Value> properties = 1;
-  map<string, google.protobuf.Timestamp> timestamps = 2;
+  map<string, .Value> properties = 1;
+  map<string, .google.protobuf.Timestamp> timestamps = 2;
 }
 
 )"));
@@ -1462,22 +1501,19 @@ message SearchResponse {
       (R"(syntax = "proto2";
 
 message SearchResponse {
-
   repeated group Result = 1 {
-    optional string title = 2;
-    optional string url = 1;
-    repeated string snippets = 3;
-    optional SomeMessage msg = 4;
-
-    oneof nested_oneof {
-      string name = 6;
-    }
-
     message SomeMessage {
       optional string string = 1;
     }
+    optional string title = 2;
+    optional string url = 1;
+    repeated string snippets = 3;
+    optional .SearchResponse.Result.SomeMessage msg = 4;
     repeated group InnerGroup = 5 {
       optional int32 int32 = 1;
+    }
+    oneof nested_oneof {
+      string name = 6;
     }
   }
 }
@@ -1487,22 +1523,19 @@ message SearchResponse {
       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto2";
 
 message SearchResponse {
-
   repeated group Result = 1 {
+    message SomeMessage {
+      optional string string = 1;
+    }
     optional string url = 1;
     optional string title = 2;
     repeated string snippets = 3;
     optional .SearchResponse.Result.SomeMessage msg = 4;
-
-    oneof nested_oneof {
-      string name = 6;
-    }
-
-    message SomeMessage {
-      optional string string = 1;
-    }
     repeated group InnerGroup = 5 {
       optional int32 int32 = 1;
+    }
+    oneof nested_oneof {
+      string name = 6;
     }
   }
 }
@@ -1525,11 +1558,13 @@ message WithOneOf {
 
 )";
     auto expected_sanitized = R"(syntax = "proto3";
+
 package foo;
 
 message WithSynthetic {
   optional int32 int32 = 1;
 }
+
 message WithOneOf {
   oneof some_int {
     int32 int32 = 1;
@@ -1541,11 +1576,13 @@ message WithOneOf {
       sanitize(schema, pps::normalize::no, pps::protobuf_renderer_v2::yes),
       expected_sanitized);
     auto expected_normalized = R"(syntax = "proto3";
+
 package foo;
 
 message WithSynthetic {
   optional int32 int32 = 1;
 }
+
 message WithOneOf {
   oneof some_int {
     int32 int32 = 1;
@@ -1677,22 +1714,37 @@ option objc_class_prefix = "FS";
 option csharp_namespace = "Foo.FooService";
 option php_namespace = "my_php\ns";
 
+enum Numbers {
+  option allow_alias = true;
+  ZERO = 0;
+  MINUS_ONE = -1;
+  MINUS_TWO = -2;
+  TWO = 2;
+  ONE = 1;
+  ALIAS = 1 [deprecated = true, debug_redact = false];
+  reserved 6, 3 to 5;
+  reserved "THREE", "FOUR", "FIVE", "SIX";
+}
+
 message Baz {
   .google.protobuf.Any any = 1;
 }
+
 message Bar {
-  reserved 6;
-  reserved 3 to 5;
-
+  message NestedMessage {
+    string value = 1;
+  }
+  message MessageOptions {
+    option message_set_wire_format = false;
+    option no_standard_descriptor_accessor = true;
+    option deprecated = true;
+  }
+  enum NestedEnum {
+    FOO = 0;
+    BAR = 1;
+  }
   .google.protobuf.Any any = 2;
-  google.protobuf.Timestamp timestamp = 1;
-  repeated bool repeated_bool = 22 [packed = true];
-  map<string, string> map_string_string = 23;
-  NestedEnum repeated_nested_enum = 24 [
-    deprecated = false,
-    retention = RETENTION_SOURCE
-  ];
-
+  .google.protobuf.Timestamp timestamp = 1;
   oneof string_or_byte {
     bytes bytes = 21;
     string string = 20;
@@ -1710,45 +1762,17 @@ message Bar {
     fixed64 fixed64 = 16;
     sfixed32 sfixed32 = 17;
     sfixed64 sfixed64 = 18;
-    bool bool = 19 [
-      deprecated = false,
-      retention = RETENTION_SOURCE
-    ];
+    bool bool = 19 [deprecated = false, retention = RETENTION_SOURCE];
   }
-
-  message NestedMessage {
-    string value = 1;
-  }
-  message MessageOptions {
-    option message_set_wire_format = false;
-    option no_standard_descriptor_accessor = true;
-    option deprecated = true;
-  }
-  enum NestedEnum {
-    FOO = 0;
-    BAR = 1;
-  }
-}
-enum Numbers {
-  reserved 6;
-  reserved 3 to 5;
-  reserved "THREE";
-  reserved "FOUR";
-  reserved "FIVE";
-  reserved "SIX";
-  option allow_alias = true;
-  ZERO = 0;
-  MINUS_ONE = -1;
-  MINUS_TWO = -2;
-  TWO = 2;
-  ONE = 1;
-  ALIAS = 1 [deprecated = true, debug_redact = false];
+  repeated bool repeated_bool = 22 [packed = true];
+  map<string, string> map_string_string = 23;
+  .foo.Bar.NestedEnum repeated_nested_enum = 24 [deprecated = false, retention = RETENTION_SOURCE];
+  reserved 6, 3 to 5;
 }
 
 service FooService {
-  rpc Foo (Bar) returns (Baz);
+  rpc Foo(.foo.Bar) returns (.foo.Baz);
 }
-
 )"));
     BOOST_CHECK_EQUAL(
       normalize(schema, pps::protobuf_renderer_v2::yes), (R"(syntax = "proto3";
@@ -1759,31 +1783,46 @@ import "google/protobuf/descriptor.proto";
 import "google/protobuf/timestamp.proto";
 import public "google/protobuf/duration.proto";
 
-option cc_enable_arenas = true;
-option csharp_namespace = "Foo.FooService";
-option go_package = "foo.example.com/fooservice";
-option java_outer_classname = "FooService";
 option java_package = "com.example.foo";
-option objc_class_prefix = "FS";
+option java_outer_classname = "FooService";
 option optimize_for = SPEED;
+option go_package = "foo.example.com/fooservice";
+option cc_enable_arenas = true;
+option objc_class_prefix = "FS";
+option csharp_namespace = "Foo.FooService";
 option php_namespace = "my_php\ns";
+
+enum Numbers {
+  option allow_alias = true;
+  ZERO = 0;
+  ALIAS = 1 [deprecated = true, debug_redact = false];
+  ONE = 1;
+  TWO = 2;
+  MINUS_TWO = -2;
+  MINUS_ONE = -1;
+  reserved 3 to 5, 6;
+  reserved "FIVE", "FOUR", "SIX", "THREE";
+}
 
 message Baz {
   .google.protobuf.Any any = 1;
 }
-message Bar {
-  reserved 3 to 5;
-  reserved 6;
 
+message Bar {
+  message NestedMessage {
+    string value = 1;
+  }
+  message MessageOptions {
+    option message_set_wire_format = false;
+    option no_standard_descriptor_accessor = true;
+    option deprecated = true;
+  }
+  enum NestedEnum {
+    FOO = 0;
+    BAR = 1;
+  }
   .google.protobuf.Timestamp timestamp = 1;
   .google.protobuf.Any any = 2;
-  repeated bool repeated_bool = 22 [packed = true];
-  map<string, string> map_string_string = 23;
-  .foo.Bar.NestedEnum repeated_nested_enum = 24 [
-    deprecated = false,
-    retention = RETENTION_SOURCE
-  ];
-
   oneof integral {
     double double = 7;
     float float = 8;
@@ -1797,49 +1836,21 @@ message Bar {
     fixed64 fixed64 = 16;
     sfixed32 sfixed32 = 17;
     sfixed64 sfixed64 = 18;
-    bool bool = 19 [
-      deprecated = false,
-      retention = RETENTION_SOURCE
-    ];
+    bool bool = 19 [deprecated = false, retention = RETENTION_SOURCE];
   }
   oneof string_or_byte {
     string string = 20;
     bytes bytes = 21;
   }
-
-  message NestedMessage {
-    string value = 1;
-  }
-  message MessageOptions {
-    option deprecated = true;
-    option message_set_wire_format = false;
-    option no_standard_descriptor_accessor = true;
-  }
-  enum NestedEnum {
-    FOO = 0;
-    BAR = 1;
-  }
-}
-enum Numbers {
-  reserved 3 to 5;
-  reserved 6;
-  reserved "FIVE";
-  reserved "FOUR";
-  reserved "SIX";
-  reserved "THREE";
-  option allow_alias = true;
-  ZERO = 0;
-  ALIAS = 1 [deprecated = true, debug_redact = false];
-  ONE = 1;
-  TWO = 2;
-  MINUS_TWO = -2;
-  MINUS_ONE = -1;
+  repeated bool repeated_bool = 22 [packed = true];
+  map<string, string> map_string_string = 23;
+  .foo.Bar.NestedEnum repeated_nested_enum = 24 [deprecated = false, retention = RETENTION_SOURCE];
+  reserved 3 to 5, 6;
 }
 
 service FooService {
-  rpc Foo (.foo.Bar) returns (.foo.Baz);
+  rpc Foo(.foo.Bar) returns (.foo.Baz);
 }
-
 )"));
 }
 
