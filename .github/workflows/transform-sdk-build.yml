@@ -28,7 +28,7 @@ env:
 jobs:
   build-integration-tests:
     name: Build integration tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -46,7 +46,7 @@ jobs:
           retention-days: 1
   test-golang:
     name: Test Golang Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -64,7 +64,7 @@ jobs:
   integration-test-golang:
     name: Integration Test Golang Transform SDK
     needs: [test-golang, build-integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -100,7 +100,7 @@ jobs:
           ./wasm-integration-test -test.v
   test-rust:
     name: Test Rust Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
@@ -120,7 +120,7 @@ jobs:
   integration-test-rust:
     name: Integration Test Rust Transform SDK
     needs: [test-rust, build-integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Set up Rust
@@ -154,7 +154,7 @@ jobs:
           ./wasm-integration-test -test.v
   test-cpp:
     name: Test C++ Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     container:
       image: fedora:40
     steps:
@@ -176,7 +176,7 @@ jobs:
   integration-test-cpp:
     name: Integration Test C++ Transform SDK
     needs: [test-cpp, build-integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     container:
       image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
@@ -201,7 +201,7 @@ jobs:
           ./wasm-integration-test -test.v
   test-js:
     name: Test JS Transform SDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     container:
       image: fedora:40
     steps:
@@ -223,7 +223,7 @@ jobs:
   integration-test-js:
     name: Integration Test JS Transform SDK
     needs: [test-js, build-integration-tests]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     container:
       image: ghcr.io/webassembly/wasi-sdk:wasi-sdk-24
     steps:
