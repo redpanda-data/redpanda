@@ -20,6 +20,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/offset_interval.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "utils/tracking_allocator.h"
@@ -2711,6 +2712,36 @@ struct manifest_mutator {
         m.add(meta);
     }
 
+    void replace_offset_range(
+      const std::optional<model::bounded_offset_interval>& maybe_range) {
+        if (!maybe_range.has_value()) {
+            return;
+        }
+        auto range = maybe_range.value();
+        segment_meta replacement{
+          .is_compacted = true,
+          .size_bytes = 0,
+          .ntp_revision = model::initial_revision_id{0},
+          .sname_format = segment_name_format::v3,
+        };
+        for (const auto& meta : m) {
+            auto current = model::bounded_offset_interval::checked(
+              meta.base_offset, meta.committed_offset);
+            if (range.overlaps(current)) {
+                replacement.base_offset = std::min(
+                  replacement.base_offset, meta.base_offset);
+                replacement.committed_offset = std::max(
+                  replacement.committed_offset, meta.committed_offset);
+                replacement.delta_offset = std::min(
+                  replacement.delta_offset, meta.delta_offset);
+                replacement.delta_offset_end = std::max(
+                  replacement.delta_offset_end, meta.delta_offset_end);
+                replacement.size_bytes += meta.size_bytes;
+            }
+        }
+        m.add(replacement);
+    }
+
     void spill(model::offset so) {
         if (so == model::offset{}) {
             return;
@@ -2830,6 +2861,7 @@ struct manifest_mutator {
 
 enum class fuzzer_commands {
     add_new_segment,
+    replace_segments,
     housekeeping,
 };
 
@@ -2837,9 +2869,13 @@ struct fuzzer {
     static constexpr int max_segment_offsets = 100;
     std::vector<fuzzer_commands> commands;
 
-    explicit fuzzer(size_t segments_per_housekeeping) {
+    explicit fuzzer(
+      size_t segments_per_housekeeping, size_t replacements_per_housekeeping) {
         for (size_t i = 0; i < segments_per_housekeeping; i++) {
             commands.push_back(fuzzer_commands::add_new_segment);
+        }
+        for (size_t i = 0; i < replacements_per_housekeeping; i++) {
+            commands.push_back(fuzzer_commands::replace_segments);
         }
         commands.push_back(fuzzer_commands::housekeeping);
     }
@@ -2852,6 +2888,19 @@ struct fuzzer {
         int num_offsets = random_generators::get_int(1, max_segment_offsets);
         int num_configs = random_generators::get_int(0, num_offsets);
         return std::make_pair(num_offsets, num_configs);
+    }
+
+    std::optional<model::bounded_offset_interval>
+    replace_segments(const manifest_mutator& mm) {
+        auto base = mm.m.get_start_offset();
+        auto last = mm.m.get_last_offset();
+        if (!base.has_value()) {
+            return std::nullopt;
+        }
+        auto rb = random_generators::get_int((*base)(), last());
+        auto re = random_generators::get_int(rb, last());
+        return model::bounded_offset_interval::checked(
+          model::offset(rb), model::offset(re));
     }
 
     std::pair<model::offset, model::offset>
@@ -2871,16 +2920,21 @@ struct fuzzer {
 };
 
 void manifest_operations_fuzz(
-  size_t num_segments_per_housekeeping, size_t num_iterations) {
+  size_t num_segments_per_housekeeping,
+  size_t num_replacements_per_housekeeping,
+  size_t num_iterations) {
     manifest_mutator runner;
 
-    fuzzer f(num_segments_per_housekeeping);
+    fuzzer f(num_segments_per_housekeeping, num_replacements_per_housekeeping);
 
     runner.validate();
     for (int i = 0; i < num_iterations; i++) {
         switch (f.get_next()) {
         case fuzzer_commands::add_new_segment:
             runner.add_new_segment(f.add_new_segment(runner));
+            break;
+        case fuzzer_commands::replace_segments:
+            runner.replace_offset_range(f.replace_segments(runner));
             break;
         case fuzzer_commands::housekeeping:
             runner.housekeeping(f.housekeeping(runner));
@@ -2891,7 +2945,11 @@ void manifest_operations_fuzz(
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_fuzz) {
-    manifest_operations_fuzz(100, 10000);
+    manifest_operations_fuzz(100, 0, 10000);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_manifest_fuzz_with_replacement) {
+    manifest_operations_fuzz(100, 10, 10000);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_recycle) {
