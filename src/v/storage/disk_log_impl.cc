@@ -1208,6 +1208,10 @@ ss::future<> disk_log_impl::do_compact(
   compaction_config compact_cfg,
   std::optional<model::offset> new_start_offset) {
     compact_cfg.disk_log = this;
+
+    // Check for an early exit from compaction
+    compact_cfg.maybe_abort_compaction();
+
     if (!config::shard_local_cfg().log_compaction_use_sliding_window()) {
         co_return co_await adjacent_merge_compact(
           compact_cfg, new_start_offset);
