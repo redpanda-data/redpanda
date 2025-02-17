@@ -251,7 +251,7 @@ func (s *Serde[T]) MustAppendEncode(b []byte, v T) []byte {
 // Returns ErrBadHeader if the array is missing the leading magic byte
 // or is too small.
 func ExtractID(b []byte) (int, error) {
-	if b == nil || len(b) < 5 || b[0] != 0 {
+	if len(b) < 5 || b[0] != 0 {
 		return 0, ErrBadHeader
 	}
 	return int(binary.BigEndian.Uint32(b[1:5])), nil
