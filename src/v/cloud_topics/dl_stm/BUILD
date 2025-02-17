@@ -13,6 +13,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "dl_stm_offsets",
+    hdrs = ["dl_stm_offsets.h"],
+    include_prefix = "cloud_topics/dl_stm",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "dl_stm_state",
     srcs = ["dl_stm_state.cc"],
     hdrs = ["dl_stm_state.h"],
