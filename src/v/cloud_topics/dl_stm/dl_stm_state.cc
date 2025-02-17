@@ -18,8 +18,6 @@
 namespace experimental::cloud_topics {
 
 void dl_stm_state::push_overlay(dl_version version, dl_overlay overlay) {
-    _version_invariant.set_version(version);
-
     auto entry_it = std::find_if(
       _overlays.begin(),
       _overlays.end(),
@@ -48,6 +46,8 @@ void dl_stm_state::push_overlay(dl_version version, dl_overlay overlay) {
       // The overlay becomes visible starting with the current version.
       .added_at = version,
     });
+
+    _version_invariant.set_version(version);
 }
 
 std::optional<dl_overlay>
