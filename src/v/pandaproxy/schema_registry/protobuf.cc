@@ -277,14 +277,10 @@ private:
     pb::FileDescriptorProto _fdp;
 };
 
-template<
-  typename T,
-  typename Comp = std::ranges::less,
-  typename Proj = std::identity>
-void sort(
-  pb::RepeatedPtrField<T>* range, Comp comp = Comp{}, Proj proj = Proj{}) {
+template<typename T, typename Proj = std::identity>
+void sort(pb::RepeatedPtrField<T>* range, Proj proj = Proj{}) {
     if (range) {
-        std::ranges::sort(range->begin(), range->end(), comp, proj);
+        std::ranges::sort(*range, std::ranges::less{}, proj);
     }
 }
 
@@ -299,10 +295,9 @@ void normalize_proto(pb::FieldDescriptorProto& field) {
     }
 }
 
-// template<typename Descriptor>
 void normalize_proto(
   pb::RepeatedPtrField<pb::FieldDescriptorProto>* raw_extensions) {
-    sort(raw_extensions, std::less{}, [](const auto& extension) {
+    sort(raw_extensions, [](const auto& extension) {
         return std::make_pair(extension.extendee(), extension.number());
     });
 
@@ -315,7 +310,6 @@ void normalize_proto(
 void normalize_proto(pb::EnumDescriptorProto& enum_proto) {
     sort(
       enum_proto.mutable_reserved_range(),
-      std::less{},
       &pb::EnumDescriptorProto_EnumReservedRange::start);
 
     sort(enum_proto.mutable_reserved_name());
@@ -323,7 +317,7 @@ void normalize_proto(pb::EnumDescriptorProto& enum_proto) {
     normalize_proto(
       enum_proto.mutable_options()->mutable_uninterpreted_option());
 
-    sort(enum_proto.mutable_value(), std::less{}, [](const auto& v) {
+    sort(enum_proto.mutable_value(), [](const auto& v) {
         // In proto3, enums are open and open enums need to
         // have the first field being equal to zero. By casting
         // to an unsigned integer for sorting, all the negative
@@ -368,15 +362,11 @@ void normalize_proto(
 
     sort(
       message.mutable_reserved_range(),
-      std::less{},
       &pb::DescriptorProto_ReservedRange::start);
 
     sort(message.mutable_reserved_name());
 
-    sort(
-      message.mutable_field(),
-      std::ranges::less{},
-      &pb::FieldDescriptorProto::number);
+    sort(message.mutable_field(), &pb::FieldDescriptorProto::number);
     auto fields = std::views::filter(
       *message.mutable_field(), [](const auto& f) {
           return f.type() != pb::FieldDescriptorProto::TYPE_GROUP;
@@ -397,17 +387,13 @@ void normalize_proto(
                 oneofs.push_back(field.oneof_index());
             }
         } else {
-            normalize_proto(field);
         }
     }
     // Normalize oneof fields
     for (const int i : oneofs) {
         auto& decl = *message.mutable_oneof_decl(i);
         normalize_proto(decl.mutable_options()->mutable_uninterpreted_option());
-        sort(
-          message.mutable_field(),
-          std::ranges::less{},
-          &pb::FieldDescriptorProto::number);
+        sort(message.mutable_field(), &pb::FieldDescriptorProto::number);
         for (auto& field : fields) {
             if (field.has_oneof_index() && field.oneof_index() == i) {
                 normalize_proto(field);
