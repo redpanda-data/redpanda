@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// Enum order should not be changed
+
+enum MyEnumB {
+  ENUMB_VALUE0 = 0;
+  ENUMB_VALUE2 = 2;
+  ENUMB_VALUE1 = 1;
+}
+enum MyEnumA {
+  ENUMA_VALUE0 = 0;
+  ENUMA_VALUE2 = 2;
+  ENUMA_VALUE1 = 1;
+}
+
+

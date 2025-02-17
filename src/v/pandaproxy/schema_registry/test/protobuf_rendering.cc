@@ -125,6 +125,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "nested_extension",
       "map_entry_hack",
       "repeated_custom_options",
+      "enum_ordering",
     };
 
     auto test_path = test_utils::get_runfile_path(
