@@ -126,6 +126,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "map_entry_hack",
       "repeated_custom_options",
       "enum_ordering",
+      "message_ordering",
     };
 
     auto test_path = test_utils::get_runfile_path(

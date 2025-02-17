@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+message MessageB {
+  optional string foobarB = 3;
+  optional string barB = 2;
+  optional string fooB = 1;
+}
+
+message MessageA {
+  optional string foobarA = 3;
+  optional string barA = 2;
+  optional string fooA = 1;
+}
+
