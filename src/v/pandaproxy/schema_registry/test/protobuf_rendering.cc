@@ -127,6 +127,7 @@ TEST(ProtoRendering, test_protobuf_rendering) {
       "repeated_custom_options",
       "enum_ordering",
       "message_ordering",
+      "service_ordering",
     };
 
     auto test_path = test_utils::get_runfile_path(

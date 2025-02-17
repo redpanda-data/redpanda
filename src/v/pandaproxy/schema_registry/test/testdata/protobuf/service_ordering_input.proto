@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+message RequestA { }
+message RequestB { }
+message ResponseA { }
+message ResponseB { }
+
+// Service/Method order should not be changed
+
+service MyServiceB {
+  rpc Rpc_b(stream RequestB) returns (stream ResponseB);
+  rpc Rpc_a(RequestB) returns (ResponseB);
+}
+
+service MyServiceA {
+  rpc Rpc_b(stream RequestA) returns (stream ResponseA);
+  rpc Rpc_a(RequestA) returns (ResponseA);
+}
+
+
