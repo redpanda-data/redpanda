@@ -284,26 +284,11 @@ void sort(pb::RepeatedPtrField<T>* range, Proj proj = Proj{}) {
     }
 }
 
-void normalize_proto(pb::RepeatedPtrField<pb::UninterpretedOption>*) {
-    // Leave these alone.
-}
-
-void normalize_proto(pb::FieldDescriptorProto& field) {
-    if (field.has_options()) {
-        normalize_proto(
-          field.mutable_options()->mutable_uninterpreted_option());
-    }
-}
-
 void normalize_proto(
   pb::RepeatedPtrField<pb::FieldDescriptorProto>* raw_extensions) {
     sort(raw_extensions, [](const auto& extension) {
         return std::make_pair(extension.extendee(), extension.number());
     });
-
-    for (auto& extension : *raw_extensions) {
-        normalize_proto(extension);
-    }
 }
 
 // Normalize an enum
@@ -314,9 +299,6 @@ void normalize_proto(pb::EnumDescriptorProto& enum_proto) {
 
     sort(enum_proto.mutable_reserved_name());
 
-    normalize_proto(
-      enum_proto.mutable_options()->mutable_uninterpreted_option());
-
     sort(enum_proto.mutable_value(), [](const auto& v) {
         // In proto3, enums are open and open enums need to
         // have the first field being equal to zero. By casting
@@ -325,41 +307,10 @@ void normalize_proto(pb::EnumDescriptorProto& enum_proto) {
         return std::pair<uint32_t, std::string_view>{
           static_cast<uint32_t>(v.number()), v.name()};
     });
-    for (auto& value : *enum_proto.mutable_value()) {
-        if (!value.options().uninterpreted_option().empty()) {
-            normalize_proto(
-              value.mutable_options()->mutable_uninterpreted_option());
-        }
-    }
-}
-
-void normalize_proto(pb::ExtensionRangeOptions_Declaration&) {
-    // Nothing to do here.
-}
-
-void normalize_proto(pb::DescriptorProto_ExtensionRange& range) {
-    normalize_proto(range.mutable_options()->mutable_uninterpreted_option());
-    if (range.has_options()) {
-        auto& options = *range.mutable_options();
-
-        for (auto& decl : *options.mutable_declaration()) {
-            normalize_proto(decl);
-        }
-    }
 }
 
 // Normalize a message, including nested messages
-void normalize_proto(
-  std::optional<pb::FieldDescriptorProto>& field,
-  pb::DescriptorProto& message) {
-    auto type = field.has_value() ? field->type()
-                                  : pb::FieldDescriptorProto::TYPE_MESSAGE;
-    if (type == pb::FieldDescriptorProto::TYPE_GROUP) {
-        normalize_proto(*field);
-    }
-
-    normalize_proto(message.mutable_options()->mutable_uninterpreted_option());
-
+void normalize_proto(pb::DescriptorProto& message) {
     sort(
       message.mutable_reserved_range(),
       &pb::DescriptorProto_ReservedRange::start);
@@ -367,45 +318,6 @@ void normalize_proto(
     sort(message.mutable_reserved_name());
 
     sort(message.mutable_field(), &pb::FieldDescriptorProto::number);
-    auto fields = std::views::filter(
-      *message.mutable_field(), [](const auto& f) {
-          return f.type() != pb::FieldDescriptorProto::TYPE_GROUP;
-      });
-
-    // Each oneof section needs to start with the lowest field number, which
-    // may be different to the order of oneof_decl in the message.
-    std::vector<int> oneofs;
-
-    // Normalize non oneof fields, and record correct order of oneof indices.
-    for (auto& field : fields) {
-        if (
-          field.has_oneof_index()
-          && !(field.has_proto3_optional() && field.proto3_optional())) {
-            bool has_oneof = std::ranges::find(oneofs, field.oneof_index())
-                             != oneofs.end();
-            if (!has_oneof) {
-                oneofs.push_back(field.oneof_index());
-            }
-        } else {
-        }
-    }
-    // Normalize oneof fields
-    for (const int i : oneofs) {
-        auto& decl = *message.mutable_oneof_decl(i);
-        normalize_proto(decl.mutable_options()->mutable_uninterpreted_option());
-        sort(message.mutable_field(), &pb::FieldDescriptorProto::number);
-        for (auto& field : fields) {
-            if (field.has_oneof_index() && field.oneof_index() == i) {
-                normalize_proto(field);
-            }
-        }
-    }
-
-    // Normalize extension ranges
-    for (auto& range : *message.mutable_extension_range()) {
-        normalize_proto(range);
-    }
-
     normalize_proto(message.mutable_extension());
 
     auto nested_messages = std::views::filter(
@@ -414,75 +326,13 @@ void normalize_proto(
 
     // Normalize nested types
     for (auto& nested : nested_messages) {
-        auto it = std::ranges::find_if(
-          *message.mutable_field(), [&nested](const auto& f) {
-              return f.name() == absl::AsciiStrToLower(nested.name());
-          });
-
-        auto field = (it != message.mutable_field()->end())
-                       ? std::optional<pb::FieldDescriptorProto>{*it}
-                       : std::nullopt;
-        normalize_proto(field, nested);
+        normalize_proto(nested);
     }
 
     // Normalize nested enums
     for (auto& nested : *message.mutable_enum_type()) {
         normalize_proto(nested);
     }
-}
-
-// Normalize a service and its RPC methods
-void normalize_proto(pb::ServiceDescriptorProto& service) {
-    if (service.has_options()) {
-        normalize_proto(
-          service.mutable_options()->mutable_uninterpreted_option());
-    }
-    for (auto& method : *service.mutable_method()) {
-        if (method.has_options()) {
-            normalize_proto(
-              method.mutable_options()->mutable_uninterpreted_option());
-        }
-    }
-}
-
-// Normalize the FileOptions (if any are set)
-void normalize_proto(pb::FileOptions& options) {
-    normalize_proto(options.mutable_uninterpreted_option());
-}
-
-void normalize_proto(pb::FileDescriptorProto& fdp) {
-    std::vector<std::string_view> all_deps{
-      fdp.dependency().begin(), fdp.dependency().end()};
-
-    auto is_public = [&](const auto& dep) {
-        return std::ranges::any_of(fdp.public_dependency(), [&](int j) {
-            return fdp.dependency()[j] == dep;
-        });
-    };
-    auto is_weak = [&](const auto& dep) {
-        return std::ranges::any_of(fdp.weak_dependency(), [&](int j) {
-            return fdp.dependency()[j] == dep;
-        });
-    };
-
-    // return a range that matches the predicate
-    constexpr auto partition = [](auto begin, auto end, auto pred) {
-        return std::ranges::subrange(begin, std::partition(begin, end, pred));
-    };
-
-    auto public_deps = partition(all_deps.begin(), all_deps.end(), is_public);
-    auto weak_deps = partition(public_deps.end(), all_deps.end(), is_weak);
-    auto private_deps = std::ranges::subrange(weak_deps.end(), all_deps.end());
-
-    constexpr auto sort_and_unique = [](auto& deps) {
-        std::ranges::sort(deps);
-        deps = std::ranges::subrange(
-          deps.begin(), std::ranges::unique(deps).begin());
-    };
-
-    sort_and_unique(weak_deps);
-    sort_and_unique(private_deps);
-    sort_and_unique(public_deps);
 }
 
 void normalize_imports(pb::FileDescriptorProto& fdp, normalize norm) {
@@ -523,12 +373,9 @@ void normalize_imports(pb::FileDescriptorProto& fdp, normalize norm) {
 }
 
 void normalize_proto_file(pb::FileDescriptorProto& fdp) {
-    normalize_proto(*fdp.mutable_options());
-
     // Normalize messages
     for (auto& message : *fdp.mutable_message_type()) {
-        std::optional<pb::FieldDescriptorProto> nullopt;
-        normalize_proto(nullopt, message);
+        normalize_proto(message);
     }
 
     // Normalize enums
@@ -537,11 +384,6 @@ void normalize_proto_file(pb::FileDescriptorProto& fdp) {
     }
 
     normalize_proto(fdp.mutable_extension());
-
-    // Normalize services
-    for (auto& service : *fdp.mutable_service()) {
-        normalize_proto(service);
-    }
 }
 
 ///\brief Build a FileDescriptor using the DescriptorPool.
