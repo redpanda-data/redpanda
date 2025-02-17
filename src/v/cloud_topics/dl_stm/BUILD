@@ -30,11 +30,13 @@ redpanda_cc_library(
     include_prefix = "cloud_topics/dl_stm",
     visibility = [":__subpackages__"],
     deps = [
+        ":dl_stm_offsets",
         "//src/v/cloud_topics:dl_overlay",
         "//src/v/cloud_topics:dl_snapshot",
         "//src/v/cloud_topics:dl_version",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
+        "//src/v/serde",
     ],
 )
 

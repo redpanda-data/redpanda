@@ -11,21 +11,30 @@
 
 #include "cloud_topics/dl_overlay.h"
 #include "cloud_topics/dl_snapshot.h"
+#include "cloud_topics/dl_stm/dl_stm_offsets.h"
 #include "cloud_topics/dl_version.h"
-#include "container/fragmented_vector.h"
+#include "serde/envelope.h"
 
 #include <deque>
 
 namespace experimental::cloud_topics {
 
-struct dl_overlay_entry {
+struct dl_overlay_entry
+  : serde::
+      envelope<dl_overlay_entry, serde::version<0>, serde::compat_version<0>> {
     dl_overlay overlay;
 
     dl_version added_at;
     dl_version removed_at;
+
+    auto serde_fields() { return std::tie(overlay, added_at, removed_at); }
 };
 
-class dl_version_monotonic_invariant {
+class dl_version_monotonic_invariant
+  : public serde::envelope<
+      dl_version_monotonic_invariant,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     void set_version(dl_version version) noexcept {
         // Greater or equal for `_last_version` is required to handle retries.
@@ -53,6 +62,10 @@ public:
         _last_snapshot_version = version;
     }
 
+    auto serde_fields() {
+        return std::tie(_last_version, _last_snapshot_version);
+    }
+
 private:
     dl_version _last_version;
     dl_version _last_snapshot_version;
@@ -62,7 +75,9 @@ private:
 ///
 /// Separating the state from the state machine allows the state to be
 /// checkpointed and restored independently of the state machine.
-class dl_stm_state {
+class dl_stm_state
+  : public serde::
+      envelope<dl_stm_state, serde::version<0>, serde::compat_version<0>> {
     friend class dl_stm_state_accessor;
 
 public:
@@ -87,6 +102,14 @@ public:
     /// Remove all snapshots with version less than the given version.
     void remove_snapshots_before(dl_version last_version_to_keep);
 
+    /// Get collection of offsets maintained by the STM
+    dl_stm_offsets& get_offsets() noexcept;
+    const dl_stm_offsets& get_offsets() const noexcept;
+
+    auto serde_fields() {
+        return std::tie(_overlays, _snapshots, _version_invariant, _offsets);
+    }
+
 private:
     // A list of overlays that are stored in the cloud storage.
     // The order of elements is undefined.
@@ -99,6 +122,7 @@ private:
     std::deque<dl_snapshot_id> _snapshots;
 
     dl_version_monotonic_invariant _version_invariant;
+    dl_stm_offsets _offsets;
 };
 
 }; // namespace experimental::cloud_topics

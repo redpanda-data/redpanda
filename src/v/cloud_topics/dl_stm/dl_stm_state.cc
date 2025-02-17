@@ -147,4 +147,10 @@ void dl_stm_state::remove_snapshots_before(dl_version last_version_to_keep) {
     }
 }
 
+dl_stm_offsets& dl_stm_state::get_offsets() noexcept { return _offsets; }
+
+const dl_stm_offsets& dl_stm_state::get_offsets() const noexcept {
+    return _offsets;
+}
+
 } // namespace experimental::cloud_topics
