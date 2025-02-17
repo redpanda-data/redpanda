@@ -77,6 +77,13 @@
 #include <string_view>
 #include <unordered_set>
 
+namespace {
+
+constexpr auto not_map = std::views::filter(
+  [](const auto& m) { return !m.options().has_map_entry(); });
+
+} // namespace
+
 namespace pandaproxy::schema_registry {
 
 namespace pb = google::protobuf;
@@ -320,12 +327,8 @@ void normalize_proto(pb::DescriptorProto& message) {
     sort(message.mutable_field(), &pb::FieldDescriptorProto::number);
     normalize_proto(message.mutable_extension());
 
-    auto nested_messages = std::views::filter(
-      *message.mutable_nested_type(),
-      [](const auto& m) { return !m.options().has_map_entry(); });
-
     // Normalize nested types
-    for (auto& nested : nested_messages) {
+    for (auto& nested : *message.mutable_nested_type() | not_map) {
         normalize_proto(nested);
     }
 
@@ -374,7 +377,7 @@ void normalize_imports(pb::FileDescriptorProto& fdp, normalize norm) {
 
 void normalize_proto_file(pb::FileDescriptorProto& fdp) {
     // Normalize messages
-    for (auto& message : *fdp.mutable_message_type()) {
+    for (auto& message : *fdp.mutable_message_type() | not_map) {
         normalize_proto(message);
     }
 
