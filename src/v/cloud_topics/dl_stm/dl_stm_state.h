@@ -15,8 +15,6 @@
 #include "cloud_topics/dl_version.h"
 #include "serde/envelope.h"
 
-#include <deque>
-
 namespace experimental::cloud_topics {
 
 struct dl_overlay_entry
@@ -83,7 +81,7 @@ class dl_stm_state
 public:
     /// Add a new overlay to the state. The overlay becomes visible
     /// starting with the current version.
-    void push_overlay(dl_version version, dl_overlay overlay);
+    void push_overlay(dl_version version, dl_overlay overlay) noexcept;
 
     /// Find an overlay that contains the given offset. If no overlay
     /// contains the offset, find the overlay covering the next closest

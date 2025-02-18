@@ -14,39 +14,17 @@
 #include "model/fundamental.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace experimental::cloud_topics {
 
-void dl_stm_state::push_overlay(dl_version version, dl_overlay overlay) {
-    auto entry_it = std::find_if(
-      _overlays.begin(),
-      _overlays.end(),
-      [&overlay](const dl_overlay_entry& entry) {
-          return entry.overlay == overlay;
-      });
-    if (entry_it != _overlays.end()) {
-        // A duplicate push_overlay is tolerated if this is a retry. A retry can
-        // only happen if the version is the same.
-        // Otherwise it's an error.
-        if (entry_it->added_at == version) {
-            return;
-        }
-
-        throw std::runtime_error(fmt::format(
-          "Overlay already exists but added at a different version. Overlay: "
-          "{}, added_at: {}, "
-          "current_version: {}",
-          overlay,
-          entry_it->added_at,
-          version));
-    }
-
+void dl_stm_state::push_overlay(
+  dl_version version, dl_overlay overlay) noexcept {
     _overlays.push_back(dl_overlay_entry{
       .overlay = std::move(overlay),
       // The overlay becomes visible starting with the current version.
       .added_at = version,
     });
-
     _version_invariant.set_version(version);
 }
 
