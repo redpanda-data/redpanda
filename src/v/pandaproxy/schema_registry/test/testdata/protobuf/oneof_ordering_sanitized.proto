@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+message OneofsMessage {
+  oneof first_oneof {
+    float third_f = 7;
+    double third_d = 3;
+  }
+  double d = 6;
+  uint32 ui32 = 5;
+  int64 i64 = 4;
+  oneof second_oneof {
+    float second_f = 8;
+    double second_d = 2;
+  }
+  oneof third_oneof {
+    float first_f = 9;
+    double first_d = 1;
+  }
+}
+

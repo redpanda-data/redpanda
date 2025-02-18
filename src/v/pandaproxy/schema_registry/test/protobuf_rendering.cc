@@ -165,4 +165,5 @@ INSTANTIATE_TEST_SUITE_P(
     "repeated_custom_options",
     "enum_ordering",
     "message_ordering",
-    "service_ordering"));
+    "service_ordering",
+    "oneof_ordering"));
