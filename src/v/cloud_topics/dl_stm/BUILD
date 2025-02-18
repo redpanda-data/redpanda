@@ -46,8 +46,11 @@ redpanda_cc_library(
     hdrs = ["dl_stm.h"],
     implementation_deps = [
         ":dl_stm_commands",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/serde:map",
         "//src/v/serde:uuid",
+        "//src/v/serde:vector",
     ],
     include_prefix = "cloud_topics/dl_stm",
     visibility = ["//visibility:public"],

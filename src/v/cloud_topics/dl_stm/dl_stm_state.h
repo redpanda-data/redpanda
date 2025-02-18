@@ -110,6 +110,19 @@ public:
         return std::tie(_overlays, _snapshots, _version_invariant, _offsets);
     }
 
+    /// Create snapshot of the dl_stm_state for Raft snapshotting mechanism.
+    /// The snapshot is just a copy of the dl_stm_state that contains all
+    /// changes introduced at offset 'snapshot_at' and earlier.
+    ///
+    /// This 'snapshot' shouldn't be confused with the snapshot returned by
+    /// the 'read_snapshot' method. The 'dl_snapshot_payload' returned by it
+    /// is supposed to be uploaded to the cloud storage and consumed by the
+    /// recovery process. The 'dl_stm_state' instance returned by this method
+    /// is supposed to be used to implement 'take_snapshot' method of the
+    /// 'dl_stm' which returns Raft snapshot and is used during partition
+    /// movement.
+    dl_stm_state get_state_at(model::offset snapshot_at) const noexcept;
+
 private:
     // A list of overlays that are stored in the cloud storage.
     // The order of elements is undefined.

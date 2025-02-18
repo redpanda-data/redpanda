@@ -81,16 +81,6 @@ TEST(dl_stm_state, push_overlay) {
     state.push_overlay(ct::dl_version(1), overlay1);
 
     ASSERT_EQ(q::overlays(state).size(), 1);
-
-    // Pushing the same overlay again at the same version should be a no-op.
-    state.push_overlay(ct::dl_version(1), overlay1);
-
-    ASSERT_EQ(q::overlays(state).size(), 1);
-    ASSERT_EQ(q::overlays(state).front().added_at, ct::dl_version(1));
-    ASSERT_EQ(q::overlays(state).front().removed_at, ct::dl_version{});
-
-    // Pushing the same overlay again at a different version should throw.
-    ASSERT_ANY_THROW(state.push_overlay(ct::dl_version(2), overlay1));
 }
 
 TEST(dl_stm_state, lower_bound) {

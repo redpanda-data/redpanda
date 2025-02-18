@@ -153,4 +153,44 @@ const dl_stm_offsets& dl_stm_state::get_offsets() const noexcept {
     return _offsets;
 }
 
+dl_stm_state
+dl_stm_state::get_state_at(model::offset snapshot_at) const noexcept {
+    dl_stm_state result;
+    // Copy overlays
+    std::copy_if(
+      _overlays.begin(),
+      _overlays.end(),
+      std::back_inserter(result._overlays),
+      [snapshot_at](const dl_overlay_entry& o) noexcept {
+          return o.added_at() <= snapshot_at;
+      });
+    // Copy snapshots
+    std::copy_if(
+      _snapshots.begin(),
+      _snapshots.end(),
+      std::back_inserter(result._snapshots),
+      [snapshot_at](const dl_snapshot_id& o) noexcept {
+          return o.version() <= snapshot_at;
+      });
+    // Copy version invariant and offsets
+    if (!result._snapshots.empty()) {
+        // The snapshot versions can't go back
+        result._version_invariant.set_last_snapshot_version(
+          result._snapshots.back().version);
+    }
+    if (!result._overlays.empty()) {
+        dl_version ver;
+        for (const auto& ov : result._overlays) {
+            ver = std::max(ver, ov.added_at);
+            ver = std::max(ver, ov.removed_at);
+        }
+        result._version_invariant.set_version(ver);
+        result._offsets.advance_insync_offset(model::offset{ver()});
+        result._offsets.advance_applied_offset();
+    }
+    result._offsets.advance_last_reconciled_offset(
+      _offsets.get_last_reconciled_offset());
+    return result;
+}
+
 } // namespace experimental::cloud_topics

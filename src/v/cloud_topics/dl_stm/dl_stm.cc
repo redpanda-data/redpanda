@@ -9,10 +9,15 @@
 
 #include "cloud_topics/dl_stm/dl_stm.h"
 
+#include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
 #include "cloud_topics/dl_stm/dl_stm_commands.h"
 #include "cloud_topics/dl_stm/dl_stm_state.h"
 #include "serde/rw/map.h"
 #include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
+
+#include <stdexcept>
 
 namespace experimental::cloud_topics {
 
@@ -64,17 +69,26 @@ ss::future<> dl_stm::do_apply(const model::record_batch& batch) {
 }
 
 ss::future<raft::local_snapshot_applied>
-dl_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) {
+dl_stm::apply_local_snapshot(raft::stm_snapshot_header, iobuf&& buf) {
+    _state = serde::from_iobuf<dl_stm_state>(std::move(buf));
     co_return raft::local_snapshot_applied::yes;
 }
 
 ss::future<raft::stm_snapshot>
 dl_stm::take_local_snapshot(ssx::semaphore_units) {
-    co_return raft::stm_snapshot{};
+    auto buf = serde::to_iobuf(_state);
+    co_return raft::stm_snapshot::create(
+      0, _state.get_offsets().get_insync_offset(), std::move(buf));
 }
 
-ss::future<> dl_stm::apply_raft_snapshot(const iobuf&) { co_return; }
+ss::future<> dl_stm::apply_raft_snapshot(const iobuf& buf) {
+    _state = serde::from_iobuf<dl_stm_state>(buf.copy());
+    co_return;
+}
 
-ss::future<iobuf> dl_stm::take_snapshot(model::offset) { co_return iobuf(); }
+ss::future<iobuf> dl_stm::take_snapshot(model::offset snapshot_at) {
+    auto st = _state.get_state_at(snapshot_at);
+    co_return serde::to_iobuf(std::move(st));
+}
 
 }; // namespace experimental::cloud_topics
