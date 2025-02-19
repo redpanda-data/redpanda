@@ -431,6 +431,18 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     co_return _start_offset;
 }
 
+ss::future<compaction_result> disk_log_impl::segment_self_compact(
+  ss::lw_shared_ptr<segment> s, const compaction_config& cfg) {
+    return storage::internal::self_compact_segment(
+      s,
+      _stm_manager,
+      cfg,
+      *_probe,
+      *_readers_cache,
+      _manager.resources(),
+      _feature_table);
+}
+
 ss::future<> disk_log_impl::adjacent_merge_compact(
   compaction_config cfg, std::optional<model::offset> new_start_offset) {
     vlog(
