@@ -11,7 +11,7 @@ import signal
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, ResourceSettings
 from rptest.util import expect_exception
 from rptest.services.redpanda import LoggingConfig
 from ducktape.errors import TimeoutError
@@ -60,6 +60,9 @@ class CrashLoopChecksTest(RedpandaTest):
                                          'main': 'debug',
                                          'crash_tracker': 'trace'
                                      }),
+            # Disable core dumps as they take a long time (>1min). Core dumps are uninteresting for
+            # this test, since this test intentionally triggers crashes.
+            resource_settings=ResourceSettings(core_dump_limit="0"),
         )
         self.broker = self.redpanda.nodes[0]
 

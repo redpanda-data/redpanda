@@ -395,7 +395,8 @@ class ResourceSettings:
                  memory_mb: Optional[int] = None,
                  bypass_fsync: Optional[bool] = None,
                  nfiles: Optional[int] = None,
-                 reactor_stall_threshold: Optional[int] = None):
+                 reactor_stall_threshold: Optional[int] = None,
+                 core_dump_limit: Optional[str] = "unlimited"):
         self._num_cpus = num_cpus
         self._memory_mb = memory_mb
 
@@ -406,6 +407,7 @@ class ResourceSettings:
 
         self._nfiles = nfiles
         self._reactor_stall_threshold = reactor_stall_threshold
+        self._core_dump_limit = core_dump_limit
 
     @property
     def memory_mb(self):
@@ -423,7 +425,7 @@ class ResourceSettings:
 
         :return: 2 tuple of strings, first goes before the binary, second goes after it
         """
-        preamble = "ulimit -Sc unlimited"
+        preamble = f"ulimit -Sc {self._core_dump_limit}"
         preamble += f" -Sn {self._nfiles}; " if self._nfiles else "; "
 
         if self._num_cpus is None and not dedicated_node:
