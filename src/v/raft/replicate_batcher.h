@@ -115,7 +115,8 @@ public:
         ss::promise<result<replicate_result>> _promise;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
-    explicit replicate_batcher(consensus* ptr, size_t cache_size);
+    explicit replicate_batcher(
+      consensus* ptr, size_t cache_size, ss::scheduling_group sg);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
     replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
@@ -133,6 +134,12 @@ public:
     ss::future<> stop();
 
 private:
+    void flush_dispatch_loop();
+
+    bool can_flush() const;
+    ss::future<> flush_dispatch();
+
+    size_t cached_bytes() const;
     ss::future<> do_flush(
       std::vector<item_ptr>,
       append_entries_request,
@@ -161,6 +168,11 @@ private:
     size_t _max_batch_size;
     std::vector<item_ptr> _item_cache;
     mutex _lock{"replicate_batcher"};
+    ss::condition_variable _trigger;
+    ss::timer<> _flush_timer;
+    std::chrono::steady_clock::time_point _armed_at
+      = std::chrono::steady_clock::now();
+    ss::scheduling_group _sg;
     ss::gate _bg;
     // If true, a background flush must be pending. Used to coalesce
     // background flush requests, since one flush dequeues all items

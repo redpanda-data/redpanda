@@ -24,10 +24,18 @@
 
 namespace raft {
 using namespace std::chrono_literals; // NOLINT
-replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
+namespace {
+std::chrono::microseconds flush_interval = 2ms;
+}
+replicate_batcher::replicate_batcher(
+  consensus* ptr, size_t cache_size, ss::scheduling_group sg)
   : _ptr(ptr)
   , _max_batch_size_sem(cache_size, "raft/repl-batch")
-  , _max_batch_size(cache_size) {}
+  , _max_batch_size(cache_size)
+  , _sg(sg) {
+    _flush_timer.set_callback([this] { _trigger.signal(); });
+    flush_dispatch_loop();
+}
 
 replicate_stages replicate_batcher::replicate(
   std::optional<model::term_id> expected_term,
@@ -39,6 +47,12 @@ replicate_stages replicate_batcher::replicate(
     auto f = cache_and_wait_for_result(
       std::move(enqueued), expected_term, std::move(batches), opts);
     return {std::move(enqueued_f), std::move(f)};
+}
+void replicate_batcher::flush_dispatch_loop() {
+    return ssx::repeat_until_gate_closed(_bg, [this] {
+        return ss::with_scheduling_group(
+          _sg, [this] { return flush_dispatch(); });
+    });
 }
 
 ss::future<result<replicate_result>>
@@ -65,25 +79,12 @@ replicate_batcher::cache_and_wait_for_result(
          * replicate batcher stop method
          *
          */
-        if (!_flush_pending) {
-            _flush_pending = true;
-            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units()
-                  .then([this](auto units) {
-                      return flush(std::move(units), false);
-                  })
-                  .handle_exception([this](const std::exception_ptr& e) {
-                      // an exception here is quite unlikely, since the flush()
-                      // method generally catches all its exceptions and
-                      // propagates them to the promises associated with the
-                      // items being flushed
-                      vlog(
-                        _ptr->_ctxlog.error,
-                        "Error in background flush: {}",
-                        e);
-                  });
-            });
+
+        if (!_flush_timer.armed()) {
+            _armed_at = std::chrono::steady_clock::now();
+            _flush_timer.arm(flush_interval);
         }
+        _trigger.signal();
     } catch (...) {
         // exception in caching phase
         enqueued.set_to_current_exception();
@@ -94,6 +95,7 @@ replicate_batcher::cache_and_wait_for_result(
 }
 
 ss::future<> replicate_batcher::stop() {
+    _trigger.broken();
     return _bg.close().then([this] {
         // we keep a lock here to make sure that all inflight requests have
         // finished already
@@ -107,6 +109,47 @@ ss::future<> replicate_batcher::stop() {
     });
 }
 
+bool replicate_batcher::can_flush() const {
+    if (_item_cache.empty()) {
+        return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const auto can_flush = _armed_at + flush_interval < now
+                           || cached_bytes() >= 512_KiB;
+    fmt::print(
+      ">>> can_flush: {}, size: {} bytes: {} elapsed: {}ms\n",
+      can_flush,
+      _item_cache.size(),
+      cached_bytes(),
+      (now - _armed_at) / 1ms);
+    return can_flush;
+}
+
+size_t replicate_batcher::cached_bytes() const {
+    return _max_batch_size - _max_batch_size_sem.available_units();
+}
+
+ss::future<> replicate_batcher::flush_dispatch() {
+    return _trigger.wait([this] { return can_flush(); }).then([this] {
+        _flush_pending = true;
+
+        return _lock.get_units()
+          .then([this](auto units) {
+              ssx::spawn_with_gate(
+                _bg, [this, units = std::move(units)]() mutable {
+                    return flush(std::move(units), false);
+                });
+          })
+
+          .handle_exception([this](const std::exception_ptr& e) {
+              // an exception here is quite unlikely, since the flush()
+              // method generally catches all its exceptions and
+              // propagates them to the promises associated with the
+              // items being flushed
+              vlog(_ptr->_ctxlog.error, "Error in background flush: {}", e);
+          });
+    });
+}
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
   std::optional<model::term_id> expected_term,
   chunked_vector<model::record_batch> batches,

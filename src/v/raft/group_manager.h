@@ -56,6 +56,7 @@ public:
 
     group_manager(
       model::node_id self,
+      ss::scheduling_group produce_sg,
       ss::scheduling_group raft_scheduling_group,
       ss::scheduling_group raft_heartbeats_sched_group,
       config_provider_fn,
@@ -110,6 +111,7 @@ private:
     do_shutdown(ss::lw_shared_ptr<consensus>, bool remove_persistent_state);
 
     model::node_id _self;
+    ss::scheduling_group _produce_sg;
     ss::scheduling_group _raft_sg;
     configuration _configuration;
     ss::shared_ptr<raft::buffered_protocol> _buffered_protocol;

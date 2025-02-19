@@ -72,6 +72,7 @@ struct simple_raft_fixture {
             _self,
             ss::default_scheduling_group(),
             ss::default_scheduling_group(),
+            ss::default_scheduling_group(),
             [] {
                 return raft::group_manager::configuration{
                   .heartbeat_interval

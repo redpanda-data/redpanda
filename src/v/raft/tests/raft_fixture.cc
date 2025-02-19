@@ -471,7 +471,9 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       timeout_jitter(_election_timeout),
       _f_log,
       scheduling_config(
-        ss::default_scheduling_group(), ss::default_priority_class()),
+        ss::default_scheduling_group(),
+        ss::default_priority_class(),
+        ss::default_scheduling_group()),
       config::mock_binding<std::chrono::milliseconds>(1s),
       config::mock_binding<bool>(_enable_longest_log_detection),
       consensus_client_protocol(_buffered_protocol),

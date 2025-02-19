@@ -742,20 +742,26 @@ struct scheduling_config {
       ss::scheduling_group default_sg,
       ss::io_priority_class default_iopc,
       ss::scheduling_group learner_recovery_sg,
-      ss::io_priority_class learner_recovery_iopc)
+      ss::io_priority_class learner_recovery_iopc,
+      ss::scheduling_group produce_sg)
       : default_sg(default_sg)
       , default_iopc(default_iopc)
       , learner_recovery_sg(learner_recovery_sg)
-      , learner_recovery_iopc(learner_recovery_iopc) {}
+      , learner_recovery_iopc(learner_recovery_iopc)
+      , produce_sg(produce_sg) {}
 
     scheduling_config(
-      ss::scheduling_group default_sg, ss::io_priority_class default_iopc)
-      : scheduling_config(default_sg, default_iopc, default_sg, default_iopc) {}
+      ss::scheduling_group default_sg,
+      ss::io_priority_class default_iopc,
+      ss::scheduling_group produce_sg)
+      : scheduling_config(
+          default_sg, default_iopc, default_sg, default_iopc, produce_sg) {}
 
     ss::scheduling_group default_sg;
     ss::io_priority_class default_iopc;
     ss::scheduling_group learner_recovery_sg;
     ss::io_priority_class learner_recovery_iopc;
+    ss::scheduling_group produce_sg;
 };
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);

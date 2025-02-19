@@ -1437,6 +1437,7 @@ void application::wire_up_redpanda_services(
     raft_group_manager
       .start(
         node_id,
+        sched_groups.produce_sg(),
         sched_groups.raft_sg(),
         sched_groups.raft_heartbeats(),
         [] {
