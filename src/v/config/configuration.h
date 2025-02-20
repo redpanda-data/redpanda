@@ -36,6 +36,8 @@
 
 #include <cctype>
 #include <chrono>
+#include <map>
+#include <unordered_set>
 #include <vector>
 
 class monitor_unsafe;
@@ -730,6 +732,28 @@ struct configuration final : public config_store {
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
+
+    // Performs validation of the provided config after all updates have been
+    // applied. This allows for multi-property validation checks to be
+    // implemented. For example, certain properties may be mutually exclusive in
+    // terms of being toggled, and standard property validation cannot take this
+    // into account.
+    //
+    // Returns a config_validation_result, which contains both a set of
+    // properties which would need to be unset for the config to be valid, and a
+    // map of related errors. It is not guaranteed that every key in
+    // `properties_to_unset` has a key in `errors`. However, there should be
+    // related properties which describe the error encountered (e.g
+    // `cloud_storage_bucket` being `null` when `cloud_storage_enabled` is set
+    // to `true` causes `cloud_storage_enabled` to become unset in
+    // `properties_to_unset`, but the associated error is under the key
+    // `cloud_storage_bucket` in `errors`).
+    struct config_validation_result {
+        std::unordered_set<ss::sstring> properties_to_unset;
+        std::map<ss::sstring, ss::sstring> errors;
+    };
+    static config_validation_result
+    validate_config(const config::configuration& config);
 
 public:
     development_feature_property<bool> development_enable_cloud_topics;

@@ -1546,23 +1546,6 @@ json::validator make_cluster_config_validator() {
     return json::validator(schema);
 }
 
-ss::sstring
-join_properties(const std::vector<std::reference_wrapper<
-                  const config::property<std::optional<ss::sstring>>>>& props) {
-    ss::sstring result = "";
-    for (size_t idx = 0; const auto& prop : props) {
-        if (idx == props.size() - 1) {
-            result += ss::sstring{prop.get().name()};
-        } else {
-            result += ssx::sformat("{}, ", prop.get().name());
-        }
-
-        ++idx;
-    };
-
-    return result;
-}
-
 /**
  * This function provides special case validation for configuration
  * properties that need to check other properties' values as well
@@ -1607,110 +1590,6 @@ void config_multi_property_validation(
         }
     }
 
-    if (updated_config.cloud_storage_enabled()) {
-        // The properties that cloud_storage::configuration requires
-        // to be set if cloud storage is enabled.
-        using config_properties_seq = std::vector<std::reference_wrapper<
-          const config::property<std::optional<ss::sstring>>>>;
-
-        switch (updated_config.cloud_storage_credentials_source.value()) {
-        case model::cloud_credentials_source::config_file: {
-            config_properties_seq s3_properties = {
-              std::ref(updated_config.cloud_storage_region),
-              std::ref(updated_config.cloud_storage_bucket),
-              std::ref(updated_config.cloud_storage_access_key),
-              std::ref(updated_config.cloud_storage_secret_key),
-            };
-
-            config_properties_seq abs_properties = {
-              std::ref(updated_config.cloud_storage_azure_storage_account),
-              std::ref(updated_config.cloud_storage_azure_container),
-              std::ref(updated_config.cloud_storage_azure_shared_key),
-            };
-
-            std::array<config_properties_seq, 2> valid_configurations = {
-              s3_properties, abs_properties};
-
-            bool is_valid_configuration = std::any_of(
-              valid_configurations.begin(),
-              valid_configurations.end(),
-              [](const auto& config) {
-                  return std::none_of(
-                    config.begin(), config.end(), [](const auto& prop) {
-                        return prop() == std::nullopt;
-                    });
-              });
-
-            if (!is_valid_configuration) {
-                errors["cloud_storage_enabled"] = ssx::sformat(
-                  "To enable cloud storage you need to configure S3 or "
-                  "Azure "
-                  "Blob Storage access. For S3 {} must be set. For ABS {} "
-                  "must be set",
-                  join_properties(s3_properties),
-                  join_properties(abs_properties));
-            }
-        } break;
-        case model::cloud_credentials_source::aws_instance_metadata:
-        case model::cloud_credentials_source::gcp_instance_metadata:
-        case model::cloud_credentials_source::sts: {
-            // basic config checks for cloud_storage. for sts it is expected to
-            // receive part of the configuration via env variables, while
-            // aws_instance_metadata and gcp_instance_metadata do not require
-            // extra configuration
-            config_properties_seq properties = {
-              std::ref(updated_config.cloud_storage_region),
-              std::ref(updated_config.cloud_storage_bucket),
-            };
-
-            for (auto& p : properties) {
-                if (p() == std::nullopt) {
-                    errors[ss::sstring(p.get().name())] = ssx::sformat(
-                      "Must be set when cloud storage enabled with "
-                      "cloud_storage_credentials_source = {}",
-                      updated_config.cloud_storage_credentials_source.value());
-                }
-            }
-        } break;
-        case model::cloud_credentials_source::azure_aks_oidc_federation: {
-            // for azure_aks_oidc_federation it is expected to receive part of
-            // the configuration via env variables. this check is just for
-            // related cluster properties
-            config_properties_seq properties = {
-              std::ref(updated_config.cloud_storage_azure_storage_account),
-              std::ref(updated_config.cloud_storage_azure_container),
-            };
-
-            for (auto& p : properties) {
-                if (p() == std::nullopt) {
-                    errors[ss::sstring(p.get().name())]
-                      = "Must be set when cloud storage enabled with "
-                        "cloud_storage_credentials_source = "
-                        "azure_aks_oidc_federation";
-                }
-            }
-        } break;
-        case model::cloud_credentials_source::azure_vm_instance_metadata: {
-            // azure_vm_instance_metadata requires an client_id to work
-            // correctly
-            config_properties_seq properties = {
-              std::ref(updated_config.cloud_storage_azure_storage_account),
-              std::ref(updated_config.cloud_storage_azure_container),
-              std::ref(updated_config.cloud_storage_azure_managed_identity_id),
-            };
-
-            for (auto& p : properties) {
-                if (p() == std::nullopt) {
-                    errors[ss::sstring(p.get().name())]
-                      = "Must be set when cloud storage enabled with "
-                        "cloud_storage_credentials_source = "
-                        "azure_vm_instance_metadata";
-                }
-            }
-        } break;
-        }
-    }
-
     if (
       updated_config.enable_schema_id_validation
         != pandaproxy::schema_registry::schema_id_validation_mode::none
@@ -1720,30 +1599,9 @@ void config_multi_property_validation(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 
-    // cloud_storage_cache_size/size_percent validation
-    if (auto invalid_cache = cloud_storage::cache::validate_cache_config(
-          updated_config);
-        invalid_cache.has_value()) {
-        auto name = ss::sstring(updated_config.cloud_storage_cache_size.name());
-        errors[name] = invalid_cache.value();
-    }
-
-    // For simplicity's sake, cloud storage read/write permissions cannot be
-    // enabled at the same time as tombstone_retention_ms at the cluster level,
-    // to avoid the case in which topics are created with TS read/write
-    // permissions and bugs are encountered later with tombstone removal.
-    if (updated_config.tombstone_retention_ms().has_value() &&
-	(updated_config.cloud_storage_enabled()
-	 || updated_config.cloud_storage_enable_remote_read()
-	 || updated_config.cloud_storage_enable_remote_write())) {
-        errors["cloud_storage_enabled"] = ssx::sformat(
-          "cannot set {} if any of ({}, {}, {}) are enabled at the cluster "
-          "level",
-          updated_config.tombstone_retention_ms.name(),
-          updated_config.cloud_storage_enabled.name(),
-          updated_config.cloud_storage_enable_remote_read.name(),
-          updated_config.cloud_storage_enable_remote_write.name());
-    }
+    auto cfg_validation_result = config::configuration::validate_config(
+      updated_config);
+    errors.merge(cfg_validation_result.errors);
 }
 } // namespace
 

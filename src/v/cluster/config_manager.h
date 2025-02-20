@@ -14,6 +14,7 @@
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
 #include "cluster/notification.h"
+#include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/record.h"
