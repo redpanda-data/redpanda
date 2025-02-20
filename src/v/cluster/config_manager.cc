@@ -429,6 +429,27 @@ config_manager::preload(const YAML::Node& legacy_config) {
         }
     }
 
+    // Validate the local config on this shard. We will have to propagate
+    // changes to all shards in case of errors.
+    auto cfg_validation_result = config::configuration::validate_config(
+      config::shard_local_cfg());
+
+    for (const auto& [prop_name, error] : cfg_validation_result.errors) {
+        vlog(
+          clusterlog.warn,
+          "Misconfigured preload property {}: {}",
+          prop_name,
+          error);
+    }
+
+    for (const auto& property_to_unset :
+         cfg_validation_result.properties_to_unset) {
+        co_await ss::smp::invoke_on_all([&property_to_unset]() {
+            config::shard_local_cfg().get(property_to_unset).reset();
+        });
+        result.raw_values.erase(property_to_unset);
+    }
+
     co_return result;
 }
 
