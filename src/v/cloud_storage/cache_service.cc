@@ -14,7 +14,6 @@
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/recursive_directory_walker.h"
-#include "config/configuration.h"
 #include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -2003,29 +2002,6 @@ ss::future<> cache::sync_access_time_tracker(
           "syncing access time tracker with disk skipped, sync is already "
           "running");
     }
-}
-
-std::optional<ss::sstring>
-cache::validate_cache_config(const config::configuration& conf) {
-    const auto& cloud_storage_cache_size = conf.cloud_storage_cache_size;
-    const auto& cloud_storage_cache_size_pct
-      = conf.cloud_storage_cache_size_percent;
-
-    // If not set, cloud cache uses default value of 0.0
-    auto cache_size_pct = cloud_storage_cache_size_pct().value_or(0.0);
-
-    using cache_size_pct_type = double;
-    static constexpr auto epsilon
-      = std::numeric_limits<cache_size_pct_type>::epsilon();
-
-    if ((cache_size_pct < epsilon) && (cloud_storage_cache_size() == 0)) {
-        return ss::format(
-          "Cannot set both {} and {} to 0.",
-          cloud_storage_cache_size.name(),
-          cloud_storage_cache_size_pct.name());
-    }
-
-    return std::nullopt;
 }
 
 } // namespace cloud_storage
