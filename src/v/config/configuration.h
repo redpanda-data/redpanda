@@ -796,31 +796,4 @@ bool development_feature_property<T>::development_features_enabled(
 
 configuration& shard_local_cfg();
 
-// TODO: Move to anonymous namespace
-// Checks if a cluster configuration is valid for the properties
-// `cloud_storage_cache_size` and `cloud_storage_cache_size_percent`.
-// Two cases are invalid: 1. the case in which both are 0, 2. the case in
-// which `cache_size` is 0 while `cache_size_percent` is `std::nullopt`.
-//
-// Returns `std::nullopt` if the passed configuration is valid, or an
-// `ss::sstring` explaining the misconfiguration otherwise.
-std::optional<ss::sstring>
-validate_cloud_storage_cache_config(const config::configuration& conf) {
-    const auto& cloud_storage_cache_size = conf.cloud_storage_cache_size;
-    const auto& cloud_storage_cache_size_pct
-      = conf.cloud_storage_cache_size_percent;
-
-    // If not set, cloud cache uses default value of 0.0
-    auto cache_size_pct = cloud_storage_cache_size_pct().value_or(0.0);
-
-    if ((cache_size_pct == 0.0) && (cloud_storage_cache_size() == 0)) {
-        return ss::format(
-          "Cannot set both {} and {} to 0.",
-          cloud_storage_cache_size.name(),
-          cloud_storage_cache_size_pct.name());
-    }
-
-    return std::nullopt;
-}
-
 } // namespace config
