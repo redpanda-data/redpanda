@@ -34,18 +34,7 @@ namespace {
 ss::sstring
 join_properties(const std::vector<std::reference_wrapper<
                   const config::property<std::optional<ss::sstring>>>>& props) {
-    ss::sstring result = "";
-    for (size_t idx = 0; const auto& prop : props) {
-        if (idx == props.size() - 1) {
-            result += ss::sstring{prop.get().name()};
-        } else {
-            result += ssx::sformat("{}, ", prop.get().name());
-        }
-
-        ++idx;
-    };
-
-    return result;
+    return ssx::sformat("{}", fmt::join(props, ", "));
 }
 
 } // namespace
