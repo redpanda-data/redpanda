@@ -813,8 +813,19 @@ class RpkTool:
                                use_schema_registry=use_schema_registry
                                is not None)
 
-    def group_seek_to(self, group, to):
+    def group_seek_to(self,
+                      group: str,
+                      to,
+                      topics: str | list[str] = [],
+                      allow_new_topics: bool = False):
         cmd = ["seek", group, "--to", to]
+        if topics:
+            if isinstance(topics, str):
+                topics = [topics]
+            cmd.append("--topics")
+            cmd += topics
+        if allow_new_topics:
+            cmd.append("--allow-new-topics")
         self._run_group(cmd)
 
     def group_describe(self, group, summary=False, tolerant=False):
