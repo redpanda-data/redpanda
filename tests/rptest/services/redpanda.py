@@ -1279,11 +1279,13 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
             ns: Any,
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
             namespace: str | None = None,
-            topic: str | None = None):
+            topic: str | None = None,
+            expect_metric: bool = False):
         '''Does the main work of the metric_sum() implementation given a list of ns to iterate over.
         '''
 
         count = 0
+        metric_seen = False
         for n in ns:
             metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
             for family in metrics:
@@ -1301,7 +1303,10 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
                         if labels.get("redpanda_topic",
                                       labels.get("topic")) != topic:
                             continue
+                    metric_seen = True
                     count += int(sample.value)
+        if expect_metric:
+            assert metric_seen, f"Metric {metric_name} was not observed"
         return count
 
 
@@ -1533,7 +1538,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                    metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
                    namespace: str | None = None,
                    topic: str | None = None,
-                   nodes: Any = None):
+                   nodes: Any = None,
+                   expect_metric: bool = False):
         '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
@@ -1542,8 +1548,12 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
         if nodes is None:
             nodes = self.nodes
 
-        return self._metric_sum(metric_name, nodes, metrics_endpoint,
-                                namespace, topic)
+        return self._metric_sum(metric_name,
+                                nodes,
+                                metrics_endpoint,
+                                namespace,
+                                topic,
+                                expect_metric=expect_metric)
 
     def healthy(self):
         """
