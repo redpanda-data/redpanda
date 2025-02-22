@@ -122,18 +122,6 @@ public:
               });
         });
     }
-
-    void restart() {
-        shutdown();
-        app_signal = std::make_unique<::stop_signal>();
-        ss::smp::invoke_on_all([] {
-            auto& config = config::shard_local_cfg();
-            config.get("disable_metrics").set_value(false);
-        }).get();
-        app.initialize(proxy_config(), proxy_client_config());
-        app.check_environment();
-        app.wire_up_and_start(*app_signal, true);
-    }
 };
 
 FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
@@ -184,7 +172,7 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
       test_tp, kafka::error_code::unknown_topic_or_partition)
       .get();
     info("Restarting redpanda, first time");
-    restart();
+    restart(should_wipe::no);
     wait_for_controller_leadership().get();
     info("Creating {} with {} partitions", test_tp, 3);
     create_topic(test_tp(), 3, 1);
@@ -197,7 +185,7 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
     create_topic(test_tp(), 3, 1);
     wait_until_topic_status(test_tp, kafka::error_code::none).get();
     info("Restarting redpanda, second time");
-    restart();
+    restart(should_wipe::no);
     info("Waiting for recovery");
     wait_for_controller_leadership().get();
     wait_until_topic_status(test_tp, kafka::error_code::none).get();
@@ -272,7 +260,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
             })
           .get();
     info("Restarting redpanda");
-    restart();
+    restart(should_wipe::no);
 
     // make sure we can read the same amount of data
     {
