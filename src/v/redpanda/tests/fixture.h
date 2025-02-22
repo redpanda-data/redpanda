@@ -280,6 +280,9 @@ public:
         app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
+        app.controller->get_partition_leaders()
+          .invoke_on_all([](cluster::partition_leaders_table& t) { t.reset(); })
+          .get();
     }
 
     config::configuration& lconf() { return config::shard_local_cfg(); }

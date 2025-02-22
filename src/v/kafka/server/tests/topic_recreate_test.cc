@@ -176,6 +176,7 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
     wait_for_controller_leadership().get();
     info("Creating {} with {} partitions", test_tp, 3);
     create_topic(test_tp(), 3, 1);
+    wait_until_topic_status(test_tp, kafka::error_code::none).get();
     info("Deleting {}", test_tp);
     delete_topics({test_tp});
     wait_until_topic_status(
