@@ -23,8 +23,11 @@ class PartitionMovementMixin():
     INVALID_CORE = 12121212
 
     @staticmethod
-    def _random_partition(metadata):
-        topic = random.choice(metadata)
+    def _random_partition(metadata, topic_name: str = ""):
+        if topic_name:
+            topic = next(t for t in metadata if t.name == topic_name)
+        else:
+            topic = random.choice(metadata)
         partition = random.choice(topic.partitions)
         return topic.name, partition.id
 
@@ -197,10 +200,10 @@ class PartitionMovementMixin():
 
         return (topic, partition, new_assignment)
 
-    def _move_and_verify(self):
+    def _move_and_verify(self, topic_name: str = ""):
         # choose a random topic-partition
         metadata = self.client().describe_topics()
-        topic, partition = self._random_partition(metadata)
+        topic, partition = self._random_partition(metadata, topic_name)
         # timeout for __consumer_offsets topic has to be long enough
         # to wait for compaction to finish. For resource constrained machines
         # and redpanda debug builds it may take a very long time
