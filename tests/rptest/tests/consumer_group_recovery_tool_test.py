@@ -52,7 +52,8 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
         # for example, kgo-verifier-1691097745-347-0
         kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
 
-        self.logger.debug(f"Issue ListGroups, expect {num_groups} groups")
+        self.logger.debug(
+            f"Issue ListGroups, expect {num_groups} kgo verifier groups")
 
         def do_list_groups():
             res = rpk.group_list_names()
@@ -60,12 +61,14 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             if res is None:
                 return False
 
+            res = list(filter(lambda t: kgo_group_re.match(t) is not None,
+                              res))
+
             if len(res) != num_groups:
                 return False
 
-            kgo_group_m = kgo_group_re.match(res[0])
-            self.logger.debug(f"kgo group match {kgo_group_m}")
-            return False if kgo_group_m is None else (True, res)
+            self.logger.debug(f"kgo group matches {res}")
+            return (True, res)
 
         group_list_res = wait_until_result(
             do_list_groups,
