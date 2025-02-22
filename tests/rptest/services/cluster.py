@@ -123,6 +123,7 @@ def cluster(log_allow_list: LogAllowList | None = None,
                     # self.redpanda.decode_backtraces()
 
                     if isinstance(redpanda, RedpandaServiceBase):
+                        redpanda.stop_load_gen()
                         redpanda.cloud_storage_diagnostics()
                     if isinstance(redpanda,
                                   RedpandaService | RedpandaServiceCloud):

@@ -2514,6 +2514,35 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 sw.elapsedf(f"# Done log copy for {name} (interim)"))
         return {}
 
+class ConsumerOffsetTopicLoadGenerator:
+    def __init__(self, redpanda, num_groups):
+        self.redpanda = redpanda
+        self.num_groups = num_groups
+        self._stop = threading.Event()
+
+    def start(self):
+        self.thread = threading.Thread(target=self.run)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self.thread.join()
+
+    def run(self):
+        while not self._stop.is_set():
+            rpk = RpkTool(self.redpanda)
+            group = f"load-gen-group{random.randint(0,self.num_groups)}"
+            try:
+                topics = list(rpk.list_topics())
+            except Exception as e:
+                self.redpanda.logger.debug(f"Failed to get topics {e}")
+                time.sleep(1)
+                continue
+            try:
+                rpk.group_seek_to(group, "start", topics, True)
+            except:
+                time.sleep(2)  # relax
 
 class RedpandaService(RedpandaServiceBase):
 
@@ -2645,6 +2674,21 @@ class RedpandaService(RedpandaServiceBase):
         self._seed_servers = self.nodes
 
         self._expect_max_controller_records = 1000
+
+        self.loadgen = []
+        self.start_load_gen()
+
+    def start_load_gen(self):
+        self.loadgen = [ConsumerOffsetTopicLoadGenerator(self, 1000) for _ in range(10)]
+        for generator in self.loadgen:
+            generator.start()
+
+    def stop_load_gen(self):
+        for generator in self.loadgen:
+            try:
+                generator.stop()
+            except:
+                pass
 
     def redpanda_env_preamble(self):
         # Pass environment variables via FOO=BAR shell expressions
