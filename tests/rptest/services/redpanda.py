@@ -2515,10 +2515,11 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         return {}
 
 class ConsumerOffsetTopicLoadGenerator:
-    def __init__(self, redpanda, num_groups):
+    def __init__(self, redpanda, num_groups, check_consistency):
         self.redpanda = redpanda
         self.num_groups = num_groups
         self._stop = threading.Event()
+        self.check_consistency = check_consistency
 
     def start(self):
         self.thread = threading.Thread(target=self.run)
@@ -2531,6 +2532,15 @@ class ConsumerOffsetTopicLoadGenerator:
 
     def run(self):
         while not self._stop.is_set():
+            if self.check_consistency:
+                metric_name = "vectorized_raft_offset_translator_inconsistency_errors_total"
+                errors = None
+                try:
+                    errors = self.redpanda.metric_sum(metric_name, expect_metric=True)
+                except:
+                    pass
+                if errors is not None:
+                    assert errors == 0
             rpk = RpkTool(self.redpanda)
             group = f"load-gen-group{random.randint(0,self.num_groups)}"
             try:
@@ -2679,7 +2689,7 @@ class RedpandaService(RedpandaServiceBase):
         self.start_load_gen()
 
     def start_load_gen(self):
-        self.loadgen = [ConsumerOffsetTopicLoadGenerator(self, 1000) for _ in range(10)]
+        self.loadgen = [ConsumerOffsetTopicLoadGenerator(self, 1000, i == 0) for i in range(10)]
         for generator in self.loadgen:
             generator.start()
 
