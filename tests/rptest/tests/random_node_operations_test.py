@@ -10,6 +10,7 @@
 import math
 import random
 import re
+import time
 import threading
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -44,6 +45,30 @@ TS_LOG_ALLOW_LIST = [
     re.compile(".*archival -.* System error during SSL read:.*")
 ]
 
+class ConsumerOffsetTopicLoadGenerator:
+    def __init__(self, redpanda, num_groups):
+        self.rpk = RpkTool(redpanda)
+        self.num_groups = num_groups
+        self._stop = threading.Event()
+
+    def start(self):
+        self.thread = threading.Thread(target=self.run)
+        self.thread.daemon = True
+        self.thread.start()
+        self.start_time = time.time()
+
+    def stop(self):
+        self._stop.set()
+        self.thread.join()
+
+    def run(self):
+        while not self._stop.is_set():
+            group = f"group{random.randint(0,self.num_groups)}"
+            try:
+                topics = list(self.rpk.list_topics())
+                self.rpk.group_seek_to(group, "start", topics, True)
+            except:
+                time.sleep(2)  # relax
 
 class RandomNodeOperationsTest(PreallocNodesTest):
     def __init__(self, test_context, *args, **kwargs):
@@ -90,6 +115,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             cloud_storage_bucket=self._si_settings.cloud_storage_bucket,
             filesystem_wrapper_mode=False)
 
+        self.consumer_offsets_load_gens = []
+
     def min_producer_records(self):
         return 20 * self.producer_throughput
 
@@ -108,6 +135,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
     def tearDown(self):
         if self.admin_fuzz is not None:
             self.admin_fuzz.stop()
+
+        for generator in self.consumer_offsets_load_gens:
+            generator.stop()
 
         return super().tearDown()
 
@@ -422,6 +452,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         client.create_topic(regular_topic)
         self.maybe_enable_iceberg_for_topic(regular_topic, with_iceberg)
 
+        self.consumer_offsets_load_gens = [ConsumerOffsetTopicLoadGenerator(self.redpanda, 1000) for _ in range(10)]
+        for generator in self.consumer_offsets_load_gens:
+            generator.start()
+
         if with_tiered_storage:
             # change local retention policy to make some local segments will be deleted during the test
             self._alter_local_topic_retention_bytes(regular_topic.name,
@@ -624,3 +658,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 controller_snapshot = log_viewer.read_controller_snapshot(node)
                 self.logger.info(
                     f"Read controller snapshot: {controller_snapshot} ")
+
+        metric_name = "vectorized_raft_offset_translator_inconsistency_errors_total"
+        errors = self.redpanda.metric_sum(metric_name, expect_metric=True)
+        assert errors == 0
