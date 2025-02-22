@@ -45,6 +45,7 @@ TS_LOG_ALLOW_LIST = [
     re.compile(".*archival -.* System error during SSL read:.*")
 ]
 
+
 class ConsumerOffsetTopicLoadGenerator:
     def __init__(self, redpanda, num_groups):
         self.rpk = RpkTool(redpanda)
@@ -69,6 +70,7 @@ class ConsumerOffsetTopicLoadGenerator:
                 self.rpk.group_seek_to(group, "start", topics, True)
             except:
                 time.sleep(2)  # relax
+
 
 class RandomNodeOperationsTest(PreallocNodesTest):
     def __init__(self, test_context, *args, **kwargs):
@@ -452,7 +454,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         client.create_topic(regular_topic)
         self.maybe_enable_iceberg_for_topic(regular_topic, with_iceberg)
 
-        self.consumer_offsets_load_gens = [ConsumerOffsetTopicLoadGenerator(self.redpanda, 1000) for _ in range(10)]
+        self.consumer_offsets_load_gens = [
+            ConsumerOffsetTopicLoadGenerator(self.redpanda, 1000)
+            for _ in range(10)
+        ]
         for generator in self.consumer_offsets_load_gens:
             generator.start()
 

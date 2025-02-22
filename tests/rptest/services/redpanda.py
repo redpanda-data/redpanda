@@ -2514,6 +2514,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                 sw.elapsedf(f"# Done log copy for {name} (interim)"))
         return {}
 
+
 class ConsumerOffsetTopicLoadGenerator:
     def __init__(self, redpanda, num_groups, check_consistency):
         self.redpanda = redpanda
@@ -2536,7 +2537,8 @@ class ConsumerOffsetTopicLoadGenerator:
                 metric_name = "vectorized_raft_offset_translator_inconsistency_errors_total"
                 errors = None
                 try:
-                    errors = self.redpanda.metric_sum(metric_name, expect_metric=True)
+                    errors = self.redpanda.metric_sum(metric_name,
+                                                      expect_metric=True)
                 except:
                     pass
                 if errors is not None:
@@ -2553,6 +2555,7 @@ class ConsumerOffsetTopicLoadGenerator:
                 rpk.group_seek_to(group, "start", topics, True)
             except:
                 time.sleep(2)  # relax
+
 
 class RedpandaService(RedpandaServiceBase):
 
@@ -2689,7 +2692,10 @@ class RedpandaService(RedpandaServiceBase):
         self.start_load_gen()
 
     def start_load_gen(self):
-        self.loadgen = [ConsumerOffsetTopicLoadGenerator(self, 1000, i == 0) for i in range(10)]
+        self.loadgen = [
+            ConsumerOffsetTopicLoadGenerator(self, 1000, i == 0)
+            for i in range(10)
+        ]
         for generator in self.loadgen:
             generator.start()
 
