@@ -235,11 +235,10 @@ class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
         self.samples = samples
 
-    def label_filter(self, labels: Mapping[str, str]):
+    def label_filter(self, labels: Mapping[str, str], match_all: bool = False):
         def f(sample):
-            for key, value in labels.items():
-                assert key in sample.labels
-                return sample.labels[key] == value
+            reducer = all if match_all else any
+            return reducer(sample.labels[k] == v for k, v in labels.items())
 
         return MetricSamples([s for s in filter(f, self.samples)])
 
