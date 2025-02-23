@@ -71,7 +71,9 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
 
         topic = self.topics[0].name
         partition_count = self.topics[0].partition_count
-        metric = metric.label_filter(dict(namespace="kafka", topic=topic))
+
+        metric = metric.label_filter(dict(namespace="kafka", topic=topic),
+                                     match_all=True)
 
         # Ensure we have samples reported for all partitions.
         expected_partitions = set(range(partition_count))
@@ -88,7 +90,8 @@ class PrefixTruncateRecoveryTestBase(RedpandaTest):
         Return the values of the log segments removed metric.
         """
         metric = self.redpanda.metrics_sample("log_segments_removed", nodes)
-        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic))
+        metric = metric.label_filter(dict(namespace="kafka", topic=self.topic),
+                                     match_all=True)
         assert len(metric.samples) == len(nodes)
         return [s.value for s in metric.samples]
 
