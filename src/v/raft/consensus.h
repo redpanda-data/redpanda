@@ -359,7 +359,6 @@ public:
             do_step_down(fmt::format("external_stepdown - {}", ctx));
             if (_leader_id) {
                 _leader_id = std::nullopt;
-                trigger_leadership_notification();
             }
         });
     }

@@ -140,7 +140,6 @@ ss::future<election_success> vote_stm::vote(bool leadership_transfer) {
               //  only trigger notification when we had a leader previously
               if (_ptr->_leader_id) {
                   _ptr->_leader_id = std::nullopt;
-                  _ptr->trigger_leadership_notification();
               }
 
               if (_prevote && leadership_transfer) {

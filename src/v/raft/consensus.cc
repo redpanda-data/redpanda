@@ -237,7 +237,6 @@ void consensus::maybe_step_down() {
                     do_step_down("heartbeats_majority");
                     if (_leader_id) {
                         _leader_id = std::nullopt;
-                        trigger_leadership_notification();
                     }
                 }
             }
@@ -1881,7 +1880,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
         do_step_down("candidate_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
-            trigger_leadership_notification();
         }
 
         // do not grant vote if log isn't ok
@@ -3134,7 +3132,6 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
         co_await transfer_and_stepdown("no_longer_member");
         if (_leader_id) {
             _leader_id = std::nullopt;
-            trigger_leadership_notification();
         }
     }
 }
@@ -3664,7 +3661,6 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
                               do_step_down("leadership_transfer");
                               if (_leader_id) {
                                   _leader_id = std::nullopt;
-                                  trigger_leadership_notification();
                               }
 
                               return make_error_code(errc::success);

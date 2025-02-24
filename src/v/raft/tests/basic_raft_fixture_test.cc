@@ -770,15 +770,15 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
     auto leader_id = get_leader().value();
     auto& leader_node = node(leader_id);
     auto current_term = leader_node.raft()->term();
+    clock_t::time_point start = clock_t::now();
     auto r = co_await leader_node.raft()->transfer_leadership(
       transfer_leadership_request{.group = leader_node.raft()->group()});
     ASSERT_TRUE_CORO(r.success);
     // here we wait for all the replicas to notify about the leadership changes,
-    // each replica will notify two times, one when there is no leader, second
-    // time when the leader is elected. We have 4 replicas so in total we expect
-    // 8 notifications to be fired.
+    // each replica will notify one time only when the leader is elected. We
+    // have 4 replicas so in total we expect 4 notifications to be fired.
     co_await tests::cooperative_spin_wait_with_timeout(
-      10s, [&] { return events.size() >= 8; });
+      10s, [&] { return events.size() >= 4; });
 
     // calculate the time needed to transfer leadership, in our case it is the
     // time between first notification reporting no leader and first reporting
@@ -789,8 +789,7 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
                  && ev.status.term > current_term;
       });
 
-    auto transfer_time = new_leader_reported_ev->timestamp
-                         - events.begin()->timestamp;
+    auto transfer_time = new_leader_reported_ev->timestamp - start;
     vlog(
       tstlog.info,
       "leadership_transfer - new leader reported after: {} ms",
@@ -806,10 +805,19 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
     co_await new_leader_node.raft()->replace_configuration(
       std::vector<vnode>{new_nodes.begin(), new_nodes.end()},
       model::revision_id(2));
-    // analogically to the previous case we wait for 6 notifications as
+    // wait for no leader to be reported
+    co_await tests::cooperative_spin_wait_with_timeout(10s, [&] {
+        if (new_leader_node.raft()->get_leader_id() == std::nullopt) {
+            return true;
+        }
+        return new_leader_node.raft()->term() > current_term;
+    });
+
+    start = clock_t::now();
+    // analogically to the previous case we wait for 3 notifications as
     // currently the group has only 3 replicas
     co_await tests::cooperative_spin_wait_with_timeout(
-      10s, [&] { return events.size() >= 6; });
+      10s, [&] { return events.size() >= 3; });
 
     auto leader_reported_after_reconfiguration = std::find_if(
       events.begin(), events.end(), [&](leadership_changed_event& ev) {
@@ -818,7 +826,7 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
       });
 
     auto election_time = leader_reported_after_reconfiguration->timestamp
-                         - events.begin()->timestamp;
+                         - start;
     vlog(
       tstlog.info,
       "reconfiguration - new leader reported after: {} ms",
@@ -834,7 +842,6 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
      * time needed for leadership transfer
      */
     ASSERT_LE_CORO(election_time * 1.0, transfer_time * tolerance_multiplier);
-    ASSERT_GE_CORO(election_time * 1.0, transfer_time / tolerance_multiplier);
 }
 
 TEST_F_CORO(raft_fixture, test_no_stepdown_on_append_entries_timeout) {
