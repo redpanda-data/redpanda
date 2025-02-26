@@ -58,7 +58,7 @@ public:
         g_assert_log.l.error("{}", buffer);
         g_assert_log.l.error("Backtrace:\n{}", bt);
 
-        auto cb_func = _cb_func.load();
+        auto cb_func = _cb_func.load(std::memory_order_relaxed);
         if (cb_func != nullptr) {
             cb_func(buffer);
         }
@@ -66,7 +66,7 @@ public:
 
     void register_cb(assert_cb_func cb) {
         assert_cb_func before = nullptr;
-        _cb_func.compare_exchange_strong(before, cb);
+        _cb_func.compare_exchange_strong(before, cb, std::memory_order_relaxed);
     }
 
 private:
