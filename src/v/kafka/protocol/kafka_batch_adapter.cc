@@ -18,6 +18,7 @@
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "storage/parser_utils.h"
 
 #include <seastar/core/smp.hh>
@@ -191,13 +192,33 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
      * Perform some type of validation on the uncompressed input. In this case
      * we make sure that the records can be materialized but we avoid
      * re-encoding them using the lazy-record optimization.
+     *
+     * TODO(kafka): we should also be validating compressed batches - the
+     * reference implementation does this, and this also means they are able to
+     * set the max_timestamp when using timestamp_type::create_time.
      */
     if (!new_batch.compressed()) {
+        int64_t max_timestamp_delta = 0;
         try {
-            new_batch.for_each_record([](model::record r) { (void)r; });
+            new_batch.for_each_record([&max_timestamp_delta](model::record r) {
+                max_timestamp_delta = std::max(
+                  r.timestamp_delta(), max_timestamp_delta);
+            });
         } catch (const std::exception& e) {
             vlog(klog.error, "Parsing uncompressed records: {}", e.what());
             return remainder;
+        }
+        // If using append_time, we'll override the timestamp in the produce
+        // handler. Otherwise if the client does not set the max_timestamp we
+        // need to so that timequeries work correctly.
+        if (
+          header.max_timestamp == model::timestamp::missing()
+          && header.attrs.timestamp_type()
+               == model::timestamp_type::create_time) {
+            model::timestamp max_timestamp(
+              header.first_timestamp() + max_timestamp_delta);
+            new_batch.set_max_timestamp(
+              model::timestamp_type::create_time, max_timestamp);
         }
     }
 
