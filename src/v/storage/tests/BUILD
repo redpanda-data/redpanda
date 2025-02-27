@@ -835,9 +835,11 @@ redpanda_cc_gtest(
     ],
     cpu = 1,
     deps = [
+        ":disk_log_builder",
         "//src/v/base",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
+        "//src/v/model/tests:random",
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage",

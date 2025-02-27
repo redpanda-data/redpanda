@@ -163,7 +163,7 @@ rp_test(
   GTEST
   BINARY_NAME gtest_storage_e2e
   SOURCES compaction_e2e_test.cc
-  LIBRARIES  v::application v::features v::gtest_main v::kafka_test_utils
+  LIBRARIES  v::application v::features v::gtest_main v::kafka_test_utils v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
 )

@@ -10,11 +10,14 @@
 #include "base/vlog.h"
 #include "gtest/gtest.h"
 #include "kafka/server/tests/produce_consume_utils.h"
+#include "model/compression.h"
 #include "model/namespace.h"
 #include "model/record_batch_types.h"
+#include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/manual_mixin.h"
+#include "storage/tests/utils/disk_log_builder.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
@@ -1336,3 +1339,100 @@ INSTANTIATE_TEST_SUITE_P(
   RandomDistributionMultiPass,
   CompactionFixtureTombstonesMultiPassRandomParamTest,
   ::testing::Combine(::testing::Bool(), ::testing::Values(10, 25, 100)));
+
+class CompactionFixtureTopicCompressionTest
+  : public ::testing::Test
+  , public ::testing::WithParamInterface<model::compression> {
+public:
+    struct compression_type_validating_consumer {
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            RPTEST_EXPECT_EQ(
+              b.header().attrs.compression(),
+              _expected_compression_types[index++]);
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+
+        void end_of_stream() {}
+
+        std::vector<model::compression> _expected_compression_types;
+        size_t index{0};
+    };
+};
+
+TEST_P(CompactionFixtureTopicCompressionTest, TopicCompressionTypeTest) {
+    using namespace storage;
+    disk_log_builder b;
+    b | start();
+    auto cleanup = ss::defer([&] { b.stop().get(); });
+    auto& disk_log = b.get_disk_log_impl();
+    auto num_batches = 100;
+    // Make random batches.
+    auto batches = model::test::make_random_batches(
+                     /*offset=*/model::offset{0},
+                     /*count=*/num_batches,
+                     /*allow_compression=*/true)
+                     .get();
+
+    std::vector<model::compression> original_compression_types{};
+    for (auto& batch : batches) {
+        original_compression_types.push_back(
+          batch.header().attrs.compression());
+    }
+
+    // Add the batches and force roll the log.
+    b | add_segment(0);
+    for (auto& batch : batches) {
+        b | add_batch(std::move(batch));
+    }
+    disk_log.force_roll(ss::default_priority_class()).get();
+
+    auto topic_compression_type = GetParam();
+    ss::abort_source as;
+    compaction_config compact_cfg(
+      model::offset::max(),
+      std::nullopt,
+      ss::default_priority_class(),
+      as,
+      /*san_cfg=*/std::nullopt,
+      /*max_keys=*/std::nullopt,
+      /*key_map=*/nullptr,
+      /*to_clean=*/nullptr,
+      topic_compression_type);
+
+    EXPECT_EQ(disk_log.segment_count(), 2);
+    // Self compact the rolled segment with all the compressed batches in it.
+    disk_log.segment_self_compact(disk_log.segments()[0], compact_cfg).get();
+
+    // Make a reader and check each of the compression types in the
+    // re-compressed batches.
+    log_reader_config cfg(
+      model::offset{0}, model::offset::max(), ss::default_priority_class());
+
+    auto reader = disk_log.make_reader(std::move(cfg)).get();
+
+    std::vector<model::compression> expected_compression_types;
+    if (topic_compression_type == model::compression::producer) {
+        expected_compression_types = std::move(original_compression_types);
+    } else {
+        expected_compression_types = std::vector<model::compression>(
+          num_batches, topic_compression_type);
+    }
+    reader
+      .consume(
+        compression_type_validating_consumer{
+          ._expected_compression_types = std::move(expected_compression_types)},
+        model::no_timeout)
+      .get();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  TopicCompressionTest,
+  CompactionFixtureTopicCompressionTest,
+  ::testing::Values(
+    model::compression::none,
+    model::compression::gzip,
+    model::compression::snappy,
+    model::compression::lz4,
+    model::compression::zstd,
+    model::compression::producer));
