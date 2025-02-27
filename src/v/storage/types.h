@@ -12,6 +12,7 @@
 #pragma once
 
 #include "container/fragmented_vector.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
 #include "model/record.h"
@@ -476,7 +477,8 @@ struct compaction_config {
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       hash_key_offset_map* key_map = nullptr,
-      scoped_file_tracker::set_t* to_clean = nullptr)
+      scoped_file_tracker::set_t* to_clean = nullptr,
+      model::compression comp_type = model::compression::producer)
       : max_collectible_offset(max_collect_offset)
       , tombstone_retention_ms(tombstone_ret_ms)
       , iopc(p)
@@ -484,7 +486,8 @@ struct compaction_config {
       , key_offset_map_max_keys(max_keys)
       , hash_key_map(key_map)
       , files_to_cleanup(to_clean)
-      , asrc(&as) {}
+      , asrc(&as)
+      , compression_type(comp_type) {}
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
     // records): that is, only offsets <= this may be compacted.
@@ -520,6 +523,10 @@ struct compaction_config {
     // abort source for compaction task
     ss::abort_source* asrc;
 
+    // The topic compression type used to recompress batches during compaction
+    // (from ntp config).
+    model::compression compression_type;
+
     friend std::ostream& operator<<(std::ostream&, const compaction_config&);
 };
 
@@ -538,7 +545,8 @@ struct housekeeping_config {
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
-      hash_key_offset_map* key_map = nullptr)
+      hash_key_offset_map* key_map = nullptr,
+      model::compression comp_type = model::compression::producer)
       : compact(
           max_collect_offset,
           tombstone_retention_ms,
@@ -546,7 +554,9 @@ struct housekeeping_config {
           as,
           std::move(san_cfg),
           std::nullopt,
-          key_map)
+          key_map,
+          nullptr,
+          comp_type)
       , gc(upper, max_bytes_in_log) {}
 
     compaction_config compact;

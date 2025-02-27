@@ -208,10 +208,12 @@ std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
       o,
       "{{max_collectible_offset:{}, "
       "should_sanitize:{}, "
-      "tombstone_retention_ms:{}}}",
+      "tombstone_retention_ms:{}, "
+      "compression_type:{}}}",
       c.max_collectible_offset,
       c.sanitizer_config,
-      c.tombstone_retention_ms);
+      c.tombstone_retention_ms,
+      c.compression_type);
     return o;
 }
 
