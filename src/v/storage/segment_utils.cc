@@ -422,6 +422,7 @@ ss::future<storage::index_state> do_copy_segment_data(
       seg->path().is_internal_topic(),
       apply_offset,
       segment_last_offset,
+      cfg.compression_type,
       /*cidx=*/nullptr,
       /*inject_failure=*/false,
       cfg.asrc);

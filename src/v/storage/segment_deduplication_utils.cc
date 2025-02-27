@@ -234,6 +234,7 @@ ss::future<index_state> deduplicate_segment(
       seg->path().is_internal_topic(),
       should_offset_delta_times,
       seg->offsets().get_committed_offset(),
+      cfg.compression_type,
       &cmp_idx_writer,
       inject_reader_failure,
       cfg.asrc);

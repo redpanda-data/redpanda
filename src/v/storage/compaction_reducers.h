@@ -15,6 +15,7 @@
 #include "bytes/bytes.h"
 #include "container/fragmented_vector.h"
 #include "hashing/xx.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
@@ -163,12 +164,14 @@ public:
       bool internal_topic,
       offset_delta_time apply_offset,
       model::offset segment_last_offset,
+      model::compression compression_type,
       compacted_index_writer* cidx = nullptr,
       bool inject_failure = false,
       ss::abort_source* as = nullptr)
       : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
       , _appender(a)
+      , _compression_type(compression_type)
       , _compacted_idx(cidx)
       , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic)
@@ -198,6 +201,8 @@ private:
     // Offset to keep in case the index is empty as of getting to this offset.
     model::offset _segment_last_offset;
     segment_appender* _appender;
+
+    model::compression _compression_type;
 
     // Compacted index writer for the newly written segment. May not be
     // supplied if the compacted index isn't expected to change, e.g. when

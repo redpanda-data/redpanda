@@ -11,6 +11,7 @@
 
 #include "base/vlog.h"
 #include "compression/compression.h"
+#include "model/compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -308,7 +309,28 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
                 r.offset_delta());
           });
     }
-    auto batch = co_await compress_batch(original, std::move(to_copy.value()));
+
+    auto compression_type = [original, &batch = to_copy.value(), this]() {
+        // Recompress with the original compression type if the topic is
+        // configured with `compaction.type=producer`. Otherwise, compress with
+        // `compaction.type`.
+        if (_compression_type == model::compression::producer) {
+            return original;
+        } else {
+            // We are going to apply the topic `compression.type` to this batch.
+            // We'd better be sure it's data MEANT to be compressed, i.e raft
+            // data.
+            if (batch.header().type == model::record_batch_type::raft_data) {
+                return _compression_type;
+            }
+        }
+
+        // Fall back to returning original compression type.
+        return original;
+    }();
+
+    auto batch = co_await compress_batch(
+      compression_type, std::move(to_copy.value()));
     const auto start_pos = _appender->file_byte_offset();
     const auto header_size = batch.header().size_bytes;
     _acc += header_size;
