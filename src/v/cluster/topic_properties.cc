@@ -139,7 +139,7 @@ bool topic_properties::has_overrides() const {
         || iceberg_invalid_record_action.has_value()
         || iceberg_target_lag_ms.has_value()
         || min_cleanable_dirty_ratio.is_engaged()
-        || remote_topic_allow_gaps.has_value();
+        || remote_topic_allow_gaps.has_value() || compression.has_value();
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         return overrides
@@ -184,6 +184,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.tombstone_retention_ms = delete_retention_ms;
     ret.min_cleanable_dirty_ratio = min_cleanable_dirty_ratio;
     ret.remote_allow_gaps = remote_topic_allow_gaps;
+    ret.compression = compression;
     return ret;
 }
 

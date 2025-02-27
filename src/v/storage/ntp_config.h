@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/configuration.h"
+#include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -89,6 +90,8 @@ public:
         tristate<double> min_cleanable_dirty_ratio;
         // Controls behavior during pause
         std::optional<bool> remote_allow_gaps;
+
+        std::optional<model::compression> compression;
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -388,6 +391,13 @@ public:
             }
         }
         return config::shard_local_cfg().min_cleanable_dirty_ratio();
+    }
+
+    model::compression compression_type() const {
+        if (_overrides && _overrides->compression.has_value()) {
+            return _overrides->compression.value();
+        }
+        return config::shard_local_cfg().log_compression_type();
     }
 
     ntp_config copy() const {
