@@ -472,6 +472,13 @@ int application::run(int ac, char** av) {
     std::string cmd_line = fmt::to_string(
       fmt::join(std::span{av, size_t(ac)}, " "));
 
+    // NOTE: we register the vassert callback before the reactor is started to
+    // ensure that the callback is visible on all reactor and non-reactor
+    // threads
+    ::detail::g_assert_log_holder.register_cb([](std::string_view msg) {
+        crash_tracker::get_recorder().record_crash_vassert(msg);
+    });
+
     return app.run(ac, av, [this, &app, cmd_line = std::move(cmd_line)] {
         vlog(_log.info, "Redpanda {}", redpanda_version());
         vlog(_log.info, "Command line: {}", cmd_line);

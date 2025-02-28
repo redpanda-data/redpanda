@@ -51,6 +51,8 @@ public:
     /// Must be called after a fill() that returned a non-null value
     void write();
 
+    bool uninitialized() { return _state.load() == state::uninitialized; }
+
 private:
     enum class state { uninitialized, initialized, filled, written, released };
     friend std::ostream& operator<<(std::ostream&, state);

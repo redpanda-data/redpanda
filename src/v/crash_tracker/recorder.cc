@@ -149,8 +149,6 @@ ss::future<> recorder::start() {
     co_await remove_old_crashfiles();
     co_await remove_dangling_upload_markers();
     co_await _writer.initialize(co_await generate_crashfile_name());
-    ::detail::g_assert_log_holder.register_cb(
-      [](std::string_view msg) { get_recorder().record_crash_vassert(msg); });
 }
 
 namespace {
@@ -265,6 +263,15 @@ void recorder::record_crash_exception(std::exception_ptr eptr) {
 }
 
 void recorder::record_crash_vassert(std::string_view msg) {
+    if (_writer.uninitialized()) {
+        // The vassert callback may be called before the recorder is
+        // initialized. If there is a vassert crash before the recorder is
+        // initialized, we cannot record the crash and so we print and return
+        // here.
+        print_skipping();
+        return;
+    }
+
     auto* cd_opt = _writer.fill();
     if (!cd_opt) {
         // The writer has already been consumed by another crash

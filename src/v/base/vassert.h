@@ -16,9 +16,6 @@
 
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
-#include <seastar/util/noncopyable_function.hh>
-
-#include <atomic>
 
 namespace detail {
 struct dummyassert {
@@ -58,19 +55,19 @@ public:
         g_assert_log.l.error("{}", buffer);
         g_assert_log.l.error("Backtrace:\n{}", bt);
 
-        auto cb_func = _cb_func.load();
-        if (cb_func != nullptr) {
-            cb_func(buffer);
+        if (_cb_func != nullptr) {
+            _cb_func(buffer);
         }
     }
 
     void register_cb(assert_cb_func cb) {
-        assert_cb_func before = nullptr;
-        _cb_func.compare_exchange_strong(before, cb);
+        if (_cb_func == nullptr) {
+            _cb_func = cb;
+        }
     }
 
 private:
-    std::atomic<assert_cb_func> _cb_func{nullptr};
+    assert_cb_func _cb_func{nullptr};
 };
 inline assert_log_holder g_assert_log_holder;
 } // namespace detail
