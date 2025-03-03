@@ -87,15 +87,23 @@ class JavaCompressionTest(EndToEndTest):
                 assert False, f"Failed to consume messages"
 
     def get_compacted_segments(self):
-        return self.redpanda.metric_sum(
+        num_compacted_segments = self.redpanda.metric_sum(
             metric_name="vectorized_storage_log_compacted_segment_total",
             metrics_endpoint=MetricsEndpoint.METRICS,
             topic=self.topic_spec.name)
+        self.redpanda.logger.debug(
+            f"Saw {num_compacted_segments} compacted segments")
+        return num_compacted_segments
 
     def wait_for_compacted_segments(self, num_segments, timeout_sec=120):
-        wait_until(lambda: self.get_compacted_segments() >= num_segments,
-                   timeout_sec=timeout_sec,
-                   err_msg=f"Timed out waiting for compacted segments.")
+        self.redpanda.logger.debug(
+            f"Waiting for {num_segments} compacted segments")
+        wait_until(
+            lambda: self.get_compacted_segments() >= num_segments,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            err_msg=f"Timed out waiting for {num_segments} compacted segments."
+        )
 
     @cluster(num_nodes=2)
     @matrix(compression_type=[
