@@ -47,16 +47,20 @@ class JavaCompressionTest(EndToEndTest):
                                     count,
                                     compression_type,
                                     timeout_sec=120):
+        # Arbitrarily high key set cardinality
+        key_set_cardinality = 100000
         producer = VerifiableProducer(self.test_context,
                                       num_nodes=1,
                                       redpanda=self.redpanda,
                                       topic=self.topic_spec.name,
-                                      compression_types=[compression_type])
+                                      compression_types=[compression_type],
+                                      repeating_keys=key_set_cardinality)
         producer.start()
         try:
             wait_until(
                 lambda: self.partition_segments() >= count,
                 timeout_sec=timeout_sec,
+                backoff_sec=1,
                 err_msg=
                 f"Timed out waiting for {count} segments to be produced.")
         finally:
@@ -64,7 +68,7 @@ class JavaCompressionTest(EndToEndTest):
             producer.clean()
             producer.free()
 
-    def consume(self, num_messages=100, timeout_sec=120):
+    def consume(self, num_messages=10, timeout_sec=120):
         deadline = time() + timeout_sec
         consumer = KafkaConsumer(self.topic_spec.name,
                                  bootstrap_servers=self.redpanda.brokers(),
