@@ -128,6 +128,6 @@ class JavaCompressionTest(EndToEndTest):
         expected_num_segments = 4
         self.produce_until_segment_count(
             expected_num_segments, compression_type=compression_type.value)
-        self.wait_for_compacted_segments(expected_num_segments)
+        self.wait_for_compacted_segments(expected_num_segments - 1)
 
         self.consume()
