@@ -22,6 +22,7 @@
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/log.hh>
 
 #include <fmt/chrono.h>
 #include <fmt/ranges.h>
@@ -29,6 +30,7 @@
 #include <charconv>
 #include <exception>
 #include <memory>
+#include <type_traits>
 
 namespace pandaproxy {
 
@@ -77,12 +79,14 @@ struct handler_adaptor : ss::httpd::handler_base {
       server::function_handler&& handler,
       ss::httpd::path_description& path_desc,
       const ss::sstring& metrics_group_name,
-      json::serialization_format exceptional_mime_type)
+      json::serialization_format exceptional_mime_type,
+      ss::logger& log)
       : _pending_requests(pending_requests)
       , _ctx(ctx)
       , _handler(std::move(handler))
       , _probe(path_desc, metrics_group_name)
-      , _exceptional_mime_type(exceptional_mime_type) {}
+      , _exceptional_mime_type(exceptional_mime_type)
+      , _log(log) {}
 
     ss::future<std::unique_ptr<ss::http::reply>> handle(
       const ss::sstring&,
@@ -112,6 +116,16 @@ struct handler_adaptor : ss::httpd::handler_base {
             co_return std::move(rp.rep);
         }
         auto sem_units = co_await ss::get_units(_ctx.mem_sem, req_size);
+
+        // Username is empty 'cos auth wrapper happens later :'()
+        auto access_log = ssx::sformat(
+          R"("{} {} {} {} HTTP/{}")",
+          rq.req->get_client_address().addr(),
+          rq.user.name,
+          rq.req->_method,
+          rq.req->_url,
+          rq.req->_version);
+
         if (_ctx.as.abort_requested()) {
             set_reply_unavailable(*rp.rep);
             rp.mime_type = _exceptional_mime_type;
@@ -133,6 +147,13 @@ struct handler_adaptor : ss::httpd::handler_base {
             rp = server::reply_t{exception_reply(ex), _exceptional_mime_type};
         }
         set_and_measure_response(rp);
+        vlog(
+          _log.trace,
+          "{} {} {}",
+          access_log,
+          static_cast<std::underlying_type_t<ss::http::reply::status_type>>(
+            rp.rep->_status),
+          rp.rep->_content.size());
         co_return std::move(rp.rep);
     }
 
@@ -141,6 +162,7 @@ struct handler_adaptor : ss::httpd::handler_base {
     server::function_handler _handler;
     probe _probe;
     json::serialization_format _exceptional_mime_type;
+    ss::logger& _log;
 };
 
 server::server(
@@ -150,7 +172,8 @@ server::server(
   const ss::sstring& header,
   const ss::sstring& definitions,
   context_t& ctx,
-  json::serialization_format exceptional_mime_type)
+  json::serialization_format exceptional_mime_type,
+  ss::logger& log)
   : _server(server_name)
   , _public_metrics_group_name(public_metrics_group_name)
   , _pending_reqs()
@@ -158,7 +181,8 @@ server::server(
   , _has_routes(false)
   , _ctx(ctx)
   , _exceptional_mime_type(exceptional_mime_type)
-  , _probe{} {
+  , _probe{}
+  , _log(log) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
@@ -177,7 +201,8 @@ void server::route(server::route_t r) {
       std::move(r.handler),
       r.path_desc,
       _public_metrics_group_name,
-      _exceptional_mime_type);
+      _exceptional_mime_type,
+      _log);
     r.path_desc.set(_server._routes, handler);
 }
 

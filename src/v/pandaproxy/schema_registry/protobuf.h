@@ -19,7 +19,8 @@ namespace pandaproxy::schema_registry {
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
   sharded_store& store,
   canonical_schema schema,
-  normalize norm = normalize::no);
+  normalize norm = normalize::no,
+  bool allow_v2_renderer = true);
 
 ss::future<canonical_schema_definition> validate_protobuf_schema(
   sharded_store& store,

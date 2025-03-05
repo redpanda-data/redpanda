@@ -59,6 +59,7 @@ public:
     security::audit::audit_log_manager& audit_mgr() {
         return _audit_mgr.local();
     }
+    ss::logger& access_logger();
 
 private:
     ss::future<> do_start();

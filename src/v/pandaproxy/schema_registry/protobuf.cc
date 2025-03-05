@@ -1680,13 +1680,20 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
 }
 
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
-  schema_getter& store, canonical_schema schema, normalize norm) {
+  schema_getter& store,
+  canonical_schema schema,
+  normalize norm,
+  bool allow_v2_renderer) {
     auto refs = schema.def().refs();
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
+    auto subj = schema.sub();
     impl->fdp = co_await import_schema(impl->_dp, store, std::move(schema));
     impl->fd = impl->_dp.FindFileByName(impl->fdp.name());
-    if (auto* s = dynamic_cast<const sharded_store*>(&store); s != nullptr) {
-        impl->v2_renderer = s->protobuf_v2_renderer();
+    if (allow_v2_renderer) {
+        if (auto* s = dynamic_cast<const sharded_store*>(&store);
+            s != nullptr) {
+            impl->v2_renderer = s->protobuf_v2_renderer();
+        }
     }
     impl->is_normalized = norm;
     if (norm) {
@@ -1694,7 +1701,15 @@ ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
         auto uniq = std::ranges::unique(refs);
         refs.erase(uniq.begin(), uniq.end());
     }
-    co_return protobuf_schema_definition{std::move(impl), std::move(refs)};
+    const auto ps = protobuf_schema_definition{
+      std::move(impl), std::move(refs)};
+    if (!allow_v2_renderer) {
+        co_return ps;
+    }
+    canonical_schema cs = canonical_schema{
+      subj, {ps.raw(), schema_type::protobuf, ps.refs()}};
+    co_return co_await make_protobuf_schema_definition(
+      store, std::move(cs), norm, false);
 }
 
 ss::future<canonical_schema_definition> validate_protobuf_schema(
