@@ -3971,6 +3971,15 @@ configuration::configuration()
       std::chrono::milliseconds{1min},
       {.min = std::chrono::milliseconds{10s},
        .max = serde::max_serializable_ms})
+  , iceberg_batch_max_bytes(
+      *this,
+      "iceberg_batch_max_bytes",
+      "Default value for the redpanda.iceberg.batching.limit.bytes topic "
+      "property, which controls the maximum amount of scratch disk space "
+      "consumed by a single partition translator for in-flight parquet files.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      64_MiB,
+      {.min = 1_MiB, .max = 1_GiB})
   , iceberg_disable_snapshot_tagging(
       *this,
       "iceberg_disable_snapshot_tagging",
