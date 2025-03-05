@@ -104,18 +104,6 @@ public:
         return {it->second.definition.copy()};
     }
 
-    ///\brief Return the id of the schema, if it already exists.
-    std::optional<schema_id>
-    get_schema_id(const canonical_schema_definition& def) const {
-        const auto s_it = std::find_if(
-          _schemas.begin(), _schemas.end(), [&](const auto& s) {
-              const auto& entry = s.second;
-              return def == entry.definition;
-          });
-        return s_it == _schemas.end() ? std::optional<schema_id>{}
-                                      : s_it->first;
-    }
-
     ///\brief Return a list of subject-versions for the shema id.
     chunked_vector<subject_version> get_schema_subject_versions(schema_id id) {
         chunked_vector<subject_version> svs;
@@ -782,6 +770,9 @@ public:
               });
         }
     };
+
+    ///\brief _schemas const getter
+    const auto& get_schemas() const { return _schemas; }
 
 private:
     struct schema_entry {
