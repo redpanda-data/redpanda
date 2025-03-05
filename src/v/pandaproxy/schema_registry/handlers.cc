@@ -489,7 +489,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       is_deleted::no};
 
     auto ids = co_await rq.service().schema_store().get_schema_version(
-      schema.share());
+      schema.share(), norm);
 
     schema_id schema_id{ids.id.value_or(invalid_schema_id)};
     if (!ids.version.has_value()) {

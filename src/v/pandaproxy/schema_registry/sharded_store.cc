@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "pandaproxy/logger.h"
@@ -27,13 +28,16 @@
 #include "pandaproxy/schema_registry/util.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/exception.hh>
 
 #include <absl/algorithm/container.h>
 #include <fmt/core.h>
 
+#include <exception>
 #include <functional>
 #include <iterator>
 
@@ -133,13 +137,64 @@ sharded_store::make_valid_schema(canonical_schema schema) {
 }
 
 ss::future<sharded_store::has_schema_result>
-sharded_store::get_schema_version(subject_schema schema) {
+sharded_store::get_schema_version(subject_schema schema, normalize norm) {
     // Validate the schema (may throw)
     co_await validate_schema(schema.schema.share());
 
     // Determine if the definition already exists
-    auto map = [&schema](store& s) {
-        return s.get_schema_id(schema.schema.def());
+    auto map = [this, norm, &schema](
+                 const store& s) -> ss::future<std::optional<schema_id>> {
+        chunked_vector<schema_id> stored_ids{
+          s.get_schemas() | std::views::keys};
+
+        return ss::do_with(
+          std::optional<schema_id>{},
+          std::move(stored_ids),
+          [this, norm, &s, &schema](
+            std::optional<schema_id>& ret_id, chunked_vector<schema_id>& ids) {
+              auto loop_condition = [&ret_id, &ids]() {
+                  return ret_id.has_value() || ids.empty();
+              };
+
+              auto loop_body =
+                [this, norm, &s, &ids, &ret_id, &schema]() -> ss::future<> {
+                  auto id = ids.back();
+                  ids.pop_back();
+
+                  auto s_res = s.get_schema_definition(id);
+                  if (s_res.has_error()) {
+                      return ss::make_ready_future();
+                  }
+
+                  auto [raw, type, refs]
+                    = std::move(s_res.value()).destructure();
+                  return this
+                    ->make_canonical_schema(
+                      unparsed_schema{
+                        subject{},
+                        unparsed_schema_definition{
+                          std::move(raw), type, std::move(refs)}},
+                      norm)
+                    .then([id, &ret_id, &schema](canonical_schema processed) {
+                        if (processed.def() == schema.schema.def()) {
+                            ret_id = id;
+                        }
+                        return ss::make_ready_future();
+                    })
+                    .handle_exception([id](std::exception_ptr e) {
+                        vlog(
+                          plog.warn,
+                          "Failed to parse stored schema with "
+                          "id {}. Error: {}",
+                          id,
+                          e);
+                    });
+              };
+
+              return ss::do_until(
+                       std::move(loop_condition), std::move(loop_body))
+                .then([&ret_id] { return ret_id; });
+          });
     };
     auto reduce = [](
                     std::optional<schema_id> acc,

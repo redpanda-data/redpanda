@@ -204,6 +204,37 @@ message myrecord {
     json_incompat=r'{"type": "number", "multipleOf": 20}',
 )
 
+imported_schema_proto_def = """
+syntax = "proto3";
+message AType {
+  double d =   2;
+  float f =   1;
+}"""
+
+imported_schema_sanitized_proto_def = """
+syntax = "proto3";
+
+message AType {
+  double d = 2;
+  float f = 1;
+}"""
+
+imported_schema_normalized_proto_def = """
+syntax = "proto3";
+
+message AType {
+  float f = 1;
+  double d = 2;
+}"""
+
+imported_schema = {
+    "subject": "imported",
+    "version": 1,
+    "schema": imported_schema_proto_def,
+    "sanitized": imported_schema_sanitized_proto_def,
+    "normalized": imported_schema_normalized_proto_def,
+}
+
 log_config = LoggingConfig('info',
                            logger_levels={
                                'security': 'trace',
@@ -800,6 +831,36 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     """
     def __init__(self, context, **kwargs):
         super(SchemaRegistryTestMethods, self).__init__(context, **kwargs)
+
+    def _push_to_schemas_topic(self, schemas):
+
+        schema_topic = TopicSpec(name="_schemas",
+                                 partition_count=1,
+                                 replication_factor=1)
+        self.client().create_topic(schema_topic)
+
+        rpk = self._get_rpk_tools()
+
+        for i_schema, schema in enumerate(schemas):
+            key = {
+                "keytype": "SCHEMA",
+                "subject": schema["subject"],
+                "version": schema["version"],
+                "magic": 1,
+            }
+            value = {
+                "subject": schema["subject"],
+                "version": schema["version"],
+                "id": i_schema + 1,
+                "schemaType": "PROTOBUF",
+                "schema": schema["schema"],
+                "deleted": False,
+            }
+            if "references" in schema:
+                value["references"] = schema["references"]
+            rpk.produce(topic="_schemas",
+                        key=json.dumps(key),
+                        msg=json.dumps(value))
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
@@ -2052,6 +2113,88 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result = result_raw.json()
         assert result["schemaType"] == "JSON"
         assert result["schema"].strip() == json_number_schema_def.strip()
+
+    @cluster(num_nodes=3)
+    def test_unsanitized_import(self):
+        """
+        Verify that all endpoints sanitize the retrieved schema
+        """
+        #Test setup: Simulate import of a schema by writting directly into the _schemas topic.
+        #This schema is neither sanitized nor normalized
+        self._push_to_schemas_topic([imported_schema])
+
+        self.redpanda.set_cluster_config(
+            {'schema_registry_protobuf_renderer_v2': True},
+            expect_restart=True)
+
+        schema_def = imported_schema["schema"]
+        #Normalization:off - /subjects/{subject}
+        result_raw = self._post_subjects_subject(subject="imported",
+                                                 data=json.dumps({
+                                                     "schema":
+                                                     schema_def,
+                                                     "schemaType":
+                                                     "PROTOBUF"
+                                                 }))
+        assert result_raw.status_code == requests.codes.ok, \
+            f"Expected {requests.codes.ok} but got {result_raw.status_code}, "\
+            f"for request 'POST subjects/imported'"
+        result = result_raw.json()["schema"].strip()
+        expected_result = imported_schema["sanitized"].strip()
+        assert result == expected_result, \
+            f"Expected:\n{expected_result}\nGot:\n{result}\n"\
+            "for request 'POST subjects/imported'"
+
+        #Normalization:on - /subjects/{subject}
+        result_raw = self._post_subjects_subject(subject="imported",
+                                                 data=json.dumps({
+                                                     "schema":
+                                                     schema_def,
+                                                     "schemaType":
+                                                     "PROTOBUF"
+                                                 }),
+                                                 normalize=True)
+        assert result_raw.status_code == requests.codes.ok, \
+            f"Expected {requests.codes.ok} but got {result_raw.status_code}, "\
+            f"for request 'POST subjects/imported?normalize=true'"
+        result = result_raw.json()["schema"].strip()
+        expected_result = imported_schema["normalized"].strip()
+        assert result == expected_result, \
+            f"Expected:\n{expected_result}\nGot:\n{result}\n"\
+            "for request 'POST subjects/imported?normalize=true'"
+
+        #Normalization:off - /subjects/{subject}/versions
+        result_raw = self._post_subjects_subject_versions(subject="imported",
+                                                          data=json.dumps({
+                                                              "schema":
+                                                              schema_def,
+                                                              "schemaType":
+                                                              "PROTOBUF"
+                                                          }))
+        assert result_raw.status_code == requests.codes.ok, \
+            f"Expected {requests.codes.ok} but got {result_raw.status_code}, "\
+            f"for request 'POST subjects/imported/versions'"
+        result_id = result_raw.json()["id"]
+        assert result_id == 1, \
+            f"Expected id 1 but got {result_id}, "\
+            "for request 'POST subjects/imported/versions'"
+
+        #Normalization:on - /subjects/{subject}/versions
+        result_raw = self._post_subjects_subject_versions(subject="imported",
+                                                          data=json.dumps({
+                                                              "schema":
+                                                              schema_def,
+                                                              "schemaType":
+                                                              "PROTOBUF"
+                                                          }),
+                                                          normalize=True)
+        assert result_raw.status_code == requests.codes.ok, \
+            f"Expected {requests.codes.ok} but got {result_raw.status_code}, "\
+            "for request 'POST subjects/imported/versions?normalize=true'"
+        result_id = result_raw.json()["id"]
+        assert result_id == 1, \
+            f"Expected id 1 but got {result_id}, "\
+            "for request 'POST subjects/imported/versions?normalize=true'"
 
     @cluster(num_nodes=4)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
