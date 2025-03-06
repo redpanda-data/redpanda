@@ -1115,6 +1115,9 @@ topic_properties topic_table::update_topic_properties(
       overrides.min_cleanable_dirty_ratio);
     incremental_update(
       updated_properties.remote_topic_allow_gaps, overrides.remote_allow_gaps);
+    incremental_update(
+      updated_properties.iceberg_batch_max_bytes,
+      overrides.iceberg_batch_max_bytes);
     return updated_properties;
 }
 

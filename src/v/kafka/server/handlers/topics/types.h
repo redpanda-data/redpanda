@@ -123,6 +123,9 @@ inline constexpr std::string_view topic_property_iceberg_target_lag_ms
 inline constexpr std::string_view topic_property_min_cleanable_dirty_ratio
   = "min.cleanable.dirty.ratio";
 
+inline constexpr std::string_view topic_property_iceberg_batch_max_bytes
+  = "redpanda.iceberg.batch.max.bytes";
+
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 inline constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {

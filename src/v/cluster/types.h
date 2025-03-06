@@ -650,6 +650,8 @@ struct incremental_topic_updates
     property_update<std::optional<std::chrono::milliseconds>>
       iceberg_target_lag_ms;
 
+    property_update<std::optional<size_t>> iceberg_batch_max_bytes;
+
     // To allow us to better control use of the deprecated shadow_indexing
     // field, use getters and setters instead.
     const auto& get_shadow_indexing() const { return shadow_indexing; }
@@ -693,7 +695,8 @@ struct incremental_topic_updates
           iceberg_invalid_record_action,
           iceberg_target_lag_ms,
           min_cleanable_dirty_ratio,
-          remote_allow_gaps);
+          remote_allow_gaps,
+          iceberg_batch_max_bytes);
     }
 
     friend std::ostream&

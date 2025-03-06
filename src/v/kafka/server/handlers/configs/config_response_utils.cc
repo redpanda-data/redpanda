@@ -1035,6 +1035,20 @@ config_response_container_t make_topic_configs(
             "Best effort target for Iceberg table lag relative to source "
             "topic, in milliseconds."),
           describe_as_string<std::chrono::milliseconds>);
+
+        add_topic_config_if_requested(
+          config_keys,
+          result,
+          topic_property_iceberg_batch_max_bytes,
+          metadata_cache.get_default_iceberg_batch_max_bytes(),
+          topic_property_iceberg_batch_max_bytes,
+          topic_properties.iceberg_batch_max_bytes,
+          include_synonyms,
+          maybe_make_documentation(
+            include_documentation,
+            "Max size, in bytes, of in-flight parquet data for an in-progress "
+            "datalake partition translator."),
+          describe_as_string<size_t>);
     }
 
     add_topic_config_if_requested(

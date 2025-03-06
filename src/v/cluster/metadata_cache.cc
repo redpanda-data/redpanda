@@ -334,6 +334,10 @@ metadata_cache::get_default_min_cleanable_dirty_ratio() const {
     return config::shard_local_cfg().min_cleanable_dirty_ratio();
 }
 
+size_t metadata_cache::get_default_iceberg_batch_max_bytes() const {
+    return config::shard_local_cfg().iceberg_batch_max_bytes();
+}
+
 topic_properties metadata_cache::get_default_properties() const {
     topic_properties tp;
     tp.compression = {get_default_compression()};

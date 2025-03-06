@@ -666,6 +666,7 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional([] { return tests::random_duration_ms(); }),
           tristate<double>{disable_tristate},
           std::nullopt,
+          std::nullopt,
         };
     }
 

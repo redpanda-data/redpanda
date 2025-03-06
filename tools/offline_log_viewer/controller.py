@@ -154,6 +154,8 @@ def read_topic_properties_serde(rdr: Reader, version):
             rdr.read_optional(Reader.read_int64),
             'min_cleanable_dirty_ratio':
             rdr.read_tristate(Reader.read_double),
+            'iceberg_batch_max_bytes':
+            rdr.read_optional(Reader.read_uint64),
         }
 
     if version >= 11:

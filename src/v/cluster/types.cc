@@ -408,7 +408,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "iceberg_partition_spec: {}, "
       "iceberg_invalid_record_action: {}, "
       "iceberg_target_lag_ms: {}, "
-      "remote_allow_gaps: {}",
+      "remote_allow_gaps: {},"
+      "iceberg_batch_max_bytes: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -443,7 +444,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.iceberg_partition_spec,
       i.iceberg_invalid_record_action,
       i.iceberg_target_lag_ms,
-      i.remote_allow_gaps);
+      i.remote_allow_gaps,
+      i.iceberg_batch_max_bytes);
     return o;
 }
 

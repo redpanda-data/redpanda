@@ -403,6 +403,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(iceberg_invalid_record_action);
         json_read(iceberg_target_lag_ms);
         json_read(min_cleanable_dirty_ratio);
+        json_read(iceberg_batch_max_bytes);
         return obj;
     }
 
@@ -437,6 +438,7 @@ struct compat_check<cluster::topic_properties> {
         obj.iceberg_invalid_record_action = std::nullopt;
         obj.iceberg_target_lag_ms = std::nullopt;
         obj.min_cleanable_dirty_ratio = tristate<double>{std::nullopt};
+        obj.iceberg_batch_max_bytes = std::nullopt;
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -527,6 +529,8 @@ struct compat_check<cluster::topic_configuration> {
           std::nullopt};
 
         obj.properties.iceberg_target_lag_ms = std::nullopt;
+
+        obj.properties.iceberg_batch_max_bytes = std::nullopt;
 
         // ADL will always squash is_migrated to false
         obj.is_migrated = false;

@@ -44,6 +44,7 @@ class TopicSpec:
     PROPERTY_ICEBERG_INVALID_RECORD_ACTION = "redpanda.iceberg.invalid.record.action"
     PROPERTY_ICEBERG_TARGET_LAG_MS = "redpanda.iceberg.target.lag.ms"
     PROPERTY_MIN_CLEANABLE_DIRTY_RATIO = "min.cleanable.dirty.ratio"
+    PROPERTY_ICEBERG_BATCH_MAX_BYTES = "redpanda.iceberg.batch.max.bytes"
 
     class CompressionTypes(str, Enum):
         """

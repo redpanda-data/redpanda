@@ -411,6 +411,14 @@ create_topic_properties_update(
                   min_cleanable_dirty_ratio_validator{});
                 continue;
             }
+
+            if (cfg.name == topic_property_iceberg_batch_max_bytes) {
+                parse_and_set_optional(
+                  update.properties.iceberg_batch_max_bytes,
+                  cfg.value,
+                  op,
+                  iceberg_batch_max_bytes_validator{});
+            }
         } catch (const validation_error& e) {
             vlog(
               klog.debug,

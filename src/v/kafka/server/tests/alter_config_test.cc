@@ -1382,7 +1382,8 @@ FIXTURE_TEST(test_describe_iceberg_properties, alter_config_test_fixture) {
       "redpanda.iceberg.delete",
       "redpanda.iceberg.partition.spec",
       "redpanda.iceberg.invalid.record.action",
-      "redpanda.iceberg.target.lag.ms"};
+      "redpanda.iceberg.target.lag.ms",
+      "redpanda.iceberg.batch.max.bytes"};
 
     {
         model::topic test_tp{"topic-1"};

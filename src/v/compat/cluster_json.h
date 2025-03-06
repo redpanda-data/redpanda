@@ -632,6 +632,7 @@ inline void rjson_serialize(
       w, "iceberg_invalid_record_action", tps.iceberg_invalid_record_action);
     write_member(w, "iceberg_target_lag_ms", tps.iceberg_target_lag_ms);
     write_member(w, "min_cleanable_dirty_ratio", tps.min_cleanable_dirty_ratio);
+    write_member(w, "iceberg_batch_max_bytes", tps.iceberg_batch_max_bytes);
     w.EndObject();
 }
 
@@ -708,6 +709,7 @@ inline void read_value(const json::Value& rd, cluster::topic_properties& obj) {
       rd, "iceberg_invalid_record_action", obj.iceberg_invalid_record_action);
     read_member(rd, "iceberg_target_lag_ms", obj.iceberg_target_lag_ms);
     read_member(rd, "min_cleanable_dirty_ratio", obj.min_cleanable_dirty_ratio);
+    read_member(rd, "iceberg_batch_max_bytes", obj.iceberg_batch_max_bytes);
 }
 
 inline void rjson_serialize(

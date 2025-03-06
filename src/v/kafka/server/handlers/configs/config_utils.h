@@ -559,6 +559,25 @@ struct min_cleanable_dirty_ratio_validator {
     }
 };
 
+struct iceberg_batch_max_bytes_validator {
+    std::optional<ss::sstring> operator()(
+      const ss::sstring& /*raw*/, const std::optional<size_t>& maybe_value) {
+        if (maybe_value.has_value()) {
+            const auto& value = maybe_value.value();
+            constexpr size_t min_b = 1_MiB;
+            constexpr size_t max_b = 1_GiB;
+            if (value < min_b || value > max_b) {
+                return fmt::format(
+                  "batch.max.bytes value invalid, expected to be in range "
+                  "[{},{}]",
+                  min_b,
+                  max_b);
+            }
+        }
+        return std::nullopt;
+    }
+};
+
 template<typename T, typename... ValidatorTypes>
 requires requires(
   model::topic_namespace_view tns,

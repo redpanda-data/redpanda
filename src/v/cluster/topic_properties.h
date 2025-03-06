@@ -82,7 +82,8 @@ struct topic_properties
         iceberg_invalid_record_action,
       std::optional<std::chrono::milliseconds> iceberg_target_lag_ms,
       tristate<double> min_cleanable_dirty_ratio,
-      std::optional<bool> remote_topic_allow_gaps)
+      std::optional<bool> remote_topic_allow_gaps,
+      std::optional<size_t> iceberg_batch_max_bytes)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -129,7 +130,8 @@ struct topic_properties
       , iceberg_partition_spec(std::move(iceberg_partition_spec))
       , iceberg_invalid_record_action(iceberg_invalid_record_action)
       , iceberg_target_lag_ms(iceberg_target_lag_ms)
-      , min_cleanable_dirty_ratio(min_cleanable_dirty_ratio) {}
+      , min_cleanable_dirty_ratio(min_cleanable_dirty_ratio)
+      , iceberg_batch_max_bytes(iceberg_batch_max_bytes) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -220,6 +222,8 @@ struct topic_properties
 
     tristate<double> min_cleanable_dirty_ratio{std::nullopt};
 
+    std::optional<size_t> iceberg_batch_max_bytes{};
+
     bool is_compacted() const;
     bool has_overrides() const;
     bool requires_remote_erase() const;
@@ -271,7 +275,8 @@ struct topic_properties
           iceberg_invalid_record_action,
           iceberg_target_lag_ms,
           min_cleanable_dirty_ratio,
-          remote_topic_allow_gaps);
+          remote_topic_allow_gaps,
+          iceberg_batch_max_bytes);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
