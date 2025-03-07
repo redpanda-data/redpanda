@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include <seastar/core/shared_ptr_incomplete.hh>
 
 namespace raft {
 
@@ -21,3 +22,11 @@ class state_machine_manager;
 class state_machine_base;
 
 } // namespace raft
+namespace seastar {
+
+template<>
+struct lw_shared_ptr_deleter<raft::consensus> {
+    static void dispose(raft::consensus* sst);
+};
+
+} // namespace seastar

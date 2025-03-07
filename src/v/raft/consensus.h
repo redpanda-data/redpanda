@@ -61,7 +61,7 @@ std::vector<model::record_batch_type>
 offset_translator_batch_types(const model::ntp& ntp);
 
 /// consensus for one raft group
-class consensus {
+class consensus : public ss::enable_lw_shared_from_this<consensus> {
 public:
     // we maintain this for backward compatibility, will be removed in future
     // versions.

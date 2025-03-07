@@ -4318,3 +4318,11 @@ size_t consensus::bytes_to_deliver_to_learners() const {
 }
 
 } // namespace raft
+
+namespace seastar {
+
+void lw_shared_ptr_deleter<raft::consensus>::dispose(raft::consensus* s) {
+    delete s;
+}
+
+} // namespace seastar
