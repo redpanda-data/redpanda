@@ -167,10 +167,11 @@ class DatalakeServices():
                                      partitions=1,
                                      replicas=1,
                                      iceberg_mode="key_value",
-                                     target_lag_ms=10000,
+                                     target_lag_ms:int|None = None,
                                      config: dict[str, Any] = dict()):
         config[TopicSpec.PROPERTY_ICEBERG_MODE] = iceberg_mode
-        config[TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS] = target_lag_ms
+        if target_lag_ms:
+            config[TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS] = target_lag_ms
         rpk = RpkTool(self.redpanda)
         rpk.create_topic(topic=name,
                          partitions=partitions,

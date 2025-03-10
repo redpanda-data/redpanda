@@ -63,6 +63,8 @@ class RedpandaConnectIcebergTest(RedpandaTest, DataMigrationTestMixin):
                 True,
                 "iceberg_catalog_commit_interval_ms":
                 self.FAST_COMMIT_INTVL_S * 1000,
+                "iceberg_target_lag_ms":
+                self.FAST_COMMIT_INTVL_S * 1000,
             },
             schema_registry_config=SchemaRegistryConfig())
         self.dl = DatalakeServices(
