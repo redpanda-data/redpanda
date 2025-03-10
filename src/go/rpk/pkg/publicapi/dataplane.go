@@ -24,6 +24,7 @@ type DataPlaneClientSet struct {
 	Transform    transformServiceClient
 	CloudStorage dataplanev1connect.CloudStorageServiceClient
 	User         dataplanev1connect.UserServiceClient
+	Secrets      dataplanev1connect.SecretServiceClient
 }
 
 // NewDataPlaneClientSet creates a Public API client set with the service
@@ -44,6 +45,7 @@ func NewDataPlaneClientSet(host, authToken string, opts ...connect.ClientOption)
 		Transform:    newTransformServiceClient(http.DefaultClient, host, authToken, opts...),
 		CloudStorage: dataplanev1connect.NewCloudStorageServiceClient(http.DefaultClient, host, opts...),
 		User:         dataplanev1connect.NewUserServiceClient(http.DefaultClient, host, opts...),
+		Secrets:      dataplanev1connect.NewSecretServiceClient(http.DefaultClient, host, opts...),
 	}, nil
 }
 
