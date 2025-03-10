@@ -58,6 +58,8 @@ class ProducerConsumerWorkload(PWorkload):
             self.ctx.redpanda,
             self.topic,
             self.MSG_SIZE,
+            debug_logs=True,
+            trace_logs=True,
             nodes=self.ctx.preallocated_nodes)
 
     def begin(self):
