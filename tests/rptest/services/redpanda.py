@@ -72,6 +72,7 @@ from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
+from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
 from rptest.utils.rpenv import sample_license
 import enum
@@ -529,7 +530,8 @@ class SISettings:
                  retention_local_strict=True,
                  cloud_storage_max_throughput_per_shard: Optional[int] = None,
                  cloud_storage_signature_version: str = "s3v4",
-                 before_call_headers: Optional[dict[str, Any]] = None,
+                 before_call_headers: Optional[Callable[[], dict[str,
+                                                                 str]]] = None,
                  skip_end_of_test_scrubbing: bool = False,
                  addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
         """
@@ -632,6 +634,8 @@ class SISettings:
 
         self._expected_damage_types = set()
 
+        self._gcp_token_cache = ExpiringValue[str]()
+
     def get_use_fips_s3_endpoint(self) -> bool:
         use_fips_option = self._context.globals.get(
             self.GLOBAL_USE_FIPS_S3_ENDPOINT,
@@ -713,9 +717,9 @@ class SISettings:
                                         'aws') == 'gcp':
                 self.endpoint_url = 'https://storage.googleapis.com'
                 self.cloud_storage_signature_version = "unsigned"
-                self.before_call_headers = {
+                self.before_call_headers = lambda: {
                     "Authorization": f"Bearer {self.gcp_iam_token(logger)}",
-                    "x-goog-project-id": cloud_storage_gcp_project_id
+                    "x-goog-project-id": str(cloud_storage_gcp_project_id)
                 }
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
@@ -753,7 +757,11 @@ class SISettings:
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self._cloud_storage_azure_container = new_bucket_name
 
-    def gcp_iam_token(self, logger):
+    def gcp_iam_token(self, logger) -> str:
+        token = self._gcp_token_cache.value()
+        if token is not None:
+            return token
+
         logger.info('Getting gcp iam token')
         s = requests.Session()
         s.mount('http://169.254.169.254', HTTPAdapter(max_retries=5))
@@ -762,6 +770,14 @@ class SISettings:
             "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
             headers={"Metadata-Flavor": "Google"})
         res.raise_for_status()
+        logger.info(
+            f"Got gcp iam token expiring in {res.json()['expires_in']} seconds"
+        )
+        # GCP guarantees that tokens are valid for at least 5 minutes so it is
+        # safe to subtract 60 seconds and still assume a valid token.
+        self._gcp_token_cache.update(res.json()["access_token"],
+                                     expire_at=time.time() +
+                                     res.json()["expires_in"] - 60)
         return res.json()["access_token"]
 
     # Call this to update the extra_rp_conf
