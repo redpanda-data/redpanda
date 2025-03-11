@@ -24,7 +24,7 @@ public:
     static constexpr std::string_view name = "datalake_translation_stm";
     using base = raft::persisted_stm<>;
 
-    explicit translation_stm(ss::logger&, raft::consensus*);
+    explicit translation_stm(ss::logger&, ss::weak_ptr<raft::consensus>);
 
     ss::future<> stop() override;
 
@@ -39,7 +39,7 @@ public:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<iobuf> take_snapshot(model::offset) final;
 
-    raft::consensus* raft() const { return _raft; }
+    ss::weak_ptr<raft::consensus> raft() const { return _raft; }
 
     // wait until at least offset is translated
     ss::future<> wait_translated(
@@ -115,7 +115,9 @@ class stm_factory : public cluster::state_machine_factory {
 public:
     explicit stm_factory(bool is_iceberg_enabled);
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      ss::weak_ptr<raft::consensus>) final;
 
 private:
     bool _iceberg_enabled;

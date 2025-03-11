@@ -24,7 +24,7 @@ class dl_stm final : public raft::persisted_stm<> {
 public:
     static constexpr const char* name = "dl_stm";
 
-    dl_stm(ss::logger&, raft::consensus*);
+    dl_stm(ss::logger&, ss::weak_ptr<raft::consensus>);
 
 private:
     ss::future<> do_apply(const model::record_batch& batch) override;

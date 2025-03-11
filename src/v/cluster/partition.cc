@@ -459,7 +459,7 @@ ss::future<> partition::start(
   const std::optional<xshard_transfer_state>& xst_state) {
     const auto& ntp = _raft->ntp();
     raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
-      _raft.get());
+      _raft->weak_from_this());
 
     std::optional<raft::xshard_transfer_state> raft_xst_state;
     if (xst_state) {

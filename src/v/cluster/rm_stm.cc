@@ -81,7 +81,7 @@ rm_stm::parse_tx_control_batch(const model::record_batch& b) {
 
 rm_stm::rm_stm(
   ss::logger& logger,
-  raft::consensus* c,
+  ss::weak_ptr<raft::consensus> c,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<tx::producer_state_manager>& producer_state_manager,
@@ -2253,7 +2253,8 @@ bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
 
 void rm_stm_factory::create(
 
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto topic_md = _topics.local().get_topic_metadata_ref(
       model::topic_namespace_view(raft->ntp()));
 

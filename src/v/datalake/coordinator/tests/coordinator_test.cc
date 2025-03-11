@@ -214,11 +214,11 @@ public:
         }
         for (auto& [id, node] : nodes()) {
             node->initialise(all_vnodes()).get();
-            auto* raft = node->raft().get();
+            auto raft = node->raft();
             raft::state_machine_manager_builder builder;
             auto stm = builder.create_stm<coordinator_stm>(
               datalake::datalake_log,
-              raft,
+              raft->weak_from_this(),
               config::mock_binding<std::chrono::seconds>(1s));
             node->start(std::move(builder)).get();
             if (args.noop_commits) {
@@ -336,7 +336,7 @@ public:
             }
             last_committed = committed;
             last_num_entries = num_entries;
-            auto* leader_raft = leader_stm.raft();
+            auto leader_raft = leader_stm.raft();
             co_await leader_raft->step_down("test");
         }
     }

@@ -22,7 +22,9 @@
 namespace raft {
 
 state_machine::state_machine(
-  consensus* raft, ss::logger& log, ss::io_priority_class io_prio)
+  ss::weak_ptr<raft::consensus> raft,
+  ss::logger& log,
+  ss::io_priority_class io_prio)
   : _raft(raft)
   , _io_prio(io_prio)
   , _log(log)

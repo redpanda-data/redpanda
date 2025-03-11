@@ -35,7 +35,8 @@ struct state_machine_factory {
     /**
      * A method must call builder interface to create STM instance.
      */
-    virtual void create(raft::state_machine_manager_builder&, raft::consensus*)
+    virtual void
+    create(raft::state_machine_manager_builder&, ss::weak_ptr<raft::consensus>)
       = 0;
 
     virtual ~state_machine_factory() = default;
@@ -56,7 +57,7 @@ public:
     }
 
     raft::state_machine_manager_builder
-    make_builder_for(raft::consensus* raft) {
+    make_builder_for(ss::weak_ptr<raft::consensus> raft) {
         raft::state_machine_manager_builder builder;
         for (auto& factory : _stm_factories) {
             if (factory->is_applicable_for(raft->log_config())) {

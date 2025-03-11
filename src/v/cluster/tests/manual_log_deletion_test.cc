@@ -35,7 +35,7 @@ struct manual_deletion_fixture : public raft::raft_fixture {
         raft::state_machine_manager_builder stm_mgr_builder;
         n.initialise(all_vnodes()).get();
         cluster::log_eviction_stm_factory f(n.get_kvstore());
-        f.create(stm_mgr_builder, n.raft().get());
+        f.create(stm_mgr_builder, n.raft()->weak_from_this());
         return n.start(std::move(stm_mgr_builder));
     }
 

@@ -36,10 +36,10 @@ public:
 
     using stm_allocation_result = result<int64_t>;
 
-    explicit id_allocator_stm(ss::logger&, raft::consensus*);
+    explicit id_allocator_stm(ss::logger&, ss::weak_ptr<raft::consensus>);
 
     explicit id_allocator_stm(
-      ss::logger&, raft::consensus*, config::configuration&);
+      ss::logger&, ss::weak_ptr<raft::consensus>, config::configuration&);
 
     ss::future<stm_allocation_result>
     allocate_id(model::timeout_clock::duration timeout);
@@ -147,7 +147,7 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      ss::weak_ptr<raft::consensus> raft) final;
 };
 
 } // namespace cluster

@@ -51,7 +51,7 @@ struct id_allocator_stm_fixture : stm_raft_fixture<cluster::id_allocator_stm> {
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder, raft_node_instance& node) {
         return builder.create_stm<cluster::id_allocator_stm>(
-          idstmlog, node.raft().get(), config::shard_local_cfg());
+          idstmlog, node.raft()->weak_from_this(), config::shard_local_cfg());
     }
 
     ss::future<> reset(int64_t id) {

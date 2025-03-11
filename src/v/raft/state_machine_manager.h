@@ -26,6 +26,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/weak_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -143,7 +144,7 @@ private:
     };
 
     state_machine_manager(
-      consensus* raft,
+      ss::weak_ptr<raft::consensus> raft,
       std::vector<named_stm> stms_to_manage,
       ss::scheduling_group apply_sg);
 
@@ -208,7 +209,7 @@ private:
       const managed_snapshot& snapshot,
       model::offset last_included_offset);
 
-    consensus* _raft;
+    ss::weak_ptr<raft::consensus> _raft;
     ctx_log _log;
     mutex _apply_mutex{"stm_manager::apply"};
     state_machines_t _machines;
@@ -234,9 +235,7 @@ public:
 
     void with_scheduing_group(ss::scheduling_group sg) { _sg = sg; }
 
-    state_machine_manager build(raft::consensus* raft) && {
-        return {raft, std::move(_stms), _sg};
-    }
+    state_machine_manager build(ss::weak_ptr<raft::consensus> raft) &&;
 
 private:
     std::vector<state_machine_manager::named_stm> _stms;

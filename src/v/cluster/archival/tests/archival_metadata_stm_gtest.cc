@@ -111,7 +111,7 @@ public:
 
             raft::state_machine_manager_builder builder;
             auto stm = builder.create_stm<cluster::archival_metadata_stm>(
-              node->raft().get(),
+              node->raft(),
               stm_node.remote.local(),
               node->get_feature_table().local(),
               fixture_logger,

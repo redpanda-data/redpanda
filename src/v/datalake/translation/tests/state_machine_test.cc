@@ -19,7 +19,7 @@ using stm_ptr = ss::shared_ptr<datalake::translation::translation_stm>;
 struct translator_stm_fixture : stm_raft_fixture<stm> {
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder, raft_node_instance& node) {
-        return builder.create_stm<stm>(logger(), node.raft().get());
+        return builder.create_stm<stm>(logger(), node.raft()->weak_from_this());
     }
 
     ss::future<> update_iceberg_config(model::iceberg_mode mode) {

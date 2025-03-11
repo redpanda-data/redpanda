@@ -35,7 +35,7 @@ struct kv_stm_fixture : stm_raft_fixture<stm_t> {
     //
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder, raft_node_instance& node) {
-        return builder.create_stm<stm_t>(1, test_logger, node.raft().get());
+        return builder.create_stm<stm_t>(1, test_logger, node.raft());
     }
 
     ss::future<result<model::partition_id, cluster::errc>>

@@ -146,7 +146,7 @@ struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
         create_raft();
         raft::state_machine_manager_builder builder;
         archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-          _raft.get(),
+          _raft->weak_from_this(),
           cloud_api.local(),
           _feature_table.local(),
           logger,
@@ -362,7 +362,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(),
+      _raft.weak_from_this(),
       cloud_api.local(),
       _feature_table.local(),
       logger,
@@ -462,7 +462,7 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(),
+      _raft.weak_from_this(),
       cloud_api.local(),
       _feature_table.local(),
       logger,
@@ -682,7 +682,7 @@ FIXTURE_TEST(
 
     raft::state_machine_manager_builder builder;
     auto archival_stm = builder.create_stm<cluster::archival_metadata_stm>(
-      _raft.get(),
+      _raft.weak_from_this(),
       cloud_api.local(),
       _feature_table.local(),
       logger,

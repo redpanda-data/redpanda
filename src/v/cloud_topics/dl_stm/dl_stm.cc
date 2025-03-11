@@ -13,6 +13,7 @@
 #include "bytes/iobuf_parser.h"
 #include "cloud_topics/dl_stm/dl_stm_commands.h"
 #include "cloud_topics/dl_stm/dl_stm_state.h"
+#include "raft/consensus.h"
 #include "serde/rw/map.h"
 #include "serde/rw/uuid.h"
 #include "serde/rw/vector.h"
@@ -21,7 +22,7 @@
 
 namespace experimental::cloud_topics {
 
-dl_stm::dl_stm(ss::logger& logger, raft::consensus* raft)
+dl_stm::dl_stm(ss::logger& logger, ss::weak_ptr<raft::consensus> raft)
   : raft::persisted_stm<>(name, logger, raft) {}
 
 ss::future<> dl_stm::do_apply(const model::record_batch& batch) {

@@ -49,7 +49,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
       state_machine_manager_builder& builder,
       raft_node_instance& node) override {
         return builder.create_stm<stm>(
-          logger(), node.raft().get(), snapshot_interval());
+          logger(), node.raft()->weak_from_this(), snapshot_interval());
     }
 
     ss::future<> initialize() {

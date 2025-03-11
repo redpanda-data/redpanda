@@ -681,7 +681,7 @@ archival_metadata_stm::has_snapshot(const storage::ntp_config& ntp_cfg) {
 }
 
 archival_metadata_stm::archival_metadata_stm(
-  raft::consensus* raft,
+  ss::weak_ptr<raft::consensus> raft,
   cloud_storage::remote& remote,
   features::feature_table& ft,
   ss::logger& logger,
@@ -1697,7 +1697,8 @@ bool archival_metadata_stm_factory::is_applicable_for(
 }
 
 void archival_metadata_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto topic_md = _topics.local().get_topic_metadata_ref(
       model::topic_namespace_view(raft->ntp()));
     auto remote_label

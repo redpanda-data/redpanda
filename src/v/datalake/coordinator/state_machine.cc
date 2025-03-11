@@ -47,7 +47,7 @@ void maybe_log_update_error(
 
 coordinator_stm::coordinator_stm(
   ss::logger& logger,
-  raft::consensus* raft,
+  ss::weak_ptr<raft::consensus> raft,
   config::binding<std::chrono::seconds> snapshot_delay)
   : coordinator_stm_base("datalake_coordinator_stm.snapshot", logger, raft)
   , snapshot_delay_secs_(std::move(snapshot_delay)) {
@@ -218,7 +218,8 @@ bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
 }
 
 void stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto stm = builder.create_stm<coordinator_stm>(
       datalake_log,
       raft,

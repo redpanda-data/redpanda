@@ -135,7 +135,7 @@ public:
 
     explicit rm_stm(
       ss::logger&,
-      raft::consensus*,
+      ss::weak_ptr<raft::consensus>,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<tx::producer_state_manager>&,
@@ -448,7 +448,9 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::topic_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      ss::weak_ptr<raft::consensus>) final;
 
 private:
     bool _enable_transactions;

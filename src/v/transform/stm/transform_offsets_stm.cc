@@ -34,7 +34,8 @@ bool transform_offsets_stm_factory::is_applicable_for(
 }
 
 void transform_offsets_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto cfg = _topics.local().get_topic_cfg(
       model::topic_namespace_view(raft->ntp().ns, raft->ntp().tp.topic));
     vassert(

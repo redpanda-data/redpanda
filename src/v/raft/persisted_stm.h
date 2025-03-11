@@ -22,6 +22,7 @@
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/weak_ptr.hh>
 
 namespace raft {
 
@@ -63,7 +64,9 @@ struct stm_snapshot {
 class file_backed_stm_snapshot {
 public:
     file_backed_stm_snapshot(
-      ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c);
+      ss::sstring snapshot_name,
+      prefix_logger& log,
+      ss::weak_ptr<raft::consensus> c);
     ss::future<> perform_initial_cleanup();
     ss::future<std::optional<stm_snapshot>> load_snapshot();
     ss::future<> persist_local_snapshot(stm_snapshot&&);
@@ -92,7 +95,7 @@ public:
     kvstore_backed_stm_snapshot(
       ss::sstring snapshot_name,
       prefix_logger& log,
-      raft::consensus* c,
+      ss::weak_ptr<raft::consensus> c,
       storage::kvstore& kvstore);
 
     /// For testing
@@ -169,7 +172,7 @@ class persisted_stm_base
 public:
     template<typename... Args>
     explicit persisted_stm_base(
-      ss::sstring, ss::logger&, raft::consensus*, Args&&...);
+      ss::sstring, ss::logger&, ss::weak_ptr<raft::consensus>, Args&&...);
 
     /**
      * Takes and persists a local persisted_stm snapshot. This snapshot isn't
@@ -247,7 +250,7 @@ protected:
 
     bool _is_catching_up{false};
     model::term_id _insync_term;
-    raft::consensus* _raft;
+    ss::weak_ptr<raft::consensus> _raft;
     prefix_logger _log;
     ss::gate _gate;
 

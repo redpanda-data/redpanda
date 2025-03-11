@@ -17,7 +17,9 @@ ss::logger logger("eviction_stm_test");
 class test_log_eviction_stm : public cluster::log_eviction_stm {
 public:
     test_log_eviction_stm(
-      raft::consensus* c, ss::logger& logger, storage::kvstore& kvs)
+      ss::weak_ptr<raft::consensus> c,
+      ss::logger& logger,
+      storage::kvstore& kvs)
       : cluster::log_eviction_stm(c, logger, kvs) {}
 
     ss::future<> stop() override {
@@ -69,7 +71,7 @@ TEST_F(eviction_stm_fixture, test_eviction_stm_deadlock) {
         raft::state_machine_manager_builder stm_mgr_builder;
         node->initialise(all_vnodes()).get();
         stm_mgr_builder.create_stm<test_log_eviction_stm>(
-          node->raft().get(), logger(), node->get_kvstore());
+          node->raft()->weak_from_this(), logger(), node->get_kvstore());
 
         node->start(std::move(stm_mgr_builder)).get();
     }

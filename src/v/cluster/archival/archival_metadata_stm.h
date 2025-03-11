@@ -133,7 +133,7 @@ public:
     friend class command_batch_builder;
 
     explicit archival_metadata_stm(
-      raft::consensus*,
+      ss::weak_ptr<raft::consensus>,
       cloud_storage::remote& remote,
       features::feature_table&,
       ss::logger& logger,
@@ -399,7 +399,9 @@ public:
       ss::sharded<cluster::topic_table>&);
 
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      ss::weak_ptr<raft::consensus>) final;
 
 private:
     bool _cloud_storage_enabled;

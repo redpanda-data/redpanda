@@ -365,7 +365,7 @@ ss::future<> controller::start(
           std::ref(_feature_table),
           config::shard_local_cfg().controller_snapshot_max_age_sec.bind(),
           std::ref(clusterlog),
-          _raft0.get(),
+          _raft0->weak_from_this(),
           raft::persistent_last_applied::yes,
           absl::flat_hash_set<model::record_batch_type>{
             model::record_batch_type::checkpoint,

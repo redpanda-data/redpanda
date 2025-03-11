@@ -15,7 +15,7 @@ namespace kafka {
 
 group_tx_tracker_stm::group_tx_tracker_stm(
   ss::logger& logger,
-  raft::consensus* raft,
+  ss::weak_ptr<raft::consensus> raft,
   ss::sharded<features::feature_table>& feature_table)
   : raft::persisted_stm<>("group_tx_tracker_stm.snapshot", logger, raft)
   , group_data_parser<group_tx_tracker_stm>()
@@ -280,7 +280,8 @@ group_tx_tracker_stm_factory::group_tx_tracker_stm_factory(
   : _feature_table(feature_table) {}
 
 void group_tx_tracker_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto stm = builder.create_stm<kafka::group_tx_tracker_stm>(
       cg_klog, raft, _feature_table);
     raft->log()->stm_manager()->add_stm(stm);

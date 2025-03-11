@@ -76,7 +76,9 @@ public:
     using all_txs_t = absl::btree_map<kafka::group_id, per_group_state>;
 
     group_tx_tracker_stm(
-      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
+      ss::logger&,
+      ss::weak_ptr<raft::consensus>,
+      ss::sharded<features::feature_table>&);
 
     storage::stm_type type() override {
         return storage::stm_type::consumer_offsets_transactional;
@@ -162,7 +164,9 @@ public:
     explicit group_tx_tracker_stm_factory(
       ss::sharded<features::feature_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      ss::weak_ptr<raft::consensus>) final;
 
 private:
     ss::sharded<features::feature_table>& _feature_table;

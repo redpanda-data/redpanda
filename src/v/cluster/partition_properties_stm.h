@@ -29,7 +29,7 @@ public:
     static constexpr std::string_view name = "partition_properties_stm";
 
     partition_properties_stm(
-      raft::consensus* raft,
+      ss::weak_ptr<raft::consensus> raft,
       ss::logger& logger,
       storage::kvstore& kvstore,
       config::binding<std::chrono::milliseconds> sync_timeout);
@@ -152,7 +152,7 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      ss::weak_ptr<raft::consensus> raft) final;
 
 private:
     storage::kvstore& _kvstore;

@@ -231,7 +231,9 @@ public:
     };
 
     explicit tm_stm(
-      ss::logger&, raft::consensus*, ss::sharded<features::feature_table>&);
+      ss::logger&,
+      ss::weak_ptr<raft::consensus>,
+      ss::sharded<features::feature_table>&);
 
     void try_rm_lock(const kafka::transactional_id& tid) {
         auto it = _transactions.find(tid);
@@ -462,7 +464,7 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      ss::weak_ptr<raft::consensus> raft) final;
 
 private:
     ss::sharded<features::feature_table>& _feature_table;

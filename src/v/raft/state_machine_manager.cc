@@ -159,8 +159,10 @@ state_machine_manager::named_stm::named_stm(ss::sstring name, stm_ptr stm)
   , stm(std::move(stm)) {}
 
 state_machine_manager::state_machine_manager(
-  consensus* raft, std::vector<named_stm> stms, ss::scheduling_group apply_sg)
-  : _raft(raft)
+  ss::weak_ptr<raft::consensus> raft,
+  std::vector<named_stm> stms,
+  ss::scheduling_group apply_sg)
+  : _raft(std::move(raft))
   , _log(ctx_log(_raft->group(), _raft->ntp()))
   , _apply_sg(apply_sg) {
     for (auto& n_stm : stms) {
@@ -589,6 +591,11 @@ ss::future<> state_machine_manager::remove_local_state() {
     co_await ss::coroutine::parallel_for_each(_machines, [](auto entry_pair) {
         return entry_pair.second->stm->remove_local_state();
     });
+}
+
+state_machine_manager
+state_machine_manager_builder::build(ss::weak_ptr<raft::consensus> raft) && {
+    return {std::move(raft), std::move(_stms), _sg};
 }
 
 } // namespace raft

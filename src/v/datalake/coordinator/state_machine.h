@@ -28,8 +28,10 @@ public:
     };
 
     explicit coordinator_stm(
-      ss::logger&, raft::consensus*, config::binding<std::chrono::seconds>);
-    raft::consensus* raft() { return _raft; }
+      ss::logger&,
+      ss::weak_ptr<raft::consensus>,
+      config::binding<std::chrono::seconds>);
+    ss::weak_ptr<raft::consensus> raft() { return _raft; }
 
     // Syncs the STM such that we're guaranteed that it has applied all records
     // from the previous terms. Calling does _not_ ensure that all records from
@@ -81,6 +83,8 @@ class stm_factory : public cluster::state_machine_factory {
 public:
     stm_factory() = default;
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      ss::weak_ptr<raft::consensus>) final;
 };
 } // namespace datalake::coordinator

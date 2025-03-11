@@ -266,7 +266,7 @@ struct kv1_stm_fixture : kv_stm_fixture<kv1_stm_t> {
         vassert(inserted, "attempted to initialize multiple stms per node");
         return ss::make_shared<kv1_stm_t>(
           kvlog,
-          node.raft().get(),
+          node.raft()->weak_from_this(),
           raft::persistent_last_applied::yes,
           not_handled_batch_types,
           *it->second);
@@ -408,7 +408,7 @@ TEST_F_CORO(raft_fixture, test_stm_recovery) {
         simple_kv<batch_type_1> state;
         simple_kv_stm<batch_type_1> stm(
           kvlog,
-          node.raft().get(),
+          node.raft()->weak_from_this(),
           raft::persistent_last_applied::yes,
           not_handled_batch_types,
           state);
@@ -442,7 +442,7 @@ TEST_F_CORO(raft_fixture, test_stm_recovery) {
         simple_kv<batch_type_1> state;
         simple_kv_stm<batch_type_1> stm(
           kvlog,
-          node.raft().get(),
+          node.raft()->weak_from_this(),
           raft::persistent_last_applied::yes,
           not_handled_batch_types,
           state);
@@ -481,7 +481,7 @@ struct kv2_stm_fixture : kv_stm_fixture<kv2_stm_t> {
         vassert(inserted, "attempted to initialize multiple stms per node");
         return ss::make_shared<kv2_stm_t>(
           kvlog,
-          node.raft().get(),
+          node.raft()->weak_from_this(),
           raft::persistent_last_applied::yes,
           not_handled_batch_types,
           std::get<0>(*it->second),

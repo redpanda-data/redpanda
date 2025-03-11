@@ -48,7 +48,8 @@ public:
     static constexpr std::string_view name = "log_eviction_stm";
 
     using offset_result = result<model::offset, std::error_code>;
-    log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
+    log_eviction_stm(
+      ss::weak_ptr<raft::consensus>, ss::logger&, storage::kvstore&);
 
     ss::future<> start() override;
 
@@ -161,7 +162,7 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      ss::weak_ptr<raft::consensus> raft) final;
 
 private:
     storage::kvstore& _kvstore;

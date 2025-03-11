@@ -48,7 +48,7 @@ struct partition_properties_stm_fixture : raft::raft_fixture {
             raft::state_machine_manager_builder builder;
 
             auto stm = builder.create_stm<stm_t>(
-              node->raft().get(),
+              node->raft()->weak_from_this(),
               clusterlog,
               node->get_kvstore(),
               sync_timeout.bind());

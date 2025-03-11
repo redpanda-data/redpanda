@@ -54,7 +54,7 @@ model::record_batch tm_stm::serialize_tx(tx_metadata tx) {
 
 tm_stm::tm_stm(
   ss::logger& logger,
-  raft::consensus* c,
+  ss::weak_ptr<raft::consensus> c,
   ss::sharded<features::feature_table>& feature_table)
   : raft::persisted_stm<>(tm_stm_snapshot, logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
@@ -882,7 +882,8 @@ bool tm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
 }
 
 void tm_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto tm_stm = builder.create_stm<cluster::tm_stm>(
       txlog, raft, _feature_table);
     raft->log()->stm_manager()->add_stm(tm_stm);

@@ -102,7 +102,7 @@ public:
 
     explicit mux_state_machine(
       ss::logger&,
-      consensus*,
+      ss::weak_ptr<raft::consensus>,
       persistent_last_applied,
       absl::flat_hash_set<model::record_batch_type>,
       T&...);
@@ -208,7 +208,7 @@ private:
 
     replicate_units get_units() { return replicate_units(this); }
 
-    consensus* _c;
+    ss::weak_ptr<raft::consensus> _c;
     absl::node_hash_map<model::offset, std::error_code> _results;
     model::offset _last_applied;
     int64_t _pending = 0;
@@ -235,7 +235,7 @@ template<typename... T>
 requires(State<T>, ...)
 mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger,
-  consensus* c,
+  ss::weak_ptr<raft::consensus> c,
   persistent_last_applied persist,
   absl::flat_hash_set<model::record_batch_type> not_handled_batch_types,
   T&... state)

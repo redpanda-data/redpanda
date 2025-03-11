@@ -36,12 +36,15 @@ static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
     return std::move(b).build();
 }
 
-id_allocator_stm::id_allocator_stm(ss::logger& logger, raft::consensus* c)
-  : id_allocator_stm(logger, c, config::shard_local_cfg()) {}
+id_allocator_stm::id_allocator_stm(
+  ss::logger& logger, ss::weak_ptr<raft::consensus> c)
+  : id_allocator_stm(logger, std::move(c), config::shard_local_cfg()) {}
 
 id_allocator_stm::id_allocator_stm(
-  ss::logger& logger, raft::consensus* c, config::configuration& cfg)
-  : raft::persisted_stm<>(id_allocator_snapshot, logger, c)
+  ss::logger& logger,
+  ss::weak_ptr<raft::consensus> c,
+  config::configuration& cfg)
+  : raft::persisted_stm<>(id_allocator_snapshot, logger, std::move(c))
   , _batch_size(cfg.id_allocator_batch_size.value())
   , _log_capacity(cfg.id_allocator_log_capacity.value()) {}
 
@@ -246,7 +249,8 @@ bool id_allocator_stm_factory::is_applicable_for(
 }
 
 void id_allocator_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     builder.create_stm<id_allocator_stm>(clusterlog, raft);
 }
 

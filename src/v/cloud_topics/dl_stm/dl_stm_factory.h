@@ -21,7 +21,7 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      ss::weak_ptr<raft::consensus> raft) final;
 };
 
 } // namespace experimental::cloud_topics

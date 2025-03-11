@@ -41,7 +41,7 @@ public:
             raft::state_machine_manager_builder builder;
 
             experimental::cloud_topics::dl_stm_factory stm_factory;
-            stm_factory.create(builder, &*node->raft());
+            stm_factory.create(builder, node->raft()->weak_from_this());
 
             vlog(ct::cd_log.info, "Starting node {}", id);
 

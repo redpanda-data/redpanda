@@ -20,6 +20,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/log.hh>
 
 namespace raft {
@@ -55,7 +56,10 @@ class consensus;
  */
 class state_machine {
 public:
-    state_machine(consensus*, ss::logger& log, ss::io_priority_class io_prio);
+    state_machine(
+      ss::weak_ptr<raft::consensus>,
+      ss::logger& log,
+      ss::io_priority_class io_prio);
     state_machine(state_machine&&) = delete;
     state_machine(const state_machine&) = delete;
     state_machine& operator=(state_machine&&) = delete;
@@ -117,7 +121,7 @@ protected:
         return model::prev_offset(_next);
     }
 
-    consensus* _raft;
+    ss::weak_ptr<raft::consensus> _raft;
     ss::gate _gate;
     ss::abort_source _as;
 

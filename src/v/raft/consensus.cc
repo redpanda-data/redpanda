@@ -1471,7 +1471,8 @@ ss::future<> consensus::start(
   std::optional<state_machine_manager_builder> stm_manager_builder,
   std::optional<xshard_transfer_state> xst_state) {
     if (stm_manager_builder) {
-        _stm_manager = std::move(stm_manager_builder.value()).build(this);
+        _stm_manager
+          = std::move(stm_manager_builder.value()).build(weak_from_this());
     }
     return ss::try_with_gate(
       _bg, [this, xst_state = std::move(xst_state)]() mutable {
@@ -4318,11 +4319,3 @@ size_t consensus::bytes_to_deliver_to_learners() const {
 }
 
 } // namespace raft
-
-namespace seastar {
-
-void lw_shared_ptr_deleter<raft::consensus>::dispose(raft::consensus* s) {
-    delete s;
-}
-
-} // namespace seastar

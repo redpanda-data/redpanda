@@ -60,7 +60,7 @@ template<typename... Args>
 persisted_stm_base<BaseT, T>::persisted_stm_base(
   ss::sstring snapshot_mgr_name,
   ss::logger& logger,
-  raft::consensus* c,
+  ss::weak_ptr<raft::consensus> c,
   Args&&... args)
   : _raft(c)
   , _log(logger, ssx::sformat("[{} ({})]", _raft->ntp(), snapshot_mgr_name))
@@ -90,7 +90,9 @@ ss::future<> persisted_stm_base<BaseT, T>::remove_persistent_state() {
 }
 
 file_backed_stm_snapshot::file_backed_stm_snapshot(
-  ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c)
+  ss::sstring snapshot_name,
+  prefix_logger& log,
+  ss::weak_ptr<raft::consensus> c)
   : _ntp(c->ntp())
   , _log(log)
   , _snapshot_mgr(
@@ -218,7 +220,7 @@ size_t file_backed_stm_snapshot::get_snapshot_size() const {
 kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
   ss::sstring snapshot_name,
   prefix_logger& log,
-  raft::consensus* c,
+  ss::weak_ptr<raft::consensus> c,
   storage::kvstore& kvstore)
   : _ntp(c->ntp())
   , _name(snapshot_name)
@@ -612,22 +614,30 @@ template class persisted_stm_base<
   kvstore_backed_stm_snapshot>;
 
 template persisted_stm_base<state_machine_base, file_backed_stm_snapshot>::
-  persisted_stm_base(ss::sstring, seastar::logger&, raft::consensus*);
+  persisted_stm_base(
+    ss::sstring, seastar::logger&, ss::weak_ptr<raft::consensus>);
 
 template persisted_stm_base<state_machine_base, kvstore_backed_stm_snapshot>::
   persisted_stm_base(
-    ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
+    ss::sstring,
+    seastar::logger&,
+    ss::weak_ptr<raft::consensus>,
+    storage::kvstore&);
 
 template persisted_stm_base<
   no_at_offset_snapshot_stm_base,
   file_backed_stm_snapshot>::
-  persisted_stm_base(ss::sstring, seastar::logger&, raft::consensus*);
+  persisted_stm_base(
+    ss::sstring, seastar::logger&, ss::weak_ptr<raft::consensus>);
 
 template persisted_stm_base<
   no_at_offset_snapshot_stm_base,
   kvstore_backed_stm_snapshot>::
   persisted_stm_base(
-    ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
+    ss::sstring,
+    seastar::logger&,
+    ss::weak_ptr<raft::consensus>,
+    storage::kvstore&);
 ss::sstring kvstore_backed_stm_snapshot::snapshot_key(
   const ss::sstring& snapshot_name, const model::ntp& ntp) {
     return stm_snapshot_key(snapshot_name, ntp);

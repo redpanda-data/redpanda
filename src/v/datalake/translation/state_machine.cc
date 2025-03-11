@@ -43,7 +43,8 @@ model::record_batch make_translation_state_batch(
 
 namespace datalake::translation {
 
-translation_stm::translation_stm(ss::logger& logger, raft::consensus* raft)
+translation_stm::translation_stm(
+  ss::logger& logger, ss::weak_ptr<raft::consensus> raft)
   : raft::persisted_stm<>("datalake_translation_stm.snapshot", logger, raft) {}
 
 ss::future<> translation_stm::stop() {
@@ -237,7 +238,8 @@ bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
 }
 
 void stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto stm = builder.create_stm<translation_stm>(datalake_log, raft);
     raft->log()->stm_manager()->add_stm(stm);
 }

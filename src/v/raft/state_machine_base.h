@@ -21,7 +21,6 @@
 namespace raft {
 using snapshot_at_offset_supported
   = ss::bool_class<struct snapshot_at_offset_supported_tag>;
-class consensus;
 
 /**
  * State machine interface. The class provides an interface that must be

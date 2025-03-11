@@ -127,7 +127,7 @@ public:
     static constexpr std::string_view name = "persited_kv_stm";
     explicit persisted_kv(
       raft_node_instance& rn, bool reject_local_snapshots = false)
-      : persisted_stm<>("simple-kv", logger, rn.raft().get())
+      : persisted_stm<>("simple-kv", logger, rn.raft()->weak_from_this())
       , raft_node(rn)
       , reject_local_snapshots(reject_local_snapshots) {}
 
@@ -467,7 +467,8 @@ public:
     static constexpr std::string_view name = "slow_persisted_stm";
 
     explicit slow_persisted_stm(raft_node_instance& rn)
-      : persisted_stm<>("slow_persisted_stm", logger, rn.raft().get()) {}
+      : persisted_stm<>(
+          "slow_persisted_stm", logger, rn.raft()->weak_from_this()) {}
 
     ss::future<> do_apply(const model::record_batch& batch) override {
         _last_stm_applied = batch.last_offset();

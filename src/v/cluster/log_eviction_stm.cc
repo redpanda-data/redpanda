@@ -39,8 +39,10 @@ struct snapshot_data
 };
 
 log_eviction_stm::log_eviction_stm(
-  raft::consensus* raft, ss::logger& logger, storage::kvstore& kvstore)
-  : base_t("log_eviction_stm.snapshot", logger, raft, kvstore) {}
+  ss::weak_ptr<raft::consensus> raft,
+  ss::logger& logger,
+  storage::kvstore& kvstore)
+  : base_t("log_eviction_stm.snapshot", logger, std::move(raft), kvstore) {}
 
 ss::future<> log_eviction_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
@@ -473,7 +475,8 @@ bool log_eviction_stm_factory::is_applicable_for(
 }
 
 void log_eviction_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  ss::weak_ptr<raft::consensus> raft) {
     auto stm = builder.create_stm<log_eviction_stm>(raft, clusterlog, _kvstore);
     raft->log()->stm_manager()->add_stm(stm);
 }

@@ -70,7 +70,7 @@ struct tm_stm_test_fixture : stm_raft_fixture<stm_t> {
     stm_shptrs_t create_stms(
       state_machine_manager_builder& builder, raft_node_instance& node) {
         return builder.create_stm<stm_t>(
-          tm_logger, node.raft().get(), node.get_feature_table());
+          tm_logger, node.raft()->weak_from_this(), node.get_feature_table());
     }
 
     template<class Func>

@@ -43,7 +43,7 @@ struct rm_stm_test_fixture : simple_raft_fixture {
 
         _stm = stm_m_builder.create_stm<cluster::rm_stm>(
           logger,
-          _raft.get(),
+          _raft->weak_from_this(),
           tx_gateway_frontend,
           _feature_table,
           producer_state_manager,
