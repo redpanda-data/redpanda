@@ -181,6 +181,10 @@ class DatalakeServices():
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(topic, "redpanda.iceberg.mode", mode)
 
+    def set_partition_spec_on_topic(self, topic: str, spec: str):
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(topic, "redpanda.iceberg.partition.spec", spec)
+
     def catalog_client(self):
         return self.catalog_service.client(self.warehouse_name)
 
