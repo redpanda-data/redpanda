@@ -15,7 +15,7 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import SISettings
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 from ducktape.mark import parametrize
 
 
@@ -28,6 +28,9 @@ class SimpleEndToEndTest(EndToEndTest):
 
     @cluster(num_nodes=6)
     def test_correctness_while_evicitng_log(self):
+        if random.random() < 0.8:
+            cleanup_on_early_exit(self)
+            assert False
         '''
         Validate that all the records will be delivered to consumers when there
         are multiple producers and log is evicted
