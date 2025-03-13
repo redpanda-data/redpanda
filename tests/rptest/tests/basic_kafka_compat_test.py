@@ -45,12 +45,16 @@ class KafkaCompatTest(EndToEndTest):
         self.redpanda: RedpandaService = RedpandaService(self.test_context,
                                                          num_brokers=3)
 
+        server_prop_overrides = [[
+            "initial.broker.registration.timeout.ms", "180000"
+        ]]
         self.kafka = KafkaServiceAdapter(
             self.test_context,
             KafkaService(self.test_context,
                          num_nodes=3,
                          zk=None,
-                         version=KAFKA_VERSION))
+                         version=KAFKA_VERSION,
+                         server_prop_overrides=server_prop_overrides))
 
     def setUp(self):
         pass
@@ -59,7 +63,7 @@ class KafkaCompatTest(EndToEndTest):
         self.kafka.stop()
 
     def start_brokers(self):
-        self.kafka.start()
+        self.kafka.start(timeout_sec=180)
         if self.redpanda:
             self.redpanda.start()
 

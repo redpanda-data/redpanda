@@ -21,8 +21,9 @@ class KafkaServiceAdapter(RedpandaServiceForClients):
     def start(self):
         return self._kafka_service.start()
 
-    def start(self, add_principals=""):
-        return self._kafka_service.start(add_principals)
+    def start(self, add_principals="", timeout_sec=60):
+        return self._kafka_service.start(add_principals,
+                                         timeout_sec=timeout_sec)
 
     def wait_until(self, *args, **kwargs):
         # RedpandaService does some helpful liveness checks to fail faster on crashes,
