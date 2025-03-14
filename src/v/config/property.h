@@ -26,6 +26,8 @@
 
 #include <seastar/util/noncopyable_function.hh>
 
+#include <fmt/chrono.h>
+
 #include <algorithm>
 #include <chrono>
 #include <exception>
@@ -146,12 +148,10 @@ public:
     operator value_type() const { return value(); } // NOLINT
 
     void print(std::ostream& o) const override {
-        o << name() << ":";
-
         if (is_secret() && !is_default()) {
-            o << secret_placeholder;
+            fmt::print(o, "{}:{}", name(), secret_placeholder);
         } else {
-            o << _value;
+            fmt::print(o, "{}:{}", name(), _value);
         }
     }
 
