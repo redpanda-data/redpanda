@@ -140,17 +140,24 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             'value.serializer': value_serializer,
         })
 
-    def produce(self, dl, producer, topic_name, msg_count, already_produced=0):
+    def produce(self,
+                dl,
+                producer,
+                topic_name,
+                msg_count,
+                already_produced=0,
+                gen_record=None):
         # Have all records share the same timestamp, so that they are
         # guaranteed to end up in the same hour partition.
         timestamp = time.time()
         for i in range(msg_count):
             ev_type = random.choice(["type_A", "type_B"])
-            record = {
-                "event_type": ev_type,
-                "number": already_produced + i,
-                "timestamp_us": int(timestamp * 1000000),
-            }
+            record = gen_record(already_produced + i, ev_type, timestamp) if gen_record is not None \
+                else {
+                        "event_type": ev_type,
+                        "number": already_produced + i,
+                        "timestamp_us": int(timestamp * 1000000),
+                }
             producer.produce(
                 topic=topic_name,
                 # key to ensure that all partitions get some records
@@ -160,17 +167,57 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
         dl.wait_for_translation(topic_name,
                                 msg_count=already_produced + msg_count)
 
-    def describe_partitioning(self, dl, topic_name):
+    def list_files(self,
+                   dl: DatalakeServices,
+                   query_engine: QueryEngineType,
+                   topic_name: str,
+                   select="file_path"):
+        if query_engine == QueryEngineType.SPARK:
+            return set(dl.spark().run_query_fetch_all(
+                f"select {select} from redpanda.{topic_name}.files"))
+        elif query_engine == QueryEngineType.TRINO:
+            return set(dl.trino().run_query_fetch_all(
+                f'select {select} from redpanda."{topic_name}$files"'))
+
+    def num_files(self, dl: DatalakeServices, query_engine: QueryEngineType,
+                  topic_name: str):
+        partitions = self.list_files(dl,
+                                     query_engine,
+                                     topic_name,
+                                     select="file_path")
+        self.logger.debug(f"iceberg files partitions: {partitions}")
+        return len(partitions)
+
+    def num_partitions(self, dl: DatalakeServices,
+                       query_engine: QueryEngineType, topic_name: str):
+        partitions = self.list_files(dl,
+                                     query_engine,
+                                     topic_name,
+                                     select="partition")
+        self.logger.debug(f"iceberg files partitions: {partitions}")
+        return len(partitions)
+
+    def describe_partitioning(self, dl: DatalakeServices,
+                              query_engine: QueryEngineType, topic_name: str):
         table_name = f"redpanda.{topic_name}"
-        spark = dl.spark()
-        spark_describe_out = spark.run_query_fetch_all(
-            f"describe {table_name}")
-        # If there is just 1 field in the partition spec, partition info
-        # starts with '# Partition Information', if there is more, it starts
-        # with '# Partitioning'.
-        return list(
-            itertools.dropwhile(lambda r: not r[0].startswith('# Partition'),
-                                spark_describe_out))
+        if query_engine == QueryEngineType.SPARK:
+            spark = dl.spark()
+            spark_describe_out = spark.run_query_fetch_all(
+                f"describe {table_name}")
+            # If there is just 1 field in the partition spec, partition info
+            # starts with '# Partition Information', if there is more, it starts
+            # with '# Partitioning'.
+            return list(
+                itertools.dropwhile(
+                    lambda r: not r[0].startswith('# Partition'),
+                    spark_describe_out))
+        elif query_engine == QueryEngineType.TRINO:
+            trino = dl.trino()
+            desc = trino.run_query_fetch_all(
+                f'describe redpanda."{topic_name}$partitions"')
+            return [e for e in desc if e[0] == 'partition']
+        else:
+            assert False
 
     @cluster(num_nodes=6)
     @matrix(cloud_storage_type=supported_storage_types(),
@@ -201,7 +248,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # Check that created table has the correct partition spec.
 
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             expected_partitioning = [
                 ('# Partitioning', '', ''),
                 ('Part 0', 'hours(timestamp_us)', ''),
@@ -213,22 +261,19 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             # spark can use this partitioning for a delete query.
 
             table_name = f"redpanda.{topic_name}"
-            spark = dl.spark()
 
-            files_before = set(
-                spark.run_query_fetch_all(
-                    f"select file_path from {table_name}.files"))
-            # The translator for each partition should produce a file for
-            # each of 2 event types.
-            assert len(files_before) == partitions * 2
+            files_before = self.list_files(dl, QueryEngineType.SPARK,
+                                           topic_name)
+            assert len(files_before) == partitions * 2, \
+                f"Expected {partitions * 2} partitions, got {partitions_before}"
 
-            spark.make_client().cursor().execute(
+            dl.spark().make_client().cursor().execute(
                 f"delete from {table_name} where event_type='type_A'")
 
-            files_after = set(
-                spark.run_query_fetch_all(
-                    f"select file_path from {table_name}.files"))
-            assert len(files_after) == partitions
+            files_after = self.list_files(dl, QueryEngineType.SPARK,
+                                          topic_name)
+            assert len(files_after) == partitions, \
+                f"Expected {partitions} partitions, got {len(files_after)}"
             assert files_after.issubset(files_before)
 
     @cluster(num_nodes=6)
@@ -268,13 +313,12 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             spark = dl.spark()
 
             # The translator for each partition should produce one file.
-            files1 = set(
-                spark.run_query_fetch_all(
-                    f"select file_path from {table_name}.files"))
-            assert len(files1) == partitions
+            n = self.num_files(dl, QueryEngineType.SPARK, topic_name)
+            assert n == partitions, f"Expected {partitions=}, got {n}"
 
             # partition spec should reflect the original value
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             assert describe_partitioning == []
 
             self.logger.info("adding a 2-field partition spec...")
@@ -287,13 +331,13 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # The translator for each partition should produce one file
             # for each event type.
-            files2 = set(
-                spark.run_query_fetch_all(
-                    f"select file_path from {table_name}.files"))
-            assert len(files2) == partitions * 3
+            n = self.num_files(dl, QueryEngineType.SPARK, topic_name)
+            assert n == partitions * 3, \
+                f"Expected partitions={partitions*3}, got {n}"
 
             # partition spec should reflect the altered value
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             expected_partitioning = [
                 ('# Partitioning', '', ''),
                 ('Part 0', 'hours(timestamp_us)', ''),
@@ -310,12 +354,12 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # The translator for each partition should produce one file
             # for each event type.
-            files3 = set(
-                spark.run_query_fetch_all(
-                    f"select file_path from {table_name}.files"))
-            assert len(files3) == partitions * 5
+            n = self.num_files(dl, QueryEngineType.SPARK, topic_name)
+            assert n == partitions * 5, \
+                f"Expected partitions={partitions*5}, got {n}"
 
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             expected_partitioning = [
                 ('# Partition Information', '', ''),
                 ('# col_name', 'data_type', 'comment'),
@@ -359,7 +403,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             produce(topic_name)
 
             # partition spec should reflect the original value
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             assert describe_partitioning == []
 
             self.logger.info("altering default partition spec...")
@@ -371,7 +416,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             produce(topic_name)
 
             # partition spec should reflect the original value
-            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
             assert describe_partitioning == []
 
             # create another topic, but don't enable iceberg just yet.
@@ -396,7 +442,7 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # partition spec should reflect the value at the time iceberg was enabled
             describe_partitioning = self.describe_partitioning(
-                dl, another_topic)
+                dl, QueryEngineType.SPARK, another_topic)
             expected_partitioning = [
                 ('# Partitioning', '', ''),
                 ('Part 0', 'days(redpanda.timestamp)', ''),
@@ -477,13 +523,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                 timeout_sec=60,
                 backoff_sec=2)
 
-            def num_partitions():
-                partitions = set(dl.spark().run_query_fetch_all(
-                    f"select partition from redpanda.{topic_name}.files"))
-                self.logger.info(f"iceberg files partitions: {partitions}")
-                return len(partitions)
-
-            assert num_partitions() == 1
+            n = self.num_partitions(dl, QueryEngineType.SPARK, topic_name)
+            assert n == 1, f"expected partitions={1}, got {n}"
 
             self.logger.info("altering topic partition spec...")
             rpk.alter_topic_config(topic_name,
@@ -491,7 +532,8 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                                    "(event_type)")
 
             self.redpanda.wait_until(
-                lambda: num_partitions() == 1 + num_event_types,
+                lambda: self.num_partitions(dl, QueryEngineType.SPARK,
+                                            topic_name) == 1 + num_event_types,
                 timeout_sec=60,
                 backoff_sec=5,
                 err_msg="failed to wait for new partitions to appear")
@@ -502,7 +544,7 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                 ('event_type', 'int', None),
             ]
             assert self.describe_partitioning(
-                dl, topic_name) == expected_partitioning
+                dl, QueryEngineType.SPARK, topic_name) == expected_partitioning
 
             connect.stop_stream("ducky_stream", should_finish=False)
             verifier.wait()
