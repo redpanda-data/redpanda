@@ -12,8 +12,25 @@
 namespace datalake::translation {
 
 model::offset highest_log_offset_below_next(
-  ss::shared_ptr<storage::log> log, kafka::offset o) {
-    auto next_kafka_offset = kafka::next_offset(o);
+  ss::shared_ptr<storage::log> log, kafka::offset kafka_lto) {
+    /**
+     * If translated offset is smaller than the start offset of the log it means
+     * that the last translated offset is stored in cloud storage. We need to
+     * clamp max collectible offset. This can happen when fast partition
+     * movement.
+     */
+    auto log_start_offset = log->offsets().start_offset;
+    if (log_start_offset >= model::offset{0}) {
+        auto log_start_kafka_offset = model::offset_cast(
+          log->from_log_offset(log_start_offset));
+
+        if (log_start_kafka_offset >= kafka_lto) {
+            return log_start_offset;
+        }
+    }
+
+    auto next_kafka_offset = kafka::next_offset(kafka_lto);
+
     auto log_offset_for_next_kafka_offset = log->to_log_offset(
       kafka::offset_cast(next_kafka_offset));
     auto translated_log_offset = model::prev_offset(
