@@ -5259,27 +5259,8 @@ class RedpandaService(RedpandaServiceBase):
             tolerate_stopped_nodes=True)
 
         unavailable = set()
-        for p in cloud_storage_partitions:
-            try:
-                leader_id = self._admin.await_stable_leader(topic=p.topic,
-                                                            partition=p.index)
-
-                self._admin.reset_scrubbing_metadata(
-                    namespace="kafka",
-                    topic=p.topic,
-                    partition=p.index,
-                    node=self.get_node_by_id(leader_id))
-            except HTTPError as he:
-                if he.response.status_code == 404:
-                    # Old redpanda, doesn't have this endpoint.  We can't
-                    # do our upload check.
-                    unavailable.add(p)
-                    continue
-                else:
-                    raise
-
-        cloud_storage_partitions -= unavailable
         scrubbed = set()
+        seen = set()
         all_anomalies = []
 
         allowed_keys = set([
@@ -5327,10 +5308,31 @@ class RedpandaService(RedpandaServiceBase):
                             detected.pop("segment_metadata_anomalies", None)
 
         def all_partitions_scrubbed():
-            waiting_for = cloud_storage_partitions - scrubbed
+            waiting_for = cloud_storage_partitions - scrubbed - unavailable
             self.logger.info(
                 f"Waiting for {len(waiting_for)} partitions to be scrubbed")
             for p in waiting_for:
+                if p not in seen:
+                    seen.add(p)
+                    # Reset scrubbing metadata the first time the partition is encountered.
+                    try:
+                        leader_id = self._admin.await_stable_leader(
+                            topic=p.topic, partition=p.index)
+
+                        self._admin.reset_scrubbing_metadata(
+                            namespace="kafka",
+                            topic=p.topic,
+                            partition=p.index,
+                            node=self.get_node_by_id(leader_id))
+                    except HTTPError as he:
+                        if he.response.status_code == 404:
+                            # Old redpanda, doesn't have this endpoint.  We can't
+                            # do our upload check.
+                            unavailable.add(p)
+                            continue
+                        else:
+                            raise
+
                 result = self._admin.get_cloud_storage_anomalies(
                     namespace="kafka", topic=p.topic, partition=p.index)
                 if "last_complete_scrub_at" in result:
