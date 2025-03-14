@@ -2644,7 +2644,7 @@ void partition_manifest::process_anomalies(
     auto& missing_spills = _detected_anomalies.missing_spillover_manifests;
 
     const auto archive_start_offset = get_archive_start_offset();
-    erase_if(
+    absl::erase_if(
       missing_spills, [this, &archive_start_offset](const auto& spill_comp) {
           // Remove the missing spill if lies below the start offset of the
           // archive or if it doesn't match with any of the entries in the
@@ -2656,16 +2656,23 @@ void partition_manifest::process_anomalies(
 
     auto first_kafka_offset = full_log_start_kafka_offset();
     auto& missing_segs = _detected_anomalies.missing_segments;
-    erase_if(missing_segs, [this, &first_kafka_offset](const auto& meta) {
-        if (meta.next_kafka_offset() <= first_kafka_offset) {
+    absl::erase_if(missing_segs, [this, first_kafka_offset](const auto& meta) {
+        // The correct kafka start offset value can't be computed without
+        // segments. But in this case it's safe to remove all missing segment
+        // anomalies because they're guaranteed to be false positives.
+        // The 'first_kafka_offset' is nullopt only if the list of segments
+        // is empty or all segments are below 'start-offset'.
+        if (
+          !first_kafka_offset.has_value()
+          || meta.next_kafka_offset() <= first_kafka_offset.value()) {
             return true;
         }
 
         if (meta.committed_offset >= get_start_offset()) {
             // The segment might have been missing because it was merged with
             // something else. If the offset range doesn't match a segment
-            // exactly, discard the anomaly. Only segments from the STM manifest
-            // may be merged/reuploaded.
+            // exactly, discard the anomaly. Only segments from the STM
+            // manifest may be merged/reuploaded.
             return !segment_with_offset_range_exists(
               meta.base_offset, meta.committed_offset);
         } else {
@@ -2676,7 +2683,7 @@ void partition_manifest::process_anomalies(
 
     auto& segment_meta_anomalies
       = _detected_anomalies.segment_metadata_anomalies;
-    erase_if(
+    absl::erase_if(
       segment_meta_anomalies,
       [this, &first_kafka_offset](const auto& anomaly_meta) {
           if (anomaly_meta.at.next_kafka_offset() <= first_kafka_offset) {
