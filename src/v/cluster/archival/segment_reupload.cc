@@ -12,6 +12,7 @@
 
 #include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cluster/archival/types.h"
 #include "config/configuration.h"
 #include "logger.h"
 #include "storage/disk_log_impl.h"
@@ -623,7 +624,51 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       },
       std::move(locks_resolved)};
 }
+ss::future<result<segment_collector_stream>>
+segment_collector::make_upload_candidate_stream(
+  ss::io_priority_class io_priority_class,
+  ss::lowres_clock::duration segment_lock_duration) {
+    auto candidate_res = co_await make_upload_candidate(
+      io_priority_class, segment_lock_duration);
 
+    if (std::holds_alternative<candidate_creation_error>(candidate_res)) {
+        vlog(
+          archival_log.warn,
+          "Candidate creation error: {}",
+          std::get<candidate_creation_error>(candidate_res));
+        co_return error_outcome::offset_not_found;
+    } else if (std::holds_alternative<skip_offset_range>(candidate_res)) {
+        const auto& skip = std::get<skip_offset_range>(candidate_res);
+        vlog(
+          archival_log.debug,
+          "Skipping offset range: {}-{}, reason: {}",
+          skip.begin_offset,
+          skip.end_offset,
+          skip.reason);
+        co_return error_outcome::out_of_range;
+    }
+
+    auto& cand_with_locks = std::get<upload_candidate_with_locks>(
+      candidate_res);
+
+    auto& cand = cand_with_locks.candidate;
+
+    segment_collector_stream stream;
+    stream.start_offset = cand.starting_offset;
+    stream.end_offset = cand.final_offset;
+    stream.size = cand.content_length;
+    stream.create_input_stream =
+      [segments = cand.sources,
+       locks = std::move(cand_with_locks.read_locks),
+       file_offset = cand.file_offset,
+       final_file_offset = cand.final_file_offset,
+       iopc = io_priority_class]() mutable -> ss::input_stream<char> {
+        storage::concat_segment_reader_view crv(
+          std::move(segments), file_offset, final_file_offset, iopc);
+        return crv.take_stream();
+    };
+    co_return stream;
+}
 size_t segment_collector::collected_size() const { return _collected_size; }
 
 } // namespace archival

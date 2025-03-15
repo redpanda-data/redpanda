@@ -15,6 +15,8 @@
 #include "model/fundamental.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/iostream.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 namespace cloud_storage {
 class partition_manifest;
@@ -31,6 +33,20 @@ namespace archival {
 enum class segment_collector_mode {
     collect_compacted,
     collect_non_compacted,
+};
+
+struct segment_collector_stream {
+    // The offset range for the segments that are being uploaded.
+    model::offset start_offset, end_offset;
+    size_t size;
+    // The time range of the segments that are being uploaded.
+    model::timestamp min_timestamp, max_timestamp;
+
+    // Create the input_stream for the segment upload.
+    // The generator function here is stateful and holds the segments and the
+    // locks. The function can only be called once.
+    // The object should be kept alive until the stream is alive.
+    ss::noncopyable_function<ss::input_stream<char>()> create_input_stream;
 };
 
 class segment_collector {
@@ -87,6 +103,11 @@ public:
       ss::lowres_clock::duration segment_lock_duration);
 
     size_t collected_size() const;
+
+    // Create a stream for the upload candidate.
+    ss::future<result<segment_collector_stream>> make_upload_candidate_stream(
+      ss::io_priority_class io_priority_class,
+      ss::lowres_clock::duration segment_lock_duration);
 
 private:
     struct lookup_result {
