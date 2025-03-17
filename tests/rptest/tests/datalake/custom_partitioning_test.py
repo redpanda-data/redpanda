@@ -675,3 +675,52 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
             files = self.list_files(dl, query_engine, topic_name)
             assert len(files) == partitions * 4, \
                 f"Expected {partitions * 2} files, got {json.dumps(list(files), indent=1)}"
+
+    @cluster(num_nodes=6)
+    @matrix(cloud_storage_type=supported_storage_types(),
+            catalog_type=supported_catalog_types())
+    def test_many_partitions(self, cloud_storage_type, catalog_type):
+        with DatalakeServices(self.test_context,
+                              redpanda=self.redpanda,
+                              catalog_type=catalog_type,
+                              include_query_engines=[QueryEngineType.SPARK
+                                                     ]) as dl:
+            topic_name = "foo"
+            msg_count = 100000
+            partitions = 5
+            dl.create_iceberg_enabled_topic(
+                topic_name,
+                partitions=partitions,
+                iceberg_mode="value_schema_id_prefix",
+                config={
+                    "redpanda.iceberg.partition.spec": "(timestamp_us)",
+                })
+
+            producer = self.create_producer(AVRO_SCHEMA_STR)
+            self.produce(
+                dl,
+                producer,
+                topic_name,
+                msg_count,
+                0,
+                gen_record=lambda n, ev, t: {
+                    "event_type": ev,
+                    "number": n,
+                    "timestamp_us": int(t + n),
+                },
+            )
+
+            describe_partitioning = self.describe_partitioning(
+                dl, QueryEngineType.SPARK, topic_name)
+            expected_partitioning = [
+                ('# Partition Information', '', ''),
+                ('# col_name', 'data_type', 'comment'),
+                ('timestamp_us', 'timestamp_ntz', None),
+            ]
+
+            assert describe_partitioning == expected_partitioning, \
+                    f"{expected_partitioning=}, got {describe_partitioning=}"
+
+            files = self.list_files(dl, QueryEngineType.SPARK, topic_name)
+            assert len(files) ==  msg_count, \
+                f"Expected {partitions * msg_count} files, got {len(files)}"
