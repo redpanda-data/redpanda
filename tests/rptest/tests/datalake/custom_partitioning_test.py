@@ -7,6 +7,7 @@
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
 import itertools
+import json
 import time
 import random
 from uuid import uuid4
@@ -106,6 +107,20 @@ AVRO_SCHEMA_STR = """
         {"name": "event_type", "type": "string"},
         {"name": "number", "type": "long"},
         {"name": "timestamp_us", "type": {"type": "long", "logicalType": "timestamp-micros"}}
+    ]
+}
+"""
+
+AVRO_SCHEMA_STR_2 = """
+{
+    "type": "record",
+    "namespace": "com.redpanda.examples.avro",
+    "name": "ClickEvent",
+    "fields": [
+        {"name": "event_type", "type": "string"},
+        {"name": "number", "type": "long"},
+        {"name": "timestamp_us", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+        {"name": "timestamp_date", "type": {"type": "int", "logicalType": "date"}}
     ]
 }
 """
@@ -548,3 +563,115 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             connect.stop_stream("ducky_stream", should_finish=False)
             verifier.wait()
+
+    @cluster(num_nodes=6)
+    @matrix(cloud_storage_type=supported_storage_types(),
+            catalog_type=supported_catalog_types(),
+            query_engine=[
+                QueryEngineType.SPARK,
+                QueryEngineType.TRINO,
+            ])
+    def test_schema_evolution(self, cloud_storage_type, catalog_type,
+                              query_engine):
+        with DatalakeServices(self.test_context,
+                              redpanda=self.redpanda,
+                              catalog_type=catalog_type,
+                              include_query_engines=[query_engine]) as dl:
+            topic_name = "foo"
+            msg_count = 100
+            partitions = 1
+            dl.create_iceberg_enabled_topic(
+                topic_name,
+                partitions=partitions,
+                iceberg_mode="value_schema_id_prefix",
+                config={
+                    "redpanda.iceberg.partition.spec":
+                    "(day(timestamp_us), event_type)",
+                })
+
+            SchemaRegistryClient({
+                'url':
+                self.redpanda.schema_reg().split(",")[0]
+            }).set_compatibility(subject_name=f"{topic_name}-value",
+                                 level="NONE")
+
+            already_produced = 0
+
+            def produce(schema: str, gen_record=None):
+                nonlocal already_produced
+                producer = self.create_producer(schema)
+                self.produce(dl,
+                             producer,
+                             topic_name,
+                             msg_count,
+                             already_produced,
+                             gen_record=gen_record)
+                already_produced += msg_count
+
+            produce(AVRO_SCHEMA_STR)
+
+            table_name = f"redpanda.{topic_name}"
+
+            # TODO(oren): remove
+            # qe = dl.spark() if query_engine == QueryEngineType.SPARK \
+            #     else dl.trino()
+
+            # Check that created table has the correct partition spec.
+            describe_partitioning = self.describe_partitioning(
+                dl, query_engine, topic_name)
+            expected_partitioning = None
+            if query_engine == QueryEngineType.SPARK:
+                expected_partitioning = [
+                    ('# Partitioning', '', ''),
+                    ('Part 0', 'days(timestamp_us)', ''),
+                    ('Part 1', 'event_type', ''),
+                ]
+            elif query_engine == QueryEngineType.TRINO:
+                expected_partitioning = [(
+                    'partition',
+                    'row(timestamp_us_day date, event_type varchar)',
+                    '',
+                    '',
+                )]
+
+            assert describe_partitioning == expected_partitioning, \
+                    f"{expected_partitioning=}, got {describe_partitioning=}"
+
+            files = self.list_files(dl, query_engine, topic_name)
+            assert len(files) == partitions * 2, \
+                f"Expected {partitions * 2} files, got {json.dumps(list(files), indent=1)}"
+
+            dl.set_partition_spec_on_topic(
+                topic_name, "(day(timestamp_date), event_type)")
+
+            produce(AVRO_SCHEMA_STR_2,
+                    gen_record=lambda n, ev, t: {
+                        "event_type": ev,
+                        "number": n,
+                        "timestamp_us": int(t * 1000000),
+                        "timestamp_date": int(t / 60 / 60 / 24),
+                    })
+
+            describe_partitioning = self.describe_partitioning(
+                dl, query_engine, topic_name)
+
+            if query_engine == QueryEngineType.SPARK:
+                expected_partitioning = [
+                    ('# Partitioning', '', ''),
+                    ('Part 0', 'days(timestamp_date)', ''),
+                    ('Part 1', 'event_type', ''),
+                ]
+            elif query_engine == QueryEngineType.TRINO:
+                expected_partitioning = [(
+                    'partition',
+                    'row(timestamp_us_day date, event_type varchar, timestamp_date_day date)',
+                    '',
+                    '',
+                )]
+
+            assert describe_partitioning == expected_partitioning, \
+                    f"{expected_partitioning=}, got {describe_partitioning=}"
+
+            files = self.list_files(dl, query_engine, topic_name)
+            assert len(files) == partitions * 4, \
+                f"Expected {partitions * 2} files, got {json.dumps(list(files), indent=1)}"
