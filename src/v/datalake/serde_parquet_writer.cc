@@ -1,10 +1,15 @@
 #include "datalake/serde_parquet_writer.h"
 
+#include "base/units.h"
 #include "base/vlog.h"
 #include "datalake/logger.h"
 #include "datalake/schema_parquet.h"
 #include "datalake/values_parquet.h"
 #include "version/version.h"
+
+namespace {
+constexpr size_t fixed_cost_b = 4_MiB;
+}
 
 namespace datalake {
 
@@ -22,7 +27,8 @@ ss::future<writer_error> serde_parquet_writer::add_data_struct(
         auto stats = co_await _writer.write_row(std::move(group));
         _buffered_bytes = stats.buffered_size;
         _flushed_bytes = stats.flushed_size;
-        co_await _mem_tracker.update_current_memory_usage(_buffered_bytes, as);
+        co_await _mem_tracker.update_current_memory_usage(
+          _buffered_bytes + fixed_cost_b, as);
     } catch (...) {
         vlog(
           datalake_log.warn,
@@ -59,13 +65,15 @@ ss::future<std::unique_ptr<parquet_ostream>>
 serde_parquet_writer_factory::create_writer(
   const iceberg::struct_type& schema,
   ss::output_stream<char> out,
-  writer_mem_tracker& mem_tracker) {
+  writer_mem_tracker& mem_tracker,
+  ss::abort_source& as) {
     serde::parquet::writer::options opts{
       .schema = schema_to_parquet(schema),
       .version = ss::sstring(redpanda_git_version()),
       .build = ss::sstring(redpanda_git_revision()),
       .compress = true,
     };
+    co_await mem_tracker.update_current_memory_usage(fixed_cost_b, as);
     serde::parquet::writer writer(std::move(opts), std::move(out));
     co_await writer.init();
     co_return std::make_unique<serde_parquet_writer>(

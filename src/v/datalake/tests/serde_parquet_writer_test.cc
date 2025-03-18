@@ -12,11 +12,13 @@ TEST(SerdeParquetWriterTest, CheckIfTheWriterWritesData) {
     auto schema = test_schema(iceberg::field_required::no);
     iobuf target;
 
+    ss::abort_source as;
     datalake::noop_mem_tracker mem_tracker;
-    auto writer = datalake::serde_parquet_writer_factory{}
-                    .create_writer(
-                      schema, make_iobuf_ref_output_stream(target), mem_tracker)
-                    .get();
+    auto writer
+      = datalake::serde_parquet_writer_factory{}
+          .create_writer(
+            schema, make_iobuf_ref_output_stream(target), mem_tracker, as)
+          .get();
 
     auto v = iceberg::tests::make_value(
       iceberg::tests::value_spec{.null_pct = 50},

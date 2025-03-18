@@ -34,7 +34,8 @@ public:
     ss::future<std::unique_ptr<parquet_ostream>> create_writer(
       const iceberg::struct_type&,
       ss::output_stream<char>,
-      writer_mem_tracker&) final;
+      writer_mem_tracker&,
+      ss::abort_source&) final;
 };
 
 } // namespace datalake

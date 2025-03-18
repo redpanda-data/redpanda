@@ -57,7 +57,7 @@ ss::future<writer_error> partitioning_writer::add_data(
     }
     auto writer_iter = writers_.find(pk);
     if (writer_iter == writers_.end()) {
-        auto writer_res = co_await writer_factory_.create_writer(type_);
+        auto writer_res = co_await writer_factory_.create_writer(type_, as);
         if (writer_res.has_error()) {
             vlog(
               datalake_log.error,

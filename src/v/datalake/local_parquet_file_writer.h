@@ -27,7 +27,7 @@ public:
       local_path, ss::shared_ptr<parquet_ostream_factory>, writer_mem_tracker&);
 
     ss::future<checked<std::nullopt_t, writer_error>>
-    initialize(const iceberg::struct_type&);
+    initialize(const iceberg::struct_type&, ss::abort_source& as);
 
     ss::future<writer_error> add_data_struct(
       iceberg::struct_value /* data */,
@@ -68,7 +68,8 @@ public:
       std::unique_ptr<writer_mem_tracker>);
 
     ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
-    create_writer(const iceberg::struct_type& schema) final;
+    create_writer(
+      const iceberg::struct_type& schema, ss::abort_source& as) final;
 
 private:
     local_path create_filename() const;

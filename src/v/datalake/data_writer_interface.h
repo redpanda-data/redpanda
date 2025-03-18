@@ -120,7 +120,10 @@ public:
     virtual ~parquet_ostream_factory() = default;
 
     virtual ss::future<std::unique_ptr<parquet_ostream>> create_writer(
-      const iceberg::struct_type&, ss::output_stream<char>, writer_mem_tracker&)
+      const iceberg::struct_type&,
+      ss::output_stream<char>,
+      writer_mem_tracker&,
+      ss::abort_source& as)
       = 0;
 };
 
@@ -173,7 +176,9 @@ public:
 
     virtual ss::future<
       result<std::unique_ptr<parquet_file_writer>, writer_error>>
-    create_writer(const iceberg::struct_type& /* schema */) = 0;
+    create_writer(
+      const iceberg::struct_type& /* schema */, ss::abort_source& as)
+      = 0;
 };
 
 } // namespace datalake
