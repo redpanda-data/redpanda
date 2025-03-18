@@ -94,7 +94,7 @@ protected:
     virtual void fail_outstanding_futures() {}
 
     ss::input_stream<char> _in;
-    net::batched_output_stream _out;
+    ss::output_stream<char>  _out;
     ss::gate _dispatch_gate;
 
 private:

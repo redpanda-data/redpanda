@@ -357,11 +357,17 @@ ss::future<> transport::do_dispatch_send() {
             _requests_queue.size(),
             server_address());
           return std::move(f)
-            .then([this, corr](bool flushed) {
+            .then([this, corr]() {
                 if (auto maybe_timing = get_timing(corr)) {
                     maybe_timing->written_at = clock_type::now();
-                    maybe_timing->flushed = flushed;
                 }
+            })
+            .then([this, corr] {
+                return _out.flush().then([this, corr] {
+                    if (auto maybe_timing = get_timing(corr)) {
+                        maybe_timing->flushed = true;
+                    }
+                });
             })
             .finally([this, msg_size] { _probe->add_bytes_sent(msg_size); });
       });

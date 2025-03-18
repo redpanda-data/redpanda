@@ -63,11 +63,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
             p->connection_established();
         }
         _in = _fd->input();
-
-        // Never implicitly destroy a live output stream here: output streams
-        // are only safe to destroy after/during stop()
-        vassert(!_out.is_valid(), "destroyed output_stream without stopping");
-        _out = net::batched_output_stream(_fd->output());
+        _out = _fd->output();
     } catch (...) {
         auto e = std::current_exception();
         if (auto* p = _probe.value_or(nullptr); p != nullptr) {
@@ -100,7 +96,7 @@ ss::future<> base_transport::stop() {
         // We must call stop() on our output stream, because
         // seastar::output_stream may not be safely destroyed without a call to
         // close(), and this class may be destroyed after stop() is called.
-        return _out.stop().then_wrapped([this](ss::future<> f) {
+        return _out.close().then_wrapped([this](ss::future<> f) {
             // Invalidate _out here, so that do_connect can assert that
             // it isn't dropping an un-stopped output stream when it
             // assigns to _out

@@ -83,34 +83,36 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf)))
-          .then([this, is_flexible](bool) {
-              return protocol::parse_size(_in).then([this, is_flexible](
-                                                      std::optional<size_t>
-                                                        sz) {
-                  if (!sz) {
-                      return ss::make_exception_future<iobuf>(
-                        kafka_request_disconnected_exception(
-                          "Request disconnected, no response received"));
-                  }
-                  auto size = sz.value();
-                  return _in.read_exactly(sizeof(correlation_id))
-                    .then([this, size, is_flexible](
-                            ss::temporary_buffer<char>) {
-                        if (is_flexible) {
-                            return parse_tags(_in).then([size](auto p) {
-                                auto& [_, bytes_read] = p;
-                                return size
-                                       - (sizeof(correlation_id) + bytes_read);
-                            });
-                        }
-                        return ss::make_ready_future<size_t>(
-                          size - sizeof(correlation_id));
-                    })
-                    .then([this](size_t remaining) {
-                        // Finally, read the rest of the response from the
-                        // buffer
-                        return read_iobuf_exactly(_in, remaining);
-                    });
+          .then([this, is_flexible]() {
+              return _out.flush().then([this, is_flexible]() {
+                  return protocol::parse_size(_in).then([this, is_flexible](
+                                                          std::optional<size_t>
+                                                            sz) {
+                      if (!sz) {
+                          return ss::make_exception_future<iobuf>(
+                            kafka_request_disconnected_exception(
+                              "Request disconnected, no response received"));
+                      }
+                      auto size = sz.value();
+                      return _in.read_exactly(sizeof(correlation_id))
+                        .then([this, size, is_flexible](
+                                ss::temporary_buffer<char>) {
+                            if (is_flexible) {
+                                return parse_tags(_in).then([size](auto p) {
+                                    auto& [_, bytes_read] = p;
+                                    return size
+                                           - (sizeof(correlation_id) + bytes_read);
+                                });
+                            }
+                            return ss::make_ready_future<size_t>(
+                              size - sizeof(correlation_id));
+                        })
+                        .then([this](size_t remaining) {
+                            // Finally, read the rest of the response from the
+                            // buffer
+                            return read_iobuf_exactly(_in, remaining);
+                        });
+                  });
               });
           });
     }
