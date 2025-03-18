@@ -419,6 +419,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
                   "anomalies",
                   sync_timeout.count(),
                   _start_term);
+                auto hold = _probe->register_archiver_on_hold(true);
                 co_await ss::sleep_abortable(sync_timeout, _as);
                 continue;
             }
