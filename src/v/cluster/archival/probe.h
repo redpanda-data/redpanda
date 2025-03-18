@@ -83,6 +83,10 @@ public:
         return ss::defer(std::move(lmd));
     }
 
+    uint64_t get_num_paused_archivers() const noexcept {
+        return _num_paused_archivers;
+    }
+
 private:
     /// Uploaded offsets
     uint64_t _uploaded = 0;
