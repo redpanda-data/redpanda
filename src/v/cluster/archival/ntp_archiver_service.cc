@@ -408,10 +408,38 @@ ss::future<> ntp_archiver::upload_until_abort() {
             // The validation and printing of anomalies is happening
             // every time we start an archiver
             validator.maybe_print_scarry_log_message();
+
+            auto ok_to_skip = [&] {
+                // The gap anomalie is expected if the
+                // 'is_remote_allow_gaps_enabled' is true (either because the
+                // topic property or cluster global config).
+                int gap_anomalies = 0;
+                int ots_anomalies = 0;
+                for (const auto& anomaly : validator.get_anomalies()) {
+                    switch (anomaly.type) {
+                    case replica_state_anomaly_type::offsets_gap:
+                        gap_anomalies++;
+                        break;
+                    case replica_state_anomaly_type::ot_state:
+                        ots_anomalies++;
+                        break;
+                    }
+                }
+                if (ots_anomalies > 0) {
+                    return false;
+                }
+                return gap_anomalies == 0
+                       || _parent.get_ntp_config()
+                            .is_remote_allow_gaps_enabled();
+            }();
+
+            auto checks_disabled
+              = config::shard_local_cfg()
+                  .cloud_storage_disable_upload_consistency_checks();
+
             // Disable uploads and housekeeping if consistency
             // checks are not disabled
-            if (!config::shard_local_cfg()
-                   .cloud_storage_disable_upload_consistency_checks()) {
+            if (!checks_disabled && !ok_to_skip) {
                 // Consistency checks will not let us do anything anyway
                 vlog(
                   _rtclog.warn,
@@ -422,6 +450,16 @@ ss::future<> ntp_archiver::upload_until_abort() {
                 auto hold = _probe->register_archiver_on_hold(true);
                 co_await ss::sleep_abortable(sync_timeout, _as);
                 continue;
+            } else {
+                vlog(
+                  _rtclog.info,
+                  // The list of anomalies is logged separately
+                  "upload loop continuing in term {} with anomalies, "
+                  "consistency checks disabled: {}, gap anomalies are skipped: "
+                  "{}",
+                  _start_term,
+                  checks_disabled,
+                  ok_to_skip);
             }
         }
 
