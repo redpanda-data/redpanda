@@ -230,6 +230,7 @@ class CrashLoopChecksTest(RedpandaTest):
                                  expect_fail=True)
 
         report = self.read_first_crash_report()
+        report2 = self.read_first_crash_report()
         assert 'Failure during startup: std::__1::system_error (error C-Ares:4, unreachable_host.com: Not found)' == report[
             'crash_message'], f'Unexpected crash message: {report["crash_message"]}'
         assert len(report['stacktrace']) > 0, \
