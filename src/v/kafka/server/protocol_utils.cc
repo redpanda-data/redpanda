@@ -71,8 +71,14 @@ parse_v1_header(ss::input_stream<char>& src) {
     header.client_id_buffer = std::move(buf);
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
-    validate_utf8(*header.client_id);
-    validate_no_control(*header.client_id);
+    try {
+        validate_utf8(*header.client_id);
+        validate_no_control(*header.client_id);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error(
+          fmt::format("Error while parsing client_id: {}", e.what()));
+    }
+
     co_return header;
 }
 

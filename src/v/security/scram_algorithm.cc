@@ -1,6 +1,7 @@
 #include "security/scram_algorithm.h"
 
 #include "base/vlog.h"
+#include "security/scram_credential.h"
 #include "ssx/sformat.h"
 #include "strings/utf8.h"
 #include "utils/base64.h"
@@ -204,11 +205,32 @@ static std::optional<ss::sstring> parse_saslname(std::string_view message) {
 
 namespace security {
 
+namespace {
+struct scram_string_conversion_exception
+  : public default_control_character_thrower {
+    scram_string_conversion_exception(
+      std::string_view unsanitized_string, std::string_view context)
+      : default_control_character_thrower(unsanitized_string)
+      , _context(context) {}
+    [[noreturn]] [[gnu::cold]] void conversion_error() override {
+        throw scram_exception(fmt_with_ctx(
+          ssx::sformat,
+          "Parameter contained invalid control characters while parsing {}: {}",
+          _context,
+          get_sanitized_string()));
+    }
+
+private:
+    std::string_view _context;
+};
+} // namespace
+
 client_first_message::client_first_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
-    validate_no_control(view);
+    validate_no_control(
+      view, scram_string_conversion_exception{view, "client-first-message"});
 
     auto match = parse_client_first(view);
     if (unlikely(!match)) {
@@ -281,7 +303,8 @@ client_final_message::client_final_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
-    validate_no_control(view);
+    validate_no_control(
+      view, scram_string_conversion_exception{view, "client-final-message"});
 
     auto match = parse_client_final(view);
     if (unlikely(!match)) {
@@ -322,7 +345,8 @@ server_first_message::server_first_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
-    validate_no_control(view);
+    validate_no_control(
+      view, scram_string_conversion_exception{view, "server-first-message"});
 
     auto match = parse_server_first(view);
     if (unlikely(!match)) {
@@ -346,7 +370,8 @@ server_final_message::server_final_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
-    validate_no_control(view);
+    validate_no_control(
+      view, scram_string_conversion_exception{view, "server-final-message"});
 
     auto match = parse_server_final(view);
     if (unlikely(!match)) {

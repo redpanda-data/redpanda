@@ -11,8 +11,11 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "pandaproxy/parsing/error.h"
 #include "strings/utf8.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <fmt/format.h>
 
@@ -45,15 +48,23 @@ public:
 };
 
 struct pp_parsing_error : public default_control_character_thrower {
-    explicit pp_parsing_error(std::string_view unsanitized_string)
-      : default_control_character_thrower(unsanitized_string) {}
+    pp_parsing_error(
+      std::string_view unsanitized_string, std::string_view context)
+      : default_control_character_thrower(unsanitized_string)
+      , _context(context) {}
 
     [[noreturn]] [[gnu::cold]] void conversion_error() override {
         throw parse::error(
           parse::error_code::invalid_param,
-          "Parameter contained invalid control characters: "
-            + get_sanitized_string());
+          fmt::format(
+            "Parameter contained invalid control characters while parsing "
+            "{}: {}",
+            _context,
+            get_sanitized_string()));
     }
+
+private:
+    std::string_view _context;
 };
 
 } // namespace pandaproxy::parse

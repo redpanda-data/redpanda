@@ -1363,7 +1363,8 @@ void admin_server::register_config_routes() {
                 "Invalid parameter 'name' got {{{}}}",
                 req->get_path_param("name")));
           }
-          validate_no_control(name, string_conversion_exception{name});
+          validate_no_control(
+            name, string_conversion_exception{name, "get_log_level"});
 
           ss::log_level cur_level;
           try {
@@ -1403,7 +1404,8 @@ void admin_server::register_config_routes() {
                 "Invalid parameter 'name' got {{{}}}",
                 req->get_path_param("name")));
           }
-          validate_no_control(name, string_conversion_exception{name});
+          validate_no_control(
+            name, string_conversion_exception{name, "set_log_level"});
 
           // current level: will be used revert after a timeout (optional)
           ss::log_level cur_level;

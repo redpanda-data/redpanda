@@ -216,7 +216,8 @@ create_consumer(server::request_t rq, server::reply_t rp) {
       std::move(rq.req), ppj::create_consumer_request_handler());
 
     validate_no_control(
-      req_data.name(), parse::pp_parsing_error{req_data.name()});
+      req_data.name(),
+      parse::pp_parsing_error{req_data.name(), "create_consumer"});
 
     if (req_data.format != "binary" && req_data.format != "json") {
         throw parse::error(
@@ -330,7 +331,8 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
       req_data.topics.end(),
       [](const auto& topic_name) {
           validate_no_control(
-            topic_name(), parse::pp_parsing_error{topic_name()});
+            topic_name(),
+            parse::pp_parsing_error{topic_name(), "subscribe_consumer"});
       });
 
     co_return co_await rq.dispatch(
@@ -418,7 +420,8 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
         std::move(rq.req), ppj::partitions_request_handler()));
 
     std::for_each(req_data.begin(), req_data.end(), [](const auto& r) {
-        validate_no_control(r.name(), parse::pp_parsing_error{r.name()});
+        validate_no_control(
+          r.name(), parse::pp_parsing_error{r.name(), "Get_consumer_offsets"});
     });
 
     co_return co_await rq.dispatch(
@@ -464,7 +467,8 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
                             ppj::partition_offsets_request_handler()));
 
     std::for_each(req_data.begin(), req_data.end(), [](const auto& r) {
-        validate_no_control(r.name(), parse::pp_parsing_error{r.name()});
+        validate_no_control(
+          r.name(), parse::pp_parsing_error{r.name(), "post_consumer_offsets"});
     });
 
     co_return co_await rq.dispatch(

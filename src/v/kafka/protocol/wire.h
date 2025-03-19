@@ -81,7 +81,13 @@ public:
     }
 
     static ss::sstring apply_control_validation(ss::sstring val) {
-        validate_no_control(val);
+        try {
+            validate_no_control(val);
+        } catch (const std::runtime_error& e) {
+            throw std::runtime_error(fmt::format(
+              "Failed parsing string while decoding kafka wire message: {}",
+              e.what()));
+        }
         return val;
     }
 
