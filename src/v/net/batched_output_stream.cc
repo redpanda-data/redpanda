@@ -37,24 +37,27 @@ already_closed_error(ss::scattered_message<char>& msg) {
 }
 
 ss::future<bool> batched_output_stream::write(ss::scattered_message<char> msg) {
-    if (unlikely(_closed)) {
+    if (unlikely(_gate.is_closed())) {
         return already_closed_error(msg);
     }
-    return ss::with_semaphore(
-      *_write_sem, 1, [this, v = std::move(msg)]() mutable {
-          if (unlikely(_closed)) {
-              return already_closed_error(v);
-          }
-          const size_t vbytes = v.size();
-          return _out.write(std::move(v)).then([this, vbytes] {
-              _unflushed_bytes += vbytes;
-              if (
-                _write_sem->waiters() == 0 || _unflushed_bytes >= _cache_size) {
-                  return do_flush().then([] { return true; });
+    return ss::with_gate(_gate, [this, msg = std::move(msg)]() mutable {
+        return ss::with_semaphore(
+          *_write_sem, 1, [this, v = std::move(msg)]() mutable {
+              if (unlikely(_gate.is_closed())) {
+                  return already_closed_error(v);
               }
-              return ss::make_ready_future<bool>(false);
+              const size_t vbytes = v.size();
+              return _out.write(std::move(v)).then([this, vbytes] {
+                  _unflushed_bytes += vbytes;
+                  if (
+                    _write_sem->waiters() == 0
+                    || _unflushed_bytes >= _cache_size) {
+                      return do_flush().then([] { return true; });
+                  }
+                  return ss::make_ready_future<bool>(false);
+              });
           });
-      });
+    });
 }
 ss::future<> batched_output_stream::do_flush() {
     if (_unflushed_bytes == 0) {
@@ -67,10 +70,10 @@ ss::future<> batched_output_stream::flush() {
     return ss::with_semaphore(*_write_sem, 1, [this] { return do_flush(); });
 }
 ss::future<> batched_output_stream::stop() {
-    if (_closed) {
+    if (_gate.is_closed()) {
         return ss::make_ready_future<>();
     }
-    _closed = true;
+    auto f = _gate.close();
 
     if (_cache_size == 0) {
         // A default-initialized batched_output_stream has a default
@@ -80,9 +83,13 @@ ss::future<> batched_output_stream::stop() {
         return ss::make_ready_future();
     }
 
-    return ss::with_semaphore(*_write_sem, 1, [this] {
-        return do_flush().finally([this] { return _out.close(); });
-    });
+    return ss::with_semaphore(
+             *_write_sem,
+             1,
+             [this] {
+                 return do_flush().finally([this] { return _out.close(); });
+             })
+      .then([f = std::move(f)]() mutable { return std::move(f); });
 }
 
 } // namespace net

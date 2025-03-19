@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
 
 #include <cstddef>
@@ -87,6 +88,6 @@ private:
     size_t _cache_size{0};
     std::unique_ptr<ssx::semaphore> _write_sem;
     size_t _unflushed_bytes{0};
-    bool _closed = false;
+    ss::gate _gate;
 };
 } // namespace net
