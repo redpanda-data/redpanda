@@ -2653,3 +2653,120 @@ FIXTURE_TEST(test_ntp_archiver_upload_loop_blocked, archiver_fixture) {
                && probe.value().get_num_paused_archivers() > 0;
     });
 }
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(
+  test_ntp_archiver_upload_loop_not_blocked_if_allow_gaps_set,
+  archiver_fixture) {
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_upload_loop_for_tests").set_value(true);
+    // Allow-gaps is set to true so the
+    cfg.get("cloud_storage_enable_remote_allow_gaps").set_value(true);
+
+    std::vector<segment_desc> segments = {
+      // 0-99
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .num_records = 100},
+      // 100-199
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(100),
+       .term = model::term_id(1),
+       .num_records = 100},
+      // 200-299
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(200),
+       .term = model::term_id(2),
+       .num_records = 100},
+      // 300-399
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(300),
+       .term = model::term_id(2),
+       .num_records = 100},
+      // 400-499
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(400),
+       .term = model::term_id(2),
+       .num_records = 100},
+    };
+
+    init_storage_api_local(segments);
+
+    wait_for_partition_leadership(manifest_ntp);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(400);
+    }).get();
+
+    storage::log* partition_log
+      = get_local_storage_api().log_mgr().get(manifest_ntp).get();
+    partition_log
+      ->truncate_prefix(storage::truncate_prefix_config(
+        model::offset(300), ss::default_priority_class()))
+      .get();
+
+    BOOST_REQUIRE(partition_log->offsets().start_offset == model::offset(300));
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, high-watermark: {}, partition: {}",
+      part->high_watermark(),
+      *part);
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+
+    // the local log is truncated and starts at offset 3000
+    std::vector<cloud_storage::segment_meta> meta;
+    meta.push_back(cloud_storage::segment_meta{
+      .is_compacted = false,
+      .size_bytes = 100,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .delta_offset = model::offset_delta(0),
+      .segment_term = model::term_id{1},
+      .delta_offset_end = model::offset_delta(0),
+    });
+    part->archival_meta_stm()
+      ->add_segments(
+        meta,
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 1s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+
+    cfg.get("cloud_storage_disable_upload_loop_for_tests").set_value(false);
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      path_provider);
+
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    auto initial_request = get_requests().size();
+    archiver.start().get();
+
+    // Wait until segments are uploaded
+    RPTEST_REQUIRE_EVENTUALLY(10s, [&] {
+        // Upload at least two segments (segment + index)
+        return get_requests().size() - initial_request > 4;
+    });
+}
