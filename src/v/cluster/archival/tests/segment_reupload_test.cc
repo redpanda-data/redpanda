@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "storage/log_manager.h"
+#include "storage/record_batch_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
 #include "test_utils/tmp_dir.h"
@@ -218,6 +219,60 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
     BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("candidate_stream_test");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    populate_log(
+      b,
+      {.segment_starts = {10, 20, 30, 40},
+       .compacted_segment_indices = {0, 1, 2},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      model::offset{4}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector.collect_segments();
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
+    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
+    BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+
+    auto result = collector
+                    .make_upload_candidate_stream(
+                      ss::default_priority_class(), segment_lock_timeout)
+                    .get();
+    BOOST_REQUIRE(!result.has_failure());
+
+    auto cstream = std::move(result.value());
+    BOOST_REQUIRE_GE(cstream.size, size_t{1});
+
+    // Read from candidate stream
+    iobuf candidate_data;
+    {
+        auto is = cstream.create_input_stream();
+        while (!is.eof()) {
+            auto buf = is.read().get();
+            if (buf.empty()) {
+                break;
+            }
+            candidate_data.append(std::move(buf));
+        }
+        is.close().get();
+    }
+    BOOST_REQUIRE_EQUAL(candidate_data.size_bytes(), cstream.size);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
