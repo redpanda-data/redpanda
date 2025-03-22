@@ -255,6 +255,7 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
                       ss::default_priority_class(), segment_lock_timeout)
                     .get();
     BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == false);
 
     auto cstream = std::move(result.value());
     BOOST_REQUIRE_GE(cstream.size, size_t{1});
@@ -273,6 +274,39 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
         is.close().get();
     }
     BOOST_REQUIRE_EQUAL(candidate_data.size_bytes(), cstream.size);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_skip_offsets) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("candidate_stream_test");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    populate_log(
+      b,
+      {.segment_starts = {15, 25, 35},
+       .compacted_segment_indices = {0, 1, 2},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      model::offset{4}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector.collect_segments();
+    auto result = collector
+                    .make_upload_candidate_stream(
+                      ss::default_priority_class(), segment_lock_timeout)
+                    .get();
+    BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == true);
+    BOOST_REQUIRE_EQUAL(result.value().end_offset, model::offset{39});
 }
 
 SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
