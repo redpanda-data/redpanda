@@ -41,6 +41,9 @@ struct segment_collector_stream {
     size_t size;
     // The time range of the segments that are being uploaded.
     model::timestamp min_timestamp, max_timestamp;
+    // If this is set to true, the offset range should be skipped.
+    // The 'create_input_stream' method shouldn't be invoked.
+    bool skip_offset_range{false};
 
     // Create the input_stream for the segment upload.
     // The generator function here is stateful and holds the segments and the
