@@ -645,7 +645,17 @@ segment_collector::make_upload_candidate_stream(
           skip.begin_offset,
           skip.end_offset,
           skip.reason);
-        co_return error_outcome::out_of_range;
+        co_return segment_collector_stream{
+          .start_offset = skip.begin_offset,
+          .end_offset = skip.end_offset,
+          .size = 0,
+          .min_timestamp = {},
+          .max_timestamp = {},
+          .skip_offset_range = true,
+          .create_input_stream = []() -> ss::input_stream<char> {
+              throw std::runtime_error("The upload should be skipped");
+          },
+        };
     }
 
     auto& cand_with_locks = std::get<upload_candidate_with_locks>(
