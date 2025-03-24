@@ -3275,7 +3275,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           run->meta.size_bytes,
           run->meta.committed_offset);
         collector.collect_segments(
-          segment_collector_mode::collect_non_compacted);
+          segment_collector_mode::non_compacted_reupload);
         auto candidate = co_await collector.make_upload_candidate(
           _conf->upload_io_priority, _conf->segment_upload_timeout());
 
