@@ -31,8 +31,12 @@ class segment;
 namespace archival {
 
 enum class segment_collector_mode {
-    collect_compacted,
-    collect_non_compacted,
+    // collect segments for reupload
+    compacted_reupload,
+    // collect segments for reupload
+    non_compacted_reupload,
+    // collect segments for the first time upload
+    new_non_compacted,
 };
 
 struct segment_collector_stream {
@@ -78,13 +82,16 @@ public:
     /// \param mode defines what segments should be collected
     ///        compacted or normal.
     void collect_segments(
-      segment_collector_mode mode = segment_collector_mode::collect_compacted);
+      segment_collector_mode mode = segment_collector_mode::compacted_reupload);
 
     segment_seq segments();
 
     /// Once segments are collected, this query determines if the collected
     /// segments should replace at least one segment in manifest.
     bool should_replace_manifest_segment() const;
+
+    /// Segments are found and can be uploaded to the cloud.
+    bool segment_ready_for_upload() const;
 
     /// The starting point for the collection, this may not coincide with the
     /// start of the first collected segment. It should be aligned
@@ -118,6 +125,9 @@ private:
         const storage::ntp_config* ntp_conf;
     };
 
+    ss::lw_shared_ptr<storage::segment>
+    lower_bound(model::offset, segment_collector_mode mode) const;
+
     /// Collects segments until the end of the manifest, or until the
     /// end of compacted segments in log.
     void do_collect(segment_collector_mode mode);
@@ -142,7 +152,7 @@ private:
     /// Finds the offset which the collection needs to progress upto in order to
     /// replace at least one manifest segment. The collection is valid if it
     /// reaches the replacement boundary.
-    model::offset find_replacement_boundary() const;
+    model::offset find_replacement_boundary(segment_collector_mode mode) const;
 
     model::offset _begin_inclusive;
     model::offset _end_inclusive;
