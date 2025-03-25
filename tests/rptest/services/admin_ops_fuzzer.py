@@ -143,7 +143,7 @@ class CreateTopicOperation(Operation):
             "type": "create_topic",
             "properties": {
                 "name": self.topic,
-                "replication_factor": self.topic,
+                "replication_factor": self.rf,
                 "partitions": self.topic,
                 "config": self.config,
             }
