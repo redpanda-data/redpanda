@@ -59,7 +59,8 @@ enum class record_batch_type : int8_t {
     dl_placeholder = 36,       // placeholder batch type used by cloud topics
     dl_stm_command = 37,       // dl_stm command batch
     datalake_translation_state = 38, // maintains state for translation progress
-    MAX = datalake_translation_state,
+    compact_me_if_you_can = 39,      // fake archival batch
+    MAX = compact_me_if_you_can,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
@@ -77,7 +78,8 @@ inline std::vector<model::record_batch_type> offset_translator_batch_types() {
       model::record_batch_type::version_fence,
       model::record_batch_type::prefix_truncate,
       model::record_batch_type::partition_properties_update,
-      model::record_batch_type::datalake_translation_state};
+      model::record_batch_type::datalake_translation_state,
+      model::record_batch_type::compact_me_if_you_can};
 }
 
 } // namespace model

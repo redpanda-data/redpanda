@@ -396,6 +396,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::dl_overlay";
     case record_batch_type::datalake_translation_state:
         return o << "datalake_translation_state";
+    case record_batch_type::compact_me_if_you_can:
+        return o << "compact_me_if_you_can";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

@@ -2632,6 +2632,9 @@ class RedpandaService(RedpandaServiceBase):
 
         self._environment['UBSAN_OPTIONS'] = ubsan_opts
 
+        self._environment[
+            "__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS"] = "ON"
+
         if environment is not None:
             self._environment.update(environment)
 

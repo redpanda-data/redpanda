@@ -913,6 +913,8 @@ private:
         try_arm(clock_type::now() + _abort_interval_ms);
     }
 
+    ss::future<> insert_fake_batch();
+
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
     ss::future<cluster::tx::errc> try_abort_old_tx(model::producer_identity);
@@ -997,6 +999,10 @@ private:
 
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
     ss::sharded<features::feature_table>& _feature_table;
+
+    bool _fake_insertion_in_progress = false;
+    ss::lowres_clock::time_point _last_fake_batch_time
+      = ss::lowres_clock::now();
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

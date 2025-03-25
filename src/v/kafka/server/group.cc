@@ -2148,6 +2148,24 @@ kafka::error_code map_store_offset_error_code(std::error_code ec) {
     return error_code::unknown_server_error;
 }
 
+ss::future<> group::insert_fake_batch() {
+    try {
+        storage::record_batch_builder builder(
+          model::record_batch_type::compact_me_if_you_can, model::offset(0));
+        builder.add_raw_kv(iobuf{}, iobuf{});
+        auto fake_batch = std::move(builder).build();
+        std::ignore = co_await _partition->raft()->replicate(
+          _term,
+          std::move(fake_batch),
+          raft::replicate_options(raft::consistency_level::quorum_ack));
+    } catch (...) {
+        vlog(
+          _ctxlog.error,
+          "Failed to replicate fake batch - {}",
+          std::current_exception());
+    }
+}
+
 void group::update_store_offset_builder(
   cluster::simple_batch_builder& builder,
   const model::topic& name,
@@ -2248,34 +2266,54 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
       chunked_vector<model::record_batch>::single(std::move(builder).build()),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
-    auto f = replicate_stages.replicate_finished.then(
-      [this, req = std::move(r), commits = std::move(offset_commits)](
-        result<raft::replicate_result> r) mutable {
-          auto error = error_code::none;
-          if (!r) {
-              vlog(
-                _ctxlog.info,
-                "Storing committed offset failed - {}",
-                r.error().message());
-              error = map_store_offset_error_code(r.error());
-          }
-          if (in_state(group_state::dead)) {
-              return offset_commit_response(req, error);
-          }
+    auto f = replicate_stages.replicate_finished.then([this,
+                                                       req = std::move(r),
+                                                       commits = std::move(
+                                                         offset_commits)](
+                                                        result<
+                                                          raft::
+                                                            replicate_result>
+                                                          r) mutable {
+        auto error = error_code::none;
+        if (!r) {
+            vlog(
+              _ctxlog.info,
+              "Storing committed offset failed - {}",
+              r.error().message());
+            error = map_store_offset_error_code(r.error());
+        }
+        if (in_state(group_state::dead)) {
+            return offset_commit_response(req, error);
+        }
 
-          if (error == error_code::none) {
-              for (auto& e : commits) {
-                  e.second.log_offset = r.value().last_offset;
-                  complete_offset_commit(e.first, e.second);
-              }
-          } else {
-              for (const auto& e : commits) {
-                  fail_offset_commit(e.first, e.second);
-              }
-          }
+        if (error == error_code::none) {
+            for (auto& e : commits) {
+                e.second.log_offset = r.value().last_offset;
+                complete_offset_commit(e.first, e.second);
+            }
 
-          return offset_commit_response(req, error);
-      });
+            static constexpr auto fake_archival_insertion_frequency = 300ms;
+            auto should_insert_fake_batch
+              = !_fake_insertion_in_progress
+                && (ss::lowres_clock::now() - _last_fake_batch_time > fake_archival_insertion_frequency);
+            if (should_insert_fake_batch) {
+                _fake_insertion_in_progress = true;
+                std::ignore = ssx::spawn_with_gate_then(_gate, [this] {
+                                  return insert_fake_batch();
+                              }).finally([this]() {
+                    _fake_insertion_in_progress = false;
+                    _last_fake_batch_time = ss::lowres_clock::now();
+                });
+            }
+
+        } else {
+            for (const auto& e : commits) {
+                fail_offset_commit(e.first, e.second);
+            }
+        }
+
+        return offset_commit_response(req, error);
+    });
     return {std::move(replicate_stages.request_enqueued), std::move(f)};
 }
 
