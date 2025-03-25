@@ -195,8 +195,14 @@ class DatalakeVerifier():
                 if msg.error():
                     self.logger.error(f"Consumer error: {msg.error()}")
                     continue
-
+                if msg.offset() <= self._max_consumed_offsets.get(
+                        msg.partition(), -1):
+                    self.logger.info(
+                        f"[{self.topic}] Duplicated message consumed from partition={msg.partition()}, current consumed: {msg.offset()}"
+                    )
+                    continue
                 with self._lock:
+
                     self._num_msgs_pending_verification += 1
                     self._consumed_messages[msg.partition()].append(msg)
                     if self._num_msgs_pending_verification >= self._query_batch_size:
