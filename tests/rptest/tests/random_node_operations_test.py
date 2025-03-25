@@ -543,12 +543,16 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         # - topic with fast partition movements enabled
         if with_iceberg:
             dl_verifiers.append(
-                DatalakeVerifier(self.redpanda, regular_topic.name,
-                                 self.spark))
+                DatalakeVerifier(self.redpanda,
+                                 regular_topic.name,
+                                 self.spark,
+                                 tolerate_deleted_messages=True))
             if enable_fast_partition_movement():
                 dl_verifiers.append(
-                    DatalakeVerifier(self.redpanda, fast_topic.name,
-                                     self.spark))
+                    DatalakeVerifier(self.redpanda,
+                                     fast_topic.name,
+                                     self.spark,
+                                     tolerate_deleted_messages=True))
             for verifier in dl_verifiers:
                 verifier.start()
 

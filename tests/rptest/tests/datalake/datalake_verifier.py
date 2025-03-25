@@ -48,6 +48,7 @@ class DatalakeVerifier():
                  query_engine: QueryEngineBase,
                  compacted: bool = False,
                  table_override: Optional[str] = None,
+                 tolerate_deleted_messages: bool = False,
                  max_buffered_msgs=5000):
         self.redpanda = redpanda
         self.topic = topic
@@ -106,6 +107,10 @@ class DatalakeVerifier():
         # consuming, we assert that the size of this set is zero (otherwise,
         # it would imply an anomaly between the Iceberg table and the log).
         self._expected_compacted_keys = set()
+
+        # if set the verifier will tolerate messages that are missing in the
+        # topic but are present in the iceberg table
+        self._tolerate_deleted_messages = tolerate_deleted_messages
 
     def create_consumer(self):
         c = Consumer({
@@ -264,9 +269,13 @@ class DatalakeVerifier():
                 self._expected_compacted_keys.add(iceberg_key)
                 return
             else:
+                if self._tolerate_deleted_messages:
+                    return
+
                 self._errors.append(
-                    f"Offset from iceberg table {iceberg_offset} for {partition} does not match the next consumed offset {consumer_offset}"
+                    f"Offset from iceberg table {iceberg_offset=} for {partition=} does not match the next consumed offset {consumer_offset}"
                 )
+                # the offset might have already been deleted from the topic but it is still present in Iceberg table as it should be
                 return
         else:
             if self._compacted:
