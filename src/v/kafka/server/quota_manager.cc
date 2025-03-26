@@ -346,9 +346,16 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
     auto delay = co_await maybe_add_and_retrieve_quota(
       key, now, [now, mutations](quota_manager::client_quota& cq) {
           if (!cq.pm_rate.has_value()) {
+              vlog(
+                client_quota_log.trace,
+                "no partition mutation quota configured");
               return clock::duration::zero();
           }
           auto& pm_rate_tracker = cq.pm_rate.value();
+          vlog(
+            client_quota_log.trace,
+            "partition mutation quota rate: {}",
+            pm_rate_tracker.rate());
           auto result
             = pm_rate_tracker.update_and_calculate_delay<clock::duration>(
               now, 0);
