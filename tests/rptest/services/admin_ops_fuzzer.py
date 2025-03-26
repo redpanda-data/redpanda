@@ -61,6 +61,15 @@ def random_string(length):
     )  # Using only lower case to avoid getting "ERROR" or other string that would be perceived as an error in the log
 
 
+def validate_topic_property(current_value: str, expected_value: str,
+                            property_name: str):
+    if (property_name.endswith(".ms")):
+        # RPK may add "ms" suffix to the value
+        current_value = current_value.replace("ms", "")
+
+    return current_value == expected_value
+
+
 @unique
 class RedpandaAdminOperation(Enum):
     CREATE_TOPIC = auto()
@@ -121,7 +130,7 @@ class CreateTopicOperation(Operation):
 
     def execute(self, ctx):
         ctx.redpanda.logger.info(
-            f"Creating topic with name {self.topic}, replication: {self.rf} partitions: {self.partitions}"
+            f"Creating topic with name {self.topic}, replication: {self.rf} partitions: {self.partitions}, configuration: {self.config}"
         )
         ctx.rpk().create_topic(self.topic, self.partitions, self.rf,
                                self.config)
@@ -136,7 +145,10 @@ class CreateTopicOperation(Operation):
             return False
         else:
             desc = ctx.rpk().describe_topic_configs(self.topic)
-            return all([desc[k][0] == str(v) for k, v in self.config.items()])
+            return all([
+                validate_topic_property(desc[k][0], str(v), k)
+                for k, v in self.config.items()
+            ])
 
     def describe(self):
         return {
@@ -237,7 +249,8 @@ class UpdateTopicOperation(Operation):
         )
 
         desc = ctx.rpk().describe_topic_configs(self.topic)
-        return desc[self.property][0] == str(self.value)
+        return validate_topic_property(desc[self.property][0], str(self.value),
+                                       self.property)
 
     def describe(self):
         return {
