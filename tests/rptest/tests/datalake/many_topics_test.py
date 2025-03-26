@@ -27,6 +27,7 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.catalog_service import CatalogType
+from rptest.utils.parallel import execute_in_parallel
 
 
 class DatalakeManyTopicsTest(RedpandaTest):
@@ -48,13 +49,6 @@ class DatalakeManyTopicsTest(RedpandaTest):
         # redpanda will be started by DatalakeServices
         pass
 
-    def _execute_in_parallel(self, topics, process_batch, batch_len=10):
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            batches = []
-            for i in range(0, len(topics), batch_len):
-                batches.append(list(topics[i:min(i + batch_len, len(topics))]))
-            executor.map(process_batch, batches)
-
     def create_topics(self, n_topics, partitions=5, replicas=3):
         all_topic_names = [f"topic_{i:06d}" for i in range(n_topics)]
 
@@ -69,7 +63,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                     replicas=replicas,
                     config={"redpanda.iceberg.mode": "value_schema_id_prefix"})
 
-        self._execute_in_parallel(all_topic_names, create_batch)
+        execute_in_parallel(all_topic_names, create_batch)
         return all_topic_names
 
     def create_producer(self, schema):
@@ -95,7 +89,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                         value=create_record(i))
             producer.flush()
 
-        self._execute_in_parallel(topics, produce_batch)
+        execute_in_parallel(topics, produce_batch)
 
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=supported_storage_types())
@@ -219,7 +213,7 @@ class DatalakeManyTopicsTest(RedpandaTest):
                                            "redpanda.iceberg.partition.spec",
                                            "(event_type)")
 
-            self._execute_in_parallel(all_topics, set_property_for_batch)
+            execute_in_parallel(all_topics, set_property_for_batch)
             self.logger.info(f"partition spec property changed")
 
             self.produce_messages(schema2,
