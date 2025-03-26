@@ -278,6 +278,18 @@ translation_task::finish(
           fmt::join(write_result.data_files, ", "));
     }
 
+    size_t rows_added = 0;
+    size_t bytes_added = 0;
+    for (const auto& file : write_result.data_files) {
+        rows_added += file.local_file.row_count;
+        bytes_added += file.local_file.size_bytes;
+    }
+    _translation_probe->on_translation_finished(
+      write_result.data_files.size(),
+      rows_added,
+      bytes_added,
+      write_result.dlq_files.size());
+
     coordinator::translated_offset_range ret{
       .start_offset = write_result.start_offset,
       .last_offset = write_result.last_offset,

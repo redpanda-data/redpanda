@@ -29,8 +29,72 @@ translation_probe::translation_probe(model::ntp ntp)
   : _ntp(std::move(ntp)) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
         _public_metrics.emplace();
+        register_created_files_metrics();
         register_invalid_record_metric();
     }
+}
+
+void translation_probe::register_created_files_metrics() {
+    namespace sm = ss::metrics;
+
+    std::vector<sm::label_instance> labels{
+      namespace_label(_ntp.ns()),
+      topic_label(_ntp.tp.topic()),
+      partition_label(_ntp.tp.partition()),
+    };
+
+    _public_metrics->add_group(
+      group_name,
+      {
+        sm::make_counter(
+          "translations_finished",
+          _translations_finished,
+          sm::description("Number of finished translator executions"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+        sm::make_counter(
+          "files_created",
+          _files_created,
+          sm::description(
+            "Number of created parquet files (not counting the DLQ table)"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+        sm::make_counter(
+          "parquet_rows_added",
+          _parquet_rows_added,
+          sm::description("Number of rows in created parquet files (not "
+                          "counting the DLQ table)"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+        sm::make_counter(
+          "parquet_bytes_added",
+          _parquet_bytes_added,
+          sm::description("Number of bytes in created parquet files (not "
+                          "counting the DLQ table)"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+        sm::make_counter(
+          "dlq_files_created",
+          _dlq_files_created,
+          sm::description("Number of created parquet files for the DLQ table"),
+          labels)
+          .aggregate({
+            sm::shard_label,
+            partition_label,
+          }),
+      });
 }
 
 void translation_probe::register_invalid_record_metric() {
