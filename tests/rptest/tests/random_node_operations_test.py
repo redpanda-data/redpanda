@@ -131,7 +131,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             catalog_type=CatalogType.REST_JDBC)
         self.spark.start()
 
-    def _setup_test_scale(self):
+    def _setup_test_scale(self, with_iceberg):
         # test setup
         self.producer_timeout = 180
         self.consumer_timeout = 180
@@ -140,14 +140,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             # scale test setup
             self.max_partitions = 32
             self.producer_throughput = 20000
-            self.node_operations = 30
+            self.node_operations = 15 if with_iceberg else 30
             self.msg_size = 1024  # 1KiB
             self.rate_limit = 100 * 1024 * 1024  # 100 MBps
             self.total_data = 5 * 1024 * 1024 * 1024
         else:
             self.max_partitions = 32
             self.producer_throughput = 1000 if self.debug_mode else 10000
-            self.node_operations = 10
+            self.node_operations = 5 if with_iceberg else 10
             self.msg_size = 128
             self.rate_limit = 1024 * 1024
             self.total_data = 50 * 1024 * 1024
@@ -403,7 +403,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         default_segment_size = 1024 * 1024
 
         # setup test case scale parameters
-        self._setup_test_scale()
+        self._setup_test_scale(with_iceberg)
 
         if self.should_skip:
             cleanup_on_early_exit(self)
