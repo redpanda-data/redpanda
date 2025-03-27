@@ -82,8 +82,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             **kwargs)
         self.nodes_with_prev_version = []
         self.installer = self.redpanda._installer
-        self.previous_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
         self._si_settings = SISettings(self.test_context,
                                        cloud_storage_enable_remote_read=True,
                                        cloud_storage_enable_remote_write=True,
@@ -198,6 +196,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         self.redpanda.set_seed_servers(self.redpanda.nodes)
         if mixed_versions:
+            self.previous_version = self.installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD)
             node_count = len(self.redpanda.nodes)
             with_prev_version = math.ceil(node_count / 2.0)
             self.logger.info(
