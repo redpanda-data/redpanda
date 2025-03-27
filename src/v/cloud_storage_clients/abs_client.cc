@@ -688,6 +688,12 @@ ss::future<> abs_client::do_put_object(
         status != created && !is_no_content_and_accepted) {
         const auto content_type = get_response_content_type(
           response_stream->get_headers());
+        if (content_type == response_content_type::unknown) {
+            vlog(
+              abs_log.debug,
+              "ABS response type is unknown for response with headers: {:l}",
+              response_stream->get_headers());
+        }
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
         throw parse_rest_error_response(content_type, status, std::move(buf));
