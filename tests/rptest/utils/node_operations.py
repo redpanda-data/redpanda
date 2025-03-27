@@ -108,7 +108,8 @@ def verify_offset_translator_state_consistent(redpanda: RedpandaService):
                 lambda: _state_consistent(namespace, topic, partition),
                 timeout_sec=180,
                 backoff_sec=1,
-                err_msg="Error waiting for offsets to be consistent")
+                err_msg=
+                f"Error waiting for {partition_name} offsets to be consistent")
 
             logger.debug(
                 f"debug state of {partition_name} replica on node {node_id}: {state}"
