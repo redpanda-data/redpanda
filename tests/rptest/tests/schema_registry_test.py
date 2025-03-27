@@ -1807,6 +1807,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     @parametrize(dataset_type=SchemaType.AVRO)
     @parametrize(dataset_type=SchemaType.JSON)
     def test_normalize(self, dataset_type: SchemaType):
+
         dataset = get_normalize_dataset(dataset_type)
         self.logger.debug(f"testing with {dataset=}")
 
