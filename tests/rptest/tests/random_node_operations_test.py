@@ -380,17 +380,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                     "Skipping test with iceberg and unsupported cloud storage type"
                 )
 
-        def enable_fast_partition_movement():
-
-            initial_version = self.redpanda._installer.highest_from_prior_feature_version(
-                RedpandaInstaller.HEAD)
-            supported_by_prev = (initial_version[0] > 23) or \
-                                     (initial_version[0] == 23
-                                           and initial_version[1] > 2)
-            # do not enable fast partition movement with
-            # upgrades as the feature is not enabled
-            return supported_by_prev
-
         def enable_write_caching_testing():
             if not mixed_versions:
                 return True
@@ -475,36 +464,35 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
 
-        if enable_fast_partition_movement():
-            # if running with tiered storage create a topic with fast partition
-            # moves enabled
-            fast_topic = TopicSpec(name='tp-workload-fast',
-                                   partition_count=self.max_partitions,
-                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
-                                   segment_bytes=default_segment_size,
-                                   redpanda_remote_read=True,
-                                   redpanda_remote_write=True)
+        # if running with tiered storage create a topic with fast partition
+        # moves enabled
+        fast_topic = TopicSpec(name='tp-workload-fast',
+                               partition_count=self.max_partitions,
+                               cleanup_policy=TopicSpec.CLEANUP_DELETE,
+                               segment_bytes=default_segment_size,
+                               redpanda_remote_read=True,
+                               redpanda_remote_write=True)
 
-            client.create_topic(fast_topic)
+        client.create_topic(fast_topic)
 
-            client.alter_topic_config(fast_topic.name,
-                                      'initial.retention.local.target.bytes',
-                                      default_segment_size)
-            self._alter_local_topic_retention_bytes(fast_topic.name,
-                                                    8 * default_segment_size)
-            self.maybe_enable_iceberg_for_topic(fast_topic, with_iceberg)
-            fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
-                test_context=self.test_context,
-                logger=self.logger,
-                topic_name=fast_topic.name,
-                redpanda=self.redpanda,
-                nodes=[self.preallocated_nodes[2]],
-                msg_size=self.msg_size,
-                rate_limit_bps=self.rate_limit,
-                msg_count=self.msg_count,
-                consumers_count=self.consumers_count,
-                compaction_enabled=False)
-            fast_producer_consumer.start()
+        client.alter_topic_config(fast_topic.name,
+                                  'initial.retention.local.target.bytes',
+                                  default_segment_size)
+        self._alter_local_topic_retention_bytes(fast_topic.name,
+                                                8 * default_segment_size)
+        self.maybe_enable_iceberg_for_topic(fast_topic, with_iceberg)
+        fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+            test_context=self.test_context,
+            logger=self.logger,
+            topic_name=fast_topic.name,
+            redpanda=self.redpanda,
+            nodes=[self.preallocated_nodes[2]],
+            msg_size=self.msg_size,
+            rate_limit_bps=self.rate_limit,
+            msg_count=self.msg_count,
+            consumers_count=self.consumers_count,
+            compaction_enabled=False)
+        fast_producer_consumer.start()
 
         write_caching_enabled = enable_write_caching_testing()
         if write_caching_enabled:
@@ -547,12 +535,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                  regular_topic.name,
                                  self.spark,
                                  tolerate_deleted_messages=True))
-            if enable_fast_partition_movement():
-                dl_verifiers.append(
-                    DatalakeVerifier(self.redpanda,
-                                     fast_topic.name,
-                                     self.spark,
-                                     tolerate_deleted_messages=True))
+            dl_verifiers.append(
+                DatalakeVerifier(self.redpanda,
+                                 fast_topic.name,
+                                 self.spark,
+                                 tolerate_deleted_messages=True))
             for verifier in dl_verifiers:
                 verifier.start()
 
@@ -605,8 +592,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             assert write_caching_producer_consumer
             write_caching_producer_consumer.verify()
 
-        if enable_fast_partition_movement():
-            fast_producer_consumer.verify()
+        fast_producer_consumer.verify()
 
         if mixed_versions:
             self.logger.info("Upgrading cluster with current Redpanda version")
