@@ -169,8 +169,7 @@ private:
     ss::future<std::optional<translation_offsets>>
     fetch_translation_offsets(retry_chain_node&);
 
-    using finish_immediately = ss::bool_class<struct finish_immediately_tag>;
-    ss::future<finish_immediately>
+    ss::future<translation_errc>
     run_one_translation_iteration(kafka::offset translation_begin_offset);
 
     /**

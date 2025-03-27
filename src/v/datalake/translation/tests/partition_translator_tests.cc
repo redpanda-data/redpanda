@@ -271,7 +271,7 @@ public:
           "finish() must be called in all cases for cleanup");
     }
 
-    ss::future<> translate_now(
+    ss::future<translation_errc> translate_now(
       model::record_batch_reader rdr, kafka::offset, ss::abort_source&) final {
         _test_ctx.translation_attempt();
         _inflight_translation = true;
@@ -281,7 +281,7 @@ public:
             throw std::runtime_error("translation error simulation");
         }
         if (batches.empty()) {
-            co_return;
+            co_return translation_errc::no_data;
         }
         auto min = model::offset_cast(batches.begin()->base_offset());
         auto max = model::offset_cast(batches.back().last_offset());
@@ -293,6 +293,7 @@ public:
           min, _min_offset_translated.value_or(kafka::offset::max()));
         _max_offset_translated = std::max(
           max, _max_offset_translated.value_or(kafka::offset::min()));
+        co_return translation_errc::ok;
     }
 
     std::optional<kafka::offset> last_translated_offset() const final {
@@ -301,14 +302,14 @@ public:
 
     size_t flushed_bytes() const final { return _flushed_bytes; }
 
-    ss::future<> flush() final {
+    ss::future<translation_errc> flush() noexcept final {
         if (_test_ctx.error_on_flush()) {
-            return ss::make_exception_future(
+            return ss::make_exception_future<translation_errc>(
               std::runtime_error("flush error simulation"));
         }
         _flushed_bytes += _translated_bytes;
         _translated_bytes = 0;
-        return ss::make_ready_future();
+        return ss::make_ready_future<translation_errc>(translation_errc::ok);
     }
 
     void reconcile_properties() final {}

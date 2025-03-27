@@ -193,6 +193,7 @@ public:
 };
 
 enum translation_errc {
+    ok,
     no_data,
     file_io_error,
     cloud_io_error,
@@ -219,14 +220,14 @@ public:
     /**
      * Translates using the record reader until aborted.
      */
-    virtual ss::future<>
+    virtual ss::future<translation_errc>
     translate_now(model::record_batch_reader, kafka::offset, ss::abort_source&)
       = 0;
 
     /**
      * Flushes all the buffered state guaranteeing release of resources.
      */
-    virtual ss::future<> flush() = 0;
+    virtual ss::future<translation_errc> flush() noexcept = 0;
 
     /**
      * Returns the number of bytes that are flushed to the writer from the

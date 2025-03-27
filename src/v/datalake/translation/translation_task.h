@@ -41,6 +41,7 @@ public:
       location_provider,
       translation_probe&);
     enum class errc {
+        ok,
         file_io_error,
         cloud_io_error,
         flush_error,
@@ -59,7 +60,7 @@ public:
      * Can be called multiple times if needed. The results of translation can be
      * uploading using finish().
      */
-    ss::future<> translate_once(
+    ss::future<errc> translate_once(
       model::record_batch_reader reader,
       kafka::offset start_offset,
       ss::abort_source&);

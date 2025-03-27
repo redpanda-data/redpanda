@@ -33,6 +33,8 @@ datalake::translation::translation_errc
 map_error_code(datalake::translation_task::errc errc) {
     using datalake::translation::translation_errc;
     switch (errc) {
+    case datalake::translation_task::errc::ok:
+        return translation_errc::ok;
     case datalake::translation_task::errc::file_io_error:
         return translation_errc::file_io_error;
     case datalake::translation_task::errc::cloud_io_error:
@@ -457,6 +459,8 @@ std::unique_ptr<data_source> data_source::make_default_data_source(
 
 std::ostream& operator<<(std::ostream& o, translation_errc ec) {
     switch (ec) {
+    case ok:
+        return o << "translation_errc::ok";
     case no_data:
         return o << "translation_errc::no_data";
     case file_io_error:
@@ -514,7 +518,7 @@ public:
           _features.is_active(features::feature::datalake_iceberg_ga)})
       , _mem_tracker(translator_mem_tracker{_reservations}) {}
 
-    ss::future<> translate_now(
+    ss::future<translation_errc> translate_now(
       model::record_batch_reader reader,
       kafka::offset start_offset,
       ss::abort_source& as) final {
@@ -535,12 +539,13 @@ public:
         }
         if (_discard_translated_state) {
             return std::move(reader).release()->finally().then([] {
-                return ss::make_exception_future(
-                  std::runtime_error("state changed, reset translation"));
+                return ss::make_ready_future<translation_errc>(
+                  translation_errc::discard_error);
             });
         }
-        return _in_progress_translation->translate_once(
-          std::move(reader), start_offset, as);
+        return _in_progress_translation
+          ->translate_once(std::move(reader), start_offset, as)
+          .then([](auto errc) { return map_error_code(errc); });
     }
 
     void reconcile_properties() final {
@@ -584,7 +589,13 @@ public:
                  : std::nullopt;
     }
 
-    ss::future<> flush() final {
+    ss::future<translation_errc> flush() noexcept final {
+        auto release_resources = ss::defer([this] {
+            _mem_tracker.release();
+            // the translator finished a round of translation and may be
+            // taken out of the running state, so give back unused units.
+            _mem_tracker.disk().release_unused();
+        });
         if (_in_progress_translation) {
             // TODO: The flush here *does not* fully release memory associated
             // with the underlying file output stream because Seastar only
@@ -597,29 +608,26 @@ public:
             // improvement could be to account for the fixed reservation cost
             // across flush calls and only release on finish.
             vlog(datalake_log.trace, "[{}] flushing writers", _ntp);
-            return _in_progress_translation->flush()
-              .then_wrapped([](auto result_f) {
-                  if (result_f.failed()) {
-                      return ss::make_exception_future(
-                        result_f.get_exception());
-                  }
-                  auto result = result_f.get();
-                  if (result.has_error()) {
-                      return ss::make_exception_future(
-                        std::runtime_error(fmt::format(
-                          "Error flushing in-progress translation: {}",
-                          result.error())));
-                  }
-                  return ss::now();
-              })
-              .finally([this]() {
-                  _mem_tracker.release();
-                  // the translator finished a round of translation and may be
-                  // taken out of the running state, so give back unused units.
-                  _mem_tracker.disk().release_unused();
-              });
+            try {
+                auto flush_error = co_await _in_progress_translation->flush();
+                if (flush_error.has_error()) {
+                    co_return map_error_code(flush_error.error());
+                }
+            } catch (...) {
+                auto ex = std::current_exception();
+                auto log_level = ssx::is_shutdown_exception(ex)
+                                   ? ss::log_level::debug
+                                   : ss::log_level::error;
+                vlogl(
+                  datalake_log,
+                  log_level,
+                  "[{}] Flushing ran into an exception : {}",
+                  _ntp,
+                  ex);
+                co_return translation_errc::flush_error;
+            }
         }
-        return ss::now();
+        co_return translation_errc::ok;
     }
 
     ss::future<checked<coordinator::translated_offset_range, translation_errc>>
