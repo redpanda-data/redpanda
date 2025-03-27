@@ -14,6 +14,8 @@
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 
@@ -278,11 +280,23 @@ partition_translator::run_one_translation_iteration(
         vlog(
           _logger.debug,
           "Translation attempt exceeded scheduler time limit quota");
-    } catch (...) {
-        // unknown exception or shutdown exception.
+    } catch (const ss::gate_closed_exception&) {
         unexpected_ex = std::current_exception();
         vlog(
-          _logger.warn,
+          _logger.info,
+          "Translation attempt ran into a shutdown exception: {}",
+          unexpected_ex);
+    } catch (const ss::abort_requested_exception&) {
+        unexpected_ex = std::current_exception();
+        vlog(
+          _logger.info,
+          "Translation attempt ran into a shutdown exception: {}",
+          unexpected_ex);
+    } catch (...) {
+        // unknown exception.
+        unexpected_ex = std::current_exception();
+        vlog(
+          _logger.error,
           "Translation attempt ran into an unexpected exception: {}",
           unexpected_ex);
     }
