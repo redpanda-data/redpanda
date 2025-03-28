@@ -1827,37 +1827,25 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             data=base_schema,
             normalize=False)
         self.logger.debug(result_raw)
-        self.logger.debug(result_raw.content)
-        assert result_raw.status_code == requests.codes.ok, \
-                f"expected {requests.codes.ok} but got {result_raw.status_code}"
+        assert result_raw.status_code == requests.codes.ok
         v1_id = result_raw.json()["id"]
 
         self.logger.debug(f"Checking that the returned schema is canonical")
         result_raw = self._get_schemas_ids_id(id=v1_id)
-        self.logger.debug(result_raw)
-        self.logger.debug(result_raw.content)
-        assert result_raw.status_code == requests.codes.ok, \
-                f"expected {requests.codes.ok} but got {result_raw.status_code}"
-        assert result_raw.json()['schema'] == dataset.schema_canonical, \
-                f"expected:\n{dataset.schema_canonical}\ngot:\n{result_raw.json()['schema']}"
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()['schema'] == dataset.schema_canonical
 
         self.logger.debug(f"Register a schema against a subject - normalized")
         result_raw = self._post_subjects_subject_versions(
             subject=f"{normalize_topic}-key", data=base_schema, normalize=True)
         self.logger.debug(result_raw)
-        self.logger.debug(result_raw.content)
-        assert result_raw.status_code == requests.codes.ok, \
-                f"expected {requests.codes.ok} but got {result_raw.status_code}"
+        assert result_raw.status_code == requests.codes.ok
         v1_id = result_raw.json()["id"]
 
         self.logger.debug(f"Checking that the returned schema is normalized")
         result_raw = self._get_schemas_ids_id(id=v1_id)
-        self.logger.debug(result_raw)
-        self.logger.debug(result_raw.content)
-        assert result_raw.status_code == requests.codes.ok, \
-                f"expected {requests.codes.ok} but got {result_raw.status_code}"
-        assert result_raw.json()['schema'] == dataset.schema_normalized, \
-                f"expected:\n{dataset.schema_normalized}\ngot:\n{result_raw.json()['schema']}"
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()['schema'] == dataset.schema_normalized
 
     @cluster(num_nodes=3)
     @parametrize(dataset_type=SchemaType.AVRO)
