@@ -36,12 +36,23 @@ template<typename T>
 struct is_reference_wrapper_of_ssx_sharded<
   std::reference_wrapper<ssx::sharded<T>>> : std::true_type {};
 
+template<typename T>
+struct is_pointer_to_ssx_sharded : std::false_type {};
+
+template<typename T>
+struct is_pointer_to_ssx_sharded<ssx::sharded<T>*> : std::true_type {};
+
 /// Convert std::reference_wrapper<ssx::sharded<T>> to
-/// std::reference_wrapper<seastar::sharded<T>>
+/// std::reference_wrapper<seastar::sharded<T>> and
+/// ssx::sharded<T>* to seastar::sharded<T>*.
 template<typename T>
 auto unwrap_ssx_sharded_ref(T&& arg) {
-    if constexpr (is_reference_wrapper_of_ssx_sharded<std::decay_t<T>>::value) {
-        return std::ref(arg.get().as_sharded());
+    if constexpr (detail::is_reference_wrapper_of_ssx_sharded<
+                    std::decay_t<T>>::value) {
+        return std::ref(arg.get().underlying());
+    } else if constexpr (detail::is_pointer_to_ssx_sharded<
+                           std::decay_t<T>>::value) {
+        return &arg->underlying();
     } else {
         return std::forward<T>(arg);
     }
@@ -54,26 +65,21 @@ auto unwrap_ssx_sharded_ref(T&& arg) {
 /// The difference between 'ssx::sharded' and 'seastar::sharded' is that
 /// 'ssx::sharded' provides a 'stop' method that waits for the service to
 /// stop and logs a warning if the shutdown takes too long.
+///
 /// The c-tor of 'ssx::sharded' takes the name of the service as an argument.
-/// Alternatively, the service may expose a static 'service_name' method that
-/// returns the name of the service.
+/// Alternatively, the name could be inferred using typeid.
 ///
 /// The 'ssx::sharded' is not a drop in replacement for 'seastar::sharded'. It
-/// implements the same interface as 'seastar::sharded' but it's incompatible
-/// with the way 'seastar::sharded' handles
-/// 'std::reference_wrapper<sesatar::sharded>' parameters of the 'start' method.
-/// The 'seastar::sharded::start' method can accept 'std::ref' which then will
-/// be unwrapped and the reference will be passed to the c-tor of the underlying
-/// service. Obviously, this will not work with 'ssx::sharded'. Instead, the
-/// caller should pass 'std::ref(service.as_sharded())'.
+/// implements the same interface as 'seastar::sharded' but it doesn't inherit
+/// from it so that it can't be used in places where 'seastar::sharded' is
+/// expected.
 template<typename Service>
 class sharded {
 public:
     // Default constructor.
-    // The service must expose static 'service_name' method
-    // that returns the name of the service.
+    // Uses type name as the name of the service.
     sharded()
-      : _service_name(Service::service_name()) {}
+      : _service_name(typeid(Service).name()) {}
     // C-tor with explicit service name.
     explicit sharded(ss::sstring service_name)
       : _service_name(std::move(service_name)) {}
@@ -98,7 +104,12 @@ public:
 
     template<typename... Args>
     seastar::future<> start_single(Args&&... args) noexcept {
-        return _service.start_single(std::forward<Args>(args)...);
+        if constexpr (sizeof...(Args) > 0) {
+            return _service.start_single(detail::unwrap_ssx_sharded_ref<Args>(
+              std::forward<Args>(args))...);
+        } else {
+            return _service.start_single();
+        }
     }
 
     /// Stop service on all shards.
@@ -221,7 +232,7 @@ public:
         return _service;
     } // NOLINT
 
-    seastar::sharded<Service>& as_sharded() noexcept { return _service; }
+    seastar::sharded<Service>& underlying() noexcept { return _service; }
 
 private:
     seastar::future<> do_stop() {
