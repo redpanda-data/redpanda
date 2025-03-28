@@ -694,7 +694,9 @@ archival_metadata_stm::archival_metadata_stm(
       raft->ntp(), raft->log_config().get_remote_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
-  , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
+  , _remote_path_provider(remote_label, remote_topic_namespace_override) {
+    vlog(_logger.debug, "creating with remote_label={}", remote_label);
+}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
@@ -1704,6 +1706,12 @@ void archival_metadata_stm_factory::create(
       = topic_md.has_value()
           ? topic_md->get().get_configuration().properties.remote_label
           : std::nullopt;
+    vlog(
+      clusterlog.debug,
+      "Creating archival metadata STM ntp={}, topic_md={}, remote_label={}",
+      raft->ntp(),
+      topic_md.has_value(),
+      remote_label);
     auto remote_topic_namespace_override
       = topic_md.has_value() ? topic_md->get()
                                  .get_configuration()

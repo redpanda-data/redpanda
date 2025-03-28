@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #include "cloud_storage/remote_path_provider.h"
 
+#include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_path_utils.h"
 #include "cloud_storage/remote_label.h"
@@ -27,7 +28,9 @@ remote_path_provider::remote_path_provider(
   std::optional<remote_label> label,
   std::optional<model::topic_namespace> topic_namespace_override)
   : label_(label)
-  , _topic_namespace_override(std::move(topic_namespace_override)) {}
+  , _topic_namespace_override(std::move(topic_namespace_override)) {
+    vlog(cst_log.debug, "remote_path_provider created with label {}", label_);
+}
 
 remote_path_provider remote_path_provider::copy() const {
     remote_path_provider ret(label_, _topic_namespace_override);
