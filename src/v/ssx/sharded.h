@@ -14,6 +14,7 @@
 #include "base/vlog.h"
 #include "ssx/watchdog.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/util/log.hh>
 
@@ -49,13 +50,41 @@ template<typename T>
 auto unwrap_ssx_sharded_ref(T&& arg) {
     if constexpr (detail::is_reference_wrapper_of_ssx_sharded<
                     std::decay_t<T>>::value) {
-        return std::ref(arg.get().underlying());
+        return std::ref(arg.get().as_underlying());
     } else if constexpr (detail::is_pointer_to_ssx_sharded<
                            std::decay_t<T>>::value) {
-        return &arg->underlying();
+        return &arg->as_underlying();
     } else {
         return std::forward<T>(arg);
     }
+}
+
+/// Invoke the async callback and wait for it to finish.
+/// If the callback takes too long, log a warning.
+template<class Fn>
+requires std::is_invocable_r_v<seastar::future<>, Fn>
+seastar::future<> stop_with_watchdog(seastar::sstring name, Fn&& fn) {
+    watchdog short_wd(detail::short_shutdown_timeout, [name] {
+        vlog(
+          detail::shutdown_log.info,
+          "Service {} stop is taking more than {} seconds.",
+          name,
+          std::chrono::duration_cast<std::chrono::seconds>(
+            detail::short_shutdown_timeout)
+            .count());
+    });
+    watchdog long_wd(detail::long_shutdown_timeout, [name] {
+        vlog(
+          detail::shutdown_log.warn,
+          "Service {} stop is taking more than {} seconds!",
+          name,
+          std::chrono::duration_cast<std::chrono::seconds>(
+            detail::long_shutdown_timeout)
+            .count());
+    });
+    vlog(detail::shutdown_log.info, "Stopping service: {}", name);
+    co_await fn();
+    vlog(detail::shutdown_log.info, "Stopped service: {}", name);
 }
 
 } // namespace detail
@@ -115,7 +144,10 @@ public:
     /// Stop service on all shards.
     /// Log warning in case if service stop takes too long.
     /// Log shutdown sequence messages (stopping/stopped).
-    seastar::future<> stop() { return do_stop(); }
+    seastar::future<> stop() {
+        return detail::stop_with_watchdog(
+          _service_name, [this] { return _service.stop(); });
+    }
 
     seastar::future<> invoke_on_all(
       seastar::smp_submit_to_options options,
@@ -228,39 +260,23 @@ public:
         return _service.local_is_initialized();
     }
 
-    operator seastar::sharded<Service>&() noexcept {
+    operator seastar::sharded<Service>&() noexcept { // NOLINT
         return _service;
-    } // NOLINT
-
-    seastar::sharded<Service>& underlying() noexcept { return _service; }
-
-private:
-    seastar::future<> do_stop() {
-        watchdog short_wd(detail::short_shutdown_timeout, [this] {
-            vlog(
-              detail::shutdown_log.info,
-              "Service {} stop is taking more than {} seconds.",
-              _service_name,
-              std::chrono::duration_cast<std::chrono::seconds>(
-                detail::short_shutdown_timeout)
-                .count());
-        });
-        watchdog long_wd(detail::long_shutdown_timeout, [this] {
-            vlog(
-              detail::shutdown_log.warn,
-              "Service {} stop is taking more than {} seconds!",
-              _service_name,
-              std::chrono::duration_cast<std::chrono::seconds>(
-                detail::long_shutdown_timeout)
-                .count());
-        });
-        vlog(detail::shutdown_log.info, "Stopping service: {}", _service_name);
-        co_await _service.stop();
-        vlog(detail::shutdown_log.info, "Stopped service: {}", _service_name);
     }
 
+    /// Get the underlying 'seastar::sharded<Service' instance
+    seastar::sharded<Service>& as_underlying() noexcept { return _service; }
+
+private:
     seastar::sstring _service_name;
     seastar::sharded<Service> _service;
 };
+
+template<typename Service>
+seastar::future<> dispose_with_watchdog(std::unique_ptr<Service> p) {
+    auto name = typeid(Service).name();
+    co_await detail::stop_with_watchdog(
+      name, [ptr = std::move(p)] { return ptr->stop(); });
+}
 
 } // namespace ssx
