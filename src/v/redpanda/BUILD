@@ -65,6 +65,7 @@ redpanda_cc_library(
         "//src/v/security",
         "//src/v/security/audit",
         "//src/v/ssx:abort_source",
+        "//src/v/ssx:sharded",
         "//src/v/ssx:thread_worker",
         "//src/v/storage",
         "//src/v/storage:chunk_cache",

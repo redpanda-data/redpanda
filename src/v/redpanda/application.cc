@@ -1275,7 +1275,7 @@ void application::wire_up_runtime_services(
           *_schema_reg_client_config,
           *_schema_reg_config,
           std::reference_wrapper(controller),
-          std::ref(audit_mgr));
+          std::ref(audit_mgr.underlying()));
     }
 
     if (wasm_data_transforms_enabled()) {
@@ -1289,16 +1289,17 @@ void application::wire_up_runtime_services(
           _transform_rpc_service,
           ss::sharded_parameter([this] {
               return transform::rpc::topic_metadata_cache::make_default(
-                &metadata_cache);
+                &metadata_cache.underlying());
           }),
           ss::sharded_parameter([this] {
               return transform::rpc::partition_manager::make_default(
-                &shard_table,
-                &partition_manager,
+                &shard_table.underlying(),
+                &partition_manager.underlying(),
                 smp_service_groups.transform_smp_sg());
           }),
           ss::sharded_parameter([this] {
-              return transform::service::create_reporter(&_transform_service);
+              return transform::service::create_reporter(
+                &_transform_service.underlying());
           }))
           .get();
         construct_service(
@@ -1310,7 +1311,7 @@ void application::wire_up_runtime_services(
           }),
           ss::sharded_parameter([this] {
               return transform::rpc::topic_metadata_cache::make_default(
-                &metadata_cache);
+                &metadata_cache.underlying());
           }),
           ss::sharded_parameter([this] {
               return transform::rpc::topic_creator::make_default(
@@ -1369,7 +1370,7 @@ void application::wire_up_runtime_services(
                   *bucket,
                   ss::metrics::label_instance{"role", "coordinator"});
             },
-            std::ref(cloud_io)),
+            std::ref(cloud_io.underlying())),
           std::ref(cloud_io),
           std::ref(*bucket))
           .get();
@@ -1407,7 +1408,7 @@ void application::wire_up_runtime_services(
                   *bucket,
                   ss::metrics::label_instance{"role", "translator"});
             },
-            std::ref(cloud_io)),
+            std::ref(cloud_io.underlying())),
           _schema_registry.get(),
           &_as,
           *bucket,
@@ -1440,7 +1441,8 @@ void application::wire_up_runtime_services(
           .invoke_on_all(&kafka::datalake_throttle_manager::start)
           .get();
     }
-    construct_single_service(_monitor_unsafe, std::ref(feature_table));
+    construct_single_service(
+      _monitor_unsafe, std::ref(feature_table.underlying()));
 
     construct_service(_debug_bundle_service, &storage.local().kvs()).get();
 
@@ -1701,12 +1703,12 @@ void application::wire_up_redpanda_services(
       shard_table,
       storage,
       local_monitor,
-      std::ref(raft_group_manager),
-      std::ref(feature_table),
-      std::ref(cloud_storage_api),
-      std::ref(shadow_index_cache),
-      std::ref(node_status_table),
-      std::ref(metadata_cache));
+      std::ref(raft_group_manager.underlying()),
+      std::ref(feature_table.underlying()),
+      std::ref(cloud_storage_api.underlying()),
+      std::ref(shadow_index_cache.underlying()),
+      std::ref(node_status_table.underlying()),
+      std::ref(metadata_cache.underlying()));
     controller->wire_up().get();
 
     if (config::node().recovery_mode_enabled()) {
@@ -1717,8 +1719,8 @@ void application::wire_up_redpanda_services(
           std::ref(controller->get_topics_state()),
           std::ref(controller->get_partition_manager()),
           std::ref(controller->get_shard_table()),
-          std::ref(metadata_cache),
-          std::ref(_connection_cache),
+          std::ref(metadata_cache.underlying()),
+          std::ref(_connection_cache.underlying()),
           std::ref(controller->get_partition_leaders()),
           config::node().node_id().value(),
           config::shard_local_cfg().internal_topic_replication_factor(),
@@ -1842,9 +1844,9 @@ void application::wire_up_redpanda_services(
     syschecks::systemd_message("Creating isolation node watcher").get();
     construct_single_service(
       _node_isolation_watcher,
-      metadata_cache,
+      metadata_cache.underlying(),
       controller->get_health_monitor(),
-      node_status_table);
+      node_status_table.underlying());
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota managers").get();
@@ -2011,11 +2013,11 @@ void application::wire_up_redpanda_services(
       config::shard_local_cfg().retention_local_target_capacity_bytes.bind(),
       config::shard_local_cfg().retention_local_target_capacity_percent.bind(),
       config::shard_local_cfg().disk_reservation_percent.bind(),
-      &local_monitor,
-      &storage,
-      &storage_node,
-      &shadow_index_cache,
-      &partition_manager);
+      &local_monitor.underlying(),
+      &storage.underlying(),
+      &storage_node.underlying(),
+      &shadow_index_cache.underlying(),
+      &partition_manager.underlying());
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         vassert(
@@ -2079,8 +2081,8 @@ void application::wire_up_redpanda_services(
 
     offsets_recovery_manager
       = ss::make_shared<cluster::cloud_metadata::offsets_recovery_manager>(
-        std::ref(offsets_recovery_router),
-        std::ref(coordinator_ntp_mapper),
+        std::ref(offsets_recovery_router.underlying()),
+        std::ref(coordinator_ntp_mapper.underlying()),
         controller->get_members_table(),
         controller->get_api(),
         std::ref(controller->get_topics_frontend()));
@@ -2114,8 +2116,8 @@ void application::wire_up_redpanda_services(
     producer_id_recovery_manager
       = ss::make_shared<cluster::cloud_metadata::producer_id_recovery_manager>(
         std::ref(controller->get_members_table()),
-        std::ref(_connection_cache),
-        std::ref(id_allocator_frontend));
+        std::ref(_connection_cache.underlying()),
+        std::ref(id_allocator_frontend.underlying()));
 
     syschecks::systemd_message("Creating group resource manager frontend")
       .get();
@@ -2129,7 +2131,7 @@ void application::wire_up_redpanda_services(
       .get();
 
     _rm_group_proxy = std::make_unique<kafka::rm_group_proxy_impl>(
-      std::ref(rm_group_frontend));
+      std::ref(rm_group_frontend.underlying()));
 
     syschecks::systemd_message("Creating partition resource manager frontend")
       .get();
@@ -2214,7 +2216,7 @@ void application::wire_up_redpanda_services(
     kafka_cfg
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
-              c.conn_quotas = std::ref(_kafka_conn_quotas);
+              c.conn_quotas = std::ref(_kafka_conn_quotas.underlying());
               c.max_service_memory_per_core = int64_t(
                 memory_groups().kafka_total_memory());
               c.listen_backlog
@@ -2327,27 +2329,27 @@ void application::wire_up_redpanda_services(
         sched_groups.fetch_sg(),
         sched_groups.produce_sg(),
         sched_groups.kafka_sg(),
-        std::ref(metadata_cache),
+        std::ref(metadata_cache.underlying()),
         std::ref(controller->get_topics_frontend()),
         std::ref(controller->get_config_frontend()),
         std::ref(controller->get_feature_table()),
         std::ref(controller->get_quota_frontend()),
         std::ref(controller->get_quota_store()),
-        std::ref(quota_mgr),
-        std::ref(snc_quota_mgr),
-        std::ref(group_router),
-        std::ref(usage_manager),
-        std::ref(shard_table),
-        std::ref(partition_manager),
-        std::ref(id_allocator_frontend),
+        std::ref(quota_mgr.underlying()),
+        std::ref(snc_quota_mgr.underlying()),
+        std::ref(group_router.underlying()),
+        std::ref(usage_manager.underlying()),
+        std::ref(shard_table.underlying()),
+        std::ref(partition_manager.underlying()),
+        std::ref(id_allocator_frontend.underlying()),
         std::ref(controller->get_credential_store()),
         std::ref(controller->get_authorizer()),
-        std::ref(audit_mgr),
+        std::ref(audit_mgr.underlying()),
         std::ref(controller->get_oidc_service()),
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
-        std::ref(tx_gateway_frontend),
-        std::ref(datalake_throttle_manager),
+        std::ref(tx_gateway_frontend.underlying()),
+        std::ref(datalake_throttle_manager.underlying()),
         qdc_config,
         std::ref(*thread_worker),
         std::ref(_schema_registry))
@@ -2691,7 +2693,7 @@ void application::start_bootstrap_services() {
             std::make_unique<cluster::bootstrap_service>(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(storage)));
+              std::ref(storage.underlying())));
           s.add_services(std::move(bootstrap_service));
       })
       .get();
@@ -3023,21 +3025,21 @@ void application::start_runtime_services(
               cluster::cloud_metadata::offsets_recovery_rpc_service>(
               sched_groups.archival_upload(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(offsets_lookup),
-              std::ref(offsets_recovery_router),
-              std::ref(offsets_upload_router)));
+              std::ref(offsets_lookup.underlying()),
+              std::ref(offsets_recovery_router.underlying()),
+              std::ref(offsets_upload_router.underlying())));
           runtime_services.push_back(std::make_unique<cluster::id_allocator>(
             sched_groups.raft_recv_sg(),
             smp_service_groups.raft_smp_sg(),
-            std::ref(id_allocator_frontend)));
+            std::ref(id_allocator_frontend.underlying())));
           // _rm_group_proxy is wrap around a sharded service with only
           // `.local()' access so it's ok to share without foreign_ptr
           runtime_services.push_back(std::make_unique<cluster::tx_gateway>(
             sched_groups.raft_recv_sg(),
             smp_service_groups.raft_smp_sg(),
-            std::ref(tx_gateway_frontend),
+            std::ref(tx_gateway_frontend.underlying()),
             _rm_group_proxy.get(),
-            std::ref(rm_partition_frontend)));
+            std::ref(rm_partition_frontend.underlying())));
 
           if (!start_raft_rpc_early) {
               runtime_services.push_back(std::make_unique<raft::service<
@@ -3059,7 +3061,7 @@ void application::start_runtime_services(
             std::ref(controller->get_topics_frontend()),
             std::ref(controller->get_plugin_frontend()),
             std::ref(controller->get_members_manager()),
-            std::ref(metadata_cache),
+            std::ref(metadata_cache.underlying()),
             std::ref(controller->get_security_frontend()),
             std::ref(controller->get_api()),
             std::ref(controller->get_members_frontend()),
@@ -3068,9 +3070,9 @@ void application::start_runtime_services(
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
-            std::ref(_connection_cache),
+            std::ref(_connection_cache.underlying()),
             std::ref(controller->get_partition_manager()),
-            std::ref(node_status_backend),
+            std::ref(node_status_backend.underlying()),
             std::ref(controller->get_quota_frontend())));
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(
@@ -3082,13 +3084,13 @@ void application::start_runtime_services(
             std::make_unique<cluster::node_status_rpc_handler>(
               sched_groups.raft_heartbeats(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(node_status_backend)));
+              std::ref(node_status_backend.underlying())));
 
           runtime_services.push_back(
             std::make_unique<cluster::self_test_rpc_handler>(
               sched_groups.raft_heartbeats(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(self_test_backend)));
+              std::ref(self_test_backend.underlying())));
 
           runtime_services.push_back(
             std::make_unique<cluster::partition_balancer_rpc_handler>(
@@ -3107,14 +3109,14 @@ void application::start_runtime_services(
                 std::make_unique<transform::rpc::network_service>(
                   sched_groups.transforms_sg(),
                   smp_service_groups.transform_smp_sg(),
-                  &_transform_rpc_service));
+                  &_transform_rpc_service.underlying()));
           }
 
           runtime_services.push_back(
             std::make_unique<cluster::topic_recovery_status_rpc_handler>(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(topic_recovery_service)));
+              std::ref(topic_recovery_service.underlying())));
 
           if (config::node().recovery_mode_enabled()) {
               runtime_services.push_back(
@@ -3123,8 +3125,8 @@ void application::start_runtime_services(
                   smp_service_groups.cluster_smp_sg(),
                   std::ref(controller->get_partition_manager()),
                   std::ref(controller->get_shard_table()),
-                  std::ref(metadata_cache),
-                  std::ref(_connection_cache),
+                  std::ref(metadata_cache.underlying()),
+                  std::ref(_connection_cache.underlying()),
                   std::ref(controller->get_partition_leaders()),
                   config::node().node_id().value()));
           }
@@ -3139,13 +3141,13 @@ void application::start_runtime_services(
                 std::make_unique<datalake::coordinator::rpc::service>(
                   sched_groups.datalake_sg(),
                   smp_service_groups.datalake_sg(),
-                  &_datalake_coordinator_fe));
+                  &_datalake_coordinator_fe.underlying()));
           }
           runtime_services.push_back(
             std::make_unique<kafka::consumer_group_lag_metrics_service>(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
-              std::ref(_consumer_group_lag_metrics_frontend)));
+              std::ref(_consumer_group_lag_metrics_frontend.underlying())));
 
           s.add_services(std::move(runtime_services));
 

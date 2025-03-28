@@ -60,6 +60,7 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "security/fwd.h"
+#include "ssx/sharded.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "transform/fwd.h"
@@ -113,90 +114,90 @@ public:
 
     smp_groups smp_service_groups;
     scheduling_groups sched_groups;
-    ss::sharded<stress_fiber_manager> stress_fiber_manager;
+    ssx::sharded<stress_fiber_manager> stress_fiber_manager;
 
     // Sorted list of services (public members)
-    ss::sharded<cloud_storage::cache> shadow_index_cache;
-    ss::sharded<cloud_storage::partition_recovery_manager>
+    ssx::sharded<cloud_storage::cache> shadow_index_cache;
+    ssx::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
-    ss::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
-    ss::sharded<cloud_io::remote> cloud_io;
-    ss::sharded<cloud_storage::remote> cloud_storage_api;
-    ss::sharded<archival::upload_housekeeping_service>
+    ssx::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
+    ssx::sharded<cloud_io::remote> cloud_io;
+    ssx::sharded<cloud_storage::remote> cloud_storage_api;
+    ssx::sharded<archival::upload_housekeeping_service>
       archival_upload_housekeeping;
-    ss::sharded<archival::archiver_manager> archiver_manager;
-    ss::sharded<cluster::topic_recovery_status_frontend>
+    ssx::sharded<archival::archiver_manager> archiver_manager;
+    ssx::sharded<cluster::topic_recovery_status_frontend>
       topic_recovery_status_frontend;
-    ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
-    ss::sharded<cluster::inventory_service> inventory_service;
+    ssx::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
+    ssx::sharded<cluster::inventory_service> inventory_service;
 
-    ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
-    ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<cluster::metadata_dissemination_service>
+    ssx::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
+    ssx::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ssx::sharded<cluster::metadata_cache> metadata_cache;
+    ssx::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
-    ss::sharded<cluster::node_status_backend> node_status_backend;
-    ss::sharded<cluster::node_status_table> node_status_table;
-    ss::sharded<cluster::partition_manager> partition_manager;
-    ss::sharded<cluster::tx::producer_state_manager> producer_manager;
-    ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
-    ss::sharded<cluster::self_test_backend> self_test_backend;
-    ss::sharded<cluster::self_test_frontend> self_test_frontend;
-    ss::sharded<cluster::shard_table> shard_table;
+    ssx::sharded<cluster::node_status_backend> node_status_backend;
+    ssx::sharded<cluster::node_status_table> node_status_table;
+    ssx::sharded<cluster::partition_manager> partition_manager;
+    ssx::sharded<cluster::tx::producer_state_manager> producer_manager;
+    ssx::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
+    ssx::sharded<cluster::self_test_backend> self_test_backend;
+    ssx::sharded<cluster::self_test_frontend> self_test_frontend;
+    ssx::sharded<cluster::shard_table> shard_table;
     // only one instance on core 0
-    ss::sharded<cluster::tx_topic_manager> tx_topic_manager;
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ssx::sharded<cluster::tx_topic_manager> tx_topic_manager;
+    ssx::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
-    ss::sharded<features::feature_table> feature_table;
+    ssx::sharded<features::feature_table> feature_table;
 
     // Services required for consumer offsets trimming and recovery.
-    ss::sharded<cluster::cloud_metadata::offsets_lookup> offsets_lookup;
-    ss::sharded<cluster::cloud_metadata::offsets_recoverer> offsets_recoverer;
-    ss::sharded<cluster::cloud_metadata::offsets_recovery_router>
+    ssx::sharded<cluster::cloud_metadata::offsets_lookup> offsets_lookup;
+    ssx::sharded<cluster::cloud_metadata::offsets_recoverer> offsets_recoverer;
+    ssx::sharded<cluster::cloud_metadata::offsets_recovery_router>
       offsets_recovery_router;
 
     ss::shared_ptr<cluster::cloud_metadata::offsets_recovery_manager>
       offsets_recovery_manager;
 
     // Services required for consumer offsets snapshotting.
-    ss::sharded<cluster::cloud_metadata::offsets_uploader> offsets_uploader;
-    ss::sharded<cluster::cloud_metadata::offsets_upload_router>
+    ssx::sharded<cluster::cloud_metadata::offsets_uploader> offsets_uploader;
+    ssx::sharded<cluster::cloud_metadata::offsets_upload_router>
       offsets_upload_router;
 
     ss::shared_ptr<cluster::cloud_metadata::producer_id_recovery_manager>
       producer_id_recovery_manager;
 
-    ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
-    ss::sharded<kafka::group_router> group_router;
-    ss::sharded<kafka::quota_manager> quota_mgr;
+    ssx::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
+    ssx::sharded<kafka::group_router> group_router;
+    ssx::sharded<kafka::quota_manager> quota_mgr;
     kafka::snc_quota_manager::buckets_t snc_node_quota;
-    ss::sharded<kafka::snc_quota_manager> snc_quota_mgr;
-    ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
-    ss::sharded<kafka::usage_manager> usage_manager;
+    ssx::sharded<kafka::snc_quota_manager> snc_quota_mgr;
+    ssx::sharded<kafka::rm_group_frontend> rm_group_frontend;
+    ssx::sharded<kafka::usage_manager> usage_manager;
 
-    ss::sharded<security::audit::audit_log_manager> audit_mgr;
+    ssx::sharded<security::audit::audit_log_manager> audit_mgr;
 
-    ss::sharded<raft::group_manager> raft_group_manager;
-    ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
+    ssx::sharded<raft::group_manager> raft_group_manager;
+    ssx::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
 
-    ss::sharded<storage::api> storage;
-    ss::sharded<storage::node> storage_node;
-    ss::sharded<cluster::node::local_monitor> local_monitor;
+    ssx::sharded<storage::api> storage;
+    ssx::sharded<storage::node> storage_node;
+    ssx::sharded<cluster::node::local_monitor> local_monitor;
     std::unique_ptr<storage::disk_space_manager> space_manager;
 
     std::unique_ptr<cluster::controller> controller;
 
     std::unique_ptr<ssx::singleton_thread_worker> thread_worker;
 
-    ss::sharded<crypto::ossl_context_service> ossl_context_service;
-    ss::sharded<kafka::datalake_throttle_manager> datalake_throttle_manager;
+    ssx::sharded<crypto::ossl_context_service> ossl_context_service;
+    ssx::sharded<kafka::datalake_throttle_manager> datalake_throttle_manager;
 
-    ss::sharded<kafka::consumer_group_lag_metrics_frontend>
+    ssx::sharded<kafka::consumer_group_lag_metrics_frontend>
       _consumer_group_lag_metrics_frontend;
     kafka::server_app _kafka_server;
-    ss::sharded<rpc::connection_cache> _connection_cache;
-    ss::sharded<kafka::group_manager> _group_manager;
-    ss::sharded<experimental::cloud_topics::app> _reconciler;
+    ssx::sharded<rpc::connection_cache> _connection_cache;
+    ssx::sharded<kafka::group_manager> _group_manager;
+    ssx::sharded<experimental::cloud_topics::app> _reconciler;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
@@ -268,7 +269,7 @@ private:
      * @return the future returned by start()
      */
     template<typename Service, typename... Args>
-    ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
+    ss::future<> construct_service(ssx::sharded<Service>& s, Args&&... args) {
         _deferred.emplace_back([&s] { s.stop().get(); });
         return s.start(std::forward<Args>(args)...);
     }
@@ -284,7 +285,7 @@ private:
 
     template<typename Service, typename... Args>
     ss::future<>
-    construct_single_service_sharded(ss::sharded<Service>& s, Args&&... args) {
+    construct_single_service_sharded(ssx::sharded<Service>& s, Args&&... args) {
         auto f = s.start_single(std::forward<Args>(args)...);
         _deferred.emplace_back([&s] { s.stop().get(); });
         return f;
@@ -313,48 +314,48 @@ private:
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
     std::optional<kafka::client::configuration> _audit_log_client_config;
-    ss::sharded<scheduling_groups_probe> _scheduling_groups_probe;
+    ssx::sharded<scheduling_groups_probe> _scheduling_groups_probe;
     ss::logger _log;
 
     std::optional<config::binding<bool>> _abort_on_oom;
 
-    ss::sharded<memory_sampling> _memory_sampling;
-    ss::sharded<rpc::rpc_server> _rpc;
-    ss::sharded<admin_server> _admin;
-    ss::sharded<net::conn_quota> _kafka_conn_quotas;
+    ssx::sharded<memory_sampling> _memory_sampling;
+    ssx::sharded<rpc::rpc_server> _rpc;
+    ssx::sharded<admin_server> _admin;
+    ssx::sharded<net::conn_quota> _kafka_conn_quotas;
     std::unique_ptr<pandaproxy::rest::api> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
-    ss::sharded<storage::compaction_controller> _compaction_controller;
-    ss::sharded<archival::upload_controller> _archival_upload_controller;
+    ssx::sharded<storage::compaction_controller> _compaction_controller;
+    ssx::sharded<archival::upload_controller> _archival_upload_controller;
     std::unique_ptr<monitor_unsafe> _monitor_unsafe;
-    ss::sharded<archival::purger> _archival_purger;
+    ssx::sharded<archival::purger> _archival_purger;
 
     std::unique_ptr<wasm::caching_runtime> _wasm_runtime;
-    ss::sharded<transform::service> _transform_service;
-    ss::sharded<transform::rpc::local_service> _transform_rpc_service;
-    ss::sharded<transform::rpc::client> _transform_rpc_client;
+    ssx::sharded<transform::service> _transform_service;
+    ssx::sharded<transform::rpc::local_service> _transform_rpc_service;
+    ssx::sharded<transform::rpc::client> _transform_rpc_client;
 
     metrics::internal_metric_groups _metrics;
-    ss::sharded<metrics::public_metrics_group_service> _public_metrics;
+    ssx::sharded<metrics::public_metrics_group_service> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
-    ss::sharded<resources::cpu_profiler> _cpu_profiler;
-    ss::sharded<debug_bundle::service> _debug_bundle_service;
+    ssx::sharded<resources::cpu_profiler> _cpu_profiler;
+    ssx::sharded<debug_bundle::service> _debug_bundle_service;
 
     std::unique_ptr<cluster::node_isolation_watcher> _node_isolation_watcher;
 
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 
-    ss::sharded<datalake::coordinator::coordinator_manager>
+    ssx::sharded<datalake::coordinator::coordinator_manager>
       _datalake_coordinator_mgr;
-    ss::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;
-    ss::sharded<datalake::datalake_manager> _datalake_manager;
+    ssx::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;
+    ssx::sharded<datalake::datalake_manager> _datalake_manager;
 
     // run these first on destruction
     deferred_actions _deferred;
 
-    ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
+    ssx::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 
     // instantiated only in recovery mode
     std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
@@ -365,7 +366,7 @@ private:
 
     std::unique_ptr<metrics::host_metrics_watcher> _host_metrics_watcher;
 
-    ss::sharded<ss::abort_source> _as;
+    ssx::sharded<ss::abort_source> _as;
 };
 
 namespace debug {
