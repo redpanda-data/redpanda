@@ -1704,6 +1704,11 @@ void archival_metadata_stm_factory::create(
       = topic_md.has_value()
           ? topic_md->get().get_configuration().properties.remote_label
           : std::nullopt;
+    vlog(
+      clusterlog.debug,
+      "creating archival metadata stm for ntp {} with remote label: {}",
+      raft->ntp(),
+      remote_label);
     auto remote_topic_namespace_override
       = topic_md.has_value() ? topic_md->get()
                                  .get_configuration()
