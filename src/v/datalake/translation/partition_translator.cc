@@ -12,6 +12,7 @@
 
 #include "config/configuration.h"
 #include "datalake/logger.h"
+#include "datalake/translation/errors.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/watchdog.h"
 #include "utils/retry_chain_node.h"
