@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "datalake/record_multiplexer.h"
+#include "datalake/translation/record_multiplexer.h"
 
 #include "base/vlog.h"
 #include "datalake/catalog_schema_manager.h"

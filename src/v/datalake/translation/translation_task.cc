@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "datalake/translation_task.h"
+#include "datalake/translation/translation_task.h"
 
 #include "datalake/logger.h"
-#include "datalake/record_multiplexer.h"
+#include "datalake/translation/record_multiplexer.h"
 #include "iceberg/values_bytes.h"
 #include "utils/retry_chain_node.h"
 

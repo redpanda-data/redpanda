@@ -184,35 +184,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "translation_task",
-    srcs = [
-        "translation_task.cc",
-    ],
-    hdrs = [
-        "translation_task.h",
-    ],
-    include_prefix = "datalake",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":cloud_data_io",
-        ":location",
-        ":logger",
-        ":record_multiplexer",
-        ":types",
-        ":writer",
-        "//src/v/base",
-        "//src/v/datalake/coordinator:translated_offset_range",
-        "//src/v/datalake/translation:translation_probe",
-        "//src/v/iceberg:values_bytes",
-        "//src/v/model",
-        "//src/v/utils:lazy_abort_source",
-        "//src/v/utils:retry_chain_node",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
     name = "table_definition",
     srcs = [
         "table_definition.cc",
@@ -284,42 +255,6 @@ redpanda_cc_library(
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/pandaproxy",
-    ],
-)
-
-redpanda_cc_library(
-    name = "record_multiplexer",
-    srcs = [
-        "record_multiplexer.cc",
-    ],
-    hdrs = [
-        "record_multiplexer.h",
-    ],
-    implementation_deps = [
-        ":catalog_schema_manager",
-        ":logger",
-        ":record_schema_resolver",
-        ":record_translator",
-        ":table_creator",
-        ":table_id_provider",
-        "//src/v/base",
-        "//src/v/iceberg/conversion:conversion_outcome",
-        "//src/v/storage:parser_utils",
-        "//src/v/utils:lazy_abort_source",
-        "//src/v/utils:prefix_logger",
-    ],
-    include_prefix = "datalake",
-    visibility = [":__subpackages__"],
-    deps = [
-        ":location",
-        ":partitioning_writer",
-        ":schema_identifier",
-        ":types",
-        ":writer",
-        "//src/v/container:chunked_hash_map",
-        "//src/v/datalake/translation:translation_probe",
-        "//src/v/model",
-        "@seastar",
     ],
 )
 
