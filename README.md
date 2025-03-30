@@ -2,7 +2,7 @@
 
 [![Documentation](https://img.shields.io/badge/documentation-black)](https://redpanda.com/documentation)
 [![Slack](https://img.shields.io/badge/slack-purple)](https://redpanda.com/slack)
-[![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
+[![X](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
 ![Go](https://github.com/redpanda-data/redpanda/workflows/Go/badge.svg)
 ![C++](https://github.com/redpanda-data/redpanda/workflows/build-test/badge.svg)
 [![Redpanda University](https://img.shields.io/badge/Redpanda%20University-black)](https://university.redpanda.com/)
