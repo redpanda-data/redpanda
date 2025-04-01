@@ -1921,7 +1921,7 @@ configuration::configuration()
       "cloud_storage_disable_archiver_manager",
       "Use legacy upload mode and do not start archiver_manager.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      true)
+      false)
   , cloud_storage_access_key(
       *this,
       "cloud_storage_access_key",
