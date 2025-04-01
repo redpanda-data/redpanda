@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "base/vassert.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
