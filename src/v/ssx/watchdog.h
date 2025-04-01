@@ -64,9 +64,47 @@ public:
     /// be very simple, for instance, it should just log an error message.
     watchdog(
       seastar::lowres_clock::duration timeout,
-      seastar::noncopyable_function<void()> callback) {
-        start_waiting(timeout, std::move(callback));
+      seastar::noncopyable_function<void()> callback,
+      double growth_factor = 0,
+      seastar::lowres_clock::duration max_timeout
+      = seastar::lowres_clock::duration::max()) {
+        if (growth_factor == 0) {
+            start_waiting(timeout, std::move(callback));
+        } else {
+            ssx::background = ssx::ignore_shutdown_exceptions(seastar::do_with(
+              timeout,
+              std::move(callback),
+              growth_factor,
+              max_timeout,
+              [this](
+                seastar::lowres_clock::duration& timeout,
+                seastar::noncopyable_function<void()>& cb,
+                double growth_factor,
+                seastar::lowres_clock::duration max_timeout) {
+                  return seastar::sleep_abortable(timeout, _as)
+                    .then([&cb] { cb(); })
+                    .then([this, &timeout, &cb, growth_factor, max_timeout] {
+                        return seastar::repeat(
+                          [this, &timeout, &cb, growth_factor, max_timeout] {
+                              timeout = std::chrono::duration_cast<
+                                seastar::lowres_clock::duration>(
+                                timeout * growth_factor);
+
+                              if (timeout > max_timeout) {
+                                  timeout = max_timeout;
+                              }
+
+                              return seastar::sleep_abortable(timeout, _as)
+                                .then([&cb] {
+                                    cb();
+                                    return seastar::stop_iteration::no;
+                                });
+                          });
+                    });
+              }));
+        }
     }
+
     // D-tor defuses the watchdog. The callback won't be called after this.
     ~watchdog() {
         // Cancellation happens asynchronously but its guaranteed that
