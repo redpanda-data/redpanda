@@ -55,8 +55,8 @@ public:
     ///
     /// \param timeout defines time interval after which the watchdog will be
     ///                triggered
-    /// \param deadline_reached is a callback that will be called when
-    ///                         the watchdog is triggered
+    /// \param callback is a callback that will be called when
+    ///                 the watchdog is triggered
     /// \note The callback may outlive the watchdog
     /// instance. To prevent lifetime issues one could use external
     /// synchronization (hold a gate in the callback and close the gate outside
@@ -64,8 +64,8 @@ public:
     /// be very simple, for instance, it should just log an error message.
     watchdog(
       seastar::lowres_clock::duration timeout,
-      seastar::noncopyable_function<void()> deadline_reached) {
-        start_waiting(timeout, std::move(deadline_reached));
+      seastar::noncopyable_function<void()> callback) {
+        start_waiting(timeout, std::move(callback));
     }
     // D-tor defuses the watchdog. The callback won't be called after this.
     ~watchdog() {
