@@ -36,6 +36,7 @@ v_cc_library(
     v::utils
     v::pandaproxy_schema_registry_protobuf
     v::container
+    v::datalake_schema
     Avro::avro
     Boost::iostreams
     protobuf::libprotobuf

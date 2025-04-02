@@ -55,6 +55,20 @@ pps::compatibility_result check_compatible_verbose(
       pps::verbose::yes);
 }
 
+bool check_iceberg_compatible(
+  const pps::canonical_schema_definition& r,
+  const pps::canonical_schema_definition& w) {
+    pps::sharded_store s;
+    return check_iceberg_compatible(
+             pps::make_avro_schema_definition(
+               s, {pps::subject("r"), {r.shared_raw(), pps::schema_type::avro}})
+               .get(),
+             pps::make_avro_schema_definition(
+               s, {pps::subject("w"), {w.shared_raw(), pps::schema_type::avro}})
+               .get())
+      .is_compat;
+}
+
 } // namespace
 
 SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
@@ -71,6 +85,20 @@ SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion) {
     BOOST_REQUIRE(check_compatible(schema_bytes, schema_string));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_avro_type_promotion_iceberg) {
+    BOOST_REQUIRE(check_iceberg_compatible(schema_long, schema_int));
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_float, schema_int));
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_double, schema_int));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_float, schema_long));
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_double, schema_long));
+
+    BOOST_REQUIRE(check_iceberg_compatible(schema_double, schema_float));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_string, schema_bytes));
+    BOOST_REQUIRE(!check_iceberg_compatible(schema_bytes, schema_string));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_avro_enum) {
     // Adding an enum field is ok
     BOOST_REQUIRE(check_compatible(enum3, enum2));
@@ -85,10 +113,31 @@ SEASTAR_THREAD_TEST_CASE(test_avro_enum) {
     BOOST_REQUIRE(check_compatible(enum2_mat, enum1_mat));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_avro_enum_iceberg) {
+    // Adding an enum field is ok
+    BOOST_REQUIRE(check_iceberg_compatible(enum3, enum2));
+
+    // Removing an enum field without default is ok in iceberg land
+    BOOST_REQUIRE(check_iceberg_compatible(enum2, enum3));
+
+    // Removing an enum field with default is also ok
+    BOOST_REQUIRE(check_iceberg_compatible(enum3, enum2_def));
+
+    // Test from Materialize (follows NodeSymbolic)
+    BOOST_REQUIRE(check_iceberg_compatible(enum2_mat, enum1_mat));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_avro_union) {
     BOOST_REQUIRE(check_compatible(union2, union0));
 
     BOOST_REQUIRE(!check_compatible(union1, union0));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_avro_union_iceberg) {
+    // TODO(oren)
+    // BOOST_REQUIRE(check_iceberg_compatible(union2, union0));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(union1, union0));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_avro_array) {
@@ -97,6 +146,13 @@ SEASTAR_THREAD_TEST_CASE(test_avro_array) {
     BOOST_REQUIRE(!check_compatible(int_array, long_array));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_avro_array_iceberg) {
+    BOOST_REQUIRE(check_iceberg_compatible(long_array, int_array));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(int_array, long_array));
+}
+
+// TODO(oren): last one
 SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_compat) {
     // Backward compatibility: A new schema is backward compatible if it can be
     // used to read the data written in the previous schema.
