@@ -598,6 +598,8 @@ struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
     char presentation{'l'};
 };
 
+using iceberg_compat_mode = ss::bool_class<struct iceberg_compat_mode_tag>;
+
 namespace json {
 
 template<typename Buffer>
