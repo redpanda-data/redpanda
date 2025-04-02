@@ -168,6 +168,41 @@ put_config_subject(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
+ss::future<ctx_server<service>::reply_t> get_config_subject_iceberg(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    rq.req.reset();
+
+    co_await rq.service().writer().read_sync();
+
+    auto res
+      = co_await rq.service().schema_store().get_iceberg_compatibility_mode(
+        sub);
+
+    rp.rep->write_body(
+      "json",
+      ppj::rjson_serialize(
+        get_config_iceberg_req_rep{.compatibility_mode = res}));
+    co_return rp;
+}
+
+ss::future<ctx_server<service>::reply_t> put_config_subject_iceberg(
+  ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
+    parse_content_type_header(rq);
+    parse_accept_header(rq, rp);
+    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    [[maybe_unused]] auto config = co_await ppj::rjson_parse(
+      std::move(rq.req), put_config_iceberg_handler{});
+
+    co_await rq.service().writer().read_sync();
+    co_await rq.service().writer().write_iceberg_compatibility_mode(
+      sub, config.compatibility_mode);
+
+    rp.rep->write_body("json", ppj::rjson_serialize(config));
+    co_return rp;
+}
+
 ss::future<server::reply_t>
 delete_config_subject(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);

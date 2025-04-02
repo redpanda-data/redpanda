@@ -299,6 +299,14 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       wrap(gate, es, auth_level::user, delete_config_subject)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::get_config_subject_iceberg,
+      wrap(gate, es, auth_level::user, get_config_subject_iceberg)});
+
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::put_config_subject_iceberg,
+      wrap(gate, es, auth_level::user, put_config_subject_iceberg)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_mode,
       wrap(gate, es, auth_level::user, get_mode)});
 
