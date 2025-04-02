@@ -79,7 +79,7 @@ redpanda_cc_library(
         "schema_protobuf.h",
     ],
     include_prefix = "datalake",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":conversion_outcome",
         ":protobuf_utils",
@@ -471,7 +471,7 @@ redpanda_cc_library(
         "schema_avro.h",
     ],
     include_prefix = "datalake",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":conversion_outcome",
         "//src/v/iceberg:datatypes",
