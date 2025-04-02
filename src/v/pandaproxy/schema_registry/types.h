@@ -393,7 +393,10 @@ enum class seq_marker_key_type {
     schema,
     delete_subject,
     config,
-    mode
+    mode,
+    // only really used to avoid iceberg config records interfering with offset
+    // accounting for regular SR config
+    iceberg,
 };
 
 constexpr std::string_view to_string_view(seq_marker_key_type v) {
@@ -402,6 +405,7 @@ constexpr std::string_view to_string_view(seq_marker_key_type v) {
         return "schema";
     case seq_marker_key_type::delete_subject:
         return "delete_subject";
+    case seq_marker_key_type::iceberg:
     case seq_marker_key_type::config:
         return "config";
     case seq_marker_key_type::mode:

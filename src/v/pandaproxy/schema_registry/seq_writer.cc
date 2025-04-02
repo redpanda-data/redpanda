@@ -88,6 +88,9 @@ struct batch_builder : public storage::record_batch_builder {
             auto key = mode_key{.seq{s.seq}, .node{s.node}, .sub{sub}};
             add_raw_kv(to_json_iobuf(std::move(key)), std::nullopt);
         } break;
+        case seq_marker_key_type::iceberg:
+            // TODO(oren): delete iceberg config records? maybe no need
+            break;
         case seq_marker_key_type::invalid:
             vassert(false, "Unknown key type");
             break;
@@ -350,6 +353,48 @@ ss::future<bool> seq_writer::delete_config(subject sub) {
     return sequenced_write(
       [sub{std::move(sub)}](model::offset, seq_writer& seq) {
           return seq.do_delete_config(sub);
+      });
+}
+
+ss::future<std::optional<bool>> seq_writer::do_write_iceberg_compatibility_mode(
+  subject sub, iceberg_compat_mode mode, model::offset write_at) {
+    vlog(
+      plog.debug,
+      "write_config sub={} iceberg={} offset={}",
+      sub,
+      mode,
+      write_at);
+
+    co_await check_mutable(sub);
+
+    try {
+        // Check for no-op caseo
+        auto existing = co_await _store.get_iceberg_compatibility_mode(sub);
+        if (existing == mode) {
+            co_return false;
+        }
+    } catch (const exception&) {
+        // ignore
+    }
+
+    batch_builder rb(write_at, sub);
+    rb(
+      config_key{.seq{write_at}, .node{_node_id}, .sub{sub}},
+      config_value{.iceberg = mode});
+
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
+        co_return true;
+    } else {
+        // Pass up a None, our caller's cue to retry
+        co_return std::nullopt;
+    }
+}
+
+ss::future<bool> seq_writer::write_iceberg_compatibility_mode(
+  subject sub, iceberg_compat_mode mode) {
+    return sequenced_write(
+      [sub{std::move(sub)}, mode](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_iceberg_compatibility_mode(sub, mode, write_at);
       });
 }
 
