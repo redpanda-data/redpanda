@@ -763,6 +763,26 @@ sharded_store::clear_compatibility(seq_marker marker, subject sub) {
       });
 }
 
+///\brief Get the iceberg config for a subject, or fallback to global.
+ss::future<iceberg_compat_mode>
+sharded_store::get_iceberg_compatibility_mode(subject sub) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, [sub{std::move(sub)}](store& s) {
+          return s.get_iceberg_compatibility_mode(sub).value();
+      });
+}
+
+///\brief Set the iceberg config for a subject.
+ss::future<bool> sharded_store::set_iceberg_compatibility_mode(
+  seq_marker marker, subject sub, iceberg_compat_mode mode) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}, mode](store& s) {
+          return s.set_iceberg_compatibility_mode(marker, sub, mode).value();
+      });
+}
+
 ss::future<bool>
 sharded_store::upsert_schema(schema_id id, unparsed_schema_definition def) {
     co_await maybe_update_max_schema_id(id);
