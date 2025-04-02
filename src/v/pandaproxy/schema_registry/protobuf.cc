@@ -13,6 +13,8 @@
 
 #include "base/vlog.h"
 #include "bytes/streambuf.h"
+#include "datalake/schema_protobuf.h"
+#include "iceberg/compatibility.h"
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/compatibility.h"
@@ -691,6 +693,36 @@ struct compatibility_checker {
         return check_compatible(_writer.fd, std::move(p));
     }
 
+    compatibility_result check_iceberg_compatible() {
+        auto* writer_fd = _writer.fd;
+
+        for (int i = 0; i < writer_fd->message_type_count(); ++i) {
+            auto w = writer_fd->message_type(i);
+            auto r = _reader._dp.FindMessageTypeByName(w->full_name());
+            // reader is the new one, must have every message in the writer
+            if (!r) {
+                return {.is_compat = false};
+            }
+
+            auto w_struct = datalake::type_to_iceberg(*w);
+            if (w_struct.has_error()) {
+                return {.is_compat = false};
+            }
+            auto r_struct = datalake::type_to_iceberg(*r);
+            if (r_struct.has_error()) {
+                return {.is_compat = false};
+            }
+
+            auto res = iceberg::evolve_schema(
+              w_struct.value(), r_struct.value(), iceberg::partition_spec{});
+
+            if (res.has_error()) {
+                return {.is_compat = false};
+            }
+        }
+        return {.is_compat = true};
+    }
+
     proto_compatibility_result check_compatible(
       const pb::FileDescriptor* writer, std::filesystem::path p) {
         // There must be a compatible reader message for every writer
@@ -897,6 +929,13 @@ struct compatibility_checker {
 };
 
 } // namespace
+
+compatibility_result check_iceberg_compatible(
+  const protobuf_schema_definition& reader,
+  const protobuf_schema_definition& writer) {
+    compatibility_checker checker{reader(), writer()};
+    return checker.check_iceberg_compatible();
+}
 
 compatibility_result check_compatible(
   const protobuf_schema_definition& reader,

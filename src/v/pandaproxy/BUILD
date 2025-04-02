@@ -124,6 +124,7 @@ redpanda_cc_library(
         "//src/v/container:fragmented_vector",
         "//src/v/container:json",
         "//src/v/datalake:schema_avro",
+        "//src/v/datalake:schema_protobuf",
         "//src/v/hashing:jump_consistent",
         "//src/v/hashing:xx",
         "//src/v/iceberg:compatibility",

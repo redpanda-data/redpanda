@@ -85,6 +85,27 @@ bool check_compatible(
       .get();
 }
 
+bool check_iceberg_compatible(
+  std::string_view reader, std::string_view writer) {
+    pps::sharded_store store;
+    return check_iceberg_compatible(
+             pps::make_protobuf_schema_definition(
+               store,
+               pps::canonical_schema{
+                 pps::subject{"r"},
+                 pps::canonical_schema_definition{
+                   reader, pps::schema_type::protobuf}})
+               .get(),
+             pps::make_protobuf_schema_definition(
+               store,
+               pps::canonical_schema{
+                 pps::subject{"w"},
+                 pps::canonical_schema_definition{
+                   writer, pps::schema_type::protobuf}})
+               .get())
+      .is_compat;
+}
+
 pps::compatibility_result check_compatible_verbose(
   const pps::canonical_schema_definition& r,
   const pps::canonical_schema_definition& w) {
@@ -423,6 +444,71 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_encoding) {
       R"(syntax = "proto3"; message Test { double id = 1; })"));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_encoding_iceberg) {
+    BOOST_REQUIRE(check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { int32 id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      // long -> int
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { uint32 id = 1; })"));
+
+    BOOST_REQUIRE(check_iceberg_compatible(
+      // int -> long
+      R"(syntax = "proto3"; message Test { uint32 id = 1; })",
+      R"(syntax = "proto3"; message Test { int32 id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      // uint64 are encoded as strings
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { uint64 id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { bool id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { sint32 id = 1; })",
+      R"(syntax = "proto3"; message Test { sint64 id = 1; })"));
+
+    // bytes
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { string id = 1; })",
+      R"(syntax = "proto3"; message Test { bytes id = 1; })"));
+
+    // int -> long
+    BOOST_REQUIRE(check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })",
+      R"(syntax = "proto3"; message Test { sfixed32 id = 1; })"));
+
+    // long -> string
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { fixed64 id = 1; })",
+      R"(syntax = "proto3"; message Test { sfixed64 id = 1; })"));
+
+    // A subset of incompatible types
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { string id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { string id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { int32 id = 1; })",
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { fixed32 id = 1; })",
+      R"(syntax = "proto3"; message Test { fixed64 id = 1; })"));
+
+    BOOST_REQUIRE(!check_iceberg_compatible(
+      R"(syntax = "proto3"; message Test { float id = 1; })",
+      R"(syntax = "proto3"; message Test { double id = 1; })"));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_rename_field) {
     BOOST_REQUIRE(check_compatible(
       pps::compatibility_level::full,
@@ -439,6 +525,14 @@ syntax = "proto3"; message Simple { string id = 1; })",
 syntax = "proto3"; message Simple { string id = 1; string name = 2; })"));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_field_iceberg) {
+    BOOST_REQUIRE(check_iceberg_compatible(
+      R"(
+syntax = "proto3"; message Simple { string id = 1; })",
+      R"(
+syntax = "proto3"; message Simple { string id = 1; string name = 2; })"));
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_message_after) {
     auto reader = R"(syntax = "proto3";
 message Simple { string id = 1; }
@@ -449,6 +543,16 @@ message Simple { string id = 1; })";
       check_compatible(pps::compatibility_level::backward, reader, writer));
     BOOST_REQUIRE(
       !check_compatible(pps::compatibility_level::forward, reader, writer));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_message_iceberg) {
+    auto reader = R"(syntax = "proto3";
+message Simple { string id = 1; }
+message Simple2 { int64 id = 1; })";
+    auto writer = R"(syntax = "proto3";
+message Simple { string id = 1; })";
+    BOOST_REQUIRE(check_iceberg_compatible(reader, writer));
+    BOOST_REQUIRE(!check_iceberg_compatible(writer, reader));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_add_message_before) {
@@ -479,6 +583,12 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_missing_field) {
       R"(syntax = "proto3"; message Simple { string res = 1; int32 id = 2; })"));
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_missing_field_iceberg) {
+    BOOST_REQUIRE(check_iceberg_compatible(
+      R"(syntax = "proto3"; message Simple { int32 id = 2; })",
+      R"(syntax = "proto3"; message Simple { string res = 1; int32 id = 2; })"));
+}
+
 constexpr std::string_view recursive = R"(syntax = "proto3";
 
 package recursive;
@@ -498,6 +608,11 @@ SEASTAR_THREAD_TEST_CASE(
   test_protobuf_compatibility_of_mutually_recursive_types) {
     BOOST_REQUIRE(check_compatible(
       pps::compatibility_level::full_transitive, recursive, recursive));
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_protobuf_compatibility_of_mutually_recursive_types_iceberg) {
+    BOOST_REQUIRE(!check_iceberg_compatible(recursive, recursive));
 }
 
 auto sanitize(
