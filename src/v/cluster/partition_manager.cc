@@ -294,7 +294,9 @@ ss::future<consensus_ptr> partition_manager::manage(
         p->block_new_leadership();
     }
 
-    co_await p->start(_stm_registry, xst_state);
+    auto stm_builder = _stm_registry.make_builder_for(c.get());
+
+    co_await p->start(std::move(stm_builder), std::move(xst_state));
 
     // this is not done in partition::start itself because the purpose of this
     // flag is to operate in an uninterruptible context with watcher

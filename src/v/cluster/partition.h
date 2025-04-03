@@ -62,8 +62,9 @@ public:
     ~partition() = default;
 
     raft::group_id group() const;
-    ss::future<>
-    start(state_machine_registry&, const std::optional<xshard_transfer_state>&);
+    ss::future<> start(
+      raft::state_machine_manager_builder&&,
+      std::optional<xshard_transfer_state>&&);
     ss::future<> stop();
 
     /// This method exposes reset mutex for the external subsystem
