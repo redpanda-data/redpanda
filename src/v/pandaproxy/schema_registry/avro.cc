@@ -563,7 +563,7 @@ ss::future<collected_schema> collect_schema(
     for (const auto& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
-              ref.sub, ref.version, include_deleted::no);
+              ref.sub, ref.version, include_deleted::yes);
             collected = co_await collect_schema(
               store, std::move(collected), ref.name, std::move(ss.schema));
         }

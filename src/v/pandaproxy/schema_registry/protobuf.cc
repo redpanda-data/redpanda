@@ -439,7 +439,7 @@ ss::future<pb::FileDescriptorProto> build_file_with_refs(
             continue;
         }
         auto dep = co_await store.get_subject_schema(
-          ref.sub, ref.version, include_deleted::no);
+          ref.sub, ref.version, include_deleted::yes);
         co_await build_file_with_refs(
           dp,
           store,
