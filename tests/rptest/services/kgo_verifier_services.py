@@ -577,6 +577,7 @@ class KgoVerifierProducer(KgoVerifierService):
                  tolerate_data_loss=False,
                  tolerate_failed_produce=False,
                  tombstone_probability=0.0,
+                 random_byte_values=True,
                  validate_latest_values=False):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
@@ -598,6 +599,7 @@ class KgoVerifierProducer(KgoVerifierService):
         self._tolerate_failed_produce = tolerate_failed_produce
         self._tombstone_probability = tombstone_probability
         self._validate_latest_values = validate_latest_values
+        self._random_byte_values = random_byte_values
 
     @property
     def produce_status(self):
@@ -719,6 +721,8 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd += f" --tombstone-probability {self._tombstone_probability}"
         if self._validate_latest_values:
             cmd += " --validate-latest-values"
+        if self._random_byte_values:
+            cmd += " --produce-random-bytes"
 
         self.spawn(cmd, node)
 
