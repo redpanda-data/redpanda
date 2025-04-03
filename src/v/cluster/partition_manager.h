@@ -96,8 +96,7 @@ public:
       std::optional<xshard_transfer_state>,
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
-      std::optional<cloud_storage::remote_label> = std::nullopt,
-      std::optional<model::topic_namespace> = std::nullopt);
+      const topic_configuration* = nullptr);
 
     ss::future<xshard_transfer_state> shutdown(const model::ntp& ntp);
 
