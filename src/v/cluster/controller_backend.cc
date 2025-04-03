@@ -1388,8 +1388,7 @@ ss::future<std::error_code> controller_backend::create_partition(
               std::move(xst_state),
               rtp,
               read_replica_bucket,
-              cfg.properties.remote_label,
-              cfg.properties.remote_topic_namespace_override);
+              std::move(cfg));
 
             _xst_states.erase(ntp);
 
