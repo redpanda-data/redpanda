@@ -285,7 +285,9 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     _manage_watchers.notify(p->ntp(), p);
 
-    co_await p->start(_stm_registry, xst_state);
+    auto stm_builder = _stm_registry.make_builder_for(c.get());
+
+    co_await p->start(std::move(stm_builder), std::move(xst_state));
 
     co_return c;
 }
