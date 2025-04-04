@@ -2395,6 +2395,12 @@ ss::future<canonical_schema> make_canonical_json_schema(
     co_return schema;
 }
 
+compatibility_result check_iceberg_compatible(
+  const json_schema_definition&, const json_schema_definition&) {
+    // STUB, obviously
+    return {.is_compat = true};
+}
+
 compatibility_result check_compatible(
   const json_schema_definition& reader,
   const json_schema_definition& writer,
