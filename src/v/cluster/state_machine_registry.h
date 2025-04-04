@@ -16,6 +16,7 @@
 
 namespace cluster {
 
+struct topic_configuration;
 /**
  * State machine factory is a class used by registry to create stm instance if
  * it is required for a given Raft group. The factory has two main
@@ -55,9 +56,10 @@ public:
           std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    raft::state_machine_manager_builder
-    make_builder_for(raft::consensus* raft) {
-        raft::state_machine_manager_builder builder;
+    raft::state_machine_manager_builder make_builder_for(
+      raft::consensus* raft,
+      const std::optional<cluster::topic_configuration>* initial_topic_cfg) {
+        raft::state_machine_manager_builder builder{initial_topic_cfg};
         for (auto& factory : _stm_factories) {
             if (factory->is_applicable_for(raft->log_config())) {
                 factory->create(builder, raft);

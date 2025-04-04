@@ -22,6 +22,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/partition_recovery_manager.h"
+#include "cluster/topic_configuration.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
@@ -298,7 +299,7 @@ ss::future<consensus_ptr> partition_manager::manage(
         p->block_new_leadership();
     }
 
-    auto stm_builder = _stm_registry.make_builder_for(c.get());
+    auto stm_builder = _stm_registry.make_builder_for(c.get(), &topic_cfg);
 
     co_await p->start(std::move(stm_builder), std::move(xst_state));
 

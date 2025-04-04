@@ -34,6 +34,9 @@
 #include <utility>
 #include <vector>
 
+namespace cluster {
+struct topic_configuration;
+}
 namespace raft {
 
 template<typename T>
@@ -224,6 +227,13 @@ private:
  */
 class state_machine_manager_builder {
 public:
+    // for tests only
+    state_machine_manager_builder() = default;
+
+    explicit state_machine_manager_builder(
+      const std::optional<cluster::topic_configuration>* initial_topic_cfg)
+      : _initial_topic_cfg(initial_topic_cfg) {}
+
     template<ManagableStateMachine T, typename... Args>
     ss::shared_ptr<T> create_stm(Args&&... args) {
         auto machine = ss::make_shared<T>(std::forward<Args>(args)...);
@@ -238,7 +248,13 @@ public:
         return {raft, std::move(_stms), _sg};
     }
 
+    const std::optional<cluster::topic_configuration>&
+    initial_topic_cfg() const {
+        return *_initial_topic_cfg;
+    }
+
 private:
+    const std::optional<cluster::topic_configuration>* _initial_topic_cfg;
     std::vector<state_machine_manager::named_stm> _stms;
     ss::scheduling_group _sg = ss::default_scheduling_group();
 };
