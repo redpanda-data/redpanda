@@ -2237,18 +2237,15 @@ bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
 void rm_stm_factory::create(
   raft::state_machine_manager_builder& builder,
   raft::consensus* raft,
-  const cluster::stm_instance_config&) {
-    auto topic_md = _topics.local().get_topic_metadata_ref(
-      model::topic_namespace_view(raft->ntp()));
+  const cluster::stm_instance_config& cfg) {
+    const auto tcfg = cfg.initial_topic_cfg;
     auto stm = builder.create_stm<cluster::rm_stm>(
       clusterlog,
       raft,
       _tx_gateway_frontend,
       _feature_table,
       _producer_state_manager,
-      topic_md.has_value()
-        ? topic_md->get().get_configuration().properties.mpx_virtual_cluster_id
-        : std::nullopt);
+      tcfg ? tcfg->properties.mpx_virtual_cluster_id : std::nullopt);
 
     raft->log()->stm_manager()->add_stm(stm);
 }
