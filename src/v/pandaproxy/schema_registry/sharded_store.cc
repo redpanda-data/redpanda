@@ -488,6 +488,8 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
           return s.get_schema_definition(id).value();
       });
 
+    auto s_def = def.share();
+
     try {
         auto canonical = co_await make_canonical_schema(
           {sub, std::move(def)}, norm);
@@ -499,12 +501,24 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
           .deleted = v_id.deleted};
     } catch (const exception& e) {
         vlog(
-          plog.warn,
+          plog.info,
           "Failed to parse stored schema, subject {}, version {}: {}",
           sub,
           v_id.id,
           e.what());
-        throw;
+        // Hack around creating a canonical_schema from an unparsed and invalid
+        // one
+        auto [raw_def, type, refs] = std::move(s_def).destructure();
+        canonical_schema temp{
+          sub,
+          {canonical_schema_definition::raw_string{std::move(raw_def)()},
+           type,
+           std::move(refs)}};
+        co_return subject_schema{
+          .schema = std::move(temp),
+          .version = v_id.version,
+          .id = v_id.id,
+          .deleted = v_id.deleted};
     }
 }
 
