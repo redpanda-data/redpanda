@@ -5771,7 +5771,7 @@
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/rustc": "241027b94ad67beb36d0356f7cc05180daaa9966b2958cfba1d4de089d2e521c",
           "@@//bazel/thirdparty/Cargo.lock": "931fa1bc55d0e5d2e5b6d96da399569a4c2254a4bb1d99c98f71bb4b98eead73",
           "@@//bazel/thirdparty/Cargo.toml": "cb23768a6e7edc8f97215921e956f5be06521ad93cc0ecf64a932e3a8caada54",
-          "@@//MODULE.bazel": "77e8149cc0f5e8566a6ff7dddcbc39d17d3020b82de67e9c1fad7ea296f70f2c",
+          "@@//MODULE.bazel": "a8f74d14d431bca83c0ae25606b811a3a06a4f6550a05c240c9a182f8a5b558c",
           "@@//bazel/thirdparty/wasmtime.BUILD": "4b55deaf51f5b8be25fc3592f9bcf3d732f99632cd793c685436ddca9a177534",
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/cargo": "35099f3b7b9497b3ae95aa00886ac6839343488e5cdb958e69c16c9b58c3afb2"
         },
