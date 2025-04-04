@@ -1699,24 +1699,14 @@ bool archival_metadata_stm_factory::is_applicable_for(
 
 void archival_metadata_stm_factory::create(
   raft::state_machine_manager_builder& builder, raft::consensus* raft) {
-    auto topic_md = _topics.local().get_topic_metadata_ref(
-      model::topic_namespace_view(raft->ntp()));
-    auto remote_label
-      = topic_md.has_value()
-          ? topic_md->get().get_configuration().properties.remote_label
-          : std::nullopt;
-    auto remote_topic_namespace_override
-      = topic_md.has_value() ? topic_md->get()
-                                 .get_configuration()
-                                 .properties.remote_topic_namespace_override
-                             : std::nullopt;
+    const auto& cfg = builder.initial_topic_cfg();
     auto stm = builder.create_stm<cluster::archival_metadata_stm>(
       raft,
       _cloud_storage_api.local(),
       _feature_table.local(),
       clusterlog,
-      remote_label,
-      remote_topic_namespace_override);
+      cfg ? cfg->properties.remote_label : std::nullopt,
+      cfg ? cfg->properties.remote_topic_namespace_override : std::nullopt);
     raft->log()->stm_manager()->add_stm(stm);
 }
 
