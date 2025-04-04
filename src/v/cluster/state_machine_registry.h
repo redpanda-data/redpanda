@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cluster/fwd.h"
 #include "raft/consensus.h"
 #include "raft/fwd.h"
 #include "raft/state_machine_manager.h"
@@ -55,9 +56,10 @@ public:
           std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    raft::state_machine_manager_builder
-    make_builder_for(raft::consensus* raft) {
-        raft::state_machine_manager_builder builder;
+    raft::state_machine_manager_builder make_builder_for(
+      raft::consensus* raft,
+      const std::optional<cluster::topic_configuration>* initial_topic_cfg) {
+        raft::state_machine_manager_builder builder{initial_topic_cfg};
         for (auto& factory : _stm_factories) {
             if (factory->is_applicable_for(raft->log_config())) {
                 factory->create(builder, raft);

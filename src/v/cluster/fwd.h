@@ -21,6 +21,7 @@ class controller;
 class controller_backend;
 class controller_stm;
 class controller_stm_shard;
+struct topic_configuration;
 class id_allocator_frontend;
 class rm_partition_frontend;
 class log_eviction_stm;
