@@ -694,7 +694,8 @@ archival_metadata_stm::archival_metadata_stm(
       raft->ntp(), raft->log_config().get_remote_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
-  , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
+  , _remote_path_provider(
+      std::move(remote_label), std::move(remote_topic_namespace_override)) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
