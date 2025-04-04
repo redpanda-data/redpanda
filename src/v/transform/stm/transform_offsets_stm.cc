@@ -35,8 +35,7 @@ bool transform_offsets_stm_factory::is_applicable_for(
 
 void transform_offsets_stm_factory::create(
   raft::state_machine_manager_builder& builder, raft::consensus* raft) {
-    auto cfg = _topics.local().get_topic_cfg(
-      model::topic_namespace_view(raft->ntp().ns, raft->ntp().tp.topic));
+    const auto& cfg = builder.initial_topic_cfg();
     vassert(
       cfg.has_value(),
       "When creating transform stm the topic configuration must exists");
