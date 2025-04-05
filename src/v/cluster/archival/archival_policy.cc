@@ -14,6 +14,7 @@
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
@@ -509,6 +510,52 @@ ss::future<candidate_creation_result> archival_policy::get_next_candidate(
         }
     }
     co_return upload;
+}
+
+ss::future<candidate_creation_result> archival_policy::get_next_segment(
+  model::offset begin_inclusive,
+  model::offset end_exclusive,
+  std::optional<model::offset> flush_offset,
+  ss::shared_ptr<storage::log> log,
+  const cloud_storage::partition_manifest& manifest,
+  ss::lowres_clock::duration segment_lock_duration) {
+    std::optional<model::offset> end_inclusive;
+    bool force_upload = upload_deadline_reached();
+    if (flush_offset.has_value()) {
+        end_inclusive = flush_offset.value();
+    }
+    if (force_upload && !end_inclusive.has_value()) {
+        end_inclusive = model::prev_offset(end_exclusive);
+    }
+    vlog(
+      archival_log.debug,
+      "get_next_segment {}, begin_inclusive: {}, end_exclusive: {}, "
+      "end_inclusive: {}, force_upload: {}",
+      _ntp,
+      begin_inclusive,
+      end_exclusive,
+      end_inclusive,
+      force_upload);
+
+    segment_collector segment_collector{
+      begin_inclusive,
+      manifest,
+      *log,
+      config::shard_local_cfg().cloud_storage_segment_size_target().value_or(
+        config::shard_local_cfg().log_segment_size),
+      end_inclusive};
+
+    segment_collector.collect_segments(
+      segment_collector_mode::new_non_compacted);
+    if (!segment_collector.segment_ready_for_upload()) {
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    if (_upload_limit) {
+        _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
+    }
+    co_return co_await segment_collector.make_upload_candidate(
+      _io_priority, segment_lock_duration);
 }
 
 ss::future<candidate_creation_result>
