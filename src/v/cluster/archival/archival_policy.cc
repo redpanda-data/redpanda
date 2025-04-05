@@ -14,6 +14,7 @@
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
@@ -509,6 +510,74 @@ ss::future<candidate_creation_result> archival_policy::get_next_candidate(
         }
     }
     co_return upload;
+}
+
+ss::future<candidate_creation_result> archival_policy::get_next_segment(
+  model::offset begin_inclusive,
+  model::offset end_exclusive,
+  std::optional<model::offset> flush_offset,
+  ss::shared_ptr<storage::log> log,
+  const cloud_storage::partition_manifest& manifest,
+  ss::lowres_clock::duration segment_lock_duration) {
+    std::optional<model::offset> end_inclusive;
+    bool force_upload = upload_deadline_reached();
+    if (flush_offset.has_value()) {
+        end_inclusive = flush_offset.value();
+    }
+    if (force_upload && !end_inclusive.has_value()) {
+        end_inclusive = model::prev_offset(end_exclusive);
+    }
+    if (end_inclusive.has_value()) {
+        auto kafka_begin_inclusive = log->from_log_offset(begin_inclusive);
+        auto kafka_end_exclusive = log->from_log_offset(
+          model::next_offset(end_inclusive.value()));
+        if (kafka_begin_inclusive > kafka_end_exclusive) {
+            // We can only start upload if the last uploaded kafka offset
+            // increases.
+            // Otherwise we can get into a situation when timeboxed upload
+            // is kicking off new segment upload every time even if no user
+            // data is added to the log. This is because we are replicating
+            // archival_metadata_stm batch after every upload.
+            vlog(
+              archival_log.debug,
+              "Upload policy for {}: can't find candidate, only non-data "
+              "batches to upload (kafka begin exclusive: {}, kafka end "
+              "inclusive: {})",
+              _ntp,
+              kafka_begin_inclusive,
+              kafka_end_exclusive);
+            co_return candidate_creation_error::no_segments_collected;
+        }
+    }
+    vlog(
+      archival_log.debug,
+      "get_next_segment {}, begin_inclusive: {}, end_exclusive: {}, "
+      "end_inclusive: {}, force_upload: {}",
+      _ntp,
+      begin_inclusive,
+      end_exclusive,
+      end_inclusive,
+      force_upload);
+
+    segment_collector segment_collector{
+      begin_inclusive,
+      manifest,
+      *log,
+      config::shard_local_cfg().cloud_storage_segment_size_target().value_or(
+        config::shard_local_cfg().log_segment_size),
+      end_inclusive};
+
+    segment_collector.collect_segments(
+      segment_collector_mode::new_non_compacted);
+    if (!segment_collector.segment_ready_for_upload()) {
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    if (_upload_limit) {
+        _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
+    }
+    co_return co_await segment_collector.make_upload_candidate(
+      _io_priority, segment_lock_duration);
 }
 
 ss::future<candidate_creation_result>

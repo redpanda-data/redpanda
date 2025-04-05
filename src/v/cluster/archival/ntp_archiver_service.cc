@@ -1703,17 +1703,20 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 
     switch (upload_ctx.upload_kind) {
     case segment_upload_kind::non_compacted:
-        candidate_result = co_await _policy.get_next_candidate(
+        candidate_result = co_await _policy.get_next_segment(
           start_upload_offset,
           last_stable_offset,
           _flush_uploads_offset,
           log,
+          manifest(),
           _conf->segment_upload_timeout());
         break;
     case segment_upload_kind::compacted:
-        const auto& m = manifest();
         candidate_result = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, log, m, _conf->segment_upload_timeout());
+          start_upload_offset,
+          log,
+          manifest(),
+          _conf->segment_upload_timeout());
         break;
     }
 
