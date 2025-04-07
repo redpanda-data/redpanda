@@ -76,9 +76,9 @@ fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
     result.data.throttle_time_ms += val.data.throttle_time_ms;
     std::move(
-      val.data.topics.begin(),
-      val.data.topics.end(),
-      std::back_inserter(result.data.topics));
+      val.data.responses.begin(),
+      val.data.responses.end(),
+      std::back_inserter(result.data.responses));
     return result;
 };
 
@@ -444,15 +444,15 @@ ss::future<fetch_response> consumer::fetch(
                             }})
                           .first->second;
 
-            if (req.data.topics.empty() || req.data.topics.back().name != t) {
-                req.data.topics.push_back(fetch_request::topic{.name{t}});
+            if (req.data.topics.empty() || req.data.topics.back().topic != t) {
+                req.data.topics.push_back(fetch_request::topic{.topic{t}});
             }
 
-            req.data.topics.back().fetch_partitions.push_back(
+            req.data.topics.back().partitions.push_back(
               fetch_request::partition{
-                .partition_index = p,
+                .partition = p,
                 .fetch_offset = session.offset(tp),
-                .max_bytes = max_bytes.value_or(
+                .partition_max_bytes = max_bytes.value_or(
                   _config.consumer_request_max_bytes)});
         }
     }

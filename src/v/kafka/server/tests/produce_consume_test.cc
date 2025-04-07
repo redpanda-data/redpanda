@@ -129,12 +129,12 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
     fetch_next(kafka::client::transport& consumer, model::partition_id p_id) {
         kafka::fetch_request::partition partition;
         partition.fetch_offset = fetch_offsets[p_id()];
-        partition.partition_index = p_id;
+        partition.partition = p_id;
         partition.log_start_offset = model::offset(0);
-        partition.max_bytes = 1_MiB;
+        partition.partition_max_bytes = 1_MiB;
         kafka::fetch_request::topic topic;
-        topic.name = test_topic;
-        topic.fetch_partitions.push_back(partition);
+        topic.topic = test_topic;
+        topic.partitions.push_back(partition);
 
         kafka::fetch_request req;
         req.data.min_bytes = 1;
@@ -144,10 +144,10 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
         return consumer.dispatch(std::move(req), kafka::api_version(4))
           .then([this, p_id](kafka::fetch_response resp) {
-              if (resp.data.topics.empty()) {
+              if (resp.data.responses.empty()) {
                   return resp;
               }
-              auto& part = *resp.data.topics.begin();
+              auto& part = *resp.data.responses.begin();
 
               for ([[maybe_unused]] auto& r : part.partitions) {
                   const auto& data = part.partitions.begin()->records;
@@ -202,21 +202,23 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
                     }).get();
     auto resp_2 = fetch_next().get();
 
-    BOOST_REQUIRE_EQUAL(resp_1.data.topics.empty(), false);
-    BOOST_REQUIRE_EQUAL(resp_2.data.topics.empty(), false);
-    BOOST_REQUIRE_EQUAL(resp_1.data.topics.begin()->partitions.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_1.data.responses.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_2.data.responses.empty(), false);
     BOOST_REQUIRE_EQUAL(
-      resp_1.data.topics.begin()->partitions.begin()->error_code,
+      resp_1.data.responses.begin()->partitions.empty(), false);
+    BOOST_REQUIRE_EQUAL(
+      resp_1.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_1.data.topics.begin()->partitions.begin()->records->last_offset(),
+      resp_1.data.responses.begin()->partitions.begin()->records->last_offset(),
       offset_1);
-    BOOST_REQUIRE_EQUAL(resp_2.data.topics.begin()->partitions.empty(), false);
     BOOST_REQUIRE_EQUAL(
-      resp_2.data.topics.begin()->partitions.begin()->error_code,
+      resp_2.data.responses.begin()->partitions.empty(), false);
+    BOOST_REQUIRE_EQUAL(
+      resp_2.data.responses.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_2.data.topics.begin()->partitions.begin()->records->last_offset(),
+      resp_2.data.responses.begin()->partitions.begin()->records->last_offset(),
       offset_2);
 };
 
@@ -401,11 +403,12 @@ struct throughput_limits_fixure : prod_consume_fixture {
                 ss::sleep(throttle_time).get();
             }
             const auto fetch_resp = fetch_next(consumers[i], p_id).get();
-            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
-            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics[0].partitions.size(), 1);
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.responses.size(), 1);
+            BOOST_REQUIRE_EQUAL(
+              fetch_resp.data.responses[0].partitions.size(), 1);
             BOOST_TEST_REQUIRE(
-              fetch_resp.data.topics[0].partitions[0].records.has_value());
-            const auto kafka_data_len = fetch_resp.data.topics[0]
+              fetch_resp.data.responses[0].partitions[0].records.has_value());
+            const auto kafka_data_len = fetch_resp.data.responses[0]
                                           .partitions[0]
                                           .records.value()
                                           .size_bytes();

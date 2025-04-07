@@ -379,7 +379,7 @@ ss::future<fetch_response> maybe_throw_exception(
           broker_error(b->id(), res.data.error_code));
     }
 
-    const auto& topics = res.data.topics;
+    const auto& topics = res.data.responses;
     if (topics.size() != 1 || topics[0].partitions.size() != 1) {
         return ss::make_exception_future<fetch_response>(
           partition_error(tp, error_code::unknown_server_error));
@@ -560,8 +560,8 @@ ss::future<kafka::fetch_response> client::consumer_fetch(
           })
           .then([this](kafka::fetch_response res) {
               bool has_error = std::any_of(
-                res.data.topics.begin(),
-                res.data.topics.end(),
+                res.data.responses.begin(),
+                res.data.responses.end(),
                 [](const auto& topics) {
                     return std::any_of(
                       topics.partitions.begin(),

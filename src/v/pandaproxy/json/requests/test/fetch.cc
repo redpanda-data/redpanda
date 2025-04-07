@@ -50,14 +50,14 @@ auto make_fetch_response(
           .high_watermark{model::offset{0}},
           .last_stable_offset{model::offset{1}},
           .log_start_offset{model::offset{0}},
-          .aborted{},
+          .aborted_transactions{},
           .records{make_record_set(offset, count)}});
         parts.push_back(std::move(res));
     }
     return kafka::fetch_response{
       .data = {
         .error_code = kafka::error_code::none,
-        .topics = std::move(parts),
+        .responses = std::move(parts),
       }};
 }
 

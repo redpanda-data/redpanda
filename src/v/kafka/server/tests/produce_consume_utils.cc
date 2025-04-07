@@ -132,15 +132,15 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
   std::vector<model::partition_id> pids,
   model::offset offset_inclusive) {
     kafka::fetch_request::topic topic;
-    topic.name = topic_name;
-    topic.fetch_partitions.reserve(pids.size());
+    topic.topic = topic_name;
+    topic.partitions.reserve(pids.size());
     for (const auto& pid : pids) {
         kafka::fetch_request::partition partition;
         partition.fetch_offset = offset_inclusive;
-        partition.partition_index = pid;
+        partition.partition = pid;
         partition.log_start_offset = model::offset(0);
-        partition.max_bytes = 1_MiB;
-        topic.fetch_partitions.emplace_back(std::move(partition));
+        partition.partition_max_bytes = 1_MiB;
+        topic.partitions.emplace_back(std::move(partition));
     }
 
     kafka::fetch_request req;
@@ -160,11 +160,11 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
         ret.emplace(pid, std::vector<kv_t>{});
     }
     auto& data = fetch_resp.data;
-    for (auto& topic : data.topics) {
+    for (auto& topic : data.responses) {
         vlog(
           test_log.trace,
           "Processing topic {} from the fetch response",
-          topic.name);
+          topic.topic);
         for (auto& partition : topic.partitions) {
             if (partition.error_code != kafka::error_code::none) {
                 throw std::runtime_error(fmt::format(
@@ -173,13 +173,13 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
             vlog(
               test_log.trace,
               "Processing ntp {}/{} from the fetch response",
-              topic.name,
+              topic.topic,
               partition.partition_index);
             if (!partition.records.has_value()) {
                 vlog(
                   test_log.trace,
                   "No data in ntp {}/{}",
-                  topic.name,
+                  topic.topic,
                   partition.partition_index);
                 continue;
             }
@@ -189,7 +189,7 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
                     vlog(
                       test_log.trace,
                       "EOS ntp {}/{}",
-                      topic.name,
+                      topic.topic,
                       partition.partition_index);
                     break;
                 }
@@ -198,7 +198,7 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
                   test_log.trace,
                   "Reading {} records, ntp {}/{}",
                   records.size(),
-                  topic.name,
+                  topic.topic,
                   partition.partition_index);
                 auto& records_for_partition = ret[partition.partition_index];
                 for (auto& r : records) {

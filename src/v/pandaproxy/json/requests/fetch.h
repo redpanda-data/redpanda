@@ -106,7 +106,7 @@ public:
         for (auto& v : res) {
             auto r = std::move(*v.partition_response);
             model::topic_partition_view tpv(
-              v.partition->name, r.partition_index);
+              v.partition->topic, r.partition_index);
             while (r.records && !r.records->empty()) {
                 auto adapter = r.records->consume_batch();
                 if (

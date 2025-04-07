@@ -33,17 +33,16 @@ struct fixture {
     static kafka::fetch_request::topic
     make_fetch_request_topic(model::topic tp, int partitions_count) {
         kafka::fetch_request::topic fetch_topic{
-          .name = std::move(tp),
-          .fetch_partitions = {},
+          .topic = std::move(tp),
+          .partitions = {},
         };
 
         for (int i = 0; i < partitions_count; ++i) {
-            fetch_topic.fetch_partitions.push_back(
-              kafka::fetch_request::partition{
-                .partition_index = model::partition_id(i),
-                .fetch_offset = model::offset(i * 10),
-                .max_bytes = 100_KiB,
-              });
+            fetch_topic.partitions.push_back(kafka::fetch_request::partition{
+              .partition = model::partition_id(i),
+              .fetch_offset = model::offset(i * 10),
+              .partition_max_bytes = 100_KiB,
+            });
         }
         return fetch_topic;
     }
@@ -83,17 +82,17 @@ PERF_TEST_F(fetch_plan_fixture, test_fetch_plan) {
     auto make_fetch_req = [this]() {
         // make the fetch topic
         kafka::fetch_topic ft;
-        ft.name = t;
+        ft.topic = t;
 
         // add the partitions to the fetch request
         for (size_t pid = 0; pid < session_partition_count; pid++) {
             kafka::fetch_partition fp;
-            fp.partition_index = model::partition_id(static_cast<int32_t>(pid));
+            fp.partition = model::partition_id(static_cast<int32_t>(pid));
             fp.fetch_offset = model::offset(0);
             fp.current_leader_epoch = kafka::leader_epoch(-1);
             fp.log_start_offset = model::offset(-1);
-            fp.max_bytes = 1048576;
-            ft.fetch_partitions.push_back(std::move(fp));
+            fp.partition_max_bytes = 1048576;
+            ft.partitions.push_back(std::move(fp));
         }
 
         BOOST_TEST_CHECKPOINT("HERE");

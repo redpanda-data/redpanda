@@ -76,18 +76,19 @@ struct fetch_bench_fixture : redpanda_thread_fixture {
             chunked_vector<kafka::fetch_topic> fetch_topics;
             for (auto& topic_fetch : req_config) {
                 kafka::fetch_topic ft;
-                ft.name = topic_fetch.name;
+                ft.topic = topic_fetch.name;
 
                 // add the partitions to the fetch request
                 for (const auto& part : topic_fetch.partitions) {
                     kafka::fetch_partition fp;
-                    fp.partition_index = model::partition_id(part.pid);
+                    fp.partition = model::partition_id(part.pid);
                     fp.fetch_offset = part.offset;
                     fp.current_leader_epoch = kafka::leader_epoch(-1);
                     fp.log_start_offset = model::offset(-1);
-                    fp.max_bytes = part.num_batches
-                                   * (cfg.batch_size + cfg.batch_overhead);
-                    ft.fetch_partitions.push_back(std::move(fp));
+                    fp.partition_max_bytes
+                      = part.num_batches
+                        * (cfg.batch_size + cfg.batch_overhead);
+                    ft.partitions.push_back(std::move(fp));
                     total_batches += part.num_batches;
                 }
 

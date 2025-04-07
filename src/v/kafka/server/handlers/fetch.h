@@ -50,7 +50,7 @@ struct op_context {
 
         void set(fetch_response::partition_response&&);
 
-        const model::topic& topic() { return _it->partition->name; }
+        const model::topic& topic() { return _it->partition->topic; }
         model::partition_id partition_id() {
             return _it->partition_response->partition_index;
         }

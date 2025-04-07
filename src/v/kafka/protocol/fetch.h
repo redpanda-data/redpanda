@@ -61,7 +61,7 @@ struct fetch_request final {
         return data.topics.empty()
                || std::all_of(
                  data.topics.cbegin(), data.topics.cend(), [](const topic& t) {
-                     return t.fetch_partitions.empty();
+                     return t.partitions.empty();
                  });
     }
 
@@ -111,7 +111,7 @@ struct fetch_request final {
           : state_({.new_topic = true, .topic = begin})
           , t_end_(end) {
             if (likely(state_.topic != t_end_)) {
-                state_.partition = state_.topic->fetch_partitions.cbegin();
+                state_.partition = state_.topic->partitions.cbegin();
                 normalize();
             }
         }
@@ -149,11 +149,11 @@ struct fetch_request final {
 
     private:
         void normalize() {
-            while (state_.partition == state_.topic->fetch_partitions.cend()) {
+            while (state_.partition == state_.topic->partitions.cend()) {
                 state_.topic++;
                 state_.new_topic = true;
                 if (state_.topic != t_end_) {
-                    state_.partition = state_.topic->fetch_partitions.cbegin();
+                    state_.partition = state_.topic->partitions.cbegin();
                 } else {
                     break;
                 }
@@ -180,7 +180,7 @@ struct fetch_request final {
 struct fetch_response final {
     using api_type = fetch_api;
     using aborted_transaction = kafka::aborted_transaction;
-    using partition_response = fetchable_partition_response;
+    using partition_response = partition_data;
     using partition = fetchable_topic_response;
 
     fetch_response_data data;
@@ -303,11 +303,10 @@ struct fetch_response final {
     };
 
     iterator begin(bool enable_filtering = false) {
-        return iterator(
-          data.topics.begin(), data.topics.end(), enable_filtering);
+        return {data.responses.begin(), data.responses.end(), enable_filtering};
     }
 
-    iterator end() { return iterator(data.topics.end(), data.topics.end()); }
+    iterator end() { return {data.responses.end(), data.responses.end()}; }
 
     friend std::ostream& operator<<(std::ostream& os, const fetch_response& r) {
         return os << r.data;

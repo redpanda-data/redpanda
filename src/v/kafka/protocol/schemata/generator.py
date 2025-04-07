@@ -266,15 +266,15 @@ path_type_map = {
         "ReplicaId": ("model::node_id", "int32"),
         "RackId": ("model::rack_id", "string"),
         "Topics": {
-            "FetchPartitions": {
-                "PartitionIndex": ("model::partition_id", "int32"),
+            "Partitions": {
+                "Partition": ("model::partition_id", "int32"),
                 "FetchOffset": ("model::offset", "int64"),
                 "CurrentLeaderEpoch": ("kafka::leader_epoch", "int32"),
             },
         },
     },
     "FetchResponseData": {
-        "Topics": {
+        "Responses": {
             "Partitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "HighWatermark": ("model::offset", "int64"),
@@ -400,6 +400,8 @@ basic_type_map = dict(
             "read_flex_string_with_control_check()",
             "read_nullable_flex_string_with_control_check()"),
     bytes=("bytes", "read_bytes()", None, "read_flex_bytes()", None),
+    records=("bytes", "read_bytes()", "read_flex_bytes()", "read_flex_bytes()",
+             None),
     bool=("bool", "read_bool()"),
     int8=("int8_t", "read_int8()"),
     int16=("int16_t", "read_int16()"),
@@ -455,6 +457,9 @@ struct_renames = {
         ("EntityData", "AlterClientQuotasResponseEntityData"),
     ("DescribeClientQuotasResponseData", "Entries", "Entity"):
         ("EntityData", "DescribeClientQuotasResponseEntityData"),
+
+    ("FetchResponseData", "Responses", "Partitions", "DivergingEpoch"):
+        ("EpochEndOffset", "DivergingEpochEndOffset"),
 }
 
 # extra header per type name
@@ -486,7 +491,7 @@ extra_headers = {
 override_member_container = {
     'metadata_response_partition': 'large_fragment_vector',
     'metadata_response_topic': 'small_fragment_vector',
-    'fetchable_partition_response': 'small_fragment_vector',
+    'partition_data': 'small_fragment_vector',
     'offset_fetch_response_partition': 'small_fragment_vector',
     'int32_t': 'std::vector',
     'model::node_id': 'std::vector',
@@ -518,7 +523,7 @@ def make_context_field(path):
     structure. This structure will not be encoded/decoded on the wire and is
     used to add some extra context.
     """
-    if path == ("FetchResponseData", "Topics", "Partitions"):
+    if path == ("FetchResponseData", "Responses", "Partitions"):
         return ("bool", "has_to_be_included{true}")
 
 
@@ -590,7 +595,7 @@ STRUCT_TYPES = [
     "ForgottenTopic",
     "FetchPartition",
     "FetchableTopicResponse",
-    "FetchablePartitionResponse",
+    "PartitionData",
     "AbortedTransaction",
     "CreatePartitionsTopic",
     "CreatePartitionsTopicResult",
@@ -648,7 +653,7 @@ WITHOUT_DEFAULT_EQUALITY_OPERATOR = {
 # The following is a list of tag types which contain fields where their
 # respective types are not prefixed with []. The generator special cases these
 # as ArrayTypes
-TAGGED_WITH_FIELDS = []
+TAGGED_WITH_FIELDS = ['EpochEndOffset', 'LeaderIdAndEpoch', 'SnapshotId']
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())

@@ -30,23 +30,23 @@ struct fixture {
     static kafka::fetch_partition
     make_fetch_partition(const model::partition_id p_id) {
         return {
-          .partition_index = p_id,
+          .partition = p_id,
           .current_leader_epoch = kafka::leader_epoch(
             random_generators::get_int(100)),
           .fetch_offset = model::offset(random_generators::get_int(10000)),
-          .max_bytes = random_generators::get_int(1024, 1024 * 1024),
+          .partition_max_bytes = random_generators::get_int(1024, 1024 * 1024),
         };
     }
 
     static kafka::fetch_request::topic
     make_fetch_request_topic(model::topic tp, int partitions_count) {
         kafka::fetch_request::topic fetch_topic{
-          .name = std::move(tp),
-          .fetch_partitions = {},
+          .topic = std::move(tp),
+          .partitions = {},
         };
 
         for (int i = 0; i < partitions_count; ++i) {
-            fetch_topic.fetch_partitions.push_back(
+            fetch_topic.partitions.push_back(
               make_fetch_partition(model::partition_id(i)));
         }
         return fetch_topic;
@@ -79,16 +79,16 @@ FIXTURE_TEST(test_fetch_session_basic_operations, fixture) {
     for (int i = 0; i < 20; ++i) {
         auto req = make_fetch_request_topic(
           model::topic(random_generators::gen_alphanum_string(5)), 1);
-        req.fetch_partitions[0].partition_index = model::partition_id(
+        req.partitions[0].partition = model::partition_id(
           random_generators::get_int(i * 10, ((i + 1) * 10) - 1));
 
         expected.push_back(tpo{
           model::ktp{
-            model::topic(req.name),
-            model::partition_id(req.fetch_partitions[0].partition_index)},
-          model::offset(req.fetch_partitions[0].fetch_offset)});
+            model::topic(req.topic),
+            model::partition_id(req.partitions[0].partition)},
+          model::offset(req.partitions[0].fetch_offset)});
         session.partitions().emplace(
-          kafka::fetch_session_partition(req.name, req.fetch_partitions[0]));
+          kafka::fetch_session_partition(req.topic, req.partitions[0]));
     }
 
     BOOST_TEST_MESSAGE("test insertion order iteration");
@@ -153,18 +153,18 @@ FIXTURE_TEST(test_session_operations, fixture) {
         BOOST_REQUIRE_EQUAL(ctx.session()->partitions().size(), 3);
         for (const auto& fp : rng) {
             BOOST_REQUIRE_EQUAL(
-              fp.topic_partition.get_topic(), req.data.topics[0].name);
+              fp.topic_partition.get_topic(), req.data.topics[0].topic);
             BOOST_REQUIRE_EQUAL(
               fp.topic_partition.get_partition(),
-              req.data.topics[0].fetch_partitions[i].partition_index);
+              req.data.topics[0].partitions[i].partition);
             BOOST_REQUIRE_EQUAL(
               fp.current_leader_epoch,
-              req.data.topics[0].fetch_partitions[i].current_leader_epoch);
+              req.data.topics[0].partitions[i].current_leader_epoch);
             BOOST_REQUIRE_EQUAL(
-              fp.fetch_offset,
-              req.data.topics[0].fetch_partitions[i].fetch_offset);
+              fp.fetch_offset, req.data.topics[0].partitions[i].fetch_offset);
             BOOST_REQUIRE_EQUAL(
-              fp.max_bytes, req.data.topics[0].fetch_partitions[i].max_bytes);
+              fp.max_bytes,
+              req.data.topics[0].partitions[i].partition_max_bytes);
             i++;
         }
 
@@ -175,20 +175,21 @@ FIXTURE_TEST(test_session_operations, fixture) {
     BOOST_TEST_MESSAGE("test updating session");
     {
         // Remove and forget about the first partition.
-        auto fp_v = std::vector<
-          decltype(req.data.topics[0].fetch_partitions)::value_type>{
-          req.data.topics[0].fetch_partitions.begin(),
-          req.data.topics[0].fetch_partitions.end()};
+        auto fp_v
+          = std::vector<decltype(req.data.topics[0].partitions)::value_type>{
+            req.data.topics[0].partitions.begin(),
+            req.data.topics[0].partitions.end()};
         fp_v.erase(std::next(fp_v.begin()));
 
-        req.data.topics[0].fetch_partitions = {
+        req.data.topics[0].partitions = {
           std::make_move_iterator(fp_v.begin()),
           std::make_move_iterator(fp_v.end())};
-        req.data.forgotten.push_back(kafka::fetch_request::forgotten_topic{
-          .name = model::topic("test"), .forgotten_partition_indexes = {1}});
+        req.data.forgotten_topics_data.push_back(
+          kafka::fetch_request::forgotten_topic{
+            .topic = model::topic("test"), .partitions = {1}});
         // Update the second partition.
-        req.data.topics[0].fetch_partitions[0] = make_fetch_partition(
-          req.data.topics[0].fetch_partitions[0].partition_index);
+        req.data.topics[0].partitions[0] = make_fetch_partition(
+          req.data.topics[0].partitions[0].partition);
         // Add 2 partitions from new topic.
         req.data.topics.push_back(
           make_fetch_request_topic(model::topic("test-new"), 2));
@@ -214,21 +215,19 @@ FIXTURE_TEST(test_session_operations, fixture) {
             auto p_idx = i < 2 ? i : i - 2;
 
             BOOST_REQUIRE_EQUAL(
-              fp.topic_partition.get_topic(), req.data.topics[t_idx].name);
+              fp.topic_partition.get_topic(), req.data.topics[t_idx].topic);
             BOOST_REQUIRE_EQUAL(
               fp.topic_partition.get_partition(),
-              req.data.topics[t_idx].fetch_partitions[p_idx].partition_index);
+              req.data.topics[t_idx].partitions[p_idx].partition);
             BOOST_REQUIRE_EQUAL(
               fp.current_leader_epoch,
-              req.data.topics[t_idx]
-                .fetch_partitions[p_idx]
-                .current_leader_epoch);
+              req.data.topics[t_idx].partitions[p_idx].current_leader_epoch);
             BOOST_REQUIRE_EQUAL(
               fp.fetch_offset,
-              req.data.topics[t_idx].fetch_partitions[p_idx].fetch_offset);
+              req.data.topics[t_idx].partitions[p_idx].fetch_offset);
             BOOST_REQUIRE_EQUAL(
               fp.max_bytes,
-              req.data.topics[t_idx].fetch_partitions[p_idx].max_bytes);
+              req.data.topics[t_idx].partitions[p_idx].partition_max_bytes);
             i++;
         }
     }

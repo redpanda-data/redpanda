@@ -41,7 +41,7 @@ bool fetch_session::apply(fetch_response& res) {
         if (part.partition_response->error_code != error_code::none) {
             continue;
         }
-        const auto& topic = part.partition->name;
+        const auto& topic = part.partition->topic;
         const auto p_id = part.partition_response->partition_index;
         auto& record_set = part.partition_response->records;
         if (!record_set || record_set->empty()) {

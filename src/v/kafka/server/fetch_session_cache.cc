@@ -18,25 +18,25 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
     for (auto it = req.cbegin(); it != req.cend(); ++it) {
         auto& topic = *it->topic;
         auto& partition = *it->partition;
-        model::topic_partition tp(topic.name, partition.partition_index);
+        model::topic_partition tp(topic.topic, partition.partition);
 
         if (auto s_it = session.partitions().find(tp);
             s_it != session.partitions().end()) {
-            s_it->second->partition.max_bytes = partition.max_bytes;
+            s_it->second->partition.max_bytes = partition.partition_max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
             s_it->second->partition.current_leader_epoch
               = partition.current_leader_epoch;
         } else {
             session.partitions().emplace(
-              fetch_session_partition(topic.name, partition));
+              fetch_session_partition(topic.topic, partition));
         }
     }
 
-    for (auto& ft : req.data.forgotten) {
-        for (auto& fp : ft.forgotten_partition_indexes) {
-            model::topic_partition tp(ft.name, model::partition_id(fp));
+    for (auto& ft : req.data.forgotten_topics_data) {
+        for (auto& fp : ft.partitions) {
+            model::topic_partition tp(ft.topic, model::partition_id(fp));
             session.partitions().erase(
-              model::topic_partition_view(ft.name, model::partition_id(fp)));
+              model::topic_partition_view(ft.topic, model::partition_id(fp)));
         }
     }
 }

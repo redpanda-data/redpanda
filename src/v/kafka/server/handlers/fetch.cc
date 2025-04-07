@@ -538,7 +538,7 @@ static void fill_fetch_responses(
                         .producer_id = kafka::producer_id(range.pid.id),
                         .first_offset = range.first};
                   });
-                resp.aborted = std::move(aborted);
+                resp.aborted_transactions = std::move(aborted);
             }
             resp.records = batch_reader(std::move(res).release_data());
         } else {
@@ -1304,7 +1304,7 @@ void op_context::for_each_fetch_partition(Func&& f) const {
           request.cend(),
           [f = std::forward<Func>(f)](
             const fetch_request::const_iterator::value_type& p) {
-              f(fetch_session_partition(p.topic->name, *p.partition));
+              f(fetch_session_partition(p.topic->topic, *p.partition));
           });
     } else {
         std::for_each(
@@ -1581,7 +1581,7 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      */
     request.decode(rctx.reader(), rctx.header().version);
     if (likely(!request.data.topics.empty())) {
-        response.data.topics.reserve(request.data.topics.size());
+        response.data.responses.reserve(request.data.topics.size());
     }
 
     if (auto delay = request.debounce_delay(); delay) {
@@ -1602,14 +1602,14 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
 
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
-    response.data.topics.emplace_back(
-      fetchable_topic_response{.name = topic.name});
+    response.data.responses.emplace_back(
+      fetchable_topic_response{.topic = topic.topic});
 }
 
 void op_context::start_response_partition(const fetch_request::partition& p) {
-    response.data.topics.back().partitions.push_back(
+    response.data.responses.back().partitions.push_back(
       fetch_response::partition_response{
-        .partition_index = p.partition_index,
+        .partition_index = p.partition,
         .error_code = error_code::none,
         .high_watermark = model::offset(-1),
         .last_stable_offset = model::offset(-1),
@@ -1635,8 +1635,8 @@ void op_context::create_response_placeholders() {
           [this, &last_topic](const fetch_session_partition& fp) {
               auto& topic = fp.topic_partition.get_topic();
               if (last_topic != topic) {
-                  response.data.topics.emplace_back(
-                    fetchable_topic_response{.name = topic});
+                  response.data.responses.emplace_back(
+                    fetchable_topic_response{.topic = topic});
                   last_topic = topic;
               }
               fetch_response::partition_response p{
@@ -1646,7 +1646,7 @@ void op_context::create_response_placeholders() {
                 .last_stable_offset = fp.last_stable_offset,
                 .records = batch_reader()};
 
-              response.data.topics.back().partitions.push_back(std::move(p));
+              response.data.responses.back().partitions.push_back(std::move(p));
           });
     }
     for (auto it = response.begin(); it != response.end(); ++it) {
@@ -1713,11 +1713,11 @@ ss::future<response_ptr> op_context::send_response() && {
     final_response.data.session_id = response.data.session_id;
 
     /// Account for special internal topic bytes for usage
-    for (const auto& topic : response.data.topics) {
+    for (const auto& topic : response.data.responses) {
         const bool bytes_to_exclude = std::find(
                                         usage_excluded_topics.cbegin(),
                                         usage_excluded_topics.cend(),
-                                        topic.name)
+                                        topic.topic)
                                       != usage_excluded_topics.cend();
         if (bytes_to_exclude) {
             for (const auto& part : topic.partitions) {
@@ -1731,8 +1731,8 @@ ss::future<response_ptr> op_context::send_response() && {
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {
-            final_response.data.topics.emplace_back(
-              fetchable_topic_response{.name = it->partition->name});
+            final_response.data.responses.emplace_back(
+              fetchable_topic_response{.topic = it->partition->topic});
         }
 
         fetch_response::partition_response r{
@@ -1741,12 +1741,13 @@ ss::future<response_ptr> op_context::send_response() && {
           .high_watermark = it->partition_response->high_watermark,
           .last_stable_offset = it->partition_response->last_stable_offset,
           .log_start_offset = it->partition_response->log_start_offset,
-          .aborted = std::move(it->partition_response->aborted),
+          .aborted_transactions = std::move(
+            it->partition_response->aborted_transactions),
           .preferred_read_replica
           = it->partition_response->preferred_read_replica,
           .records = std::move(it->partition_response->records)};
 
-        final_response.data.topics.back().partitions.push_back(std::move(r));
+        final_response.data.responses.back().partitions.push_back(std::move(r));
     }
 
     return rctx.respond(std::move(final_response));
@@ -1805,7 +1806,7 @@ void op_context::response_placeholder::set(
     if (!_ctx->session_ctx.is_sessionless()) {
         auto& session_partitions = _ctx->session_ctx.session()->partitions();
         auto key = model::topic_partition_view(
-          _it->partition->name, _it->partition_response->partition_index);
+          _it->partition->topic, _it->partition_response->partition_index);
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {

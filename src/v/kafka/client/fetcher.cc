@@ -29,14 +29,14 @@ fetch_request make_fetch_request(
   std::chrono::milliseconds timeout) {
     chunked_vector<fetch_request::partition> partitions;
     partitions.push_back(fetch_request::partition{
-      .partition_index{tp.partition},
+      .partition{tp.partition},
       .current_leader_epoch = kafka::invalid_leader_epoch,
       .fetch_offset{offset},
       .log_start_offset{model::offset{-1}},
-      .max_bytes = max_bytes});
+      .partition_max_bytes = max_bytes});
     chunked_vector<fetch_request::topic> topics;
     topics.push_back(fetch_request::topic{
-      .name{tp.topic}, .fetch_partitions{std::move(partitions)}});
+      .topic{tp.topic}, .partitions{std::move(partitions)}});
 
     return fetch_request{
       .data = {
@@ -72,19 +72,19 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
       .high_watermark{model::offset{-1}},
       .last_stable_offset{model::offset{-1}},
       .log_start_offset{model::offset{-1}},
-      .aborted{},
+      .aborted_transactions{},
       .records{}};
 
     small_fragment_vector<fetch_response::partition_response> responses;
     responses.push_back(std::move(pr));
-    auto response = fetch_response::partition{.name = tp.topic};
+    auto response = fetch_response::partition{.topic = tp.topic};
     response.partitions = std::move(responses);
     chunked_vector<fetch_response::partition> parts;
     parts.push_back(std::move(response));
     return fetch_response{
       .data = {
         .error_code = error,
-        .topics = std::move(parts),
+        .responses = std::move(parts),
       }};
 }
 

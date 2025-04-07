@@ -45,8 +45,8 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
           model::topic("unknown"), model::partition_id(0));
         auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
-        const auto& p = res.data.topics[0];
-        BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
+        const auto& p = res.data.responses[0];
+        BOOST_REQUIRE_EQUAL(p.topic, ntp.tp.topic);
         BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
         BOOST_REQUIRE_EQUAL(p.partitions[0].partition_index, ntp.tp.partition);
         BOOST_REQUIRE_EQUAL(
@@ -66,8 +66,8 @@ FIXTURE_TEST(fetch, kafka_client_fixture) {
         client.config().retries.set_value(size_t(3));
         auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
-        const auto& p = res.data.topics[0];
-        BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
+        const auto& p = res.data.responses[0];
+        BOOST_REQUIRE_EQUAL(p.topic, ntp.tp.topic);
         BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
         const auto& r = p.partitions[0];
         BOOST_REQUIRE_EQUAL(r.partition_index, ntp.tp.partition);

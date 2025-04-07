@@ -43,17 +43,17 @@ kafka::fetch_response make_fetch_response(
         .throttle_time_ms = std::chrono::milliseconds{0},
         .error_code = kafka::error_code::none,
         .session_id = s_id,
-        .topics{}}};
-    kafka::fetch_response::partition p{.name = tpv.topic};
+        .responses{}}};
+    kafka::fetch_response::partition p{.topic = tpv.topic};
     p.partitions.push_back(kafka::fetch_response::partition_response{
       .partition_index = tpv.partition,
       .error_code = kafka::error_code::none,
       .high_watermark = model::offset{-1},
       .last_stable_offset = model::offset{-1},
       .log_start_offset = model::offset{-1},
-      .aborted = {},
+      .aborted_transactions = {},
       .records{std::move(record_set)}});
-    res.data.topics.push_back(std::move(p));
+    res.data.responses.push_back(std::move(p));
     return res;
 }
 

@@ -290,8 +290,8 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               auto res
                 = client.consumer_fetch(group_id, m_id, 200ms, 1_MiB).get();
               BOOST_REQUIRE_EQUAL(res.data.error_code, kafka::error_code::none);
-              BOOST_REQUIRE_EQUAL(res.data.topics.size(), 3);
-              for (const auto& p : res.data.topics) {
+              BOOST_REQUIRE_EQUAL(res.data.responses.size(), 3);
+              for (const auto& p : res.data.responses) {
                   BOOST_REQUIRE_EQUAL(p.partitions.size(), 1);
                   const auto& res = p.partitions[0];
                   BOOST_REQUIRE_EQUAL(res.error_code, kafka::error_code::none);
@@ -394,7 +394,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                   fetch_responses[i].begin(),
                   fetch_responses[i].end(),
                   [&](const auto& res) {
-                      return res.partition->name == t.name
+                      return res.partition->topic == t.name
                              && res.partition_response->partition_index
                                   == p.partition_index;
                   });
