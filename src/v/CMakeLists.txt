@@ -25,6 +25,7 @@ if(REDPANDA_RUN_CLANG_TIDY)
         bugprone-dangling-handle
         bugprone-sizeof-container
         bugprone-stringview-nullptr
+        bugprone-unused-local-non-trivial-variable
         bugprone-unused-return-value
         bugprone-suspicious-string-compare
         # TODO: Reenable this after fixing all the noise (and nuking ADL)
