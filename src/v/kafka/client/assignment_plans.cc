@@ -73,7 +73,7 @@ assignments assignment_range::plan(
                 ++p_end;
                 --rem;
             }
-            auto& rtm = assignments[*mem_it][t.name];
+            auto& rtm = assignments[*mem_it][t.name.value()];
             rtm.reserve(std::distance(p_begin, p_end));
             std::transform(
               p_begin, p_end, std::back_inserter(rtm), [](auto& p) {

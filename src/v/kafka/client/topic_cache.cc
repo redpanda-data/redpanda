@@ -31,7 +31,7 @@ topic_cache::apply(small_fragment_vector<metadata_response::topic>&& topics) {
         topic_data topic_data{
           .partitioner_func = default_partitioner(initial_partition_id)};
         auto& cache_t
-          = cache.emplace(t.name, std::move(topic_data)).first->second;
+          = cache.emplace(t.name.value(), std::move(topic_data)).first->second;
         cache_t.partitions.reserve(t.partitions.size());
         for (const auto& p : t.partitions) {
             cache_t.partitions.emplace(

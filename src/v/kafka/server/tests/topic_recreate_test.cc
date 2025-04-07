@@ -101,7 +101,7 @@ public:
     get_topic_metadata(const model::topic& tp) {
         return do_with_client([tp](kafka::client::transport& client) {
             chunked_vector<kafka::metadata_request_topic> topics;
-            topics.push_back(kafka::metadata_request_topic{tp});
+            topics.push_back(kafka::metadata_request_topic{.name{tp}});
             kafka::metadata_request md_req{
               .data
               = {.topics = std::make_optional(std::move(topics)), .allow_auto_topic_creation = false},

@@ -306,18 +306,21 @@ get_topic_metadata(
         /**
          * Authorize source topic in case if we deal with materialized one
          */
-        if (!ctx.authorized(security::acl_operation::describe, topic.name)) {
+        if (!ctx.authorized(
+              security::acl_operation::describe, topic.name.value())) {
             // not authorized, return authorization error
             res.push_back(make_error_topic_response(
-              std::move(topic.name), error_code::topic_authorization_failed));
+              std::move(topic.name).value(),
+              error_code::topic_authorization_failed));
             continue;
         }
         if (auto md = ctx.metadata_cache().get_topic_metadata(
-              model::topic_namespace_view(model::kafka_namespace, topic.name));
+              model::topic_namespace_view(
+                model::kafka_namespace, topic.name.value()));
             md) {
             auto src_topic_response = make_topic_response(
               ctx, request, *md, is_node_isolated);
-            src_topic_response.name = std::move(topic.name);
+            src_topic_response.name = std::move(topic.name.value());
             res.push_back(std::move(src_topic_response));
             continue;
         }
@@ -326,18 +329,21 @@ get_topic_metadata(
           !config::shard_local_cfg().auto_create_topics_enabled
           || !request.data.allow_auto_topic_creation) {
             res.push_back(make_error_topic_response(
-              std::move(topic.name), error_code::unknown_topic_or_partition));
+              std::move(topic.name).value(),
+              error_code::unknown_topic_or_partition));
             continue;
         }
         /**
          * check if authorized to create
          */
-        if (!ctx.authorized(security::acl_operation::create, topic.name)) {
+        if (!ctx.authorized(
+              security::acl_operation::create, topic.name.value())) {
             res.push_back(make_error_topic_response(
-              std::move(topic.name), error_code::topic_authorization_failed));
+              std::move(topic.name).value(),
+              error_code::topic_authorization_failed));
             continue;
         }
-        topics_to_be_created.emplace_back(std::move(topic.name));
+        topics_to_be_created.emplace_back(std::move(topic.name).value());
     }
 
     if (!ctx.audit()) {

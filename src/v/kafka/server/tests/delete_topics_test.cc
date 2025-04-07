@@ -79,7 +79,7 @@ public:
         auto client = make_kafka_client().get();
         client.connect().get();
         chunked_vector<kafka::metadata_request_topic> topics;
-        topics.push_back(kafka::metadata_request_topic{tp});
+        topics.push_back(kafka::metadata_request_topic{.name{tp}});
         kafka::metadata_request md_req{
           .data
           = {.topics = std::move(topics), .allow_auto_topic_creation = false},

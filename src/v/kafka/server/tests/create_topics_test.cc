@@ -175,7 +175,7 @@ public:
         metadata_req.data.topics
           = std::make_optional<chunked_vector<kafka::metadata_request_topic>>();
         metadata_req.data.topics->push_back(
-          kafka::metadata_request_topic{request_topic.name});
+          kafka::metadata_request_topic{.name{request_topic.name}});
         auto metadata_resp
           = client.dispatch(std::move(metadata_req), kafka::api_version(1))
               .get();

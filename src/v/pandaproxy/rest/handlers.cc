@@ -104,7 +104,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
           names.reserve(res.data.topics.size());
           for (auto& topic : res.data.topics) {
               if (!topic.is_internal) {
-                  names.emplace_back(topic.name);
+                  names.emplace_back(topic.name.value());
               }
           }
 
