@@ -27,16 +27,16 @@
 
 namespace kafka {
 
-struct partition_data {
+struct log_partition_data {
     describe_log_dirs_partition local;
     std::optional<describe_log_dirs_partition> remote;
 };
 
 using partition_dir_set
-  = chunked_hash_map<model::topic, chunked_vector<partition_data>>;
+  = chunked_hash_map<model::topic, chunked_vector<log_partition_data>>;
 
-static partition_data describe_partition(cluster::partition& p) {
-    auto result = partition_data{
+static log_partition_data describe_partition(cluster::partition& p) {
+    auto result = log_partition_data{
       .local = describe_log_dirs_partition{
         .partition_index = p.ntp().tp.partition(),
         .partition_size = static_cast<int64_t>(p.size_bytes()),
