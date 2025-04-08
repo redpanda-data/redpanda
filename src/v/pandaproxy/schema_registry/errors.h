@@ -145,7 +145,7 @@ inline error_info invalid_subject_schema(const subject& sub) {
       fmt::format("Error while looking up schema under subject {}", sub())};
 }
 
-inline error_info invalid_schema(const canonical_schema& schema) {
+inline error_info invalid_schema(const subject_schema& schema) {
     return {
       error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
 }
@@ -165,7 +165,7 @@ inline error_info has_references(const subject& sub, schema_version ver) {
 }
 
 error_info no_reference_found_for(
-  const canonical_schema& schema, const subject& sub, schema_version ver);
+  const subject_schema& schema, const subject& sub, schema_version ver);
 
 inline error_info compatibility_not_found(const subject& sub) {
     return error_info{

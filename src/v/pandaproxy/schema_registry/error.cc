@@ -14,6 +14,7 @@
 #include "pandaproxy/error.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/types.h"
 
 #include <ranges>
 
@@ -146,7 +147,7 @@ std::error_code make_error_code(error_code e) {
 }
 
 error_info no_reference_found_for(
-  const canonical_schema& schema, const subject& sub, schema_version ver) {
+  const subject_schema& schema, const subject& sub, schema_version ver) {
     // fmt v8 doesn't support formatting for elements in a range
     auto fmt_refs = schema.def().refs()
                     | std::views::transform([](const auto& ref) {

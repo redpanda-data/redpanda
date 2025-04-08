@@ -22,13 +22,13 @@ namespace pps = pandaproxy::schema_registry;
 constexpr std::string_view sv_string_def0{R"({"type":"string"})"};
 constexpr std::string_view sv_string_def1{R"({"type": "string"})"};
 constexpr std::string_view sv_int_def0{R"({"type": "int"})"};
-const pps::unparsed_schema_definition string_def0{
+const pps::schema_definition string_def0{
   pps::make_schema_definition<json::UTF8<>>(sv_string_def0).value(),
   pps::schema_type::avro};
-const pps::unparsed_schema_definition string_def1{
+const pps::schema_definition string_def1{
   pps::make_schema_definition<json::UTF8<>>(sv_string_def1).value(),
   pps::schema_type::avro};
-const pps::unparsed_schema_definition int_def0{
+const pps::schema_definition int_def0{
   pps::make_schema_definition<json::UTF8<>>(sv_int_def0).value(),
   pps::schema_type::avro};
 const pps::subject subject0{"subject0"};
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(test_store_insert) {
 bool upsert(
   pps::store& store,
   pps::subject sub,
-  pps::unparsed_schema_definition def,
+  pps::schema_definition def,
   pps::schema_type,
   pps::schema_id id,
   pps::schema_version version,
@@ -208,7 +208,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {
     pps::seq_marker dummy_marker;
 
     // First insert, expect id{1}
-    auto ins_res = s.insert(pps::to_unparsed({subject0, schema1.share()}));
+    auto ins_res = s.insert({subject0, schema1.share()});
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
@@ -222,7 +222,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {
     BOOST_REQUIRE(versions.empty());
 
     // Second insert, expect id{2}
-    ins_res = s.insert(pps::to_unparsed({subject0, schema2.share()}));
+    ins_res = s.insert({subject0, schema2.share()});
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{2});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{2});
@@ -258,7 +258,7 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
     pps::seq_marker dummy_marker;
 
     // First insert, expect id{1}
-    auto ins_res = s.insert(pps::to_unparsed({subject0, schema1.share()}));
+    auto ins_res = s.insert({subject0, schema1.share()});
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
@@ -269,13 +269,13 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
     BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
 
     // Second insert, same schema, expect id{1}
-    ins_res = s.insert(pps::to_unparsed({subject1, schema1.share()}));
+    ins_res = s.insert({subject1, schema1.share()});
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
 
     // Insert yet another schema associated with a different subject
-    ins_res = s.insert(pps::to_unparsed({subject2, schema2.share()}));
+    ins_res = s.insert({subject2, schema2.share()});
     BOOST_REQUIRE(ins_res.inserted);
     BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{2});
     BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});

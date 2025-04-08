@@ -40,7 +40,7 @@ struct simple_sharded_store {
     simple_sharded_store& operator=(simple_sharded_store&&) = delete;
 
     pps::schema_id
-    insert(const pps::unparsed_schema& schema, pps::schema_version version) {
+    insert(const pps::subject_schema& schema, pps::schema_version version) {
         const auto id = next_id++;
         store
           .upsert(
@@ -70,9 +70,9 @@ std::string sanitize(
     simple_sharded_store s{proto_v2};
     iobuf buf = pps::make_canonical_protobuf_schema(
                   s.store,
-                  pps::unparsed_schema{
+                  pps::subject_schema{
                     pps::subject{"foo"},
-                    pps::unparsed_schema_definition{
+                    pps::schema_definition{
                       raw_proto, pps::schema_type::protobuf, {}}},
                   norm)
                   .get()

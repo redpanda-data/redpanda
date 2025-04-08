@@ -17,8 +17,8 @@ namespace pps = pandaproxy::schema_registry;
 template<typename incompatibility>
 struct compat_test_data {
     compat_test_data(
-      pps::canonical_schema_definition reader,
-      pps::canonical_schema_definition writer,
+      pps::schema_definition reader,
+      pps::schema_definition writer,
       absl::flat_hash_set<incompatibility> exp)
       : reader(std::move(reader))
       , writer(std::move(writer))
@@ -30,7 +30,7 @@ struct compat_test_data {
           return std::move(raw)(pps::verbose::yes);
       }()) {}
 
-    pps::canonical_schema_definition reader;
-    pps::canonical_schema_definition writer;
+    pps::schema_definition reader;
+    pps::schema_definition writer;
     pps::compatibility_result expected;
 };

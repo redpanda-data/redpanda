@@ -18,10 +18,10 @@
 namespace pandaproxy::schema_registry {
 
 ss::future<avro_schema_definition>
-make_avro_schema_definition(schema_getter& store, canonical_schema schema);
+make_avro_schema_definition(schema_getter& store, subject_schema schema);
 
-result<canonical_schema_definition>
-sanitize_avro_schema_definition(unparsed_schema_definition def);
+result<schema_definition>
+sanitize_avro_schema_definition(schema_definition def);
 
 compatibility_result check_compatible(
   const avro_schema_definition& reader,

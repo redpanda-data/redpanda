@@ -234,7 +234,7 @@ private:
 ///\brief Implements ZeroCopyInputStream with a copy of the definition
 class schema_def_input_stream : public pb::io::ZeroCopyInputStream {
 public:
-    explicit schema_def_input_stream(const canonical_schema_definition& def)
+    explicit schema_def_input_stream(const schema_definition& def)
       : _is{def.shared_raw()}
       , _impl{&_is.istream()} {}
 
@@ -256,7 +256,7 @@ public:
       : _parser{}
       , _fdp{} {}
 
-    const pb::FileDescriptorProto& parse(const canonical_schema& schema) {
+    const pb::FileDescriptorProto& parse(const subject_schema& schema) {
         schema_def_input_stream is{schema.def()};
         io_error_collector error_collector;
         pb::io::Tokenizer t{&is, &error_collector};
@@ -432,7 +432,7 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 ss::future<pb::FileDescriptorProto> build_file_with_refs(
   pb::DescriptorPool& dp,
   schema_getter& store,
-  canonical_schema schema,
+  subject_schema schema,
   normalize norm) {
     for (const auto& ref : schema.def().refs()) {
         if (dp.FindFileByName(ref.name)) {
@@ -443,7 +443,7 @@ ss::future<pb::FileDescriptorProto> build_file_with_refs(
         co_await build_file_with_refs(
           dp,
           store,
-          canonical_schema{subject{ref.name}, std::move(dep.schema).def()},
+          subject_schema{subject{ref.name}, std::move(dep.schema).def()},
           normalize::no);
     }
 
@@ -462,7 +462,7 @@ ss::future<pb::FileDescriptorProto> build_file_with_refs(
 ss::future<pb::FileDescriptorProto> import_schema(
   pb::DescriptorPool& dp,
   schema_getter& store,
-  canonical_schema schema,
+  subject_schema schema,
   normalize norm) {
     try {
         co_return co_await build_file_with_refs(
@@ -530,13 +530,12 @@ struct protobuf_schema_definition::impl {
           "{}\n{}\n\n{}\n\n{}\n", header, package, imports, footer);
     }
 
-    canonical_schema_definition::raw_string raw() const {
-        return canonical_schema_definition::raw_string{debug_string()};
+    schema_definition::raw_string raw() const {
+        return schema_definition::raw_string{debug_string()};
     }
 };
 
-canonical_schema_definition::raw_string
-protobuf_schema_definition::raw() const {
+schema_definition::raw_string protobuf_schema_definition::raw() const {
     return _impl->raw();
 }
 
@@ -588,7 +587,7 @@ operator<<(std::ostream& os, const protobuf_schema_definition& def) {
 }
 
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
-  schema_getter& store, canonical_schema schema, normalize norm) {
+  schema_getter& store, subject_schema schema, normalize norm) {
     auto refs = schema.def().refs();
     auto impl = ss::make_shared<protobuf_schema_definition::impl>();
     auto v2_renderer = protobuf_renderer_v2::no;
@@ -608,26 +607,19 @@ ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
     co_return protobuf_schema_definition{std::move(impl), std::move(refs)};
 }
 
-ss::future<canonical_schema_definition> validate_protobuf_schema(
-  sharded_store& store, canonical_schema schema, normalize norm) {
+ss::future<schema_definition> validate_protobuf_schema(
+  sharded_store& store, subject_schema schema, normalize norm) {
     auto res = co_await make_protobuf_schema_definition(
       store, std::move(schema), norm);
-    co_return canonical_schema_definition{std::move(res)};
+    co_return schema_definition{std::move(res)};
 }
 
-ss::future<canonical_schema> make_canonical_protobuf_schema(
-  sharded_store& store, unparsed_schema schema, normalize norm) {
-    auto [sub, unparsed] = std::move(schema).destructure();
-    auto [def, type, refs] = std::move(unparsed).destructure();
-    canonical_schema temp{
-      sub,
-      {canonical_schema_definition::raw_string{std::move(def)()},
-       type,
-       std::move(refs)}};
-
-    co_return canonical_schema{
+ss::future<subject_schema> make_canonical_protobuf_schema(
+  sharded_store& store, subject_schema schema, normalize norm) {
+    subject sub = schema.sub();
+    co_return subject_schema{
       std::move(sub),
-      co_await validate_protobuf_schema(store, std::move(temp), norm)};
+      co_await validate_protobuf_schema(store, std::move(schema), norm)};
 }
 
 namespace {

@@ -18,7 +18,7 @@
 namespace pandaproxy::schema_registry {
 
 struct get_schemas_ids_id_response {
-    canonical_schema_definition definition;
+    schema_definition definition;
 };
 
 template<typename Buffer>

@@ -31,8 +31,8 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     const pps::schema_version ver1{1};
 
     // Insert simple
-    auto referenced_schema = pps::to_unparsed(
-      {pps::subject{"simple.proto"}, simple.share()});
+    auto referenced_schema = pps::subject_schema{
+      pps::subject{"simple.proto"}, simple.share()};
     store
       .upsert(
         pps::seq_marker{
@@ -44,8 +44,8 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       .get();
 
     // Insert referenced
-    auto importing_schema = pps::to_unparsed(
-      {pps::subject{"imported.proto"}, imported.share()});
+    auto importing_schema = pps::subject_schema{
+      pps::subject{"imported.proto"}, imported.share()};
 
     store
       .upsert(
@@ -100,22 +100,22 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
     store.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
 
-    pps::unparsed_schema array_unsanitized{
+    pps::subject_schema array_unsanitized{
       pps::subject{"array"},
-      pps::unparsed_schema_definition{
+      pps::schema_definition{
         R"({"type": "array", "default": [], "items" : "string"})",
         pps::schema_type::avro}};
 
-    pps::canonical_schema array_sanitized{
+    pps::subject_schema array_sanitized{
       pps::subject{"array"},
-      pps::canonical_schema_definition{
+      pps::schema_definition{
         R"({"type":"array","items":"string","default":[]})",
         pps::schema_type::avro}};
 
     const pps::schema_version ver1{1};
 
     // Insert an unsorted schema "onto the topic".
-    auto referenced_schema = pps::canonical_schema{
+    auto referenced_schema = pps::subject_schema{
       pps::subject{"simple.proto"}, simple.share()};
     store
       .upsert(

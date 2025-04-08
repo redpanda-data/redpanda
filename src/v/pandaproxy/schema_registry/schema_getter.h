@@ -25,9 +25,9 @@ public:
       std::optional<schema_version> version,
       include_deleted inc_dec)
       = 0;
-    virtual ss::future<canonical_schema_definition>
+    virtual ss::future<schema_definition>
     get_schema_definition(schema_id id) = 0;
-    virtual ss::future<std::optional<canonical_schema_definition>>
+    virtual ss::future<std::optional<schema_definition>>
     maybe_get_schema_definition(schema_id id) = 0;
     virtual ~schema_getter() = default;
 };

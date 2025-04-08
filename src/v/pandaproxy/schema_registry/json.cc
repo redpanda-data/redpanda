@@ -178,14 +178,14 @@ struct json_schema_definition::impl {
     impl(
       document_context ctx,
       std::string_view name,
-      canonical_schema_definition::references refs)
+      schema_definition::references refs)
       : ctx{std::move(ctx)}
       , name{name}
       , refs(std::move(refs)) {}
 
     document_context ctx;
     ss::sstring name;
-    canonical_schema_definition::references refs;
+    schema_definition::references refs;
 };
 
 bool operator==(
@@ -202,12 +202,11 @@ std::ostream& operator<<(std::ostream& os, const json_schema_definition& def) {
     return os;
 }
 
-canonical_schema_definition::raw_string json_schema_definition::raw() const {
-    return canonical_schema_definition::raw_string{_impl->to_json()};
+schema_definition::raw_string json_schema_definition::raw() const {
+    return schema_definition::raw_string{_impl->to_json()};
 }
 
-const canonical_schema_definition::references&
-json_schema_definition::refs() const {
+const schema_definition::references& json_schema_definition::refs() const {
     return _impl->refs;
 }
 
@@ -230,7 +229,7 @@ std::string_view as_string_view(const json::Value& v) {
     return {v.GetString(), v.GetStringLength()};
 }
 
-ss::future<> check_references(sharded_store& store, canonical_schema schema) {
+ss::future<> check_references(sharded_store& store, subject_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         co_await store.get_id(ref.sub, ref.version)
           .handle_exception_type([&](const exception& e) -> schema_id {
@@ -2359,7 +2358,7 @@ result<id_to_schema_pointer> collect_bundled_schema_and_fix_refs(
 } // namespace
 
 ss::future<json_schema_definition>
-make_json_schema_definition(schema_getter&, canonical_schema schema) {
+make_json_schema_definition(schema_getter&, subject_schema schema) {
     auto doc
       = parse_json(schema.def().shared_raw()()).value(); // throws on error
     std::string_view name = schema.sub()();
@@ -2369,8 +2368,8 @@ make_json_schema_definition(schema_getter&, canonical_schema schema) {
         std::move(doc), name, std::move(refs))};
 }
 
-ss::future<canonical_schema> make_canonical_json_schema(
-  sharded_store& store, unparsed_schema unparsed_schema, normalize norm) {
+ss::future<subject_schema> make_canonical_json_schema(
+  sharded_store& store, subject_schema unparsed_schema, normalize norm) {
     auto [sub, unparsed] = std::move(unparsed_schema).destructure();
     auto [def, type, refs] = std::move(unparsed).destructure();
 
@@ -2384,10 +2383,10 @@ ss::future<canonical_schema> make_canonical_json_schema(
     json::Writer<json::chunked_buffer> w{out};
     ctx.doc.Accept(w);
 
-    canonical_schema schema{
+    subject_schema schema{
       std::move(sub),
-      canonical_schema_definition{
-        canonical_schema_definition::raw_string{std::move(out).as_iobuf()},
+      schema_definition{
+        schema_definition::raw_string{std::move(out).as_iobuf()},
         type,
         std::move(refs)}};
 

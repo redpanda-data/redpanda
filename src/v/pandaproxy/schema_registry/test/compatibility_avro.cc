@@ -28,8 +28,7 @@ namespace pps = pp::schema_registry;
 namespace {
 
 bool check_compatible(
-  const pps::canonical_schema_definition& r,
-  const pps::canonical_schema_definition& w) {
+  const pps::schema_definition& r, const pps::schema_definition& w) {
     pps::sharded_store s;
     return check_compatible(
              pps::make_avro_schema_definition(
@@ -42,8 +41,7 @@ bool check_compatible(
 }
 
 pps::compatibility_result check_compatible_verbose(
-  const pps::canonical_schema_definition& r,
-  const pps::canonical_schema_definition& w) {
+  const pps::schema_definition& r, const pps::schema_definition& w) {
     pps::sharded_store s;
     return check_compatible(
       pps::make_avro_schema_definition(
@@ -261,7 +259,7 @@ SEASTAR_THREAD_TEST_CASE(test_basic_full_transitive_compatibility) {
 SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
     // Parsing Canonical Form requires fields to be ordered:
     // name, type, fields, symbols, items, values, size
-    pps::canonical_schema_definition expected{
+    pps::schema_definition expected{
       R"({"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]})",
       pps::schema_type::avro};
     pps::sharded_store s;
@@ -274,7 +272,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
       std::
         is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
       "schema2 is an avro_schema_definition");
-    pps::canonical_schema_definition avro_conversion{valid};
+    pps::schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
     BOOST_CHECK_EQUAL(valid.name(), "myrecord");
 }
@@ -287,7 +285,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
           {R"({"type":"record","name":"foo","ignored_attr":true,"fields":[{"name":"bar","type":"float","extra_attr":true}]})",
            pps::schema_type::avro})
           .value();
-    pps::canonical_schema_definition expected{
+    pps::schema_definition expected{
       R"({"type":"record","name":"foo","fields":[{"name":"bar","type":"float","extra_attr":true}]})",
       pps::schema_type::avro};
     pps::sharded_store s;
@@ -301,7 +299,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {
       std::
         is_same_v<std::decay_t<decltype(valid)>, pps::avro_schema_definition>,
       "schema2 is an avro_schema_definition");
-    pps::canonical_schema_definition avro_conversion{valid};
+    pps::schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
 }
 

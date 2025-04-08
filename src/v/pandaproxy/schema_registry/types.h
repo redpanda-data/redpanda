@@ -120,46 +120,44 @@ struct schema_reference {
 };
 
 ///\brief Definition of a schema and its type.
-template<typename Tag>
-class typed_schema_definition {
+class schema_definition {
+    using schema_definition_iobuf
+      = named_type<iobuf, struct schema_definition_tag>;
+
 public:
-    using tag = Tag;
-    struct raw_string : named_type<iobuf, tag> {
+    struct raw_string : schema_definition_iobuf {
         raw_string() = default;
         explicit raw_string(iobuf&& buf) noexcept
-          : named_type<iobuf, tag>{std::move(buf)} {}
+          : schema_definition_iobuf{std::move(buf)} {}
         explicit raw_string(std::string_view sv)
-          : named_type<iobuf, tag>{iobuf::from(sv)} {}
+          : schema_definition_iobuf{iobuf::from(sv)} {}
     };
     using references = std::vector<schema_reference>;
 
-    typed_schema_definition() = default;
-    typed_schema_definition(typed_schema_definition&&) noexcept = default;
-    typed_schema_definition(const typed_schema_definition&) = delete;
-    typed_schema_definition& operator=(typed_schema_definition&&) noexcept
-      = default;
-    typed_schema_definition& operator=(const typed_schema_definition& other)
-      = delete;
-    ~typed_schema_definition() noexcept = default;
+    schema_definition() = default;
+    schema_definition(schema_definition&&) noexcept = default;
+    schema_definition(const schema_definition&) = delete;
+    schema_definition& operator=(schema_definition&&) noexcept = default;
+    schema_definition& operator=(const schema_definition& other) = delete;
+    ~schema_definition() noexcept = default;
 
     template<typename T>
-    typed_schema_definition(T&& def, schema_type type)
+    schema_definition(T&& def, schema_type type)
       : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{} {}
 
     template<typename T>
-    typed_schema_definition(T&& def, schema_type type, references refs)
+    schema_definition(T&& def, schema_type type, references refs)
       : _def{std::forward<T>(def)}
       , _type{type}
       , _refs{std::move(refs)} {}
 
-    friend bool operator==(
-      const typed_schema_definition& lhs, const typed_schema_definition& rhs)
+    friend bool
+    operator==(const schema_definition& lhs, const schema_definition& rhs)
       = default;
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const typed_schema_definition&);
+    friend std::ostream& operator<<(std::ostream& os, const schema_definition&);
 
     schema_type type() const { return _type; }
 
@@ -173,11 +171,9 @@ public:
     const references& refs() const& { return _refs; }
     references refs() && { return std::move(_refs); }
 
-    typed_schema_definition share() const {
-        return {shared_raw(), type(), refs()};
-    }
+    schema_definition share() const { return {shared_raw(), type(), refs()}; }
 
-    typed_schema_definition copy() const {
+    schema_definition copy() const {
         return {raw_string{_def().copy()}, type(), refs()};
     }
 
@@ -191,35 +187,14 @@ private:
     references _refs;
 };
 
-///\brief An unvalidated definition of the schema and its type.
-///
-/// This comes from the user and should be considered as potentially
-/// ill-formed.
-using unparsed_schema_definition
-  = typed_schema_definition<struct unparsed_schema_defnition_tag>;
-
-///\brief A canonical definition of the schema and its type.
-///
-/// This form is stored on the topic and returned to the user.
-using canonical_schema_definition
-  = typed_schema_definition<struct canonical_schema_definition_tag>;
-
-///\brief Util function for when a canonical schema need to be re-ingested
-unparsed_schema_definition to_unparsed(canonical_schema_definition&&);
-
-static const unparsed_schema_definition invalid_schema_definition{
-  "", schema_type::avro};
-
 ///\brief The definition of an avro schema.
 class avro_schema_definition {
 public:
     explicit avro_schema_definition(
-      avro::ValidSchema vs, canonical_schema_definition::references refs);
+      avro::ValidSchema vs, schema_definition::references refs);
 
-    canonical_schema_definition::raw_string raw() const;
-    const canonical_schema_definition::references& refs() const {
-        return _refs;
-    };
+    schema_definition::raw_string raw() const;
+    const schema_definition::references& refs() const { return _refs; };
 
     const avro::ValidSchema& operator()() const;
 
@@ -231,15 +206,13 @@ public:
 
     constexpr schema_type type() const { return schema_type::avro; }
 
-    explicit operator canonical_schema_definition() const {
-        return {raw(), type()};
-    }
+    explicit operator schema_definition() const { return {raw(), type()}; }
 
     ss::sstring name() const;
 
 private:
     avro::ValidSchema _impl;
-    canonical_schema_definition::references _refs;
+    schema_definition::references _refs;
 };
 
 class protobuf_schema_definition {
@@ -248,14 +221,12 @@ public:
     using pimpl = ss::shared_ptr<const impl>;
 
     explicit protobuf_schema_definition(
-      pimpl p, canonical_schema_definition::references refs)
+      pimpl p, schema_definition::references refs)
       : _impl{std::move(p)}
       , _refs(std::move(refs)) {}
 
-    canonical_schema_definition::raw_string raw() const;
-    const canonical_schema_definition::references& refs() const {
-        return _refs;
-    };
+    schema_definition::raw_string raw() const;
+    const schema_definition::references& refs() const { return _refs; };
 
     const impl& operator()() const { return *_impl; }
 
@@ -268,7 +239,7 @@ public:
 
     constexpr schema_type type() const { return schema_type::protobuf; }
 
-    explicit operator canonical_schema_definition() const {
+    explicit operator schema_definition() const {
         return {raw(), type(), refs()};
     }
 
@@ -277,7 +248,7 @@ public:
 
 private:
     pimpl _impl;
-    canonical_schema_definition::references _refs;
+    schema_definition::references _refs;
 };
 
 class json_schema_definition {
@@ -288,8 +259,8 @@ public:
     explicit json_schema_definition(pimpl p)
       : _impl{std::move(p)} {}
 
-    canonical_schema_definition::raw_string raw() const;
-    const canonical_schema_definition::references& refs() const;
+    schema_definition::raw_string raw() const;
+    const schema_definition::references& refs() const;
 
     const impl& operator()() const { return *_impl; }
 
@@ -301,7 +272,7 @@ public:
 
     constexpr schema_type type() const { return schema_type::json; }
 
-    explicit operator canonical_schema_definition() const {
+    explicit operator schema_definition() const {
         return {raw(), type(), refs()};
     }
 
@@ -354,16 +325,15 @@ public:
         return visit([](const auto& def) { return def.type(); });
     }
 
-    unparsed_schema_definition::raw_string raw() const& {
+    schema_definition::raw_string raw() const& {
         return visit([](auto&& def) {
-            return unparsed_schema_definition::raw_string{def.raw()()};
+            return schema_definition::raw_string{def.raw()()};
         });
     }
 
-    unparsed_schema_definition::raw_string raw() && {
+    schema_definition::raw_string raw() && {
         return visit([](auto def) {
-            return unparsed_schema_definition::raw_string{
-              std::move(def).raw()()};
+            return schema_definition::raw_string{std::move(def).raw()()};
         });
     }
 
@@ -431,22 +401,19 @@ struct seq_marker {
 };
 
 ///\brief A schema with its subject
-template<typename Tag>
-class typed_schema {
+class subject_schema {
 public:
-    using tag = Tag;
-    using schema_definition = typed_schema_definition<tag>;
+    subject_schema() = default;
 
-    typed_schema() = default;
-
-    typed_schema(subject sub, schema_definition def)
+    subject_schema(subject sub, schema_definition def)
       : _sub{std::move(sub)}
       , _def{std::move(def)} {}
 
-    friend bool operator==(const typed_schema& lhs, const typed_schema& rhs)
+    friend bool operator==(const subject_schema& lhs, const subject_schema& rhs)
       = default;
 
-    friend std::ostream& operator<<(std::ostream& os, const typed_schema& ref);
+    friend std::ostream&
+    operator<<(std::ostream& os, const subject_schema& schema);
 
     const subject& sub() const& { return _sub; }
     subject sub() && { return std::move(_sub); }
@@ -456,8 +423,8 @@ public:
     const schema_definition& def() const& { return _def; }
     schema_definition def() && { return std::move(_def); }
 
-    typed_schema share() const { return {sub(), def().share()}; }
-    typed_schema copy() const { return {sub(), def().copy()}; }
+    subject_schema share() const { return {sub(), def().share()}; }
+    subject_schema copy() const { return {sub(), def().copy()}; }
 
     auto destructure() && {
         return make_tuple(std::move(_sub), std::move(_def));
@@ -468,28 +435,17 @@ private:
     schema_definition _def{"", schema_type::avro};
 };
 
-using unparsed_schema = typed_schema<unparsed_schema_definition::tag>;
-using canonical_schema = typed_schema<canonical_schema_definition::tag>;
-
-///\brief Util function for when a canonical schema need to be re-ingested
-unparsed_schema to_unparsed(canonical_schema&&);
-
-template<typename tag>
-struct typed_stored_schema {
-    typed_schema<tag> schema;
+///\brief Complete description of a subject and schema for a version, as stored
+/// in store
+struct stored_schema {
+    subject_schema schema;
     schema_version version{invalid_schema_version};
     schema_id id{invalid_schema_id};
     is_deleted deleted{false};
-    typed_stored_schema share() const {
+    stored_schema share() const {
         return {schema.share(), version, id, deleted};
     }
 };
-///\brief Complete description of a subject and schema for a version, as stored
-/// in store
-using unparsed_stored_schema
-  = typed_stored_schema<unparsed_schema_definition::tag>;
-///\brief Complete description of a subject and schema for a version.
-using stored_schema = typed_stored_schema<canonical_schema_definition::tag>;
 
 enum class compatibility_level {
     none = 0,
@@ -604,16 +560,7 @@ namespace json {
 template<typename Buffer>
 void rjson_serialize(
   json::iobuf_writer<Buffer>& w,
-  const pandaproxy::schema_registry::canonical_schema_definition::raw_string&
-    def) {
-    w.String(def());
-}
-
-template<typename Buffer>
-void rjson_serialize(
-  json::iobuf_writer<Buffer>& w,
-  const pandaproxy::schema_registry::unparsed_schema_definition::raw_string&
-    def) {
+  const pandaproxy::schema_registry::schema_definition::raw_string& def) {
     w.String(def());
 }
 

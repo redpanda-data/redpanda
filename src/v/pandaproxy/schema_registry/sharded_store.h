@@ -33,14 +33,14 @@ public:
     ss::future<> stop();
 
     ///\brief Make the canonical form of the schema
-    ss::future<canonical_schema> make_canonical_schema(
-      unparsed_schema schema, normalize norm = normalize::no);
+    ss::future<subject_schema> make_canonical_schema(
+      subject_schema schema, normalize norm = normalize::no);
 
     ///\brief Check the schema parses with the native format
-    ss::future<void> validate_schema(canonical_schema schema);
+    ss::future<void> validate_schema(subject_schema schema);
 
     ///\brief Construct a schema in the native format
-    ss::future<valid_schema> make_valid_schema(canonical_schema schema);
+    ss::future<valid_schema> make_valid_schema(subject_schema schema);
 
     struct has_schema_result {
         std::optional<schema_id> id;
@@ -58,26 +58,24 @@ public:
 
     ss::future<bool> upsert(
       seq_marker marker,
-      unparsed_schema schema,
+      subject_schema schema,
       schema_id id,
       schema_version version,
       is_deleted deleted);
 
     ss::future<bool> has_schema(schema_id id);
     ss::future<stored_schema> has_schema(
-      canonical_schema schema,
+      subject_schema schema,
       include_deleted inc_del = include_deleted::no,
       normalize norm = normalize::no);
 
     ///\brief Return a schema definition by id.
-    ss::future<canonical_schema_definition>
-    get_schema_definition(schema_id id) override;
+    ss::future<schema_definition> get_schema_definition(schema_id id) override;
 
     ///\brief Return a schema definition by id, without any processing.
-    ss::future<unparsed_schema_definition>
-    get_unparsed_schema_definition(schema_id id);
+    ss::future<schema_definition> get_unparsed_schema_definition(schema_id id);
 
-    ss::future<std::optional<canonical_schema_definition>>
+    ss::future<std::optional<schema_definition>>
     maybe_get_schema_definition(schema_id id) override;
 
     ///\brief Return a list of subject-versions for the shema id.
@@ -195,7 +193,7 @@ public:
     /// If the compatibility level is transitive, then all versions are checked,
     /// otherwise checks are against the version provided and newer.
     ss::future<bool>
-    is_compatible(schema_version version, canonical_schema new_schema);
+    is_compatible(schema_version version, subject_schema new_schema);
 
     ///\brief Check if the provided schema is compatible with the subject and
     /// version, according the the current compatibility, with the result
@@ -204,7 +202,7 @@ public:
     /// If the compatibility level is transitive, then all versions are checked,
     /// otherwise checks are against the version provided and newer.
     ss::future<compatibility_result> is_compatible(
-      schema_version version, canonical_schema new_schema, verbose is_verbose);
+      schema_version version, subject_schema new_schema, verbose is_verbose);
 
     ss::future<bool> has_version(const subject&, schema_id, include_deleted);
 
@@ -217,10 +215,9 @@ public:
 
 private:
     ss::future<compatibility_result> do_is_compatible(
-      schema_version version, canonical_schema new_schema, verbose is_verbose);
+      schema_version version, subject_schema new_schema, verbose is_verbose);
 
-    ss::future<bool>
-    upsert_schema(schema_id id, unparsed_schema_definition def);
+    ss::future<bool> upsert_schema(schema_id id, schema_definition def);
     ss::future<> delete_schema(schema_id id);
 
     struct insert_subject_result {

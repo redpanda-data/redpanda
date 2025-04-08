@@ -496,7 +496,7 @@ result<void> sanitize(json::Value::Array& a, sanitize_context& ctx) {
 } // namespace
 
 avro_schema_definition::avro_schema_definition(
-  avro::ValidSchema vs, canonical_schema_definition::references refs)
+  avro::ValidSchema vs, schema_definition::references refs)
   : _impl(std::move(vs))
   , _refs(std::move(refs)) {}
 
@@ -518,11 +518,10 @@ std::ostream& operator<<(std::ostream& os, const avro_schema_definition& def) {
     return os;
 }
 
-canonical_schema_definition::raw_string avro_schema_definition::raw() const {
+schema_definition::raw_string avro_schema_definition::raw() const {
     iobuf_ostream os;
     _impl.toJson(os.ostream());
-    return canonical_schema_definition::raw_string{
-      json::minify(std::move(os).buf())};
+    return schema_definition::raw_string{json::minify(std::move(os).buf())};
 }
 
 ss::sstring avro_schema_definition::name() const {
@@ -534,32 +533,32 @@ public:
     bool contains(const ss::sstring& name) const {
         return _names.contains(name);
     }
-    bool insert(ss::sstring name, canonical_schema_definition def) {
+    bool insert(ss::sstring name, schema_definition def) {
         bool inserted = _names.insert(std::move(name)).second;
         if (inserted) {
             _schemas.push_back(std::move(def).raw());
         }
         return inserted;
     }
-    canonical_schema_definition::raw_string flatten() && {
+    schema_definition::raw_string flatten() && {
         iobuf out;
         for (auto& s : _schemas) {
             out.append(std::move(s));
             out.append("\n", 1);
         }
-        return canonical_schema_definition::raw_string{std::move(out)};
+        return schema_definition::raw_string{std::move(out)};
     }
 
 private:
     absl::flat_hash_set<ss::sstring> _names;
-    std::vector<canonical_schema_definition::raw_string> _schemas;
+    std::vector<schema_definition::raw_string> _schemas;
 };
 
 ss::future<collected_schema> collect_schema(
   schema_getter& store,
   collected_schema collected,
   ss::sstring name,
-  canonical_schema schema) {
+  subject_schema schema) {
     for (const auto& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
@@ -573,7 +572,7 @@ ss::future<collected_schema> collect_schema(
 }
 
 ss::future<avro_schema_definition>
-make_avro_schema_definition(schema_getter& store, canonical_schema schema) {
+make_avro_schema_definition(schema_getter& store, subject_schema schema) {
     std::optional<avro::Exception> ex;
     try {
         auto name = schema.sub()();
@@ -592,8 +591,8 @@ make_avro_schema_definition(schema_getter& store, canonical_schema schema) {
         fmt::format("Invalid schema {}", ex->what())})));
 }
 
-result<canonical_schema_definition>
-sanitize_avro_schema_definition(unparsed_schema_definition def) {
+result<schema_definition>
+sanitize_avro_schema_definition(schema_definition def) {
     json::Document doc;
     constexpr auto flags = rapidjson::kParseDefaultFlags
                            | rapidjson::kParseStopWhenDoneFlag;
@@ -631,8 +630,8 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
         return error_info{error_code::schema_invalid, "Invalid schema"};
     }
 
-    return canonical_schema_definition{
-      canonical_schema_definition::raw_string{std::move(buf).as_iobuf()},
+    return schema_definition{
+      schema_definition::raw_string{std::move(buf).as_iobuf()},
       schema_type::avro,
       def.refs()};
 }

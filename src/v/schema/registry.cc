@@ -43,7 +43,7 @@ public:
         co_return reader;
     }
 
-    ss::future<ppsr::canonical_schema_definition>
+    ss::future<ppsr::schema_definition>
     get_schema_definition(ppsr::schema_id id) const override {
         auto [reader, _] = co_await service();
         co_return co_await reader->get_schema_definition(id);
@@ -56,7 +56,7 @@ public:
           sub, version, ppsr::include_deleted::no);
     }
     ss::future<ppsr::schema_id>
-    create_schema(ppsr::unparsed_schema schema) override {
+    create_schema(ppsr::subject_schema schema) override {
         auto [reader, writer] = co_await service();
         co_await writer->read_sync();
         auto parsed = co_await reader->make_canonical_schema(std::move(schema));
@@ -83,7 +83,7 @@ public:
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<ppsr::canonical_schema_definition>
+    ss::future<ppsr::schema_definition>
     get_schema_definition(ppsr::schema_id) const override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
@@ -93,7 +93,7 @@ public:
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }
-    ss::future<ppsr::schema_id> create_schema(ppsr::unparsed_schema) override {
+    ss::future<ppsr::schema_id> create_schema(ppsr::subject_schema) override {
         throw std::logic_error(
           "invalid attempted usage of a disabled schema registry");
     }

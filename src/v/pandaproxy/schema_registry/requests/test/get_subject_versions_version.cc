@@ -20,7 +20,7 @@ namespace pps = pandaproxy::schema_registry;
 SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
     const ss::sstring escaped_schema_def{
       R"({\"type\":\"record\",\"name\":\"test\",\"fields\":[{\"type\":\"string\",\"name\":\"field1\"},{\"type\":\"com.acme.Referenced\",\"name\":\"int\"}]})"};
-    const pps::canonical_schema_definition schema_def{
+    const pps::schema_definition schema_def{
       R"({"type":"record","name":"test","fields":[{"type":"string","name":"field1"},{"type":"com.acme.Referenced","name":"int"}]})",
       pps::schema_type::avro,
       {{{"com.acme.Referenced"},

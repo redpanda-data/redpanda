@@ -104,7 +104,7 @@ std::vector<int32_t> get_proto_offsets(iobuf_parser& p) {
 ss::future<std::optional<ss::sstring>> get_record_name(
   pandaproxy::schema_registry::sharded_store& store,
   subject_name_strategy sns,
-  canonical_schema_definition schema,
+  schema_definition schema,
   std::optional<std::vector<int32_t>>& offsets) {
     if (sns == subject_name_strategy::topic_name) {
         // Result is successfully nothing
@@ -235,7 +235,7 @@ public:
         }
 
         // Determine the schema type
-        std::optional<canonical_schema_definition> schema;
+        std::optional<schema_definition> schema;
         try {
             schema.emplace(co_await _api->_store->get_schema_definition(id));
         } catch (const exception& ex) {

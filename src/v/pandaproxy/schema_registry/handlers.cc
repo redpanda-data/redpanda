@@ -428,7 +428,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
     // Force 40401 if no subject
     co_await rq.service().schema_store().get_versions(sub, inc_del);
 
-    canonical_schema schema;
+    subject_schema schema;
     try {
         auto unparsed = co_await ppj::rjson_parse(
           std::move(rq.req), post_subject_versions_request_handler<>{sub});
@@ -690,7 +690,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
         version = parse_numerical_schema_version(ver).value();
     }
 
-    canonical_schema schema;
+    subject_schema schema;
     try {
         schema = co_await rq.service().schema_store().make_canonical_schema(
           std::move(unparsed.def));

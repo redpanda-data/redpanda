@@ -32,7 +32,7 @@ namespace pandaproxy::schema_registry {
 ///
 /// Returns error_code::schema_invalid on failure
 template<typename Encoding>
-result<canonical_schema_definition::raw_string>
+result<schema_definition::raw_string>
 make_schema_definition(std::string_view sv) {
     // Validate and minify
     // TODO (Ben): Minify. e.g.:
@@ -50,7 +50,7 @@ make_schema_definition(std::string_view sv) {
     ::json::chunked_buffer buf;
     ::json::Writer<::json::chunked_buffer> w{buf};
     doc.Accept(w);
-    return canonical_schema_definition::raw_string{std::move(buf).as_iobuf()};
+    return schema_definition::raw_string{std::move(buf).as_iobuf()};
 }
 
 template<typename Tag>

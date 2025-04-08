@@ -21,17 +21,13 @@ class Descriptor;
 namespace pandaproxy::schema_registry {
 
 ss::future<protobuf_schema_definition> make_protobuf_schema_definition(
-  schema_getter& store,
-  canonical_schema schema,
-  normalize norm = normalize::no);
+  schema_getter& store, subject_schema schema, normalize norm = normalize::no);
 
-ss::future<canonical_schema_definition> validate_protobuf_schema(
-  sharded_store& store,
-  canonical_schema schema,
-  normalize norm = normalize::no);
+ss::future<schema_definition> validate_protobuf_schema(
+  sharded_store& store, subject_schema schema, normalize norm = normalize::no);
 
-ss::future<canonical_schema> make_canonical_protobuf_schema(
-  sharded_store& store, unparsed_schema schema, normalize norm = normalize::no);
+ss::future<subject_schema> make_canonical_protobuf_schema(
+  sharded_store& store, subject_schema schema, normalize norm = normalize::no);
 
 compatibility_result check_compatible(
   const protobuf_schema_definition& reader,

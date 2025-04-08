@@ -33,7 +33,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     auto sub = pps::subject{"sub"};
     s.upsert(
        dummy_marker,
-       pps::to_unparsed({sub, schema1.share()}),
+       pps::subject_schema{sub, schema1.share()},
        pps::schema_id{1},
        pps::schema_version{1},
        pps::is_deleted::no)
@@ -43,7 +43,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
       s.is_compatible(pps::schema_version{1}, {sub, schema2.share()}).get());
     s.upsert(
        dummy_marker,
-       pps::to_unparsed({sub, schema2.share()}),
+       pps::subject_schema{sub, schema2.share()},
        pps::schema_id{2},
        pps::schema_version{2},
        pps::is_deleted::no)
@@ -56,7 +56,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     // Insert schema with non-defaulted field
     s.upsert(
        dummy_marker,
-       pps::to_unparsed({sub, schema2.share()}),
+       pps::subject_schema{sub, schema2.share()},
        pps::schema_id{2},
        pps::schema_version{2},
        pps::is_deleted::no)
