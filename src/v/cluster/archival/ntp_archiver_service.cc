@@ -923,12 +923,7 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
         std::optional<batch_result> result;
         auto track_paused = _probe->register_archiver_on_hold(uploads_paused);
         if (!uploads_paused) {
-            result = co_await upload_next_candidates(archival_stm_fence{
-              .read_write_fence = fence,
-              // Only use the rw-fence if the feature is enabled which requires
-              // major version upgrade.
-              .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-            });
+            result = co_await upload_next_candidates();
         }
         if (result.has_value()) {
             auto [compacted_upload_result, non_compacted_upload_result]
@@ -2346,7 +2341,6 @@ model::offset ntp_archiver::max_uploadable_offset_exclusive() const {
 }
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
-  archival_stm_fence fence,
   std::optional<model::offset> unsafe_max_offset_override_exclusive) {
     auto max_offset_exclusive = unsafe_max_offset_override_exclusive
                                   ? *unsafe_max_offset_override_exclusive
@@ -2359,6 +2353,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
     ss::gate::holder holder(_gate);
     try {
         auto units = co_await _mutex.get_units(_as);
+        auto fence = get_rw_fence();
         auto scheduled_uploads = co_await schedule_uploads(
           max_offset_exclusive);
         co_return co_await wait_all_scheduled_uploads(
@@ -2503,6 +2498,29 @@ std::ostream& operator<<(std::ostream& os, wait_result fr) {
     return os;
 }
 
+archival_stm_fence ntp_archiver::get_rw_fence() const {
+    auto emit_read_write_fence
+      = !config::shard_local_cfg()
+           .cloud_storage_disable_archival_stm_rw_fence.value()
+        && _feature_table.local().is_active(
+          features::feature::cloud_storage_metadata_rw_fence);
+
+    if (emit_read_write_fence && _mutex.available_units() > 0) {
+        vassert(
+          false,
+          "[{}] Concurrency violation. Fence acquired without holding a mutex.",
+          _ntp.path());
+    }
+
+    return {
+      .read_write_fence
+      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
+      // Only use the rw-fence if the feature is enabled which requires
+      // major version upgrade.
+      .emit_rw_fence_cmd = emit_read_write_fence,
+    };
+}
+
 ss::future<> ntp_archiver::housekeeping() {
     try {
         if (may_begin_uploads()) {
@@ -2545,13 +2563,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
         co_return;
     }
 
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    archival_stm_fence fence = get_rw_fence();
 
     std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
     std::optional<std::chrono::milliseconds> retention_ms
@@ -2619,13 +2631,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     if (!may_begin_uploads()) {
         co_return;
     }
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    archival_stm_fence fence = get_rw_fence();
     auto backlog = co_await _manifest_view->get_retention_backlog();
     if (backlog.has_failure()) {
         if (backlog.error() == cloud_storage::error_outcome::shutting_down) {
@@ -3069,13 +3075,7 @@ ss::future<> ntp_archiver::apply_retention() {
     if (!may_begin_uploads()) {
         co_return;
     }
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    archival_stm_fence fence = get_rw_fence();
     auto arch_so = manifest().get_archive_start_offset();
     auto stm_so = manifest().get_start_offset();
     if (arch_so != model::offset{} && arch_so != stm_so) {
@@ -3168,13 +3168,7 @@ ss::future<> ntp_archiver::garbage_collect() {
         co_return;
     }
 
-    archival_stm_fence fence = {
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    archival_stm_fence fence = get_rw_fence();
 
     // If we are about to delete segments, we must ensure that the remote
     // manifest is fully up to date, so that it is definitely not referring
@@ -3295,13 +3289,8 @@ ntp_archiver::get_housekeeping_jobs() {
 ss::future<ntp_archiver::find_reupload_candidate_result>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     ss::gate::holder holder(_gate);
-    archival_stm_fence rw_fence{
-      .read_write_fence
-      = _parent.archival_meta_stm()->manifest().get_applied_offset(),
-      // Only use the rw-fence if the feature is enabled which requires
-      // major version upgrade.
-      .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
-    };
+    auto units = co_await _mutex.get_units(_as);
+    archival_stm_fence rw_fence = get_rw_fence();
     if (!may_begin_uploads()) {
         co_return find_reupload_candidate_result{};
     }
@@ -3312,7 +3301,6 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
-    auto units = co_await _mutex.get_units(_as);
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
@@ -3336,7 +3324,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           },
           [this, &run, &rw_fence, units = std::move(units)](
             segment_collector_stream& collector_stream) mutable
-            -> find_reupload_candidate_result {
+          -> find_reupload_candidate_result {
               if (
                 collector_stream.size != run->meta.size_bytes
                 || collector_stream.start_offset != run->meta.base_offset

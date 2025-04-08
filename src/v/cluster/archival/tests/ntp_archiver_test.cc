@@ -331,6 +331,9 @@ FIXTURE_TEST(
     // segment upload is successful. Indices uploaded without segments are not
     // found during cleanup, thus leaving behind orphan items in the bucket.
 
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
+
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1)},
     };
@@ -380,10 +383,7 @@ FIXTURE_TEST(
         amv->stop().get();
     });
 
-    auto res = archiver
-                 .upload_next_candidates(
-                   archival_stm_fence{.emit_rw_fence_cmd = false})
-                 .get();
+    auto res = archiver.upload_next_candidates().get();
 
     auto&& [non_compacted_result, compacted_result] = res;
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
@@ -400,6 +400,8 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
      * retention was applied and garbage collection has run, we should
      * see DELETE requests for the old segments being made.
      */
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
 
     auto old_stamp = model::timestamp{
       model::timestamp::now().value()
@@ -523,6 +525,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
       .set_value(std::optional<size_t>{2});
     cfg.get("cloud_storage_spillover_manifest_size")
       .set_value(std::optional<size_t>{std::nullopt});
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
 
     // Write segments to local log
     auto old_stamp = model::timestamp{
@@ -702,6 +705,8 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
      * updated) despite the failure to delete. This should have happened
      * as the backlog size was breached (3 > 2).
      */
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
 
     auto old_stamp = model::timestamp{
       model::timestamp::now().value()

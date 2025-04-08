@@ -233,8 +233,7 @@ public:
     ///        segments bypassing the raft thus not advancing the committed
     ///        offset.
     /// \return future that returns number of uploaded/failed segments
-    virtual ss::future<batch_result> upload_next_candidates(
-      archival_stm_fence fence,
+    ss::future<batch_result> upload_next_candidates(
       std::optional<model::offset> unsafe_max_offset_override_exclusive
       = std::nullopt);
 
@@ -445,6 +444,10 @@ private:
       = "upload_loop_prologue";
     static constexpr const char* segment_merger_ctx_label
       = "adjacent_segment_merger";
+
+    /// Get the current fence value from the archival STM.
+    /// Prevent incorrect useage by checking if the mutex is locked.
+    archival_stm_fence get_rw_fence() const;
 
     /// Delete objects, return true on success and false otherwise
     ss::future<bool>

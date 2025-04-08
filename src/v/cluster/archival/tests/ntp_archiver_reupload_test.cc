@@ -757,6 +757,10 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
 
 FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     // NOTE: different terms so compaction leaves one segment each.
+    scoped_config cfg;
+    // Disable rw-fence because the test depends on segment alignment
+    // which is affected by configuration batches.
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(0), model::term_id(1), 10, 2},
       {manifest_ntp, model::offset(10), model::term_id(1), 10, 2},

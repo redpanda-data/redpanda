@@ -92,8 +92,7 @@ public:
                 co_return -1;
             }
             if (
-              (co_await archiver.upload_next_candidates(
-                 archival::archival_stm_fence{.emit_rw_fence_cmd = false}))
+              (co_await archiver.upload_next_candidates())
                 .non_compacted_upload_result.num_failed
               > 0) {
                 co_return -1;

@@ -561,8 +561,7 @@ archiver_fixture::do_upload_next(
     if (model::timeout_clock::now() > deadline) {
         co_return archival::ntp_archiver::batch_result{};
     }
-    auto result = co_await archiver.upload_next_candidates(
-      archival_stm_fence{.emit_rw_fence_cmd = false}, lso);
+    auto result = co_await archiver.upload_next_candidates(lso);
     auto num_success = result.compacted_upload_result.num_succeeded
                        + result.non_compacted_upload_result.num_succeeded;
     if (num_success > 0) {
@@ -586,10 +585,8 @@ void archiver_fixture::upload_and_verify(
     tests::cooperative_spin_wait_with_timeout(
       10s,
       [&archiver, expected, lso]() {
-          return archiver
-            .upload_next_candidates(
-              archival_stm_fence{.emit_rw_fence_cmd = false}, lso)
-            .then([expected](auto result) { return result == expected; });
+          return archiver.upload_next_candidates(lso).then(
+            [expected](auto result) { return result == expected; });
       })
       .get();
 }
