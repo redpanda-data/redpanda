@@ -81,11 +81,15 @@ ss::future<> sharded_store::start(is_mutable mut, ss::smp_service_group sg) {
 
 ss::future<> sharded_store::stop() { return _store.stop(); }
 
-ss::future<subject_schema>
-sharded_store::make_canonical_schema(subject_schema schema, normalize norm) {
-    norm = norm
-           || normalize{
-             config::shard_local_cfg().schema_registry_always_normalize()};
+ss::future<subject_schema> sharded_store::make_canonical_schema(
+  subject_schema schema,
+  normalize norm,
+  bool consider_always_normalize_config) {
+    if (consider_always_normalize_config) {
+        norm = norm
+               || normalize{
+                 config::shard_local_cfg().schema_registry_always_normalize()};
+    }
     switch (schema.type()) {
     case schema_type::avro: {
         auto [sub, unparsed] = std::move(schema).destructure();
@@ -299,6 +303,14 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
+    try {
+        subject_schema canonical = co_await make_canonical_schema(
+          schema.share(), normalize::no, false);
+        schema = std::move(canonical);
+    } catch (...) {
+        // do nothing. In case make_canonical_schema fails, continue with the
+        // schema as-is in the topic
+    }
     auto [sub, def] = std::move(schema).destructure();
     co_await upsert_schema(id, std::move(def));
     co_return co_await upsert_subject(

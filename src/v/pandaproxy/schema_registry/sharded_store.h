@@ -34,7 +34,9 @@ public:
 
     ///\brief Make the canonical form of the schema
     ss::future<subject_schema> make_canonical_schema(
-      subject_schema schema, normalize norm = normalize::no);
+      subject_schema schema,
+      normalize norm = normalize::no,
+      bool consider_always_normalize_config = true);
 
     ///\brief Check the schema parses with the native format
     ss::future<void> validate_schema(subject_schema schema);
