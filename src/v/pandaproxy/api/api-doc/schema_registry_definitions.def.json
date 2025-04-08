@@ -38,7 +38,7 @@
         }
       }
     },
-    "subject_schema": {
+    "stored_schema": {
       "type": "object",
       "properties": {
         "subject": {

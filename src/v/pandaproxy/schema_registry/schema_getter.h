@@ -20,7 +20,7 @@ namespace pandaproxy::schema_registry {
 
 class schema_getter {
 public:
-    virtual ss::future<subject_schema> get_subject_schema(
+    virtual ss::future<stored_schema> get_subject_schema(
       subject sub,
       std::optional<schema_version> version,
       include_deleted inc_dec)

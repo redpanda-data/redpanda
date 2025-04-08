@@ -62,7 +62,7 @@ public:
 
     wasm::engine* engine() { return _engine.get(); }
 
-    const std::vector<pandaproxy::schema_registry::subject_schema>&
+    const std::vector<pandaproxy::schema_registry::stored_schema>&
     registered_schemas() const;
 
     std::vector<ss::sstring> log_lines() const { return _log_lines; }

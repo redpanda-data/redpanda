@@ -157,7 +157,7 @@ public:
     }
 
     ///\brief Return a schema by subject and version.
-    result<unparsed_subject_schema> get_subject_schema(
+    result<unparsed_stored_schema> get_subject_schema(
       const subject& sub,
       std::optional<schema_version> version,
       include_deleted inc_del) const {
@@ -166,7 +166,7 @@ public:
 
         auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
 
-        return unparsed_subject_schema{
+        return unparsed_stored_schema{
           .schema = {sub, std::move(def)},
           .version = v_id.version,
           .id = v_id.id,

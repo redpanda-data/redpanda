@@ -168,7 +168,7 @@ model::record_batch WasmTestFixture::make_tiny_batch(iobuf record_value) {
     b.add_raw_kv(model::test::make_iobuf(), std::move(record_value));
     return std::move(b).build();
 }
-const std::vector<pandaproxy::schema_registry::subject_schema>&
+const std::vector<pandaproxy::schema_registry::stored_schema>&
 WasmTestFixture::registered_schemas() const {
     return _sr->get_all();
 }

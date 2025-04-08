@@ -89,7 +89,7 @@ read_encoded_schema_def(ffi::reader* r) {
 
 template<typename T>
 void write_encoded_schema_subject(
-  const pandaproxy::schema_registry::subject_schema& schema, T* w) {
+  const pandaproxy::schema_registry::stored_schema& schema, T* w) {
     w->append(schema.id());
     w->append(schema.version());
     // not writing the subject because the client should already have it.

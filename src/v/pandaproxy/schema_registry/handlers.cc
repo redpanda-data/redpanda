@@ -486,7 +486,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
         unparsed.id = invalid_schema_id;
     }
 
-    subject_schema schema{
+    stored_schema schema{
       co_await rq.service().schema_store().make_canonical_schema(
         std::move(unparsed.def), norm),
       unparsed.version.value_or(invalid_schema_version),

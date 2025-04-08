@@ -22,11 +22,11 @@ namespace ppsr = pandaproxy::schema_registry;
 
 } // namespace
 
-ss::future<ppsr::subject_schema> schema::fake_store::get_subject_schema(
+ss::future<ppsr::stored_schema> schema::fake_store::get_subject_schema(
   ppsr::subject sub,
   std::optional<ppsr::schema_version> version,
   ppsr::include_deleted) {
-    std::optional<ppsr::subject_schema> found;
+    std::optional<ppsr::stored_schema> found;
     for (const auto& s : schemas) {
         if (s.schema.sub() != sub) {
             continue;
@@ -73,7 +73,7 @@ schema::fake_registry::get_schema_definition(ppsr::schema_id id) const {
     maybe_throw_injected_failure();
     return _store.get_schema_definition(id);
 }
-ss::future<ppsr::subject_schema> schema::fake_registry::get_subject_schema(
+ss::future<ppsr::stored_schema> schema::fake_registry::get_subject_schema(
   ppsr::subject sub, std::optional<ppsr::schema_version> version) const {
     maybe_throw_injected_failure();
     return _store.get_subject_schema(sub, version, ppsr::include_deleted::no);
@@ -113,7 +113,7 @@ schema::fake_registry::create_schema(ppsr::unparsed_schema unparsed) {
     });
     co_return _store.schemas.back().id;
 }
-const std::vector<ppsr::subject_schema>& schema::fake_registry::get_all() {
+const std::vector<ppsr::stored_schema>& schema::fake_registry::get_all() {
     maybe_throw_injected_failure();
     return _store.schemas;
 }

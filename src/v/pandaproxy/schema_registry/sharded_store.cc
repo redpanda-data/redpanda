@@ -140,7 +140,7 @@ sharded_store::make_valid_schema(canonical_schema schema) {
 }
 
 ss::future<sharded_store::has_schema_result>
-sharded_store::get_schema_version(subject_schema schema, normalize norm) {
+sharded_store::get_schema_version(stored_schema schema, normalize norm) {
     // Validate the schema (may throw)
     co_await validate_schema(schema.schema.share());
 
@@ -275,7 +275,7 @@ sharded_store::get_schema_version(subject_schema schema, normalize norm) {
 }
 
 ss::future<sharded_store::insert_result>
-sharded_store::project_ids(subject_schema schema) {
+sharded_store::project_ids(stored_schema schema) {
     const auto& sub = schema.schema.sub();
     auto s_id = schema.id;
     if (s_id == invalid_schema_id) {
@@ -323,7 +323,7 @@ ss::future<> sharded_store::delete_schema(schema_id id) {
       shard_for(id), _smp_opts, [id](store& s) { s.delete_schema(id); });
 }
 
-ss::future<subject_schema> sharded_store::has_schema(
+ss::future<stored_schema> sharded_store::has_schema(
   canonical_schema schema, include_deleted inc_del, normalize norm) {
     auto versions = co_await get_versions(schema.sub(), inc_del);
 
@@ -333,7 +333,7 @@ ss::future<subject_schema> sharded_store::has_schema(
         throw as_exception(invalid_subject_schema(schema.sub()));
     }
 
-    std::optional<subject_schema> sub_schema;
+    std::optional<stored_schema> sub_schema;
     for (auto ver : versions) {
         try {
             auto res = co_await get_subject_schema(
@@ -469,12 +469,12 @@ sharded_store::get_id(subject sub, std::optional<schema_version> version) {
     co_return v_id.id;
 }
 
-ss::future<subject_schema> sharded_store::get_subject_schema(
+ss::future<stored_schema> sharded_store::get_subject_schema(
   subject sub, std::optional<schema_version> version, include_deleted inc_del) {
     return get_subject_schema(sub, version, inc_del, normalize::no);
 }
 
-ss::future<subject_schema> sharded_store::get_subject_schema(
+ss::future<stored_schema> sharded_store::get_subject_schema(
   subject sub,
   std::optional<schema_version> version,
   include_deleted inc_del,
@@ -494,7 +494,7 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
         auto canonical = co_await make_canonical_schema(
           {sub, std::move(def)}, norm);
 
-        co_return subject_schema{
+        co_return stored_schema{
           .schema = std::move(canonical),
           .version = v_id.version,
           .id = v_id.id,

@@ -47,14 +47,14 @@ public:
         std::optional<schema_version> version;
     };
     ss::future<has_schema_result>
-    get_schema_version(subject_schema schema, normalize norm = normalize::no);
+    get_schema_version(stored_schema schema, normalize norm = normalize::no);
 
     struct insert_result {
         schema_version version;
         schema_id id;
         bool inserted;
     };
-    ss::future<insert_result> project_ids(subject_schema schema);
+    ss::future<insert_result> project_ids(stored_schema schema);
 
     ss::future<bool> upsert(
       seq_marker marker,
@@ -64,7 +64,7 @@ public:
       is_deleted deleted);
 
     ss::future<bool> has_schema(schema_id id);
-    ss::future<subject_schema> has_schema(
+    ss::future<stored_schema> has_schema(
       canonical_schema schema,
       include_deleted inc_del = include_deleted::no,
       normalize norm = normalize::no);
@@ -89,12 +89,12 @@ public:
     get_schema_subjects(schema_id id, include_deleted inc_del);
 
     ///\brief Return a schema by subject and version (or latest).
-    ss::future<subject_schema> get_subject_schema(
+    ss::future<stored_schema> get_subject_schema(
       subject sub,
       std::optional<schema_version> version,
       include_deleted inc_dec) final;
 
-    ss::future<subject_schema> get_subject_schema(
+    ss::future<stored_schema> get_subject_schema(
       subject sub,
       std::optional<schema_version> version,
       include_deleted inc_dec,

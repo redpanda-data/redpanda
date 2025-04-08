@@ -475,21 +475,21 @@ using canonical_schema = typed_schema<canonical_schema_definition::tag>;
 unparsed_schema to_unparsed(canonical_schema&&);
 
 template<typename tag>
-struct typed_subject_schema {
+struct typed_stored_schema {
     typed_schema<tag> schema;
     schema_version version{invalid_schema_version};
     schema_id id{invalid_schema_id};
     is_deleted deleted{false};
-    typed_subject_schema share() const {
+    typed_stored_schema share() const {
         return {schema.share(), version, id, deleted};
     }
 };
 ///\brief Complete description of a subject and schema for a version, as stored
 /// in store
-using unparsed_subject_schema
-  = typed_subject_schema<unparsed_schema_definition::tag>;
+using unparsed_stored_schema
+  = typed_stored_schema<unparsed_schema_definition::tag>;
 ///\brief Complete description of a subject and schema for a version.
-using subject_schema = typed_subject_schema<canonical_schema_definition::tag>;
+using stored_schema = typed_stored_schema<canonical_schema_definition::tag>;
 
 enum class compatibility_level {
     none = 0,

@@ -213,7 +213,7 @@ void seq_writer::advance_offset_inner(model::offset offset) {
 }
 
 ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
-  subject_schema schema, model::offset write_at) {
+  stored_schema schema, model::offset write_at) {
     co_await check_mutable(schema.schema.sub());
 
     // Check if store already contains this data: if
@@ -266,7 +266,7 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
     }
 }
 
-ss::future<schema_id> seq_writer::write_subject_version(subject_schema schema) {
+ss::future<schema_id> seq_writer::write_subject_version(stored_schema schema) {
     co_return co_await sequenced_write(
       [&schema](model::offset write_at, seq_writer& seq) {
           return seq.do_write_subject_version(schema.share(), write_at);

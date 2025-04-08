@@ -48,7 +48,7 @@ public:
 
     virtual ss::future<pandaproxy::schema_registry::canonical_schema_definition>
       get_schema_definition(pandaproxy::schema_registry::schema_id) const = 0;
-    virtual ss::future<pandaproxy::schema_registry::subject_schema>
+    virtual ss::future<pandaproxy::schema_registry::stored_schema>
       get_subject_schema(
         pandaproxy::schema_registry::subject,
         std::optional<pandaproxy::schema_registry::schema_version>) const
