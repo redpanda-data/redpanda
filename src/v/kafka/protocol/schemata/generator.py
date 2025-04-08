@@ -544,6 +544,7 @@ STRUCT_TYPES = [
     "MemberIdentity",
     "MemberResponse",
     "DeletableTopicResult",
+    "DescribeClusterBroker",
     "DescribeConfigsResult",
     "DescribeConfigsResource",
     "DescribeConfigsResourceResult",

@@ -23,6 +23,7 @@ MESSAGES = [
     "describe_acls",
     "describe_client_quotas",
     "describe_configs",
+    "describe_cluster",
     "describe_groups",
     "describe_log_dirs",
     "describe_producers",
