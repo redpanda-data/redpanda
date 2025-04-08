@@ -278,23 +278,30 @@ ss::future<xshard_transfer_state> consensus::stop() {
         idx.second.follower_state_change.broken();
     }
     co_await _replication_monitor.stop();
+    vlog(_ctxlog.info, "Stopping 10");
     co_await _event_manager.stop();
+    vlog(_ctxlog.info, "Stopping 20");
     if (_stm_manager) {
         co_await _stm_manager->stop();
     }
+    vlog(_ctxlog.info, "Stopping 30");
     co_await _append_requests_buffer.stop();
+    vlog(_ctxlog.info, "Stopping 40");
     co_await _batcher.stop();
+    vlog(_ctxlog.info, "Stopping 50");
 
     _election_lock.broken();
     _op_lock.broken();
     _deferred_flusher.cancel();
     co_await _bg.close();
+    vlog(_ctxlog.info, "Stopping 60");
 
     // close writer if we have to
     if (unlikely(_snapshot_writer)) {
         co_await _snapshot_writer->close();
         _snapshot_writer.reset();
     }
+    vlog(_ctxlog.info, "Stopping 70");
     /**
      * Clear metrics after consensus instance is stopped.
      */
