@@ -19,6 +19,7 @@
 #include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/handlers/describe_cluster.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -467,9 +468,12 @@ guess_peer_listener(request_context& ctx, const cluster::node_metadata& nm) {
 // broker. For this we need to exclude isolated node from brokers list and
 // return -1 for controller_id, after it client will send metadata request to
 // another broker and will comunicate with it
-static ss::future<metadata_response> fill_info_about_brokers_and_controller_id(
+template<typename Api>
+ss::future<typename Api::response_type>
+fill_info_about_brokers_and_controller_id(
   request_context& ctx, is_node_isolated_or_decommissioned isolated_flag) {
-    metadata_response reply;
+    using response_type = Api::response_type;
+    response_type reply;
 
     std::vector<cluster::node_metadata> alive_brokers;
     if (isolated_flag) {
@@ -497,11 +501,11 @@ static ss::future<metadata_response> fill_info_about_brokers_and_controller_id(
         }
 
         if (peer_listener) {
-            reply.data.brokers.push_back(metadata_response::broker{
-              .node_id = nm.broker.id(),
-              .host = peer_listener->address.host(),
-              .port = peer_listener->address.port(),
-              .rack = nm.broker.rack()});
+            reply.data.brokers.push_back(typename response_type::broker{
+              nm.broker.id(),
+              peer_listener->address.host(),
+              peer_listener->address.port(),
+              nm.broker.rack()});
         }
     }
 
@@ -515,13 +519,14 @@ static ss::future<metadata_response> fill_info_about_brokers_and_controller_id(
     co_return reply;
 }
 
-template<>
-ss::future<response_ptr> metadata_handler::handle(
-  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+template<typename T>
+ss::future<typename T::api::response_type> handle_metadata(
+  request_context& ctx, [[maybe_unused]] ss::smp_service_group g) {
+    using Api = typename T::api;
     is_node_isolated_or_decommissioned isolated_or_decommissioned{
       ctx.metadata_cache().is_node_isolated()};
 
-    auto reply = co_await fill_info_about_brokers_and_controller_id(
+    auto reply = co_await fill_info_about_brokers_and_controller_id<Api>(
       ctx, isolated_or_decommissioned);
 
     const auto cluster_id = config::shard_local_cfg().cluster_id();
@@ -534,12 +539,14 @@ ss::future<response_ptr> metadata_handler::handle(
         reply.data.cluster_id = "redpanda.initializing";
     }
 
-    metadata_request request;
+    typename Api::request_type request;
     request.decode(ctx.reader(), ctx.header().version);
-    log_request(ctx.header(), request);
+    T::log_request(ctx.header(), request);
 
-    reply.data.topics = co_await get_topic_metadata(
-      ctx, request, isolated_or_decommissioned);
+    if constexpr (std::same_as<T, metadata_handler>) {
+        reply.data.topics = co_await get_topic_metadata(
+          ctx, request, isolated_or_decommissioned);
+    }
 
     if (
       request.data.include_cluster_authorized_operations
@@ -549,6 +556,20 @@ ss::future<response_ptr> metadata_handler::handle(
           details::authorized_operations(ctx, security::default_cluster_name));
     }
 
+    co_return reply;
+}
+
+template<>
+ss::future<response_ptr> metadata_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    auto reply = co_await handle_metadata<metadata_handler>(ctx, g);
+    co_return co_await ctx.respond(std::move(reply));
+}
+
+template<>
+ss::future<response_ptr> describe_cluster_handler::handle(
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
+    auto reply = co_await handle_metadata<describe_cluster_handler>(ctx, g);
     co_return co_await ctx.respond(std::move(reply));
 }
 
