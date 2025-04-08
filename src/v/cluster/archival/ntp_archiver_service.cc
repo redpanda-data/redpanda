@@ -143,14 +143,6 @@ bool segment_meta_matches_stats(
     return true;
 }
 
-bool emit_read_write_fence(
-  const ss::sharded<features::feature_table>& feature_table) {
-    return !config::shard_local_cfg()
-              .cloud_storage_disable_archival_stm_rw_fence.value()
-           && feature_table.local().is_active(
-             features::feature::cloud_storage_metadata_rw_fence);
-}
-
 cloud_storage::segment_meta convert_segment_meta(
   const segment_collector_stream& strm,
   const cluster::partition& parent,
@@ -795,8 +787,13 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
 ss::future<std::error_code> ntp_archiver::reset_scrubbing_metadata() {
     auto sync_timeout = config::shard_local_cfg()
                           .cloud_storage_metadata_sync_timeout_ms.value();
+    auto units = co_await _mutex.get_units(_as);
+    auto fence = get_rw_fence();
     auto deadline = ss::lowres_clock::now() + sync_timeout;
     auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    if (fence.emit_rw_fence_cmd) {
+        batch.read_write_fence(fence.read_write_fence);
+    }
     batch.reset_scrubbing_metadata();
     auto error = co_await batch.replicate();
 
@@ -2505,7 +2502,7 @@ archival_stm_fence ntp_archiver::get_rw_fence() const {
         && _feature_table.local().is_active(
           features::feature::cloud_storage_metadata_rw_fence);
 
-    if (emit_read_write_fence && _mutex.available_units() > 0) {
+    if (emit_read_write_fence && _mutex.has_units()) {
         vassert(
           false,
           "[{}] Concurrency violation. Fence acquired without holding a mutex.",
@@ -3324,7 +3321,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           },
           [this, &run, &rw_fence, units = std::move(units)](
             segment_collector_stream& collector_stream) mutable
-          -> find_reupload_candidate_result {
+            -> find_reupload_candidate_result {
               if (
                 collector_stream.size != run->meta.size_bytes
                 || collector_stream.start_offset != run->meta.base_offset
