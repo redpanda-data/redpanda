@@ -37,3 +37,17 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "opt_test",
+    timeout = "short",
+    srcs = ["opt_test.cc"],
+    deps = [
+        "//src/v/base",
+        "//src/v/test_utils:gtest",
+        "//src/v/random:generators",
+         "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)

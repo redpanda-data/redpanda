@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "base/opt.h"
+
 #include <optional>
 #include <type_traits>
 
@@ -77,4 +79,6 @@ namespace reflection {
 template<typename T>
 concept is_std_optional = ::detail::is_specialization_of_v<T, std::optional>;
 
-}
+template<typename T>
+concept is_opt = ::detail::is_specialization_of_v<T, opt>;
+} // namespace reflection
