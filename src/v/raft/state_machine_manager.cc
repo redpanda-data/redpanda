@@ -208,9 +208,8 @@ ss::future<> state_machine_manager::stop() {
     _as.request_abort();
 
     auto gate_f = _gate.close();
-    int i = 0;
-    co_await ss::coroutine::parallel_for_each(_machines, [this, &i](auto p) {
-        vlog(_log.debug, "stopping state machine {}", i++);
+    co_await ss::coroutine::parallel_for_each(_machines, [this](auto p) {
+        vlog(_log.debug, "stopping state machine {}", p.first);
         return p.second->stm->stop();
     });
     co_await std::move(gate_f);
