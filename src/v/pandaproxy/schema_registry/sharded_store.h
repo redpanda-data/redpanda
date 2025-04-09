@@ -66,15 +66,10 @@ public:
 
     ss::future<bool> has_schema(schema_id id);
     ss::future<stored_schema> has_schema(
-      subject_schema schema,
-      include_deleted inc_del = include_deleted::no,
-      normalize norm = normalize::no);
+      subject_schema schema, include_deleted inc_del = include_deleted::no);
 
     ///\brief Return a schema definition by id.
     ss::future<schema_definition> get_schema_definition(schema_id id) override;
-
-    ///\brief Return a schema definition by id, without any processing.
-    ss::future<schema_definition> get_unparsed_schema_definition(schema_id id);
 
     ss::future<std::optional<schema_definition>>
     maybe_get_schema_definition(schema_id id) override;
@@ -92,12 +87,6 @@ public:
       subject sub,
       std::optional<schema_version> version,
       include_deleted inc_dec) final;
-
-    ss::future<stored_schema> get_subject_schema(
-      subject sub,
-      std::optional<schema_version> version,
-      include_deleted inc_dec,
-      normalize norm);
 
     ///\brief Return the id of a schema by subject and version (or latest).
     ss::future<schema_id>

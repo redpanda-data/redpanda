@@ -435,8 +435,7 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
     }
 
     schema_id s_id = co_await _store.get_id(sub, version);
-    schema_definition schema = co_await _store.get_unparsed_schema_definition(
-      s_id);
+    schema_definition schema = co_await _store.get_schema_definition(s_id);
 
     auto key = schema_key{
       .seq{write_at}, .node{_node_id}, .sub{sub}, .version{version}};

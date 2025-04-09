@@ -445,7 +445,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
     }
 
     auto sub_schema = co_await rq.service().schema_store().has_schema(
-      std::move(schema), inc_del, norm);
+      std::move(schema), inc_del);
 
     rp.rep->write_body(
       "json",
