@@ -64,6 +64,11 @@ public:
       schema_version version,
       is_deleted deleted);
 
+    // This function will try to compile all marked schemas.
+    // It should be called every time new schemas are loaded from
+    // the topic into the store.
+    ss::future<> process_marked_schemas();
+
     ss::future<bool> has_schema(schema_id id);
     ss::future<stored_schema> has_schema(
       subject_schema schema, include_deleted inc_del = include_deleted::no);
@@ -209,6 +214,8 @@ private:
 
     ss::future<bool> upsert_schema(schema_id id, schema_definition def);
     ss::future<> delete_schema(schema_id id);
+
+    ss::future<> mark_schema(schema_id id);
 
     struct insert_subject_result {
         schema_version version;

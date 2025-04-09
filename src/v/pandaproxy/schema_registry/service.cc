@@ -599,6 +599,11 @@ ss::future<> service::fetch_internal_topic() {
       model::offset{0},
       max_offset)
       .consume(consume_to_store{_store, writer()}, model::no_timeout);
+
+    // If a schema failed to be compiled, it will be marked. We attempt to
+    // reprocess them once now that the whole topic has been read,  in case they
+    // have a reference to a schema declared later in the topic.
+    co_await _store.process_marked_schemas();
 }
 
 service::service(

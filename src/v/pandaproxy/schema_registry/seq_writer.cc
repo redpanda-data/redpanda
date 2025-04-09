@@ -114,6 +114,7 @@ ss::future<> seq_writer::read_sync() {
 
     auto max_offset = offsets.data.topics[0].partitions[0].offset;
     co_await wait_for(max_offset - model::offset{1});
+    co_await _store.process_marked_schemas();
 }
 
 ss::future<> seq_writer::check_mutable(const std::optional<subject>& sub) {
@@ -179,6 +180,7 @@ ss::future<bool> seq_writer::produce_and_apply(
     if (success) {
         vlog(plog.debug, "seq_writer: Successful write at {}", res.base_offset);
         co_await consume_to_store(_store, *this)(std::move(batch));
+        co_await _store.process_marked_schemas();
     } else {
         vlog(
           plog.debug,

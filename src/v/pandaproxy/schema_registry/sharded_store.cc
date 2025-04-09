@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "pandaproxy/logger.h"
@@ -253,18 +254,54 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
+    bool should_mark = false;
     try {
         subject_schema canonical = co_await make_canonical_schema(
           schema.share(), normalize::no, false);
         schema = std::move(canonical);
     } catch (...) {
-        // do nothing. In case make_canonical_schema fails, continue with the
-        // schema as-is in the topic
+        // mark schemas that failed to be processed here. They will be given
+        // one more chance once we have loaded all the topic to the store.
+        should_mark = true;
+    }
+    if (should_mark) {
+        co_await mark_schema(id);
     }
     auto [sub, def] = std::move(schema).destructure();
     co_await upsert_schema(id, std::move(def));
     co_return co_await upsert_subject(
       marker, std::move(sub), version, id, deleted);
+}
+
+ss::future<> sharded_store::process_marked_schemas() {
+    auto map = [](store& s) { return s.extract_marked_schemas(); };
+    auto reduce =
+      [](chunked_vector<schema_id> acc, chunked_vector<schema_id> vec) {
+          acc.reserve(acc.size() + vec.size());
+          std::ranges::copy(vec, std::back_inserter(acc));
+          return acc;
+      };
+    auto marked_schemas = co_await _store.map_reduce0(
+      map, chunked_vector<schema_id>{}, reduce);
+
+    while (!marked_schemas.empty()) {
+        schema_id id = marked_schemas.back();
+        marked_schemas.pop_back();
+
+        auto schema = co_await get_schema_definition(id);
+        try {
+            subject_schema canonical = co_await make_canonical_schema(
+              subject_schema{{}, schema.share()}, normalize::no, false);
+            auto [sub, canonical_def] = std::move(canonical).destructure();
+            schema = std::move(canonical_def);
+        } catch (...) {
+            // processing attempt failed on marked schema. This is not an issue
+            // of forward references. Ignore error and keep schema in the store
+            // as-is
+        }
+        // Update the stored form of this schema to its canonical form
+        co_await upsert_schema(id, std::move(schema));
+    }
 }
 
 ss::future<bool> sharded_store::has_schema(schema_id id) {
@@ -657,6 +694,12 @@ sharded_store::clear_compatibility(seq_marker marker, subject sub) {
       sub_shard, _smp_opts, [marker, sub{std::move(sub)}](store& s) {
           return s.clear_compatibility(marker, sub).value();
       });
+}
+
+ss::future<> sharded_store::mark_schema(schema_id id) {
+    co_await _store.invoke_on(shard_for(id), _smp_opts, [id](store& s) mutable {
+        return s.mark_schema(id);
+    });
 }
 
 ss::future<bool>

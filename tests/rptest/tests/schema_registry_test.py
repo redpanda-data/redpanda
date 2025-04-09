@@ -426,10 +426,8 @@ import_schemas = {
         }],
         "schema":
         schema_c_proto_def,
-        #schema c will be invalid during startup in the test it is used.
-        #that's why the 'sanitized' form is not the actual sanitized form but the input form.
         "sanitized":
-        schema_c_proto_def,
+        schema_c_proto_sanitized_def,
     },
     "schema_d": {
         "subject":
@@ -2608,6 +2606,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         valid_entries = [
             (1, "schema_a"),
+            (2, "schema_c"),
             (3, "schema_b"),
             (5, "schema_f_v1"),
             (6, "schema_f_v3"),
@@ -2623,13 +2622,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             (12, "schema_i"),
             (13, "schema_j"),
             (14, "schema_k"),
-        ]
-        #These are schemas whose references are loaded after them during startup
-        forward_references_entries = [
-            (2, "schema_c"),
-        ]
-        forward_references_entries_new_ids = [
-            (15, "schema_c"),
         ]
 
         #Test /schemas/ids/{id}
@@ -2651,7 +2643,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert_request_code(result_raw, 422, endpoint)
 
         #All schemas should be retrievable by id.
-        for id, _ in valid_entries + forward_references_entries + invalid_entries:
+        for id, _ in valid_entries + invalid_entries:
             test_schemas_ids_id(id, expected_successful=True)
 
         #Test /schemas/ids/{id}/versions
@@ -2666,7 +2658,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert_request_code(result_raw, 422, endpoint)
 
         #Versions should be retrievable for all ids.
-        for id, _ in valid_entries + forward_references_entries + invalid_entries:
+        for id, _ in valid_entries + invalid_entries:
             test_schemas_ids_id_versions(id, expected_successful=True)
 
         #Test /schemas/ids/{id}/subjects
@@ -2681,7 +2673,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert_request_code(result_raw, 422, endpoint)
 
         #Subjects should be retrievable for all ids.
-        for id, _ in valid_entries + forward_references_entries + invalid_entries:
+        for id, _ in valid_entries + invalid_entries:
             test_schemas_ids_id_subjects(id, expected_successful=True)
 
         #Test /subjects
@@ -2732,12 +2724,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         for _, s in invalid_entries:
             test_subjects_subject(s, expected_code=422)
 
-        #At this point, all references from these schemas are satisfied. So the input
-        #schema is valid. However, the stored schema could not be processed during startup
-        #so its stored form has not been canonicallized and the request fails
-        for _, s in forward_references_entries:
-            test_subjects_subject(s, expected_code=404)
-
         #Test /subjects/{subject}/versions/{version}
         def test_subjects_subject_versions_version(entry, expected_successful):
             lookup_schema = import_schemas[entry]
@@ -2759,7 +2745,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert_request_code(result_raw, 422, endpoint)
 
         #All schemas should be retrievable through subject/version.
-        for _, s in valid_entries + forward_references_entries + invalid_entries:
+        for _, s in valid_entries + invalid_entries:
             test_subjects_subject_versions_version(s, expected_successful=True)
 
         #Test /subjects/{subject}/versions/{version}/schema
@@ -2786,7 +2772,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert_request_code(result_raw, 422, endpoint)
 
         #All schemas should be retrievable through subject/version.
-        for _, s in valid_entries + forward_references_entries + invalid_entries:
+        for _, s in valid_entries + invalid_entries:
             test_subjects_subject_versions_version_schema(
                 s, expected_successful=True)
 
@@ -2850,13 +2836,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                                            expected_id=id,
                                            expected_successful=True)
 
-        #forward_references will fail the lookup, as they didn't get canonicallized.
-        #Each will create a new entry.
-        for id, s in forward_references_entries_new_ids:
-            test_subjects_subject_versions(s,
-                                           expected_id=id,
-                                           expected_successful=True)
-
         #These schemas should fail, as the *input* schema has an unsatisfied dependencies
         for id, s in invalid_entries:
             test_subjects_subject_versions(s,
@@ -2886,7 +2865,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         #startup and it was not in canonical form. Thus it cannot be found and a
         #new version is created.
         test_subjects_subject_versions("schema_d",
-                                       expected_id=17,
+                                       expected_id=16,
                                        expected_successful=True)
         #After pushing, schema_d is not stored by its canonical form
         import_schemas["schema_d"]["sanitized"] = schema_d_proto_sanitized_def
@@ -2902,7 +2881,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         #Fix problematic schemas by adding missing dependency for g_v2 and deleting g_v4.
         test_subjects_subject_versions("schema_f_v2",
-                                       expected_id=18,
+                                       expected_id=17,
                                        expected_successful=True)
 
         result_raw = self._delete_subject_version("schema_g", version=4)
@@ -2910,12 +2889,12 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                             "DELETE subjects/schema_g/versions/4")
 
         test_subjects_subject_versions("schema_g_v5",
-                                       expected_id=19,
+                                       expected_id=18,
                                        expected_successful=True)
 
         #Fix problematic dependency chain by adding base schema.
         test_subjects_subject_versions("schema_h",
-                                       expected_id=20,
+                                       expected_id=19,
                                        expected_successful=True)
         test_schemas_ids_id(12, expected_successful=True)
         test_schemas_ids_id(13, expected_successful=True)
