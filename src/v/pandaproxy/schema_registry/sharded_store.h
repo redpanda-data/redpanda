@@ -48,8 +48,7 @@ public:
         std::optional<schema_id> id;
         std::optional<schema_version> version;
     };
-    ss::future<has_schema_result>
-    get_schema_version(stored_schema schema, normalize norm = normalize::no);
+    ss::future<has_schema_result> get_schema_version(stored_schema schema);
 
     struct insert_result {
         schema_version version;
