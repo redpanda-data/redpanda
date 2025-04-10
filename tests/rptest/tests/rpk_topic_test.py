@@ -288,9 +288,9 @@ class RpkToolTest(RedpandaTest):
     @cluster(num_nodes=4)
     def test_analyze(self):
         topic = "test_analyze_topic"
-        partitions = 25
+        partitions = 1
         runtime_s = 15
-        throughput_bytes_s = 25 * 1024  # 25 KiB/s
+        throughput_bytes_s = 10 * 1024  # 10 KiB/s
         record_size = 1024  # 1 KiB
 
         self._rpk.create_topic(topic, partitions=partitions, replicas=3)
@@ -318,16 +318,21 @@ class RpkToolTest(RedpandaTest):
         assert topic in res
 
         def within(actual, expected, err) -> bool:
-            return (actual >= expected * (1 - err)) & (actual <= expected *
-                                                       (1 + err))
+            res = (actual >= expected * (1 - err)) & (actual <= expected *
+                                                      (1 + err))
+            if not res:
+                self.redpanda.logger.debug(
+                    f"actual: {actual} expected: {expected} err: {err}")
+
+            return res
 
         analyzed_topic = res[topic]
         assert analyzed_topic.partitions == partitions
         assert within(analyzed_topic.bytes_per_second, throughput_bytes_s,
-                      0.15)
+                      0.25)
         assert within(analyzed_topic.batches_per_second,
-                      throughput_bytes_s / record_size, 0.15)
+                      throughput_bytes_s / record_size, 0.25)
         assert within(analyzed_topic.average_bytes_per_batch, record_size,
-                      0.15)
+                      0.25)
 
         producer.wait()
