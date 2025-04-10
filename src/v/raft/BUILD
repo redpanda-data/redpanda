@@ -37,6 +37,18 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "voter_priority_tracker",
+    srcs = [
+        "voter_priority_tracker.cc",
+    ],
+    hdrs = [
+        "voter_priority_tracker.h",
+    ],
+    include_prefix = "raft",
+    deps = [":fundamental"],
+)
+
+redpanda_cc_library(
     name = "raft",
     srcs = [
         "append_entries_buffer.cc",
@@ -116,6 +128,7 @@ redpanda_cc_library(
         ":broker_compat",
         ":fundamental",
         ":raft_rpc",
+        ":voter_priority_tracker",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",

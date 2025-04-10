@@ -38,6 +38,7 @@
 #include "raft/timeout_jitter.h"
 #include "raft/transfer_leadership.h"
 #include "raft/types.h"
+#include "raft/voter_priority_tracker.h"
 #include "ssx/semaphore.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
@@ -482,22 +483,18 @@ public:
      * Prevent the current node from becoming a leader for this group. If the
      * node is the leader then this only takes affect if leadership is lost.
      */
-    void block_new_leadership() {
-        _node_priority_override = raft::zero_voter_priority;
-    }
+    void block_new_leadership() { _priority_tracker.set_min_voter_priority(); }
 
     /**
      * Resets node priority only if it was not blocked
      */
-    void reset_node_priority() {
-        if (_node_priority_override == raft::min_voter_priority) {
-            unblock_new_leadership();
-        }
-    }
+    void reset_node_priority() { _priority_tracker.reset_node_priority(); }
     /*
      * Allow the current node to become a leader for this group.
      */
-    void unblock_new_leadership() { _node_priority_override.reset(); }
+    void unblock_new_leadership() {
+        _priority_tracker.reset_voter_priority_override();
+    }
 
     const follower_stats& get_follower_stats() const { return _fstats; }
 
@@ -700,9 +697,6 @@ private:
     void maybe_update_majority_replicated_index();
     void do_update_majority_replicated_index(model::offset new_value);
 
-    voter_priority next_target_priority();
-    voter_priority get_node_priority(vnode) const;
-
     template<typename Reply>
     result<Reply> validate_reply_target_node(
       std::string_view request,
@@ -810,6 +804,8 @@ private:
 
     std::optional<model::offset>
       adjust_learner_initial_offset(std::optional<model::offset>);
+
+    const std::vector<vnode>& all_replicas() const;
     // args
     vnode _self;
     raft::group_id _group;
@@ -910,8 +906,7 @@ private:
     configuration_manager _configuration_manager;
     model::offset _majority_replicated_index;
     model::offset _visibility_upper_bound_index;
-    voter_priority _target_priority = voter_priority::max();
-    std::optional<voter_priority> _node_priority_override;
+    voter_priority_tracker _priority_tracker;
     keep_snapshotted_log _keep_snapshotted_log;
 
     // used to track currently installed snapshot
