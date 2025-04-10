@@ -12,9 +12,11 @@
 namespace raft {
 
 voter_priority_tracker::voter_priority_tracker(
-  raft::vnode self, std::optional<voter_priority> initial_priority_override)
+  raft::vnode self, bool is_ready_for_leader_election)
   : _self(self)
-  , _replica_priority_override(initial_priority_override) {}
+  , _replica_priority_override(
+      is_ready_for_leader_election ? std::nullopt
+                                   : std::make_optional(min_voter_priority)) {}
 
 void voter_priority_tracker::block_new_leadership() {
     _replica_priority_override = zero_voter_priority;
@@ -34,7 +36,7 @@ void voter_priority_tracker::on_leader_election(size_t replica_count) {
 void voter_priority_tracker::on_successful_leader_election() {
     _target_priority = voter_priority::max();
 }
-void voter_priority_tracker::reset_node_priority() {
+void voter_priority_tracker::mark_ready_for_leader_election() {
     if (_replica_priority_override == raft::min_voter_priority) {
         unblock_new_leadership();
     }
