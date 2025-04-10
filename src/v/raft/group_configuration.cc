@@ -257,7 +257,26 @@ find_by_id(const std::vector<vnode>& nodes, model::node_id id) {
     }
     return std::nullopt;
 }
+void erase_id(std::vector<vnode>& v, model::node_id id) {
+    std::erase_if(v, [id](const vnode& rni) { return id == rni.id(); });
+}
 
+std::vector<vnode>
+unique_ids(const std::vector<vnode>& current, const std::vector<vnode>& old) {
+    absl::flat_hash_set<vnode> unique_ids;
+    unique_ids.reserve(current.size());
+
+    for (auto& id : current) {
+        unique_ids.insert(id);
+    }
+    for (auto& id : old) {
+        unique_ids.insert(id);
+    }
+    std::vector<vnode> ret;
+    ret.reserve(unique_ids.size());
+    std::copy(unique_ids.begin(), unique_ids.end(), std::back_inserter(ret));
+    return ret;
+}
 } // namespace
 
 bool configuration_update::is_to_add(const vnode& id) const {
@@ -438,23 +457,6 @@ configuration_state group_configuration::get_state() const {
     return configuration_state::simple;
 };
 
-std::vector<vnode>
-unique_ids(const std::vector<vnode>& current, const std::vector<vnode>& old) {
-    absl::flat_hash_set<vnode> unique_ids;
-    unique_ids.reserve(current.size());
-
-    for (auto& id : current) {
-        unique_ids.insert(id);
-    }
-    for (auto& id : old) {
-        unique_ids.insert(id);
-    }
-    std::vector<vnode> ret;
-    ret.reserve(unique_ids.size());
-    std::copy(unique_ids.begin(), unique_ids.end(), std::back_inserter(ret));
-    return ret;
-}
-
 bool group_configuration::contains(vnode id) const {
     return _current.contains(id) || (_old && _old->contains(id));
 }
@@ -467,16 +469,6 @@ std::vector<vnode> group_configuration::unique_learner_ids() const {
     auto old_learners = _old ? _old->learners : std::vector<vnode>();
     return unique_ids(_current.learners, old_learners);
 }
-
-void erase_id(std::vector<vnode>& v, model::node_id id) {
-    auto it = std::find_if(
-      v.cbegin(), v.cend(), [id](const vnode& rni) { return id == rni.id(); });
-
-    if (it != v.cend()) {
-        v.erase(it);
-    }
-}
-
 void group_configuration::add_broker(
   model::broker broker, model::revision_id rev) {
     vassert(
