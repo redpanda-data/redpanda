@@ -112,7 +112,7 @@ consensus::consensus(
   recovery_memory_quota& recovery_mem_quota,
   recovery_scheduler& recovery_scheduler,
   features::feature_table& ft,
-  std::optional<voter_priority> voter_priority_override,
+  bool is_ready_for_leader_election,
   keep_snapshotted_log should_keep_snapshotted_log)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
@@ -144,7 +144,7 @@ consensus::consensus(
       storage::simple_snapshot_manager::default_snapshot_filename,
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
-  , _priority_tracker(_self, voter_priority_override)
+  , _priority_tracker(_self, is_ready_for_leader_election)
   , _keep_snapshotted_log(should_keep_snapshotted_log)
   , _append_requests_buffer(*this, 256)
   , _write_caching_enabled(log_config().write_caching())

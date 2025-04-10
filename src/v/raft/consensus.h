@@ -110,7 +110,7 @@ public:
       recovery_memory_quota&,
       recovery_scheduler&,
       features::feature_table&,
-      std::optional<voter_priority> = std::nullopt,
+      bool is_ready_for_leader_election = true,
       keep_snapshotted_log = keep_snapshotted_log::no);
 
     /// Initial call. Allow for internal state recovery
@@ -488,7 +488,10 @@ public:
     /**
      * Resets node priority only if it was not blocked
      */
-    void reset_node_priority() { _priority_tracker.reset_node_priority(); }
+    void mark_ready_for_leader_election() {
+        _priority_tracker.mark_ready_for_leader_election();
+    }
+
     /*
      * Allow the current node to become a leader for this group.
      */

@@ -22,9 +22,7 @@ inline constexpr voter_priority min_voter_priority = voter_priority{1};
 
 class voter_priority_tracker {
 public:
-    voter_priority_tracker(
-      raft::vnode self,
-      std::optional<voter_priority> initial_priority_override);
+    voter_priority_tracker(raft::vnode self, bool is_ready_for_leader_election);
 
     // Sets the priority to the minimum value, blocking the replica from
     // becoming a leader. The replica can only become a leader after the target
@@ -40,9 +38,10 @@ public:
     void reset_voter_priority_override();
 
     /**
-     * Resets node priority only if it was not blocked
+     * Resets node priority override if it was set to min priority to mark the
+     * node not ready to become a leader.
      */
-    void reset_node_priority();
+    void mark_ready_for_leader_election();
 
     /**
      * Called to update the next target priority for the next leader election.
