@@ -610,6 +610,26 @@ public:
                != std::nullopt;
     }
 
+    ///\brief Set the compatibility level for a subject.
+    result<bool> set_iceberg_compatibility_mode(
+      seq_marker marker, const subject& sub, iceberg_compat_mode mode) {
+        auto& sub_entry = get_or_create_subject_entry(sub);
+        sub_entry.written_at.push_back(marker);
+        return std::exchange(sub_entry.iceberg_mode, mode) != mode;
+    }
+
+    ///\brief Get the compatibility level for a subject, or fallback to global.
+    result<iceberg_compat_mode>
+    get_iceberg_compatibility_mode(const subject& sub) const {
+        auto sub_it_res = get_subject_iter(sub, include_deleted::no);
+        if (sub_it_res.has_error()) {
+            // TODO(oren): need own error code
+            return compatibility_not_found(sub);
+        }
+        auto sub_it = std::move(sub_it_res).assume_value();
+        return sub_it->second.iceberg_mode.value_or(iceberg_compat_mode::no);
+    }
+
     struct insert_schema_result {
         schema_id id;
         bool inserted;
@@ -789,6 +809,7 @@ private:
         std::optional<mode> mode;
         std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
+        std::optional<iceberg_compat_mode> iceberg_mode;
 
         std::vector<seq_marker> written_at;
 

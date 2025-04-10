@@ -14,9 +14,10 @@ import pyhive
 from contextlib import contextmanager
 import json
 from enum import Enum
+import requests
 
 from confluent_kafka import avro
-from confluent_kafka.avro import AvroProducer
+from confluent_kafka.avro import AvroProducer, ClientError
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
@@ -30,6 +31,7 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type, supported_catalog_types
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.schema_registry_test import HTTP_POST_HEADERS
 from rptest.util import expect_exception
 from ducktape.mark import matrix
 
@@ -158,10 +160,25 @@ class GenericSchema:
         self,
         dl: DatalakeServices,
         topic_name: str,
-        ver=ProtobufVersion,
+        ver: ProtobufVersion,
     ):
         return ProtoProducer(dl.redpanda, ver, self._rep['name'],
                              self._rep['fields'], topic_name)
+
+    def create(self, dl: DatalakeServices, topic_name: str,
+               type: ProducerType):
+        if type == ProducerType.AVRO:
+            # TODO(do something)
+            RpkTool(dl.redpanda).create_schema_from_str(
+                f"{topic_name}-value", json.dumps(self._rep))
+        elif type == ProducerType.PROTO2:
+            ProtoProducer(dl.redpanda, ProtobufVersion.PROTO2,
+                          self._rep['name'], self._rep['fields'], topic_name)
+        elif type == ProducerType.PROTO3:
+            ProtoProducer(dl.redpanda, ProtobufVersion.PROTO3,
+                          self._rep['name'], self._rep['fields'], topic_name)
+        else:
+            assert False, f"Unrecognized producer type: {type}"
 
     def produce(
         self,
@@ -530,12 +547,46 @@ class SchemaEvolutionE2ETests(RedpandaTest):
             out.sort(key=lambda r: r[0])
         return out
 
+    def set_config_subject_iceberg(self, url: str, subject: str, mode: bool):
+        uri = f"{url}/config/{subject}/iceberg"
+        # Error codes that may appear during normal API operation, do not
+        # indicate an issue with the service
+        acceptable_errors = {409, 422, 404}
+
+        def accept_response(resp):
+            return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
+
+        r = requests.request("PUT",
+                             uri,
+                             headers=HTTP_POST_HEADERS,
+                             data=json.dumps({"compatibilityMode": mode}))
+
+        if not accept_response(r):
+            self.logger.info(
+                f"Retrying for error {r.status_code} on {verb} {path} ({r.text})"
+            )
+            time.sleep(10)
+            r = requests.request("PUT",
+                                 uri,
+                                 headers=HTTP_POST_HEADERS,
+                                 data=json.dumps({"compatibilityMode": mode}))
+            if accept_response(r):
+                self.logger.info(
+                    f"OK after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+            else:
+                self.logger.info(
+                    f"Error after retry {r.status_code} on {verb} {path} ({r.text})"
+                )
+                assert False
+
     @contextmanager
     def setup_services(self,
                        query_engine: QueryEngineType,
                        compat_level: str = "NONE",
                        partition_spec: str = None,
-                       catalog_type: CatalogType = filesystem_catalog_type()):
+                       catalog_type: CatalogType = filesystem_catalog_type(),
+                       sr_iceberg_mode=False):
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
                               catalog_type=catalog_type,
@@ -552,11 +603,16 @@ class SchemaEvolutionE2ETests(RedpandaTest):
                 iceberg_mode="value_schema_id_prefix",
                 config=config,
             )
+            sr_url = self.redpanda.schema_reg().split(",")[0]
             SchemaRegistryClient({
-                'url':
-                self.redpanda.schema_reg().split(",")[0]
+                'url': sr_url,
             }).set_compatibility(subject_name=f"{self.topic_name}-value",
                                  level=compat_level)
+
+            self.set_config_subject_iceberg(url=sr_url,
+                                            subject=f"{self.topic_name}-value",
+                                            mode=sr_iceberg_mode)
+
             yield dl
             # make sure nothing we did trashed our ability to read the whole table
             self.select(dl, query_engine, cols=['*'])
@@ -842,3 +898,47 @@ class SchemaEvolutionE2ETests(RedpandaTest):
 
             assert len(select_out) == count * 3, \
                 f"Expected {count*3} rows, got {len(select_out)}"
+
+    @cluster(num_nodes=3)
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        produce_mode=PRODUCER_MODES,
+    )
+    def test_illegal_schema_evolution_sr_mode(self, cloud_storage_type,
+                                              produce_mode):
+        """
+        Check that SR rejects invalid schema changes when configured to do so
+        """
+        tc = ILLEGAL_TEST_CASES["illegal promotion int->string"]
+        query_engine = QueryEngineType.SPARK
+        with self.setup_services(query_engine, sr_iceberg_mode=True) as dl:
+            count = 10
+            ctx = TranslationContext()
+            tc.initial_schema.produce(dl,
+                                      self.topic_name,
+                                      count,
+                                      ctx,
+                                      mode=produce_mode)
+            tc.initial_schema.check_table_schema(dl, self.table_name,
+                                                 query_engine)
+
+            self.logger.debug("Try setting the new schema directly")
+
+            with expect_exception(
+                    RpkException,
+                    lambda e: "incompatible with an earlier schema" in str(e)):
+                tc.next_schema.create(dl, self.topic_name, produce_mode)
+
+            tc.initial_schema.check_table_schema(dl, self.table_name,
+                                                 query_engine)
+
+            select_out = self.select(dl, query_engine,
+                                     tc.next_schema.field_names)
+            assert len(select_out) == count, \
+                f"Expected {count} rows, got {select_out}"
+
+            self.logger.debug(
+                "No messages ever get DLQ'ed because the schema is rejected by SR"
+            )
+            assert ctx.dlq == 0, \
+                f"Expected {count} records were dlq'ed, got {ctx.dlq}"

@@ -181,6 +181,82 @@
         }
       }
     },
+"/config/{subject}/iceberg": {
+    "get": {
+        "summary": "Get the iceberg config for a subject",
+        "operationId": "get_config_subject_iceberg",
+        "parameters": [
+            {
+                "name": "subject",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "produces": [
+            "application/vnd.schemaregistry.v1+json",
+            "application/vnd.schemaregistry+json",
+            "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/get_iceberg_config"
+                }
+            },
+            "500": {
+                "description": "Internal Server error",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            }
+        }
+    },
+    "put": {
+        "summary": "Set the iceberg config for a subject.",
+        "operationId": "put_config_subject_iceberg",
+        "consumes": [
+            "application/vnd.schemaregistry.v1+json",
+            "application/vnd.schemaregistry+json",
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "subject",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            },
+            {
+                "name": "config",
+                "in": "body",
+                "schema": {
+                    "$ref": "#/definitions/put_iceberg_config"
+                }
+            }
+        ],
+        "produces": [
+            "application/vnd.schemaregistry.v1+json",
+            "application/vnd.schemaregistry+json",
+            "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "OK",
+                "schema": {
+                    "$ref": "#/definitions/put_iceberg_config"
+                }
+            },
+            "500": {
+                "description": "Internal Server error",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            }
+        }
+      }
+    },
     "/mode": {
       "get": {
         "summary": "Get the global mode.",

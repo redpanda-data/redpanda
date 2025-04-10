@@ -37,6 +37,26 @@ v_cc_library(
 )
 
 v_cc_library(
+  NAME datalake_protobuf_utils
+  SRCS
+    protobuf_utils.cc
+  DEPS
+    protobuf::libprotobuf
+)
+
+v_cc_library(
+  NAME datalake_schema
+  SRCS
+    schema_avro.cc
+    schema_protobuf.cc
+  DEPS
+    v::datalake_protobuf_utils
+    v::iceberg
+    Seastar::seastar
+    protobuf::libprotobuf
+)
+
+v_cc_library(
   NAME datalake_writer
   SRCS
     catalog_schema_manager.cc
@@ -45,10 +65,7 @@ v_cc_library(
     record_schema_resolver.cc
     record_translator.cc
     schema_registry.cc
-    schema_avro.cc
-    schema_protobuf.cc
     partitioning_writer.cc
-    protobuf_utils.cc
     values_avro.cc
     values_protobuf.cc
     base_types.cc
@@ -74,6 +91,8 @@ v_cc_library(
     v::serde_protobuf
     v::serde_avro
     v::serde_parquet
+    v::datalake_protobuf_utils
+    v::datalake_schema
 )
 
 add_subdirectory(tests)

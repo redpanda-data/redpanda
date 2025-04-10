@@ -1088,6 +1088,26 @@ class SchemaRegistryEndpoints(RedpandaTest):
                              headers=headers,
                              **kwargs)
 
+    def _set_config_subject_iceberg(self,
+                                    subject,
+                                    data,
+                                    headers=HTTP_POST_HEADERS,
+                                    **kwargs):
+        return self._request("PUT",
+                             f"config/{subject}/iceberg",
+                             headers=headers,
+                             data=data,
+                             **kwargs)
+
+    def _get_config_subject_iceberg(self,
+                                    subject,
+                                    headers=HTTP_POST_HEADERS,
+                                    **kwargs):
+        return self._request("GET",
+                             f"config/{subject}/iceberg",
+                             headers=headers,
+                             **kwargs)
+
     def _get_mode(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "mode", headers=headers, **kwargs)
 
@@ -1906,6 +1926,57 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         )["error_code"] == 40401, f"Wrong err code: {result_raw.json()}"
         assert result_raw.json(
         )["message"] == f"Subject 'foo-key' not found.", f"{json.dumps(result_raw.json(), indent=1)}"
+
+    @cluster(num_nodes=3)
+    def test_config_iceberg(self):
+        """
+        Smoketest iceberg config endpoints
+        """
+        self.logger.debug("Get invalid subject config")
+        result_raw = self._get_config_subject_iceberg(
+            subject="invalid_subject")
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40408
+        assert result_raw.json(
+        )["message"] == f"Subject 'invalid_subject' does not have subject-level compatibility configured"
+
+        schema_1_data = json.dumps({"schema": schema1_def})
+
+        topic = create_topic_names(1)[0]
+
+        self.logger.debug("Posting schema 1 as a subject key")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+
+        self.logger.debug(
+            "Get subject iceberg config - should be false by default")
+        result_raw = self._get_config_subject_iceberg(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.ok, result_raw.status_code
+        assert result_raw.json()["compatibilityMode"] == False
+
+        self.logger.debug("Set subject iceberg config")
+        result_raw = self._set_config_subject_iceberg(
+            subject=f"{topic}-key", data=json.dumps({"compatibilityMode": True}))
+        assert result_raw.status_code == requests.codes.ok, result_raw.json(
+        )["message"]
+        assert result_raw.json()["compatibilityMode"] == True
+
+        self.logger.debug("Get subject iceberg config - should be true")
+        result_raw = self._get_config_subject_iceberg(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.ok, result_raw.status_code
+        assert result_raw.json()["compatibilityMode"] == True
+
+        self.logger.debug("Unset subject iceberg config")
+        result_raw = self._set_config_subject_iceberg(
+            subject=f"{topic}-key", data=json.dumps({"compatibilityMode": False}))
+        assert result_raw.status_code == requests.codes.ok, result_raw.json(
+        )["message"]
+        assert result_raw.json()["compatibilityMode"] == False
+
+        self.logger.debug("Get subject iceberg config - should be false again")
+        result_raw = self._get_config_subject_iceberg(subject=f"{topic}-key")
+        assert result_raw.status_code == requests.codes.ok, result_raw.status_code
+        assert result_raw.json()["compatibilityMode"] == False
 
     @cluster(num_nodes=3)
     @parametrize(dataset_type=SchemaType.AVRO)

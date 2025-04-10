@@ -66,6 +66,18 @@ compatibility_result check_compatible(
     });
 }
 
+compatibility_result check_iceberg_compatible(
+  const valid_schema& reader, const valid_schema& writer) {
+    return reader.visit([&](const auto& reader) -> compatibility_result {
+        return writer.visit([&](const auto& writer) -> compatibility_result {
+            if constexpr (std::is_same_v<decltype(reader), decltype(writer)>) {
+                return check_iceberg_compatible(reader, writer);
+            }
+            return {.is_compat = false};
+        });
+    });
+}
+
 constexpr auto set_accumulator =
   [](store::schema_id_set acc, store::schema_id_set refs) {
       acc.insert(refs.begin(), refs.end());
@@ -763,6 +775,26 @@ sharded_store::clear_compatibility(seq_marker marker, subject sub) {
       });
 }
 
+///\brief Get the iceberg config for a subject, or fallback to global.
+ss::future<iceberg_compat_mode>
+sharded_store::get_iceberg_compatibility_mode(subject sub) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, [sub{std::move(sub)}](store& s) {
+          return s.get_iceberg_compatibility_mode(sub).value();
+      });
+}
+
+///\brief Set the iceberg config for a subject.
+ss::future<bool> sharded_store::set_iceberg_compatibility_mode(
+  seq_marker marker, subject sub, iceberg_compat_mode mode) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}, mode](store& s) {
+          return s.set_iceberg_compatibility_mode(marker, sub, mode).value();
+      });
+}
+
 ss::future<bool>
 sharded_store::upsert_schema(schema_id id, unparsed_schema_definition def) {
     co_await maybe_update_max_schema_id(id);
@@ -864,6 +896,7 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
 
     // Lookup the compatibility level
     auto compat = co_await get_compatibility(sub, default_to_global::yes);
+    auto check_iceberg = co_await get_iceberg_compatibility_mode(sub);
 
     // Types must always match
     if (old_schema.schema.type() != new_schema.type()) {
@@ -876,7 +909,7 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
         co_return result;
     }
 
-    if (compat == compatibility_level::none) {
+    if (compat == compatibility_level::none && !check_iceberg) {
         co_return compatibility_result{.is_compat = true};
     }
 
@@ -959,6 +992,14 @@ ss::future<compatibility_result> sharded_store::do_is_compatible(
               std::make_move_iterator(r.messages.end()),
               std::back_inserter(version_messages),
               formatter("old", "new"));
+        }
+
+        if (check_iceberg) {
+            auto r = check_iceberg_compatible(new_valid, old_valid);
+            result.is_compat = result.is_compat && r.is_compat;
+            version_messages.reserve(
+              version_messages.size() + r.messages.size());
+            std::ranges::move(r.messages, std::back_inserter(version_messages));
         }
 
         if (is_verbose && !result.is_compat) {

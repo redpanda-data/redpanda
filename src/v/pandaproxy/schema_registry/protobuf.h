@@ -33,6 +33,10 @@ ss::future<canonical_schema_definition> validate_protobuf_schema(
 ss::future<canonical_schema> make_canonical_protobuf_schema(
   sharded_store& store, unparsed_schema schema, normalize norm = normalize::no);
 
+compatibility_result check_iceberg_compatible(
+  const protobuf_schema_definition& reader,
+  const protobuf_schema_definition& writer);
+
 compatibility_result check_compatible(
   const protobuf_schema_definition& reader,
   const protobuf_schema_definition& writer,

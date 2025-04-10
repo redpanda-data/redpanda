@@ -22,6 +22,9 @@ make_json_schema_definition(schema_getter& store, canonical_schema schema);
 ss::future<canonical_schema> make_canonical_json_schema(
   sharded_store& store, unparsed_schema def, normalize norm = normalize::no);
 
+compatibility_result check_iceberg_compatible(
+  const json_schema_definition& reader, const json_schema_definition& writer);
+
 compatibility_result check_compatible(
   const json_schema_definition& reader,
   const json_schema_definition& writer,

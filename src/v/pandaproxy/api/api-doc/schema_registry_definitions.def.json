@@ -91,6 +91,22 @@
         }
       }
     },
+    "get_iceberg_config": {
+      "type": "object",
+      "properties": {
+        "compatibilityMode": {
+          "type": "string"
+        }
+      }
+    },
+    "put_iceberg_config": {
+      "type": "object",
+      "properties": {
+        "compatibilityMode": {
+          "type": "bool"
+        }
+      }
+    },
     "mode": {
       "type": "object",
       "properties": {

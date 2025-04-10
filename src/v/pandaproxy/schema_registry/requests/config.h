@@ -100,4 +100,79 @@ void rjson_serialize(
     w.EndObject();
 }
 
+struct get_config_iceberg_req_rep {
+    static constexpr std::string_view field_name = "compatibilityMode";
+    iceberg_compat_mode compatibility_mode{false};
+};
+
+struct put_config_iceberg_req_rep {
+    static constexpr std::string_view field_name = "compatibilityMode";
+    iceberg_compat_mode compatibility_mode{false};
+};
+
+template<typename Encoding = ::json::UTF8<>>
+class put_config_iceberg_handler : public json::base_handler<Encoding> {
+    enum class state : uint8_t {
+        empty = 0,
+        object,
+        compatibility_mode,
+    };
+    state _state = state::empty;
+
+public:
+    using Ch = typename json::base_handler<Encoding>::Ch;
+    using rjson_parse_result = put_config_iceberg_req_rep;
+    rjson_parse_result result;
+
+    explicit put_config_iceberg_handler()
+      : json::base_handler<Encoding>{json::serialization_format::none}
+      , result() {}
+
+    bool Key(const Ch* str, ::json::SizeType len, bool) {
+        auto sv = std::string_view{str, len};
+        if (_state == state::object && sv == rjson_parse_result::field_name) {
+            _state = state::compatibility_mode;
+            return true;
+        }
+        return false;
+    }
+
+    bool Bool(bool b) {
+        if (_state == state::compatibility_mode) {
+            result.compatibility_mode = iceberg_compat_mode{b};
+            _state = state::object;
+            return true;
+        }
+        return false;
+    }
+
+    bool StartObject() {
+        return std::exchange(_state, state::object) == state::empty;
+    }
+
+    bool EndObject(::json::SizeType) {
+        return std::exchange(_state, state::empty) == state::object;
+    }
+};
+
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
+  const schema_registry::get_config_iceberg_req_rep& res) {
+    w.StartObject();
+    w.Key(get_config_iceberg_req_rep::field_name.data());
+    w.Bool(static_cast<bool>(res.compatibility_mode));
+    w.EndObject();
+}
+
+template<typename Buffer>
+void rjson_serialize(
+  ::json::Writer<Buffer>& w,
+  const schema_registry::put_config_iceberg_req_rep& res) {
+    w.StartObject();
+    w.Key(put_config_iceberg_req_rep::field_name.data());
+    w.Bool(static_cast<bool>(res.compatibility_mode));
+    w.EndObject();
+}
+
 } // namespace pandaproxy::schema_registry

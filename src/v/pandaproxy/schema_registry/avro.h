@@ -23,6 +23,9 @@ make_avro_schema_definition(schema_getter& store, canonical_schema schema);
 result<canonical_schema_definition>
 sanitize_avro_schema_definition(unparsed_schema_definition def);
 
+compatibility_result check_iceberg_compatible(
+  const avro_schema_definition& reader, const avro_schema_definition& writer);
+
 compatibility_result check_compatible(
   const avro_schema_definition& reader,
   const avro_schema_definition& writer,

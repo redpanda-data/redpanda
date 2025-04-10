@@ -56,6 +56,9 @@ public:
 
     ss::future<bool> delete_config(subject sub);
 
+    ss::future<bool>
+    write_iceberg_compatibility_mode(subject sub, iceberg_compat_mode);
+
     ss::future<bool> write_mode(std::optional<subject> sub, mode m, force f);
 
     ss::future<bool> delete_mode(subject sub);
@@ -88,6 +91,9 @@ private:
       model::offset write_at);
 
     ss::future<std::optional<bool>> do_delete_config(subject sub);
+
+    ss::future<std::optional<bool>> do_write_iceberg_compatibility_mode(
+      subject sub, iceberg_compat_mode, model::offset write_at);
 
     ss::future<std::optional<bool>> do_write_mode(
       std::optional<subject> sub, mode m, force f, model::offset write_at);

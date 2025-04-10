@@ -769,6 +769,7 @@ public:
 struct config_value {
     compatibility_level compat{compatibility_level::none};
     std::optional<subject> sub;
+    std::optional<iceberg_compat_mode> iceberg;
 
     friend bool operator==(const config_value&, const config_value&) = default;
 
@@ -776,7 +777,11 @@ struct config_value {
         if (v.sub.has_value()) {
             fmt::print(os, "subject: {}, ", v.sub.value());
         }
-        fmt::print(os, "compatibility: {}", to_string_view(v.compat));
+        if (v.iceberg.has_value()) {
+            fmt::print(os, "iceberg: {}", v.iceberg.value());
+        } else {
+            fmt::print(os, "compatibility: {}", to_string_view(v.compat));
+        }
 
         return os;
     }
@@ -790,6 +795,10 @@ void rjson_serialize(
         w.Key("subject");
         ::json::rjson_serialize(w, val.sub.value());
     }
+    if (val.iceberg.has_value()) {
+        w.Key("icebergMode");
+        w.Bool(static_cast<bool>(val.iceberg.value()));
+    }
     w.Key("compatibilityLevel");
     ::json::rjson_serialize(w, to_string_view(val.compat));
     w.EndObject();
@@ -801,6 +810,7 @@ class config_value_handler : public json::base_handler<Encoding> {
         empty = 0,
         object,
         compatibility,
+        iceberg,
         subject,
     };
     state _state = state::empty;
@@ -818,6 +828,7 @@ public:
         std::optional<state> s{
           string_switch<std::optional<state>>(sv)
             .match("compatibilityLevel", state::compatibility)
+            .match("icebergMode", state::iceberg)
             .match("subject", state::subject)
             .default_match(std::nullopt)};
         return s.has_value() && std::exchange(_state, *s) == state::object;
@@ -834,6 +845,15 @@ public:
             return s.has_value();
         } else if (_state == state::subject) {
             result.sub.emplace(sv);
+            _state = state::object;
+            return true;
+        }
+        return false;
+    }
+
+    bool Bool(bool b) {
+        if (_state == state::iceberg) {
+            result.iceberg = iceberg_compat_mode{b};
             _state = state::object;
             return true;
         }
@@ -1556,6 +1576,15 @@ struct consume_to_store {
                         .version{invalid_schema_version}, // Not applicable
                         .key_type = seq_marker_key_type::config},
                       *key.sub);
+                } else if (val->iceberg.has_value()) {
+                    co_await _store.set_iceberg_compatibility_mode(
+                      seq_marker{
+                        .seq = key.seq,
+                        .node = key.node,
+                        .version{invalid_schema_version}, // not applicable
+                        .key_type = seq_marker_key_type::iceberg},
+                      *key.sub,
+                      val->iceberg.value());
                 } else {
                     co_await _store.set_compatibility(
                       seq_marker{

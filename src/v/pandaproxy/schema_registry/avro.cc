@@ -12,6 +12,8 @@
 #include "pandaproxy/schema_registry/avro.h"
 
 #include "bytes/streambuf.h"
+#include "datalake/schema_avro.h"
+#include "iceberg/compatibility.h"
 #include "json/allocator.h"
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
@@ -635,6 +637,26 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
       canonical_schema_definition::raw_string{std::move(buf).as_iobuf()},
       schema_type::avro,
       def.refs()};
+}
+
+compatibility_result check_iceberg_compatible(
+  const avro_schema_definition& rdr, const avro_schema_definition& wrtr) {
+    const auto reader = rdr().root();
+    const auto writer = wrtr().root();
+    auto reader_struct = datalake::type_to_iceberg(reader);
+    if (reader_struct.has_error()) {
+        return {.is_compat = false};
+    }
+    auto writer_struct = datalake::type_to_iceberg(writer);
+    if (writer_struct.has_error()) {
+        return {.is_compat = false};
+    }
+
+    auto res = iceberg::evolve_schema(
+      writer_struct.value(), reader_struct.value(), iceberg::partition_spec{});
+
+    // TODO(oren): a message like "ICEBERG ERROR" or w/e
+    return {.is_compat = !res.has_error()};
 }
 
 compatibility_result check_compatible(

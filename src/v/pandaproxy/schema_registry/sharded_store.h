@@ -187,6 +187,13 @@ public:
     ///\brief Clear the compatibility level for a subject.
     ss::future<bool> clear_compatibility(seq_marker marker, subject sub);
 
+    ///\brief Get the iceberg config for a subject, or fallback to global.
+    ss::future<iceberg_compat_mode> get_iceberg_compatibility_mode(subject sub);
+
+    ///\brief Set the iceberg config for a subject.
+    ss::future<bool> set_iceberg_compatibility_mode(
+      seq_marker marker, subject sub, iceberg_compat_mode mode);
+
     ///\brief Check if the provided schema is compatible with the subject and
     /// version, according the the current compatibility.
     ///
