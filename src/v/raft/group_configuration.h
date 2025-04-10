@@ -258,7 +258,7 @@ public:
     void for_each_broker(Func&& f) const;
 
     template<typename Func>
-    void for_each_broker_id(Func&& f) const;
+    void for_each_replica(Func&& f) const;
 
     template<typename Func>
     void for_each_voter(Func&& f) const;
@@ -459,7 +459,7 @@ void group_configuration::for_each_broker(Func&& f) const {
 }
 
 template<typename Func>
-void group_configuration::for_each_broker_id(Func&& f) const {
+void group_configuration::for_each_replica(Func&& f) const {
     auto voters = unique_voter_ids();
     auto learners = unique_learner_ids();
     auto joined = boost::join(voters, learners);
