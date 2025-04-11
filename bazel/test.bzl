@@ -354,7 +354,7 @@ def redpanda_cc_bench(
         tags = [],
         target_compatible_with = [],
         redirect_stderr = False,
-        exec_in_shm = False):
+        exec_in_shm = True):
     """
     Create a seastar benchmark target
 

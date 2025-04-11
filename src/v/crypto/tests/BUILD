@@ -118,6 +118,7 @@ redpanda_cc_bench(
     srcs = ["crypto_bench.cc"],
     data = common_data_deps,
     env = common_env,
+    exec_in_shm = False,
     deps = [
         "//src/v/base",
         "//src/v/crypto",
@@ -135,6 +136,7 @@ redpanda_cc_bench(
     data = common_data_deps,
     defines = ["PERF_FIPS_MODE"],
     env = common_env,
+    exec_in_shm = False,
     deps = [
         "//src/v/base",
         "//src/v/crypto",
