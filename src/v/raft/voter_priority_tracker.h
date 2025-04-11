@@ -15,11 +15,6 @@ namespace raft {
 // priority used to implement semi-deterministic leader election
 using voter_priority = named_type<uint32_t, struct voter_priority_tag>;
 
-// zero priority doesn't allow node to become a leader
-inline constexpr voter_priority zero_voter_priority = voter_priority{0};
-// 1 is smallest possible priority allowing node to become a leader
-inline constexpr voter_priority min_voter_priority = voter_priority{1};
-
 class voter_priority_tracker {
 public:
     voter_priority_tracker(raft::vnode self, bool is_ready_for_leader_election);
