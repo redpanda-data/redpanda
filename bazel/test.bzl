@@ -6,7 +6,6 @@ changes. For example, redpanda_cc_gtest will automatically configure Seastar for
 running tests, like setting a reasonable number of cores and amount of memory.
 """
 
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load(":internal.bzl", "redpanda_copts")
 
 def _has_flags(args, *flags):
@@ -368,8 +367,8 @@ def redpanda_cc_bench(
       env: any custom environment variables for the binary
       cpu: the number of cores the benchmark needs
       memory: the amount of RAM needed for the benchmark
-      runs: number of runs
-      duration: duration of a single run in seconds
+      runs: number of runs or None for default, applies to run but not test
+      duration: duration of a single run in seconds or None for default, applies to run but not test
       data: any data files available to the benchmark as runfiles
       tags: custom tags for the test
       timeout: the timeout for smoke testing the benchmark
@@ -409,12 +408,6 @@ def redpanda_cc_bench(
         "resources:memory:{}".format(_parse_bytes(memory) / (1 << 20)),
     ]
 
-    binary_args = []
-    if runs != None:
-        binary_args.append("--runs={}".format(runs))
-    if duration != None:
-        binary_args.append("--duration={}".format(duration))
-
     tags = tags + ["bench"]
 
     binary_name = name + "_binary"
@@ -434,46 +427,43 @@ def redpanda_cc_bench(
         data = data,
     )
 
+    # below here targets use a wrapper which takes the binary as the first
+    # argument and which should be included in the runfiles data
     args = ["$(rootpath :{})".format(binary_name)] + args
+    data = data + [":" + binary_name]
 
     env = env | {
         "MB_EXEC_IN_SHM": "1" if exec_in_shm else "0",
         "MB_REDIRECT_STDERR_DEFAULT": "1" if redirect_stderr else "0",
     }
 
+    wrapper_src = ["//tools:bench_wrapper"]
+
+    binary_args = []
+    if runs != None:
+        binary_args.append("--runs={}".format(runs))
+    if duration != None:
+        binary_args.append("--duration={}".format(duration))
+
     # to run a benchmark in the right way, we need to wrap it in bench-wrapper.sh,
     # which can cd to the right location and make other adjustments
     native.sh_binary(
         name = name,
-        srcs = ["//tools:bench_wrapper"],
+        srcs = wrapper_src,
         args = args,
-        data = data + [
-            ":" + binary_name,
-        ],
+        data = data,
         env = env,
         testonly = True,
     )
 
-    # we write a wrapper to test the benchmark, which tries to
-    # run it as quickly as possible in order to smoke test it
-    write_file(
-        name = name + "_test_script",
-        out = name + "_test_wrapper.sh",
-        content = [
-            "#!/bin/bash",
-            "exec $@ --iterations=1 --runs=1 --duration=0 --no-stdout --overprovisioned",
-        ],
-    )
     test_data, test_env = _test_options()
     native.sh_test(
         name = name + "_test",
         timeout = timeout,
         tags = resource_tags + tags,
-        srcs = [name + "_test_script"],
+        srcs = wrapper_src,
         env = env | test_env,
-        args = args,
-        data = [
-            ":" + binary_name,
-        ] + data + test_data,
+        args = args + ["--iterations=1 --runs=1 --duration=0 --no-stdout --overprovisioned"],
+        data = data + test_data,
         target_compatible_with = target_compatible_with,
     )
