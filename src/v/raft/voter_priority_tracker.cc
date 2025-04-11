@@ -10,6 +10,12 @@
 
 #include "raft/voter_priority_tracker.h"
 namespace raft {
+namespace {
+// zero priority doesn't allow node to become a leader
+inline constexpr voter_priority zero_voter_priority = voter_priority{0};
+// 1 is smallest possible priority allowing node to become a leader
+inline constexpr voter_priority min_voter_priority = voter_priority{1};
+} // namespace
 
 voter_priority_tracker::voter_priority_tracker(
   raft::vnode self, bool is_ready_for_leader_election)
@@ -36,6 +42,7 @@ void voter_priority_tracker::on_leader_election(size_t replica_count) {
 void voter_priority_tracker::on_successful_leader_election() {
     _target_priority = voter_priority::max();
 }
+
 void voter_priority_tracker::mark_ready_for_leader_election() {
     if (_replica_priority_override == raft::min_voter_priority) {
         unblock_new_leadership();
