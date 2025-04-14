@@ -26,10 +26,12 @@ struct small_t
     int16_t b = 2;
     int32_t c = 3;
     int64_t d = 4;
+    int64_t e = 4;
+    int64_t f = 4;
 
-    auto serde_fields() { return std::tie(a, b, c, d); }
+    auto serde_fields() { return std::tie(a, b, c, d, e, f); }
 };
-static_assert(sizeof(small_t) == 16, "one more byte for padding");
+static_assert(sizeof(small_t) == 32, "one more byte for padding");
 
 PERF_TEST(small, serialize) {
     perf_tests::start_measuring_time();
