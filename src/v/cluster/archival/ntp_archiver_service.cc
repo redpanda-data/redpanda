@@ -2857,6 +2857,8 @@ ss::future<> ntp_archiver::apply_spillover() {
         co_return;
     }
 
+    archival_stm_fence fence = get_rw_fence();
+
     const auto manifest_upload_timeout = _conf->manifest_upload_timeout();
     const auto manifest_upload_backoff = _conf->cloud_storage_initial_backoff();
 
@@ -2950,6 +2952,13 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto deadline = ss::lowres_clock::now() + sync_timeout;
 
         auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        if (fence.emit_rw_fence_cmd) {
+            vlog(
+              _rtclog.debug,
+              "spillover, read-write fence: {}",
+              fence.read_write_fence);
+            batch.read_write_fence(fence.read_write_fence);
+        }
         batch.spillover(spillover_meta);
         if (manifest().get_archive_start_offset() == model::offset{}) {
             vlog(

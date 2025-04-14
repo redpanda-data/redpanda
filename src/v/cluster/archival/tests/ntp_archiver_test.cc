@@ -1290,6 +1290,9 @@ static void test_manifest_spillover_impl(
   size_t start_manifest_size) {
     // Add segments until spillover condition will be met and check that
     // spillover actually triggered.
+    scoped_config cfg;
+    cfg.get("cloud_storage_disable_archival_stm_rw_fence").set_value(true);
+
     const int64_t rec_per_segment = 1;
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
 
