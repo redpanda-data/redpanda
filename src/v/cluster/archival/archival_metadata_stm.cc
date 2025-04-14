@@ -479,15 +479,18 @@ command_batch_builder& command_batch_builder::update_highest_producer_id(
 ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
 
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 10");
     auto units = co_await _stm.get()._lock.get_units(_as);
     auto holder = _stm.get()._gate.hold();
 
-    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate called");
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 20");
     auto now = ss::lowres_clock::now();
     auto timeout = now < _deadline ? _deadline - now : 0ms;
 
     // Block on syncing the STM.
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 30");
     auto did_sync = co_await _stm.get().do_sync(timeout, &_as);
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 40");
     if (!did_sync) {
         co_return errc::not_leader;
     }
@@ -505,6 +508,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
     // The operation can continue safely in background because it holds the
     // lock and the gate. The lock also ensures that no concurrent replicate
     // calls can be made and we won't leak continuations.
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 50");
     auto res = co_await ssx::with_timeout_abortable(
       std::move(f), model::no_timeout, _as);
 
