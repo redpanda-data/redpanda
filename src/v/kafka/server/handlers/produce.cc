@@ -224,7 +224,8 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
   error_code ec,
   std::unique_ptr<ss::promise<>> dispatch,
   model::ntp ntp,
-  ss::shard_id source_shard) {
+  ss::shard_id source_shard,
+  std::optional<ss::sstring> err_msg = std::nullopt) {
     // submit back to promise source shard
     ssx::background = ss::smp::submit_to(
       source_shard, [dispatch = std::move(dispatch)]() mutable {
@@ -233,7 +234,9 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
       });
     return ss::make_ready_future<produce_response::partition>(
       produce_response::partition{
-        .partition_index = ntp.tp.partition, .error_code = ec});
+        .partition_index = ntp.tp.partition,
+        .error_code = ec,
+        .error_message = std::move(err_msg)});
 }
 
 /**
@@ -408,11 +411,18 @@ static partition_produce_stages produce_topic_partition(
                 }
                 if (unlikely(
                       static_cast<uint32_t>(batch_size) > batch_max_bytes)) {
+                    auto msg = ssx::sformat(
+                      "batch size {} exceeds max {}",
+                      batch_size,
+                      batch_max_bytes);
+                    thread_local static ss::logger::rate_limit rate(1s);
+                    vloglr(klog, ss::log_level::warn, rate, "{}", msg);
                     return finalize_request_with_error_code(
                       error_code::message_too_large,
                       std::move(dispatch),
                       ntp,
-                      source_shard);
+                      source_shard,
+                      std::move(msg));
                 }
                 if (unlikely(!partition->is_leader())) {
                     return finalize_request_with_error_code(
