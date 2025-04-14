@@ -106,13 +106,19 @@ public:
 
     ///\brief Return the id of the schema, if it already exists.
     std::optional<schema_id> get_schema_id(const schema_definition& def) const {
-        const auto s_it = std::find_if(
-          _schemas.begin(), _schemas.end(), [&](const auto& s) {
-              const auto& entry = s.second;
-              return def == entry.definition;
-          });
-        return s_it == _schemas.end() ? std::optional<schema_id>{}
-                                      : s_it->first;
+        auto h = absl::Hash<schema_definition>{}(def);
+        const auto h_it = _schemas_hash.find(h);
+        if (h_it == _schemas_hash.end()) {
+            return {};
+        }
+        const auto s_it = _schemas.find(h_it->second);
+        if (s_it == _schemas.end()) {
+            return {};
+        }
+        if (s_it->second.definition != def) {
+            return {};
+        }
+        return h_it->second;
     }
 
     ///\brief Return a list of subject-versions for the shema id.
@@ -635,9 +641,14 @@ public:
             return {s_it->first, false};
         }
 
+        auto h = absl::Hash<schema_definition>{}(def);
+
         const auto id = _schemas.empty() ? schema_id{1}
                                          : std::prev(_schemas.end())->first + 1;
         auto [_, inserted] = _schemas.try_emplace(id, std::move(def));
+
+        _schemas_hash.try_emplace(h, id);
+
         return {id, inserted};
     }
 
@@ -645,11 +656,20 @@ public:
         if (mark_schema) {
             _marked_schemas.push_back(id);
         }
+        auto h = absl::Hash<schema_definition>{}(def);
+        _schemas_hash.try_emplace(h, id);
         return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
           .second;
     }
 
-    void delete_schema(schema_id id) { _schemas.erase(id); }
+    void delete_schema(schema_id id) {
+        const auto it = _schemas.find(id);
+        if (it != _schemas.end()) {
+            auto h = absl::Hash<schema_definition>{}(it->second.definition);
+            _schemas_hash.erase(h);
+        }
+        _schemas.erase(id);
+    }
 
     // This function returns and unmarkes all marked schemas.
     chunked_vector<schema_id> extract_marked_schemas() {
@@ -850,6 +870,7 @@ private:
             }
         }
     };
+    using schema_hash = absl::btree_map<size_t, schema_id>;
     using schema_map = absl::btree_map<schema_id, schema_entry>;
     using subject_map = absl::node_hash_map<subject, subject_entry>;
 
@@ -910,6 +931,7 @@ private:
         return v_it;
     }
 
+    schema_hash _schemas_hash;
     schema_map _schemas;
     subject_map _subjects;
     chunked_vector<schema_id> _marked_schemas;

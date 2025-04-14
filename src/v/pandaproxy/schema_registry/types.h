@@ -116,6 +116,11 @@ struct schema_reference {
     ss::sstring name;
     subject sub{invalid_subject};
     schema_version version{invalid_schema_version};
+
+    template<typename H>
+    friend H AbslHashValue(H h, const schema_reference& ref) {
+        return H::combine(std::move(h), ref.name, ref.sub, ref.version);
+    }
 };
 
 ///\brief Definition of a schema and its type.
@@ -178,6 +183,16 @@ public:
 
     auto destructure() && {
         return make_tuple(std::move(_def), _type, std::move(_refs));
+    }
+
+    template<typename H>
+    friend H AbslHashValue(H h, const schema_definition& schema) {
+        for (const auto& io_frag : schema.raw()()) {
+            std::string_view sv_frag{io_frag.get(), io_frag.size()};
+            h = H::combine(
+              std::move(h), absl::Hash<std::string_view>()(sv_frag));
+        }
+        return H::combine(std::move(h), schema.type(), schema.refs());
     }
 
 private:

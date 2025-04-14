@@ -324,37 +324,46 @@ sharded_store::has_schema(subject_schema schema, include_deleted inc_del) {
         throw as_exception(invalid_subject_schema(schema.sub()));
     }
 
-    std::optional<stored_schema> sub_schema;
-    for (auto ver : versions) {
-        try {
-            auto res = co_await get_subject_schema(schema.sub(), ver, inc_del);
-            if (schema.def() == res.schema.def()) {
-                sub_schema.emplace(std::move(res));
-                break;
-            }
-        } catch (const exception& e) {
-            if (
-              e.code() == error_code::subject_not_found
-              || e.code() == error_code::subject_version_not_found) {
-            } else if (
-              // Stored schemas might be invalid if imported improperly
-              e.code() == error_code::schema_invalid) {
-                vlog(
-                  plog.warn,
-                  "Failed to parse stored schema, subject '{}', version {}. "
-                  "Error: {}",
-                  schema.sub(),
-                  ver,
-                  e.what());
-            } else {
-                throw;
-            }
-        }
-    };
-    if (!sub_schema.has_value()) {
+    // Determine if the definition already exists
+    auto map = [&schema](store& s) { return s.get_schema_id(schema.def()); };
+    auto reduce = [](
+                    std::optional<schema_id> acc,
+                    std::optional<schema_id> s_id) { return acc ? acc : s_id; };
+    auto s_id = co_await _store.map_reduce0(
+      map, std::optional<schema_id>{}, reduce);
+
+    if (!s_id.has_value()) {
         throw as_exception(schema_not_found());
     }
-    co_return std::move(sub_schema).value();
+
+    // Determine if the subject already has a version that references this
+    // schema, deleted versions may be seen.
+    std::optional<schema_version> v_id;
+    for (const auto& v : versions) {
+        auto sve = co_await _store.invoke_on(
+          shard_for(schema.sub()),
+          _smp_opts,
+          [sub = schema.sub(), v, inc_del](store& s) {
+              return s.get_subject_version_id(sub, v, inc_del);
+          });
+        if (!sve.has_value()) {
+            continue;
+        }
+
+        if (sve.value().id == *s_id) {
+            v_id.emplace(v);
+            break;
+        }
+    }
+    if (!v_id.has_value()) {
+        throw as_exception(schema_not_found());
+    }
+
+    try {
+        co_return co_await get_subject_schema(schema.sub(), *v_id, inc_del);
+    } catch (const exception& e) {
+        throw as_exception(schema_not_found());
+    }
 }
 
 ss::future<std::optional<schema_definition>>
