@@ -40,7 +40,8 @@ vote_stm::vote_stm(consensus* p, is_prevote prevote)
   : _ptr(p)
   , _prevote(prevote)
   , _sem(0, "raft/vote")
-  , _ctxlog(_ptr->_ctxlog) {}
+  , _ctxlog(_ptr->_ctxlog)
+  , _blocked_when_started(_ptr->_priority_tracker.is_blocked()) {}
 
 vote_stm::~vote_stm() {
     vassert(
@@ -391,11 +392,17 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
 
     const auto only_voter = _config->unique_voter_count() == 1
                             && _config->is_voter(_ptr->self());
-    if (!only_voter && _ptr->_priority_tracker.is_blocked()) {
+    /**
+     * Fail election if current replica was blocked after the voting started
+     */
+    const auto blocked_while_voting = !_blocked_when_started
+                                      && _ptr->_priority_tracker.is_blocked();
+
+    if (!only_voter && blocked_while_voting) {
         vlog(
           _ctxlog.debug,
           "[pre-vote: false] Ignoring successful vote. Becoming a leader is "
-          "blocked");
+          "blocked.");
         fail_election();
         co_return;
     }

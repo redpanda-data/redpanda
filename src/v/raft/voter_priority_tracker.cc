@@ -12,20 +12,24 @@
 namespace raft {
 namespace {
 // zero priority doesn't allow node to become a leader
-inline constexpr voter_priority zero_voter_priority = voter_priority{0};
+
+[[maybe_unused]] inline constexpr voter_priority zero_voter_priority
+  = voter_priority{0};
 // 1 is smallest possible priority allowing node to become a leader
 inline constexpr voter_priority min_voter_priority = voter_priority{1};
+inline constexpr voter_priority not_ready_voter_priority = voter_priority{2};
 } // namespace
 
 voter_priority_tracker::voter_priority_tracker(
   raft::vnode self, bool is_ready_for_leader_election)
   : _self(self)
   , _replica_priority_override(
-      is_ready_for_leader_election ? std::nullopt
-                                   : std::make_optional(min_voter_priority)) {}
+      is_ready_for_leader_election
+        ? std::nullopt
+        : std::make_optional(not_ready_voter_priority)) {}
 
-void voter_priority_tracker::block_new_leadership() {
-    _replica_priority_override = zero_voter_priority;
+void voter_priority_tracker::set_min_voter_priority() {
+    _replica_priority_override = min_voter_priority;
 }
 
 void voter_priority_tracker::reset_voter_priority_override() {
@@ -44,8 +48,8 @@ void voter_priority_tracker::on_successful_leader_election() {
 }
 
 void voter_priority_tracker::mark_ready_for_leader_election() {
-    if (_replica_priority_override == raft::min_voter_priority) {
-        unblock_new_leadership();
+    if (_replica_priority_override == raft::not_ready_voter_priority) {
+        reset_voter_priority_override();
     }
 }
 /**
@@ -82,7 +86,7 @@ voter_priority voter_priority_tracker::get_replica_priority(
 }
 
 bool voter_priority_tracker::is_blocked() const {
-    return _replica_priority_override == zero_voter_priority;
+    return _replica_priority_override == min_voter_priority;
 }
 
 } // namespace raft

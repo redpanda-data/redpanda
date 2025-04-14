@@ -1050,3 +1050,52 @@ TEST_F_CORO(raft_fixture, test_replicate_abort_source) {
     ASSERT_TRUE_CORO(r_2.has_error());
     ASSERT_EQ_CORO(r_2.error(), raft::errc::replicate_first_stage_exception);
 }
+
+TEST_F_CORO(raft_fixture, test_leadership_blocked_replicas_can_elect_leader) {
+    co_await create_simple_group(3);
+    auto leader_id = co_await wait_for_leader(10s);
+    auto& leader_node = node(leader_id);
+    // replicate some batches to all replicas
+    auto res = co_await leader_node.raft()->replicate(
+      make_batches(1, 1, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(res.has_error());
+    auto blocked_follower = random_follower_id().value();
+    /**
+     * Block append entries to one of the followers
+     */
+    leader_node.on_dispatch([blocked_follower](
+                              model::node_id node, raft::msg_type mt) {
+        if (mt == raft::msg_type::append_entries && blocked_follower == node) {
+            throw std::runtime_error("error");
+        }
+        return ss::now();
+    });
+    // replicate more batches.
+    res = co_await leader_node.raft()->replicate(
+      make_batches(1, 1, 128),
+      replicate_options(consistency_level::quorum_ack));
+    ASSERT_FALSE_CORO(res.has_error());
+    /**
+     * Since append entries to one of the followers is blocked the two other
+     * replicas has the log longer than the blocked one.
+     *
+     * Now block leadership on all replicas but not the follower with the
+     * shortest log. The follower with shortest log can not be elected as a
+     * leader as it would cause truncation.
+     *
+     * Even tho the other replicas are blocked from being a leaders the raft
+     * group should finally elect a leader when enough failed election will
+     * cause the target priority to go down to 1.
+     */
+
+    for (auto& [nid, node] : nodes()) {
+        if (nid != blocked_follower) {
+            node->raft()->block_new_leadership();
+        }
+    }
+    co_await leader_node.raft()->step_down("test-step-down");
+
+    auto leader = co_await wait_for_leader(60s);
+    ASSERT_NE_CORO(leader, blocked_follower);
+}
