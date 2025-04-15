@@ -9,7 +9,16 @@
 
 #include "pandaproxy/logger.h"
 
+#include "utils/truncating_logger.h"
+
 namespace pandaproxy {
 ss::logger plog{"pandaproxy"};
 ss::logger srlog{"schemaregistry"};
+
+ss::logger _preqs{"pandaproxy/requests"};
+truncating_logger preqs(_preqs, max_log_line_bytes);
+
+ss::logger _srreqs{"schemaregistry/requests"};
+truncating_logger srreqs(_srreqs, max_log_line_bytes);
+
 } // namespace pandaproxy

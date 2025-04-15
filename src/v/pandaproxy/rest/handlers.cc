@@ -52,6 +52,12 @@ using server = proxy::server;
 
 } // namespace
 
+template<ppj::impl::RjsonParseHandler Handler>
+typename ss::future<typename Handler::rjson_parse_result>
+rjson_parse(ss::http::request& req, Handler handler) {
+    co_return co_await ppj::rjson_parse(req, std::move(handler), preqs);
+}
+
 ss::future<server::reply_t>
 get_brokers(server::request_t rq, server::reply_t rp) {
     auto res_fmt = parse::accept_header(
@@ -173,8 +179,8 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
     vlog(plog.debug, "get_topics_name: topic: {}", topic);
 
-    auto records = co_await ppj::rjson_parse(
-      std::move(rq.req), ppj::produce_request_handler(req_fmt));
+    auto records = co_await rjson_parse(
+      *rq.req, ppj::produce_request_handler(req_fmt));
     co_return co_await rq.dispatch(
       [records{std::move(records)}, topic, res_fmt, rp{std::move(rp)}](
         kafka::client::client& client) mutable {
@@ -212,8 +218,8 @@ create_consumer(server::request_t rq, server::reply_t rp) {
 
     auto base_uri = make_consumer_uri_base(rq, group_id);
 
-    auto req_data = co_await ppj::rjson_parse(
-      std::move(rq.req), ppj::create_consumer_request_handler());
+    auto req_data = co_await rjson_parse(
+      *rq.req, ppj::create_consumer_request_handler());
 
     validate_no_control(req_data.name(), parse::pp_parsing_error{"name"});
 
@@ -257,7 +263,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
                 auto ec = make_error_condition(
                   reply_error_code::consumer_already_exists);
                 server::reply_t rp;
-                rp.rep = errored_body(ec, ec.message());
+                rp.rep = errored_body(ec, ec.message()).build();
                 return ss::make_ready_future<server::reply_t>(std::move(rp));
             })
             .handle_exception_type(
@@ -322,8 +328,8 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
     auto member_id = parse::request_param<kafka::member_id>(
       *rq.req, "instance");
 
-    auto req_data = co_await ppj::rjson_parse(
-      std::move(rq.req), ppj::subscribe_consumer_request_handler());
+    auto req_data = co_await rjson_parse(
+      *rq.req, ppj::subscribe_consumer_request_handler());
     std::for_each(
       req_data.topics.begin(),
       req_data.topics.end(),
@@ -413,8 +419,7 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto member_id{parse::request_param<kafka::member_id>(*rq.req, "instance")};
 
     auto req_data = ppj::partitions_request_to_offset_request(
-      co_await ppj::rjson_parse(
-        std::move(rq.req), ppj::partitions_request_handler()));
+      co_await rjson_parse(*rq.req, ppj::partitions_request_handler()));
 
     std::for_each(req_data.begin(), req_data.end(), [](const auto& r) {
         validate_no_control(r.name(), parse::pp_parsing_error{"topic_name"});
@@ -458,9 +463,8 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
     auto req_data = rq.req->content_length == 0
                       ? std::vector<kafka::offset_commit_request_topic>()
                       : ppj::partition_offsets_request_to_offset_commit_request(
-                          co_await ppj::rjson_parse(
-                            std::move(rq.req),
-                            ppj::partition_offsets_request_handler()));
+                          co_await rjson_parse(
+                            *rq.req, ppj::partition_offsets_request_handler()));
 
     std::for_each(req_data.begin(), req_data.end(), [](const auto& r) {
         validate_no_control(r.name(), parse::pp_parsing_error{"topic_name"});

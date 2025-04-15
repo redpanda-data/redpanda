@@ -23,6 +23,12 @@ namespace pandaproxy::json {
 struct error_body {
     std::error_condition ec;
     ss::sstring message;
+
+    friend std::ostream& operator<<(std::ostream& os, const error_body& e) {
+        fmt::print(
+          os, R"({{"error_code"={}, "msg"={}}})", e.ec.value(), e.message);
+        return os;
+    }
 };
 
 template<typename Buffer>

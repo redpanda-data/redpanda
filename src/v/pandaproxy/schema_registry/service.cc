@@ -9,6 +9,7 @@
 
 #include "pandaproxy/schema_registry/service.h"
 
+#include "bytes/iobuf_parser.h"
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
@@ -42,9 +43,12 @@
 #include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
+
+#include <variant>
 
 namespace pandaproxy::schema_registry {
 
@@ -636,7 +640,8 @@ service::service(
       "/schema_registry_definitions",
       _ctx,
       json::serialization_format::schema_registry_v1_json,
-      srlog)
+      srlog,
+      srreqs)
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)

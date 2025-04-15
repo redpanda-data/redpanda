@@ -124,7 +124,8 @@ proxy::proxy(
       "/definitions",
       _ctx,
       json::serialization_format::application_json,
-      plog)
+      plog,
+      preqs)
   , _ensure_started{[this]() { return do_start(); }}
   , _controller(controller) {
     _inflight_config_binding.watch([this]() {

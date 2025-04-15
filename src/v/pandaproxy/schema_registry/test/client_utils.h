@@ -13,7 +13,6 @@
 #include "json/document.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
-#include "pandaproxy/reply.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/utils.h"
 

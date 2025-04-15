@@ -12,10 +12,15 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/units.h"
+#include "utils/truncating_logger.h"
 
 #include <seastar/util/log.hh>
 
 namespace pandaproxy {
 extern ss::logger plog;
 extern ss::logger srlog;
+static constexpr size_t max_log_line_bytes = 128_KiB;
+extern truncating_logger preqs;
+extern truncating_logger srreqs;
 } // namespace pandaproxy
