@@ -187,7 +187,7 @@ ss::future<candidate_creation_result> archival_policy::get_next_segment(
         auto kafka_begin_inclusive = log->from_log_offset(begin_inclusive);
         auto kafka_end_exclusive = log->from_log_offset(
           model::next_offset(end_inclusive.value()));
-        if (kafka_begin_inclusive > kafka_end_exclusive) {
+        if (kafka_begin_inclusive >= kafka_end_exclusive) {
             // We can only start upload if the last uploaded kafka offset
             // increases.
             // Otherwise we can get into a situation when timeboxed upload
