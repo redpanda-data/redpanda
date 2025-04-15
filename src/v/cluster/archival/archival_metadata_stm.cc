@@ -872,6 +872,9 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     // early allowing for concurrent sync and replicate calls which will lead
     // to race conditions/corruption/undefined behavior.
 
+    auto crc = batch.header().header_crc;
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 10", crc);
     auto holder = _gate.hold();
 
     vassert(
@@ -902,6 +905,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         }
     }
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 20", crc);
     // Create a promise to deliver the result of the batch application
     _active_operation_res.emplace();
     auto broken_promise_to_shutdown = [](const ss::broken_promise&) {
@@ -914,8 +919,12 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
     opts.set_force_flush();
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 30", crc);
     auto result = co_await _raft->replicate(
       current_term, std::move(batch), opts);
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 40", crc);
     if (!result) {
         vlog(
           _logger.warn,
@@ -932,21 +941,51 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         co_return result.error();
     }
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 50", crc);
     auto applied = co_await wait_no_throw(
       result.value().last_offset, model::no_timeout);
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 60", crc);
     if (!applied) {
+        vlog(
+          _logger.debug,
+          "archival_metadata_stm::do_replicate_commands {} 70",
+          crc);
         if (as.abort_requested()) {
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 80",
+              crc);
             co_return errc::shutting_down;
         }
 
         if (_raft->is_leader() && _raft->term() == current_term) {
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 90",
+              crc);
             co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 100",
+              crc);
         }
         co_return errc::replication_error;
     }
 
-    co_return co_await std::move(apply_result);
+    vlog(
+      _logger.debug,
+      "archival_metadata_stm::do_replicate_commands {} 110",
+      crc);
+    auto res = co_await std::move(apply_result);
+    vlog(
+      _logger.debug,
+      "archival_metadata_stm::do_replicate_commands {} 120",
+      crc);
+
+    co_return res;
 }
 
 ss::future<std::error_code> archival_metadata_stm::mark_clean(
