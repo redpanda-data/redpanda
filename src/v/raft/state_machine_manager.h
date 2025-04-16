@@ -189,6 +189,8 @@ private:
     std::vector<entry_ptr> all_state_machines() const;
     model::offset max_next_offset() const;
     model::offset last_applied() const { return model::prev_offset(_next); }
+
+    ss::future<> apply_initial_recovery_policy();
     /**
      * Simple data structure allowing manager to store independent snapshot
      * for each of the STMs

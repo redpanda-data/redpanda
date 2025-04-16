@@ -584,7 +584,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "persisted_stm_test",
-    timeout = "short",
+    timeout = "long",
     srcs = [
         "persisted_stm_test.cc",
     ],

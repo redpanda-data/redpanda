@@ -204,6 +204,8 @@ ss::future<> state_machine_manager::start() {
       _log.debug,
       "started state machine manager with initial next offset: {}",
       _next);
+    // it safe to update next here as apply loop didn't started yet.
+    co_await apply_initial_recovery_policy();
     ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _as.abort_requested(); }, [this] { return apply(); });
@@ -222,6 +224,50 @@ ss::future<> state_machine_manager::stop() {
     co_await ss::coroutine::parallel_for_each(
       _machines, [](auto p) { return p.second->stm->stop(); });
     co_await std::move(gate_f);
+}
+
+ss::future<> state_machine_manager::apply_initial_recovery_policy() {
+    for (auto& [name, entry] : _machines) {
+        // state machine has already been applied with updates, the initial
+        // recovery policy doesn't apply
+        if (entry->stm->last_applied_offset() != model::offset{}) {
+            continue;
+        }
+        const auto policy = entry->stm->get_initial_recovery_policy();
+        vlog(
+          _log.info,
+          "Applying '{}' initial recovery policy for '{}' state machine",
+          name,
+          policy);
+        if (policy == stm_initial_recovery_policy::read_everything) {
+            continue;
+        }
+        /**
+         * Here we apply the skip to end policy.
+         *
+         * The policy leverages the fact that the _next offset is already
+         * established as all local snapshots were applied.
+         *
+         * We must not use the log end offset here as the end offset may change
+         * with the truncation as it haven't yet been committed.
+         *
+         * The `_next` is safe as it is based on the last applied offset of the
+         * other state machines i.e. the `_next` offset is already committed.
+         *
+         * This policy comes with the trade off. The newly added state machines
+         * will not actually rewind to the physical end of the log. But will
+         * actually read a small part of it.
+         */
+
+        vlog(
+          _log.info,
+          "Setting next offset: {} for: '{}' state machine as a part of "
+          "initial recovery policy.",
+          _next,
+          name);
+        entry->stm->set_next(_next);
+        co_await entry->stm->finish_initial_recovery();
+    }
 }
 
 std::vector<state_machine_manager::entry_ptr>

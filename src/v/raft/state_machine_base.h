@@ -24,6 +24,26 @@ using snapshot_at_offset_supported
 class consensus;
 
 /**
+ * Class defining the state machine behavior when it is created for the first
+ * time for a given partition.
+ *
+ * There are two possible policies:
+ *
+ *  - read_everything - when there is no other state the state machine will
+ *                      starts its existence with next offset set to the
+ *                      beginning of the local log. Be careful as read
+ *                      everything may lead to a large amount of data being
+ *                      read on startup.
+ *
+ *   - skip_to_end      - when there is no other state the state machine will
+ *                      start reading from the first confirmed committed offset.
+ */
+enum class stm_initial_recovery_policy : uint8_t {
+    read_everything = 0,
+    skip_to_end = 1,
+};
+
+/**
  * State machine interface. The class provides an interface that must be
  * implemented to build state machine that can be registered in
  * state_machine_manager.
@@ -97,6 +117,28 @@ public:
         return snapshot_at_offset_supported::yes;
     }
 
+    /**
+     * Returns true only if this is the first start of the state machine and it
+     * needs an initial recovery to happen. In this case the state machine
+     * manager will perform the initial recovery according to the returned
+     * policy.
+     *
+     * This method is called after the state machine has been started but before
+     * any apply happened.
+     */
+    virtual bool needs_initial_recovery() const {
+        return last_applied_offset() == model::offset{};
+    }
+
+    /**
+     * Returns state machine configured initial recovery policy. The default
+     * policy is to read everything as this is the basic behavior of the state
+     * machine
+     */
+    virtual stm_initial_recovery_policy get_initial_recovery_policy() const {
+        return stm_initial_recovery_policy::read_everything;
+    }
+
 protected:
     /**
      * Must always be called under apply mutex scope and apply_units argument
@@ -106,6 +148,13 @@ protected:
     virtual ss::future<>
     apply(const model::record_batch&, const ssx::semaphore_units& apply_units)
       = 0;
+
+    /**
+     * This method is called by the state machine manager to notify the state
+     * machine that it should checkpoint its state. The state machine base
+     * provides a noop implementation for this method.
+     */
+    virtual ss::future<> finish_initial_recovery() { return ss::now(); }
 
     /**
      *  Lifecycle is managed by state_machine_manager
@@ -129,7 +178,7 @@ private:
     mutable offset_monitor<model::offset> _waiters;
     model::offset _next{0};
 };
-
+std::ostream& operator<<(std::ostream&, const stm_initial_recovery_policy&);
 /**
  * This flavor of state machine base allows implementer to opt out from taking
  * snapshot at arbitrary offset. This way a partition that the STM is based on

@@ -245,6 +245,8 @@ protected:
      */
     ss::future<bool> sync(model::timeout_clock::duration);
 
+    ss::future<> finish_initial_recovery() override;
+
     bool _is_catching_up{false};
     model::term_id _insync_term;
     raft::consensus* _raft;

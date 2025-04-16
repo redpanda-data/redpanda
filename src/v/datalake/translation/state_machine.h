@@ -90,6 +90,11 @@ public:
       model::timeout_clock::duration timeout,
       ss::abort_source&);
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::skip_to_end;
+    }
+
 private:
     struct snapshot
       : serde::envelope<snapshot, serde::version<1>, serde::compat_version<0>> {

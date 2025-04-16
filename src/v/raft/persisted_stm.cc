@@ -367,6 +367,15 @@ ss::future<> persisted_stm_base<BaseT, T>::ensure_local_snapshot_exists(
 }
 
 template<typename BaseT, supported_stm_snapshot T>
+ss::future<> persisted_stm_base<BaseT, T>::finish_initial_recovery() {
+    vlog(
+      _log.debug,
+      "Initial recovery finished with last applied offset: {}",
+      last_applied());
+    return ensure_local_snapshot_exists(last_applied());
+}
+
+template<typename BaseT, supported_stm_snapshot T>
 model::offset persisted_stm_base<BaseT, T>::max_collectible_offset() {
     return model::offset::max();
 }
