@@ -100,8 +100,6 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    model::offset last_applied() const { return model::prev_offset(_next); }
-
     snapshot_at_offset_supported supports_snapshot_at_offset() const {
         return _supports_snapshot_at_offset;
     }
@@ -190,6 +188,7 @@ private:
 
     std::vector<entry_ptr> all_state_machines() const;
     model::offset max_next_offset() const;
+    model::offset last_applied() const { return model::prev_offset(_next); }
     /**
      * Simple data structure allowing manager to store independent snapshot
      * for each of the STMs
