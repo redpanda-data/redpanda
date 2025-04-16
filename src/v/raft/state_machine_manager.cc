@@ -199,8 +199,7 @@ ss::future<> state_machine_manager::start() {
           stm_meta->stm->last_applied_offset());
         offsets.push_back(stm_meta->stm->last_applied_offset());
     }
-    std::sort(offsets.begin(), offsets.end());
-    _next = model::next_offset(offsets.front());
+    _next = model::next_offset(*std::ranges::max_element(offsets));
     vlog(
       _log.debug,
       "started state machine manager with initial next offset: {}",
@@ -427,7 +426,6 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
 }
 
 ss::future<> state_machine_manager::apply() {
-    co_await try_apply_in_foreground();
     /**
      * If any of the state machine is behind, dispatch background apply fibers
      */
@@ -436,6 +434,7 @@ ss::future<> state_machine_manager::apply() {
             maybe_start_background_apply(entry);
         }
     }
+    co_await try_apply_in_foreground();
 }
 
 void state_machine_manager::maybe_start_background_apply(
