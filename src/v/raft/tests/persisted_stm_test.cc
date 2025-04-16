@@ -124,10 +124,12 @@ struct kv_state
 
 class persisted_kv : public persisted_stm<> {
 public:
-    static constexpr std::string_view name = "persited_kv_stm";
+    static constexpr std::string_view name = "persisted_kv_stm";
     explicit persisted_kv(
-      raft_node_instance& rn, bool reject_local_snapshots = false)
-      : persisted_stm<>("simple-kv", logger, rn.raft().get())
+      raft_node_instance& rn,
+      bool reject_local_snapshots = false,
+      ss::sstring snapshot_name = "persisted_kv_stm_snapshot")
+      : persisted_stm<>(std::move(snapshot_name), logger, rn.raft().get())
       , raft_node(rn)
       , reject_local_snapshots(reject_local_snapshots) {}
 
@@ -225,6 +227,7 @@ public:
         }
         auto last_op = apply_to_state(batch, state);
         if (last_op) {
+            apply_count++;
             last_operation = std::move(*last_op);
         }
         co_return;
@@ -287,13 +290,14 @@ public:
     kv_operation last_operation;
     raft_node_instance& raft_node;
     bool reject_local_snapshots = false;
+    size_t apply_count = 0;
 };
 
 class other_persisted_kv : public persisted_kv {
 public:
-    static constexpr std::string_view name = "other_persited_kv_stm";
+    static constexpr std::string_view name = "other_persisted_kv_stm";
     explicit other_persisted_kv(raft_node_instance& rn)
-      : persisted_kv(rn) {}
+      : persisted_kv(rn, false, "other_persisted_kv_stm_snapshot") {}
     ss::future<> apply_raft_snapshot(const iobuf& buffer) override {
         if (buffer.empty()) {
             co_return;
@@ -310,6 +314,7 @@ public:
         if (batch.header().type != model::record_batch_type::raft_data) {
             co_return;
         }
+        apply_count++;
         batch.for_each_record([this](model::record r) {
             last_operation = serde::from_iobuf<kv_operation>(r.value().copy());
         });
@@ -732,7 +737,7 @@ TEST_F_CORO(persisted_stm_test_fixture, test_adding_state_machine) {
         auto stm = builder.create_stm<persisted_kv>(*node);
         other_stm = builder.create_stm<other_persisted_kv>(*node);
         co_await node->start(std::move(builder));
-        node_stms.emplace(node->get_vnode(), std::move(stm));
+        node_stms.insert_or_assign(node->get_vnode(), std::move(stm));
     }
 
     co_await wait_for_committed_offset(committed, 30s);
@@ -782,12 +787,12 @@ TEST_F_CORO(persisted_stm_test_fixture, test_snapshot_in_background_apply) {
     for (int i = 0; i < 3; ++i) {
         add_node(model::node_id(i), model::revision_id(0));
     }
-    std::vector<ss::shared_ptr<other_persisted_kv>> other_stms;
+
     for (auto& [_, node] : nodes()) {
         co_await node->initialise(all_vnodes());
         raft::state_machine_manager_builder builder;
         auto stm = builder.create_stm<persisted_kv>(*node);
-        other_stms.push_back(builder.create_stm<other_persisted_kv>(*node));
+        builder.create_stm<other_persisted_kv>(*node);
         co_await node->start(std::move(builder));
         node_stms.emplace(node->get_vnode(), std::move(stm));
     }
@@ -850,5 +855,139 @@ TEST_F_CORO(persisted_stm_test_fixture, test_snapshot_in_background_apply) {
     });
     throwing_stm->set_throw_on_apply(false);
 
+    co_await wait_for_apply();
+}
+
+TEST_F_CORO(
+  persisted_stm_test_fixture, test_adding_state_machine_no_raft_snapshot) {
+    co_await initialize_state_machines();
+    kv_state expected;
+    auto ops = random_operations(2000);
+    for (auto batch : ops) {
+        co_await apply_operations(expected, std::move(batch));
+    }
+    co_await wait_for_apply();
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+
+    // take local snapshot on every node
+    co_await take_local_snapshot_on_every_node();
+    // update state
+    auto ops_phase_two = random_operations(50);
+    for (auto batch : ops_phase_two) {
+        co_await apply_operations(expected, std::move(batch));
+    }
+
+    co_await wait_for_apply();
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+
+    auto committed = node(model::node_id(0)).raft()->committed_offset();
+
+    absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
+    for (auto& [id, node] : nodes()) {
+        data_directories[id] = node->raft()->log()->config().base_directory();
+    }
+
+    for (auto& [id, data_dir] : data_directories) {
+        co_await stop_node(id);
+        add_node(id, model::revision_id(0), std::move(data_dir));
+    }
+    ss::shared_ptr<other_persisted_kv> other_stm;
+    for (auto& [_, node] : nodes()) {
+        co_await node->initialise(all_vnodes());
+        raft::state_machine_manager_builder builder;
+        auto stm = builder.create_stm<persisted_kv>(*node);
+        other_stm = builder.create_stm<other_persisted_kv>(*node);
+        co_await node->start(std::move(builder));
+        node_stms.insert_or_assign(node->get_vnode(), std::move(stm));
+    }
+
+    co_await wait_for_committed_offset(committed, 30s);
+    co_await wait_for_apply();
+    auto leader_id = co_await wait_for_leader(10s);
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+        ASSERT_EQ_CORO(stm->last_operation, other_stm->last_operation);
+        ASSERT_LE_CORO(
+          stm->apply_count, node(leader_id).raft()->committed_offset()());
+    }
+}
+
+/**
+ * This test verifies if stm apply continues when the state machine is added to
+ * the replica that has no new batches in the log to apply.
+ */
+TEST_F_CORO(persisted_stm_test_fixture, test_application_on_lagging_replica) {
+    co_await initialize_state_machines();
+    kv_state expected;
+    auto ops = random_operations(2000);
+    for (auto batch : ops) {
+        co_await apply_operations(expected, std::move(batch));
+    }
+    co_await wait_for_apply();
+    for (const auto& [_, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+    }
+
+    // take local snapshot on every node
+    co_await take_local_snapshot_on_every_node();
+
+    absl::flat_hash_map<model::node_id, ss::sstring> data_directories;
+    for (auto& [id, node] : nodes()) {
+        data_directories[id] = node->raft()->log()->config().base_directory();
+    }
+    auto committed = node(model::node_id(0)).raft()->committed_offset();
+    for (auto& [id, data_dir] : data_directories) {
+        co_await stop_node(id);
+        add_node(id, model::revision_id(0), data_dir);
+    }
+    auto all_nodes = all_vnodes();
+    std::sort(all_nodes.begin(), all_nodes.end(), [](auto lhs, auto& rhs) {
+        return lhs.id() < rhs.id();
+    });
+    model::node_id node_without_other_stm(all_nodes.back().id());
+    std::vector<ss::shared_ptr<other_persisted_kv>> other_stms;
+    for (auto& [id, node] : nodes()) {
+        co_await node->initialise(all_nodes);
+        raft::state_machine_manager_builder builder;
+        auto stm = builder.create_stm<persisted_kv>(*node);
+        if (id != node_without_other_stm) {
+            other_stms.push_back(builder.create_stm<other_persisted_kv>(*node));
+        }
+        co_await node->start(std::move(builder));
+        node_stms.insert_or_assign(node->get_vnode(), std::move(stm));
+    }
+
+    co_await wait_for_committed_offset(committed, 30s);
+    co_await wait_for_apply();
+    auto leader_id = co_await wait_for_leader(10s);
+
+    for (const auto& [id, stm] : node_stms) {
+        ASSERT_EQ_CORO(stm->state, expected);
+        // snapshot was applied, not further applies should happen
+        ASSERT_EQ_CORO(stm->apply_count, 0);
+    }
+    for (auto& stm : other_stms) {
+        ASSERT_GT_CORO(stm->apply_count, 0);
+        ASSERT_LE_CORO(
+          stm->apply_count, node(leader_id).raft()->committed_offset()());
+    }
+
+    co_await take_local_snapshot_on_every_node();
+    co_await stop_node(node_without_other_stm);
+    add_node(
+      node_without_other_stm,
+      model::revision_id(0),
+      std::move(data_directories[node_without_other_stm]));
+    auto& n = node(node_without_other_stm);
+    co_await n.initialise(all_nodes);
+    raft::state_machine_manager_builder builder;
+
+    auto stm = builder.create_stm<persisted_kv>(n);
+    auto added_stm = builder.create_stm<other_persisted_kv>(n);
+    co_await n.start(std::move(builder));
     co_await wait_for_apply();
 }
