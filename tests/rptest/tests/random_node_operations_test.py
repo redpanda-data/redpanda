@@ -134,7 +134,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             f"running test with: [message_size {self.msg_size},  total_bytes: {self.total_data}, message_count: {self.msg_count}, rate_limit: {self.rate_limit}, cluster_operations: {self.node_operations}]"
         )
 
-    def _start_redpanda(self, mixed_versions, with_tiered_storage):
+    def _start_redpanda(self, mixed_versions, with_tiered_storage,
+                        disable_batch_cache):
 
         if with_tiered_storage:
             si_settings = SISettings(self.test_context,
@@ -145,6 +146,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             si_settings.set_expected_damage(
                 {"ntr_no_topic_manifest", "ntpr_no_manifest"})
             self.redpanda.set_si_settings(si_settings)
+
+        if disable_batch_cache:
+            self.redpanda.add_extra_rp_conf({"disable_batch_cache": True})
 
         self.redpanda.set_seed_servers(self.redpanda.nodes)
         if mixed_versions:
@@ -282,9 +286,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             mixed_versions=[True, False],
-            with_tiered_storage=[True, False])
+            with_tiered_storage=[True, False],
+            disable_batch_cache=[True, False])
     def test_node_operations(self, enable_failures, mixed_versions,
-                             with_tiered_storage):
+                             with_tiered_storage, disable_batch_cache):
         # In order to reduce the number of parameters and at the same time cover
         # as many use cases as possible this test uses 3 topics which 3 separate
         # producer/consumer pairs:
@@ -326,7 +331,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # start redpanda process
         self._start_redpanda(mixed_versions,
-                             with_tiered_storage=with_tiered_storage)
+                             with_tiered_storage=with_tiered_storage,
+                             disable_batch_cache=disable_batch_cache)
 
         self.redpanda.set_cluster_config(
             {"controller_snapshot_max_age_sec": 1})
