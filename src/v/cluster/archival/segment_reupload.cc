@@ -29,13 +29,32 @@ segment_collector::segment_collector(
   const cloud_storage::partition_manifest& manifest,
   const storage::log& log,
   size_t max_uploaded_segment_size,
-  std::optional<model::offset> end_inclusive)
+  std::optional<model::offset> end_inclusive,
+  std::optional<model::offset> end_exclusive,
+  std::optional<model::offset> flush_offset)
   : _begin_inclusive(begin_inclusive)
   , _manifest(manifest)
   , _log(log)
   , _max_uploaded_segment_size(max_uploaded_segment_size)
   , _target_end_inclusive(end_inclusive)
-  , _collected_size(0) {}
+  , _collected_size(0)
+  , _end_exclusive(end_exclusive)
+  , _flush_offset(flush_offset) {}
+
+segment_collector::segment_collector(
+  model::offset begin_inclusive,
+  const cloud_storage::partition_manifest& manifest,
+  const storage::log& log,
+  size_t max_uploaded_segment_size,
+  std::optional<model::offset> end_inclusive)
+  : segment_collector(
+      begin_inclusive,
+      manifest,
+      log,
+      max_uploaded_segment_size,
+      end_inclusive,
+      std::nullopt /* end_exclusive */,
+      std::nullopt /* flush_offset */) {}
 
 namespace {
 static bool is_reupload_mode(segment_collector_mode mode) {
@@ -485,23 +504,78 @@ segment_collector::lookup_result segment_collector::find_next_segment(
           start_offset);
         return {};
     }
+
+    auto closed = !segment->has_appender();
+
+    if (!is_reupload_mode(mode) && !closed) {
+        if (!_target_end_inclusive.has_value()) {
+            // The segment is not sealed and we don't know the LSO so
+            // we can't upload it.
+            vlog(
+              archival_log.debug,
+              "Finding next segment for {}: segment {} not sealed",
+              _manifest.get_ntp(),
+              segment);
+            return {};
+        }
+        auto committed = segment->offsets().get_committed_offset();
+        auto end_inclusive = std::min(
+          _target_end_inclusive.value_or(committed), committed);
+        auto below_flush_offset = _flush_offset.has_value()
+                                  && segment->offsets().get_base_offset()
+                                       <= _flush_offset.value();
+        if (!below_flush_offset) {
+            auto kafka_start_offset = _log.from_log_offset(_begin_inclusive);
+            // TODO(oren): should be adjusted_lso?
+            auto kafka_lso = _log.from_log_offset(
+              model::next_offset(end_inclusive));
+
+            if (kafka_start_offset >= kafka_lso) {
+                // If timeboxed uploads are enabled and there is no producer
+                // activity, we can get into a nasty loop where we upload a
+                // segment, add an archival metadata batch, upload a segment
+                // containing that batch, add another archival metadata batch,
+                // etc. This leads to lots of small segments that don't contain
+                // data being uploaded. To avoid it, we check that kafka
+                // (translated) offset increases.
+                vlog(
+                  archival_log.debug,
+                  "Segment collector for {}: can't find candidate, only "
+                  "non-data "
+                  "batches to upload (kafka start_offset: {}, kafka "
+                  "last_stable_offset: {})",
+                  _manifest.get_ntp(),
+                  kafka_start_offset,
+                  kafka_lso);
+                return {};
+            }
+        }
+    }
+
+    auto dirty_offset = segment->offsets().get_dirty_offset();
+    if (
+      !is_reupload_mode(mode) && _end_exclusive.has_value()
+      && dirty_offset >= _end_exclusive && !_target_end_inclusive.has_value()) {
+        vlog(
+          archival_log.debug,
+          "Segment collector for {}: can't find candidate, candidate dirty "
+          "offset {} is above last_stable_offset {}",
+          _manifest.get_ntp(),
+          dirty_offset,
+          model::prev_offset(_end_exclusive.value()));
+        return {};
+    }
+
     auto segment_is_compacted
       = archival_policy::eligible_for_compacted_reupload(*segment);
     auto compacted_segment_expected
       = mode == segment_collector_mode::compacted_reupload;
+    auto compacted_segment_allowed
+      = mode != segment_collector_mode::non_compacted_reupload;
+
     if (
-      !is_reupload_mode(mode) && segment->has_appender()
-      && !_target_end_inclusive.has_value()) {
-        // The segment is not sealed and we don't know the LSO so
-        // we can't upload it.
-        vlog(
-          archival_log.debug,
-          "Finding next segment for {}: segment {} not sealed",
-          _manifest.get_ntp(),
-          segment);
-        return {};
-    }
-    if (segment_is_compacted == compacted_segment_expected) {
+      segment_is_compacted == compacted_segment_expected
+      || (segment_is_compacted && compacted_segment_allowed)) {
         vlog(
           archival_log.trace,
           "Found segment for ntp {}: {}",
@@ -626,7 +700,6 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
           "No segments to reupload for {}",
           _manifest.get_ntp());
         co_return candidate_creation_error::no_segments_collected;
-        ;
     } else {
         if (archival_log.is_enabled(ss::log_level::debug)) {
             std::stringstream seg;

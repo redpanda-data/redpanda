@@ -176,12 +176,10 @@ ss::future<candidate_creation_result> archival_policy::get_next_segment(
   const cloud_storage::partition_manifest& manifest,
   ss::lowres_clock::duration segment_lock_duration) {
     std::optional<model::offset> end_inclusive;
-    bool force_upload = upload_deadline_reached();
-    if (flush_offset.has_value()) {
-        end_inclusive = flush_offset.value();
-    }
-    if (force_upload && !end_inclusive.has_value()) {
-        end_inclusive = model::prev_offset(end_exclusive);
+    bool force_upload = flush_offset.has_value() || upload_deadline_reached();
+    if (force_upload) {
+        end_inclusive = flush_offset.value_or(
+          model::prev_offset(end_exclusive));
     }
     vlog(
       archival_log.debug,
@@ -199,7 +197,9 @@ ss::future<candidate_creation_result> archival_policy::get_next_segment(
       *log,
       config::shard_local_cfg().cloud_storage_segment_size_target().value_or(
         config::shard_local_cfg().log_segment_size),
-      end_inclusive};
+      end_inclusive,
+      end_exclusive,
+      flush_offset};
 
     segment_collector.collect_segments(
       segment_collector_mode::new_non_compacted);

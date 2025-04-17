@@ -62,6 +62,13 @@ public:
     using generation_seq = std::vector<uint64_t>;
     using sizes_seq = std::vector<uint64_t>;
 
+    segment_collector(
+      model::offset begin_inclusive,
+      const cloud_storage::partition_manifest& manifest,
+      const storage::log& log,
+      size_t max_uploaded_segment_size,
+      std::optional<model::offset> end_inclusive = std::nullopt);
+
     /// C-tor
     ///
     /// \param begin_inclusive is a first offset in range
@@ -70,12 +77,19 @@ public:
     /// \param max_uploaded_segment_size is a size limit for the offset range
     /// \param end_inclusive is a target for the end offset (if not set the
     ///        collector will try to match the size only)
+    /// \param end_exclusive last stable offset (unadjusted) of the target
+    ///        partition. in new upload mode, we won't upload a segment if
+    ///        it's dirty offset exceeds this value
+    /// \param flush_offset offset specified by a flush operation upstream,
+    ///        has no effect in reupload mode
     segment_collector(
       model::offset begin_inclusive,
       const cloud_storage::partition_manifest& manifest,
       const storage::log& log,
       size_t max_uploaded_segment_size,
-      std::optional<model::offset> end_inclusive = std::nullopt);
+      std::optional<model::offset> end_inclusive,
+      std::optional<model::offset> end_exclusive,
+      std::optional<model::offset> flush_offset);
 
     /// Collect segments
     ///
@@ -168,6 +182,8 @@ private:
     size_t _max_uploaded_segment_size;
     std::optional<model::offset> _target_end_inclusive;
     size_t _collected_size;
+    std::optional<model::offset> _end_exclusive;
+    std::optional<model::offset> _flush_offset;
 };
 
 } // namespace archival
