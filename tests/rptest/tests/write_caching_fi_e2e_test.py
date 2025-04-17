@@ -104,7 +104,8 @@ class WriteCachingFailureInjectionE2ETest(RedpandaTest):
                                         self.topic_name,
                                         self.MSG_SIZE,
                                         num_msg_per_round,
-                                        use_transactions=use_transactions)
+                                        use_transactions=use_transactions,
+                                        batch_max_bytes=2048)
             total_produced += num_msg_per_round
 
             consumer.wait_total_reads(total_produced,
