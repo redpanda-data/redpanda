@@ -46,6 +46,7 @@
 #include "storage/record_batch_utils.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -1689,7 +1690,11 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
-    co_await raft::persisted_stm<>::stop();
+    auto f = raft::persisted_stm<>::stop();
+    _lock.broken();
+    maybe_notify_waiter(
+      std::make_exception_ptr(ss::abort_requested_exception{}));
+    co_await std::move(f);
 }
 
 const cloud_storage::partition_manifest&
