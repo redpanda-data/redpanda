@@ -670,6 +670,8 @@ class ScalingUpTest(PreallocNodesTest):
         total_replicas = 3 * partition_count
         rpk.delete_topic(topic.name)
 
+        time.sleep(10)
+
         rpk.create_topic(topic.name,
                          partition_count,
                          3,
