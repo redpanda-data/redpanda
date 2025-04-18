@@ -656,7 +656,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .start_kafka_offset = m.get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .highest_producer_id = m.highest_producer_id(),
-      .applied_offset = m.get_applied_offset(),
+      .applied_offset = insync_offset,
     });
 
     auto snapshot = raft::stm_snapshot::create(
