@@ -405,6 +405,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/iceberg:datatypes",
         "//src/v/iceberg:values",
+        "//src/v/resource_mgmt:io_priority",
         "@seastar",
     ],
 )

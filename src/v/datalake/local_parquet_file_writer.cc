@@ -13,6 +13,7 @@
 #include "base/units.h"
 #include "base/vlog.h"
 #include "datalake/logger.h"
+#include "resource_mgmt/io_priority.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
@@ -46,8 +47,18 @@ local_parquet_file_writer::initialize(const iceberg::struct_type& schema) {
         co_return writer_error::file_io_error;
     }
 
+    ss::file_output_stream_options opts;
+    // Minimal buffer size to flush aggressively and avoid buffering in
+    // memory.
+    opts.buffer_size = 4_KiB;
+    // No write behind because
+    // - data is appended to the stream batch wise linearly.
+    // - avoids per writer waiter allocations in the ss stream implementation
+    opts.write_behind = 0;
+    opts.io_priority_class = datalake_priority();
+
     auto fut = co_await ss::coroutine::as_future(
-      ss::make_file_output_stream(std::move(output_file)));
+      ss::make_file_output_stream(std::move(output_file), opts));
 
     if (fut.failed()) {
         vlog(
