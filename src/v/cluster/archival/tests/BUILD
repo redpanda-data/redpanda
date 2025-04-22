@@ -147,6 +147,7 @@ redpanda_cc_btest(
         "ntp_archiver_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         ":service_fixture",
         "//src/v/bytes:iobuf",
@@ -220,6 +221,7 @@ redpanda_cc_btest(
         "async_data_uploader_test.cc",
     ],
     cpu = 1,
+    tags = ["exclusive"],
     deps = [
         "//src/v/bytes:iostream",
         "//src/v/cluster",
