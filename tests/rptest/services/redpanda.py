@@ -3794,12 +3794,18 @@ class RedpandaService(RedpandaServiceBase):
         ]
         for node in self.nodes:
             self.logger.info(
-                f"Scanning node {node.account.hostname} log for errors...")
+                f"Scanning node {node.account.hostname} log for fatal errors/crashes..."
+            )
 
             crash_log = None
             for line in node.account.ssh_capture(
                     f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer -e 'Aborting on shard' {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
+
+                line = line.rstrip()  # remove trailing newline
+
+                self.logger.debug(f"raise_on_crash line candidate: {line}")
+
                 if 'SEGV' in line and any(
                     [h in line.lower() for h in cloud_header_strings]):
                     continue
@@ -3831,6 +3837,8 @@ class RedpandaService(RedpandaServiceBase):
                 )
             else:
                 raise NodeCrash(crashes)
+        else:
+            self.logger.debug("No crashes detected in redpanda logs")
 
     def raw_metrics(
             self,

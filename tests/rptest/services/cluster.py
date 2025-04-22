@@ -23,6 +23,11 @@ from rptest.services.redpanda_types import LogAllowList
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 
 
+class HasRedpanda(Protocol):
+    redpanda: RedpandaService | RedpandaServiceCloud
+    test_context: TestContext
+
+
 def cluster(log_allow_list: LogAllowList | None = None,
             check_allowed_error_logs: bool = True,
             check_for_storage_usage_inconsistencies: bool = True,
@@ -43,12 +48,12 @@ def cluster(log_allow_list: LogAllowList | None = None,
         We find all replicas by traversing ducktape's internal service registry.
         """
         rp = test.redpanda
-        assert isinstance(rp, RedpandaServiceBase) or isinstance(
+        assert isinstance(rp, RedpandaService) or isinstance(
             rp, RedpandaServiceCloud)
         yield rp
 
         for svc in test.test_context.services:
-            if isinstance(svc, RedpandaServiceBase) or isinstance(
+            if isinstance(svc, RedpandaService) or isinstance(
                     svc, RedpandaServiceCloud) and svc is not test.redpanda:
                 yield svc
 
@@ -79,12 +84,25 @@ def cluster(log_allow_list: LogAllowList | None = None,
         logger.info(f"Disk activity during {test_name}: {disk_deltas}")
         logger.info(f"Disk rates during {test_name}: {disk_rates}")
 
+    def _do_crash_checks(test: HasRedpanda):
+        for redpanda in all_redpandas(test):
+            redpanda.logger.exception(
+                f"Test failed, doing failure checks on {redpanda.who_am_i()}..."
+            )
+
+            # Disabled to avoid addr2line hangs
+            # (https://github.com/redpanda-data/redpanda/issues/5004)
+            # self.redpanda.decode_backtraces()
+
+            if isinstance(redpanda, RedpandaService):
+                redpanda.cloud_storage_diagnostics()
+                # TODO: only decode for failures
+                redpanda.decode_backtraces()
+            if isinstance(redpanda, RedpandaService | RedpandaServiceCloud):
+                redpanda.raise_on_crash(log_allow_list=log_allow_list)
+
     def cluster_use_metadata_adder(f):
         Mark.mark(f, ClusterUseMetadata(**kwargs))
-
-        class HasRedpanda(Protocol):
-            redpanda: RedpandaService | RedpandaServiceCloud | None
-            test_context: TestContext
 
         @functools.wraps(f)
         def wrapped(self: HasRedpanda, *args: Any, **kwargs: Any):
@@ -114,17 +132,7 @@ def cluster(log_allow_list: LogAllowList | None = None,
                                self.redpanda.logger, t_initial,
                                disk_stats_initial)
 
-                for redpanda in all_redpandas(self):
-                    redpanda.logger.exception(
-                        f"Test failed, doing failure checks on {redpanda.who_am_i()}..."
-                    )
-
-                    if isinstance(redpanda, RedpandaService):
-                        redpanda.cloud_storage_diagnostics()
-                        redpanda.decode_backtraces()
-                    if isinstance(redpanda,
-                                  RedpandaService | RedpandaServiceCloud):
-                        redpanda.raise_on_crash(log_allow_list=log_allow_list)
+                _do_crash_checks(self)
 
                 raise
             else:
@@ -134,6 +142,10 @@ def cluster(log_allow_list: LogAllowList | None = None,
                     # in a skipped test.
                     # Also skip if we are running against the cloud
                     return test_results
+
+                _do_crash_checks(self)
+
+                _do_crash_checks(self)
 
                 if isinstance(self.redpanda, RedpandaServiceCloud):
                     # Call copy logs function for RedpandaServiceCloud
