@@ -1158,6 +1158,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             // Configuration will be replicate to the new replica
             initial_replicas = {};
         }
+        auto tt_revision_on_create = _topics.local().last_applied_revision();
 
         auto ec = co_await create_partition(
           ntp,
@@ -1169,9 +1170,9 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         }
 
         // The partition that we just created uses topic properties queried from
-        // topic_table at last_applied_revision(). Thus all properties updates
-        // with revisions <= last_applied_revision() are already reconciled.
-        rs.mark_properties_reconciled(_topics.local().last_applied_revision());
+        // topic_table at tt_revision_on_create. Thus all properties updates
+        // with revisions <= tt_revision_on_create are already reconciled.
+        rs.mark_properties_reconciled(tt_revision_on_create);
 
         co_return ss::stop_iteration::no;
     }
@@ -1183,6 +1184,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           *rs.properties_changed_at,
           partition_operation_type::update_properties);
 
+        auto tt_prop_revision = _topics.local().last_applied_revision();
         auto cfg = _topics.local().get_topic_cfg(
           model::topic_namespace_view{ntp});
         vassert(cfg, "[{}] expected topic cfg to be present", ntp);
@@ -1194,7 +1196,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         co_await partition->update_configuration(
           std::move(cfg).value().properties);
 
-        rs.mark_properties_reconciled(_topics.local().last_applied_revision());
+        rs.mark_properties_reconciled(tt_prop_revision);
         co_return ss::stop_iteration::no;
     }
 
