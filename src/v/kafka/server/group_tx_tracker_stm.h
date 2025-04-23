@@ -158,7 +158,10 @@ public:
     explicit group_tx_tracker_stm_factory(
       ss::sharded<features::feature_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      raft::consensus*,
+      const cluster::stm_instance_config&) final;
 
 private:
     ss::sharded<features::feature_table>& _feature_table;

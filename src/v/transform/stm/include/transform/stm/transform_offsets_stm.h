@@ -29,7 +29,8 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      raft::consensus* raft,
+      const cluster::stm_instance_config&) final;
 
 private:
     ss::sharded<cluster::topic_table>& _topics;
