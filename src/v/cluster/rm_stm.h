@@ -443,8 +443,7 @@ public:
       bool enable_idempotence,
       ss::sharded<tx_gateway_frontend>&,
       ss::sharded<cluster::tx::producer_state_manager>&,
-      ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::topic_table>&);
+      ss::sharded<features::feature_table>&);
     bool is_applicable_for(const storage::ntp_config&) const final;
     void create(
       raft::state_machine_manager_builder&,
@@ -457,7 +456,6 @@ private:
     ss::sharded<tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<cluster::tx::producer_state_manager>& _producer_state_manager;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<topic_table>& _topics;
 };
 
 } // namespace cluster

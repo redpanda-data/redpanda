@@ -2217,14 +2217,12 @@ rm_stm_factory::rm_stm_factory(
   bool enable_idempotence,
   ss::sharded<tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cluster::producer_state_manager>& producer_state_manager,
-  ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<topic_table>& topics)
+  ss::sharded<features::feature_table>& feature_table)
   : _enable_transactions(enable_transactions)
   , _enable_idempotence(enable_idempotence)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _producer_state_manager(producer_state_manager)
-  , _feature_table(feature_table)
-  , _topics(topics) {}
+  , _feature_table(feature_table) {}
 
 bool rm_stm_factory::is_applicable_for(const storage::ntp_config& cfg) const {
     const auto& ntp = cfg.ntp();

@@ -399,8 +399,7 @@ public:
     archival_metadata_stm_factory(
       bool cloud_storage_enabled,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::topic_table>&);
+      ss::sharded<features::feature_table>&);
 
     bool is_applicable_for(const storage::ntp_config&) const final;
     void create(
@@ -412,7 +411,6 @@ private:
     bool _cloud_storage_enabled;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<topic_table>& _topics;
 };
 
 } // namespace cluster

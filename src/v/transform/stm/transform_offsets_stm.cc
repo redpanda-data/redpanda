@@ -22,10 +22,6 @@ namespace {
 static ss::logger log{"transform/stm"};
 } // namespace
 
-transform_offsets_stm_factory::transform_offsets_stm_factory(
-  ss::sharded<cluster::topic_table>& topics)
-  : _topics(topics) {}
-
 bool transform_offsets_stm_factory::is_applicable_for(
   const storage::ntp_config& cfg) const {
     const auto& ntp = cfg.ntp();

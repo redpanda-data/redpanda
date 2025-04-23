@@ -1724,12 +1724,10 @@ archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty(
 archival_metadata_stm_factory::archival_metadata_stm_factory(
   bool cloud_storage_enabled,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::topic_table>& topics)
+  ss::sharded<features::feature_table>& feature_table)
   : _cloud_storage_enabled(cloud_storage_enabled)
   , _cloud_storage_api(cloud_storage_api)
-  , _feature_table(feature_table)
-  , _topics(topics) {}
+  , _feature_table(feature_table) {}
 
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
