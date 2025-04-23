@@ -144,7 +144,6 @@ redpanda_cc_btest(
     srcs = [
         "bootstrap_configuration_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":simple_record_fixture",
         "//src/v/config",
@@ -188,7 +187,6 @@ redpanda_cc_btest(
     srcs = [
         "consensus_utils_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":simple_record_fixture",
         "//src/v/config",
@@ -214,7 +212,6 @@ redpanda_cc_gtest(
     srcs = [
         "group_configuration_tests.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":simple_record_fixture",
         "//src/v/base",
@@ -243,7 +240,6 @@ redpanda_cc_gtest(
         "snapshot_recovery_test.cc",
     ],
     cpu = 1,
-    tags = ["exclusive"],
     deps = [
         ":raft_fixture",
         ":raft_fixture_retry_policy",
@@ -266,7 +262,6 @@ redpanda_cc_btest(
     srcs = [
         "foreign_entry_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/model",
         "//src/v/model/tests:random",
@@ -354,7 +349,6 @@ redpanda_cc_gtest(
     srcs = [
         "membership_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":raft_fixture",
         ":raft_fixture_retry_policy",
@@ -375,7 +369,6 @@ redpanda_cc_gtest(
     srcs = [
         "leadership_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":raft_fixture",
         "//src/v/finjector",
@@ -393,7 +386,6 @@ redpanda_cc_gtest(
     srcs = [
         "state_removal_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         ":raft_fixture",
         ":raft_fixture_retry_policy",
@@ -413,7 +405,6 @@ redpanda_cc_btest(
     srcs = [
         "offset_monitor_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/base",
         "//src/v/raft",
@@ -430,7 +421,6 @@ redpanda_cc_btest(
     srcs = [
         "mutex_buffer_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/raft",
         "//src/v/ssx:sformat",
@@ -450,7 +440,6 @@ redpanda_cc_btest(
     srcs = [
         "configuration_manager_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/base",
         "//src/v/config",
@@ -514,7 +503,6 @@ redpanda_cc_gtest(
     srcs = [
         "stm_manager_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/raft/tests:raft_fixture_retry_policy",
         "//src/v/raft/tests:stm_raft_fixture",
@@ -558,7 +546,6 @@ redpanda_cc_gtest(
     ],
     cpu = 4,
     memory = "6GiB",
-    tags = ["exclusive"],
     deps = [
         "//src/v/base",
         "//src/v/bytes",
@@ -588,7 +575,6 @@ redpanda_cc_gtest(
     srcs = [
         "persisted_stm_test.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/model",
         "//src/v/raft",
@@ -613,7 +599,6 @@ redpanda_cc_gtest(
     srcs = [
         "replication_monitor_tests.cc",
     ],
-    tags = ["exclusive"],
     deps = [
         "//src/v/model",
         "//src/v/raft/tests:raft_fixture",
