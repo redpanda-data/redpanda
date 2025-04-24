@@ -8,10 +8,10 @@ buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.6-20250416134411-a6
 buf.build/gen/go/redpandadata/cloud/protocolbuffers/go v1.36.6-20250416134411-a63ce18a889a.1/go.mod h1:RUUH9gPqxuRHYeNMFjrU5hboN4lPAz2kNeOi81gjQcI=
 buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.6-20240917150400-3f349e63f44a.1 h1:PZG/e6nKfOkEIp45KoUIzReXRH6JpL9oKPe4tlJqD64=
 buf.build/gen/go/redpandadata/common/protocolbuffers/go v1.36.6-20240917150400-3f349e63f44a.1/go.mod h1:yA5Jg45dsAoOvAx1XHbDwwcWkkYW568MUeKJsa9bgrY=
-buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250319124900-5103d6dd4791.1 h1:pqDaDfukKNDDd4M8nRacBE29bMHv6V915eitQJBU1mM=
-buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250319124900-5103d6dd4791.1/go.mod h1:8tJZv4V4PP9GeuDCZyNtOaDcMONzcY4zCt/Hj0MRVdU=
-buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.5-20250319124900-5103d6dd4791.1 h1:GnOUOAHR6YqEGuwhZHTFeDnYwpFd3WQCBpF2SQAJtl8=
-buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.5-20250319124900-5103d6dd4791.1/go.mod h1:GX9Ho7surUAto5GGU+jO7zZNU7s/DjJ4Pw6489j0PTU=
+buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250404200318-65f29ddd7b29.1 h1:iIj2C/0IDTFR0JtIgKfFHRtkCIb7YqQEdNylVab2pz0=
+buf.build/gen/go/redpandadata/dataplane/connectrpc/go v1.18.1-20250404200318-65f29ddd7b29.1/go.mod h1:72CA7I2EBjkbygOtYfvNpyLwD14RqoMa9vL9SGlWkIk=
+buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.5-20250404200318-65f29ddd7b29.1 h1:/i5xh4Kk3Vvbvcqyunu9NOdxIU7Mu5EuiYzczjckbgE=
+buf.build/gen/go/redpandadata/dataplane/protocolbuffers/go v1.36.5-20250404200318-65f29ddd7b29.1/go.mod h1:GX9Ho7surUAto5GGU+jO7zZNU7s/DjJ4Pw6489j0PTU=
 buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.18.1-20241209180130-05cf059c71c1.1 h1:w7eMzWZiwi46baJaGhLyvU7utqMz8HutMdnqVnbscXs=
 buf.build/gen/go/redpandadata/gatekeeper/connectrpc/go v1.18.1-20241209180130-05cf059c71c1.1/go.mod h1:IFEsRLaNT2AxqEoYPujolN4ecrJXpvwZXIGEHo2tXaw=
 buf.build/gen/go/redpandadata/gatekeeper/protocolbuffers/go v1.36.6-20241209180130-05cf059c71c1.1 h1:iuIKINuwFyjOgLyEx/ZLJBGs9VVURiyjsQ2bNVqSk+k=
