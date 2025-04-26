@@ -109,6 +109,26 @@ Iterator segments_lower_bound(Iterator begin, Iterator end, Needle needle) {
     if (needle_in_range<Iterator>()(it, needle)) {
         return it;
     }
+
+    // The way this method is written makes this case possible i.e. if needle is
+    // 0 but the only segment we have is [10, 20] because we'll fall out of all
+    // needle_in_range checks.
+    //
+    // This looks like a bug but all our callers seem to making sure that they
+    // always pass a needle that is in the range of
+    // begin->offsets().get_base_offset() and
+    // std::prev(end)->offsets().get_dirty_offset().
+    //
+    // Let's see if we can prove it in CI.
+    //
+    // If we hit this assert it means that we're telling the caller the offset
+    // range they are interested in does not exist. But it does!
+    vassert(
+      needle > (*std::prev(end))->offsets().get_dirty_offset(),
+      "lower_bound: {} > {}",
+      needle,
+      (*std::prev(end))->offsets().get_dirty_offset());
+
     return end;
 }
 
