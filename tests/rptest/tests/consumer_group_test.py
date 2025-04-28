@@ -34,15 +34,17 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import ignore, parametrize
-from kafka import KafkaConsumer, TopicPartition
-from kafka import errors as kerr
+
+from kafka import KafkaConsumer, errors as kerr
 from kafka.admin import KafkaAdminClient
 from kafka.protocol.commit import OffsetFetchRequest_v3
 from kafka.protocol.api import Request, Response
 import kafka.protocol.types as types
 from confluent_kafka.admin import AdminClient
-from confluent_kafka import ConsumerGroupState
+from confluent_kafka import ConsumerGroupState, ConsumerGroupTopicPartitions
 from confluent_kafka import Consumer, Producer
+from confluent_kafka import TopicPartition
+from collections import namedtuple
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -422,9 +424,10 @@ class ConsumerGroupTest(RedpandaTest):
         # Test that the consumer committed what we expected.
         self.logger.info(f"Got offsets: {offsets}")
         assert len(offsets) == 1
-        assert offsets[TopicPartition(self.topic_spec.name, 0)].offset == 1000
-        assert offsets[TopicPartition(self.topic_spec.name,
-                                      0)].leader_epoch > 0
+        assert offsets[TestTopicPartition(self.topic_spec.name,
+                                          0)].offset == 1000
+        assert offsets[TestTopicPartition(self.topic_spec.name,
+                                          0)].leader_epoch > 0
 
         # Remember the old offsets to compare them after the restart.
         prev_offsets = offsets
@@ -1123,6 +1126,9 @@ class OffsetAndMetadata():
     metadata: str
 
 
+TestTopicPartition = namedtuple('TestTopicPartition', ['topic', 'partition'])
+
+
 class KafkaTestAdminClient():
     """
     A wrapper around KafkaAdminClient with support for newer Kafka versions.
@@ -1136,7 +1142,7 @@ class KafkaTestAdminClient():
 
     def list_offsets(
         self, group_id: str, partitions: List[TopicPartition]
-    ) -> Dict[TopicPartition, OffsetAndMetadata]:
+    ) -> Dict[TestTopicPartition, OffsetAndMetadata]:
         coordinator = self._admin._find_coordinator_ids([group_id])[group_id]
         future = self._list_offsets_send_request(group_id, coordinator,
                                                  partitions)
@@ -1505,3 +1511,120 @@ class ConsumerGroupStaticMembersRebalance(RedpandaTest):
             restart_then_stop_consumer,
             verify_all_consumers_are_present,
             consumer_session_timeout=10000)
+
+
+class OffsetCommitter:
+    def __init__(self, bootstrap_servers, group, topic, id, logger,
+                 partition_id: int):
+        self.bootstrap_servers = bootstrap_servers
+        self.id = id
+        self.group = group
+        self.topic = topic
+        self.consumer_thread = threading.Thread(
+            name=f'consumer-{id}',
+            target=lambda this: this.loop(),
+            args=[self])
+        self.stopped = threading.Event()
+
+        self.logger = logger
+        self.consumer_thread.daemon = True
+        self.last_committed = -1
+        self.lock = threading.Lock()
+        self.restarted = threading.Event()
+        self.partition_id = partition_id
+        self.next = 0
+        self.consumer_thread.start()
+
+    def stop(self):
+        self.logger.info(f"stopping consumer with id: {self.id}")
+        self.stopped.set()
+        self.consumer_thread.join()
+
+    def is_stopped(self):
+        return self.stopped.is_set()
+
+    def create_consumer_client(self):
+        self.consumer = Consumer(
+            {
+                "group.id": self.group,
+                "client.id": f"consumer-{self.id}",
+                'bootstrap.servers': self.bootstrap_servers,
+                'auto.offset.reset': 'earliest',
+                'enable.auto.offset.store': True,
+                'enable.auto.commit': False,
+            },
+            logger=self.logger)
+
+        self.consumer.assign([TopicPartition(self.topic, self.partition_id)])
+
+    def loop(self):
+        self.create_consumer_client()
+        self.logger.info(f"starting consumer with id: {self.id}")
+        while not self.stopped.is_set():
+            try:
+                to_commit = self.next
+                self.next += 1
+                ret = self.consumer.commit(offsets=[
+                    TopicPartition(self.topic,
+                                   self.partition_id,
+                                   offset=to_commit)
+                ],
+                                           asynchronous=False)
+                with self.lock:
+                    self.last_committed = ret[0].offset
+            except Exception as e:
+                self.logger.error(f"consumer {self.id} error - {e}")
+        self.logger.info(f"closing consumer with id: {self.id}")
+        self.consumer.close()
+
+    def get_last_committed(self):
+        with self.lock:
+            return self.last_committed
+
+
+class ConsumerGroupOffsetResetTest(RedpandaTest):
+    """
+    This tests simulates a large number of consumers trying to commit consumer 
+    group offsets. The test doesn't produce or fetch any messages, 
+    it just stress tests OffsetCommit requests and validates the final 
+    state of the consumer group.
+    """
+    def __init__(self, test_context):
+        super(ConsumerGroupOffsetResetTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             extra_rp_conf={
+                                 "group_topic_partitions": 1,
+                                 "compacted_log_segment_size": 1024 * 1024,
+                                 "log_compaction_interval_ms": 1000,
+                                 "group_offset_retention_sec": 20,
+                             })
+
+    def get_group_description(self):
+        description = self.admin_client.describe_consumer_groups(
+            group_ids=[self.group_id])[self.group_id].result()
+        return description
+
+    def list_consumer_group_offsets(self, topic):
+        topic_partitions = [
+            TopicPartition(topic, p) for p in range(self.consumer_count)
+        ]
+        cg_tp = ConsumerGroupTopicPartitions(self.group_id,
+                                             topic_partitions=topic_partitions)
+        offsets = self.admin_client.list_consumer_group_offsets([cg_tp])
+
+        return offsets[self.group_id].result()
+
+    def total_committed(self):
+        return sum([c.get_last_committed() for c in self.consumers])
+
+    def wait_for_total_commits(self, total_commits):
+        last_total = 0
+        while self.total_committed() < total_commits:
+            wait_until(
+                lambda: self.total_committed() > last_total, 60, 2,
+                "Timeout waiting for consumers to make progress committing offsets"
+            )
+            last_total = self.total_committed()
+            self.logger.debug(f"Total offsets committed: {last_total}")
+            time.sleep(5)
