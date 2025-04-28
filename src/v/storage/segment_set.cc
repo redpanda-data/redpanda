@@ -123,6 +123,16 @@ Iterator segments_lower_bound(Iterator begin, Iterator end, Needle needle) {
     //
     // If we hit this assert it means that we're telling the caller the offset
     // range they are interested in does not exist. But it does!
+    if (needle <= (*std::prev(end))->offsets().get_dirty_offset()) {
+        while (begin != end) {
+            fmt::print(
+              "{}—{}",
+              (*begin)->offsets().get_base_offset(),
+              (*begin)->offsets().get_dirty_offset());
+            ++begin;
+        }
+    }
+
     vassert(
       needle > (*std::prev(end))->offsets().get_dirty_offset(),
       "lower_bound: {} > {}",

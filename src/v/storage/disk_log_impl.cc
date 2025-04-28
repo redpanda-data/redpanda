@@ -2769,8 +2769,12 @@ disk_log_impl::make_reader(timequery_config config) {
 }
 
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
+    if (o < _start_offset) {
+        return std::nullopt;
+    }
+
     auto it = _segs.lower_bound(o);
-    if (it != _segs.end() && o >= _start_offset) {
+    if (it != _segs.end()) {
         return (*it)->offsets().get_term();
     }
 
