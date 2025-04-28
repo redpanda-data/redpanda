@@ -38,16 +38,10 @@ public:
     ss::future<> close() noexcept override;
     translation_status status() const override;
     void start_translation(clock::duration translate_for) override;
-    void stop_translation(stop_reason) override;
+    void stop_translation(stop_request) override;
     void reconcile_properties() noexcept override {}
     std::chrono::milliseconds current_lag_ms() const override {
         return std::chrono::milliseconds{0};
-    }
-    void set_finish_translation() final {
-        _finish_translation_requested = true;
-    }
-    bool get_finish_translation() final {
-        return _finish_translation_requested;
     }
 
 private:
@@ -97,7 +91,8 @@ private:
     ss::timer<clock> _translation_timer;
     ss::condition_variable _wait_for_scheduler_cb;
     clock::time_point _next_checkpoint;
-    bool _finish_translation_requested{false};
+    clock::time_point _last_finish_time;
+    bool _finish_now{false};
 };
 
 // A translator that overshoots deadline and requires explict force flushing
@@ -132,7 +127,7 @@ public:
     ss::future<>
     init(scheduling_notifications&, reservations_tracker&) override;
     void start_translation(clock::duration deadline) override;
-    void stop_translation(stop_reason) override;
+    void stop_translation(stop_request) override;
 };
 
 class noop_disk_manager : public disk_manager {

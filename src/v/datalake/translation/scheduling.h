@@ -141,6 +141,9 @@ struct translation_status {
     std::optional<size_t> disk_bytes_flushed;
 
     std::optional<size_t> translation_backlog;
+    // Last time the translation successfully checkpointed all the data to
+    // cloud and cleaned up the staging data.
+    clock::time_point last_finish_time;
 };
 std::ostream& operator<<(std::ostream&, const translation_status&);
 
@@ -223,25 +226,18 @@ public:
         out_of_disk,
     };
 
-    virtual void stop_translation(stop_reason) = 0;
+    struct stop_request {
+        stop_reason reason;
+        // If set, the translator will upload the data to the cloud and
+        // clean up locally staged data.
+        bool cleanup_staged_data;
+    };
 
-    /**
-     * Request that the translator finish and upload its data. This is distinct
-     * from `stop_translation` in that it can be called on a translator no
-     * matter what stat it is in (e.g. running, waiting, idle). The translator
-     * is free to clear the request after taking action.
-     */
-    virtual void set_finish_translation() = 0;
-
-    /**
-     * Return true if the translator is still in the progress of satisfying the
-     * latest request made via a call to `finish_translation`. This method
-     * should return true immediately after a call to `finish_translation`, and
-     * then eventually return false.
-     */
-    virtual bool get_finish_translation() { return false; }
+    virtual void stop_translation(stop_request) = 0;
 };
 
+std::ostream& operator<<(std::ostream&, const translator::stop_reason&);
+std::ostream& operator<<(std::ostream&, const translator::stop_request&);
 std::ostream& operator<<(std::ostream&, const translator&);
 
 struct executor;
@@ -291,7 +287,7 @@ public:
     void mark_waiting();
     void mark_running();
     void mark_idle();
-    void mark_stopping(translator::stop_reason);
+    void mark_stopping(translator::stop_request);
 
     // hook into the waiting queue
     intrusive_list_hook _waiting_hook;
@@ -350,7 +346,7 @@ using translators = chunked_hash_map<translator_id, translator_executable>;
  */
 struct executor {
     void start_translation(translator_executable&, clock::duration time_slice);
-    void stop_translation(translator_executable&, translator::stop_reason);
+    void stop_translation(translator_executable&, translator::stop_request);
     translators translators{};
     intrusive_list<translator_executable, &translator_executable::_running_hook>
       running;
@@ -364,11 +360,11 @@ struct executor {
     using finish_priority = size_t;
     struct finish_request {
         translator_id id;
-        translator::stop_reason reason;
+        translator::stop_request stop_request;
 
-        finish_request(translator_id id, translator::stop_reason reason)
+        finish_request(translator_id id, translator::stop_request stop_request)
           : id(std::move(id))
-          , reason(reason) {}
+          , stop_request(stop_request) {}
     };
     absl::btree_map<finish_priority, finish_request>
       translators_for_immediate_finish;
@@ -457,11 +453,11 @@ public:
      */
     struct finish_request {
         translator_id id;
-        translator::stop_reason reason;
+        translator::stop_request stop_request;
 
-        finish_request(translator_id id, translator::stop_reason reason)
+        finish_request(translator_id id, translator::stop_request stop_request)
           : id(std::move(id))
-          , reason(reason) {}
+          , stop_request(stop_request) {}
     };
     void request_immediate_finish(chunked_vector<finish_request>);
 

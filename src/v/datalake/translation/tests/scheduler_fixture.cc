@@ -67,11 +67,13 @@ ss::future<> mock_translator::flush_writers() {
 ss::future<> mock_translator::maybe_checkpoint() {
     co_await flush_writers();
     auto now = clock::now();
-    if (now >= _next_checkpoint) {
+    if (_finish_now || now >= _next_checkpoint) {
         // time to checkpoint
         co_await ss::sleep(100ms);
         // Begin of new interval
         _next_checkpoint = clock::now() + _max_target_lag;
+        _last_finish_time = clock::now();
+        _finish_now = false;
     }
 }
 
@@ -165,8 +167,6 @@ ss::future<> mock_translator::translation_loop() {
         {
             co_await _wait_for_scheduler_cb.wait(
               [this] { return _translation_state.has_value(); });
-            auto clear_finish_request = ss::defer(
-              [this] { _finish_translation_requested = false; });
             auto holder = _translation_state->gate.hold();
             auto deadline = _translation_state->translate_for;
             auto start_time = clock::now();
@@ -240,15 +240,17 @@ translation_status mock_translator::status() const {
         status.memory_bytes_reserved = total_bytes_reserved();
         status.disk_bytes_flushed = total_bytes_reserved();
     }
+    status.last_finish_time = _last_finish_time;
     return status;
 }
 
-void mock_translator::stop_translation(translator::stop_reason) {
+void mock_translator::stop_translation(translator::stop_request request) {
     auto holder = _gate.hold();
     vassert(_started, "Translator should be started first");
     if (!_translation_state) {
         return;
     }
+    _finish_now = request.cleanup_staged_data;
     vlog(datalake_log.debug, "[{}] request to stop translation", _ntp);
     _translation_state->as.request_abort();
     ssx::spawn_with_gate(
@@ -275,11 +277,12 @@ void exceptional_translator::start_translation(clock::duration translate_for) {
     return mock_translator::start_translation(translate_for);
 }
 
-void exceptional_translator::stop_translation(translator::stop_reason reason) {
+void exceptional_translator::stop_translation(
+  translator::stop_request stop_request) {
     if (tests::random_bool()) {
         throw ss::gate_closed_exception();
     }
-    return mock_translator::stop_translation(reason);
+    return mock_translator::stop_translation(stop_request);
 }
 
 std::unique_ptr<translator>

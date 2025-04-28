@@ -60,9 +60,10 @@ ss::future<> simple_fcfs_scheduling_policy::on_resource_exhaustion(
   executor& executor, const reservations_tracker& mem_tracker) {
     while (mem_tracker.memory_exhausted() && !executor.as.abort_requested()) {
         // pick the earliest scheduled translator and force a flush.
+        auto request = translator::stop_request{
+          .reason = translator::stop_reason::oom, .cleanup_staged_data = true};
         if (!executor.running.empty()) {
-            executor.stop_translation(
-              *executor.running.begin(), translator::stop_reason::oom);
+            executor.stop_translation(*executor.running.begin(), request);
         }
         co_await ss::sleep_abortable(5s, executor.as);
     }
@@ -390,12 +391,14 @@ ss::future<> fair_scheduling_policy::on_resource_exhaustion(
       datalake_log.debug,
       "[{}] stopping translator due to memory exhaustion",
       executable);
+    auto oom_stop_request = translator::stop_request{
+      .reason = translator::stop_reason::oom, .cleanup_staged_data = true};
     co_await finish_translator(
       executor,
       finish_choice_info(
         executable.translator_ptr()->id(),
         finish_choice_info::status::running,
-        translator::stop_reason::oom));
+        oom_stop_request));
 }
 
 enum fair_scheduling_policy::finish_choice_info::status
@@ -441,7 +444,7 @@ fair_scheduling_policy::choose_translator_to_finish(executor& executor) {
         const auto curr_info = finish_choice_info(
           eit->first,
           finish_choice_info::translator_status(eit->second),
-          it->second.reason);
+          it->second.stop_request);
 
         // first choice is a running translator
         if (curr_info.status == finish_choice_info::status::running) {
@@ -474,7 +477,7 @@ ss::future<> fair_scheduling_policy::finish_translator(
     }
 
     auto& executable = eit->second;
-    executable.translator_ptr()->set_finish_translation();
+    auto stop_initiated_ts = clock::now();
 
     /*
      * it is possible that the status of the choice changed due to fiber
@@ -489,7 +492,7 @@ ss::future<> fair_scheduling_policy::finish_translator(
      */
     switch (choice.status) {
     case finish_choice_info::status::running:
-        executor.stop_translation(executable, choice.reason);
+        executor.stop_translation(executable, choice.stop_request);
         break;
 
     case finish_choice_info::status::waiting:
@@ -498,7 +501,7 @@ ss::future<> fair_scheduling_policy::finish_translator(
         // out-of-memory exception which has "immediate finish"
         // semantics rather than adding completely new states.
         executor.start_translation(executable, _translation_time_quota);
-        executor.stop_translation(executable, choice.reason);
+        executor.stop_translation(executable, choice.stop_request);
         break;
 
     case finish_choice_info::status::idle:
@@ -509,9 +512,10 @@ ss::future<> fair_scheduling_policy::finish_translator(
 
     vlog(
       datalake_log.debug,
-      "Scheduler requesting {} translator {} to finish",
+      "Scheduler requesting {} translator {} to finish, request: {}",
       choice.status_name(),
-      choice.id);
+      choice.id,
+      choice.stop_request);
 
     /*
      * set_finish_translation is called on the choice, so wait for the
@@ -527,7 +531,9 @@ ss::future<> fair_scheduling_policy::finish_translator(
         }
 
         // done if the translator cleared its finish bit
-        if (!it->second.translator_ptr()->get_finish_translation()) {
+        if (
+          it->second.translator_ptr()->status().last_finish_time
+          > stop_initiated_ts) {
             break;
         }
 
