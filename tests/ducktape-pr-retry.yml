@@ -7,10 +7,10 @@
 # See https://redpandadata.atlassian.net/wiki/x/CAAIRg
 
 pass_criteria:
-  <<: *zero-drift
+  <<: *pc-definitions
 retry:
   default:
     repeat: 20
     retry_on:
       *retry-all-except-nodecrash
-    pass_criteria: fifty-drift
+    pass_criteria: min-flaky-pass-rate

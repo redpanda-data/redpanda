@@ -4,7 +4,7 @@
 #
 # See https://redpandadata.atlassian.net/wiki/x/CAAIRg
 
-zero-drift: &zero-drift
+pc-definitions: &pc-definitions
   zero-drift:
     mode:
       dynamic_reliability:
@@ -19,6 +19,13 @@ zero-drift: &zero-drift
         time_window: 2w
         allowed_drift: 50 # upstream_reliability - current_ci_reliability <= allowed_drift
         fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
+  min-flaky-pass-rate:
+    mode:
+      flaky_pass_rate:
+        compare_with_branch: dev
+        agg: min
+        time_window: 7d
+
 retry-all-except-nodecrash: &retry-all-except-nodecrash
   include: # match stacktrace of failure
     - .*
