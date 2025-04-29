@@ -30,6 +30,10 @@ class local_monitor;
 }
 } // namespace cluster
 
+namespace datalake {
+class datalake_manager;
+}
+
 namespace storage {
 
 class api;
@@ -227,7 +231,8 @@ public:
       ss::sharded<storage::api>* storage,
       ss::sharded<storage::node>* storage_node,
       ss::sharded<cloud_storage::cache>* cache,
-      ss::sharded<cluster::partition_manager>* pm);
+      ss::sharded<cluster::partition_manager>* pm,
+      ss::sharded<datalake::datalake_manager>*);
 
     disk_space_manager(disk_space_manager&&) noexcept = delete;
     disk_space_manager& operator=(disk_space_manager&&) noexcept = delete;
@@ -262,6 +267,13 @@ private:
          */
         void set_total_datalake_usage(size_t usage) noexcept {
             _total_datalake_usage = usage;
+        }
+
+        /*
+         * Number of times datalake disk usage hard limit has been reached.
+         */
+        void set_datalake_hard_limit_reached(size_t count) noexcept {
+            _datalake_hard_limit_reached = count;
         }
 
         /*
@@ -348,6 +360,7 @@ private:
         metrics::internal_metric_groups _metrics;
         size_t _total_usage{0};
         size_t _total_datalake_usage{0};
+        size_t _datalake_hard_limit_reached{0};
         size_t _retention_reclaimable{0};
         size_t _available_reclaimable{0};
         size_t _local_retention_reclaimable{0};
@@ -366,6 +379,7 @@ private:
     ss::sharded<storage::node>* _storage_node;
     ss::sharded<cloud_storage::cache>* _cache;
     ss::sharded<cluster::partition_manager>* _pm;
+    ss::sharded<datalake::datalake_manager>* _datalake_manager;
 
     node::notification_id _cache_disk_nid;
     node::notification_id _data_disk_nid;

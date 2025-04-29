@@ -543,6 +543,11 @@ ss::future<size_t> datalake_manager::reserve_disk(ss::shard_id shard) {
         _core0_disk_bytes_reservable.consume(units);
     }
 
+    // accounting for metrics
+    if (_core0_disk_bytes_reservable.current() == 0) {
+        _disk_bytes_hard_limit_reached_counter++;
+    }
+
     if (disk_space_soft_limit_exceeded()) {
         _disk_space_monitor_cv.signal();
     }
@@ -723,11 +728,15 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
     }
 }
 
-ss::future<uint64_t> datalake_manager::disk_usage() {
+ss::future<datalake_manager::disk_usage_stats> datalake_manager::disk_usage() {
     const auto path = config::node().datalake_staging_path();
+    auto stats = disk_usage_stats{
+      .total_bytes = 0,
+      .hard_limit_reached_counter = _disk_bytes_hard_limit_reached_counter,
+    };
 
     if (!co_await ss::file_exists(path.string())) {
-        co_return 0;
+        co_return stats;
     }
 
     chunked_vector<std::filesystem::path> files;
@@ -767,7 +776,8 @@ ss::future<uint64_t> datalake_manager::disk_usage() {
             });
       });
 
-    co_return total;
+    stats.total_bytes = total;
+    co_return stats;
 }
 
 bool datalake_manager::max_shares_assigned() const {

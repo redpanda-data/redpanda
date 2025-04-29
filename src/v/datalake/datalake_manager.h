@@ -89,7 +89,11 @@ public:
      *
      * This interface computes a global value, rather than shard local.
      */
-    static ss::future<uint64_t> disk_usage();
+    struct disk_usage_stats {
+        uint64_t total_bytes{0};
+        uint64_t hard_limit_reached_counter{0};
+    };
+    ss::future<disk_usage_stats> disk_usage();
 
     /**
      * Returns the number of partitions that the translator is not able to keep
@@ -223,6 +227,7 @@ private:
     config::binding<bool> _disk_space_manager_enable;
     config::binding<size_t> _scratch_space_size_bytes;
     config::binding<double> _scratch_space_soft_limit_size_percent;
+    size_t _disk_bytes_hard_limit_reached_counter;
 };
 
 } // namespace datalake

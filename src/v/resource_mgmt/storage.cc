@@ -36,7 +36,8 @@ disk_space_manager::disk_space_manager(
   ss::sharded<storage::api>* storage,
   ss::sharded<storage::node>* storage_node,
   ss::sharded<cloud_storage::cache>* cache,
-  ss::sharded<cluster::partition_manager>* pm)
+  ss::sharded<cluster::partition_manager>* pm,
+  ss::sharded<datalake::datalake_manager>* datalake_manager)
   : _enabled(std::move(enabled))
   , _enabled_override(std::move(enabled_override))
   , _local_monitor(local_monitor)
@@ -44,6 +45,7 @@ disk_space_manager::disk_space_manager(
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
   , _pm(pm)
+  , _datalake_manager(datalake_manager)
   , _retention_target_capacity_bytes(std::move(retention_target_capacity_bytes))
   , _retention_target_capacity_percent(std::move(retention_target_capacity_pct))
   , _disk_reservation_percent(std::move(disk_reservation_percent))
@@ -497,12 +499,19 @@ ss::future<storage::usage_report> disk_space_manager::disk_usage() {
      * the data used by datalake is not reclaimable. it is reported in the
      * report as more "log data" the same way that kvstore data is reported.
      */
-    const auto datalake_usage
-      = co_await datalake::datalake_manager::disk_usage();
-    vlog(rlog.debug, "Datalake usage: {}", human::bytes(datalake_usage));
+    if (_datalake_manager->local_is_initialized()) {
+        const auto datalake_stats
+          = co_await _datalake_manager->local().disk_usage();
+        vlog(
+          rlog.debug,
+          "Datalake usage: {}",
+          human::bytes(datalake_stats.total_bytes));
 
-    _probe.set_total_datalake_usage(datalake_usage);
-    report.usage.data += datalake_usage;
+        _probe.set_total_datalake_usage(datalake_stats.total_bytes);
+        _probe.set_datalake_hard_limit_reached(
+          datalake_stats.hard_limit_reached_counter);
+        report.usage.data += datalake_stats.total_bytes;
+    }
 
     co_return report;
 }
@@ -717,6 +726,12 @@ void disk_space_manager::probe::setup_metrics() {
       "datalake_disk_usage_bytes",
       [this]() { return _total_datalake_usage; },
       sm::description("Total amount of disk usage by datalake.")));
+
+    defs.emplace_back(sm::make_counter(
+      "datalake_disk_usage_hard_limit_reached",
+      [this]() { return _datalake_hard_limit_reached; },
+      sm::description(
+        "Number of times datalake disk usage hard limit has been reached.")));
 
     defs.emplace_back(sm::make_gauge(
       "retention_reclaimable_bytes",

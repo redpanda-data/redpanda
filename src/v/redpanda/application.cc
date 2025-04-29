@@ -2023,7 +2023,8 @@ void application::wire_up_redpanda_services(
       &storage,
       &storage_node,
       &shadow_index_cache,
-      &partition_manager);
+      &partition_manager,
+      &_datalake_manager);
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
         vassert(

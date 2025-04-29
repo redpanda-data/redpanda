@@ -75,6 +75,11 @@ class DatalakeDiskUsageTest(RedpandaTest):
         metric_name = "vectorized_space_management_datalake_disk_usage_bytes"
         return self.redpanda.metric_sum(metric_name, expect_metric=True)
 
+    def datalake_hardlimit_reached(self):
+        # returns number of times datalake hard limit is enforced
+        metric_name = "vectorized_space_management_datalake_disk_usage_hard_limit_reached_total"
+        return self.redpanda.metric_sum(metric_name, expect_metric=True)
+
     def create_topic(self, num_partitions):
         rpk = RpkTool(self.redpanda)
         rpk.create_topic(self.topic_name,
@@ -205,3 +210,6 @@ class DatalakeDiskUsageTest(RedpandaTest):
         finally:
             self.stopped.set()
             usage_monitor_thread.join()
+
+        hardlimit_reached = self.datalake_hardlimit_reached()
+        assert hardlimit_reached > 0
