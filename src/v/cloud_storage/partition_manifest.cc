@@ -231,12 +231,13 @@ partition_manifest::full_log_start_kafka_offset() const {
               display_name(),
               _archive_start_offset,
               _start_offset);
-            throw std::runtime_error(fmt::format(
-              "{} Archive start offset {} is greater than the "
-              "start offset {}",
-              display_name(),
-              _archive_start_offset,
-              _start_offset));
+            throw std::runtime_error(
+              fmt::format(
+                "{} Archive start offset {} is greater than the "
+                "start offset {}",
+                display_name(),
+                _archive_start_offset,
+                _start_offset));
         }
 
         return _archive_start_offset - _archive_start_offset_delta;
