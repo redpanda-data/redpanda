@@ -35,6 +35,7 @@
 #include <boost/test/tools/old/interface.hpp>
 
 #include <chrono>
+#include <stdexcept>
 
 using namespace std::chrono_literals;
 
@@ -797,14 +798,18 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
       archival_stm->manifest().get_archive_clean_offset(), model::offset{});
 
     // unaligned spillover command shouldn't remove segment
-    archival_stm
-      ->spillover(
-        cloud_storage::segment_meta{
-          .base_offset = model::offset{0},
-          .committed_offset = model::offset{1}},
-        ss::lowres_clock::now() + 10s,
-        never_abort)
-      .get();
+
+    BOOST_REQUIRE_THROW(
+      archival_stm
+        ->spillover(
+          cloud_storage::segment_meta{
+            .base_offset = model::offset{0},
+            .committed_offset = model::offset{1}},
+          ss::lowres_clock::now() + 10s,
+          never_abort)
+        .get(),
+      std::runtime_error);
+
     // the start offset remains unchanged
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
 
@@ -1087,7 +1092,9 @@ FIXTURE_TEST(
     misaligned_spillover.truncate_archive_init(
       model::offset(100), model::offset_delta(0));
     misaligned_spillover.cleanup_archive(model::offset(100), 0);
-    misaligned_spillover.replicate().get();
+
+    BOOST_REQUIRE_THROW(
+      misaligned_spillover.replicate().get(), std::runtime_error);
 
     vlog(
       logger.info,
