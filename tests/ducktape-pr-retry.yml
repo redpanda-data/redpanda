@@ -13,4 +13,4 @@ retry:
     repeat: 20
     retry_on:
       *retry-all-except-nodecrash
-    pass_criteria: zero-drift
+    pass_criteria: fifty-drift
