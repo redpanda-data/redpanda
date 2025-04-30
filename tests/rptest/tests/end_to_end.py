@@ -19,7 +19,7 @@
 # - Imported annotate_missing_msgs helper from kafka test suite
 
 from collections import defaultdict, namedtuple
-from typing import Optional
+from typing import Any, Optional
 import os
 from typing import Optional
 from ducktape.tests.test import Test
@@ -30,9 +30,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
 from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
-from rptest.archival.s3_client import S3Client
 from rptest.clients.rpk import RpkTool
-from rptest.clients.rpk import RpkException
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -70,8 +68,8 @@ class EndToEndTest(Test):
 
         self._extra_node_conf = extra_node_conf
 
-        self.records_consumed = []
-        self.last_consumed_offsets = {}
+        self.records_consumed: list[tuple[Any, Any]] = []
+        self.last_consumed_offsets: dict[TopicPartition, int] = {}
         self.redpanda: Optional[RedpandaService] = None
         self.si_settings = si_settings
         self.topic = None
@@ -165,7 +163,8 @@ class EndToEndTest(Test):
                        num_nodes=1,
                        group_id="test_group",
                        verify_offsets=True,
-                       redpanda_cluster=None):
+                       redpanda_cluster=None,
+                       **kwargs: Any):
         if redpanda_cluster is None:
             assert self.redpanda
             redpanda_cluster = self.redpanda
@@ -177,7 +176,8 @@ class EndToEndTest(Test):
             topic=self.topic,
             group_id=group_id,
             on_record_consumed=self.on_record_consumed,
-            verify_offsets=verify_offsets)
+            verify_offsets=verify_offsets,
+            **kwargs)
         self.consumer.start()
 
     def start_producer(self,
@@ -208,6 +208,13 @@ class EndToEndTest(Test):
         self.last_consumed_offsets[partition] = offset
         self.records_consumed.append((key, record_id))
 
+    def consumer_status(self):
+        pmsg = ",".join(f"{p}={o}"
+                        for p, o in self.last_consumed_offsets.items())
+        self.logger.debug(
+            f"Consumer consumed {len(self.records_consumed)} messages, offsets: {pmsg}"
+        )
+
     def await_consumed_offsets(self, last_acked_offsets, timeout_sec):
         def has_finished_consuming():
             # if consumer was interrupted with error there is no point waiting
@@ -237,16 +244,31 @@ class EndToEndTest(Test):
         )
 
     def await_num_produced(self, min_records, timeout_sec=30):
+
+        self.redpanda.logger.debug(
+            f"Waiting for producer to produce {min_records}"
+            f" records (current: {self.producer.num_acked})")
+
         wait_until(lambda: self.producer.num_acked > min_records,
                    timeout_sec=timeout_sec,
                    err_msg="Producer failed to produce messages for %ds." %\
                    timeout_sec)
 
     def await_num_consumed(self, min_records, timeout_sec=30):
-        wait_until(lambda: self.consumer.total_consumed() >= min_records,
+        def consumed():
+            return self.consumer.total_consumed()
+
+        start = consumed()
+
+        def err():
+            return (
+                f"Timed out after {timeout_sec}s "
+                f"while awaiting record consumption of {min_records} records, "
+                f"consumed at start: {start}, end: {consumed()}.")
+
+        wait_until(lambda: consumed() >= min_records,
                    timeout_sec=timeout_sec,
-                   err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
-                   (timeout_sec, min_records))
+                   err_msg=err)
 
     def _collect_segment_data(self):
         # TODO: data collection is disabled because it was
@@ -273,6 +295,7 @@ class EndToEndTest(Test):
                        enable_compaction=False):
         try:
             self.await_num_produced(min_records, producer_timeout_sec)
+            self.consumer_status()
 
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                          str(self.producer.last_acked_offsets))

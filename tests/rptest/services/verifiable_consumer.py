@@ -21,6 +21,7 @@ import json
 import os
 import signal
 from collections import namedtuple
+from typing import Any
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.background_thread import BackgroundThreadService
@@ -158,7 +159,7 @@ class ConsumerEventHandler(object):
 class VerifiableConsumer(BackgroundThreadService):
     """
     This service wraps org.apache.kafka.tools.VerifiableConsumer for use in
-    system testing. 
+    system testing.
     """
 
     PERSISTENT_ROOT = "/mnt/verifiable_consumer"
@@ -265,7 +266,12 @@ class VerifiableConsumer(BackgroundThreadService):
                  on_record_consumed=None,
                  reset_policy="earliest",
                  verify_offsets=True,
-                 log_level="INFO"):
+                 log_level="INFO",
+                 consumer_properties: dict[str, Any] = {}):
+        """
+        Create a VerifiableConsumer service.
+        :param consumer_properties: A dictionary of properties to be passed to the
+        underlying Kafka (java) consumer."""
         super(VerifiableConsumer, self).__init__(context, num_nodes)
 
         self.redpanda = redpanda
@@ -277,7 +283,8 @@ class VerifiableConsumer(BackgroundThreadService):
         self.session_timeout_sec = session_timeout_sec
         self.enable_autocommit = enable_autocommit
         self.assignment_strategy = assignment_strategy
-        self.prop_file = ""
+        self.prop_file = "\n".join(
+            f"{k}={v}" for k, v in consumer_properties.items()) + "\n"
         self.stop_timeout_sec = stop_timeout_sec
         self.on_record_consumed = on_record_consumed
         self.verify_offsets = verify_offsets

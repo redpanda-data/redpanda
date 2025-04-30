@@ -57,6 +57,7 @@ class SimpleEndToEndTest(EndToEndTest):
         '''
         This test validates if verifiable consumer is exiting early when consumed from unexpected offset
         '''
+        target_messages = 30000
 
         self.start_redpanda(num_nodes=3)
 
@@ -65,15 +66,22 @@ class SimpleEndToEndTest(EndToEndTest):
         self.topic = spec.name
 
         self.start_producer(1, throughput=1000)
-        self.start_consumer(1)
-        # wait for at least 15000 records to be consumed
-        self.await_startup(min_records=15000)
-        self.client().delete_topic(spec.name)
+        # we decrease the max.metadata.age.ms in order to ensure that the consumer
+        # starts re-consuming from the recreated topic in a timely matter. See
+        # CORE-9229 for details.
+        self.start_consumer(1,
+                            consumer_properties={"metadata.max.age.ms": 1000})
+        # wait for at least half the records to be consumed
+        self.await_startup(min_records=target_messages // 2)
 
+        self.consumer_status()
+        self.client().delete_topic(spec.name)
         self.client().create_topic(spec)
+
+        self.consumer_status()
         error = None
         try:
-            self.run_validation(min_records=30000,
+            self.run_validation(min_records=target_messages,
                                 producer_timeout_sec=300,
                                 consumer_timeout_sec=300)
         except AssertionError as e:
