@@ -12,6 +12,13 @@ zero-drift: &zero-drift
         time_window: 2w
         allowed_drift: 0 # upstream_reliability - current_ci_reliability <= allowed_drift
         fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
+  fifty-drift:
+    mode:
+      dynamic_reliability:
+        compare_with_branch: dev
+        time_window: 2w
+        allowed_drift: 50 # upstream_reliability - current_ci_reliability <= allowed_drift
+        fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
 retry-all-except-nodecrash: &retry-all-except-nodecrash
   include: # match stacktrace of failure
     - .*
