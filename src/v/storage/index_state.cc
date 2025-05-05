@@ -763,12 +763,21 @@ bool index_state::truncate(
     if (new_max_offset < base_offset) {
         return needs_persistence;
     }
-    const uint32_t i = new_max_offset() - base_offset();
-    auto res = index.offset_lower_bound(i);
-    size_t remove_back_elems = index.size() - res.value_or(index.size());
-    if (remove_back_elems > 0) {
-        needs_persistence = true;
-        pop_back(remove_back_elems);
+    static constexpr int64_t u32_max = std::numeric_limits<uint32_t>::max();
+    int64_t delta = new_max_offset() - base_offset();
+    // NOTE: we expect that deltas above u32_max would have not been
+    // added to the index, unless by an older buggy version of Redpanda.
+    // With this in mind, either there are no entries above u32_max, or
+    // offset_lower_bound() isn't going to work correctly anyway, so we just
+    // skip removal and rely on queries to detect the overflow.
+    if (delta <= u32_max) {
+        auto i = static_cast<uint32_t>(delta);
+        auto res = index.offset_lower_bound(i);
+        size_t remove_back_elems = index.size() - res.value_or(index.size());
+        if (remove_back_elems > 0) {
+            needs_persistence = true;
+            pop_back(remove_back_elems);
+        }
     }
     if (new_max_offset < max_offset) {
         needs_persistence = true;
