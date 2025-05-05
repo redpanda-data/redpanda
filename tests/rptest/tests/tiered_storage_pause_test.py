@@ -16,6 +16,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings, MetricsEndpoint
 
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils import si_utils
 from rptest.utils.mode_checks import skip_debug_mode
 
 from collections import defaultdict
@@ -59,6 +60,7 @@ class TestTieredStoragePause(PreallocNodesTest):
                              cloud_storage_housekeeping_interval_ms=500,
                              fast_uploads=True))
         self._msg_size = 128
+        self._segment_size = 1024 * 1024
         # num messages to produce (50 MiB)
         self._msg_count = 50 * int(1024 * 1024 / self._msg_size)
         # amount of data to keep per partition
@@ -100,7 +102,10 @@ class TestTieredStoragePause(PreallocNodesTest):
 
     def start_producer_lite(self):
         """Small scale producer"""
-        msg_cnt = 1024 * 1024 // self._msg_size
+
+        # Couple of segments to ensure that retention can remove whole segments
+        # before these new ones.
+        msg_cnt = 3 * self._segment_size // self._msg_size
         self.logger.info(
             f"starting kgo-verifier producer with {msg_cnt} messages")
         self.producer = KgoVerifierProducer(
@@ -115,7 +120,7 @@ class TestTieredStoragePause(PreallocNodesTest):
 
         self.producer.wait_for_acks(msg_cnt, 60, 1)
 
-    def wait_util_archivers_paused(self, expected_num_paused):
+    def wait_archivers_paused(self, expected_num_paused):
         # Check that metric is showing that the ntp archiver is paused
         def _archiver_paused():
             num_paused = self.get_metric(
@@ -168,11 +173,13 @@ class TestTieredStoragePause(PreallocNodesTest):
                    backoff_sec=10,
                    err_msg="timed out waiting for segments to be evicted")
 
-    def get_start_offset(self):
+    def get_start_offset(self) -> int:
         rpk = RpkTool(self.redpanda)
-        partitions = rpk.describe_topic(self._topic)
+        partitions = list(rpk.describe_topic(self._topic))
+        assert len(partitions) == 1, "expecting only one partition"
         for p in partitions:
             return p.start_offset
+        assert False, "unreachable code"
 
     @cluster(num_nodes=4)
     @skip_debug_mode
@@ -197,7 +204,7 @@ class TestTieredStoragePause(PreallocNodesTest):
         """
         # create topic with tiered storage enabled
         topic = TopicSpec(partition_count=1,
-                          segment_bytes=1024 * 1024,
+                          segment_bytes=self._segment_size,
                           retention_bytes=self._retention_bytes)
 
         self.client().create_topic(topic)
@@ -229,7 +236,7 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.expect_start_from_offset_zero(not gaps_expected)
 
         # Check that metric is showing that the ntp archiver is paused
-        self.wait_util_archivers_paused(expected_num_paused=1)
+        self.wait_archivers_paused(expected_num_paused=1)
 
         # Check that nothing is uploaded
         self.expect_no_uploaded_bytes()
@@ -243,12 +250,15 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.wait_until_start_offset_advances()
 
         # check that metric is showing that the ntp archiver is no longer paused
-        self.wait_util_archivers_paused(expected_num_paused=0)
+        self.wait_archivers_paused(expected_num_paused=0)
 
         # Wait until all messages are produced.
         # This is not strictly necessary for the test. But uploading some more
         # data may trigger some unexpected behavior.
         self.producer.wait_for_acks(self._msg_count, 120, 1)
+
+        # Check that all data was successfully uploaded to the cloud storage.
+        si_utils.quiesce_uploads(self.redpanda, [self._topic], 120)
 
     @cluster(num_nodes=4)
     @skip_debug_mode
@@ -262,7 +272,7 @@ class TestTieredStoragePause(PreallocNodesTest):
         """
         # create topic with tiered storage enabled
         topic = TopicSpec(partition_count=1,
-                          segment_bytes=1024 * 1024,
+                          segment_bytes=self._segment_size,
                           retention_bytes=self._retention_bytes)
 
         self.client().create_topic(topic)
@@ -278,6 +288,9 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.producer.wait_for_acks(self._msg_count, 120, 1)
         self.producer.free()
 
+        # Check that pre-populated data is uploaded to the cloud storage.
+        si_utils.quiesce_uploads(self.redpanda, [self._topic], 120)
+
         # save the start offset before pausing the uploads
         start_offset = self.get_start_offset()
 
@@ -291,13 +304,8 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.redpanda.set_cluster_config(
             {"cloud_storage_housekeeping_interval_ms": 1000})
 
-        gaps_expected = gaps_allowed(allow_gaps_cluster_level,
-                                     allow_gaps_topic_level)
-
-        # Wait until pending uploads are done
-        # We set upload interval to 5 seconds so it's guaranteed
-        # that final segment will be uploaded after short wait.
-        time.sleep(15)
+        # Check that metric is showing that the ntp archiver is paused
+        self.wait_archivers_paused(expected_num_paused=1)
 
         # Start second round of producing.
         # We don't need a lot of data here. Just need to check that
@@ -313,9 +321,6 @@ class TestTieredStoragePause(PreallocNodesTest):
                    backoff_sec=10,
                    err_msg="timed out waiting for segments to be evicted")
 
-        # Check that metric is showing that the ntp archiver is paused
-        self.wait_util_archivers_paused(expected_num_paused=1)
-
         # Wait for local storage housekeeping to remove some local segments.
         # The housekeeping interval is set to 1s.
         time.sleep(15)
@@ -327,4 +332,7 @@ class TestTieredStoragePause(PreallocNodesTest):
         self.redpanda.wait_for_manifest_uploads()
 
         # check that metric is showing that the ntp archiver is no longer paused
-        self.wait_util_archivers_paused(expected_num_paused=0)
+        self.wait_archivers_paused(expected_num_paused=0)
+
+        # Check that all data was successfully uploaded to the cloud storage.
+        si_utils.quiesce_uploads(self.redpanda, [self._topic], 120)
