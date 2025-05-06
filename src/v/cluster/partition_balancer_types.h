@@ -143,6 +143,45 @@ enum class change_reason {
 };
 
 std::ostream& operator<<(std::ostream& o, change_reason rep);
+/**
+ * Enum providing a details about partition replica reallocation failure.
+ */
+enum class reallocation_error : int8_t {
+    missing_partition_size_info,
+    no_eligible_node_found,
+    over_partition_fd_limit,
+    over_partition_memory_limit,
+    over_partition_core_limit,
+    no_quorum,
+    reconfiguration_in_progress,
+    partition_disabled,
+    unknown_error,
+};
+
+std::ostream& operator<<(std::ostream& o, reallocation_error rep);
+
+/**
+ * Struct providing details about partition replica reallocation failure.
+ * The details provided include the change reason, the replica that was
+ * intended to be moved and the error.
+ */
+struct reallocation_failure_details
+  : serde::envelope<
+      reallocation_failure_details,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::node_id replica_to_move;
+    change_reason reason;
+    reallocation_error error;
+
+    auto serde_fields() { return std::tie(replica_to_move, reason, error); }
+    friend bool operator==(
+      const reallocation_failure_details&, const reallocation_failure_details&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reallocation_failure_details& rep);
+};
 
 struct partition_balancer_overview_reply
   : serde::envelope<
