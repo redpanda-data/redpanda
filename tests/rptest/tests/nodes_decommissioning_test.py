@@ -194,6 +194,23 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self._check_state_consistent(decommissioned_id)
 
+    def _wait_for_allocation_failures_to_be_reported(self, decommissioned_id):
+        def _failures_are_present():
+            status = self.admin.get_decommission_status(decommissioned_id)
+            failed_to_reallocate_topics = {
+                f['topic']
+                for f in status['reallocation_failure_details']
+                if f['topic'] != "__consumer_offsets"
+            }
+            return len(failed_to_reallocate_topics) > 0
+
+        return wait_until(
+            _failures_are_present,
+            timeout_sec=60,
+            backoff_sec=2,
+            retry_on_exc=True,
+            err_msg="Timeout waiting for allocation failures to be reported")
+
     def _decommission(self, node_id, node=None):
         def decommissioned():
             try:
@@ -348,6 +365,29 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         if not delete_topic:
             self.verify()
+
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    def test_decommissioning_node_rf_1_replica(self):
+
+        self.start_redpanda()
+        self._create_topics(replication_factors=[1])
+
+        self.start_producer()
+        self.start_consumer()
+
+        to_decommission = self.redpanda.nodes[1]
+        node_id = self.redpanda.node_id(to_decommission)
+        self.redpanda.stop_node(node=to_decommission)
+        self.logger.info(f"decommissioning node: {node_id}", )
+        self._decommission(node_id)
+        self._wait_for_allocation_failures_to_be_reported(node_id)
+        # start the node back to finish decommissioning
+        self.redpanda.start_node(node=to_decommission,
+                                 auto_assign_node_id=True,
+                                 omit_seeds_on_idx_one=False)
+        self._wait_for_node_removed(node_id)
+
+        self.verify()
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_decommissioning_crashed_node(self):
