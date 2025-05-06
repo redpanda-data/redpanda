@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cluster/errc.h"
+#include "container/chunked_hash_map.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
@@ -186,9 +187,21 @@ struct reallocation_failure_details
 struct partition_balancer_overview_reply
   : serde::envelope<
       partition_balancer_overview_reply,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
+    partition_balancer_overview_reply() noexcept = default;
+    partition_balancer_overview_reply(const partition_balancer_overview_reply&)
+      = delete;
+    partition_balancer_overview_reply(partition_balancer_overview_reply&&)
+      = default;
+    partition_balancer_overview_reply&
+    operator=(const partition_balancer_overview_reply&)
+      = delete;
+    partition_balancer_overview_reply&
+    operator=(partition_balancer_overview_reply&&)
+      = default;
 
     errc error;
     model::timestamp last_tick_time;
@@ -198,6 +211,12 @@ struct partition_balancer_overview_reply
       decommission_realloc_failures;
     size_t partitions_pending_force_recovery_count;
     std::vector<model::ntp> partitions_pending_force_recovery_sample;
+    chunked_hash_map<model::ntp, reallocation_failure_details>
+      reallocation_failures;
+
+    void set_reallocation_failures(
+      const chunked_hash_map<model::ntp, reallocation_failure_details>&
+        reallocations);
 
     auto serde_fields() {
         return std::tie(
@@ -207,7 +226,8 @@ struct partition_balancer_overview_reply
           violations,
           decommission_realloc_failures,
           partitions_pending_force_recovery_count,
-          partitions_pending_force_recovery_sample);
+          partitions_pending_force_recovery_sample,
+          reallocation_failures);
     }
 
     friend bool operator==(
@@ -217,6 +237,8 @@ struct partition_balancer_overview_reply
 
     friend std::ostream&
     operator<<(std::ostream& o, const partition_balancer_overview_reply& rep);
+
+    partition_balancer_overview_reply copy() const;
 };
 
 class balancer_tick_aborted_exception final : public std::runtime_error {

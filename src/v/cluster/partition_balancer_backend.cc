@@ -414,8 +414,8 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     _cur_term->last_tick_time = clock_t::now();
     _cur_term->last_violations = std::move(plan_data.violations);
-    _cur_term->last_tick_decommission_realloc_failures = std::move(
-      plan_data.decommission_realloc_failures);
+    _cur_term->last_tick_reallocation_failures = std::move(
+      plan_data.reallocation_failures);
     if (
       _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::actions_planned) {
@@ -571,8 +571,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
 
     ret.status = _cur_term->last_status;
     ret.violations = _cur_term->last_violations;
-    ret.decommission_realloc_failures
-      = _cur_term->last_tick_decommission_realloc_failures;
+    ret.set_reallocation_failures(_cur_term->last_tick_reallocation_failures);
     ret.partitions_pending_force_recovery_count
       = _state.topics().partitions_to_force_recover().size();
     if (ret.partitions_pending_force_recovery_count > 0) {

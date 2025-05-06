@@ -870,4 +870,24 @@ read_value(const json::Value& rd, cluster::delete_acls_result& data) {
     read_member(rd, "bindings", data.bindings);
 }
 
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const cluster::reallocation_failure_details& data) {
+    w.StartObject();
+    w.Key("replica_to_move");
+    rjson_serialize(w, data.replica_to_move);
+    w.Key("reason");
+    rjson_serialize(w, data.reason);
+    w.Key("error");
+    rjson_serialize(w, data.error);
+    w.EndObject();
+}
+
+inline void
+read_value(const json::Value& rd, cluster::reallocation_failure_details& data) {
+    read_member(rd, "error", data.error);
+    read_member(rd, "replica_to_move", data.replica_to_move);
+    read_member(rd, "reason", data.reason);
+}
+
 } // namespace json
