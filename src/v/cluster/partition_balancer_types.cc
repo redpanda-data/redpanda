@@ -126,4 +126,19 @@ operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, change_reason reason) {
+    switch (reason) {
+    case change_reason::rack_constraint_repair:
+        return o << "rack_constraint_repair";
+    case change_reason::partition_count_rebalancing:
+        return o << "partition_count_rebalancing";
+    case change_reason::node_decommissioning:
+        return o << "node_decommissioning";
+    case change_reason::node_unavailable:
+        return o << "node_unavailable";
+    case change_reason::disk_full:
+        return o << "disk_full";
+    }
+}
+
 } // namespace cluster

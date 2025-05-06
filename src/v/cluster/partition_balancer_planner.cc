@@ -590,7 +590,7 @@ public:
     result<reallocation_step> move_replica(
       model::node_id replica,
       double max_disk_usage_ratio,
-      partition_balancer_planner::change_reason reason);
+      change_reason reason);
 
     void revert(const reallocation_step&);
 
@@ -672,7 +672,7 @@ public:
 
     bool cancel_requested() const { return _cancel_requested; }
 
-    void request_cancel(partition_balancer_planner::change_reason reason) {
+    void request_cancel(change_reason reason) {
         if (!_cancel_requested) {
             vlog(
               clusterlog.info,
@@ -725,9 +725,7 @@ public:
         }
     }
 
-    void report_failure(
-      std::string_view reason,
-      partition_balancer_planner::change_reason change_reason) {
+    void report_failure(std::string_view reason, change_reason change_reason) {
         if (_ctx.increment_failure_count()) {
             vlog(
               clusterlog.info,
@@ -785,8 +783,7 @@ public:
 
     immutability_reason reason() const { return _reason; }
 
-    void
-    report_failure(partition_balancer_planner::change_reason change_reason) {
+    void report_failure(change_reason change_reason) {
         ss::sstring reason;
         switch (_reason) {
         case immutability_reason::batch_full:
@@ -1178,9 +1175,7 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
 
 result<reallocation_step>
 partition_balancer_planner::reassignable_partition::move_replica(
-  model::node_id replica,
-  double max_disk_usage_ratio,
-  partition_balancer_planner::change_reason reason) {
+  model::node_id replica, double max_disk_usage_ratio, change_reason reason) {
     if (!_reallocated) {
         _reallocated = request_context::reassignment_info{
           .partition = _ctx._parent._partition_allocator
@@ -1467,7 +1462,7 @@ void partition_balancer_planner::force_reassignable_partition::
 ss::future<> partition_balancer_planner::get_node_drain_actions(
   request_context& ctx,
   const absl::flat_hash_set<model::node_id>& nodes,
-  partition_balancer_planner::change_reason reason) {
+  change_reason reason) {
     if (nodes.empty()) {
         co_return;
     }
@@ -2108,28 +2103,6 @@ partition_balancer_planner::plan_actions(
         result.status = status::missing_sizes;
     }
     co_return result;
-}
-
-std::ostream&
-operator<<(std::ostream& o, partition_balancer_planner::change_reason r) {
-    switch (r) {
-    case partition_balancer_planner::change_reason::rack_constraint_repair:
-        fmt::print(o, "rack_constraint_repair");
-        break;
-    case partition_balancer_planner::change_reason::partition_count_rebalancing:
-        fmt::print(o, "partition_count_rebalancing");
-        break;
-    case partition_balancer_planner::change_reason::node_unavailable:
-        fmt::print(o, "node_unavailable");
-        break;
-    case partition_balancer_planner::change_reason::node_decommissioning:
-        fmt::print(o, "node_decommissioning");
-        break;
-    case partition_balancer_planner::change_reason::disk_full:
-        fmt::print(o, "disk_full");
-        break;
-    }
-    return o;
 }
 
 } // namespace cluster
