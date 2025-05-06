@@ -2557,10 +2557,21 @@ admin_server::get_decommission_progress_handler(
 
     ret.replicas_left = decommission_progress.replicas_left;
     ret.finished = decommission_progress.finished;
-
-    for (const auto& ntp : decommission_progress.allocation_failures) {
+    ret.reallocation_failure_details._elements.reserve(
+      decommission_progress.allocation_failures.size());
+    for (const auto& [ntp, details] :
+         decommission_progress.allocation_failures) {
         ret.allocation_failures.push(
           fmt::format("{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
+        using failure_details_t
+          = ss::httpd::broker_json::reallocation_failure_details;
+        failure_details_t f_details;
+        f_details.ns = ntp.ns;
+        f_details.topic = ntp.tp.topic;
+        f_details.partition = ntp.tp.partition;
+        f_details.error = fmt::to_string(details.error);
+
+        ret.reallocation_failure_details.push(f_details);
     }
 
     for (auto& p : decommission_progress.current_reconfigurations) {

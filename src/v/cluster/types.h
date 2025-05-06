@@ -16,6 +16,7 @@
 #include "cluster/feature_update_action.h"
 #include "cluster/fwd.h"
 #include "cluster/nt_revision.h"
+#include "cluster/partition_balancer_types.h"
 #include "cluster/remote_topic_properties.h"
 #include "cluster/snapshot.h"
 #include "cluster/topic_configuration.h"
@@ -3158,7 +3159,8 @@ struct node_decommission_progress {
     // number of replicas left on decommissioned node
     size_t replicas_left{0};
     // Replicas on the node with failures during reallocation.
-    ss::chunked_fifo<model::ntp> allocation_failures;
+    chunked_hash_map<model::ntp, reallocation_failure_details>
+      allocation_failures;
     // list of currently ongoing partition reconfigurations
     std::vector<partition_reconfiguration_state> current_reconfigurations;
 };
