@@ -262,13 +262,15 @@
                         "application/json"
                     ],
                     "parameters": [
-                      {
-                        "in": "query",
-                        "name": "limit",
-                        "schema": {"type": "integer"},
-                        "required": false,
-                        "description": "Limit the number of partitions listed for each risk type (default is 128)"
-                      }
+                        {
+                            "in": "query",
+                            "name": "limit",
+                            "schema": {
+                                "type": "integer"
+                            },
+                            "required": false,
+                            "description": "Limit the number of partitions listed for each risk type. Default is 128."
+                        }
                     ]
                 }
             ]
@@ -414,6 +416,26 @@
                 }
             }
         },
+        "reallocation_failure_details": {
+            "id": "reallocation_failure_details",
+            "description": "Detailed information about reallocation failure",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string"
+                },
+                "partition": {
+                    "type": "int"
+                },
+                "error": {
+                    "type": "string",
+                    "description": "Reallocation failure description. The description contains the cause of failure"
+                }
+            }
+        },
         "decommission_status": {
             "id": "decommission_status",
             "description": "Node decommissioning status",
@@ -440,6 +462,13 @@
                         "type": "partition_reconfiguration_status"
                     },
                     "description": "Array of partition reconfiguration statues"
+                },
+                "reallocation_failure_details": {
+                    "type": "array",
+                    "items": {
+                        "type": "reallocation_failure_details"
+                    },
+                    "description": "Array containing allocation failure details. This is helpful for diagnosing node decommissioning problems."
                 }
             }
         },

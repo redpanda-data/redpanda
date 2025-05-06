@@ -389,7 +389,7 @@ controller_api::get_partitions_reconfiguration_state(
     co_return ret;
 }
 
-ss::future<result<ss::chunked_fifo<model::ntp>>>
+ss::future<result<chunked_hash_map<model::ntp, reallocation_failure_details>>>
 controller_api::get_decommission_allocation_failures(model::node_id node) {
     using result_t = std::variant<
       cluster::partition_balancer_overview_reply,
@@ -439,15 +439,38 @@ controller_api::get_decommission_allocation_failures(model::node_id node) {
     } else {
         co_return std::get<cluster::errc>(result);
     }
-
-    ss::chunked_fifo<model::ntp> ret;
-    auto it = overview.decommission_realloc_failures.find(node);
-    if (it == overview.decommission_realloc_failures.end()) {
+    /**
+     * If allocation failures are empty there are two possibilities, either a
+     * previous version of the reply was received or there are no failures,
+     * either way we are going to use decommission_realloc_failures map to
+     * determine the failures.
+     */
+    chunked_hash_map<model::ntp, reallocation_failure_details> ret;
+    if (overview.reallocation_failures.empty()) {
+        auto it = overview.decommission_realloc_failures.find(node);
+        if (it == overview.decommission_realloc_failures.end()) {
+            co_return ret;
+        }
+        ret.reserve(it->second.size());
+        for (const auto& ntp : it->second) {
+            ret.emplace(
+              ntp,
+              reallocation_failure_details{
+                .replica_to_move = node,
+                .reason = change_reason::node_decommissioning,
+                .error = reallocation_error::unknown_error,
+              });
+        }
         co_return ret;
     }
-    for (const auto& ntp : it->second) {
-        ret.push_back(ntp);
+    for (auto& [ntp, details] : overview.reallocation_failures) {
+        if (
+          details.replica_to_move == node
+          && details.reason == change_reason::node_decommissioning) {
+            ret.emplace(ntp, details);
+        }
     }
+
     co_return ret;
 }
 
