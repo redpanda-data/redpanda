@@ -131,6 +131,19 @@ struct partition_balancer_overview_request
     auto serde_fields() { return std::tie(); }
 };
 
+/**
+ * class describing a reason underlying partition replica set change
+ */
+enum class change_reason {
+    rack_constraint_repair,
+    partition_count_rebalancing,
+    node_decommissioning,
+    node_unavailable,
+    disk_full,
+};
+
+std::ostream& operator<<(std::ostream& o, change_reason rep);
+
 struct partition_balancer_overview_reply
   : serde::envelope<
       partition_balancer_overview_reply,

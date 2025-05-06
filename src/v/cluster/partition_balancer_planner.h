@@ -79,16 +79,6 @@ public:
         waiting_for_reports,
         missing_sizes,
     };
-    /**
-     * class describing a reason underlying partition replica set change
-     */
-    enum class change_reason {
-        rack_constraint_repair,
-        partition_count_rebalancing,
-        node_decommissioning,
-        node_unavailable,
-        disk_full,
-    };
 
     struct plan_data {
         partition_balancer_violations violations;
@@ -138,8 +128,6 @@ private:
     planner_config _config;
     partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
-
-    friend std::ostream& operator<<(std::ostream&, change_reason);
 };
 
 } // namespace cluster
