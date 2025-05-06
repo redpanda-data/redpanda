@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "random/generators.h"
 #include "utils/tristate.h"
@@ -153,6 +154,13 @@ inline MapType<Key, Value> random_map(Fn&& gen, size_t size = 20) {
         hm[k] = v;
     }
     return hm;
+}
+
+template<typename Key, typename Value, typename Fn>
+inline chunked_hash_map<Key, Value>
+random_chunked_hash_map(Fn&& gen, size_t size = 20) {
+    return random_map<chunked_hash_map, Key, Value, Fn>(
+      std::forward<Fn>(gen), size);
 }
 
 template<typename Key, typename Value, typename Fn>

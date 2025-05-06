@@ -75,6 +75,43 @@ partition_balancer_violations::partition_balancer_violations(
   : unavailable_nodes(std::move(un))
   , full_nodes(std::move(fn)) {}
 
+void partition_balancer_overview_reply::set_reallocation_failures(
+  const chunked_hash_map<model::ntp, reallocation_failure_details>&
+    reallocations) {
+    reallocation_failures.reserve(reallocations.size());
+    for (const auto& [ntp, details] : reallocations) {
+        reallocation_failures.emplace(ntp, details);
+        /**
+         * Fill in the decommission_realloc_failures map with the reallocation
+         * failures for backward compatibility.
+         */
+        if (details.reason == change_reason::node_decommissioning) {
+            auto& failed_ntps
+              = decommission_realloc_failures[details.replica_to_move];
+            failed_ntps.insert(ntp);
+        }
+    }
+}
+
+partition_balancer_overview_reply
+partition_balancer_overview_reply::copy() const {
+    partition_balancer_overview_reply copy;
+    copy.error = error;
+    copy.last_tick_time = last_tick_time;
+    copy.status = status;
+    copy.violations = violations;
+    copy.partitions_pending_force_recovery_count
+      = partitions_pending_force_recovery_count;
+    copy.partitions_pending_force_recovery_sample
+      = partitions_pending_force_recovery_sample;
+    copy.decommission_realloc_failures = decommission_realloc_failures;
+    copy.reallocation_failures.reserve(reallocation_failures.size());
+    for (const auto& [ntp, details] : reallocation_failures) {
+        copy.reallocation_failures.emplace(ntp, details);
+    }
+    return copy;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const partition_balancer_violations& v) {
     fmt::print(
@@ -117,12 +154,16 @@ operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
     fmt::print(
       o,
       "{{ error: {} last_tick_time: {} status: {} violations: {}, "
-      "partitions_pending_force_recovery: {}}}",
+      "partitions_pending_force_recovery: {}, "
+      "decommission_reallocation_failures_count: {}, reallocation_failures: "
+      "{}}}",
       rep.error,
       rep.last_tick_time,
       rep.status,
       rep.violations,
-      rep.partitions_pending_force_recovery_count);
+      rep.partitions_pending_force_recovery_count,
+      rep.decommission_realloc_failures.size(),
+      fmt::join(rep.reallocation_failures | std::views::values, ", "));
     return o;
 }
 
