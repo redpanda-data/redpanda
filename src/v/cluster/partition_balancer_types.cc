@@ -1,0 +1,129 @@
+/*
+ * Copyright 2025 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#include "cluster/partition_balancer_types.h"
+
+#include "utils/human.h"
+#include "utils/to_string.h"
+
+namespace cluster {
+
+node_disk_space::node_disk_space(
+  model::node_id node_id, uint64_t total, uint64_t used)
+  : node_id(node_id)
+  , total(total)
+  , used(used) {}
+
+double node_disk_space::final_used_ratio() const {
+    // it sometimes may happen  that the partition replica size on one node
+    // is out of date with the total used size reported by a node space
+    // manager. This may lead to an overflow of final used ratio.
+    if (released >= used + assigned) {
+        return 0.0;
+    }
+
+    return double(used + assigned - released) / total;
+}
+
+std::ostream& operator<<(std::ostream& o, const node_disk_space& d) {
+    fmt::print(
+      o,
+      "{{total: {}, used: {}, assigned: {}, released: {}; "
+      "used ratios: orig: {:.4}, peak: {:.4}, final: {:.4}}}",
+      human::bytes(d.total),
+      human::bytes(d.used),
+      human::bytes(d.assigned),
+      human::bytes(d.released),
+      d.original_used_ratio(),
+      d.peak_used_ratio(),
+      d.final_used_ratio());
+    return o;
+}
+
+partition_balancer_violations::unavailable_node::unavailable_node(
+  model::node_id id, model::timestamp unavailable_since)
+  : id(id)
+  , unavailable_since(unavailable_since) {}
+
+std::ostream& operator<<(
+  std::ostream& o, const partition_balancer_violations::unavailable_node& u) {
+    fmt::print(o, "{{ id: {} since: {} }}", u.id, u.unavailable_since);
+    return o;
+}
+
+partition_balancer_violations::full_node::full_node(
+  model::node_id id, uint32_t disk_used_percent)
+  : id(id)
+  , disk_used_percent(disk_used_percent) {}
+
+std::ostream&
+operator<<(std::ostream& o, const partition_balancer_violations::full_node& f) {
+    fmt::print(
+      o, "{{ id: {} disk_used_percent: {} }}", f.id, f.disk_used_percent);
+    return o;
+}
+
+partition_balancer_violations::partition_balancer_violations(
+  std::vector<unavailable_node> un, std::vector<full_node> fn)
+  : unavailable_nodes(std::move(un))
+  , full_nodes(std::move(fn)) {}
+
+std::ostream&
+operator<<(std::ostream& o, const partition_balancer_violations& v) {
+    fmt::print(
+      o,
+      "{{ unavailable_nodes: {} full_nodes: {} }}",
+      v.unavailable_nodes,
+      v.full_nodes);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& os, partition_balancer_status status) {
+    switch (status) {
+    case partition_balancer_status::off:
+        os << "off";
+        break;
+    case partition_balancer_status::starting:
+        os << "starting";
+        break;
+    case partition_balancer_status::ready:
+        os << "ready";
+        break;
+    case partition_balancer_status::in_progress:
+        os << "in_progress";
+        break;
+    case partition_balancer_status::stalled:
+        os << "stalled";
+        break;
+    }
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const partition_balancer_overview_request&) {
+    fmt::print(o, "{{}}");
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const partition_balancer_overview_reply& rep) {
+    fmt::print(
+      o,
+      "{{ error: {} last_tick_time: {} status: {} violations: {}, "
+      "partitions_pending_force_recovery: {}}}",
+      rep.error,
+      rep.last_tick_time,
+      rep.status,
+      rep.violations,
+      rep.partitions_pending_force_recovery_count);
+    return o;
+}
+
+} // namespace cluster
