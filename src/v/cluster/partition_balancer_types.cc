@@ -141,4 +141,39 @@ std::ostream& operator<<(std::ostream& o, change_reason reason) {
     }
 }
 
+std::ostream& operator<<(std::ostream& o, reallocation_error err) {
+    switch (err) {
+    case reallocation_error::missing_partition_size_info:
+        return o << "Missing partition size information, all replicas may be "
+                    "offline";
+    case reallocation_error::no_eligible_node_found:
+        return o << "No eligible node found to move replica";
+    case reallocation_error::over_partition_fd_limit:
+        return o << "Over the total partition file descriptor limit";
+    case reallocation_error::over_partition_memory_limit:
+        return o << "Over the total partition memory limit";
+    case reallocation_error::over_partition_core_limit:
+        return o << "Over the partition per core limit";
+    case reallocation_error::no_quorum:
+        return o << "No quorum, majority of replicas are offline";
+    case reallocation_error::reconfiguration_in_progress:
+        return o << "Non cancellable reconfiguration in progress";
+    case reallocation_error::partition_disabled:
+        return o << "Partition is disabled";
+    case reallocation_error::unknown_error:
+        return o << "Unknown error or error not reported";
+    }
+}
+
+std::ostream&
+operator<<(std::ostream& o, const reallocation_failure_details& details) {
+    fmt::print(
+      o,
+      "{{replica_to_move: {}, reason: {}, error: {}}}",
+      details.replica_to_move,
+      details.reason,
+      details.error);
+    return o;
+}
+
 } // namespace cluster
