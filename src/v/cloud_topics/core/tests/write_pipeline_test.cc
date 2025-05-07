@@ -77,7 +77,8 @@ TEST_CORO(write_pipeline_test, single_write_request) {
     ASSERT_TRUE_CORO(res.complete);
     ASSERT_TRUE_CORO(res.requests.size() == 1);
 
-    res.requests.front().set_value(ss::circular_buffer<model::record_batch>{});
+    res.requests.front().set_value(
+      ss::circular_buffer<cloud_topics::extent_meta>{});
 
     auto write_res = co_await std::move(fut);
     ASSERT_TRUE_CORO(write_res.has_value());
@@ -113,7 +114,8 @@ TEST_CORO(batcher_test, expired_write_request) {
 
     // One req has already expired at this point
     ASSERT_EQ_CORO(res.requests.size(), 1);
-    res.requests.back().set_value(ss::circular_buffer<model::record_batch>{});
+    res.requests.back().set_value(
+      ss::circular_buffer<cloud_topics::extent_meta>{});
 
     auto [pass_result, fail_result] = co_await ss::when_all_succeed(
       std::move(expect_pass_fut), std::move(expect_fail_fut));
