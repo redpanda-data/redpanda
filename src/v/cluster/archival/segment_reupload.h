@@ -13,7 +13,9 @@
 #include "base/seastarx.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival/async_data_uploader.h"
 #include "cluster/archival/types.h"
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
@@ -207,6 +209,11 @@ public:
     ss::future<segment_collector_stream_result> make_upload_candidate_stream(
       ss::lowres_clock::duration segment_lock_duration);
 
+    ss::future<segment_collector_stream_result> make_segment_upload_stream(
+      cluster::partition& parent,
+      ss::lowres_clock::duration segment_lock_duration,
+      ss::gate& gate);
+
 private:
     struct lookup_result {
         segment_seq::value_type segment;
@@ -243,8 +250,10 @@ private:
     /// reaches the replacement boundary.
     model::offset find_replacement_boundary(segment_collector_mode mode) const;
 
+    // TODO(oren): maybe consolidate into some kind of struct that can be wired
+    // through the APIs to make the collector less stateful
     model::offset _begin_inclusive;
-    model::offset _end_inclusive;
+    model::offset _end_inclusive{};
 
     const cloud_storage::partition_manifest& _manifest;
     const storage::log& _log;
