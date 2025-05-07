@@ -13,6 +13,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/types.h"
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 
@@ -28,7 +29,9 @@ namespace archival {
 class archival_policy {
 public:
     explicit archival_policy(
-      model::ntp ntp, std::optional<segment_time_limit> limit = std::nullopt);
+      model::ntp ntp,
+      cluster::partition& parent,
+      std::optional<segment_time_limit> limit = std::nullopt);
 
     ss::future<segment_collector_stream_result> get_next_compacted_segment(
       model::offset begin_inclusive,
@@ -57,6 +60,7 @@ private:
     model::ntp _ntp;
     std::optional<segment_time_limit> _upload_limit;
     std::optional<ss::lowres_clock::time_point> _upload_deadline;
+    cluster::partition* _parent;
 };
 
 } // namespace archival
