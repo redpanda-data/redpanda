@@ -747,9 +747,11 @@ redpanda_cc_btest(
     ],
     cpu = 1,
     deps = [
+        "//src/v/cluster/tests:cluster_test_fixture",
         "//src/v/kafka/protocol",
         "//src/v/kafka/server",
         "//src/v/model",
+        "//src/v/raft",
         "//src/v/redpanda/tests:fixture",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",

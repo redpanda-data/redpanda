@@ -33,7 +33,7 @@ fetch_scheduling_group_provider(const connection_context&);
 using fetch_handler = single_stage_handler<
   fetch_api,
   4,
-  11,
+  12,
   default_estimate_adaptor,
   fetch_scheduling_group_provider>;
 
@@ -263,6 +263,13 @@ struct read_result {
       , last_stable_offset(-1)
       , error(e) {}
 
+    explicit read_result(error_code e, leader_id_and_epoch leader)
+      : start_offset(-1)
+      , high_watermark(-1)
+      , last_stable_offset(-1)
+      , current_leader(std::move(leader))
+      , error(e) {}
+
     // special case for offset_out_of_range_error
     read_result(
       error_code e,
@@ -337,6 +344,7 @@ struct read_result {
     model::offset last_stable_offset;
     std::optional<std::chrono::milliseconds> delta_from_tip_ms;
     std::optional<model::node_id> preferred_replica;
+    std::optional<leader_id_and_epoch> current_leader;
     error_code error;
     model::partition_id partition;
     std::vector<cluster::tx::tx_range> aborted_transactions;
@@ -420,6 +428,7 @@ namespace testing {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
+  const cluster::metadata_cache&,
   const replica_selector&,
   const model::ktp&,
   fetch_config,

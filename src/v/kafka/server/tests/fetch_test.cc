@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/tests/cluster_test_fixture.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/fetch.h"
@@ -174,6 +175,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
                 [&octx, ktp, config](cluster::partition_manager& pm) {
                     return kafka::testing::read_from_ntp(
                       pm,
+                      octx.rctx.metadata_cache(),
                       octx.rctx.server().local().get_replica_selector(),
                       ktp,
                       config,
@@ -481,6 +483,134 @@ FIXTURE_TEST(fetch_leader_epoch, redpanda_thread_fixture) {
         == kafka::error_code::fenced_leader_epoch,
       fmt::format(
         "error: {}", resp.data.responses[0].partitions[0].error_code));
+}
+
+FIXTURE_TEST(fetch_current_leader_v12, cluster_test_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(0);
+
+    create_node_application(model::node_id{0});
+    create_node_application(model::node_id{1});
+    create_node_application(model::node_id{2});
+    wait_for_all_members(3s).get();
+
+    model::ktp ktp(topic, pid);
+    auto ntp = ktp.to_ntp();
+    create_topic(ktp.as_tn_view(), 1, 3).get();
+
+    wait_for(10s, [&] {
+        auto [app_ptr, _] = get_leader(ntp);
+        return app_ptr != nullptr;
+    });
+
+    auto [app_ptr, partition] = get_leader(ntp);
+
+    auto publish_some = [ntp](redpanda_thread_fixture* app_ptr) {
+        app_ptr->app.partition_manager
+          .invoke_on(
+            *app_ptr->app.shard_table.local().shard_for(ntp),
+            [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+
+                auto batches
+                  = model::test::make_random_batches(model::offset(0), 5).get();
+
+                BOOST_TEST_INFO("Replicating batches to leader");
+
+                partition->raft()
+                  ->replicate(
+                    chunked_vector<model::record_batch>(std::move(batches)),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .discard_result()
+                  .get();
+            })
+          .get();
+    };
+
+    publish_some(app_ptr);
+
+    BOOST_TEST_INFO("Shuffling leadership");
+    shuffle_leadership(ntp).get();
+
+    BOOST_TEST_INFO("Waiting for new leader");
+    wait_for(10s, [&] {
+        auto [fixture, _] = get_leader(ntp);
+        return fixture != nullptr;
+    });
+
+    BOOST_TEST_INFO("Getting new leader");
+    auto [new_app_ptr, new_partition] = get_leader(ntp);
+
+    publish_some(new_app_ptr);
+
+    // An alternative is to issue a linearizable_barrier, like list_offsets.
+    BOOST_TEST_INFO("Waiting for metadata cache to update");
+    wait_for(10s, [&] {
+        cluster::leader_term expected{
+          new_app_ptr->app.controller->self(), new_partition->raft()->term()};
+        auto term = app_ptr->app.metadata_cache.local().get_leader_term(
+          ktp.as_tn_view(), ktp.get_partition());
+        return term == expected;
+    });
+
+    auto send_request =
+      [&](redpanda_thread_fixture* app_ptr, model::term_id term) {
+          kafka::fetch_request req;
+          req.data.max_bytes = std::numeric_limits<int32_t>::max();
+          req.data.min_bytes = 1;
+          req.data.max_wait_ms = std::chrono::milliseconds(1000);
+          req.data.topics.emplace_back(kafka::fetch_topic{
+            .topic = topic,
+            .partitions = {{
+              .partition = pid,
+              .current_leader_epoch = kafka::leader_epoch_from_term(term),
+              .fetch_offset = model::offset(6),
+            }}});
+
+          auto client = instance(app_ptr->app.controller->self())
+                          ->make_kafka_client()
+                          .get();
+
+          client.connect().get();
+
+          auto response
+            = client.dispatch(std::move(req), kafka::api_version(12)).get();
+          client.stop().then([&client] { client.shutdown(); }).get();
+          return response;
+      };
+
+    auto expected = kafka::leader_id_and_epoch{
+      new_partition->raft()->get_leader_id().value_or(model::node_id{-1}),
+      kafka::leader_epoch_from_term(new_partition->raft()->term())};
+
+    {
+        BOOST_TEST_INFO("Dispatching old epoch to old leader");
+        auto resp = send_request(app_ptr, model::term_id{1});
+        const auto& part = resp.data.responses[0].partitions[0];
+        BOOST_REQUIRE_EQUAL(
+          part.error_code, kafka::error_code::not_leader_for_partition);
+        BOOST_REQUIRE_EQUAL(expected, part.current_leader);
+    }
+    {
+        BOOST_TEST_INFO("Dispatching old epoch to new leader");
+        auto resp = send_request(new_app_ptr, model::term_id{1});
+        const auto& part = resp.data.responses[0].partitions[0];
+        BOOST_REQUIRE_EQUAL(
+          part.error_code, kafka::error_code::fenced_leader_epoch);
+        BOOST_REQUIRE_EQUAL(expected, part.current_leader);
+    }
+    {
+        BOOST_TEST_INFO("Dispatching new epoch to new leader");
+        auto resp = send_request(new_app_ptr, model::term_id{2});
+        const auto& part = resp.data.responses[0].partitions[0];
+        BOOST_REQUIRE_EQUAL(part.error_code, kafka::error_code::none);
+        // When there is not an error, leader_id_and_epoch should not be set
+        BOOST_REQUIRE_EQUAL(model::node_id{-1}, part.current_leader.leader_id);
+        BOOST_REQUIRE_EQUAL(
+          kafka::leader_epoch{-1}, part.current_leader.leader_epoch);
+    }
 }
 
 FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
