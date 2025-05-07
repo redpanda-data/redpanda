@@ -43,7 +43,7 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
     /// List of all write requests
     intrusive_list_hook _hook;
 
-    using response_t = checked<ss::circular_buffer<model::record_batch>, errc>;
+    using response_t = checked<ss::circular_buffer<extent_meta>, errc>;
     /// The promise is used to signal to the caller
     /// after the upload is completed
     ss::promise<response_t> response;
@@ -66,8 +66,7 @@ struct write_request : ss::weakly_referencable<write_request<Clock>> {
 
     void set_value(errc e) noexcept;
 
-    void
-    set_value(ss::circular_buffer<model::record_batch> placeholders) noexcept;
+    void set_value(ss::circular_buffer<extent_meta> placeholders) noexcept;
 
     bool has_expired() const noexcept;
 };
