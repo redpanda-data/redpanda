@@ -224,7 +224,7 @@ ss::future<> config_manager::start() {
     _raft0_leader_changed_notification
       = _leaders.local().register_leadership_change_notification(
         model::controller_ntp,
-        [this](model::ntp, model::term_id, model::node_id) {
+        [this](const model::ntp&, model::term_id, model::node_id) {
             _reconcile_wait.signal();
         });
 
