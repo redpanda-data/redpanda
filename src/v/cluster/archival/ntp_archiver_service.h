@@ -205,6 +205,9 @@ public:
         size_t num_cancelled;
 
         auto operator<=>(const upload_group_result&) const = default;
+
+        friend std::ostream&
+        operator<<(std::ostream&, const upload_group_result&);
     };
 
     // The result of a group of parallel uploads
@@ -213,6 +216,8 @@ public:
         upload_group_result compacted_upload_result;
 
         auto operator<=>(const batch_result&) const = default;
+
+        friend std::ostream& operator<<(std::ostream&, const batch_result&);
     };
 
     /// Compute the maximum offset that is safe to be uploaded to the cloud.
