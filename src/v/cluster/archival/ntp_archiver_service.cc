@@ -3624,4 +3624,25 @@ bool ntp_archiver::uploaded_data_past_flush_offset() const {
            && manifest().get_last_offset() >= _flush_uploads_offset.value();
 }
 
+std::ostream&
+operator<<(std::ostream& os, const ntp_archiver::upload_group_result& gr) {
+    fmt::print(
+      os,
+      "{{n_succeeded: {}, n_failed: {}, n_cancelled: {}}}",
+      gr.num_succeeded,
+      gr.num_failed,
+      gr.num_cancelled);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const ntp_archiver::batch_result& br) {
+    fmt::print(
+      os,
+      "[non_compact: {} ; compact: {}]",
+      br.non_compacted_upload_result,
+      br.compacted_upload_result);
+    return os;
+}
+
 } // namespace archival
