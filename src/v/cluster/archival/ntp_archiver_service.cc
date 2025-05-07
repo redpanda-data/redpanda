@@ -334,7 +334,7 @@ ntp_archiver::ntp_archiver(
   , _remote(remote)
   , _cache(c)
   , _parent(parent)
-  , _policy(_ntp, conf->time_limit)
+  , _policy(_ntp, parent, conf->time_limit)
   , _gate()
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
