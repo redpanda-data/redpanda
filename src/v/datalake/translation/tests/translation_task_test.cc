@@ -20,7 +20,7 @@
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
 #include "datalake/translation/translation_probe.h"
-#include "datalake/translation_task.h"
+#include "datalake/translation/translation_task.h"
 #include "iceberg/uri.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"

@@ -7,7 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
-#include "datalake/record_multiplexer.h"
+#include "datalake/translation/record_multiplexer.h"
 
 #include "base/vlog.h"
 #include "datalake/catalog_schema_manager.h"
@@ -18,12 +18,37 @@
 #include "datalake/record_translator.h"
 #include "datalake/table_creator.h"
 #include "datalake/table_id_provider.h"
+#include "datalake/translation/errors.h"
 #include "datalake/translation/translation_probe.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
 
 #include <seastar/core/loop.hh>
+
+namespace {
+
+datalake::writer_error from_abort_exception(const ss::abort_source& as) {
+    auto& ex = as.abort_requested_exception_ptr();
+    if (ssx::is_shutdown_exception(ex)) {
+        return datalake::writer_error::shutting_down;
+    }
+    try {
+        std::rethrow_exception(ex);
+    } catch (const datalake::translation::translator_out_of_memory_error&) {
+        return datalake::writer_error::oom_error;
+    } catch (const datalake::translation::translator_shutdown_error&) {
+        return datalake::writer_error::shutting_down;
+    } catch (
+      const datalake::translation::translator_time_quota_exceeded_error&) {
+        return datalake::writer_error::time_limit_exceeded;
+    } catch (const datalake::translation::translator_out_of_disk_error&) {
+        return datalake::writer_error::out_of_disk;
+    } catch (...) {
+        return datalake::writer_error::unknown_error;
+    }
+}
+}; // namespace
 
 namespace datalake {
 
@@ -70,7 +95,7 @@ record_multiplexer::record_multiplexer(
   , _location_provider(std::move(location_provider))
   , _translation_probe(translation_probe) {}
 
-ss::future<> record_multiplexer::multiplex(
+ss::future<writer_error> record_multiplexer::multiplex(
   model::record_batch_reader reader,
   kafka::offset start_offset,
   model::timeout_clock::time_point deadline,
@@ -81,6 +106,8 @@ ss::future<> record_multiplexer::multiplex(
             return do_multiplex(std::move(b), start_offset, as);
         }},
       deadline);
+
+    co_return _error.value_or(writer_error::ok);
 }
 
 ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
@@ -97,7 +124,9 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
     auto it = model::record_batch_iterator::create(batch);
     while (it.has_next()) {
         if (as.abort_requested()) {
-            vlog(_log.debug, "Abort requested, stopping translation");
+            _error = from_abort_exception(as);
+            vlog(
+              _log.debug, "Abort requested, stopping translation: {}", _error);
             co_return ss::stop_iteration::yes;
         }
         auto record = it.next();

@@ -236,6 +236,26 @@ std::ostream& operator<<(std::ostream& os, const translation_status& status) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, const translator::stop_reason& reason) {
+    switch (reason) {
+    case translator::stop_reason::oom:
+        return os << "oom";
+    case translator::stop_reason::out_of_disk:
+        return os << "out_of_disk";
+    }
+}
+
+std::ostream&
+operator<<(std::ostream& os, const translator::stop_request& request) {
+    fmt::print(
+      os,
+      "{{reason: {}, cleanup_staged_data: {}}}",
+      request.reason,
+      request.cleanup_staged_data);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const translator& t) {
     fmt::print(os, "{{id: {}, status: {}}}", t.id(), t.status());
     return os;
@@ -357,13 +377,13 @@ void translator_executable::mark_idle() {
     _stop_in_progress = false;
 }
 
-void translator_executable::mark_stopping(translator::stop_reason reason) {
+void translator_executable::mark_stopping(translator::stop_request request) {
     vassert(
       !_waiting_hook.is_linked() && _running_hook.is_linked()
         && !_stop_in_progress,
       "Invalid request to stop translation: {}",
       *this);
-    _translator->stop_translation(reason);
+    _translator->stop_translation(request);
     _stop_in_progress = true;
 }
 
@@ -388,11 +408,11 @@ void executor::start_translation(
 }
 
 void executor::stop_translation(
-  translator_executable& state, translator::stop_reason reason) {
+  translator_executable& state, translator::stop_request request) {
     auto holder = gate.hold();
     vlog(datalake_log.debug, "stopping translator: {}", state);
     try {
-        state.mark_stopping(reason);
+        state.mark_stopping(request);
     } catch (...) {
         vlog(
           datalake_log.warn,
@@ -566,7 +586,7 @@ void scheduler::request_immediate_finish(
         _executor.translators_for_immediate_finish.emplace(
           i,
           executor::finish_request(
-            std::move(translators[i].id), translators[i].reason));
+            std::move(translators[i].id), translators[i].stop_request));
     }
     // there is no mechanism for backing out a request to finish, so there isn't
     // any additional work that can be done if the requests are cleared.

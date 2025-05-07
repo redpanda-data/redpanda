@@ -12,6 +12,7 @@
 
 #include "config/configuration.h"
 #include "datalake/logger.h"
+#include "datalake/translation/errors.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/watchdog.h"
 #include "utils/retry_chain_node.h"
@@ -63,6 +64,44 @@ ss::futurize_t<FuncRet> retry_with_backoff(
             }
         }
         co_await ss::sleep_abortable(retry.delay, *retry.abort_source);
+    }
+}
+
+translation_errc from_abort_exception(const ss::abort_source& as) {
+    auto& ex = as.abort_requested_exception_ptr();
+    if (ssx::is_shutdown_exception(ex)) {
+        return shutting_down;
+    }
+    try {
+        std::rethrow_exception(ex);
+    } catch (const datalake::translation::translator_out_of_memory_error&) {
+        return oom_error;
+    } catch (const datalake::translation::translator_shutdown_error&) {
+        return shutting_down;
+    } catch (
+      const datalake::translation::translator_time_quota_exceeded_error&) {
+        return time_limit_exceeded;
+    } catch (const datalake::translation::translator_out_of_disk_error&) {
+        return out_of_disk;
+    } catch (...) {
+        return discard_error;
+    }
+}
+
+bool is_recoverable_translation_error(translation_errc err) {
+    switch (err) {
+    case no_data:
+    case file_io_error:
+    case cloud_io_error:
+    case flush_error:
+    case discard_error:
+    case shutting_down:
+        return false;
+    case ok:
+    case oom_error:
+    case time_limit_exceeded:
+    case out_of_disk:
+        return true;
     }
 }
 
@@ -234,7 +273,7 @@ partition_translator::fetch_translation_offsets(retry_chain_node& rcn) {
     co_return offsets;
 }
 
-ss::future<partition_translator::finish_immediately>
+ss::future<translation_errc>
 partition_translator::run_one_translation_iteration(
   kafka::offset begin_offset) {
     _lag_tracking->notify_new_data_for_translation(begin_offset);
@@ -244,94 +283,76 @@ partition_translator::run_one_translation_iteration(
     // time slice (i.e. scheduled in), then translate until the time
     // slice expires or we run out of data
     std::exception_ptr unexpected_ex = nullptr;
-    auto result = finish_immediately::no;
-    try {
-        co_await _ready_to_translate.wait(
-          [this] { return _inflight_translation_state.has_value(); });
-        auto& as = _inflight_translation_state->as;
-        /*
-         * before going to the trouble of building a reader and poking the
-         * translation context, check if an abort has been requested. this
-         * enables the scheduler to execute:
-         *
-         *    start_translation();
-         *    stop_translation();
-         *
-         * to realize a very fast responsiveness for driving a translator state
-         * change such as finishing the on-going translation.
-         */
-        as.check();
-        auto reader = co_await _data_source->make_log_reader(
-          begin_offset, datalake_priority(), as);
-        if (!reader) {
-            co_return result;
-        }
-        vlog(
-          _logger.trace, "starting translation from offset: {}", begin_offset);
-        ss::timer<scheduling::clock> cancellation_timer;
-        cancellation_timer.set_callback([&as] {
-            as.request_abort_ex(translator_time_quota_exceeded_error{});
-        });
+    co_await _ready_to_translate.wait(
+      [this] { return _inflight_translation_state.has_value(); });
+    ss::timer<scheduling::clock> cancellation_timer;
+    auto translation_finish_guard = ss::defer([this, &cancellation_timer] {
+        // Let the scheduler know we are done
+        _scheduler->notify_done(id());
+        // inflight_translation_state tracks a single scheduled chunk of
+        // work, so we reset it to nullopt for the next time we're scheduled
+        // in
+        _inflight_translation_state.reset();
+        cancellation_timer.cancel();
+    });
+    auto& as = _inflight_translation_state->as;
+    cancellation_timer.set_callback(
+      [&as] { as.request_abort_ex(translator_time_quota_exceeded_error{}); });
+    /*
+     * before going to the trouble of building a reader and poking the
+     * translation context, check if an abort has been requested. this
+     * enables the scheduler to execute:
+     *
+     *    start_translation();
+     *    stop_translation();
+     *
+     * to realize a very fast responsiveness for driving a translator state
+     * change such as finishing the on-going translation.
+     */
+    if (as.abort_requested()) {
+        co_return from_abort_exception(as);
+    }
+    auto reader = co_await _data_source->make_log_reader(
+      begin_offset, datalake_priority(), as);
+    if (!reader) {
+        // nothing to translate
+        co_return translation_errc::ok;
+    }
 
-        auto translation_f = _translation_ctx
-                               ->translate_now(
-                                 std::move(reader.value()),
-                                 begin_offset,
-                                 _inflight_translation_state->as)
-                               .finally(
-                                 [this] { return _translation_ctx->flush(); });
+    vlog(_logger.trace, "Starting translation from offset: {}", begin_offset);
+
+    auto translation_result = translation_errc::discard_error;
+    try {
         cancellation_timer.arm(_inflight_translation_state->translate_for);
-        co_await std::move(translation_f).finally([&cancellation_timer] {
-            cancellation_timer.cancel();
-        });
-        _inflight_translation_state->as.check();
-    } catch (const translator_out_of_memory_error&) {
-        // We just swallow the exception because the underlying result state
-        // is still safe to be flushed.
-        if (_finish_translation_requested) {
-            vlog(_logger.debug, "Translation requested to finish immediately");
-        } else {
-            // `translator_out_of_memory_error is pulling double duty for
-            // preemption requests and out-of-memory requests. until stop
-            // translation is more expressive, we silence the out-of-memory
-            // warning if a finish translation request was also made.
-            vlog(
-              _logger.warn,
-              "Translation exceeded memory budget, result will be flushed "
-              "immediately");
-        }
-        // We force a finish immediately to make forward progress and avoid
-        // cases where the translator is stuck in this memory exhaustion loop.
-        result = finish_immediately::yes;
-    } catch (const translator_time_quota_exceeded_error&) {
-        // We just swallow the exception because the underlying result state
-        // is still safe to be flushed.
-        vlog(
-          _logger.debug,
-          "Translation attempt exceeded scheduler time limit quota");
-    } catch (const translator_out_of_disk_error&) {
-        // Finishing will free up scratch space on disk
-        result = finish_immediately::yes;
+        translation_result = co_await _translation_ctx->translate_now(
+          std::move(reader.value()),
+          begin_offset,
+          _inflight_translation_state->as);
     } catch (...) {
         // unknown exception or shutdown exception.
         unexpected_ex = std::current_exception();
-        vlog(
-          _logger.warn,
-          "Translation attempt ran into an unexpected exception: {}",
+        auto log_level = ssx::is_shutdown_exception(unexpected_ex)
+                           ? ss::log_level::debug
+                           : ss::log_level::error;
+        vlogl(
+          datalake_log,
+          log_level,
+          "[{}] Translation attempt ran into an unexpected exception: {}",
+          id(),
           unexpected_ex);
     }
-    // inflight_translation_state tracks a single scheduled chunk of
-    // work, so we reset it to nullopt for the next time we're scheduled
-    // in
-    _inflight_translation_state.reset();
-    // Let the scheduler know we are done
-    _scheduler->notify_done(id());
 
+    auto flush_result = co_await _translation_ctx->flush();
     if (unexpected_ex) {
-        co_await _translation_ctx->discard();
         std::rethrow_exception(unexpected_ex);
     }
-    co_return result;
+    if (
+      translation_result == translation_errc::ok
+      && flush_result != translation_errc::ok) {
+        translation_result = flush_result;
+    }
+    vlog(_logger.trace, "Translation iteration result: {}", translation_result);
+    co_return translation_result;
 }
 
 ss::future<bool> partition_translator::finish_inflight_translation(
@@ -347,6 +368,7 @@ ss::future<bool> partition_translator::finish_inflight_translation(
             // translated.
             // discard -- certain properties changed that
             // requiring a translator reset
+            _last_finish_time = scheduling::clock::now();
             co_return true;
         }
         vlog(
@@ -416,6 +438,7 @@ ss::future<bool> partition_translator::finish_inflight_translation(
           replicate_result);
         co_return false;
     }
+    _last_finish_time = scheduling::clock::now();
     co_return true;
 }
 
@@ -434,39 +457,49 @@ ss::future<> partition_translator::translate_until_stopped() {
         // case the next iteration should see some jitter.
         auto scoped_set_jitter = ss::defer(
           [&needs_jitter] { needs_jitter = true; });
-        // Clear the flag as it is a one-shot request, and since
-        // translate_until_stopped can be restarted, for example if this
-        // workloop throws. This avoids clearing the flag before running
-        // run_one_translation_iteration which uses the flag to silence the
-        // out-of-memory warning message.
-        auto clear_finish_request = ss::defer(
-          [this] { _finish_translation_requested = false; });
 
         retry_chain_node fetch_offsets_rcn{_as, 1min, 100ms};
         auto offsets = co_await fetch_translation_offsets(fetch_offsets_rcn);
-        // this test of the finish translation request flag works here because
-        // we are executing in a polling loop.
-        auto finish_now = _finish_translation_requested
-                            ? finish_immediately::yes
-                            : finish_immediately::no;
+
+        auto finish_now = _inflight_translation_state
+                          && _inflight_translation_state->finish_immediately;
         if (finish_now) {
-            vlog(_logger.debug, "Requested for immediate finish");
+            // finish immediately if requested
+            vlog(
+              _logger.debug,
+              "Finishing inflight translation as requested by the scheduler");
         }
+        finish_now = finish_now || should_finish_inflight_translation();
         if (!offsets && !finish_now) {
             continue;
         }
-        if (offsets->next_translation_begin_offset && !finish_now) {
+        auto translation_result = translation_errc::ok;
+        if (offsets->next_translation_begin_offset) {
             // new data is available to translate
             auto translate_f = co_await ss::coroutine::as_future(
               run_one_translation_iteration(
                 offsets->next_translation_begin_offset.value()));
             if (translate_f.failed()) {
+                translation_result = translation_errc::discard_error;
                 translate_f.ignore_ready_future();
-                continue;
+            } else {
+                translation_result = translate_f.get();
             }
-            finish_now = translate_f.get();
         }
-        if (finish_now || should_finish_inflight_translation()) {
+        if (!is_recoverable_translation_error(translation_result)) {
+            vlog(
+              _logger.warn,
+              "Translation failed with unrecoverable error: {}, discarding "
+              "existing translation state",
+              translation_result);
+            co_await _translation_ctx->discard();
+            _last_finish_time = scheduling::clock::now();
+            continue;
+        }
+
+        // check again if we need to finish
+        finish_now = finish_now || should_finish_inflight_translation();
+        if (finish_now) {
             // No global timeout for finishing. We are not blocking the
             // scheduler here and if we can't make progress on this partition
             // timing out/retrying can't help but wastes work.
@@ -488,7 +521,6 @@ ss::future<> partition_translator::translate_until_stopped() {
                   "for {}",
                   ntp);
             });
-
             auto success = co_await finish_inflight_translation(
               offsets->coordinator_lto, finish_rcn);
             if (!success) {
@@ -562,7 +594,7 @@ scheduling::translation_status partition_translator::status() const {
       .memory_bytes_reserved = _translation_ctx->buffered_bytes(),
       .disk_bytes_flushed = _translation_ctx->flushed_bytes(),
       .translation_backlog = _lag_tracking->translation_backlog(),
-    };
+      .last_finish_time = _last_finish_time};
 }
 
 std::chrono::milliseconds partition_translator::current_lag_ms() const {
@@ -584,12 +616,14 @@ void partition_translator::start_translation(
     _ready_to_translate.broadcast();
 }
 
-void partition_translator::stop_translation(translator::stop_reason reason) {
+void partition_translator::stop_translation(translator::stop_request request) {
     if (_gate.is_closed() || !_inflight_translation_state) {
         return;
     }
 
-    switch (reason) {
+    _inflight_translation_state->finish_immediately
+      = request.cleanup_staged_data;
+    switch (request.reason) {
     case stop_reason::oom:
         _inflight_translation_state->as.request_abort_ex(
           translator_out_of_memory_error{});
@@ -599,14 +633,6 @@ void partition_translator::stop_translation(translator::stop_reason reason) {
           translator_out_of_disk_error{});
         break;
     }
-}
-
-void partition_translator::set_finish_translation() {
-    _finish_translation_requested = true;
-}
-
-bool partition_translator::get_finish_translation() {
-    return _finish_translation_requested;
 }
 
 } // namespace datalake::translation

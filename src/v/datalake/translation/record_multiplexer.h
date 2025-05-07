@@ -82,8 +82,10 @@ public:
      * the previous translation stopped in the middle of a batch, we do not want
      * to multiplex already translated offsets in the batch, start_offset helps
      * solve that problem.
+     *
+     * Returns an error, if any during multiplexing
      */
-    ss::future<> multiplex(
+    ss::future<writer_error> multiplex(
       model::record_batch_reader reader,
       kafka::offset start_offset,
       model::timeout_clock::time_point deadline,

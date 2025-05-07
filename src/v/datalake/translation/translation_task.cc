@@ -8,10 +8,10 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "datalake/translation_task.h"
+#include "datalake/translation/translation_task.h"
 
 #include "datalake/logger.h"
-#include "datalake/record_multiplexer.h"
+#include "datalake/translation/record_multiplexer.h"
 #include "iceberg/values_bytes.h"
 #include "utils/retry_chain_node.h"
 
@@ -36,9 +36,7 @@ translation_task::errc map_error_code(cloud_data_io::errc errc) {
 translation_task::errc map_error_code(writer_error errc) {
     switch (errc) {
     case writer_error::ok:
-        // translation task does not have an equivalent for no error
-        vassert(
-          false, "map error code expects an errored state, got :{}", errc);
+        return translation_task::errc::ok;
     case writer_error::parquet_conversion_error:
     case writer_error::file_io_error:
         return translation_task::errc::file_io_error;
@@ -242,15 +240,16 @@ translation_task::translation_task(
       _location_provider,
       *_translation_probe) {}
 
-ss::future<> translation_task::translate_once(
+ss::future<translation_task::errc> translation_task::translate_once(
   model::record_batch_reader reader,
   kafka::offset start_offset,
   ss::abort_source& as) {
-    return _multiplexer.multiplex(
+    auto mux_error = co_await _multiplexer.multiplex(
       std::move(reader),
       start_offset,
       _read_timeout + model::timeout_clock::now(),
       as);
+    co_return map_error_code(mux_error);
 }
 
 size_t translation_task::flushed_bytes() const {
@@ -389,6 +388,8 @@ size_t translation_task::buffered_bytes() const {
 
 std::ostream& operator<<(std::ostream& o, translation_task::errc ec) {
     switch (ec) {
+    case translation_task::errc::ok:
+        return o << "no error";
     case translation_task::errc::file_io_error:
         return o << "local file IO error";
     case translation_task::errc::cloud_io_error:

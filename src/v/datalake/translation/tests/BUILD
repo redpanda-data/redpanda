@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "state_machine_test",
@@ -89,5 +89,69 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "record_multiplexer_test",
+    timeout = "short",
+    srcs = [
+        "record_multiplexer_test.cc",
+    ],
+    cpu = 1,
+    tags = ["exclusive"],
+    deps = [
+        "//src/v/cloud_io:provider",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:location",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:record_translator",
+        "//src/v/datalake:table_definition",
+        "//src/v/datalake:table_id_provider",
+        "//src/v/datalake/tests:catalog_and_registry_fixture",
+        "//src/v/datalake/tests:record_generator",
+        "//src/v/datalake/tests:test_data_writer",
+        "//src/v/datalake/tests:test_utils",
+        "//src/v/datalake/translation:record_multiplexer",
+        "//src/v/datalake/translation:translation_probe",
+        "//src/v/iceberg:filesystem_catalog",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/pandaproxy",
+        "//src/v/random:generators",
+        "//src/v/schema:registry",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@avro",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "record_multiplexer_rpbench",
+    timeout = "long",
+    srcs = [
+        "record_multiplexer_bench.cc",
+    ],
+    deps = [
+        "//src/v/cloud_io:provider",
+        "//src/v/container:fragmented_vector",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:location",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:record_translator",
+        "//src/v/datalake:table_creator",
+        "//src/v/datalake/tests:catalog_and_registry_fixture",
+        "//src/v/datalake/tests:record_generator",
+        "//src/v/datalake/tests:test_data_writer",
+        "//src/v/datalake/tests:test_utils",
+        "//src/v/datalake/translation:record_multiplexer",
+        "//src/v/model",
+        "//src/v/serde/avro/tests:data_generator",
+        "//src/v/serde/protobuf/tests:data_generator",
+        "//src/v/storage:parser_utils",
+        "@seastar",
+        "@seastar//:benchmark",
     ],
 )

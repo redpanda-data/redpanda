@@ -8,7 +8,6 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 #include "datalake/catalog_schema_manager.h"
-#include "datalake/record_multiplexer.h"
 #include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
 #include "datalake/table_definition.h"
@@ -17,6 +16,7 @@
 #include "datalake/tests/record_generator.h"
 #include "datalake/tests/test_data_writer.h"
 #include "datalake/tests/test_utils.h"
+#include "datalake/translation/record_multiplexer.h"
 #include "datalake/translation/translation_probe.h"
 #include "iceberg/filesystem_catalog.h"
 #include "model/fundamental.h"

@@ -484,9 +484,10 @@ ss::future<> datalake_manager::check_and_manage_disk_space() {
         // it.first is the data usage by the translator. if the scheduling
         // policy can make use of it, then it coudl be passed in here to avoid
         // recalulation of the same value.
-        schedule[it.second.first].emplace_back(
-          it.second.second,
-          translation::scheduling::translator::stop_reason::out_of_disk);
+        auto request = translation::scheduling::translator::stop_request{
+          translation::scheduling::translator::stop_reason::out_of_disk,
+          /* clean up*/ true};
+        schedule[it.second.first].emplace_back(it.second.second, request);
         schedule_total_bytes += it.first;
         num_translators++;
     }

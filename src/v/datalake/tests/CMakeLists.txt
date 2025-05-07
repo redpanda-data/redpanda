@@ -22,25 +22,6 @@ v_cc_library(
 rp_test(
   FIXTURE_TEST
   GTEST
-  BINARY_NAME gtest_record_multiplexer
-  SOURCES gtest_record_multiplexer_test.cc
-  LIBRARIES
-    v::cloud_io_utils
-    v::datalake_writer
-    v::datalake_test_utils
-    v::gtest_main
-    v::model_test_utils
-    v::schema
-    v::s3_imposter
-  LABELS datalake
-  ARGS "-- -c 1"
-)
-
-
-
-rp_test(
-  FIXTURE_TEST
-  GTEST
   BINARY_NAME datalake
   SOURCES
     record_schema_resolver_test.cc
@@ -60,26 +41,6 @@ rp_test(
 rp_test(
   FIXTURE_TEST
   GTEST
-  BINARY_NAME datalake_cloud
-  SOURCES
-    record_multiplexer_test.cc
-    translation_task_test.cc
-  LIBRARIES
-    Boost::iostreams
-    v::datalake_test_utils
-    v::datalake_translation_probe
-    v::gtest_main
-    v::datalake_writer
-    v::cloud_io_utils
-    v::s3_imposter
-    v::model_test_utils
-  LABELS datalake
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  FIXTURE_TEST
-  GTEST
   BINARY_NAME catalog_schema_manager
   SOURCES catalog_schema_manager_test.cc
   LIBRARIES
@@ -94,23 +55,7 @@ rp_test(
   ARGS "-- -c 1"
 )
 
-rp_test(
-  FIXTURE_TEST
-  GTEST
-  BINARY_NAME translator_test
-  SOURCES translator_test.cc
-  LIBRARIES
-    v::gtest_main
-    v::datalake_translation
-    v::application
-    v::iceberg_test_utils
-    v::kafka_test_utils
-    v::model_test_utils
-    v::http_test_utils
-    v::s3_imposter
-  LABELS datalake
-  ARGS "-- -c 1"
-)
+
 
 rp_test(
   GTEST
@@ -146,21 +91,4 @@ rp_test(
     v::datalake_partition_spec_parser
   LABELS datalake
   ARGS "-- -c 1"
-)
-
-rp_test(
-  BENCHMARK_TEST
-  BINARY_NAME record_multiplexer
-  SOURCES record_multiplexer_bench.cc
-  LIBRARIES
-    Seastar::seastar_perf_testing
-    Boost::unit_test_framework
-    v::cloud_io_utils
-    v::application
-    v::datalake_test_utils
-    v::iceberg_test_utils
-    v::schema
-    v::s3_imposter
-  ARGS "-c 1 --duration=1 --runs=1 --memory=4G"
-  LABELS datalake
 )

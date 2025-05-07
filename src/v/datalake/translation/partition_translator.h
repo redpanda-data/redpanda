@@ -90,13 +90,9 @@ public:
 
     void start_translation(scheduling::clock::duration time_slice) final;
 
-    void stop_translation(stop_reason) final;
+    void stop_translation(stop_request) final;
 
     void reconcile_properties() noexcept final;
-
-    void set_finish_translation() final;
-
-    bool get_finish_translation() final;
 
 private:
     /**
@@ -112,6 +108,7 @@ private:
     struct inflight_translation_state {
         scheduling::clock::duration translate_for;
         ss::abort_source as;
+        bool finish_immediately{false};
     };
 
     /**
@@ -169,8 +166,7 @@ private:
     ss::future<std::optional<translation_offsets>>
     fetch_translation_offsets(retry_chain_node&);
 
-    using finish_immediately = ss::bool_class<struct finish_immediately_tag>;
-    ss::future<finish_immediately>
+    ss::future<translation_errc>
     run_one_translation_iteration(kafka::offset translation_begin_offset);
 
     /**
@@ -204,9 +200,6 @@ private:
     // result.
     ss::condition_variable _ready_to_translate;
 
-    // true if this translator has been requested to finish. when set, the
-    // translator should work towards uploading and removing its staging data.
-    // the translator can clear this bit. it may be reset by future requests.
-    bool _finish_translation_requested{false};
+    scheduling::clock::time_point _last_finish_time{scheduling::clock::now()};
 };
 } // namespace datalake::translation
