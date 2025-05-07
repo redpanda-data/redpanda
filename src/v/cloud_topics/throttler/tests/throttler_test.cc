@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cloud_topics/core/pipeline_stage.h"
+#include "cloud_topics/extent_meta.h"
 #include "cloud_topics/throttler/throttler.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -80,7 +81,7 @@ struct write_pipeline_accessor {
             auto list0 = pipeline->get_write_requests(
               std::numeric_limits<size_t>::max(), stage);
             for (auto& r : list0.requests) {
-                r.set_value(ss::circular_buffer<model::record_batch>());
+                r.set_value(ss::circular_buffer<extent_meta>());
             }
         }
     }

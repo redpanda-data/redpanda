@@ -8,6 +8,7 @@ redpanda_cc_gtest(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/cloud_topics/core:pipeline_stage",
         "//src/v/cloud_topics/core:write_pipeline",
         "//src/v/cloud_topics/core:write_request",
