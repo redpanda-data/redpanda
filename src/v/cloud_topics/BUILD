@@ -159,3 +159,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "extent_meta",
+    hdrs = [
+        "extent_meta.h",
+    ],
+    include_prefix = "cloud_topics",
+    deps = [
+        ":types",
+        "//src/v/model",
+        "@fmt",
+    ],
+)
