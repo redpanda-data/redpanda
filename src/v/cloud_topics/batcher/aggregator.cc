@@ -12,8 +12,6 @@
 
 #include "cloud_topics/core/serializer.h"
 #include "cloud_topics/core/write_request.h"
-#include "cloud_topics/dl_placeholder.h"
-#include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/util/defer.hh>
@@ -38,9 +36,9 @@ aggregator<Clock>::~aggregator() {
 }
 
 template<class Clock>
-struct prepared_placeholder_batches {
-    const object_id id;
-    chunked_vector<std::unique_ptr<batches_for_req<Clock>>> placeholders;
+struct prepared_extents {
+    object_id id;
+    chunked_vector<std::unique_ptr<extents_for_req<Clock>>> placeholders;
     uint64_t size_bytes{0};
 };
 
@@ -51,37 +49,22 @@ namespace {
 /// concatenating multiple chunks the offset has to be corrected.
 /// This is done using the `base_byte_offset` parameter.
 template<class Clock>
-void make_dl_placeholder_batches(
-  prepared_placeholder_batches<Clock>& ctx,
+void make_dl_placeholders(
+  prepared_extents<Clock>& ctx,
   core::write_request<Clock>& req,
   const core::serialized_chunk& chunk) {
-    auto result = std::make_unique<batches_for_req<Clock>>();
-    for (const auto& b : chunk.batches) {
-        dl_placeholder placeholder{
+    auto result = std::make_unique<extents_for_req<Clock>>();
+    for (const auto& b : chunk.extents) {
+        extent_meta placeholder{
           .id = ctx.id,
-          .offset = first_byte_offset_t(ctx.size_bytes),
-          .size_bytes = byte_range_size_t(b.size_bytes),
+          .first_byte_offset = first_byte_offset_t(ctx.size_bytes),
+          .byte_range_size = byte_range_size_t(b.byte_range_size),
+          .base_offset = b.base_offset,
+          .committed_offset = b.committed_offset,
         };
 
-        storage::record_batch_builder builder(
-          model::record_batch_type::dl_placeholder, b.base);
-
-        // TX data (producer id, control flag) are not copied from 'src' yet.
-
-        // Put the payload
-        builder.add_raw_kv(
-          serde::to_iobuf(dl_placeholder_record_key::payload),
-          serde::to_iobuf(placeholder));
-
-        // TODO: fix this
-        for (int i = 1; i < b.num_records - 1; i++) {
-            iobuf empty;
-            builder.add_raw_kv(
-              serde::to_iobuf(dl_placeholder_record_key::empty),
-              std::move(empty));
-        }
-        result->placeholders.push_back(std::move(builder).build());
-        ctx.size_bytes += b.size_bytes;
+        result->extents.emplace_back(placeholder);
+        ctx.size_bytes += b.byte_range_size();
     }
     result->ref = req.weak_from_this();
     ctx.placeholders.push_back(std::move(result));
@@ -89,9 +72,9 @@ void make_dl_placeholder_batches(
 } // namespace
 
 template<class Clock>
-chunked_vector<std::unique_ptr<batches_for_req<Clock>>>
-aggregator<Clock>::get_placeholders() {
-    prepared_placeholder_batches<Clock> ctx{
+chunked_vector<std::unique_ptr<extents_for_req<Clock>>>
+aggregator<Clock>::get_extents() {
+    prepared_extents<Clock> ctx{
       .id = _id,
     };
     for (auto& [key, list] : _staging) {
@@ -100,7 +83,7 @@ aggregator<Clock>::get_placeholders() {
               !req.data_chunk.payload.empty(),
               "Empty write request for ntp: {}",
               key);
-            make_dl_placeholder_batches(ctx, req, req.data_chunk);
+            make_dl_placeholders(ctx, req, req.data_chunk);
         }
     }
     return std::move(ctx.placeholders);
@@ -125,7 +108,7 @@ object_id aggregator<Clock>::get_object_id() const noexcept {
 template<class Clock>
 iobuf aggregator<Clock>::prepare() {
     // Move data from staging to aggregated
-    _aggregated = get_placeholders();
+    _aggregated = get_extents();
     _staging.clear();
     // Produce input stream
     return get_stream();
@@ -140,7 +123,7 @@ void aggregator<Clock>::ack() {
     for (auto& p : _aggregated) {
         if (p->ref != nullptr) {
             try {
-                p->ref->set_value(std::move(p->placeholders));
+                p->ref->set_value(std::move(p->extents));
             } catch (const ss::broken_promise&) {
             }
         }

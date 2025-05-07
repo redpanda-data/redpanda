@@ -14,8 +14,8 @@ redpanda_cc_library(
         "aggregator.h",
     ],
     implementation_deps = [
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/cloud_topics:logger",
-        "//src/v/cloud_topics:placeholder",
         "//src/v/cloud_topics/core:serializer",
         "//src/v/storage:record_batch_builder",
     ],
