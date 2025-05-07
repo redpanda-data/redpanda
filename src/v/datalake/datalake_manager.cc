@@ -119,7 +119,7 @@ ss::future<> datalake_manager::start() {
     auto partition_managed_notification
       = _partition_mgr->local().register_manage_notification(
         model::kafka_namespace,
-        [this](ss::lw_shared_ptr<cluster::partition> new_partition) {
+        [this](const ss::lw_shared_ptr<cluster::partition>& new_partition) {
             on_group_notification(new_partition->ntp());
         });
     auto partition_unmanaged_notification
