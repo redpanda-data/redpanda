@@ -15,6 +15,7 @@
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/types.h"
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "logger.h"
 #include "model/fundamental.h"
@@ -29,6 +30,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/log.hh>
@@ -1016,6 +1018,127 @@ segment_collector::make_upload_candidate_stream(
     };
     co_return stream;
 }
+
+ss::future<segment_collector_stream_result>
+segment_collector::make_segment_upload_stream(
+  cluster::partition& parent,
+  ss::lowres_clock::duration segment_lock_duration,
+  ss::gate& gate) {
+    auto candidate_res = co_await make_upload_candidate(segment_lock_duration);
+
+    vassert(
+      !std::holds_alternative<std::monostate>(candidate_res),
+      "Unexpected default upload candidate creation result");
+
+    if (std::holds_alternative<candidate_creation_error>(candidate_res)) {
+        auto err = std::get<candidate_creation_error>(candidate_res);
+        vlog(archival_log.warn, "Candidate creation error: {}", err);
+        co_return err;
+    } else if (std::holds_alternative<skip_offset_range>(candidate_res)) {
+        auto skip = std::get<skip_offset_range>(candidate_res);
+        vlog(
+          archival_log.debug,
+          "Skipping offset range: {}-{}, reason: {}",
+          skip.begin_offset,
+          skip.end_offset,
+          skip.reason);
+        co_return skip;
+    }
+
+    auto& cand_with_locks = std::get<upload_candidate_with_locks>(
+      candidate_res);
+
+    auto& cand = cand_with_locks.candidate;
+
+    vlog(
+      archival_log.debug,
+      "{}: Upload candidate: {}",
+      _manifest.get_ntp(),
+      cand);
+
+    auto read_buffer_size
+      = config::shard_local_cfg().storage_read_buffer_size();
+    auto deadline = ss::lowres_clock::now() + segment_lock_duration;
+
+    auto start_offset = cand.starting_offset;
+    auto final_offset = [this, &cand]() -> model::offset {
+        if (is_reupload_mode(_mode)) {
+            return align_end_offset_to_manifest(cand.final_offset)
+              .value_or(cand.final_offset);
+        }
+        return cand.final_offset;
+    }();
+
+    if (start_offset > final_offset) {
+        vlog(
+          archival_log.warn,
+          "{}: Invalid offset range for upload: start {} > final {}",
+          _manifest.get_ntp(),
+          start_offset,
+          final_offset);
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    inclusive_offset_range range(start_offset, final_offset);
+
+    ss::gate::holder holder = gate.hold();
+
+    auto upl = co_await segment_upload::make_segment_upload(
+      &parent,
+      range,
+      read_buffer_size,
+      ss::default_scheduling_group(),
+      deadline);
+
+    if (upl.has_error()) {
+        // NOTE: under load, it's not uncommon for read lock acquisition to
+        // time out, e.g. due to a race with prefix truncation.
+        if (
+          upl.error() != archival::error_outcome::not_enough_data
+          && upl.error() != archival::error_outcome::timed_out) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate for {}: {}",
+              range,
+              upl.error().message());
+        }
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    auto seg_upload = std::move(upl).value();
+    auto meta = seg_upload->get_meta();
+
+    vlog(
+      archival_log.debug,
+      "{}: {{b: {} e: {}}} Got upload:  offsets: {} sz: {} compact?: {}",
+      _manifest.get_ntp(),
+      start_offset,
+      final_offset,
+      meta.offsets,
+      seg_upload->get_size_bytes(),
+      seg_upload->get_meta().is_compacted
+        && seg_upload->get_meta().eligible_for_compacted_reupload);
+
+    segment_collector_stream stream;
+    stream.start_offset = meta.offsets.base;
+    stream.end_offset = meta.offsets.last;
+    stream.min_timestamp = meta.base_timestamp;
+    stream.max_timestamp = meta.max_timestamp;
+    stream.size = meta.size_bytes;
+    stream.is_compacted = meta.is_compacted
+                          && meta.eligible_for_compacted_reupload;
+    stream.term = parent.get_term(meta.offsets.base);
+    auto strm = co_await std::move(*seg_upload).detach_stream();
+    stream.create_input_stream =
+      [strm = std::move(strm),
+       holder = std::move(holder)]() mutable -> ss::input_stream<char> {
+        // NOTE: should only be called w/ a gate held
+        holder.release();
+        return std::move(strm);
+    };
+    co_return stream;
+}
+
 size_t segment_collector::collected_size() const { return _collected_size; }
 
 std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
