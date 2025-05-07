@@ -3793,4 +3793,22 @@ bool ntp_archiver::uploaded_data_past_flush_offset() const {
            && manifest().get_last_offset() >= _flush_uploads_offset.value();
 }
 
+fmt::iterator
+ntp_archiver::upload_group_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{n_succeeded: {}, n_failed: {}, n_cancelled: {}}}",
+      num_succeeded,
+      num_failed,
+      num_cancelled);
+}
+
+fmt::iterator ntp_archiver::batch_result::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "[non_compact: {} ; compact: {}]",
+      non_compacted_upload_result,
+      compacted_upload_result);
+}
+
 } // namespace archival

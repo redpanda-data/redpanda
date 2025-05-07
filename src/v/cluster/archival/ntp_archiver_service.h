@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "base/format_to.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
@@ -206,6 +207,7 @@ public:
         size_t num_cancelled;
 
         auto operator<=>(const upload_group_result&) const = default;
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     // The result of a group of parallel uploads
@@ -214,6 +216,7 @@ public:
         upload_group_result compacted_upload_result;
 
         auto operator<=>(const batch_result&) const = default;
+        fmt::iterator format_to(fmt::iterator) const;
     };
 
     /// Compute the maximum offset that is safe to be uploaded to the cloud.
