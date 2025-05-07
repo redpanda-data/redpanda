@@ -11,6 +11,7 @@
 #include "cloud_topics/core/event_filter.h"
 #include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/core/write_pipeline.h"
+#include "cloud_topics/extent_meta.h"
 #include "model/namespace.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -107,7 +108,7 @@ TEST_CORO(EventFilterTest, filter_triggered_once) {
     auto pending = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     for (auto& req : pending.requests) {
-        req.set_value(ss::circular_buffer<model::record_batch>());
+        req.set_value(ss::circular_buffer<extent_meta>());
     }
     std::ignore = co_await std::move(write);
     co_return;
@@ -147,7 +148,7 @@ TEST_CORO(EventFilterTest, filter_has_memory) {
     auto pending = stage.pull_write_requests(
       std::numeric_limits<size_t>::max());
     for (auto& req : pending.requests) {
-        req.set_value(ss::circular_buffer<model::record_batch>());
+        req.set_value(ss::circular_buffer<extent_meta>());
     }
     std::ignore = co_await std::move(write);
     co_return;

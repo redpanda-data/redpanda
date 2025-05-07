@@ -56,6 +56,7 @@ redpanda_cc_gtest(
         "event_filter_test.cc",
     ],
     deps = [
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/cloud_topics/core:event_filter",
         "//src/v/cloud_topics/core:pipeline_stage",
         "//src/v/cloud_topics/core:write_pipeline",
