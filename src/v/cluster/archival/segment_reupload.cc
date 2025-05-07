@@ -981,7 +981,16 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     content_length += tail_seek.bytes;
 
     auto starting_offset = head_seek.offset;
-    if (starting_offset != _begin_inclusive) {
+
+    // This adjustment is only ever relevant during compacted reupload, where
+    // the boundary offset of the target range may have been compacted away.
+    // For new segment uploads, this condition means there's a gap in the actual
+    // log. We need to pass a valid offset range to 'async_data_uploader', so we
+    // shouldn't perform the start_offset adjustment in this case.
+    // See 4253766df74ca8ee53e17702655976c30298ebea for more detail
+    auto is_compacted = first->is_compacted_segment()
+                        && eligible_for_compacted_reupload(*first);
+    if (starting_offset != _begin_inclusive && is_compacted) {
         vlog(
           archival_log.debug,
           "adjusting begin offset of upload candidate from {} to {}",
