@@ -13,7 +13,7 @@
 #include "cloud_io/io_result.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/batcher/batcher.h"
-#include "cloud_topics/dl_placeholder.h"
+#include "cloud_topics/extent_meta.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -24,7 +24,6 @@
 #include "random/generators.h"
 #include "remote_mock.h"
 #include "storage/record_batch_builder.h"
-#include "storage/record_batch_utils.h"
 #include "test_utils/random_bytes.h"
 #include "test_utils/test.h"
 
@@ -125,15 +124,6 @@ sleep_until(std::chrono::milliseconds delta, Fn&& fn, int retry_limit = 100) {
     GTEST_MESSAGE_("Test stalled", ::testing::TestPartResult::kFatalFailure);
 }
 
-inline cloud_topics::dl_placeholder
-parse_placeholder_batch(model::record_batch batch) {
-    iobuf payload = std::move(batch).release_data();
-    iobuf_parser parser(std::move(payload));
-    auto record = model::parse_one_record_from_buffer(parser);
-    iobuf value = std::move(record).release_value();
-    return serde::from_iobuf<cloud_topics::dl_placeholder>(std::move(value));
-}
-
 TEST_CORO(batcher_test, single_write_request) {
     remote_mock mock;
     cloud_storage_clients::bucket_name bucket("foo");
@@ -173,10 +163,9 @@ TEST_CORO(batcher_test, single_write_request) {
     // access the data in S3.
     auto placeholder_batches = std::move(write_res.value());
     ASSERT_EQ_CORO(placeholder_batches.size(), num_batches);
-    for (const model::record_batch& batch : placeholder_batches) {
-        auto placeholder = parse_placeholder_batch(batch.copy());
+    for (const cloud_topics::extent_meta& ext : placeholder_batches) {
         // TODO: revisit this code when the object path format will change
-        auto sid = ssx::sformat("{}", placeholder.id);
+        auto sid = ssx::sformat("{}", ext.id);
         ASSERT_EQ_CORO(sid, id());
     }
 }
@@ -217,7 +206,8 @@ TEST_CORO(batcher_test, many_write_requests) {
     mock.expect_upload_object(all_records);
 
     const auto timeout = 1s;
-    std::vector<ss::future<result<ss::circular_buffer<model::record_batch>>>>
+    std::vector<
+      ss::future<result<ss::circular_buffer<cloud_topics::extent_meta>>>>
       futures;
     futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader1), timeout));
@@ -249,10 +239,8 @@ TEST_CORO(batcher_test, many_write_requests) {
         // uuid.
         auto placeholder_batches = std::move(write_res.value());
         ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches.at(ix));
-        for (const model::record_batch& batch : placeholder_batches) {
-            auto placeholder = parse_placeholder_batch(batch.copy());
-            // TODO: revisit this code when the object path format will change
-            auto sid = ssx::sformat("{}", placeholder.id);
+        for (const cloud_topics::extent_meta& ext : placeholder_batches) {
+            auto sid = ssx::sformat("{}", ext.id);
             ASSERT_EQ_CORO(sid, id());
         }
         ix++;
@@ -329,10 +317,8 @@ TEST_CORO(batcher_test, expired_write_request) {
     auto placeholder_batches = std::move(pass_result.value());
 
     ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches);
-    for (const model::record_batch& batch : placeholder_batches) {
-        auto placeholder = parse_placeholder_batch(batch.copy());
-        // TODO: revisit this code when the object path format will change
-        auto sid = ssx::sformat("{}", placeholder.id);
+    for (const cloud_topics::extent_meta& ext : placeholder_batches) {
+        auto sid = ssx::sformat("{}", ext.id);
         ASSERT_EQ_CORO(sid, id());
     }
 }
