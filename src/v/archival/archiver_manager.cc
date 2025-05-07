@@ -801,8 +801,8 @@ public:
 
         _unmanage_notifications = _pm.local().register_unmanage_notification(
           model::kafka_namespace, [this](model::topic_partition_view tpv) {
-              model::ntp ntp(model::kafka_namespace, tpv.topic, tpv.partition);
-              stop_managing_partition(ntp);
+              stop_managing_partition(
+                {model::kafka_namespace, tpv.topic, tpv.partition});
           });
 
         vassert(_gm.local_is_initialized(), "group_manager is not initialized");
