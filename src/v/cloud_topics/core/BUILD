@@ -71,6 +71,7 @@ redpanda_cc_library(
         ":pipeline_stage",
         ":serializer",
         "//src/v/base",
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/cloud_topics:types",
         "//src/v/container:intrusive",
         "//src/v/model",

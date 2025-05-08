@@ -14,6 +14,7 @@
 #include "base/seastarx.h"
 #include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/errc.h"
+#include "cloud_topics/extent_meta.h"
 #include "container/intrusive_list_helpers.h"
 #include "model/record.h"
 #include "utils/retry_chain_node.h"
@@ -34,7 +35,7 @@ struct dataplane_query_result {
 /// The meta field contains a bunch of dl_placeholder and dl_overlay batches.
 struct dataplane_query {
     size_t output_size_estimate{0};
-    ss::circular_buffer<model::record_batch> meta;
+    ss::circular_buffer<extent_meta> meta;
 };
 
 // This object is created for every fetch request.
