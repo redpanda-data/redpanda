@@ -1042,6 +1042,57 @@ health_monitor_backend::get_node_drain_status(
 
     co_return it->second->drain_status;
 }
+namespace {
+bool is_partition_offline(
+  const cluster::partition_assignment& p_as,
+  const std::vector<model::node_id>& offline_nodes) {
+    return std::ranges::all_of(
+      p_as.replicas, [&offline_nodes](const model::broker_shard bs) {
+          return std::ranges::find(offline_nodes, bs.node_id)
+                 != offline_nodes.end();
+      });
+}
+} // namespace
+
+ss::future<> health_monitor_backend::fill_aggregate_with_offline_partitions(
+  const std::vector<model::node_id>& offline_nodes,
+  aggregated_report& aggr_report) {
+    size_t retries_left = 5;
+
+    ssx::async_counter counter;
+    while (retries_left > 0) {
+        try {
+            for (auto it = _topic_table.local().topics_iterator_begin();
+                 it != _topic_table.local().topics_iterator_end();
+                 ++it) {
+                const auto& topic = it->first;
+                const auto& assignment_set = it->second.get_assignments();
+                co_await ssx::async_for_each_counter(
+                  counter,
+                  assignment_set,
+                  [&offline_nodes, &aggr_report, &topic, &it](
+                    const auto& p_as) {
+                      it.check();
+                      if (!is_partition_offline(p_as.second, offline_nodes)) {
+                          return;
+                      }
+                      aggr_report.leaderless_count++;
+                      if (
+                        aggr_report.leaderless_count
+                        > aggregated_report::max_partitions_report) {
+                          return;
+                      }
+                      aggr_report.leaderless.emplace(
+                        model::ntp(topic.ns, topic.tp, p_as.first));
+                  });
+            }
+            // success, return from the function
+            co_return;
+        } catch (const iterator_stability_violation&) {
+            --retries_left;
+        }
+    }
+}
 
 health_monitor_backend::aggregated_report
 health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
@@ -1131,6 +1182,8 @@ health_monitor_backend::get_cluster_health_overview(
       ret.nodes_in_recovery_mode.begin(), ret.nodes_in_recovery_mode.end());
 
     auto aggr_report = aggregate_reports(reports());
+    co_await fill_aggregate_with_offline_partitions(
+      ret.nodes_down, aggr_report);
 
     auto move_into = [](auto& dest, auto& src) {
         dest.reserve(src.size());
