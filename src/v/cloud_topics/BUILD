@@ -125,6 +125,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/model",
         "//src/v/storage",
         "@seastar",

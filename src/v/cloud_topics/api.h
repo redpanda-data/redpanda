@@ -11,6 +11,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "cloud_topics/extent_meta.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 
@@ -34,7 +35,7 @@ public:
     virtual ss::future<> stop() = 0;
 
     /// Write data batches and get back placeholder batches
-    virtual ss::future<result<ss::circular_buffer<model::record_batch>>>
+    virtual ss::future<result<ss::circular_buffer<extent_meta>>>
     write_and_debounce(
       model::ntp ntp,
       model::record_batch_reader r,

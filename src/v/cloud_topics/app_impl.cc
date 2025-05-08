@@ -76,8 +76,7 @@ public:
         co_await _reconciler->stop();
     }
 
-    ss::future<result<ss::circular_buffer<model::record_batch>>>
-    write_and_debounce(
+    ss::future<result<ss::circular_buffer<extent_meta>>> write_and_debounce(
       model::ntp ntp,
       model::record_batch_reader r,
       std::chrono::milliseconds timeout) override {
