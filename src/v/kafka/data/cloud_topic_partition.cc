@@ -12,6 +12,8 @@
 
 #include "cloud_storage/types.h"
 #include "cloud_topics/app.h"
+#include "cloud_topics/dl_placeholder.h"
+#include "cloud_topics/extent_meta.h"
 #include "cluster/partition.h"
 #include "cluster/rm_stm.h"
 #include "cluster/types.h"
@@ -21,13 +23,16 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/replicate.h"
 #include "storage/log_reader.h"
+#include "storage/record_batch_builder.h"
 #include "storage/types.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -38,6 +43,86 @@
 #include <system_error>
 
 namespace kafka {
+
+namespace {
+
+struct placeholder_batches_with_size {
+    ss::circular_buffer<model::record_batch> batches;
+    // Total size of all referenced data
+    size_t extent_size{0};
+};
+
+static model::record_batch make_placeholder_batch(
+  const model::record_batch_header& hdr,
+  const experimental::cloud_topics::extent_meta& extent) {
+    // The caller is supposed to use the correct batch header
+    // that matches the extent.
+    vassert(
+      hdr.base_offset == kafka::offset_cast(extent.base_offset),
+      "Base offset of the extent {} doesn't match the data batch {}",
+      extent.base_offset,
+      hdr.base_offset);
+    vassert(
+      hdr.last_offset() == kafka::offset_cast(extent.committed_offset),
+      "Base offset of the extent {} doesn't match the data batch {}",
+      extent.base_offset,
+      hdr.base_offset);
+
+    experimental::cloud_topics::dl_placeholder placeholder{
+      .id = extent.id,
+      .offset = extent.first_byte_offset,
+      .size_bytes = extent.byte_range_size,
+    };
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::dl_placeholder, hdr.base_offset);
+
+    auto first_key = serde::to_iobuf(
+      experimental::cloud_topics::dl_placeholder_record_key::payload);
+
+    auto first_value = serde::to_iobuf(placeholder);
+
+    // In case of a placeholder batch the first record contains the
+    // actual placeholder and the remaining records are empty. The remaining
+    // records are added to avoid confusing any other code that may expect
+    // that the number of records in the batch is equal to the number of
+    // offsets in the header.
+    builder.add_raw_kv(std::move(first_key), std::move(first_value));
+
+    for (int i = 1; i < hdr.record_count; ++i) {
+        builder.add_raw_kv(std::nullopt, std::nullopt);
+    }
+
+    return std::move(builder).build();
+}
+
+// Utility function to convert array of extent_meta structs to
+// array of placeholder batches.
+static placeholder_batches_with_size convert_to_placeholders(
+  const ss::circular_buffer<experimental::cloud_topics::extent_meta>& extents,
+  ss::circular_buffer<model::record_batch_header> headers) {
+    placeholder_batches_with_size result;
+    result.batches.reserve(extents.size());
+    for (const auto& extent : extents) {
+        auto header = headers.front();
+        headers.pop_front();
+        vassert(
+          extent.base_offset() <= extent.committed_offset(),
+          "Extent base offset {} is greater than committed offset {}",
+          extent.base_offset(),
+          extent.committed_offset());
+
+        // Every extent maps to a single batch produced by the client
+        // and therefore we need to create a placeholder batch for it.
+        auto batch = make_placeholder_batch(header, extent);
+
+        result.batches.push_back(std::move(batch));
+        result.extent_size += extent.byte_range_size;
+    }
+    return result;
+}
+} // namespace
+
 cloud_topic_partition::cloud_topic_partition(
   ss::lw_shared_ptr<cluster::partition> p,
   ss::shared_ptr<experimental::cloud_topics::api> app) noexcept
@@ -240,6 +325,7 @@ struct upload_and_replicate_stages {
 static ss::future<> bg_upload_and_replicate(
   ss::shared_ptr<experimental::cloud_topics::api> api,
   ss::lw_shared_ptr<cluster::partition> partition,
+  model::record_batch_header header,
   ss::lw_shared_ptr<upload_and_replicate_stages> op) {
     vassert(api != nullptr, "cloud topics api is not initialized");
     auto fallback = ss::defer([op] {
@@ -250,27 +336,30 @@ static ss::future<> bg_upload_and_replicate(
         op->replicate_finished.set_value(raft::errc::timeout);
     });
     auto timeout = op->timeout == 0ms ? 1s : op->timeout;
-    auto pl = co_await api->write_and_debounce(
+    auto res = co_await api->write_and_debounce(
       op->ntp, std::move(op->reader), timeout);
 
-    if (pl.has_error()) {
+    if (res.has_error()) {
         vlog(
-          kdlog.debug, "LO object upload has failed: {}", pl.error().message());
+          kdlog.debug,
+          "LO object upload has failed: {}",
+          res.error().message());
         co_return;
     }
 
-    // Unpack record_batch_reader (TODO: get rid of
-    // record_batch_reader)
-    auto placeholder_batches = std::move(pl.value());
+    ss::circular_buffer<model::record_batch_header> headers;
+    headers.push_back(header);
+    auto placeholders = convert_to_placeholders(
+      res.value(), std::move(headers));
 
     vassert(
-      placeholder_batches.size() == 1,
+      placeholders.batches.size() == 1,
       "Expected single batch, got {}",
-      placeholder_batches.size());
+      placeholders.batches.size());
 
     // Replicate
     auto replicate_stages = partition->replicate_in_stages(
-      op->batch_id, std::move(placeholder_batches.front()), op->opts);
+      op->batch_id, std::move(placeholders.batches.front()), op->opts);
 
     fallback.cancel();
 
@@ -297,29 +386,36 @@ static ss::future<> bg_upload_and_replicate(
 ss::future<result<model::offset>> cloud_topic_partition::replicate(
   chunked_vector<model::record_batch> batches, raft::replicate_options opts) {
     using ret_t = result<model::offset>;
+    ss::circular_buffer<model::record_batch_header> headers;
+    headers.reserve(batches.size());
+    for (const auto& batch : batches) {
+        headers.push_back(batch.header());
+    }
     auto batch_reader = model::make_fragmented_memory_record_batch_reader(
       std::move(batches));
     // TODO: use a config
     auto default_timeout = 1s;
 
     // Dataplane.
-    auto placeholders = co_await _ct_api->write_and_debounce(
+    auto res = co_await _ct_api->write_and_debounce(
       ntp(), std::move(batch_reader), opts.timeout.value_or(default_timeout));
 
-    if (placeholders.has_error()) {
-        co_return ret_t(placeholders.error());
+    if (res.has_error()) {
+        co_return ret_t(res.error());
     }
 
-    // TODO: change the return type of write_and_debounce to
-    // avoid type conversion.
+    auto placeholders = convert_to_placeholders(
+      res.value(), std::move(headers));
+
     chunked_vector<model::record_batch> placeholder_batches;
-    for (auto&& batch : placeholders.value()) {
+    for (auto&& batch : placeholders.batches) {
         placeholder_batches.push_back(std::move(batch));
     }
 
     // Control plane.
     auto result = co_await _partition->replicate(
       std::move(placeholder_batches), opts);
+
     if (!result) {
         co_return ret_t(result.error());
     }
@@ -336,6 +432,7 @@ raft::replicate_stages cloud_topic_partition::replicate(
   model::batch_identity batch_id,
   model::record_batch batch,
   raft::replicate_options opts) {
+    auto header = batch.header();
     auto op_state = ss::make_lw_shared<upload_and_replicate_stages>(
       _partition,
       model::make_memory_record_batch_reader(std::move(batch)),
@@ -346,7 +443,8 @@ raft::replicate_stages cloud_topic_partition::replicate(
     raft::replicate_stages out(raft::errc::success);
     out.request_enqueued = op_state->request_enqueued.get_future();
     out.replicate_finished = op_state->replicate_finished.get_future();
-    ssx::background = bg_upload_and_replicate(_ct_api, _partition, op_state);
+    ssx::background = bg_upload_and_replicate(
+      _ct_api, _partition, header, op_state);
     return out;
 }
 
