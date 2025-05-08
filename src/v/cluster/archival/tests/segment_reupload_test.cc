@@ -17,12 +17,18 @@
 #include "cluster/archival/tests/service_fixture.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/offset_interval.h"
+#include "model/record.h"
+#include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "storage/log_manager.h"
+#include "storage/record_batch_utils.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
 #include "test_utils/tmp_dir.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
@@ -218,6 +224,94 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
     BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("candidate_stream_test");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    populate_log(
+      b,
+      {.segment_starts = {10, 20, 30, 40},
+       .compacted_segment_indices = {0, 1, 2},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      model::offset{4}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector.collect_segments();
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
+    BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
+    BOOST_REQUIRE_EQUAL(3, collector.segments().size());
+
+    auto result = collector
+                    .make_upload_candidate_stream(
+                      ss::default_priority_class(), segment_lock_timeout)
+                    .get();
+    BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == false);
+
+    auto cstream = std::move(result.value());
+    BOOST_REQUIRE_GE(cstream.size, size_t{1});
+
+    // Read from candidate stream
+    iobuf candidate_data;
+    {
+        auto is = cstream.create_input_stream();
+        while (!is.eof()) {
+            auto buf = is.read().get();
+            if (buf.empty()) {
+                break;
+            }
+            candidate_data.append(std::move(buf));
+        }
+        is.close().get();
+    }
+    BOOST_REQUIRE_EQUAL(candidate_data.size_bytes(), cstream.size);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_skip_offsets) {
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("candidate_stream_test");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    populate_log(
+      b,
+      {.segment_starts = {15, 25, 35},
+       .compacted_segment_indices = {0, 1, 2},
+       .last_segment_num_records = 10});
+
+    archival::segment_collector collector{
+      model::offset{4}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector.collect_segments();
+    auto result = collector
+                    .make_upload_candidate_stream(
+                      ss::default_priority_class(), segment_lock_timeout)
+                    .get();
+    BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == true);
+    BOOST_REQUIRE_EQUAL(result.value().end_offset, model::offset{39});
 }
 
 SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
@@ -1262,7 +1356,7 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
       12001752,
       model::offset{115}};
 
-    collector.collect_segments(segment_collector_mode::collect_non_compacted);
+    collector.collect_segments(segment_collector_mode::non_compacted_reupload);
     auto candidate = require_upload_candidate(
       collector.make_upload_candidate(ss::default_priority_class(), 10s).get());
     BOOST_REQUIRE_EQUAL(
@@ -1462,7 +1556,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_concurrent_compaction) {
       max_upload_size,
       model::offset{39}};
 
-    collector.collect_segments(segment_collector_mode::collect_non_compacted);
+    collector.collect_segments(segment_collector_mode::non_compacted_reupload);
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
 
@@ -1482,4 +1576,526 @@ SEASTAR_THREAD_TEST_CASE(test_segment_concurrent_compaction) {
     BOOST_REQUIRE(
       std::get<candidate_creation_error>(candidate)
       == candidate_creation_error::concurrency_error);
+}
+
+static void validate_non_compacted_collector(archival::segment_collector& c) {
+    if (!c.segment_ready_for_upload()) {
+        return;
+    }
+    auto interval = model::bounded_offset_interval::checked(
+      c.begin_inclusive(), c.end_inclusive());
+
+    auto collected_interval = model::bounded_offset_interval::checked(
+      c.segments().front()->offsets().get_base_offset(),
+      c.segments().back()->offsets().get_committed_offset());
+    BOOST_REQUIRE(collected_interval.contains(c.begin_inclusive()));
+    BOOST_REQUIRE(collected_interval.contains(c.end_inclusive()));
+
+    // Unrelated segments should not be collected.
+    for (const auto& s : c.segments()) {
+        auto seg_interval = model::bounded_offset_interval::checked(
+          s->offsets().get_base_offset(), s->offsets().get_committed_offset());
+        BOOST_REQUIRE(interval.overlaps(seg_interval));
+    }
+
+    // Check that collected segments are aligned
+    auto prev = model::prev_offset(collected_interval.min());
+    for (const auto& s : c.segments()) {
+        BOOST_REQUIRE(
+          model::next_offset(prev) == s->offsets().get_base_offset());
+        prev = s->offsets().get_committed_offset();
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_new_segment_upload) {
+    // Start with empty manifest and upload the log.
+    cloud_storage::partition_manifest m(
+      model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Local disk log starts before manifest and ends after manifest. First
+    // three segments are compacted.
+    populate_log(
+      b,
+      {.segment_starts = {0, 20, 30, 40},
+       .compacted_segment_indices = {},
+       .last_segment_num_records = 10});
+
+    for (auto& s : b.get_disk_log_impl().segments()) {
+        if (s->offsets().get_base_offset() == model::offset{40}) {
+            // Keep last segment unsealed
+            break;
+        }
+        s->release_appender()->close().get();
+    }
+
+    // Upload the first segment of the log. This replicates the normal
+    // upload flow in the ntp_archiver. The archiver uploads segments
+    // when they are sealed.
+    archival::segment_collector collector1{
+      model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector1.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector1.begin_inclusive(), model::offset{00});
+    BOOST_REQUIRE_EQUAL(collector1.end_inclusive(), model::offset{19});
+    validate_non_compacted_collector(collector1);
+
+    // Upload the segment in the middle of the log.
+    archival::segment_collector collector2{
+      model::offset{20}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector2.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector2.begin_inclusive(), model::offset{20});
+    BOOST_REQUIRE_EQUAL(collector2.end_inclusive(), model::offset{29});
+    validate_non_compacted_collector(collector2);
+
+    // Upload the last segment of the log. This should fail because
+    // the segment is not sealed.
+    archival::segment_collector collector3{
+      model::offset{40}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector3.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(!collector3.segment_ready_for_upload());
+    validate_non_compacted_collector(collector3);
+
+    // Collect multiple segments at once. This should succeed.
+    // The collector will be guided by the target end offset
+    // and max size. The collection will include the whole log
+    // except the last unsealed segment.
+    archival::segment_collector collector4{
+      model::offset{0},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{39}};
+    collector4.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector4.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector4.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector4.end_inclusive(), model::offset{39});
+    validate_non_compacted_collector(collector4);
+
+    // Same as the previous case but the target end offset is set to
+    // be in the middle of the unsealed segment. The collector should
+    // still be able to collect the same set of segments + part of the
+    // last unsealed segment.
+    // When the upload is forced by the timeout we have to upload all
+    // data that we have up to the LSO. The LSO could be in the middle of
+    // of the unsealed segment in this case.
+    archival::segment_collector collector5{
+      model::offset{0},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{42}};
+    collector5.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector5.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector5.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector5.end_inclusive(), model::offset{42});
+    validate_non_compacted_collector(collector5);
+
+    // Similar to the previous case but the start of the upload is not aligned
+    // to the segment boundary. So does the end of the upload.
+    archival::segment_collector collector6{
+      model::offset{8},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{42}};
+    collector6.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector6.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector6.begin_inclusive(), model::offset{8});
+    BOOST_REQUIRE_EQUAL(collector6.end_inclusive(), model::offset{42});
+    validate_non_compacted_collector(collector6);
+
+    // The upload starts and stops inside the unsealed segment.
+    archival::segment_collector collector7{
+      model::offset{42},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{45}};
+    collector7.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector7.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector7.begin_inclusive(), model::offset{42});
+    BOOST_REQUIRE_EQUAL(collector7.end_inclusive(), model::offset{45});
+    validate_non_compacted_collector(collector7);
+
+    // The upload size is limited by the size. The last offset is not set
+    // explicitly. We should pick up only one segment.
+    auto first_segment_size
+      = b.get_disk_log_impl().segments().front()->file_size();
+    archival::segment_collector collector8{
+      model::offset{0}, m, b.get_disk_log_impl(), first_segment_size};
+    collector8.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector8.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector8.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector8.end_inclusive(), model::offset{19});
+    validate_non_compacted_collector(collector8);
+
+    // Same case but the last offset is set explicitly. The collector should
+    // chose the same segment as in the previous case.
+    archival::segment_collector collector9{
+      model::offset{0},
+      m,
+      b.get_disk_log_impl(),
+      first_segment_size,
+      model::offset{42} /*this will be ignored*/};
+    collector9.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector9.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector9.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector9.end_inclusive(), model::offset{19});
+    validate_non_compacted_collector(collector9);
+
+    // Similar to the previous case but the start of the upload is not aligned
+    // with the segment boundary. The collector will stop on a segment boundary
+    // anyway based on the segment size.
+    archival::segment_collector collector10{
+      model::offset{18},
+      m,
+      b.get_disk_log_impl(),
+      first_segment_size,
+      model::offset{42} /*this will be ignored*/};
+    collector10.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(collector10.segment_ready_for_upload());
+    BOOST_REQUIRE_EQUAL(collector10.begin_inclusive(), model::offset{18});
+    BOOST_REQUIRE_EQUAL(collector10.end_inclusive(), model::offset{19});
+    validate_non_compacted_collector(collector10);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_off_by_one) {
+    // Upload segments that contain only one record so begin_inclusive
+    // is equal to end_inclusive.
+    cloud_storage::partition_manifest m(
+      model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Local disk log starts before manifest and ends after manifest. First
+    // three segments are compacted.
+    populate_log(
+      b,
+      {.segment_starts = {0, 1, 2, 3},
+       .compacted_segment_indices = {},
+       .last_segment_num_records = 1});
+
+    for (auto& s : b.get_disk_log_impl().segments()) {
+        if (s->offsets().get_base_offset() == model::offset{3}) {
+            // Keep last segment unsealed
+            break;
+        }
+        s->release_appender()->close().get();
+    }
+
+    // Upload first segment which contains only one record [0-0 offset range]
+    archival::segment_collector collector1{
+      model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
+
+    collector1.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector1.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector1.end_inclusive(), model::offset{0});
+    BOOST_REQUIRE(collector1.segment_ready_for_upload());
+    validate_non_compacted_collector(collector1);
+
+    // Upload second segment which contains only one record [1-1 offset range]
+    archival::segment_collector collector2{
+      model::offset{1}, m, b.get_disk_log_impl(), max_upload_size};
+    collector2.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector2.begin_inclusive(), model::offset{1});
+    BOOST_REQUIRE_EQUAL(collector2.end_inclusive(), model::offset{1});
+    BOOST_REQUIRE(collector2.segment_ready_for_upload());
+    validate_non_compacted_collector(collector2);
+
+    // Upload second segment which contains only one record [3-3 offset range]
+    archival::segment_collector collector3{
+      model::offset{3}, m, b.get_disk_log_impl(), max_upload_size};
+    collector3.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE(!collector3.segment_ready_for_upload());
+    validate_non_compacted_collector(collector3);
+
+    // Upload series of segments. Last segment which is not sealed is not
+    // included.
+    archival::segment_collector collector4{
+      model::offset{0},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{2}};
+    collector4.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector4.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector4.end_inclusive(), model::offset{2});
+    BOOST_REQUIRE(collector4.segment_ready_for_upload());
+    validate_non_compacted_collector(collector4);
+
+    // Upload series of segments but include last segment which is not sealed.
+    // This should work because target_end_inclusive is set to 3.
+    // The 'target_end_inclusive' is supposed to be used to pass LSO value
+    // to the collector. This means that the collector now knows that it's safe
+    // to read from unsealed segment below this offset.
+    archival::segment_collector collector5{
+      model::offset{0},
+      m,
+      b.get_disk_log_impl(),
+      max_upload_size,
+      model::offset{3}};
+    collector5.collect_segments(segment_collector_mode::new_non_compacted);
+    BOOST_REQUIRE_EQUAL(collector5.begin_inclusive(), model::offset{0});
+    BOOST_REQUIRE_EQUAL(collector5.end_inclusive(), model::offset{3});
+    BOOST_REQUIRE(collector5.segment_ready_for_upload());
+    validate_non_compacted_collector(collector5);
+}
+
+/// Collect all batch boundaries
+struct consumer {
+    ss::future<ss::stop_iteration> operator()(model::record_batch b) noexcept {
+        auto interval = model::bounded_offset_interval::checked(
+          b.base_offset(), b.last_offset());
+        boundaries->push_back(interval);
+        auto hdr_size = model::packed_record_batch_header_size;
+        auto data_size = b.data().size_bytes();
+        auto prev_size = running_sum->empty() ? 0 : running_sum->back();
+        running_sum->push_back(prev_size + hdr_size + data_size);
+        co_return ss::stop_iteration::no;
+    }
+
+    bool end_of_stream() const { return false; }
+
+    std::vector<model::bounded_offset_interval>* boundaries;
+    std::vector<size_t>* running_sum;
+};
+
+SEASTAR_THREAD_TEST_CASE(test_new_segment_upload_fuzz) {
+    static ss::logger testlog("test_new_segment_upload_fuzz");
+    cloud_storage::partition_manifest m(
+      model::ntp{"test_ns", "test_tpc", 0}, model::initial_revision_id{0});
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Local disk log starts before manifest and ends after manifest. First
+    // three segments are compacted.
+
+    const int max_records_per_batch = 100;
+    const int batches_per_segment = 100;
+    const int num_segments = 20;
+    model::offset start_offset{0};
+    model::term_id start_term{0};
+    for (int segment_ix = 0; segment_ix < num_segments; segment_ix++) {
+        auto num_batches = random_generators::get_int(1, batches_per_segment);
+        vlog(
+          testlog.info,
+          "Add segment{}: {} {}",
+          segment_ix,
+          start_offset,
+          start_term);
+
+        b.add_segment(start_offset, start_term).get();
+        for (int batch_ix = 0; batch_ix < num_batches; batch_ix++) {
+            auto num_records = random_generators::get_int(
+              1, max_records_per_batch);
+            vlog(testlog.info, "Add batch: {} {}", start_offset, num_records);
+            b.add_random_batch(start_offset, num_records).get();
+            start_offset = model::offset(start_offset() + num_records);
+        }
+        // Maybe bump the term id of the next segment
+        // start_term = random_generators::get_int(2) == 0 ? start_term :
+        // model::term_id(start_term() + 1);
+    }
+
+    model::offset last_offset = b.get_disk_log_impl()
+                                  .segments()
+                                  .back()
+                                  ->offsets()
+                                  .get_committed_offset();
+
+    std::vector<model::bounded_offset_interval> batch_boundaries;
+    std::vector<model::bounded_offset_interval> segment_boundaries;
+    std::vector<size_t> acc_batch_size;
+
+    // Find all segment boundaries
+    for (auto& s : b.get_disk_log_impl().segments()) {
+        auto interval = model::bounded_offset_interval::checked(
+          s->offsets().get_base_offset(), s->offsets().get_committed_offset());
+        segment_boundaries.push_back(interval);
+        vlog(
+          testlog.info,
+          "Segment boundaries: {} - {} (closed: {})",
+          s->offsets().get_base_offset(),
+          s->offsets().get_committed_offset(),
+          s->is_closed());
+        if (s->has_appender() && !s->is_closed()) {
+            s->release_appender()->close().get();
+        }
+    }
+
+    // Consume the log to find all batch boundaries
+    auto reader = b.get_disk_log_impl()
+                    .make_reader(storage::log_reader_config(
+                      model::offset{0},
+                      model::offset{last_offset},
+                      ss::default_priority_class()))
+                    .get();
+
+    vlog(testlog.info, "Consuming from the log 0 - {}", last_offset);
+    std::move(reader)
+      .consume(
+        consumer{
+          .boundaries = &batch_boundaries, .running_sum = &acc_batch_size},
+        model::no_timeout)
+      .get();
+
+    for (auto t : batch_boundaries) {
+        vlog(testlog.info, "Batch boundaries: {} - {}", t.min(), t.max());
+    }
+    vlog(testlog.info, "Done consuming from the log");
+
+    // In a loop generate a random offset range and check that
+    // the collector is able to collect the segments that are in the range.
+    for (int i = 0; i < 25; i++) {
+        auto ix_start = random_generators::get_int(
+          0UL, batch_boundaries.size() - 1);
+        auto ix_end = random_generators::get_int(
+          0UL, batch_boundaries.size() - 1);
+        if (ix_start == ix_end) {
+            continue;
+        } else if (ix_start > ix_end) {
+            std::swap(ix_start, ix_end);
+        }
+        auto start_bound = batch_boundaries.at(ix_start);
+        auto end_bound = batch_boundaries.at(ix_end);
+        auto expected_size
+          = acc_batch_size.at(ix_end)
+            - (ix_start == 0 ? 0 : acc_batch_size.at(ix_start - 1));
+
+        auto check_upload_candidate = [](
+                                        segment_collector& collector,
+                                        auto start_bound,
+                                        auto end_bound,
+                                        size_t expected_size) {
+            auto candidate = collector
+                               .make_upload_candidate(
+                                 ss::default_priority_class(), 10s)
+                               .get();
+            BOOST_REQUIRE(
+              std::holds_alternative<upload_candidate_with_locks>(candidate));
+            auto& c = std::get<upload_candidate_with_locks>(candidate);
+            vlog(
+              testlog.info,
+              "Upload candidate: {}-{}, content length: {}",
+              c.candidate.starting_offset,
+              c.candidate.final_offset,
+              c.candidate.content_length);
+            BOOST_REQUIRE_EQUAL(
+              std::get<upload_candidate_with_locks>(candidate)
+                .candidate.starting_offset,
+              start_bound.min());
+            BOOST_REQUIRE_EQUAL(
+              std::get<upload_candidate_with_locks>(candidate)
+                .candidate.final_offset,
+              end_bound.max());
+            auto candidate_size = std::get<upload_candidate_with_locks>(
+                                    candidate)
+                                    .candidate.content_length;
+            BOOST_REQUIRE_EQUAL(candidate_size, expected_size);
+        };
+
+        // Case 1:
+        // Specify the full range and expect the collector to collect
+        // all batches in the range. The size should match the expectation
+        // precisely.
+        // This code path is used when we're reuploading the offset range
+        // or when we're uploading new segment but forcing upload up to LSO.
+        vlog(
+          testlog.info,
+          "Collecting {} bytes starting from the offset {}-{}",
+          expected_size,
+          start_bound.min(),
+          end_bound.max());
+        archival::segment_collector closed_range_collector{
+          start_bound.min(),
+          m,
+          b.get_disk_log_impl(),
+          expected_size
+            * 10, // Make sure the size limit is not affecting anything
+          end_bound.max()};
+
+        closed_range_collector.collect_segments(
+          segment_collector_mode::new_non_compacted);
+
+        validate_non_compacted_collector(closed_range_collector);
+        check_upload_candidate(
+          closed_range_collector, start_bound, end_bound, expected_size);
+
+        // Case 2:
+        // In this case the end offset is not specified. The collector
+        // should be able to collect the segments in the range based on
+        // size limit (size limit is set to match the expected size).
+        // This code path is used when we're uploading new non compacted
+        // segments.
+
+        // Since this will upload only one segment we need to adjust the
+        // end offset and the size.
+        bool batch_found = false;
+        for (auto s : segment_boundaries) {
+            if (s.contains(start_bound.min())) {
+                // The uploaded segment is found. Now we need to find the end
+                // batch.
+                ix_end = ix_start;
+                for (auto i = ix_start; i < batch_boundaries.size(); i++) {
+                    if (batch_boundaries.at(i).contains(s.max())) {
+                        ix_end = i;
+                        end_bound = batch_boundaries.at(i);
+                        expected_size
+                          = acc_batch_size.at(ix_end)
+                            - (ix_start == 0 ? 0 : acc_batch_size.at(ix_start - 1));
+                        batch_found = true;
+                        vlog(
+                          testlog.info,
+                          "New range: {}-{}, new content length: {}",
+                          start_bound.min(),
+                          end_bound.max(),
+                          expected_size);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        BOOST_REQUIRE(batch_found);
+        vlog(
+          testlog.info,
+          "Collecting {} bytes starting from the offset {}-{}",
+          expected_size,
+          start_bound.min(),
+          end_bound.max());
+        archival::segment_collector open_range_collector{
+          start_bound.min(),
+          m,
+          b.get_disk_log_impl(),
+          expected_size,
+          std::nullopt};
+
+        open_range_collector.collect_segments(
+          segment_collector_mode::new_non_compacted);
+        validate_non_compacted_collector(open_range_collector);
+        check_upload_candidate(
+          open_range_collector, start_bound, end_bound, expected_size);
+    }
 }

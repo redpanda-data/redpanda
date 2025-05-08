@@ -1703,17 +1703,20 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 
     switch (upload_ctx.upload_kind) {
     case segment_upload_kind::non_compacted:
-        candidate_result = co_await _policy.get_next_candidate(
+        candidate_result = co_await _policy.get_next_segment(
           start_upload_offset,
           last_stable_offset,
           _flush_uploads_offset,
           log,
+          manifest(),
           _conf->segment_upload_timeout());
         break;
     case segment_upload_kind::compacted:
-        const auto& m = manifest();
         candidate_result = co_await _policy.get_next_compacted_segment(
-          start_upload_offset, log, m, _conf->segment_upload_timeout());
+          start_upload_offset,
+          log,
+          manifest(),
+          _conf->segment_upload_timeout());
         break;
     }
 
@@ -3279,7 +3282,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           run->meta.size_bytes,
           run->meta.committed_offset);
         collector.collect_segments(
-          segment_collector_mode::collect_non_compacted);
+          segment_collector_mode::non_compacted_reupload);
         auto candidate = co_await collector.make_upload_candidate(
           _conf->upload_io_priority, _conf->segment_upload_timeout());
 
