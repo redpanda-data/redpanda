@@ -167,6 +167,8 @@ public:
     struct offset_range_size_result_t {
         size_t on_disk_size;
         model::offset last_offset;
+        model::timestamp first_timestamp;
+        model::timestamp last_timestamp;
     };
 
     struct offset_range_size_requirements_t {

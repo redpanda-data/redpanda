@@ -299,8 +299,14 @@ private:
     friend ::reupload_fixture; // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
+    struct file_offset_t {
+        size_t position{};
+        model::timestamp base_timestamp{model::timestamp::missing()};
+        model::timestamp last_timestamp{model::timestamp::missing()};
+    };
+
     /// Compute file offset of the batch inside the segment
-    ss::future<size_t> get_file_offset(
+    ss::future<file_offset_t> get_file_offset(
       ss::lw_shared_ptr<segment> s,
       std::optional<segment_index::entry> index_entry,
       model::offset target,
