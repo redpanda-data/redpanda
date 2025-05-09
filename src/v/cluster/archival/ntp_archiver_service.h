@@ -691,9 +691,9 @@ private:
     cloud_storage::cache& _cache;
     cluster::partition& _parent;
     model::term_id _start_term;
+    ss::gate _gate;
     archival_policy _policy;
     std::optional<cloud_storage_clients::bucket_name> _bucket_override;
-    ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;

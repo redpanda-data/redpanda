@@ -33,10 +33,12 @@ using namespace std::chrono_literals;
 archival_policy::archival_policy(
   model::ntp ntp,
   cluster::partition& parent,
+  ss::gate& gate,
   std::optional<segment_time_limit> limit)
   : _ntp(std::move(ntp))
   , _upload_limit(limit)
-  , _parent(&parent) {}
+  , _parent(&parent)
+  , _gate(&gate) {}
 
 bool archival_policy::upload_deadline_reached() {
     if (!_upload_limit.has_value()) {
