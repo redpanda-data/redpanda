@@ -23,6 +23,7 @@ redpanda_cc_library(
         "//src/v/cloud_io:basic_cache_service_api",
         "//src/v/cloud_io:io_result",
         "//src/v/cloud_io:remote",
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics:placeholder",
         "//src/v/cloud_topics:types",

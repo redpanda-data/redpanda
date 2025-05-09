@@ -21,6 +21,7 @@ redpanda_test_cc_library(
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage_clients",
         "//src/v/cloud_topics:placeholder",
+        "//src/v/cloud_topics/read_path:placeholder_extent",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
         "//src/v/model/tests:random",
@@ -42,6 +43,7 @@ redpanda_cc_gtest(
         "placeholder_extent_test.cc",
     ],
     deps = [
+        "//src/v/cloud_topics:placeholder",
         "//src/v/cloud_topics:types",
         "//src/v/cloud_topics/read_path:placeholder_extent",
         "//src/v/cloud_topics/read_path/tests:placeholder_extent_fixture",

@@ -11,6 +11,8 @@
 #include "bytes/bytes.h"
 #include "bytes/iostream.h"
 #include "cloud_io/basic_cache_service_api.h"
+#include "cloud_topics/dl_placeholder.h"
+#include "cloud_topics/read_path/placeholder_extent.h"
 #include "container/fragmented_vector.h"
 #include "mocks.h"
 #include "model/fundamental.h"
@@ -101,6 +103,27 @@ public:
 
     /// Create a list of batches that contain placeholders
     ss::circular_buffer<model::record_batch> make_underlying();
+
+    static experimental::cloud_topics::materialized_extent
+    make_placeholder_extent(model::record_batch batch) {
+        experimental::cloud_topics::extent_meta e{
+          .base_offset = model::offset_cast(batch.base_offset()),
+          .committed_offset = model::offset_cast(batch.last_offset()),
+        };
+        iobuf payload = std::move(batch).release_data();
+        iobuf_parser parser(std::move(payload));
+        auto record = model::parse_one_record_from_buffer(parser);
+        iobuf value = std::move(record).release_value();
+        auto placeholder
+          = serde::from_iobuf<experimental::cloud_topics::dl_placeholder>(
+            std::move(value));
+        e.id = placeholder.id;
+        e.first_byte_offset = placeholder.offset;
+        e.byte_range_size = placeholder.size_bytes;
+        return experimental::cloud_topics::materialized_extent{
+          .meta = e,
+        };
+    }
 
     ss::circular_buffer<model::record_batch> partition;
     ss::circular_buffer<model::record_batch> expected;

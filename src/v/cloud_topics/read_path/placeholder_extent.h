@@ -12,7 +12,7 @@
 
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
-#include "cloud_topics/dl_placeholder.h"
+#include "cloud_topics/extent_meta.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
@@ -27,11 +27,6 @@ using namespace std::chrono_literals;
 
 namespace experimental::cloud_topics {
 
-struct hydrated_L0_object {
-    object_id id;
-    iobuf payload;
-};
-
 // Materialized placeholder extent
 //
 // Extent represents dl_placeholder with the data
@@ -40,22 +35,17 @@ struct hydrated_L0_object {
 // The extent can be hydrated (the data is moved from the cloud
 // storage to disk) or materialized (data is moved to the main
 // memory).
-struct placeholder_extent {
-    model::offset base_offset;
-    dl_placeholder placeholder;
-    ss::lw_shared_ptr<hydrated_L0_object> L0_object;
+struct materialized_extent {
+    extent_meta meta;
+    iobuf object;
 };
-
-/// Convert record batch to dl_placeholder value and return an empty
-/// extent which later has to be hydrated.
-placeholder_extent make_placeholder_extent(model::record_batch batch);
 
 /// Fetch data referenced by the placeholder batch and the content of the
 /// dl_placeholder.
 /// Return 'true' if the object was downloaded from the cloud storage.
 /// Otherwise, if the object was populated from the cache, return 'false'.
 ss::future<result<bool>> materialize(
-  placeholder_extent* extent,
+  materialized_extent* extent,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
   cloud_io::basic_cache_service_api<>* cache,
@@ -63,6 +53,6 @@ ss::future<result<bool>> materialize(
 
 // Get dl_placeholder and the payload of the object and generate a record
 // batch
-model::record_batch make_raft_data_batch(placeholder_extent extent);
+model::record_batch make_raft_data_batch(materialized_extent extent);
 
 } // namespace experimental::cloud_topics
