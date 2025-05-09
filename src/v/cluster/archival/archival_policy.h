@@ -31,6 +31,7 @@ public:
     explicit archival_policy(
       model::ntp ntp,
       cluster::partition& parent,
+      ss::gate& gate,
       std::optional<segment_time_limit> limit = std::nullopt);
 
     ss::future<segment_collector_stream_result> get_next_compacted_segment(
@@ -61,6 +62,7 @@ private:
     std::optional<segment_time_limit> _upload_limit;
     std::optional<ss::lowres_clock::time_point> _upload_deadline;
     cluster::partition* _parent;
+    ss::gate* _gate;
 };
 
 } // namespace archival
