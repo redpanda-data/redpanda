@@ -45,6 +45,13 @@ STARTUP_SEQUENCE_ABORTED = [
     "Failure during startup: seastar::abort_requested_exception \(abort requested\)"
 ]
 
+# We need to ignore stuck reconciliation errors as they are expected when offline node is suspended
+# Example
+# ERROR 2025-05-12 11:08:51,283 [shard 1:main] cluster - controller_backend.cc:909 - [{kafka/topic-sgnmkqspsy/0}] reconciliation seems stuck (last retried 109s. ago), state: {pending_notifies: 1,  properties_changed_at: {nullopt}, removed_at: {nullopt}, cur_operation: {{revision: 264, type: update, assignment: { id: 0, group_id: 1, replicas: {{node_id: 1, shard: 0}, {node_id: 4, shard: 0}, {node_id: 2, shard: 0}} }, retries: 2, last_error: cluster::errc::waiting_for_recovery (Waiting for partition to recover)}}}
+RECONCILIATION_TIMEOUT_LOG = [
+    "controller_backend.* reconciliation seems stuck \(last retried.*"
+]
+
 
 class PartitionBalancerService(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
@@ -351,7 +358,8 @@ class PartitionBalancerTest(PartitionBalancerService):
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @skip_debug_mode
-    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=7,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
 
