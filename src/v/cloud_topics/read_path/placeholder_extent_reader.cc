@@ -33,48 +33,31 @@ using namespace std::chrono_literals;
 
 namespace experimental::cloud_topics {
 
-/// Convert record batch to dl_placeholder value and return an empty
-/// extent which later has to be hydrated.
-size_t get_extent_size(const model::record_batch& placeholder) {
-    /// FIXME: This code makes unnecessary copy
-    vassert(
-      placeholder.header().type == model::record_batch_type::dl_placeholder,
-      "Unsupported batch type {}",
-      placeholder.header());
-    iobuf payload = placeholder.data().copy();
-    iobuf_parser parser(std::move(payload));
-    auto record = model::parse_one_record_from_buffer(parser);
-    iobuf value = std::move(record).release_value();
-    auto p = serde::from_iobuf<dl_placeholder>(std::move(value));
-    return p.size_bytes;
-}
-
-ss::future<result<ss::circular_buffer<placeholder_extent>>>
+ss::future<result<ss::circular_buffer<materialized_extent>>>
 materialize_sorted_run(
-  ss::circular_buffer<model::record_batch> placeholders,
+  ss::circular_buffer<extent_meta> query,
   cloud_storage_clients::bucket_name bucket,
   cloud_io::remote_api<>* api,
   cloud_io::basic_cache_service_api<>* cache,
   retry_chain_node* rtc) {
-    absl::node_hash_map<uuid_t, ss::lw_shared_ptr<hydrated_L0_object>> hydrated;
-    ss::circular_buffer<placeholder_extent> extents;
-    for (auto&& p : placeholders) {
-        auto extent = make_placeholder_extent(std::move(p));
-
-        extents.push_back(extent);
+    absl::node_hash_map<uuid_t, iobuf> hydrated;
+    ss::circular_buffer<materialized_extent> extents;
+    for (const auto& extent : query) {
+        extents.push_back(materialized_extent{.meta = extent});
+        auto& back = extents.back();
         // reuse hydrated objects if possible
-        auto it = hydrated.find(extent.placeholder.id());
+        auto it = hydrated.find(back.meta.id());
         if (it != hydrated.end()) {
-            auto& payload = it->second->payload;
+            auto& payload = it->second;
             // TODO: check that id of the payload matches
-            extent.L0_object->payload = payload.share(0, payload.size_bytes());
+            back.object = payload.share(0, payload.size_bytes());
         } else {
-            auto res = co_await materialize(&extent, bucket, api, cache, rtc);
+            auto res = co_await materialize(&back, bucket, api, cache, rtc);
             if (res.has_error()) {
                 co_return res.error();
             }
-            hydrated.insert(
-              std::make_pair(extent.placeholder.id, extent.L0_object));
+            hydrated.insert(std::make_pair(
+              back.meta.id, back.object.share(0, back.object.size_bytes())));
         }
     }
     co_return std::move(extents);
@@ -82,13 +65,13 @@ materialize_sorted_run(
 
 ss::future<ss::circular_buffer<model::record_batch>> materialize_placeholders(
   cloud_storage_clients::bucket_name bucket,
-  ss::circular_buffer<model::record_batch> underlying,
+  ss::circular_buffer<extent_meta> query,
   cloud_io::remote_api<ss::lowres_clock>& api,
   cloud_io::basic_cache_service_api<ss::lowres_clock>& cache,
   retry_chain_node& rtc,
   retry_chain_logger& logger) {
     auto extents = co_await materialize_sorted_run(
-      std::move(underlying), bucket, &api, &cache, &rtc);
+      std::move(query), bucket, &api, &cache, &rtc);
     if (extents.has_error()) {
         vlog(
           logger.error,

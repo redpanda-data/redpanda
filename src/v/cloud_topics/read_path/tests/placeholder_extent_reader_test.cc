@@ -32,11 +32,22 @@ using namespace std::chrono_literals;
 
 namespace cloud_topics = experimental::cloud_topics;
 
+struct ss::circular_buffer<cloud_topics::extent_meta>
+convert_placeholders(const ss::circular_buffer<model::record_batch>& batches) {
+    ss::circular_buffer<cloud_topics::extent_meta> res;
+    for (const auto& b : batches) {
+        auto mext = placeholder_extent_fixture::make_placeholder_extent(
+          b.copy());
+        res.push_back(mext.meta);
+    }
+    return res;
+}
+
 TEST_F_CORO(placeholder_extent_fixture, full_scan_test) {
     const int num_batches = 10;
     co_await add_random_batches(num_batches);
     produce_placeholders(true, 1);
-    auto underlying = make_underlying();
+    auto underlying = convert_placeholders(make_underlying());
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 100ms);
     retry_chain_logger logger(test_log, rtc, "placeholder_extent_reader_test");
@@ -83,7 +94,7 @@ ss::future<> test_aggregated_log_partial_scan(
           b.last_offset());
     }
 
-    auto underlying = fx->make_underlying();
+    auto underlying = convert_placeholders(fx->make_underlying());
 
     ss::abort_source as;
     retry_chain_node rtc(as, 1s, 100ms);

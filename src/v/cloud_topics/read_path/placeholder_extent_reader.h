@@ -12,6 +12,7 @@
 
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
+#include "cloud_topics/extent_meta.h"
 #include "model/record_batch_reader.h"
 #include "storage/log_reader.h"
 
@@ -27,14 +28,14 @@ namespace experimental::cloud_topics {
 ///
 /// \param cfg is a log reader config
 /// \param bucket is a cloud storage bucket
-/// \param underlying is a reader that returns dl_placeholder batches
+/// \param query is an array of extent_meta objects
 /// \param api is a cloud_io::remote instance
 /// \param cache is a cloud storage cache instance
 /// \param rtc is a retry chain node to use
 /// \param rtc_logger is a logger that should track the progress
 ss::future<ss::circular_buffer<model::record_batch>> materialize_placeholders(
   cloud_storage_clients::bucket_name bucket,
-  ss::circular_buffer<model::record_batch> underlying,
+  ss::circular_buffer<extent_meta> query,
   cloud_io::remote_api<ss::lowres_clock>& api,
   cloud_io::basic_cache_service_api<ss::lowres_clock>& cache,
   retry_chain_node& rtc,
