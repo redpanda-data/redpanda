@@ -3316,19 +3316,19 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           run->meta.size_bytes,
           run->meta.committed_offset);
         collector.collect_segments();
-        auto candidate = co_await collector.make_upload_candidate_stream(
-          _conf->segment_upload_timeout());
+        auto candidate = co_await collector.make_segment_upload_stream(
+          _parent, _conf->segment_upload_timeout(), _gate);
 
-        co_return ss::visit(
+        co_return co_await ss::visit(
           candidate,
-          [](std::monostate) -> find_reupload_candidate_result {
+          [](std::monostate) -> ss::future<find_reupload_candidate_result> {
               vassert(
                 false,
                 "unexpected default re-upload candidate creation result");
           },
           [this, &run, &rw_fence, units = std::move(units)](
             segment_collector_stream& collector_stream) mutable
-            -> find_reupload_candidate_result {
+            -> ss::future<find_reupload_candidate_result> {
               if (
                 collector_stream.size != run->meta.size_bytes
                 || collector_stream.start_offset != run->meta.base_offset
@@ -3339,32 +3339,36 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                     "candidate: {} run: {}",
                     collector_stream,
                     run->meta);
-                  return {};
+                  return collector_stream.close().then([]() {
+                      return ss::make_ready_future<
+                        find_reupload_candidate_result>();
+                  });
               }
-              return {
-                .units = std::move(units),
-                .upload_stream = std::move(collector_stream),
-                .read_write_fence = rw_fence};
+              return ss::make_ready_future<find_reupload_candidate_result>(
+                find_reupload_candidate_result{
+                  .units = std::move(units),
+                  .upload_stream = std::move(collector_stream),
+                  .read_write_fence = rw_fence});
           },
-          [this](
-            skip_offset_range& skip_offsets) -> find_reupload_candidate_result {
+          [this](skip_offset_range& skip_offsets)
+            -> ss::future<find_reupload_candidate_result> {
               const auto log_level = log_level_for_error(skip_offsets.reason);
               vlogl(
                 _rtclog,
                 log_level,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
-              return {};
+              return ss::make_ready_future<find_reupload_candidate_result>();
           },
-          [this](
-            candidate_creation_error& error) -> find_reupload_candidate_result {
+          [this](candidate_creation_error& error)
+            -> ss::future<find_reupload_candidate_result> {
               const auto log_level = log_level_for_error(error);
               vlogl(
                 _rtclog,
                 log_level,
                 "Failed to make reupload candidate: {}",
                 error);
-              return {};
+              return ss::make_ready_future<find_reupload_candidate_result>();
           });
     }
     // OTHERWISE WE'RE REUPLOADING REMOTE SEGMENTS
