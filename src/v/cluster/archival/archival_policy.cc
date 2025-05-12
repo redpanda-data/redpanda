@@ -98,8 +98,9 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
     if (_upload_limit) {
         _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
     }
-    co_return co_await segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+
+    co_return co_await segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
 }
 
 ss::future<segment_collector_stream_result>
@@ -128,8 +129,8 @@ archival_policy::get_next_compacted_segment(
         co_return candidate_creation_error::cannot_replace_manifest_entry;
     }
 
-    co_return co_await compacted_segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+    co_return co_await compacted_segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
 }
 
 } // namespace archival
