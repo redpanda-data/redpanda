@@ -9,7 +9,9 @@
 
 #include "storage/lock_manager.h"
 
+#include "container/fragmented_vector.h"
 #include "model/offset_interval.h"
+#include "ssx/when_all.h"
 #include "storage/segment.h"
 
 #include <seastar/core/future-util.hh>
@@ -24,14 +26,16 @@ static ss::future<std::unique_ptr<lock_manager::lease>>
 range(segment_set::underlying_t segs) {
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
-    std::vector<ss::future<ss::rwlock::holder>> dispatch;
-    dispatch.reserve(ctx->range.size());
+
+    chunked_vector<ss::future<ss::rwlock::holder>> dispatch;
     for (auto& s : ctx->range) {
-        dispatch.emplace_back(s->read_lock());
+        dispatch.push_back(s->read_lock());
     }
-    return ss::when_all_succeed(dispatch.begin(), dispatch.end())
+
+    return ssx::when_all_succeed<chunked_vector<ss::rwlock::holder>>(
+             std::move(dispatch))
       .then(
-        [ctx = std::move(ctx)](std::vector<ss::rwlock::holder> lks) mutable {
+        [ctx = std::move(ctx)](chunked_vector<ss::rwlock::holder> lks) mutable {
             ctx->locks = std::move(lks);
             return std::move(ctx);
         });
