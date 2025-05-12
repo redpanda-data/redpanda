@@ -169,6 +169,7 @@ class KgoVerifierService(Service):
         # Check that the PID we just launched is still running as a confirmation
         # that it is the one.
         self._assert_running(node)
+        self._stopped = False
 
     def _await_ready(self, node):
         """
@@ -199,9 +200,13 @@ class KgoVerifierService(Service):
         node.account.ssh_output(f"ps -p {self._pid}", allow_fail=False)
 
     def stop_node(self, node, **kwargs):
+        error = None
         if self._status_thread:
             self._status_thread.stop()
-            self._status_thread.raise_on_error()
+            try:
+                self._status_thread.raise_on_error()
+            except Exception as e:
+                error = e
             self._status_thread = None
             # Record that we just stopped, so that we can't wait() after.
             # This is done inside this if statement because stop_node() is also
@@ -223,6 +228,8 @@ class KgoVerifierService(Service):
 
         self._pid = None
         self._release_port()
+        if error:
+            raise error
 
     def clean_node(self, node: ClusterNode):
         self._redpanda.logger.info(f"{self.__class__.__name__}.clean_node")
@@ -726,7 +733,6 @@ class KgoVerifierProducer(KgoVerifierService):
             cmd += " --validate-latest-values"
 
         self.spawn(cmd, node)
-
         self._status_thread = StatusThread(self, node, ProduceStatus)
         self._status_thread.start()
 
