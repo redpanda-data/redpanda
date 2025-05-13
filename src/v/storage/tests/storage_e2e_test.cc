@@ -1807,8 +1807,9 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
 
     // There are 4 segments, and the last is the active segments. The first two
     // will merge, and the third will be compacted but not merged.
+
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
+    BOOST_REQUIRE_EQUAL(log->segment_count(), 3);
 
     // Check if it honors max_compactible offset by resetting it to the base
     // offset of first segment. Nothing should be compacted.
@@ -1816,13 +1817,11 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     c_cfg.compact.max_collectible_offset
       = first_segment_offsets.get_base_offset();
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(log->segment_count(), 4);
-
-    // The segment count will be reduced again.
-    c_cfg.compact.max_collectible_offset = model::offset::max();
-    log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 3);
 
+    // Now compact without restricting collectible offset. The segment count
+    // will be reduced again.
+    c_cfg.compact.max_collectible_offset = model::offset::max();
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(log->segment_count(), 2);
 
@@ -1874,9 +1873,6 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
       as);
 
     // compact all the individual segments
-    log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
-
     // the two segments with term 2 can be combined
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
@@ -1948,21 +1944,15 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
       as);
 
     // self compaction steps
-    log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
-
     // the first two segments are combined 2+2=4 < 6 MB
     log->housekeeping(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
 
     // the new first and second are too big 4+5 > 6 MB but the second and third
     // can be combined 5 + 15KB < 6 MB
-    log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
-
     // then the next 16 KB can be folded in
     log->housekeeping(c_cfg).get0();
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
 
     // that's all that can be done. the next seg is an appender
     log->housekeeping(c_cfg).get0();
@@ -2227,16 +2217,16 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
     // self compaction steps
     log->housekeeping(c_cfg).get0();
 
-    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
     auto new_backlog_size = log->compaction_backlog();
     /**
      * after all self segments are compacted they shouldn't be included into the
      * backlog (only last segment is since it has appender and isn't self
      * compacted)
      */
-    BOOST_REQUIRE_EQUAL(
+    BOOST_REQUIRE_LT(
       new_backlog_size,
-      backlog_size - self_seg_compaction_sz + segments[4]->size_bytes());
+      backlog_size - self_seg_compaction_sz + segments[3]->size_bytes());
 }
 
 FIXTURE_TEST(not_compacted_log_backlog, storage_test_fixture) {

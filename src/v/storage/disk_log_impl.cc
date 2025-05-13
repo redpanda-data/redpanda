@@ -1262,24 +1262,28 @@ ss::future<> disk_log_impl::do_compact(
         std::rethrow_exception(eptr);
     }
     bool compacted = did_compact_fut.get();
-    if (!compacted) {
-        if (auto range = find_compaction_range(compact_cfg); range) {
-            auto r = co_await compact_adjacent_segments(
-              std::move(*range), compact_cfg);
-            vlog(
-              gclog.debug,
-              "Adjacent segments of {}, compaction result: {}",
-              config().ntp(),
-              r);
-            if (r.did_compact()) {
-                _compaction_ratio.update(r.compaction_ratio());
-            }
-        } else {
-            vlog(
-              gclog.debug,
-              "Adjacent segments of {}, no adjacent pair",
-              config().ntp());
+    vlog(
+      gclog.debug,
+      "Sliding compaction of {} did {}compact data, proceeding to adjacent "
+      "segment compaction",
+      config().ntp(),
+      compacted ? "" : "not ");
+    if (auto range = find_compaction_range(compact_cfg); range) {
+        auto r = co_await compact_adjacent_segments(
+          std::move(*range), compact_cfg);
+        vlog(
+          gclog.debug,
+          "Adjacent segments of {}, compaction result: {}",
+          config().ntp(),
+          r);
+        if (r.did_compact()) {
+            _compaction_ratio.update(r.compaction_ratio());
         }
+    } else {
+        vlog(
+          gclog.debug,
+          "Adjacent segments of {}, no adjacent pair",
+          config().ntp());
     }
 }
 

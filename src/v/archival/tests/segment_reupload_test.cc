@@ -832,6 +832,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
 
     auto first = spec.segment_starts.begin();
     auto second = std::next(first);
+    // Segment boundaries: [5, 14][15, 24][25, 34][35, 50]...
     for (; second != spec.segment_starts.end(); ++first, ++second) {
         b | storage::add_segment(*first);
         for (auto curr_offset = *first; curr_offset < *second; ++curr_offset) {
@@ -843,19 +844,18 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
               .get();
         }
         auto seg = b.get_log_segments().back();
-        seg->appender().close().get();
-        seg->release_appender().get();
+        seg->release_appender(&b.get_disk_log_impl().readers()).get();
     }
 
     b | storage::add_segment(*first)
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
-    // Compaction will rewrite each segment.
+    // Compaction will rewrite each segment, and merge the first two.
+    // Segment boundaries: [5, 24][25, 34][35, 50]...
     b.gc(model::timestamp::max(), std::nullopt).get();
 
     size_t max_size = b.get_segment(0).size_bytes()
-                      + b.get_segment(1).size_bytes()
-                      + b.get_segment(2).size_bytes();
+                      + b.get_segment(1).size_bytes();
     archival::segment_collector collector{
       model::offset{5}, m, b.get_disk_log_impl(), max_size};
 
@@ -868,6 +868,8 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
           ss::default_priority_class(), segment_lock_timeout)
         .get());
 
+    // The upload candidate should align with the manifest's segment
+    // boundaries.
     auto upload_candidate = upload_with_locks.candidate;
     BOOST_REQUIRE(!upload_candidate.sources.empty());
     BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
@@ -885,7 +887,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     BOOST_REQUIRE_EQUAL(
       expected_content_length, upload_candidate.content_length);
 
-    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
+    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 2);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {

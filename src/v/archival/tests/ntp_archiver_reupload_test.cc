@@ -230,7 +230,6 @@ struct reupload_fixture : public archiver_fixture {
     ss::lw_shared_ptr<storage::segment> run_disk_log_housekeeping(
       model::offset max_collectible = model::offset::max()) {
         auto& seg_set = disk_log_impl()->segments();
-        auto size_before = seg_set.size();
 
         disk_log_impl()
           ->housekeeping(storage::housekeeping_config{
@@ -240,13 +239,6 @@ struct reupload_fixture : public archiver_fixture {
             ss::default_priority_class(),
             abort_source})
           .get();
-
-        auto size_after = seg_set.size();
-
-        // We are only looking to trigger self-compaction here.
-        // If the segment count reduced, adjacent segment compaction must
-        // have occurred.
-        BOOST_REQUIRE_EQUAL(size_before, size_after);
 
         ss::lw_shared_ptr<storage::segment> last_compacted_segment;
         for (auto& i : seg_set) {
@@ -447,11 +439,11 @@ FIXTURE_TEST(
     std::stringstream st;
     stm_manifest.serialize_json(st);
     vlog(test_log.debug, "manifest: {}", st.str());
-    verify_segment_request("500-1-v1.log", stm_manifest);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{999});
     auto replaced = stm_manifest.replaced_segments();
+    BOOST_REQUIRE_EQUAL(replaced.size(), 1);
     BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{500});
 }
 
