@@ -69,7 +69,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
     def test_upload(self, cloud_storage_type):
         # Set compaction to happen infrequently initially, so we have several log segments.
         self._rpk_client.cluster_config_set("log_compaction_interval_ms",
-                                            f'{1000 * 60 * 60}')
+                                            f'{1000 * 60 * 59}')
 
         # observe this metric about compaction removed bytes to check that it increases
         metric = "vectorized_ntp_archiver_compacted_replaced_bytes"
