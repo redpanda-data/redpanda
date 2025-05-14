@@ -877,6 +877,14 @@ bulk_force_reconfiguration_cmd_data::bulk_force_reconfiguration_cmd_data(
     user_approved_force_recovery_partitions
       = other.user_approved_force_recovery_partitions.copy();
 }
+
+std::ostream&
+operator<<(std::ostream& o, const cluster::feature_update_cmd_data& r) {
+    fmt::print(
+      o, "{{logical_version: {}, actions: {}}}", r.logical_version, r.actions);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
