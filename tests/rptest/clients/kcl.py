@@ -324,6 +324,10 @@ class KCL:
                 if has_partition_err(l, "UNKNOWN_TOPIC_OR_PARTITION"):
                     return False
 
+                # A concurrent reassignment may be triggered by partition_balancer
+                if has_partition_err(l, "REASSIGNMENT_IN_PROGRESS"):
+                    return False
+
             return True
 
         wait_until(do_alter_partitions,
