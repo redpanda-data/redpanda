@@ -29,6 +29,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/panda_link.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
@@ -3521,6 +3522,68 @@ struct set_partition_shard_reply
       const set_partition_shard_reply&, const set_partition_shard_reply&)
       = default;
 
+    auto serde_fields() { return std::tie(ec); }
+};
+
+struct upsert_panda_link_request
+  : serde::envelope<
+      upsert_panda_link_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::panda_link_metadata panda_link;
+    model::timeout_clock::duration timeout{};
+
+    friend bool operator==(
+      const upsert_panda_link_request&, const upsert_panda_link_request&)
+      = default;
+    auto serde_fields() { return std::tie(panda_link, timeout); }
+};
+
+struct upsert_panda_link_response
+  : serde::envelope<
+      upsert_panda_link_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    errc ec;
+    model::panda_link_id panda_link_id;
+
+    friend bool operator==(
+      const upsert_panda_link_response&, const upsert_panda_link_response&)
+      = default;
+    auto serde_fields() { return std::tie(ec, panda_link_id); }
+};
+
+struct remove_panda_link_request
+  : serde::envelope<
+      remove_panda_link_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::panda_link_name name;
+    model::timeout_clock::duration timeout{};
+    friend bool operator==(
+      const remove_panda_link_request&, const remove_panda_link_request&)
+      = default;
+    auto serde_fields() { return std::tie(name, timeout); }
+};
+
+struct remove_panda_link_response
+  : serde::envelope<
+      remove_panda_link_response,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    errc ec;
+
+    friend bool operator==(
+      const remove_panda_link_response&, const remove_panda_link_response&)
+      = default;
     auto serde_fields() { return std::tie(ec); }
 };
 
