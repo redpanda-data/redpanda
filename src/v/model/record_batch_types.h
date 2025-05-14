@@ -59,7 +59,8 @@ enum class record_batch_type : int8_t {
     dl_placeholder = 36,       // placeholder batch type used by cloud topics
     dl_stm_command = 37,       // dl_stm command batch
     datalake_translation_state = 38, // maintains state for translation progress
-    MAX = datalake_translation_state,
+    panda_link_update = 39,          // panda link update
+    MAX = panda_link_update,
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
