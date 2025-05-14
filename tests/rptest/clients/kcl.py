@@ -16,6 +16,7 @@ import subprocess
 import time
 import itertools
 from typing import Optional
+from functools import cache
 from ducktape.utils.util import wait_until
 from rptest.utils.functional import flat_map
 
@@ -284,15 +285,15 @@ class KCL:
             reassignment_str += join_partitions
             cmd.append(reassignment_str)
 
-        no_broker_re = re.compile(
-            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +BROKER_NOT_AVAILABLE.*$"
-        )
-        bad_rep_factor_re = re.compile(
-            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +INVALID_REPLICATION_FACTOR.*$"
-        )
-        unknown_tp_re = re.compile(
-            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +UNKNOWN_TOPIC_OR_PARTITION:.*$"
-        )
+        @cache
+        def make_partition_err_re(err_str):
+            return re.compile(
+                rf"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +{re.escape(err_str)}.*$"
+            )
+
+        def has_partition_err(line, err):
+            re = make_partition_err_re(err)
+            return re.match(line) is not None
 
         lines = None
 
@@ -306,24 +307,21 @@ class KCL:
                 l = l.strip()
                 self._redpanda.logger.debug(l)
 
-                m = no_broker_re.match(l)
                 # No broker available means the partition did not find any eligible allocation nodes.
                 # See the map from cluster errors to kafka errors in kafka::map_topic_error_code()
-                if m is not None:
+                if has_partition_err(l, "BROKER_NOT_AVAILABLE"):
                     raise RuntimeError('No eligible allocation nodes')
 
                 # Invalid replication factor means the number of replicas for one (or more) partitions
                 # in a request does not match the replication factor for the topic.
-                m = bad_rep_factor_re.match(l)
-                if m is not None:
+                if has_partition_err(l, "INVALID_REPLICATION_FACTOR"):
                     raise RuntimeError(
                         'Number of replicas != topic replication factor')
 
                 # RP may report that the topic does not exist, this can
                 # happen when the recieving broker has out-of-date metadata. So
                 # retry the request.
-                m = unknown_tp_re.match(l)
-                if m is not None:
+                if has_partition_err(l, "UNKNOWN_TOPIC_OR_PARTITION"):
                     return False
 
             return True
