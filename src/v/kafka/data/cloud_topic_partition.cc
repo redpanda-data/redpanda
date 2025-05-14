@@ -121,6 +121,21 @@ static placeholder_batches_with_size convert_to_placeholders(
     }
     return result;
 }
+
+// materialized_extent make_placeholder_extent(model::record_batch batch) {
+//     materialized_extent e;
+//     e.base_offset = batch.base_offset();
+//     iobuf payload = std::move(batch).release_data();
+//     iobuf_parser parser(std::move(payload));
+//     auto record = model::parse_one_record_from_buffer(parser);
+//     iobuf value = std::move(record).release_value();
+//     e.placeholder = serde::from_iobuf<dl_placeholder>(std::move(value));
+
+//     e.object = ss::make_lw_shared<hydrated_L0_object>({
+//       .id = e.placeholder.id,
+//     });
+//     return e;
+// }
 } // namespace
 
 cloud_topic_partition::cloud_topic_partition(
@@ -251,13 +266,36 @@ ss::future<storage::translating_reader> cloud_topic_partition::make_reader(
     auto placeholders = co_await model::consume_reader_to_memory(
       std::move(underlying), model::no_timeout);
 
+    // TODO: convert to a extent_meta
+    auto extents = [ph = std::move(placeholders)]() mutable {
+        ss::circular_buffer<experimental::cloud_topics::extent_meta> res;
+        for (auto&& batch : ph) {
+            experimental::cloud_topics::extent_meta e{
+              .base_offset = model::offset_cast(batch.base_offset()),
+              .committed_offset = model::offset_cast(batch.last_offset()),
+            };
+            iobuf payload = std::move(batch).release_data();
+            iobuf_parser parser(std::move(payload));
+            auto record = model::parse_one_record_from_buffer(parser);
+            iobuf value = std::move(record).release_value();
+            auto placeholder
+              = serde::from_iobuf<experimental::cloud_topics::dl_placeholder>(
+                std::move(value));
+            e.id = placeholder.id;
+            e.first_byte_offset = placeholder.offset;
+            e.byte_range_size = placeholder.size_bytes;
+            res.push_back(e);
+        }
+        return res;
+    }();
+
     // This part comprises the data plane query. The 'cloud_topics::api' is
     // responsible for moving the data from the cloud storage to the local
     // cache.
     auto data_batches = co_await _ct_api->materialize(
       ntp(),
       cfg.max_bytes,
-      std::move(placeholders),
+      std::move(extents),
       // TODO: use configurable default timeout or derive from the log reader
       // config
       10s);
