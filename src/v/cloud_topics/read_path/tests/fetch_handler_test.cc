@@ -35,6 +35,17 @@ namespace cloud_topics = experimental::cloud_topics;
 
 ss::logger test_log("L0_fetch_handler_test");
 
+struct ss::circular_buffer<cloud_topics::extent_meta>
+convert_placeholders(const ss::circular_buffer<model::record_batch>& batches) {
+    ss::circular_buffer<cloud_topics::extent_meta> res;
+    for (const auto& b : batches) {
+        auto mext = placeholder_extent_fixture::make_placeholder_extent(
+          b.copy());
+        res.push_back(mext.meta);
+    }
+    return res;
+}
+
 TEST_F_CORO(placeholder_extent_fixture, l0_fetch_handler_test) {
     const int num_batches = 1;
     co_await add_random_batches(num_batches);
@@ -42,7 +53,7 @@ TEST_F_CORO(placeholder_extent_fixture, l0_fetch_handler_test) {
 
     auto ntp = model::controller_ntp;
 
-    auto underlying = make_underlying();
+    auto underlying = convert_placeholders(make_underlying());
 
     cloud_topics::core::read_pipeline<> pipeline;
 
