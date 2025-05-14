@@ -46,7 +46,7 @@ public:
     materialize(
       model::ntp ntp,
       size_t output_size_estimate,
-      ss::circular_buffer<model::record_batch> metadata,
+      ss::circular_buffer<extent_meta> metadata,
       std::chrono::milliseconds timeout)
       = 0;
 };

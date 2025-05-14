@@ -87,7 +87,7 @@ public:
     ss::future<result<ss::circular_buffer<model::record_batch>>> materialize(
       model::ntp ntp,
       size_t output_size_estimate,
-      ss::circular_buffer<model::record_batch> metadata,
+      ss::circular_buffer<extent_meta> metadata,
       std::chrono::milliseconds timeout) override {
         auto res = co_await _read_pipeline->make_reader(
           ntp,
