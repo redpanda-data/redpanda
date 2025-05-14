@@ -16,6 +16,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/panda_link.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/transform.h"
@@ -148,6 +149,10 @@ inline constexpr int8_t alter_quotas_delta_cmd_type = 0;
 inline constexpr int8_t create_data_migration_cmd_type = 0;
 inline constexpr int8_t update_data_migration_state_cmd_type = 1;
 inline constexpr int8_t remove_data_migration_cmd_type = 2;
+
+// panda link commands
+inline constexpr int8_t panda_link_upsert_cmd_type = 0;
+inline constexpr int8_t panda_link_remove_cmd_type = 1;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -440,6 +445,20 @@ using remove_data_migration_cmd = controller_command<
   data_migrations::remove_migration_cmd_data,
   remove_data_migration_cmd_type,
   model::record_batch_type::data_migration_cmd>;
+
+using panda_link_upsert_cmd = controller_command<
+  int8_t, // unused
+  model::panda_link_metadata,
+  panda_link_upsert_cmd_type,
+  model::record_batch_type::panda_link_update,
+  serde_opts::serde_only>;
+
+using panda_link_remove_cmd = controller_command<
+  model::panda_link_name,
+  int8_t, // unused
+  panda_link_remove_cmd_type,
+  model::record_batch_type::panda_link_update,
+  serde_opts::serde_only>;
 
 // typelist utils
 template<typename T>
