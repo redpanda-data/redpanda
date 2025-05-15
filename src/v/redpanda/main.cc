@@ -15,7 +15,7 @@ application* app;
 }
 
 int main(int argc, char** argv, char** /*env*/) {
-    // must be the first thing called
+    // this must be the first thing called
     syschecks::initialize_intrinsics();
     application app;
     debug::app = &app;
