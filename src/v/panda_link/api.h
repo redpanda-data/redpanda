@@ -11,9 +11,12 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
+#include "model/panda_link.h"
+#include "panda_link/errc.h"
 #include "panda_link/fwd.h"
 #include "raft/fundamental.h"
 #include "raft/fwd.h"
@@ -41,6 +44,8 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+
+    ss::future<result<void>> create_link(model::panda_link_metadata);
 
 private:
     void register_notifications();

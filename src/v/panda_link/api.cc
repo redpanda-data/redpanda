@@ -13,11 +13,117 @@
 
 #include "cluster/panda_link_frontend.h"
 #include "cluster/partition_manager.h"
+#include "model/panda_link.h"
+#include "panda_link/errc.h"
 #include "panda_link/logger.h"
 #include "panda_link/manager.h"
 #include "raft/group_manager.h"
 
 namespace panda_link {
+
+namespace {
+error_info map_cluster_errc(cluster::errc ec) {
+    switch (ec) {
+    case cluster::errc::success:
+    case cluster::errc::notification_wait_timeout:
+    case cluster::errc::topic_invalid_partitions:
+    case cluster::errc::topic_invalid_replication_factor:
+    case cluster::errc::topic_invalid_config:
+    case cluster::errc::not_leader_controller:
+    case cluster::errc::topic_already_exists:
+    case cluster::errc::replication_error:
+    case cluster::errc::shutting_down:
+    case cluster::errc::no_leader_controller:
+    case cluster::errc::join_request_dispatch_error:
+    case cluster::errc::seed_servers_exhausted:
+    case cluster::errc::auto_create_topics_exception:
+    case cluster::errc::timeout:
+    case cluster::errc::topic_not_exists:
+    case cluster::errc::invalid_topic_name:
+    case cluster::errc::partition_not_exists:
+    case cluster::errc::not_leader:
+    case cluster::errc::partition_already_exists:
+    case cluster::errc::waiting_for_recovery:
+    case cluster::errc::waiting_for_reconfiguration_finish:
+    case cluster::errc::update_in_progress:
+    case cluster::errc::user_exists:
+    case cluster::errc::user_does_not_exist:
+    case cluster::errc::invalid_producer_epoch:
+    case cluster::errc::sequence_out_of_order:
+    case cluster::errc::generic_tx_error:
+    case cluster::errc::node_does_not_exists:
+    case cluster::errc::invalid_node_operation:
+    case cluster::errc::invalid_configuration_update:
+    case cluster::errc::topic_operation_error:
+    case cluster::errc::no_eligible_allocation_nodes:
+    case cluster::errc::allocation_error:
+    case cluster::errc::partition_configuration_revision_not_updated:
+    case cluster::errc::partition_configuration_in_joint_mode:
+    case cluster::errc::partition_configuration_leader_config_not_committed:
+    case cluster::errc::partition_configuration_differs:
+    case cluster::errc::data_policy_already_exists:
+    case cluster::errc::data_policy_not_exists:
+    case cluster::errc::source_topic_not_exists:
+    case cluster::errc::source_topic_still_in_use:
+    case cluster::errc::waiting_for_partition_shutdown:
+    case cluster::errc::error_collecting_health_report:
+    case cluster::errc::leadership_changed:
+    case cluster::errc::feature_disabled:
+    case cluster::errc::invalid_request:
+    case cluster::errc::no_update_in_progress:
+    case cluster::errc::unknown_update_interruption_error:
+    case cluster::errc::throttling_quota_exceeded:
+    case cluster::errc::cluster_already_exists:
+    case cluster::errc::no_partition_assignments:
+    case cluster::errc::failed_to_create_partition:
+    case cluster::errc::partition_operation_failed:
+    case cluster::errc::transform_does_not_exist:
+    case cluster::errc::transform_invalid_update:
+    case cluster::errc::transform_invalid_create:
+    case cluster::errc::transform_invalid_source:
+    case cluster::errc::transform_invalid_environment:
+    case cluster::errc::trackable_keys_limit_exceeded:
+    case cluster::errc::topic_disabled:
+    case cluster::errc::partition_disabled:
+    case cluster::errc::invalid_partition_operation:
+    case cluster::errc::concurrent_modification_error:
+    case cluster::errc::transform_count_limit_exceeded:
+    case cluster::errc::role_exists:
+    case cluster::errc::role_does_not_exist:
+    case cluster::errc::waiting_for_shard_placement_update:
+    case cluster::errc::topic_invalid_partitions_core_limit:
+    case cluster::errc::topic_invalid_partitions_memory_limit:
+    case cluster::errc::topic_invalid_partitions_fd_limit:
+    case cluster::errc::topic_invalid_partitions_decreased:
+    case cluster::errc::producer_ids_vcluster_limit_exceeded:
+    case cluster::errc::validation_of_recovery_topic_failed:
+    case cluster::errc::replica_does_not_exist:
+    case cluster::errc::invalid_data_migration_state:
+    case cluster::errc::data_migration_not_exists:
+    case cluster::errc::data_migration_already_exists:
+    case cluster::errc::data_migration_invalid_resources:
+    case cluster::errc::data_migration_invalid_definition:
+    case cluster::errc::data_migrations_disabled:
+    case cluster::errc::resource_is_being_migrated:
+    case cluster::errc::invalid_target_node_id:
+    case cluster::errc::topic_id_already_exists:
+        return {
+          errc::internal_server_error,
+          fmt::format(
+            "Panda link error: {}",
+            cluster::error_category().message(int(ec)))};
+    case cluster::errc::panda_link_does_not_exist:
+        return error_info{errc::panda_link_does_not_exist};
+    case cluster::errc::panda_link_invalid_create:
+    case cluster::errc::panda_link_invalid_update:
+        return error_info{errc::invalid_configuration};
+        break;
+    }
+}
+} // namespace
+
+using model::panda_link_metadata;
+
 class link_registry_adapter : public link_registry {
 public:
     explicit link_registry_adapter(cluster::panda_link_frontend* pl_frontend)
@@ -73,6 +179,26 @@ ss::future<> service::stop() {
         co_await _manager->stop();
     }
     vlog(pllog.info, "Panda link service stopped");
+}
+
+ss::future<result<void>> service::create_link(panda_link_metadata meta) {
+    auto _ = _gate.hold();
+    vlog(pllog.info, "Attempting to create panda link: {}", meta);
+    auto exists = _pl_frontend->local().lookup_panda_link(meta.name);
+    if (exists) {
+        co_return error_info(
+          errc::panda_link_already_exists,
+          fmt::format("Panda link '{}' already exists", meta.name));
+    }
+    auto uuid = uuid_t::create();
+
+    meta.uuid = uuid;
+    auto ec = co_await _pl_frontend->local().upsert_panda_link(
+      std::move(meta), model::timeout_clock::now() + 5s);
+    if (ec.ec != cluster::errc::success) {
+        co_return map_cluster_errc(ec.ec);
+    }
+    co_return outcome::success();
 }
 
 void service::register_notifications() {
