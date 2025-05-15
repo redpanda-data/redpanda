@@ -19,6 +19,7 @@
 
 namespace cluster {
 
+using model::panda_link_id;
 using model::panda_link_metadata;
 using model::panda_link_name;
 using mutation_result = panda_link_frontend::mutation_result;
@@ -86,6 +87,15 @@ panda_link_frontend::register_for_updates(notification_callback cb) {
 
 void panda_link_frontend::unregister_for_updates(notification_id id) {
     _table->unregister_for_updates(id);
+}
+
+std::optional<panda_link_metadata>
+panda_link_frontend::lookup_panda_link(const panda_link_name& name) const {
+    return _table->find_by_name(name);
+}
+std::optional<panda_link_metadata>
+panda_link_frontend::lookup_panda_link(panda_link_id id) const {
+    return _table->find_by_id(id);
 }
 
 ss::future<mutation_result> panda_link_frontend::do_mutation(

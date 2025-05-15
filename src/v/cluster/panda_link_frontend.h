@@ -49,6 +49,11 @@ public:
     notification_id register_for_updates(notification_callback);
     void unregister_for_updates(notification_id);
 
+    std::optional<model::panda_link_metadata>
+    lookup_panda_link(const model::panda_link_name&) const;
+    std::optional<model::panda_link_metadata>
+      lookup_panda_link(model::panda_link_id) const;
+
 private:
     ss::future<mutation_result>
       do_mutation(panda_link_cmd, model::timeout_clock::time_point);
