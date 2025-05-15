@@ -50,6 +50,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -6358,5 +6359,67 @@ TEST_F(storage_test_fixture, segment_cached_disk_usage_set_after_compaction) {
                 check_cached_sizes(s);
             }
         }
+    }
+}
+
+TEST_F(storage_test_fixture, test_get_file_offset_lock_precheck) {
+    // - Generate a few segments
+    // - Acquire read locks from each (simulating internals of
+    //   offset_range_size)
+    // - Queue up a write lock behind one of them, in the background
+    // - Then call get_file_offset on that segment
+    // - get_file_offset  should throw ss::semaphore_timed_out
+
+    constexpr size_t num_segments = 5;
+    ss::gate gate{};
+
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+
+    {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        f_locks.reserve(segments.size());
+        for (auto& s : segments) {
+            f_locks.emplace_back(s->read_lock());
+        }
+
+        auto seg = *std::next(segments.begin(), num_segments / 2);
+
+        ssx::spawn_with_gate(gate, [seg] {
+            return seg->write_lock().then([](auto) { return ss::now(); });
+        });
+
+        EXPECT_THROW(
+          dynamic_cast<storage::disk_log_impl*>(log.get())
+            ->get_file_offset(
+              seg,
+              std::nullopt,
+              seg->offsets().get_committed_offset(),
+              storage::boundary_type::exclusive)
+            .get(),
+          ss::timed_out_error);
     }
 }

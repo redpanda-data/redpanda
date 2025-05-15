@@ -2412,8 +2412,19 @@ auto disk_log_impl::get_file_offset(
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
 
+    auto lock = co_await s->try_read_lock();
+
+    if (!lock.has_value()) {
+        vlog(
+          stlog.debug,
+          "{}: Something prevented access to the segment's read lock. "
+          "aborting...",
+          config().ntp());
+        throw ss::semaphore_timed_out();
+    }
+
     auto reader = model::make_record_batch_reader<single_segment_reader>(
-      s, co_await s->read_lock(), reader_cfg, *_probe);
+      s, std::move(lock).value(), reader_cfg, *_probe);
 
     try {
         co_await std::move(reader).consume(acc, model::no_timeout);
