@@ -181,7 +181,11 @@ public:
     /// The 'first' offset should be the first offset of the batch. The 'last'
     /// should be the last offset of the batch. The offset range is inclusive.
     virtual ss::future<std::optional<offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) = 0;
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max())
+      = 0;
 
     /// Find the offset range based on size requirements
     ///

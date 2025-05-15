@@ -6423,3 +6423,60 @@ TEST_F(storage_test_fixture, test_get_file_offset_lock_precheck) {
           ss::timed_out_error);
     }
 }
+
+TEST_F(storage_test_fixture, test_offset_range_size_lock_timeout) {
+    // similar to above, offset_range_size should time out in this scenario if
+    // we provide a sensible deadline
+
+    constexpr size_t num_segments = 5;
+    ss::gate gate{};
+
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+
+    {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        f_locks.reserve(segments.size());
+        for (auto& s : segments) {
+            f_locks.emplace_back(s->read_lock());
+        }
+
+        auto seg = *std::next(segments.begin(), num_segments / 2);
+
+        ssx::spawn_with_gate(gate, [seg] {
+            return seg->write_lock().then([](auto) { return ss::now(); });
+        });
+
+        EXPECT_THROW(
+          log
+            ->offset_range_size(
+              seg->offsets().get_base_offset(),
+              seg->offsets().get_committed_offset(),
+              ss::semaphore::clock::now() + 1s)
+            .get(),
+          ss::timed_out_error);
+    }
+}

@@ -96,7 +96,10 @@ public:
     uint64_t size_bytes_after_offset(model::offset o) const final;
 
     ss::future<std::optional<storage::log::offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) final;
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout) final;
 
     ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
       model::offset first, offset_range_size_requirements_t target) final;
