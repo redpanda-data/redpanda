@@ -27,6 +27,7 @@ class log_eviction_stm;
 class tx_coordinator_mapper;
 class tx_gateway_frontend;
 class panda_link_backend;
+class panda_link_frontend;
 class panda_link_table;
 class partition_leaders_table;
 class partition_allocator;
