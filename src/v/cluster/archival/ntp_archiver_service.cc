@@ -1688,7 +1688,13 @@ auto ntp_archiver::do_schedule_single_upload_streaming(
   segment_upload_kind upload_kind) -> ss::future<scheduled_upload> {
     auto sname = segment_name_for_stream(strm, start_term);
     auto meta = convert_segment_meta(strm, _parent, _rev, start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
+    auto aborted_fut = co_await ss::coroutine::as_future(
+      get_aborted_transactions(strm, sname));
+    if (aborted_fut.failed()) {
+        co_await strm.close();
+        co_await ss::make_exception_future(aborted_fut.get_exception());
+    }
+    auto [tx_ranges, tx_size] = aborted_fut.get();
     meta.metadata_size_hint = tx_size;
 
     vlog(
@@ -3392,6 +3398,7 @@ ss::future<bool> ntp_archiver::upload(
           std::move(find_res.upload_stream).value(),
           source_rtc);
     }
+    co_await find_res.upload_stream.value().close();
     // Currently, the uploading of remote segments is disabled and
     // the only reason why the list of locks is empty is truncation.
     // The log could be truncated right after we scanned the manifest to
@@ -3405,32 +3412,36 @@ ss::future<bool> ntp_archiver::do_upload_local(
   segment_collector_stream strm,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     if (!may_begin_uploads()) {
+        co_await strm.close();
         co_return false;
     }
     if (!config::shard_local_cfg().cloud_storage_enable_segment_uploads()) {
+        co_await strm.close();
         co_return false;
     }
 
     auto sname = segment_name_for_stream(strm);
 
     if (strm.is_compacted) {
-        vlog(
-          _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
-          sname);
+        vlog(_rtclog.warn, "Unexpected compacted upload for {}", sname);
+        co_await strm.close();
         co_return false;
     }
 
     if (strm.size == 0) {
-        vlog(
-          _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
-          sname);
+        vlog(_rtclog.warn, "Unexpected empty stream for {}", sname);
+        co_await strm.close();
         co_return false;
     }
 
     auto meta = convert_segment_meta(strm, _parent, _rev, _start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
+    auto aborted_fut = co_await ss::coroutine::as_future(
+      get_aborted_transactions(strm, sname));
+    if (aborted_fut.failed()) {
+        co_await strm.close();
+        co_await ss::make_exception_future(aborted_fut.get_exception());
+    }
+    auto [tx_ranges, tx_size] = aborted_fut.get();
     meta.metadata_size_hint = tx_size;
     vlog(
       _rtclog.debug,
