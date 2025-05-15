@@ -99,6 +99,9 @@ enum class errc : int16_t {
     resource_is_being_migrated,
     invalid_target_node_id,
     topic_id_already_exists,
+    panda_link_does_not_exist,
+    panda_link_invalid_create,
+    panda_link_invalid_update,
 };
 
 std::ostream& operator<<(std::ostream& o, errc err);
@@ -291,6 +294,12 @@ struct errc_category final : public std::error_category {
             return "Request was intended for the node with different node id";
         case errc::topic_id_already_exists:
             return "A topic with the given id already exists";
+        case errc::panda_link_does_not_exist:
+            return "Panda link does not exist";
+        case errc::panda_link_invalid_create:
+            return "Invalid create panda link configuration";
+        case errc::panda_link_invalid_update:
+            return "Invalid update panda link configuration";
         }
         return "cluster::errc::unknown";
     }
