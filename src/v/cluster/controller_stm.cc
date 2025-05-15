@@ -187,6 +187,8 @@ ss::future<> controller_stm::apply_snapshot(
           std::get<client_quota::backend&>(_state).apply_snapshot(
             offset, snapshot),
           std::get<data_migrations::migrations_table&>(_state).apply_snapshot(
+            offset, snapshot),
+          std::get<panda_link_backend&>(_state).apply_snapshot(
             offset, snapshot));
 
     } catch (const seastar::abort_requested_exception&) {

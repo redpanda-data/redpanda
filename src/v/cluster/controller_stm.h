@@ -18,6 +18,7 @@
 #include "cluster/controller_log_limiter.h"
 #include "cluster/data_migration_table.h"
 #include "cluster/feature_backend.h"
+#include "cluster/panda_link_backend.h"
 #include "cluster/plugin_backend.h"
 #include "cluster/security_manager.h"
 #include "cluster/topic_updates_dispatcher.h"
@@ -41,7 +42,8 @@ class controller_stm final
       plugin_backend,
       cluster_recovery_manager,
       client_quota::backend,
-      data_migrations::migrations_table> {
+      data_migrations::migrations_table,
+      panda_link_backend> {
 public:
     template<typename... Args>
     controller_stm(

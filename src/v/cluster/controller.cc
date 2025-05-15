@@ -53,6 +53,9 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/metrics_reporter.h"
 #include "cluster/node_status_table.h"
+#include "cluster/panda_link_backend.h"
+#include "cluster/panda_link_frontend.h"
+#include "cluster/panda_link_table.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
@@ -298,6 +301,9 @@ ss::future<> controller::start(
     co_await _quota_store.start();
     co_await _quota_backend.start_single(std::ref(_quota_store));
 
+    co_await _panda_link_table.start();
+    co_await _panda_link_backend.start_single(&_panda_link_table);
+
     co_await _config_frontend.start(
       std::ref(_stm),
       std::ref(_connections),
@@ -389,7 +395,8 @@ ss::future<> controller::start(
           std::ref(_plugin_backend),
           std::ref(_recovery_manager),
           std::ref(_quota_backend),
-          std::ref(_data_migration_table.local()));
+          std::ref(_data_migration_table.local()),
+          std::ref(_panda_link_backend));
     }
 
     co_await _members_frontend.start(
@@ -465,6 +472,16 @@ ss::future<> controller::start(
       std::ref(_connections),
       std::ref(_partition_leaders),
       std::ref(_as));
+
+    co_await _panda_link_frontend.start(
+      _raft0->self().id(),
+      ss::sharded_parameter([this] { return &_partition_leaders.local(); }),
+      ss::sharded_parameter([this] { return &_panda_link_table.local(); }),
+      ss::sharded_parameter([this] {
+          return _stm.local_is_initialized() ? &_stm.local() : nullptr;
+      }),
+      ss::sharded_parameter([this] { return &_connections.local(); }),
+      ss::sharded_parameter([this] { return &_as.local(); }));
 
     co_await _members_backend.start_single(
       std::ref(_tp_frontend),
@@ -900,6 +917,7 @@ ss::future<> controller::stop() {
     co_await _backend.stop();
     co_await _tp_frontend.stop();
     co_await _plugin_frontend.stop();
+    co_await _panda_link_frontend.stop();
     co_await _quota_frontend.stop();
     co_await _ephemeral_credential_frontend.stop();
     co_await _security_frontend.stop();
@@ -917,6 +935,8 @@ ss::future<> controller::stop() {
     co_await _tp_state.stop();
     co_await _members_manager.stop();
     co_await _stm.stop();
+    co_await _panda_link_backend.stop();
+    co_await _panda_link_table.stop();
     co_await _quota_backend.stop();
     co_await _quota_store.stop();
     co_await _plugin_backend.stop();
