@@ -121,6 +121,8 @@ struct segment_collector_stream {
 
     model::term_id term;
 
+    ss::future<> close() { co_await create_input_stream().close(); }
+
     friend std::ostream&
     operator<<(std::ostream& s, const segment_collector_stream&);
 };
