@@ -11,6 +11,7 @@
 
 #include "model/panda_link.h"
 
+#include "panda_link/api.h"
 #include "redpanda/admin/api-doc/panda_link.json.hh"
 #include "redpanda/admin/server.h"
 
@@ -258,6 +259,11 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_panda_link(
       .name = name.assume_value(),
       .connection = std::move(conn),
     };
+
+    auto ec = co_await _panda_link_service.local().create_link(std::move(meta));
+    if (ec.has_error()) {
+        co_return make_error_body(std::move(ec).assume_error(), std::move(rep));
+    }
 
     rep->set_status(ss::http::reply::status_type::created);
     co_return std::move(rep);

@@ -198,6 +198,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/features:enterprise_feature_messages",
+        "//src/v/panda_link",
     ],
     include_prefix = "redpanda/admin",
     visibility = ["//visibility:public"],
@@ -243,6 +244,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/panda_link:fwd",
         "//src/v/pandaproxy",
         "//src/v/pandaproxy:config",
         "//src/v/raft",

@@ -22,6 +22,7 @@
 #include "finjector/stress_fiber.h"
 #include "kafka/server/fwd.h"
 #include "model/metadata.h"
+#include "panda_link/fwd.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "redpanda/admin/debug_bundle.h"
@@ -95,7 +96,8 @@ public:
       std::unique_ptr<cluster::tx_manager_migrator>&,
       ss::sharded<kafka::server>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
-      ss::sharded<debug_bundle::service>&);
+      ss::sharded<debug_bundle::service>&,
+      ss::sharded<panda_link::service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -783,6 +785,7 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<debug_bundle::service>& _debug_bundle_service;
     ss::sharded<debug_bundle::file_handler> _debug_bundle_file_handler;
+    ss::sharded<panda_link::service>& _panda_link_service;
 
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
