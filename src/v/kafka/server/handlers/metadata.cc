@@ -92,6 +92,9 @@ std::optional<cluster::leader_term> get_leader_term(
      * cluster::topic_dispatcher before)
      */
     if (!leader_term) {
+        if (!md_cache.get_previous_leader_id(tp_ns, p_id).has_value()) {
+            return std::nullopt;
+        }
         leader_term.emplace(replicas[0], model::term_id(0));
         return leader_term;
     }
@@ -149,6 +152,9 @@ metadata_response::topic make_topic_response_from_topic_metadata(
         p.partition_index = p_as.id;
         p.leader_id = no_leader;
         auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
+        if (!lt) {
+            continue;
+        }
         if (lt && !is_node_isolated && p.error_code == error_code::none) {
             p.leader_id = lt->leader.value_or(no_leader);
             p.leader_epoch = leader_epoch_from_term(lt->term);
@@ -293,8 +299,11 @@ get_topic_metadata(
                   authz_quiet{true})) {
                 continue;
             }
-            res.push_back(
-              make_topic_response(ctx, request, md.metadata, is_node_isolated));
+            auto ts = make_topic_response(
+              ctx, request, md.metadata, is_node_isolated);
+            if (!ts.partitions.empty()) {
+                res.push_back(std::move(ts));
+            }
         }
 
         return ss::make_ready_future<
@@ -327,8 +336,14 @@ get_topic_metadata(
                 md) {
                 auto src_topic_response = make_topic_response(
                   ctx, request, *md, is_node_isolated);
-                src_topic_response.name = move_topic_name();
-                res.push_back(std::move(src_topic_response));
+                if (src_topic_response.partitions.empty()) {
+                    res.push_back(make_error_topic_response(
+                      move_topic_name(),
+                      error_code::unknown_topic_or_partition));
+                } else {
+                    src_topic_response.name = move_topic_name();
+                    res.push_back(std::move(src_topic_response));
+                }
                 continue;
             }
         }
