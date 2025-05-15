@@ -9,6 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
+// foo
+// bar
+
 #pragma once
 
 #include "storage/batch_cache.h"
