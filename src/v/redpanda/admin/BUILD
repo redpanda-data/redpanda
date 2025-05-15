@@ -106,6 +106,14 @@ seastar_cc_swagger_library(
     ],
 )
 
+seastar_cc_swagger_library(
+    name = "panda_link",
+    src = "api-doc/panda_link.json",
+    definitions = [
+        "api-doc/panda_link.def.json",
+    ],
+)
+
 redpanda_cc_library(
     name = "cluster_config_schema_util",
     srcs = [
@@ -152,6 +160,7 @@ redpanda_cc_library(
         "debug_bundle.cc",
         "kafka.cc",
         "migrations.cc",
+        "panda_link.cc",
         "partition.cc",
         "recovery.cc",
         "security.cc",
@@ -172,6 +181,7 @@ redpanda_cc_library(
         "api-doc/features.json.hh",
         "api-doc/hbadger.json.hh",
         "api-doc/migration.json.hh",
+        "api-doc/panda_link.json.hh",
         "api-doc/partition.json.hh",
         "api-doc/raft.json.hh",
         "api-doc/recovery.json.hh",
@@ -203,6 +213,7 @@ redpanda_cc_library(
         ":features",
         ":hbadger",
         ":migration",
+        ":panda_link",
         ":partition",
         ":raft",
         ":recovery",

@@ -442,6 +442,7 @@ private:
     void register_data_migration_routes();
     void register_topic_routes();
     void register_debug_bundle_routes();
+    void register_panda_link_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::http::request>, const request_auth_result&);
@@ -704,6 +705,10 @@ private:
     ss::future<std::unique_ptr<ss::http::reply>> get_debug_bundle_file(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<std::unique_ptr<ss::http::reply>> delete_debug_bundle_file(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
+
+    // Panda link routes
+    ss::future<std::unique_ptr<ss::http::reply>> post_panda_link(
       std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
 
     // Shard store message routes

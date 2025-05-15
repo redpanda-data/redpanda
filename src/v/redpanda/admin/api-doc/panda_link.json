@@ -1,0 +1,82 @@
+"/v1/panda_link": {
+    "post": {
+        "description": "Create a new panda link",
+        "summary": "Create a panda link",
+        "operationId": "post_panda_link",
+        "consumes": [
+            "application/json"
+        ],
+        "parameters": [
+            {
+                "name": "config",
+                "in": "body",
+                "required": true,
+                "schema": {
+                    "description": "Configuration for the link",
+                    "type": "object",
+                    "required": [
+                        "link_name",
+                        "connection_configuration"
+                    ],
+                    "properties": {
+                        "link_name": {
+                            "description": "Name for the panda link",
+                            "type": "string"
+                        },
+                        "connection_configuration": {
+                            "description": "Connection configuration for the link",
+                            "type": "object",
+                            "required": [
+                                "source_cluster_bootstrap_servers"
+                            ],
+                            "properties": {
+                                "source_cluster_bootstrap_servers": {
+                                    "description": "List of addresses to use to connect to the source cluster",
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ],
+        "produces": [
+            "application/json"
+        ],
+        "responses": {
+            "201": {
+                "description": "Created"
+            },
+            "401": {
+                "description": "Unauthorized",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            },
+            "403": {
+                "description": "Forbidden",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            },
+            "409": {
+                "description": "Conflict",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            },
+            "422": {
+                "description": "Format error",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            },
+            "500": {
+                "description": "Internal server error",
+                "schema": {
+                    "$ref": "#/definitions/error_body"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,17 @@
+"error_body": {
+    "type": "object",
+    "required": [
+        "code",
+        "message"
+    ],
+    "properties": {
+        "code": {
+            "description": "Error code",
+            "type": "int"
+        },
+        "message": {
+            "description": "Error message",
+            "type": "string"
+        }
+    }
+}

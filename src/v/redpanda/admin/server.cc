@@ -419,6 +419,7 @@ void admin_server::configure_admin_routes() {
     register_data_migration_routes();
     register_topic_routes();
     register_debug_bundle_routes();
+    register_panda_link_routes();
     /**
      * Special REST apis active only in recovery mode
      */
