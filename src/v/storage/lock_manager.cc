@@ -22,15 +22,17 @@
 
 namespace storage {
 
-static ss::future<std::unique_ptr<lock_manager::lease>>
-range(segment_set::underlying_t segs) {
+static ss::future<std::unique_ptr<lock_manager::lease>> range(
+  segment_set::underlying_t segs,
+  ss::semaphore::clock::time_point read_lock_deadline
+  = ss::semaphore::clock::time_point::max()) {
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
 
     chunked_vector<ss::future<ss::rwlock::holder>> dispatch;
     dispatch.reserve(ctx->range.size());
     for (auto& s : ctx->range) {
-        dispatch.push_back(s->read_lock());
+        dispatch.push_back(s->read_lock(read_lock_deadline));
     }
 
     return ssx::when_all_succeed<chunked_vector<ss::rwlock::holder>>(
@@ -80,7 +82,9 @@ lock_manager::range_lock(const log_reader_config& cfg) {
           // must be base offset
           return s->offsets().get_base_offset() <= cfg.max_offset;
       });
-    return range(std::move(tmp));
+    return range(
+      std::move(tmp),
+      cfg.read_lock_deadline.value_or(ss::semaphore::clock::time_point::max()));
 }
 
 std::ostream& operator<<(std::ostream& o, const lock_manager::lease& l) {
