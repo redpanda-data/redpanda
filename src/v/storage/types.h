@@ -416,6 +416,8 @@ struct log_reader_config {
     // separately.
     translate_offsets translate_offsets{false};
 
+    std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
