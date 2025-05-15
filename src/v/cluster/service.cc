@@ -25,6 +25,7 @@
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/node_status_backend.h"
+#include "cluster/panda_link_frontend.h"
 #include "cluster/partition_manager.h"
 #include "cluster/plugin_frontend.h"
 #include "cluster/security_frontend.h"
@@ -61,7 +62,8 @@ service::service(
   ss::sharded<rpc::connection_cache>& conn_cache,
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<node_status_backend>& node_status_backend,
-  ss::sharded<client_quota::frontend>& quotas_frontend)
+  ss::sharded<client_quota::frontend>& quotas_frontend,
+  ss::sharded<panda_link_frontend>& panda_link_frontend)
   : controller_service(sg, ssg)
   , _controller(controller)
   , _topics_frontend(tf)
@@ -79,7 +81,8 @@ service::service(
   , _partition_manager(partition_manager)
   , _plugin_frontend(pf)
   , _node_status_backend(node_status_backend)
-  , _quotas_frontend(quotas_frontend) {}
+  , _quotas_frontend(quotas_frontend)
+  , _panda_link_frontend(panda_link_frontend) {}
 
 ss::future<join_node_reply>
 service::join_node(join_node_request req, rpc::streaming_context&) {
@@ -245,8 +248,8 @@ ss::future<update_topic_properties_reply> service::update_topic_properties(
 
 ss::future<update_topic_properties_reply>
 service::do_update_topic_properties(update_topic_properties_request req) {
-    // local topic frontend instance will eventually dispatch request to _raft0
-    // core
+    // local topic frontend instance will eventually dispatch request to
+    // _raft0 core
     auto res = co_await _topics_frontend.local().update_topic_properties(
       std::move(req).updates,
       config::shard_local_cfg().replicate_append_timeout_ms()
@@ -369,12 +372,12 @@ ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
 }
 
 /*
- * A hello message from a peer means that the peer just booted up and setup a
- * connection to this node. An important optimization is to resume sending
- * heartbeats to the peer, which might not be active because the connection is
- * in a back-off state. Resuming heartbeats is important because raft groups on
- * the peer are likely idle waiting for signs of life without which they will
- * start calling for votes which may cause disruption.
+ * A hello message from a peer means that the peer just booted up and setup
+ * a connection to this node. An important optimization is to resume sending
+ * heartbeats to the peer, which might not be active because the connection
+ * is in a back-off state. Resuming heartbeats is important because raft
+ * groups on the peer are likely idle waiting for signs of life without
+ * which they will start calling for votes which may cause disruption.
  */
 ss::future<hello_reply>
 service::hello(hello_request req, rpc::streaming_context&) {
@@ -854,13 +857,21 @@ ss::future<client_quota::alter_quotas_response> service::alter_client_quotas(
     co_return client_quota::alter_quotas_response{.ec = ec};
 }
 
-ss::future<upsert_panda_link_response>
-service::upsert_panda_link(upsert_panda_link_request, rpc::streaming_context&) {
-    co_return upsert_panda_link_response{.ec = errc::success};
+ss::future<upsert_panda_link_response> service::upsert_panda_link(
+  upsert_panda_link_request req, rpc::streaming_context&) {
+    auto meta = std::move(req.panda_link);
+    auto deadline = model::timeout_clock::now() + req.timeout;
+    auto result = co_await _panda_link_frontend.local().upsert_panda_link(
+      std::move(meta), deadline);
+    co_return upsert_panda_link_response{.ec = result.ec};
 }
 
-ss::future<remove_panda_link_response>
-service::remove_panda_link(remove_panda_link_request, rpc::streaming_context&) {
-    co_return remove_panda_link_response{.ec = errc::success};
+ss::future<remove_panda_link_response> service::remove_panda_link(
+  remove_panda_link_request req, rpc::streaming_context&) {
+    auto name = std::move(req.name);
+    auto deadline = model::timeout_clock::now() + req.timeout;
+    auto result = co_await _panda_link_frontend.local().remove_panda_link(
+      std::move(name), deadline);
+    co_return remove_panda_link_response{.ec = result.ec};
 }
 } // namespace cluster
