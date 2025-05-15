@@ -2471,7 +2471,8 @@ bool disk_log_impl::log_contains_offset_range(
 }
 
 ss::future<std::optional<log::offset_range_size_result_t>>
-disk_log_impl::offset_range_size(model::offset first, model::offset last) {
+disk_log_impl::offset_range_size(
+  model::offset first, model::offset last, ss::semaphore::time_point timeout) {
     vlog(
       stlog.debug,
       "Offset range size, first: {}, last: {}, lstat: {}",
@@ -2533,7 +2534,7 @@ disk_log_impl::offset_range_size(model::offset first, model::offset last) {
     std::vector<ss::future<ss::rwlock::holder>> f_locks;
     f_locks.reserve(segments.size());
     for (auto& s : segments) {
-        f_locks.emplace_back(s->read_lock());
+        f_locks.emplace_back(s->read_lock(timeout));
     }
 
     auto holders = co_await ss::when_all_succeed(

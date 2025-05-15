@@ -177,8 +177,8 @@ failure_injectable_log::size_bytes_after_offset(model::offset o) const {
 
 ss::future<std::optional<storage::log::offset_range_size_result_t>>
 failure_injectable_log::offset_range_size(
-  model::offset first, model::offset last) {
-    return _underlying_log->offset_range_size(first, last);
+  model::offset first, model::offset last, ss::semaphore::time_point timeout) {
+    return _underlying_log->offset_range_size(first, last, timeout);
 }
 
 ss::future<std::optional<failure_injectable_log::offset_range_size_result_t>>
