@@ -12,7 +12,7 @@
 
 #include "base/seastarx.h"
 #include "cluster/commands.h"
-#include "cluster/fwd.h"
+#include "cluster/panda_link_table.h"
 #include "rpc/fwd.h"
 #include "utils/mutex.h"
 
@@ -33,6 +33,9 @@ public:
       rpc::connection_cache*,
       ss::abort_source*);
 
+    using notification_id = panda_link_table::notification_id;
+    using notification_callback = panda_link_table::notification_callback;
+
     struct mutation_result {
         errc ec;
     };
@@ -42,6 +45,9 @@ public:
 
     ss::future<mutation_result> remove_panda_link(
       model::panda_link_name, model::timeout_clock::time_point);
+
+    notification_id register_for_updates(notification_callback);
+    void unregister_for_updates(notification_id);
 
 private:
     ss::future<mutation_result>

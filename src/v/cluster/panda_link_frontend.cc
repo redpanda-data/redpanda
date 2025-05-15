@@ -79,6 +79,15 @@ ss::future<mutation_result> panda_link_frontend::remove_panda_link(
     co_return co_await do_mutation(std::move(c), timeout);
 }
 
+panda_link_frontend::notification_id
+panda_link_frontend::register_for_updates(notification_callback cb) {
+    return _table->register_for_updates(std::move(cb));
+}
+
+void panda_link_frontend::unregister_for_updates(notification_id id) {
+    _table->unregister_for_updates(id);
+}
+
 ss::future<mutation_result> panda_link_frontend::do_mutation(
   panda_link_cmd cmd, model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders->get_leader(model::controller_ntp);
