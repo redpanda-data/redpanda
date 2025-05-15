@@ -13,4 +13,5 @@
 
 namespace panda_link {
 class manager;
-}
+class service;
+} // namespace panda_link
