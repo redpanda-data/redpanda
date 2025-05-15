@@ -10,6 +10,8 @@
 
 #include "cluster/panda_link_table.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <optional>
 
 namespace cluster {
@@ -23,8 +25,48 @@ panda_link_table::map_t panda_link_table::all_links() const {
 
 size_t panda_link_table::size() const { return _underlying.size(); }
 
-void panda_link_table::reset_links(map_t links) {
-    _underlying = std::move(links);
+void panda_link_table::reset_links(map_t snap) {
+    name_index_t snap_name_index;
+
+    ss::chunked_fifo<panda_link_id> all_deletes;
+    ss::chunked_fifo<panda_link_id> all_inserts;
+    ss::chunked_fifo<panda_link_id> all_changed;
+
+    for (const auto& [k, v] : _underlying) {
+        auto it = snap.find(k);
+        if (it == snap.end()) {
+            all_deletes.push_back(k);
+        } else if (v != it->second) {
+            all_changed.push_back(k);
+        }
+    }
+
+    for (const auto& [k, v] : snap) {
+        if (_underlying.find(k) == _underlying.end()) {
+            all_inserts.push_back(k);
+        }
+        auto it = snap_name_index.insert({v.name, k});
+        if (!it.second) {
+            throw std::logic_error(ss::format(
+              "panda link id={} is attempting to use a name {} which is "
+              "already registered to {}",
+              k,
+              v.name,
+              it.first->second));
+        }
+    }
+    _underlying = std::move(snap);
+    _name_index = std::move(snap_name_index);
+
+    for (const auto& deleted : all_deletes) {
+        run_callbacks(deleted);
+    }
+    for (const auto& updated : all_changed) {
+        run_callbacks(updated);
+    }
+    for (const auto& inserted : all_inserts) {
+        run_callbacks(inserted);
+    }
 }
 
 std::optional<panda_link_metadata>
@@ -87,6 +129,7 @@ void panda_link_table::upsert_link(panda_link_id id, panda_link_metadata meta) {
         _name_index.emplace(meta.name, id);
     }
     _underlying.insert_or_assign(id, std::move(meta));
+    run_callbacks(id);
 }
 
 void panda_link_table::remove_link(const panda_link_name& name) {
@@ -106,6 +149,24 @@ void panda_link_table::remove_link(const panda_link_name& name) {
 
     _name_index.erase(name_it);
     _underlying.erase(it);
+    run_callbacks(id);
+}
+
+panda_link_table::notification_id
+panda_link_table::register_for_updates(notification_callback cb) {
+    auto it = _callbacks.insert({++_latest_id, std::move(cb)});
+    vassert(it.second, "Invalid duplicate in callbacks");
+    return _latest_id;
+}
+
+void panda_link_table::unregister_for_updates(notification_id id) {
+    _callbacks.erase(id);
+}
+
+void panda_link_table::run_callbacks(panda_link_id id) {
+    for (const auto& [_, cb] : _callbacks) {
+        cb(id);
+    }
 }
 
 bool panda_link_table::name_less_cmp::operator()(
