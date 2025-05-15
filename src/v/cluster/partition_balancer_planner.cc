@@ -71,7 +71,7 @@ reallocation_failure_details map_result_to_failure_details(
     reallocation_failure_details details{
       .replica_to_move = replica_to_move,
       .reason = reason,
-      .error = details.error = reallocation_error::unknown_error};
+      .error = reallocation_error::unknown_error};
     if (ec.category() == cluster::error_category()) {
         switch (static_cast<cluster::errc>(ec.value())) {
         case cluster::errc::no_eligible_allocation_nodes:
@@ -856,7 +856,7 @@ public:
         reallocation_failure_details details{
           .replica_to_move = replica_to_move,
           .reason = reason,
-          .error = details.error = reallocation_error::unknown_error};
+          .error = reallocation_error::unknown_error};
 
         switch (_reason) {
         case immutability_reason::no_quorum:
