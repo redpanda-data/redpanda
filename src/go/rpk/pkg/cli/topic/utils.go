@@ -79,3 +79,12 @@ func regexTopicDetails(adm *kadm.Client, expressions []string) (kadm.TopicDetail
 	}
 	return result, nil
 }
+
+func protected(topic string, protectedTopics []string) bool {
+	for _, protectedTopic := range protectedTopics {
+		if topic == protectedTopic {
+			return true
+		}
+	}
+	return false
+}

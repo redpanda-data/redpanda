@@ -12,6 +12,7 @@ package topic
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -58,6 +59,25 @@ For example,
 			adm, err := kafka.NewAdmin(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
+
+			nodeleteTopics := []string{"_redpanda.audit_log", "__consumer_offsets", "_schemas"}
+			// Check if any of the topics to be deleted are protected.
+			// By looping from the end toward zero, removals don’t affect the yet-to-be-visited indexes:
+			before := len(topics)
+			for i := len(topics) - 1; i >= 0; i-- {
+				if protected(topics[i], nodeleteTopics) {
+					fmt.Printf("%s is protected and cannot be deleted\n", topics[i])
+					topics = append(topics[:i], topics[i+1:]...)
+				}
+			}
+			after := len(topics)
+			if before != after {
+				fmt.Println("See the full protected topics with 'rpk cluster config get kafka_nodelete_topics'")
+			}
+			fmt.Println()
+			if len(topics) == 0 {
+				out.Die("No topics to delete")
+			}
 
 			if re {
 				topics, err = regexTopics(adm, topics)
