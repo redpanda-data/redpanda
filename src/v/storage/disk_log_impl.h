@@ -292,13 +292,6 @@ public:
       storage::compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
-private:
-    friend class disk_log_appender; // for multi-term appends
-    friend class disk_log_builder;  // for tests
-    friend ::storage_e2e_fixture;
-    friend ::reupload_fixture; // for tests
-    friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
-
     struct file_offset_t {
         size_t position{};
         model::timestamp base_timestamp{model::timestamp::missing()};
@@ -311,6 +304,13 @@ private:
       std::optional<segment_index::entry> index_entry,
       model::offset target,
       boundary_type boundary);
+
+private:
+    friend class disk_log_appender; // for multi-term appends
+    friend class disk_log_builder;  // for tests
+    friend ::storage_e2e_fixture;
+    friend ::reupload_fixture; // for tests
+    friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
