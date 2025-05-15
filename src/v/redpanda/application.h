@@ -45,6 +45,7 @@
 #include "metrics/metrics.h"
 #include "net/conn_quota.h"
 #include "net/fwd.h"
+#include "panda_link/fwd.h"
 #include "pandaproxy/fwd.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
@@ -401,6 +402,7 @@ private:
     ss::sharded<transform::service> _transform_service;
     ss::sharded<transform::rpc::local_service> _transform_rpc_service;
     ss::sharded<transform::rpc::client> _transform_rpc_client;
+    ss::sharded<panda_link::service> _panda_link_service;
 
     metrics::internal_metric_groups _metrics;
     ss::sharded<metrics::public_metrics_group_service> _public_metrics;

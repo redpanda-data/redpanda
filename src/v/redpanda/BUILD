@@ -11,6 +11,9 @@ redpanda_cc_library(
         "application.h",
         "monitor_unsafe.h",
     ],
+    implementation_deps = [
+        "//src/v/panda_link",
+    ],
     include_prefix = "redpanda",
     visibility = ["//visibility:public"],
     deps = [
@@ -50,6 +53,7 @@ redpanda_cc_library(
         "//src/v/migrations",
         "//src/v/model",
         "//src/v/net",
+        "//src/v/panda_link:fwd",
         "//src/v/pandaproxy",
         "//src/v/raft",
         "//src/v/redpanda/admin",

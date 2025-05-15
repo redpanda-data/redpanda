@@ -121,6 +121,7 @@
 #include "net/dns.h"
 #include "net/server.h"
 #include "net/tls_certificate_probe.h"
+#include "panda_link/api.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/schema_registry/api.h"
@@ -1337,6 +1338,14 @@ void application::wire_up_runtime_services(
           memory_groups().data_transforms_max_memory())
           .get();
     }
+
+    construct_service(
+      _panda_link_service,
+      node_id,
+      &controller->get_panda_link_frontend(),
+      &partition_manager,
+      &raft_group_manager)
+      .get();
 
     if (datalake_enabled()) {
         vassert(
@@ -2951,6 +2960,8 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           .get();
         _transform_service.invoke_on_all(&transform::service::start).get();
     }
+
+    _panda_link_service.invoke_on_all(&panda_link::service::start).get();
 
     construct_service(_aggregate_metrics_watcher).get();
 
