@@ -34,3 +34,12 @@ redpanda_cc_library(
         "//src/v/ssx:work_queue",
     ],
 )
+
+redpanda_cc_library(
+    name = "fwd",
+    hdrs = [
+        "fwd.h",
+    ],
+    include_prefix = "panda_link",
+    visibility = ["//visibility:public"],
+)
