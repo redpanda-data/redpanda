@@ -48,9 +48,11 @@ redpanda_cc_library(
     name = "panda_link",
     srcs = [
         "api.cc",
+        "errc.cc",
     ],
     hdrs = [
         "api.h",
+        "errc.h",
     ],
     implementation_deps = [
         ":impl",
