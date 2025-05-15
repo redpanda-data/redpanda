@@ -171,6 +171,16 @@
             "name": "alter_client_quotas",
             "input_type": "client_quota::alter_quotas_request",
             "output_type": "client_quota::alter_quotas_response"
+        },
+        {
+            "name": "upsert_panda_link",
+            "input_type": "upsert_panda_link_request",
+            "output_type": "upsert_panda_link_response"
+        },
+        {
+            "name": "remove_panda_link",
+            "input_type": "remove_panda_link_request",
+            "output_type": "remove_panda_link_response"
         }
     ]
 }

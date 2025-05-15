@@ -854,4 +854,13 @@ ss::future<client_quota::alter_quotas_response> service::alter_client_quotas(
     co_return client_quota::alter_quotas_response{.ec = ec};
 }
 
+ss::future<upsert_panda_link_response>
+service::upsert_panda_link(upsert_panda_link_request, rpc::streaming_context&) {
+    co_return upsert_panda_link_response{.ec = errc::success};
+}
+
+ss::future<remove_panda_link_response>
+service::remove_panda_link(remove_panda_link_request, rpc::streaming_context&) {
+    co_return remove_panda_link_response{.ec = errc::success};
+}
 } // namespace cluster
