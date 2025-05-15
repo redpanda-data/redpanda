@@ -11,6 +11,7 @@
 
 // foo
 // bar
+// baz
 
 #pragma once
 
