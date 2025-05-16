@@ -149,6 +149,11 @@ public:
         return p;
     }
 
+    const upload_reconciliation_result get_meta() && noexcept {
+        throw_if_not_initialized("get_meta&&");
+        return std::exchange(_params, std::nullopt).value();
+    }
+
     /// \brief Make new segment upload
     ///
     /// \note Make an upload that begins and ends at precise offsets.
