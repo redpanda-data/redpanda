@@ -49,6 +49,17 @@ bool eligible_for_compacted_reupload(const storage::segment& s) {
     return s.has_self_compact_timestamp();
 }
 
+std::ostream& operator<<(std::ostream& os, segment_collector_mode m) {
+    switch (m) {
+    case segment_collector_mode::compacted_reupload:
+        return os << "segment_collector_mode::compacted_reupload";
+    case segment_collector_mode::non_compacted_reupload:
+        return os << "segment_collector_mode::non_compacted_reupload";
+    case segment_collector_mode::new_upload:
+        return os << "segment_collector_mode::new_upload";
+    }
+}
+
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
     vassert(
       c.sources.empty() || c.remote_sources.empty(),

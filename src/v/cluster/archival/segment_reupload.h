@@ -104,6 +104,8 @@ enum class segment_collector_mode {
     new_upload,
 };
 
+std::ostream& operator<<(std::ostream&, segment_collector_mode);
+
 struct segment_collector_stream {
     // The offset range for the segments that are being uploaded.
     model::offset start_offset, end_offset;
