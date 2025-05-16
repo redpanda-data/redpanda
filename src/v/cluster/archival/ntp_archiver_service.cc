@@ -843,8 +843,8 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             // grow very large disabling the archival storage
             vlog(
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
-            co_await ss::sleep_abortable(
-              backoff + _backoff_jitter.next_jitter_duration(), _as);
+            co_await _wakeup_event.wait(
+              backoff + _backoff_jitter.next_jitter_duration());
             backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff());
         } else {
             backoff = _conf->upload_loop_initial_backoff();
@@ -1213,6 +1213,7 @@ ss::future<> ntp_archiver::stop() {
     _uploads_active.broken();
     _leader_cond.broken();
     _flush_cond.broken();
+    _wakeup_event.broken();
     co_await _gate.close();
 }
 
@@ -3013,6 +3014,7 @@ flush_result ntp_archiver::flush() {
 
     _flush_uploads_offset = model::prev_offset(
       max_uploadable_offset_exclusive());
+    _wakeup_event.set();
     vlog(
       _rtclog.debug,
       "Accepted flush, flush offset is {}",
