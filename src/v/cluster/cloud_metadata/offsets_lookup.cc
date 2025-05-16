@@ -26,10 +26,12 @@ namespace cluster::cloud_metadata {
 offsets_lookup::offsets_lookup(
   model::node_id node_id,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<cluster::shard_table>& st)
+  ss::sharded<cluster::shard_table>& st,
+  ss::sharded<experimental::cloud_topics::app>& ct)
   : _node_id(node_id)
   , _partitions(pm)
-  , _shards(st) {}
+  , _shards(st)
+  , _ct(ct) {}
 
 ss::future<offsets_lookup_reply>
 offsets_lookup::lookup(offsets_lookup_request req) {
@@ -66,11 +68,11 @@ offsets_lookup::lookup(offsets_lookup_request req) {
     for (auto& [shard, ntps] : lookups_per_shard) {
         shards.emplace_back(shard);
         pending_shard_replies.emplace_back(_partitions.invoke_on(
-          shard, [ntps = std::move(ntps)](partition_manager& pm) mutable {
+          shard, [this, ntps = std::move(ntps)](partition_manager& pm) mutable {
               offsets_lookup_reply shard_reply;
               for (auto& ntp : ntps) {
                   auto partition = kafka::make_partition_proxy(
-                    model::ktp{ntp.tp.topic, ntp.tp.partition}, pm);
+                    model::ktp{ntp.tp.topic, ntp.tp.partition}, pm, _ct);
                   if (!partition.has_value()) {
                       // Partition may have moved between scheduling points.
                       continue;

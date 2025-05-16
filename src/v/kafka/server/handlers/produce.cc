@@ -14,6 +14,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "config/configuration.h"
+#include "kafka/data/partition_proxy.h"
 #include "kafka/data/replicated_partition.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
@@ -139,20 +140,22 @@ error_code map_produce_error_code(std::error_code ec) {
  */
 partition_produce_stages partition_append(
   model::partition_id id,
-  ss::lw_shared_ptr<replicated_partition> partition,
+  partition_proxy partition,
   model::batch_identity bid,
   std::unique_ptr<model::record_batch> batch,
   int16_t acks,
   int32_t num_records,
   int64_t num_bytes,
   std::chrono::milliseconds timeout_ms) {
-    auto stages = partition->replicate(
+    auto stages = partition.replicate(
       bid, std::move(*batch), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
-        [partition, id, num_records = num_records, num_bytes](
-          ss::future<result<raft::replicate_result>> f) {
+        [partition = std::move(partition),
+         id,
+         num_records = num_records,
+         num_bytes](ss::future<result<raft::replicate_result>> f) mutable {
             produce_response::partition p{.partition_index = id};
             try {
                 auto r = f.get();
@@ -162,9 +165,9 @@ partition_produce_stages partition_append(
                     p.base_offset = model::offset(
                       r.value().last_offset - (num_records - 1));
                     p.error_code = error_code::none;
-                    partition->probe().add_records_produced(num_records);
-                    partition->probe().add_bytes_produced(num_bytes);
-                    partition->probe().add_batches_produced(1);
+                    partition.probe().add_records_produced(num_records);
+                    partition.probe().add_bytes_produced(num_bytes);
+                    partition.probe().add_batches_produced(1);
                 } else {
                     p.error_code = map_produce_error_code(r.error());
                 }
@@ -332,6 +335,7 @@ partition_produce_stages produce_topic_partition(
         // negative timeout translates to no timeout
         timeout = max_timeout;
     }
+    auto ct_api = std::ref(octx.rctx.cloud_topics_api());
     auto f
       = octx.rctx.partition_manager()
           .invoke_on(
@@ -339,6 +343,7 @@ partition_produce_stages produce_topic_partition(
             octx.ssg,
             [batch = std::move(batch),
              validator = std::move(validator),
+             ct_api,
              ntp = std::move(ntp),
              dispatch = std::move(dispatch),
              num_records,
@@ -394,15 +399,17 @@ partition_produce_stages produce_topic_partition(
                    num_records,
                    batch_size,
                    timeout,
+                   ct_api,
                    batch = std::move(batch)](kafka::error_code err) mutable {
                       if (err != kafka::error_code::none) {
                           return finalize_request_with_error_code(
                             err, std::move(dispatch), ntp, source_shard);
                       }
+                      auto proxy = kafka::make_partition_proxy(
+                        partition, ct_api.get());
                       auto stages = partition_append(
                         ntp.tp.partition,
-                        ss::make_lw_shared<replicated_partition>(
-                          std::move(partition)),
+                        std::move(proxy),
                         bid,
                         std::move(batch),
                         acks,

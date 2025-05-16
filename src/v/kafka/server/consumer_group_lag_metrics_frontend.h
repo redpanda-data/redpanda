@@ -22,6 +22,9 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
+namespace experimental::cloud_topics {
+class app;
+} // namespace experimental::cloud_topics
 namespace kafka {
 
 /**
@@ -34,11 +37,13 @@ public:
       model::node_id self,
       ss::sharded<rpc::connection_cache>& rpc_connections,
       ss::sharded<cluster::metadata_cache>& metadata,
-      ss::sharded<cluster::partition_manager>& partition_manager)
+      ss::sharded<cluster::partition_manager>& partition_manager,
+      ss::sharded<experimental::cloud_topics::app>& ct_app)
       : _self{self}
       , _rpc_connections{rpc_connections}
       , _metadata{metadata}
-      , _partition_manager(partition_manager) {}
+      , _partition_manager(partition_manager)
+      , _ct_app(ct_app) {}
 
     ss::future<> start();
     ss::future<> stop();
@@ -55,6 +60,7 @@ private:
     ss::sharded<rpc::connection_cache>& _rpc_connections;
     ss::sharded<cluster::metadata_cache>& _metadata;
     ss::sharded<cluster::partition_manager>& _partition_manager;
+    ss::sharded<experimental::cloud_topics::app>& _ct_app;
 
     ss::gate _gate;
     partition_offsets_reply::offsets _consumer_offsets;

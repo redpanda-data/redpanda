@@ -15,6 +15,10 @@
 
 #include <seastar/core/sharded.hh>
 
+namespace experimental::cloud_topics {
+class app;
+}
+
 namespace cluster::cloud_metadata {
 
 class offsets_lookup {
@@ -22,7 +26,8 @@ public:
     offsets_lookup(
       model::node_id node_id,
       ss::sharded<cluster::partition_manager>& pm,
-      ss::sharded<cluster::shard_table>& st);
+      ss::sharded<cluster::shard_table>& st,
+      ss::sharded<experimental::cloud_topics::app>& ct);
     ss::future<> start() { co_return; }
     ss::future<> stop() { co_return; }
 
@@ -32,6 +37,7 @@ private:
     model::node_id _node_id;
     ss::sharded<cluster::partition_manager>& _partitions;
     ss::sharded<cluster::shard_table>& _shards;
+    ss::sharded<experimental::cloud_topics::app>& _ct;
 };
 
 } // namespace cluster::cloud_metadata

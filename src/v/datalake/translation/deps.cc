@@ -321,7 +321,8 @@ public:
       : _partition(std::move(partition))
       , _stm(_partition->raft()->stm_manager()->get<translation_stm>())
       , _partition_proxy(std::make_unique<kafka::partition_proxy>(
-          kafka::make_partition_proxy(_partition)))
+          // TODO(cloud_topics): propagate cloud_topics::api
+          kafka::make_partition_proxy(_partition, nullptr)))
       , _partition_flush_subscription(_partition->register_flush_hook(
           std::bind_front(&wait_stm_translated, _stm))) {}
 
@@ -754,7 +755,8 @@ public:
       cluster::topic_table& topics)
       : _partition(std::move(partition))
       , _partition_proxy(std::make_unique<kafka::partition_proxy>(
-          kafka::make_partition_proxy(_partition)))
+          // TODO(cloud_topics): fixme: propagate cloud_topics::api
+          kafka::make_partition_proxy(_partition, nullptr)))
       , _topics(topics)
       , _stm(_partition->raft()->stm_manager()->get<translation_stm>()) {}
 

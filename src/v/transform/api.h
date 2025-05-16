@@ -29,6 +29,10 @@
 
 #include <system_error>
 
+namespace experimental::cloud_topics {
+class app;
+}
+
 namespace transform {
 
 /** Request options for listing committed offsets. */
@@ -61,6 +65,7 @@ public:
       ss::sharded<cluster::partition_manager>* partition_manager,
       ss::sharded<rpc::client>* rpc_client,
       ss::sharded<cluster::metadata_cache>* metadata_cache,
+      ss::sharded<experimental::cloud_topics::app>* cloud_topics_app,
       ss::scheduling_group sg,
       size_t memory_limit);
     service(const service&) = delete;
@@ -151,6 +156,7 @@ private:
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<rpc::client>* _rpc_client;
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
+    ss::sharded<experimental::cloud_topics::app>* _cloud_topics_api;
     std::unique_ptr<manager<ss::lowres_clock>> _manager;
     std::unique_ptr<commit_batcher<ss::lowres_clock>> _batcher;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>

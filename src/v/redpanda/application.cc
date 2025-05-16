@@ -1341,6 +1341,7 @@ void application::wire_up_runtime_services(
           &partition_manager,
           &_transform_rpc_client,
           &metadata_cache,
+          &cloud_topics_api,
           sched_groups.transforms_sg(),
           memory_groups().data_transforms_max_memory())
           .get();
@@ -1692,12 +1693,6 @@ void application::wire_up_redpanda_services(
       }))
       .get();
     vlog(_log.info, "Partition manager started");
-    construct_service(
-      offsets_lookup,
-      node_id,
-      std::ref(partition_manager),
-      std::ref(shard_table))
-      .get();
 
     construct_service(node_status_table, node_id).get();
     // controller
@@ -2043,6 +2038,14 @@ void application::wire_up_redpanda_services(
           .get();
     }
 
+    construct_service(
+      offsets_lookup,
+      node_id,
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(cloud_topics_api))
+      .get();
+
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();
     construct_service(
@@ -2050,7 +2053,8 @@ void application::wire_up_redpanda_services(
       node_id,
       std::ref(_connection_cache),
       std::ref(metadata_cache),
-      std::ref(partition_manager))
+      std::ref(partition_manager),
+      std::ref(cloud_topics_api))
       .get();
     construct_service(
       _group_manager,

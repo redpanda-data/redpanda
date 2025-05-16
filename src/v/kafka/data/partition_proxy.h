@@ -21,8 +21,15 @@
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <optional>
 #include <system_error>
+
+namespace experimental::cloud_topics {
+class app;
+class api;
+} // namespace experimental::cloud_topics
 
 namespace kafka {
 
@@ -193,13 +200,32 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-partition_proxy
-make_partition_proxy(const ss::lw_shared_ptr<cluster::partition>&);
+partition_proxy make_partition_proxy(
+  const ss::lw_shared_ptr<cluster::partition>&,
+  ss::sharded<experimental::cloud_topics::app>&);
 
-std::optional<partition_proxy>
-make_partition_proxy(const model::ktp&, cluster::partition_manager&);
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ktp&,
+  cluster::partition_manager&,
+  ss::sharded<experimental::cloud_topics::app>&);
 
-std::optional<partition_proxy>
-make_partition_proxy(const model::ntp&, cluster::partition_manager&);
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ntp&,
+  cluster::partition_manager&,
+  ss::sharded<experimental::cloud_topics::app>&);
+
+partition_proxy make_partition_proxy(
+  const ss::lw_shared_ptr<cluster::partition>&,
+  const ss::shared_ptr<experimental::cloud_topics::api>&);
+
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ntp&,
+  cluster::partition_manager&,
+  const ss::shared_ptr<experimental::cloud_topics::api>&);
+
+std::optional<partition_proxy> make_partition_proxy(
+  const model::ktp&,
+  cluster::partition_manager&,
+  const ss::shared_ptr<experimental::cloud_topics::api>&);
 
 } // namespace kafka

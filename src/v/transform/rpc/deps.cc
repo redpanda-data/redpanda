@@ -286,7 +286,8 @@ private:
           shard,
           [ntp,
            func = std::move(func)](cluster::partition_manager& mgr) mutable {
-              auto pp = kafka::make_partition_proxy(ntp, mgr);
+              // TODO(cloud_topics): fixme to enable WASM for cloud topics
+              auto pp = kafka::make_partition_proxy(ntp, mgr, nullptr);
               if (!pp || !pp->is_leader()) {
                   return ss::make_ready_future<result<R, cluster::errc>>(
                     cluster::errc::not_leader);

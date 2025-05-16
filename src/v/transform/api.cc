@@ -372,10 +372,12 @@ public:
       wasm_engine_factory factory,
       cluster::topic_table* topic_table,
       cluster::partition_manager* partition_manager,
+      ss::sharded<experimental::cloud_topics::app>* ct_app,
       rpc::client* client,
       commit_batcher<>* batcher)
       : _wasm_engine_factory(std::move(factory))
       , _partition_manager(partition_manager)
+      , _ct_app(ct_app)
       , _client(client)
       , _batcher(batcher)
       , _topic_table(topic_table) {}
@@ -391,7 +393,8 @@ public:
         if (!engine) {
             throw std::runtime_error("unable to create wasm engine");
         }
-        auto partition = kafka::make_partition_proxy(ntp, *_partition_manager);
+        auto partition = kafka::make_partition_proxy(
+          ntp, *_partition_manager, *_ct_app);
         if (!partition) {
             throw std::runtime_error("unable to create transform source");
         }
@@ -425,6 +428,7 @@ private:
     mutex _mu{"proc_factory"};
     wasm_engine_factory _wasm_engine_factory;
     cluster::partition_manager* _partition_manager;
+    ss::sharded<experimental::cloud_topics::app>* _ct_app;
     rpc::client* _client;
     absl::flat_hash_map<model::offset, std::unique_ptr<wasm::engine>> _cache;
     commit_batcher<>* _batcher;
@@ -486,6 +490,7 @@ service::service(
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<rpc::client>* rpc_client,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
+  ss::sharded<experimental::cloud_topics::app>* cloud_topics_app,
   ss::scheduling_group sg,
   size_t memory_limit)
   : _runtime(runtime)
@@ -497,6 +502,7 @@ service::service(
   , _partition_manager(partition_manager)
   , _rpc_client(rpc_client)
   , _metadata_cache(metadata_cache)
+  , _cloud_topics_api(cloud_topics_app)
   , _sg(sg)
   , _total_memory_limit(memory_limit) {}
 
@@ -543,6 +549,7 @@ ss::future<> service::start() {
         },
         &_topic_table->local(),
         &_partition_manager->local(),
+        _cloud_topics_api,
         &_rpc_client->local(),
         _batcher.get()),
       _sg,

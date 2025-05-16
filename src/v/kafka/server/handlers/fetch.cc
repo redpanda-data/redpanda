@@ -304,7 +304,8 @@ static ss::future<read_result> do_read_from_ntp(
   std::optional<model::timeout_clock::time_point> deadline,
   const bool obligatory_batch_read,
   ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem) {
+  ssx::semaphore& memory_fetch_sem,
+  ss::sharded<experimental::cloud_topics::app>* ct_api) {
     // control available memory
     read_result::memory_units_t memory_units(memory_sem, memory_fetch_sem);
     if (!ntp_config.cfg.skip_read) {
@@ -323,7 +324,8 @@ static ss::future<read_result> do_read_from_ntp(
     /*
      * lookup the ntp's partition
      */
-    auto kafka_partition = make_partition_proxy(ntp_config.ktp(), cluster_pm);
+    auto kafka_partition = make_partition_proxy(
+      ntp_config.ktp(), cluster_pm, *ct_api);
     if (unlikely(!kafka_partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
@@ -426,7 +428,9 @@ ss::future<read_result> read_from_ntp(
       deadline,
       obligatory_batch_read,
       memory_sem,
-      memory_fetch_sem);
+      memory_fetch_sem,
+      // TODO: fixme
+      nullptr);
 }
 
 read_result::memory_units_t reserve_memory_units(
@@ -566,7 +570,8 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   std::optional<model::timeout_clock::time_point> deadline,
   const size_t bytes_left,
   ssx::semaphore& memory_sem,
-  ssx::semaphore& memory_fetch_sem) {
+  ssx::semaphore& memory_fetch_sem,
+  ss::sharded<experimental::cloud_topics::app>* ct_api) {
     size_t total_max_bytes = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
@@ -599,7 +604,8 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
        foreign_read,
        first_p_id,
        &memory_sem,
-       &memory_fetch_sem](const ntp_fetch_config& ntp_cfg) {
+       &memory_fetch_sem,
+       ct_api](const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ktp().get_partition();
           return do_read_from_ntp(
                    cluster_pm,
@@ -609,7 +615,8 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
                    deadline,
                    first_p_id == p_id,
                    memory_sem,
-                   memory_fetch_sem)
+                   memory_fetch_sem,
+                   ct_api)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -671,6 +678,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         octx.ssg,
         [foreign_read, configs = std::move(fetch.requests), &octx](
           cluster::partition_manager& mgr) mutable {
+            auto ct_api = &octx.rctx.cloud_topics_api();
             // &octx is captured only to immediately use its accessors here so
             // that there is a list of all objects accessed next to `invoke_on`.
             // This is meant to help avoiding unintended cross shard access
@@ -683,7 +691,8 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
               octx.deadline,
               octx.bytes_left,
               octx.rctx.server().local().memory(),
-              octx.rctx.server().local().memory_fetch_sem());
+              octx.rctx.server().local().memory_fetch_sem(),
+              ct_api);
         })
       .then([responses = std::move(fetch.responses),
              start_time = fetch.start_time,
@@ -840,7 +849,8 @@ private:
           _ctx.deadline,
           _ctx.bytes_left,
           _ctx.srv.memory(),
-          _ctx.srv.memory_fetch_sem());
+          _ctx.srv.memory_fetch_sem(),
+          &_ctx.srv.cloud_topics_api());
 
         // If we weren't able to read the last_visible_index for a partition
         // before calling `fetch_ntps_in_parallel` then we need to

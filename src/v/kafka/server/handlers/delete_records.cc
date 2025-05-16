@@ -122,7 +122,7 @@ ss::future<result_t> prefix_truncate(
         co_return make_partition_error(
           ktp, error_code::unknown_topic_or_partition);
     }
-    auto partition = make_partition_proxy(ktp, pm);
+    auto partition = make_partition_proxy(ktp, pm, nullptr /*TODO: fixme*/);
     if (!partition->is_leader()) {
         co_return make_partition_error(
           ktp, error_code::not_leader_for_partition);

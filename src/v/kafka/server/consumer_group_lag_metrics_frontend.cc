@@ -138,7 +138,7 @@ consumer_group_lag_metrics_frontend::get_local_partition_offsets(
           partition_offsets_reply reply;
           std::ranges::for_each(copy, [&](ktp_view ktp) {
               auto part = make_partition_proxy(
-                ktp.ktp(), me._partition_manager.local());
+                ktp.ktp(), me._partition_manager.local(), me._ct_app);
               if (part.has_value()) {
                   reply.data[ktp.tp()][ktp.partition()] = kafka::offset{
                     part->high_watermark()()};
