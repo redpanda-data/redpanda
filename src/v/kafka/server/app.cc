@@ -45,7 +45,8 @@ seastar::future<> server_app::init(
   seastar::sharded<datalake_throttle_manager>& dtm,
   std::optional<qdc_monitor_config> qdc,
   ssx::singleton_thread_worker& worker,
-  const std::unique_ptr<pandaproxy::schema_registry::api>& pp) {
+  const std::unique_ptr<pandaproxy::schema_registry::api>& pp,
+  ss::sharded<cloud_topics::app>& cloud_topics_api) {
     return _server.start(
       conf,
       smp,
@@ -75,7 +76,8 @@ seastar::future<> server_app::init(
       std::ref(dtm),
       qdc,
       std::ref(worker),
-      std::ref(pp));
+      std::ref(pp),
+      std::ref(cloud_topics_api));
 }
 
 server_app::~server_app() = default;

@@ -194,7 +194,8 @@ public:
             std::ref(app.datalake_throttle_manager),
             std::nullopt,
             std::ref(*app.thread_worker),
-            std::ref(app.schema_registry()))
+            std::ref(app.schema_registry()),
+            std::ref(app.cloud_topics_api))
           .get();
 
         configs.stop().get();

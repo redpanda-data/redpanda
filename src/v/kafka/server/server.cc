@@ -146,7 +146,8 @@ server::server(
   ss::sharded<kafka::datalake_throttle_manager>& datalake_throttle_manager,
   std::optional<qdc_monitor_config> qdc_config,
   ssx::singleton_thread_worker& tw,
-  const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
+  const std::unique_ptr<pandaproxy::schema_registry::api>& sr,
+  ss::sharded<cloud_topics::app>& ct) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
   , _fetch_scheduling_group(fetch_sg)
@@ -197,7 +198,8 @@ server::server(
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
-  , _schema_registry(sr) {
+  , _schema_registry(sr)
+  , _cloud_topics_api(ct) {
     vlog(
       klog.debug,
       "Starting kafka server with {} byte limit on fetch requests",

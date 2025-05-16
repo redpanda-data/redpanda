@@ -46,6 +46,13 @@ namespace ssx {
 class singleton_thread_worker;
 }
 
+namespace experimental::cloud_topics {
+class app;
+}
+namespace cloud_topics {
+using app = experimental::cloud_topics::app;
+}
+
 namespace kafka {
 
 class server final
@@ -81,7 +88,8 @@ public:
       ss::sharded<datalake_throttle_manager>&,
       std::optional<qdc_monitor_config>,
       ssx::singleton_thread_worker&,
-      const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
+      const std::unique_ptr<pandaproxy::schema_registry::api>&,
+      ss::sharded<cloud_topics::app>&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -245,6 +253,10 @@ public:
     void
     mark_datalake_producer(const std::optional<std::string_view>& client_id);
 
+    ss::sharded<cloud_topics::app>& cloud_topics_api() {
+        return _cloud_topics_api;
+    }
+
 private:
     void setup_metrics();
 
@@ -294,6 +306,7 @@ private:
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
     boost::intrusive::list<connection_context> _connections;
+    ss::sharded<cloud_topics::app>& _cloud_topics_api;
 };
 
 } // namespace kafka
