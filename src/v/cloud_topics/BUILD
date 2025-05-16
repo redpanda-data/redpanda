@@ -114,6 +114,7 @@ redpanda_cc_library(
         "app.cc",
     ],
     hdrs = [
+        "api.h",
         "app.h",
     ],
     implementation_deps = [
