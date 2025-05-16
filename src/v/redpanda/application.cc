@@ -19,6 +19,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
+#include "cloud_topics/app_impl.h"
 #include "cloud_topics/dl_stm/dl_stm_factory.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archiver_manager.h"
@@ -2060,12 +2061,15 @@ void application::wire_up_redpanda_services(
         vassert(
           archival_storage_enabled(),
           "cloud topics currently requires archival storage to be enabled");
+
         construct_service(
-          _reconciler,
-          &partition_manager,
-          &cloud_io,
-          &shadow_index_cache,
-          bucket)
+          cloud_topics_api, ss::sharded_parameter([this, bucket] {
+              return experimental::cloud_topics::make_app(
+                &partition_manager, &cloud_io, &shadow_index_cache, bucket);
+          }))
+          .get();
+
+        cloud_topics_api.invoke_on_all([](auto& app) { return app.start(); })
           .get();
     }
 
@@ -3286,10 +3290,6 @@ void application::start_runtime_services(
     }
 
     space_manager->start().get();
-
-    if (config::shard_local_cfg().development_enable_cloud_topics()) {
-        _reconciler.invoke_on_all([](auto& app) { return app.start(); }).get();
-    }
 }
 
 /**
