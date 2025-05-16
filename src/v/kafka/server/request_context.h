@@ -143,6 +143,10 @@ public:
         return _conn->server().quota_frontend();
     }
 
+    ss::sharded<cloud_topics::app>& cloud_topics_api() {
+        return _conn->server().cloud_topics_api();
+    }
+
     cluster::client_quota::store& quota_store() {
         return _conn->server().quota_store();
     }
