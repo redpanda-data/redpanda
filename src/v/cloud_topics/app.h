@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cloud_topics/api.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/future.hh>
@@ -18,41 +19,26 @@
 
 #include <memory>
 
-namespace cluster {
-class partition_manager;
-}
-
-namespace cloud_io {
-class remote;
-} // namespace cloud_io
-
-namespace cloud_storage {
-class cache;
-}
-
 namespace experimental::cloud_topics {
 
+// Simple container to use with seastar::sharded.
+// The seastar::sharded wants to know the size of the object at compile time.
 class app {
-    class impl;
-
 public:
-    app(
-      seastar::sharded<cluster::partition_manager>*,
-      seastar::sharded<cloud_io::remote>*,
-      seastar::sharded<cloud_storage::cache>*,
-      cloud_storage_clients::bucket_name bucket);
+    explicit app(ss::shared_ptr<api>);
 
     app(const app&) = delete;
     app& operator=(const app&) = delete;
     app(app&&) noexcept = delete;
     app& operator=(app&&) noexcept = delete;
-    ~app();
 
     seastar::future<> start();
     seastar::future<> stop();
 
+    ss::shared_ptr<api> get_api();
+
 private:
-    std::unique_ptr<impl> _impl;
+    ss::shared_ptr<api> _impl;
 };
 
 } // namespace experimental::cloud_topics
