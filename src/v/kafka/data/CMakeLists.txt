@@ -13,9 +13,11 @@ v_cc_library(
   SRCS
     partition_proxy.cc
     replicated_partition.cc
+    cloud_topic_partition.cc
   DEPS
     Seastar::seastar
     v::cloud_storage
+    v::cloud_topics_app
     v::cluster
     v::kafka_protocol
     v::kd_logger
