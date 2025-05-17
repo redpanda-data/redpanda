@@ -12,23 +12,21 @@
 
 #include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/logger.h"
-#include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
 #include <chrono>
-#include <variant>
 
 namespace experimental::cloud_topics::core {
 
 template<class Clock>
 read_request<Clock>::read_request(
   model::ntp ntp,
-  read_request_query query,
+  dataplane_query query,
   std::chrono::milliseconds timeout,
   basic_retry_chain_node<Clock>* root_rtc,
   pipeline_stage stage)
   : ntp(std::move(ntp))
-  , query(query)
+  , query(std::move(query))
   , ingestion_time(Clock::now())
   , expiration_time(Clock::now() + timeout)
   , stage(stage)
@@ -62,12 +60,7 @@ void read_request<Clock>::set_value(errc e) noexcept {
 }
 
 template<class Clock>
-bool read_request<Clock>::is_timequery() const noexcept {
-    return std::holds_alternative<storage::timequery_config>(query);
-}
-
-template<class Clock>
-void read_request<Clock>::set_value(read_request_result result) noexcept {
+void read_request<Clock>::set_value(dataplane_query_result result) noexcept {
     try {
         response.set_value(std::move(result));
     } catch (const ss::broken_promise&) {
@@ -78,11 +71,6 @@ void read_request<Clock>::set_value(read_request_result result) noexcept {
 template<class Clock>
 bool read_request<Clock>::has_expired() const noexcept {
     return Clock::now() > expiration_time;
-}
-
-template<class Clock>
-storage::log_reader_config read_request<Clock>::get_log_reader_config() const {
-    return std::get<storage::log_reader_config>(query);
 }
 
 template struct read_request<ss::lowres_clock>;
