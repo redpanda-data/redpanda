@@ -21,6 +21,7 @@ void offset_monitor::stop() {
         waiter.second->done.set_exception(ss::abort_requested_exception());
     }
     _waiters.clear();
+    stopped = true;
 }
 
 ss::future<> offset_monitor::wait(
@@ -30,6 +31,9 @@ ss::future<> offset_monitor::wait(
     // the offset has already been applied
     if (offset <= _last_applied) {
         return ss::now();
+    }
+    if (unlikely(stopped)) {
+        return ss::make_exception_future<>(ss::abort_requested_exception());
     }
     auto w = std::make_unique<waiter>(this, timeout, as);
     auto f = w->done.get_future();
