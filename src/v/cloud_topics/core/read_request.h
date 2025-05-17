@@ -14,42 +14,43 @@
 #include "base/seastarx.h"
 #include "cloud_topics/core/pipeline_stage.h"
 #include "cloud_topics/errc.h"
-#include "container/fragmented_vector.h"
+#include "container/intrusive_list_helpers.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
-#include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/weak_ptr.hh>
 
 namespace experimental::cloud_topics::core {
 
-struct read_request_fetch_result {
-    model::record_batch_reader reader;
-    fragmented_vector<model::tx_range> tx;
+/// The result of the read request processing.
+/// Contains raft_data batches.
+struct dataplane_query_result {
+    ss::circular_buffer<model::record_batch> results;
 };
 
-using read_request_timequery_result = storage::timequery_result;
-
-using read_request_result
-  = std::variant<read_request_fetch_result, read_request_timequery_result>;
-using read_request_query
-  = std::variant<storage::log_reader_config, storage::timequery_config>;
+/// The query for the data-plane.
+/// The meta field contains a bunch of dl_placeholder and dl_overlay batches.
+struct dataplane_query {
+    size_t output_size_estimate{0};
+    ss::circular_buffer<model::record_batch> meta;
+};
 
 // This object is created for every fetch request.
 // The main processing steps are:
-// - read underlying partition
 // - materialize placeholder batches
-// - read dl_stm state
+// or
 // - materialize dl_overlay batches
+//
+// The input is a series of placeholder batches.
 template<class Clock = ss::lowres_clock>
 struct read_request : ss::weakly_referencable<read_request<Clock>> {
     using timestamp_t = Clock::time_point;
     /// Target NTP
     model::ntp ntp;
     /// Log reader config or timequery config
-    read_request_query query;
+    dataplane_query query;
     /// Timestamp of the data ingestion
     timestamp_t ingestion_time;
     /// Fetch request processing deadline
@@ -63,7 +64,7 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
     /// Per-request logger
     basic_retry_chain_logger<Clock> rtc_logger;
 
-    using response_t = checked<read_request_result, errc>;
+    using response_t = checked<dataplane_query_result, errc>;
 
     /// The promise is used to signal to the caller
     /// after the data is fetched
@@ -77,30 +78,24 @@ struct read_request : ss::weakly_referencable<read_request<Clock>> {
 
     /// C-tor
     /// \param ntp is a target NTP
-    /// \param query is either a reader config or timequery config
-    /// \param read_quota contains semaphore units that represent memory that
-    ///        request is allowed to use
+    /// \param query is either a reader that contains a bunch of
+    ///        placeholder/overlay values
+    /// \param read_quota contains semaphore units that represent
+    ///        memory that request is allowed to use
     /// \param timeout is a time quota
     /// \param stage is a current pipeline stage (unassigned by default)
     read_request(
       model::ntp ntp,
-      read_request_query query,
+      dataplane_query query,
       std::chrono::milliseconds timeout,
       basic_retry_chain_node<Clock>* root,
       pipeline_stage stage = unassigned_pipeline_stage);
 
-    bool is_timequery() const noexcept;
-
     void set_value(errc e) noexcept;
 
-    void set_value(read_request_result result) noexcept;
+    void set_value(dataplane_query_result result) noexcept;
 
     bool has_expired() const noexcept;
-
-    /// Get log reader config.
-    /// This method can only be called if the request is not
-    /// a timequery.
-    storage::log_reader_config get_log_reader_config() const;
 };
 
 template<class Clock>
