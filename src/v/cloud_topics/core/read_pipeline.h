@@ -106,6 +106,8 @@ public:
 
     void signal(pipeline_stage stage);
 
+    event trigger_event(pipeline_stage stage);
+
 private:
     ss::abort_source& get_abort_source() {
         return this->get_root_rtc().root_abort_source();
