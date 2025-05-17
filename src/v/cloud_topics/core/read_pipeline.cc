@@ -176,6 +176,16 @@ void read_pipeline<Clock>::signal(pipeline_stage stage) {
       stage, event_type::new_read_request, _current_size, _bytes_total);
 }
 
+template<class Clock>
+event read_pipeline<Clock>::trigger_event(pipeline_stage stage) {
+    return event{
+      .stage = stage,
+      .type = event_type::new_read_request,
+      .pending_read_bytes = _current_size,
+      .total_read_bytes = _bytes_total,
+    };
+}
+
 template class read_pipeline<ss::lowres_clock>;
 template class read_pipeline<ss::manual_clock>;
 
