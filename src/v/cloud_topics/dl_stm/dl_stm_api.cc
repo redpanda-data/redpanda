@@ -59,6 +59,33 @@ dl_stm_api::push_overlay(dl_overlay overlay) {
     co_return outcome::success(true);
 }
 
+ss::future<checked<kafka::offset, dl_stm_api_errc>>
+dl_stm_api::get_last_reconciled_offset() {
+    // TODO: use proper timeout value
+    static constexpr auto timeout = std::chrono::seconds(30);
+    try {
+        co_await _stm->sync(timeout);
+        // The reconciler is starting by picking up this offset.
+        // If the commands are being applied to the STM in parallel this value
+        // could be stale. This is not a critical error though because in the
+        // worst case we will just do more work than necessary.
+        // The 'sync' call only guarantees that all commands replicated in the
+        // previous term are applied to the in-memory state.
+
+        // Additionally, we need to wait until the in-memory state will
+        // accumulate all changes available in the log.
+        auto last_offset = _stm->_raft->last_visible_index();
+        co_await _stm->wait(last_offset, model::timeout_clock::now() + timeout);
+    } catch (...) {
+        vlog(
+          _logger.error, "Failed to sync dl_stm: {}", std::current_exception());
+        co_return outcome::failure(dl_stm_api_errc::timeout);
+    }
+
+    co_return outcome::success(
+      _stm->_state.get_offsets().get_last_reconciled_offset());
+}
+
 std::optional<dl_overlay> dl_stm_api::lower_bound(kafka::offset offset) const {
     return _stm->_state.lower_bound(offset);
 }

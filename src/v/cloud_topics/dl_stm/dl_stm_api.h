@@ -64,6 +64,10 @@ public:
     ss::future<checked<void, dl_stm_api_errc>>
     remove_snapshots_before(dl_version last_version_to_keep);
 
+    /// Get last reconciled offset
+    ss::future<checked<kafka::offset, dl_stm_api_errc>>
+    get_last_reconciled_offset();
+
 private:
     /// Replicate a record batch and wait for it to be applied to the dl_stm.
     /// Returns the offset at which the batch was applied.
@@ -79,7 +83,7 @@ private:
 
     /// The API can only read the state of the stm. The state can be mutated
     /// only via \ref consensus::replicate calls.
-    ss::shared_ptr<const dl_stm> _stm;
+    ss::shared_ptr<dl_stm> _stm;
 };
 
 } // namespace experimental::cloud_topics
