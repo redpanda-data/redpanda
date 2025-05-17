@@ -26,6 +26,10 @@
 
 #include <optional>
 
+namespace experimental::cloud_topics {
+class api;
+}
+
 namespace experimental::cloud_topics::reconciler {
 
 /*
@@ -37,6 +41,7 @@ namespace experimental::cloud_topics::reconciler {
 class reconciler {
 public:
     reconciler(
+      ss::shared_ptr<api> api,
       ss::sharded<cluster::partition_manager>*,
       ss::sharded<cloud_io::remote>*,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt);
@@ -144,6 +149,7 @@ private:
     make_reader(const attached_partition&, size_t);
 
 private:
+    ss::shared_ptr<api> _api;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<cloud_io::remote>* _cloud_io;
     cloud_storage_clients::bucket_name _bucket;
