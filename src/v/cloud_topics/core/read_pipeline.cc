@@ -33,18 +33,16 @@ namespace experimental::cloud_topics::core {
 template<class Clock>
 read_pipeline<Clock>::read_pipeline()
   // TODO: use config parameter
-  : _mem_quota(10_MiB, "read-pipeline")
+  : _mem_quota(100_MiB, "read-pipeline")
   // TODO: use config parameter
   , _breaker(10, std::chrono::seconds(1)) {}
 
 template<class Clock>
-ss::future<result<read_request_fetch_result>> read_pipeline<Clock>::make_reader(
-  model::ntp ntp,
-  storage::log_reader_config cfg,
-  std::chrono::milliseconds timeout) {
+ss::future<result<dataplane_query_result>> read_pipeline<Clock>::make_reader(
+  model::ntp ntp, dataplane_query query, std::chrono::milliseconds timeout) {
     auto h = this->hold_gate();
     auto& as = this->get_root_rtc().root_abort_source();
-
+    auto size_estimate = query.output_size_estimate;
     std::optional<
       ss::semaphore_units<ss::named_semaphore_exception_factory, Clock>>
       half_open_units;
@@ -54,34 +52,33 @@ ss::future<result<read_request_fetch_result>> read_pipeline<Clock>::make_reader(
     case circuit_breaker_state::half_open:
         // If the circuit breaker is half open acquire units twice.
         // Possibly, we will have to use different mechanism here.
-        half_open_units = co_await ss::get_units(_mem_quota, 1_MiB, as);
+        half_open_units = co_await ss::get_units(_mem_quota, size_estimate, as);
         break;
     case circuit_breaker_state::closed:
         co_return errc::timeout;
     }
 
     // TODO: add timeout
-    auto units = co_await ss::get_units(_mem_quota, 1_MiB, as);
-    // TODO: fixme
-    _current_size += 1_MiB; // TODO: use actual memory quota based on estimate
-                            // (readahead + buffer size)
+    auto units = co_await ss::get_units(_mem_quota, size_estimate, as);
+    _current_size += size_estimate;
 
     // The read request is stored on the stack of the
     // fiber until the 'response' promise is set.
 
-    auto d = ss::defer([this] {
-        // TODO: fixme, use proper size estimate
-        _current_size -= 1_MiB;
-    });
+    auto d = ss::defer(
+      [this, size_estimate] { _current_size -= size_estimate; });
 
     auto stage = this->first_stage();
+
     core::read_request<Clock> request(
-      std::move(ntp), cfg, timeout, &this->get_root_rtc(), stage);
+      std::move(ntp), std::move(query), timeout, &this->get_root_rtc(), stage);
+
     vlog(
       request.rtc_logger.trace,
       "read_pipeline.make_reader called with {}, (timeout: {})",
-      cfg,
+      size_estimate,
       std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count());
+
     auto fut = request.response.get_future();
     this->get_pending().push_back(request);
 
@@ -97,19 +94,7 @@ ss::future<result<read_request_fetch_result>> read_pipeline<Clock>::make_reader(
         co_return res.error();
     }
 
-    vassert(
-      std::holds_alternative<read_request_fetch_result>(res.value()),
-      "Fetch result expected");
-
-    co_return std::get<read_request_fetch_result>(std::move(res.value()));
-}
-
-template<class Clock>
-ss::future<result<read_request_timequery_result>>
-read_pipeline<Clock>::timequery(
-  model::ntp, storage::timequery_config, std::chrono::milliseconds) {
-    // FIXME: Not implemented
-    co_return errc::unexpected_failure;
+    co_return std::move(res.value());
 }
 
 template<class Clock>
@@ -133,19 +118,13 @@ read_pipeline<Clock>::get_fetch_requests(
         if (it->stage != stage) {
             continue;
         }
-        if (it->is_timequery()) {
-            continue;
-        }
         // TODO: avoid copy
-        auto cfg = it->get_log_reader_config();
-        auto sz = cfg.max_bytes;
+        auto sz = it->query.output_size_estimate;
         acc_size += sz;
         vlog(
           it->rtc_logger.trace,
-          "get_fetch_requests processing req for {}, config: {}, total size: "
-          "{}",
+          "get_fetch_requests processing req for {}, size estimate: {}",
           it->ntp,
-          cfg,
           acc_size);
         if (acc_size >= max_bytes) {
             // Include last element
