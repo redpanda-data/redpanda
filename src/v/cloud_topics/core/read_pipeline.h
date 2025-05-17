@@ -38,19 +38,13 @@ class read_pipeline
 public:
     read_pipeline();
 
-    /// Make log reader config
-    ss::future<result<read_request_fetch_result>> make_reader(
-      model::ntp ntp,
-      storage::log_reader_config cfg,
-      std::chrono::milliseconds timeout);
-
-    /// Make timequery
-    ss::future<result<read_request_timequery_result>> timequery(
-      model::ntp ntp,
-      storage::timequery_config cfg,
-      std::chrono::milliseconds timeout);
-
-    // TODO: add metadata requests (last term for offset, start offset, etc)
+    /// Query the data plane for the given ntp.
+    /// The query is a list of placeholder or overlay batches
+    /// that should be materialized.
+    /// The result of the query is a reader that contains the
+    /// actual raft_data batches.
+    ss::future<result<dataplane_query_result>> make_reader(
+      model::ntp ntp, dataplane_query query, std::chrono::milliseconds timeout);
 
     using read_requests_list
       = requests_list<read_pipeline<Clock>, read_request<Clock>>;
