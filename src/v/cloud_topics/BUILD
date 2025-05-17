@@ -117,6 +117,18 @@ redpanda_cc_library(
         "api.h",
         "app.h",
     ],
+    include_prefix = "cloud_topics",
+    visibility = [
+        "//src/v/cloud_topics/reconciler:__pkg__",
+        "//src/v/kafka/data:__pkg__",
+        "//src/v/redpanda:__pkg__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/model",
+        "//src/v/storage",
+        "@seastar",
+    ],
 )
 
 redpanda_cc_library(
