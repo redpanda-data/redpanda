@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cloud_topics/L0_read_path/placeholder_extent.h"
-#include "cloud_topics/L0_read_path/tests/placeholder_extent_fixture.h"
 #include "cloud_topics/errc.h"
+#include "cloud_topics/read_path/placeholder_extent.h"
+#include "cloud_topics/read_path/tests/placeholder_extent_fixture.h"
 #include "test_utils/test.h"
 
 #include <seastar/core/abort_source.hh>
@@ -40,11 +40,11 @@ TEST_F_CORO(placeholder_extent_fixture, materialize_from_cache) {
 
     ASSERT_FALSE_CORO(res.has_error());
 
-    fragmented_vector<model::record_batch> actual;
+    ss::circular_buffer<model::record_batch> actual;
     actual.emplace_back(make_raft_data_batch(std::move(extent)));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
-    ASSERT_EQ_CORO(actual, expected);
+    ASSERT_TRUE_CORO(actual == expected);
 }
 
 TEST_F_CORO(placeholder_extent_fixture, cache_get_fails) {
@@ -201,11 +201,11 @@ TEST_F_CORO(placeholder_extent_fixture, is_cached_stall_then_success) {
 
     ASSERT_FALSE_CORO(res.has_error());
 
-    fragmented_vector<model::record_batch> actual;
+    ss::circular_buffer<model::record_batch> actual;
     actual.emplace_back(cloud_topics::make_raft_data_batch(std::move(extent)));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
-    ASSERT_EQ_CORO(actual, expected);
+    ASSERT_TRUE_CORO(actual == expected);
 }
 
 TEST_F_CORO(placeholder_extent_fixture, is_cached_stall_then_timeout) {
@@ -254,11 +254,11 @@ TEST_F_CORO(placeholder_extent_fixture, materialize_from_cloud) {
 
     ASSERT_FALSE_CORO(res.has_error());
 
-    fragmented_vector<model::record_batch> actual;
+    ss::circular_buffer<model::record_batch> actual;
     actual.emplace_back(cloud_topics::make_raft_data_batch(std::move(extent)));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
-    ASSERT_EQ_CORO(actual, expected);
+    ASSERT_TRUE_CORO(actual == expected);
 }
 
 TEST_F_CORO(placeholder_extent_fixture, cloud_get_return_failure) {
@@ -411,11 +411,11 @@ TEST_F_CORO(placeholder_extent_fixture, cache_reserve_space_throws) {
 
     ASSERT_FALSE_CORO(res.has_error());
 
-    fragmented_vector<model::record_batch> actual;
+    ss::circular_buffer<model::record_batch> actual;
     actual.emplace_back(cloud_topics::make_raft_data_batch(extent));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
-    ASSERT_EQ_CORO(actual, expected);
+    ASSERT_TRUE_CORO(actual == expected);
 }
 
 TEST_F_CORO(placeholder_extent_fixture, cache_reserve_space_throws_shutdown) {
@@ -469,11 +469,11 @@ TEST_F_CORO(placeholder_extent_fixture, cache_put_throws) {
 
     ASSERT_FALSE_CORO(res.has_error());
 
-    fragmented_vector<model::record_batch> actual;
+    ss::circular_buffer<model::record_batch> actual;
     actual.emplace_back(cloud_topics::make_raft_data_batch(extent));
 
     ASSERT_EQ_CORO(actual.size(), expected.size());
-    ASSERT_EQ_CORO(actual, expected);
+    ASSERT_TRUE_CORO(actual == expected);
 }
 
 TEST_F_CORO(placeholder_extent_fixture, cache_put_throws_shutdown) {
