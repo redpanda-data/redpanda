@@ -171,8 +171,7 @@ TEST_CORO(batcher_test, single_write_request) {
 
     // Check that uuid in the placeholder can be used to
     // access the data in S3.
-    auto placeholder_batches = co_await model::consume_reader_to_memory(
-      std::move(write_res.value()), model::no_timeout);
+    auto placeholder_batches = std::move(write_res.value());
     ASSERT_EQ_CORO(placeholder_batches.size(), num_batches);
     for (const model::record_batch& batch : placeholder_batches) {
         auto placeholder = parse_placeholder_batch(batch.copy());
@@ -218,7 +217,8 @@ TEST_CORO(batcher_test, many_write_requests) {
     mock.expect_upload_object(all_records);
 
     const auto timeout = 1s;
-    std::vector<ss::future<result<model::record_batch_reader>>> futures;
+    std::vector<ss::future<result<ss::circular_buffer<model::record_batch>>>>
+      futures;
     futures.push_back(pipeline.write_and_debounce(
       model::controller_ntp, std::move(reader1), timeout));
     futures.push_back(pipeline.write_and_debounce(
@@ -247,8 +247,7 @@ TEST_CORO(batcher_test, many_write_requests) {
         // Check that uuid in the placeholder can be used to
         // access the data in S3. All placeholders should share the same
         // uuid.
-        auto placeholder_batches = co_await model::consume_reader_to_memory(
-          std::move(write_res.value()), model::no_timeout);
+        auto placeholder_batches = std::move(write_res.value());
         ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches.at(ix));
         for (const model::record_batch& batch : placeholder_batches) {
             auto placeholder = parse_placeholder_batch(batch.copy());
@@ -327,8 +326,7 @@ TEST_CORO(batcher_test, expired_write_request) {
     ASSERT_TRUE_CORO(fail_result.has_error());
 
     ASSERT_TRUE_CORO(pass_result.has_value());
-    auto placeholder_batches = co_await model::consume_reader_to_memory(
-      std::move(pass_result.value()), model::no_timeout);
+    auto placeholder_batches = std::move(pass_result.value());
 
     ASSERT_EQ_CORO(placeholder_batches.size(), expected_num_batches);
     for (const model::record_batch& batch : placeholder_batches) {
