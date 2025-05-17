@@ -60,12 +60,9 @@ PERF_TEST_C(read_pipeline_bench, propagation_latency) {
     ct::core::read_pipeline<> pipeline;
     read_pipeline_sink sink(pipeline);
     sink.start();
-    storage::log_reader_config cfg(
-      model::offset(), model::offset(), ss::default_priority_class());
-
     perf_tests::start_measuring_time();
     perf_tests::do_not_optimize(co_await pipeline.make_reader(
-      model::controller_ntp, cfg, std::chrono::milliseconds(10)));
+      model::controller_ntp, {}, std::chrono::milliseconds(10)));
     perf_tests::stop_measuring_time();
 
     co_await pipeline.stop();

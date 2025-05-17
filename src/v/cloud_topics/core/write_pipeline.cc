@@ -38,7 +38,7 @@ template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
 
 template<class Clock>
-ss::future<result<model::record_batch_reader>>
+ss::future<result<ss::circular_buffer<model::record_batch>>>
 write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
   model::record_batch_reader r,
@@ -78,10 +78,7 @@ write_pipeline<Clock>::write_and_debounce(
     if (res.has_error()) {
         co_return res.error();
     }
-    // At this point the request is no longer referenced
-    // by any other shard
-    auto rdr = model::make_memory_record_batch_reader(std::move(res.value()));
-    co_return std::move(rdr);
+    co_return std::move(res.value());
 }
 
 template<class Clock>
@@ -164,6 +161,16 @@ void write_pipeline<Clock>::signal(pipeline_stage stage) {
 }
 
 template<class Clock>
+event write_pipeline<Clock>::trigger_event(pipeline_stage stage) {
+    return event{
+      .stage = stage,
+      .type = event_type::new_write_request,
+      .pending_write_bytes = _current_size,
+      .total_write_bytes = _bytes_total,
+    };
+}
+
+template<class Clock>
 bool write_pipeline<Clock>::stage::stopped() const noexcept {
     return _parent->stopped();
 }
@@ -202,14 +209,16 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
         case core::event_type::shutting_down:
             co_return errc::shutting_down;
         case core::event_type::new_write_request:
-            if (event.pending_write_bytes < max_bytes) {
+            if (
+              event.pending_write_bytes < max_bytes
+              && Clock::now() < deadline) {
                 // Ignore all write requests until timed
                 // out or enough data.
-                break;
+                continue;
             }
             [[fallthrough]];
         case core::event_type::err_timedout:
-            co_return errc::success;
+            break;
         case core::event_type::new_read_request:
         case core::event_type::none:
             vassert(false, "Read request added to the write pipeline");
