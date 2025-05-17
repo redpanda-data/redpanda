@@ -1,14 +1,14 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 package(default_visibility = [
-    "//src/v/cloud_topics/L0_read_path:__pkg__",
-    "//src/v/cloud_topics/L0_read_path/tests:__pkg__",
     "//src/v/cloud_topics/batcher:__pkg__",
     "//src/v/cloud_topics/batcher/tests:__pkg__",
     "//src/v/cloud_topics/core:__pkg__",
     "//src/v/cloud_topics/core/tests:__pkg__",
     "//src/v/cloud_topics/dl_stm:__pkg__",
     "//src/v/cloud_topics/dl_stm/tests:__pkg__",
+    "//src/v/cloud_topics/read_path:__pkg__",
+    "//src/v/cloud_topics/read_path/tests:__pkg__",
     "//src/v/cloud_topics/reconciler:__pkg__",
     "//src/v/cloud_topics/reconciler/tests:__pkg__",
     "//src/v/cloud_topics/tests:__pkg__",
@@ -120,11 +120,10 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/cloud_io:remote",
         "//src/v/cloud_storage",
-        "//src/v/cloud_topics/L0_read_path:L0_fetch_handler",
         "//src/v/cloud_topics/batcher",
         "//src/v/cloud_topics/core:read_pipeline",
         "//src/v/cloud_topics/core:write_pipeline",
-        "//src/v/cloud_topics/interfaces:cluster_partition_manager",
+        "//src/v/cloud_topics/read_path:fetch_handler",
         "//src/v/cloud_topics/reconciler",
         "//src/v/cloud_topics/throttler",
         "//src/v/model",

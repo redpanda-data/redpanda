@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Redpanda Data, Inc.
+ * Copyright 2025 Redpanda Data, Inc.
  *
  * Licensed as a Redpanda Enterprise file under the Redpanda Community
  * License (the "License"); you may not use this file except in compliance with
@@ -14,7 +14,6 @@
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_io/remote.h"
 #include "cloud_topics/core/read_pipeline.h"
-#include "cloud_topics/interfaces/cluster_partition_manager.h"
 #include "model/fundamental.h"
 
 #include <seastar/core/abort_source.hh>
@@ -24,21 +23,24 @@
 namespace experimental::cloud_topics {
 
 /// Read request handler.
-/// This component can only process
-class l0_fetch_handler {
+/// This component can process dl_placeholder and dl_overlay batches.
+/// This component should be split up into separate components in the
+/// future (one for materialization step, one for reading from cache,
+// etc). Currently everything is done in one place for simplicity.
+class fetch_handler {
 public:
-    explicit l0_fetch_handler(
+    explicit fetch_handler(
       core::read_pipeline<>::stage,
       cloud_storage_clients::bucket_name,
       cloud_io::remote_api<>*,
-      cloud_io::basic_cache_service_api<>*,
-      ss::shared_ptr<cluster_partition_manager_api>);
+      cloud_io::basic_cache_service_api<>*);
 
     ss::future<> start();
     ss::future<> stop();
 
 private:
-    ss::future<> bg_resolve_pipeline();
+    ss::future<> bg_process_requests();
+
     /// Run resolver loop once
     ss::future<checked<bool, errc>> process_requests();
 
@@ -48,7 +50,6 @@ private:
     cloud_storage_clients::bucket_name _bucket;
     cloud_io::remote_api<>* _remote;
     cloud_io::basic_cache_service_api<>* _cache;
-    ss::shared_ptr<cluster_partition_manager_api> _pm;
     retry_chain_node _rtc;
     retry_chain_logger _logger;
     ss::gate _gate;

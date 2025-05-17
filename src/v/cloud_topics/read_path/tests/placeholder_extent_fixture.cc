@@ -11,6 +11,7 @@
 #include "storage/record_batch_utils.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/gate.hh>
 
 #include <exception>
@@ -82,7 +83,7 @@ void placeholder_extent_fixture::produce_placeholders(
     // that has to be added to the cloud storage mock and (optionally) cache
     // mock
     struct placeholders_and_uploads {
-        fragmented_vector<model::record_batch> placeholders;
+        ss::circular_buffer<model::record_batch> placeholders;
         std::map<std::filesystem::path, iobuf> uploads;
     };
     // Produce data for the partition and the cloud/cache. Group data
@@ -91,7 +92,7 @@ void placeholder_extent_fixture::produce_placeholders(
       [&](
         std::queue<model::record_batch> sources,
         std::queue<iobuf> serialized_batches) -> placeholders_and_uploads {
-        fragmented_vector<model::record_batch> placeholders;
+        ss::circular_buffer<model::record_batch> placeholders;
         std::map<std::filesystem::path, iobuf> uploads;
         while (!sources.empty()) {
             iobuf current;
@@ -306,12 +307,29 @@ model::offset placeholder_extent_fixture::get_expected_committed_offset() {
     return expected.back().last_offset();
 }
 
-model::record_batch_reader placeholder_extent_fixture::make_log_reader() {
+ss::circular_buffer<model::record_batch>
+placeholder_extent_fixture::make_underlying() {
     vlog(
       test_log.info,
       "make_log_reader called, partition's size: {}, expected size: {}",
       partition.size(),
       expected.size());
-    return model::make_fragmented_memory_record_batch_reader(
-      std::move(partition));
+
+    return std::move(partition);
+}
+
+bool operator==(
+  const ss::circular_buffer<model::record_batch>& lhs,
+  const ss::circular_buffer<model::record_batch>& rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    auto it_l = lhs.begin();
+    auto it_r = rhs.begin();
+    for (; it_l != lhs.end() && it_r != rhs.end(); ++it_l, ++it_r) {
+        if (*it_l != *it_r) {
+            return false;
+        }
+    }
+    return true;
 }

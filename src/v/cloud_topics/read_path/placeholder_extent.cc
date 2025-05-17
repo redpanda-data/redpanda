@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_topics/L0_read_path/placeholder_extent.h"
+#include "cloud_topics/read_path/placeholder_extent.h"
 
 #include "bytes/iostream.h"
 #include "cloud_io/basic_cache_service_api.h"
