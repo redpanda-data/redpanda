@@ -89,6 +89,9 @@ public:
     std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const final;
 
+    std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const final;
+
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
 
     size_t size_bytes() const final;
