@@ -66,6 +66,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 
@@ -3147,6 +3148,25 @@ disk_log_impl::index_batch_base_offset_lower_bound(model::offset o) const {
         return entry->offset;
     }
     return std::nullopt;
+}
+
+std::optional<model::offset>
+disk_log_impl::base_offset_lower_bound(model::offset o) const {
+    const auto& segment_set = segments();
+    auto it = segment_set.lower_bound(o);
+    if (it != segment_set.end()) {
+        return it->get()->offsets().get_base_offset();
+    }
+
+    it = std::ranges::find_if(
+      segment_set, [o](const ss::lw_shared_ptr<storage::segment>& s) {
+          return s->offsets().get_base_offset() >= o;
+      });
+
+    if (it == segment_set.end()) {
+        return std::nullopt;
+    }
+    return it->get()->offsets().get_base_offset();
 }
 
 ss::future<std::optional<timequery_result>>

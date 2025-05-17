@@ -147,6 +147,9 @@ public:
     virtual std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const = 0;
 
+    virtual std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const = 0;
+
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *

@@ -144,6 +144,8 @@ public:
     std::optional<model::offset> index_lower_bound(model::offset o) const final;
     std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const final;
+    std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const final;
 
     std::ostream& print(std::ostream&) const final;
 
