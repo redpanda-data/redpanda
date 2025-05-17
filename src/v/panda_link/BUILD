@@ -22,6 +22,7 @@ redpanda_cc_library(
         "manager.cc",
     ],
     hdrs = [
+        "deps.h",
         "manager.h",
     ],
     implementation_deps = [
@@ -30,6 +31,8 @@ redpanda_cc_library(
     include_prefix = "panda_link",
     visibility = ["//src/v/panda_link:__subpackages__"],
     deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/kafka/client",
         "//src/v/model",
         "//src/v/ssx:work_queue",
     ],
