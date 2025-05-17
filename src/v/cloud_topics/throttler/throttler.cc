@@ -47,6 +47,7 @@ ss::future<> throttler<Clock>::stop() {
 
 template<class Clock>
 void throttler<Clock>::throttle_tput(size_t overshoot) {
+    vlog(cd_log.debug, "Throttle tput invoked, overshoot = {}", overshoot);
     auto list = _my_stage.pull_write_requests(overshoot);
     chunked_vector<write_req_ptr> tmp;
     for (auto& wr : list.requests) {
