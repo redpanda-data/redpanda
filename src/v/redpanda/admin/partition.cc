@@ -19,6 +19,7 @@
 #include "cluster/topics_frontend.h"
 #include "container/fragmented_vector.h"
 #include "container/lw_shared_container.h"
+#include "kafka/data/partition_proxy.h"
 #include "model/record.h"
 #include "redpanda/admin/api-doc/debug.json.hh"
 #include "redpanda/admin/api-doc/partition.json.hh"
@@ -681,6 +682,62 @@ admin_server::set_partition_replica_core_handler(
     co_return ss::json::json_void();
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::offset_for_leader_epoch_handler(
+  std::unique_ptr<ss::http::request> request) {
+    auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*request, ntp);
+    }
+    vlog(
+      adminlog.debug,
+      "Requesting offset for leader epoch for partition {}",
+      ntp);
+    auto epoch_str = request->get_query_param("epoch");
+    kafka::leader_epoch epoch{};
+    try {
+        epoch = boost::lexical_cast<kafka::leader_epoch>(epoch_str);
+    } catch (const boost::bad_lexical_cast&) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("epoch parameter must be an integer: {}", epoch_str));
+    }
+    auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt_with_ctx(
+          fmt::format, "Partition {} not found on this node", ntp));
+    }
+    auto [offset, current_epoch] = co_await _partition_manager.invoke_on(
+      *shard,
+      [ntp = std::move(ntp), epoch](cluster::partition_manager& pm) mutable {
+          return ss::do_with(
+            kafka::make_partition_proxy(ntp, pm),
+            std::move(ntp),
+            [epoch](
+              std::optional<kafka::partition_proxy>& proxy, model::ntp& ntp) {
+                if (!proxy) {
+                    return ss::make_exception_future<std::pair<
+                      std::optional<model::offset>,
+                      kafka::leader_epoch>>(
+                      ss::httpd::not_found_exception(fmt_with_ctx(
+                        fmt::format,
+                        "Partition {} not found on this node",
+                        ntp)));
+                }
+                auto current_epoch = proxy->leader_epoch();
+                return proxy->get_leader_epoch_last_offset(epoch).then(
+                  [current_epoch](std::optional<model::offset> offset) {
+                      return std::make_pair(offset, current_epoch);
+                  });
+            });
+      });
+
+    ss::httpd::partition_json::epoch_and_offset result;
+    result.epoch = epoch;
+    result.current_leader_epoch = current_epoch();
+    result.end_offset = offset ? offset.value()() : -1;
+    co_return result;
+}
+
 void admin_server::register_partition_routes() {
     /*
      * Get a list of partition summaries.
@@ -838,6 +895,12 @@ void admin_server::register_partition_routes() {
       ss::httpd::debug_json::disable_append_entries_error_injection,
       [this](std::unique_ptr<ss::http::request> req) {
           return toggle_append_entries_error_injection(std::move(req), false);
+      });
+
+    register_route<superuser>(
+      ss::httpd::partition_json::offset_for_leader_epoch,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return offset_for_leader_epoch_handler(std::move(req));
       });
 
     register_route<superuser>(
