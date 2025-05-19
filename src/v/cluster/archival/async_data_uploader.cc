@@ -88,7 +88,7 @@ class reader_ds : public ss::data_source_impl {
 
 public:
     explicit reader_ds(
-      model::ntp ntp,
+      const model::ntp& ntp,
       model::record_batch_reader r,
       size_t max_bytes,
       inclusive_offset_range range,
@@ -153,7 +153,7 @@ private:
 };
 
 ss::input_stream<char> make_reader_input_stream(
-  model::ntp ntp,
+  const model::ntp& ntp,
   model::record_batch_reader r,
   size_t read_buffer_size,
   inclusive_offset_range range,
@@ -288,7 +288,7 @@ ss::future<result<void>> segment_upload::initialize(
     // Create a log reader config to scan the uploaded offset
     // range. We should skip the batch cache.
     storage::log_reader_config reader_cfg(
-      params.value().offsets.base, params.value().offsets.last);
+      _params.value().offsets.base, _params.value().offsets.last);
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
     reader_cfg.read_lock_deadline = deadline_sc;
@@ -299,7 +299,7 @@ ss::future<result<void>> segment_upload::initialize(
       _ntp,
       std::move(reader),
       _rd_buffer_size,
-      params.value().offsets,
+      _params.value().offsets,
       model::time_until(deadline));
     co_return outcome::success();
 }
