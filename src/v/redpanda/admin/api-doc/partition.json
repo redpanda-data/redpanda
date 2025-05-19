@@ -464,6 +464,40 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/partitions/{topic}/{partition}/offset_for_leader_epoch",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Perform offset_for_leader_epoch on the given Kafka partition and epoch",
+                    "nickname": "offset_for_leader_epoch",
+                    "type": "epoch_and_offset",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "epoch",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -798,6 +832,30 @@
                     "description:": "List of nodes that are dead and contributing to majority loss of partitions."
                 }
             }
+        },
+        "epoch_and_offset": {
+            "id": "epoch_and_offset",
+            "description": "Result of the offset for leader epoch request",
+            "type": "object",
+            "properties": {
+                "epoch": {
+                    "type": "int",
+                    "description": "The epoch requested"
+                },
+                "current_leader_epoch": {
+                    "type": "int",
+                    "description": "The current leader epoch of the partition"
+                },
+                "end_offset": {
+                    "type": "long",
+                    "description": "The end offset of the partition for the requested epoch"
+                }
+            },
+            "required": [
+                "epoch",
+                "current_leader_epoch",
+                "end_offset"
+            ]
         }
     }
 }
