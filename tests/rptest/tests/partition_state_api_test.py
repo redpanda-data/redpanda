@@ -12,6 +12,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
+from requests.exceptions import HTTPError
 
 from collections import Counter
 import time
@@ -199,3 +200,80 @@ class PartitionStateAPItest(RedpandaTest):
         sumsum_eventually(count=2 * n_topics,
                           leaderless=2 * n_topics,
                           under_replicated=0)
+
+    @cluster(num_nodes=5)
+    def test_offset_for_leader_epoch(self):
+        self.topics = [
+            TopicSpec(partition_count=1,
+                      replication_factor=len(self.redpanda.nodes))
+        ]
+        topic = self.topics[0]
+        self._create_initial_topics()
+        kafka_tools = KafkaCliTools(self.redpanda)
+
+        # Invalid request
+        try:
+            self.redpanda._admin.get_offset_for_leader_epoch(
+                topic.name, 0, "unparseable_epoch")
+            assert False, "Expected request to fail with invalid epoch"
+        except HTTPError as e:
+            assert e.response.status_code == 400, \
+                f"Expected 400 Bad Request, got {e.response.status_code}"
+
+        def produce_one_record():
+            kafka_tools.produce(topic.name, 1, 1, acks=-1)
+
+        def get_current_leader_epoch():
+            try:
+                return self.redpanda._admin.get_offset_for_leader_epoch(
+                    topic.name, 0, 1)["current_leader_epoch"]
+            except:
+                self.logger.debug(f"Failed to get current leader epoch",
+                                  exc_info=True)
+                return -1
+
+        def do_validate_offset_for_leader_epoch(epoch: int,
+                                                expected_offset: int):
+            node_results = []
+            for node in self.redpanda.started_nodes():
+                try:
+                    output = self.redpanda._admin.get_offset_for_leader_epoch(
+                        topic.name, 0, epoch, node)
+                    node_results.append(
+                        output["end_offset"] == expected_offset
+                        and output["current_leader_epoch"] == epoch)
+                except:
+                    self.logger.debug(
+                        f"Failed to get offset for leader epoch for node {node}",
+                        exc_info=True)
+                    node_results.append(False)
+            return all(node_results)
+
+        def validate_offset_for_leader_epoch(epoch: int, expected_offset: int):
+            self.redpanda.wait_until(
+                lambda: do_validate_offset_for_leader_epoch(
+                    epoch, expected_offset),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg=
+                f"Offset for leader epoch {epoch} not consistent across nodes")
+
+        current_epoch = get_current_leader_epoch()
+        validate_offset_for_leader_epoch(current_epoch, 0)
+        produce_one_record()
+        validate_offset_for_leader_epoch(current_epoch, 1)
+        produce_one_record()
+        validate_offset_for_leader_epoch(current_epoch, 2)
+
+        # Bump epoch
+        while True:
+            epoch = get_current_leader_epoch()
+            if epoch > current_epoch:
+                current_epoch = epoch
+                break
+            self.redpanda._admin.partition_transfer_leadership(
+                "kafka", topic.name, 0)
+
+        validate_offset_for_leader_epoch(current_epoch, 2)
+        produce_one_record()
+        validate_offset_for_leader_epoch(current_epoch, 3)
