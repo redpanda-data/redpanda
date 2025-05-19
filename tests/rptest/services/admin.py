@@ -1628,6 +1628,10 @@ class Admin:
         path = f"debug/partition/{namespace}/{topic}/{partition}"
         return self._request("GET", path, node=node).json()
 
+    def get_offset_for_leader_epoch(self, topic, partition, epoch, node=None):
+        path = f"debug/partitions/{topic}/{partition}/offset_for_leader_epoch?epoch={epoch}"
+        return self._request("GET", path, node=node).json()
+
     def get_partitions_local_summary(self, node: ClusterNode):
         path = f"partitions/local_summary"
         return self._request("GET", path, node=node).json()
