@@ -199,14 +199,17 @@ mark_files_committed_update::apply(topics_state& state) {
     const auto& topic = tp.topic;
     const auto& pid = tp.partition;
 
+    auto& tp_state = state.topic_to_state[topic];
+
     // Mark all files that fall entirely below `new_committed` as committed.
-    auto& files_state = state.topic_to_state[topic].pid_to_pending_files[pid];
+    auto& files_state = tp_state.pid_to_pending_files[pid];
     while (!files_state.pending_entries.empty()
            && files_state.pending_entries.front().data.last_offset
                 <= new_committed) {
         files_state.pending_entries.pop_front();
     }
     files_state.last_committed = new_committed;
+    tp_state.add_kafka_bytes_processed(kafka_bytes_processed);
     return std::nullopt;
 }
 
