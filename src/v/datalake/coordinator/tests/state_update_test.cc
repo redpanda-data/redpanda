@@ -62,7 +62,7 @@ void check_commit_doesnt_apply(
   int64_t commit_offset) {
     // We should fail to build the update in the first place.
     auto update = mark_files_committed_update::build(
-      state, tp, rev, kafka::offset{commit_offset});
+      state, tp, rev, kafka::offset{commit_offset}, 0UL);
     EXPECT_TRUE(update.has_error());
 
     // Also explicitly build the bad update and make sure it doesn't apply.
@@ -186,7 +186,8 @@ TEST(StateUpdateTest, TestMarkCommitted) {
     ASSERT_NO_FATAL_FAILURE(check_commit_doesnt_apply(state, tp, 201));
     ASSERT_NO_FATAL_FAILURE(check_partition(state, tp, 100, {{101, 200}}));
 
-    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{200})
+    res = mark_files_committed_update::build(
+            state, tp, rev, kafka::offset{200}, 0UL)
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());
@@ -214,7 +215,8 @@ TEST(StateUpdateTest, TestMarkCommitted) {
       check_partition(state, tp, 200, {{201, 205}, {206, 210}, {211, 220}}));
 
     // But it should work with one of the inner files.
-    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{205})
+    res = mark_files_committed_update::build(
+            state, tp, rev, kafka::offset{205}, 0UL)
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());
@@ -222,7 +224,8 @@ TEST(StateUpdateTest, TestMarkCommitted) {
       check_partition(state, tp, 205, {{206, 210}, {211, 220}}));
 
     // And it should work with the last file.
-    res = mark_files_committed_update::build(state, tp, rev, kafka::offset{220})
+    res = mark_files_committed_update::build(
+            state, tp, rev, kafka::offset{220}, 0UL)
             .value()
             .apply(state);
     EXPECT_FALSE(res.has_error());
@@ -295,7 +298,7 @@ TEST(StateUpdateTest, TestLifecycle) {
 
     {
         auto upd = mark_files_committed_update::build(
-          state, tp, rev2, kafka::offset{100});
+          state, tp, rev2, kafka::offset{100}, 0UL);
         ASSERT_TRUE(upd.has_value());
         ASSERT_TRUE(upd.value().apply(state).has_value());
     }

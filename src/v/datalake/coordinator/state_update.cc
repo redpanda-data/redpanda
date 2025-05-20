@@ -131,11 +131,13 @@ mark_files_committed_update::build(
   const topics_state& state,
   const model::topic_partition& tp,
   model::revision_id topic_revision,
-  kafka::offset o) {
+  kafka::offset o,
+  uint64_t kafka_bytes_processed) {
     mark_files_committed_update update{
       .tp = tp,
       .topic_revision = topic_revision,
       .new_committed = o,
+      .kafka_bytes_processed = kafka_bytes_processed,
     };
     auto allowed = update.can_apply(state);
     if (allowed.has_error()) {
@@ -304,10 +306,11 @@ std::ostream&
 operator<<(std::ostream& o, const mark_files_committed_update& u) {
     fmt::print(
       o,
-      "{{tp: {}, revision: {}, new_committed: {}}}",
+      "{{tp: {}, revision: {}, new_committed: {}, kafka_bytes_processed: {}}}",
       u.tp,
       u.topic_revision,
-      u.new_committed);
+      u.new_committed,
+      u.kafka_bytes_processed);
     return o;
 }
 

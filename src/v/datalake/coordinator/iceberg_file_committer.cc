@@ -505,10 +505,17 @@ iceberg_file_committer::commit_topic_files_to_catalog(
           dlq_table_commit_builder_res.value());
     }
 
-    chunked_hash_map<model::partition_id, kafka::offset> pending_commits;
+    struct offset_and_bytes {
+        kafka::offset last_offset{};
+        size_t kafka_bytes_processed{0};
+    };
+
+    chunked_hash_map<model::partition_id, offset_and_bytes> pending_commits;
     for (const auto& [pid, p_state] : tp_state.pid_to_pending_files) {
         for (const auto& e : p_state.pending_entries) {
-            pending_commits[pid] = e.data.last_offset;
+            pending_commits[pid].last_offset = e.data.last_offset;
+            pending_commits[pid].kafka_bytes_processed
+              += e.data.kafka_bytes_processed;
 
             if (!e.data.files.empty()) {
                 vassert(
@@ -546,10 +553,14 @@ iceberg_file_committer::commit_topic_files_to_catalog(
         co_return chunked_vector<mark_files_committed_update>{};
     }
     chunked_vector<mark_files_committed_update> updates;
-    for (const auto& [pid, committed_offset] : pending_commits) {
+    for (const auto& [pid, entry] : pending_commits) {
         auto tp = model::topic_partition(topic, pid);
         auto update_res = mark_files_committed_update::build(
-          state, tp, topic_revision, committed_offset);
+          state,
+          tp,
+          topic_revision,
+          entry.last_offset,
+          entry.kafka_bytes_processed);
         if (update_res.has_error()) {
             vlog(
               datalake_log.warn,
