@@ -2952,6 +2952,52 @@ bool disk_log_impl::is_compacted(
     return false;
 }
 
+bool disk_log_impl::compaction_complete(
+  model::offset first, model::offset last) const {
+    if (auto mco = max_compacted_offset(first); mco.has_value()) {
+        return last <= mco.value();
+    }
+    return false;
+}
+
+std::optional<model::offset>
+disk_log_impl::max_compacted_offset(model::offset first) const {
+    auto it = _segs.lower_bound(first);
+    if (it == _segs.end()) {
+        return std::nullopt;
+    }
+    auto compaction_complete = [](const segment& seg) {
+        if (!seg.is_compacted_segment()) {
+            return false;
+        }
+        if (config::shard_local_cfg().log_compaction_use_sliding_window) {
+            return seg.has_clean_compact_timestamp();
+        }
+        return seg.has_self_compact_timestamp();
+    };
+
+    if (!compaction_complete(*(it->get()))) {
+        return std::nullopt;
+    }
+    auto first_uncompacted = std::lower_bound(
+      it,
+      _segs.end(),
+      true,
+      [&compaction_complete](
+        const ss::lw_shared_ptr<segment>& seg, bool value) {
+          auto cc = compaction_complete(*seg);
+          return value && cc;
+      });
+
+    if (first_uncompacted == _segs.end()) {
+        // in this case everything is compacted
+        return _segs.back()->offsets().get_committed_offset();
+    }
+
+    return model::prev_offset(
+      first_uncompacted->get()->offsets().get_base_offset());
+}
+
 ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);

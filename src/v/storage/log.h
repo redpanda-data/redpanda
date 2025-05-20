@@ -200,6 +200,13 @@ public:
     virtual bool is_compacted(model::offset first, model::offset last) const
       = 0;
 
+    virtual bool
+    compaction_complete(model::offset first, model::offset last) const
+      = 0;
+
+    virtual std::optional<model::offset>
+    max_compacted_offset(model::offset first = model::offset{0}) const = 0;
+
     /// Mutates the ntp_config stored in the log with the new
     /// topic/partition-level overrides
     virtual void set_overrides(ntp_config::default_overrides) = 0;
