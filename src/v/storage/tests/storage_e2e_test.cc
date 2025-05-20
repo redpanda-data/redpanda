@@ -3377,6 +3377,7 @@ TEST_F(storage_test_fixture, test_max_compact_offset) {
     // specified.
     ASSERT_LE(post_compact_gaps.first_gap_start, max_compact_offset);
     ASSERT_LE(post_compact_gaps.last_gap_end, max_compact_offset);
+    ASSERT_LE(log->max_compacted_offset(model::offset{0}), max_compact_offset);
 };
 
 TEST_F(storage_test_fixture, test_self_compaction_while_reader_is_open) {
@@ -3594,6 +3595,8 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
     //  Instead, we use weaker assert for now:
 
     ASSERT_LE(final_gaps.last_gap_end, args.max_compact_offs);
+    ASSERT_LE(
+      log->max_compacted_offset(model::offset{0}), args.max_compact_offs);
 }
 
 TEST_F(storage_test_fixture, test_max_compact_offset_mid_segment) {
@@ -6478,5 +6481,99 @@ TEST_F(storage_test_fixture, test_offset_range_size_lock_timeout) {
               ss::semaphore::clock::now() + 1s)
             .get(),
           ss::timed_out_error);
+    }
+}
+
+TEST_F(storage_test_fixture, test_max_compacted_offset) {
+    constexpr size_t num_segments = 2;
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "test-topic", 0);
+
+    storage::ntp_config::default_overrides overrides{
+      .cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction,
+    };
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log, 10, model::term_id(i), key_limited_random_batch_generator());
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+    auto first = *std::next(segments.begin(), 0);
+    auto second = *std::next(segments.begin(), 1);
+
+    auto mco = [&log](model::offset from) {
+        return log->max_compacted_offset(from);
+    };
+
+    EXPECT_FALSE(mco(first->offsets().get_base_offset()).has_value());
+    EXPECT_FALSE(mco(second->offsets().get_base_offset()).has_value());
+    EXPECT_FALSE(mco(first->offsets().get_committed_offset()).has_value());
+    EXPECT_FALSE(mco(model::offset::max()).has_value());
+    EXPECT_FALSE(mco(model::offset::min()).has_value());
+
+    {
+        // Compact the first segment only
+        vlog(e2e_test_log.info, "Starting compaction");
+        storage::housekeeping_config h_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          first->offsets().get_committed_offset(),
+          std::nullopt,
+          0ms,
+          as);
+        log->housekeeping(h_cfg).get();
+
+        EXPECT_TRUE(mco(first->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_base_offset()),
+          first->offsets().get_committed_offset());
+        EXPECT_FALSE(mco(second->offsets().get_base_offset()).has_value());
+        EXPECT_TRUE(mco(first->offsets().get_committed_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_committed_offset()),
+          first->offsets().get_committed_offset());
+    }
+
+    {
+        // Now the rest of the topic
+        vlog(e2e_test_log.info, "Starting compaction");
+        storage::housekeeping_config h_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          log->offsets().committed_offset,
+          std::nullopt,
+          0ms,
+          as);
+        log->housekeeping(h_cfg).get();
+
+        EXPECT_TRUE(mco(first->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_base_offset()),
+          second->offsets().get_committed_offset());
+        EXPECT_TRUE(mco(second->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(second->offsets().get_base_offset()),
+          second->offsets().get_committed_offset());
+
+        EXPECT_TRUE(mco(first->offsets().get_committed_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_committed_offset()),
+          second->offsets().get_committed_offset());
     }
 }

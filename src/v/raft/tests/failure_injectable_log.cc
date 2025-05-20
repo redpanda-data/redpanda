@@ -192,6 +192,16 @@ bool failure_injectable_log::is_compacted(
     return _underlying_log->is_compacted(first, last);
 }
 
+bool failure_injectable_log::compaction_complete(
+  model::offset first, model::offset last) const {
+    return _underlying_log->compaction_complete(first, last);
+}
+
+std::optional<model::offset>
+failure_injectable_log::max_compacted_offset(model::offset first) const {
+    return _underlying_log->max_compacted_offset(first);
+}
+
 void failure_injectable_log::set_overrides(
   storage::ntp_config::default_overrides overrides) {
     mutable_config().set_overrides(overrides);
