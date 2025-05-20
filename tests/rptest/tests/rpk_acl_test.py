@@ -126,9 +126,8 @@ class RpkACLTest(RedpandaTest):
                                          self.mechanism)
         assert f'Updated user "{self.username}" successfully' in out
 
-        with expect_exception(
-                RpkException, lambda e:
-                'Invalid credentials: SASL_AUTHENTICATION_FAILED' in str(e)):
+        with expect_exception(RpkException,
+                              lambda e: 'Invalid credentials' in str(e)):
             # the rpk tool instance here will use old credentials so now it
             # should fail. We wait until it fails because the user update
             # it's not instant.

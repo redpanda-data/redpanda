@@ -285,9 +285,14 @@ class OffsetDeletionTest(RedpandaTest):
 
     @cluster(num_nodes=5)
     def test_offset_deletion(self):
-        def wait_for_partitions_in_group(n):
+        def wait_for_partitions_in_group(n, topic_names):
+            # rpk group describe show non-empty groups so we want to make sure that
+            # we filter for the ones we are expecting.
             desc = self.rpk.group_describe(self.group)
-            return len(desc.partitions) == n
+            topic_partitions = [
+                p for p in desc.partitions if p.topic in topic_names
+            ]
+            return len(topic_partitions) == n
 
         def assert_status(output, expected_status, expected_topic):
             for response in output:
@@ -300,7 +305,7 @@ class OffsetDeletionTest(RedpandaTest):
             self.rpk.produce(self.topic, "k", "v", partition=1)
             self.rpk.produce(self.topic, "k", "v", partition=2)
         self.rpk.consume(self.topic, n=3, group=self.group)
-        wait_until(partial(wait_for_partitions_in_group, 3),
+        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
                    timeout_sec=30,
                    backoff_sec=1)
 
@@ -328,7 +333,7 @@ class OffsetDeletionTest(RedpandaTest):
         consumer = self.make_consumer(self.topic)
         consumer.start()
         consumer.wait_for_messages(1)
-        wait_until(partial(wait_for_partitions_in_group, 3),
+        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
                    timeout_sec=30,
                    backoff_sec=1)
 
@@ -369,7 +374,8 @@ class OffsetDeletionTest(RedpandaTest):
         consumer_b.start()
 
         # Wait until both have joined the group
-        wait_until(partial(wait_for_partitions_in_group, 6),
+        wait_until(partial(wait_for_partitions_in_group, 6,
+                           [self.topic, new_topic]),
                    timeout_sec=30,
                    backoff_sec=1)
 
@@ -383,7 +389,7 @@ class OffsetDeletionTest(RedpandaTest):
 
         # After consumer_b shuts down wait for the group rebalance to occur
         # and unsubscription of topic/partitions it was assigned to
-        wait_until(partial(wait_for_partitions_in_group, 3),
+        wait_until(partial(wait_for_partitions_in_group, 3, [self.topic]),
                    timeout_sec=30,
                    backoff_sec=1)
 

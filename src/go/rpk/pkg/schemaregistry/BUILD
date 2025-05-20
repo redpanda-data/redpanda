@@ -12,6 +12,8 @@ go_library(
         "//src/go/rpk/pkg/oauth",
         "//src/go/rpk/pkg/oauth/providers/auth0",
         "@com_github_spf13_afero//:afero",
+        "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_sr//:sr",
+        "@com_github_twmb_franz_go_plugin_kzap//:kzap",
     ],
 )
