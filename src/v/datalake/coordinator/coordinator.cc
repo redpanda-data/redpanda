@@ -542,11 +542,13 @@ coordinator::sync_add_files(
     }
     vlog(
       datalake_log.debug,
-      "Sync add files requested {} (topic rev: {}): [{}, {}], {} files",
+      "Sync add files requested {} (topic rev: {}): [{}, {}], kafka_bytes: {} "
+      "files: {}",
       tp,
       topic_revision,
       entries.begin()->start_offset,
       entries.back().last_offset,
+      entries.back().kafka_bytes_processed,
       entries.size());
     auto sync_res = co_await stm_->sync(10s);
     if (sync_res.has_error()) {
