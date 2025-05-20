@@ -607,8 +607,16 @@ seastar::future<> raft_fixture::TearDownAsync() {
     co_await ss::smp::invoke_on_all(
       []() { config::shard_local_cfg().for_each([](auto& p) { p.reset(); }); });
 
-    co_await seastar::coroutine::parallel_for_each(
-      _nodes, [](auto& pair) { return pair.second->stop(); });
+    co_await seastar::coroutine::parallel_for_each(_nodes, [this](auto& pair) {
+        vassert(
+          !_validate_state_machine_inconsistency
+            || pair.second->raft()
+                   ->get_probe()
+                   .get_state_machine_inconsistency_errors()
+                 == 0,
+          "State machine inconsistency detected");
+        return pair.second->stop();
+    });
 
     co_await seastar::coroutine::parallel_for_each(
       _nodes, [](auto& pair) { return pair.second->remove_data(); });

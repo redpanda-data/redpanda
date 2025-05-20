@@ -295,9 +295,8 @@ TEST_F_CORO(state_machine_fixture, test_recovery_from_snapshot) {
     }
 
     auto expected = co_await build_random_state(1000);
-
+    // Checksum validation should pass on stms that are not in sync.
     co_await wait_for_apply();
-
     for (auto& stm : stms) {
         ASSERT_EQ_CORO(stm->state, expected);
     }

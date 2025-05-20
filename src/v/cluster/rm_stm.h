@@ -232,6 +232,8 @@ public:
         return raft::stm_initial_recovery_policy::read_everything;
     }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
+
 protected:
     ss::future<> apply_raft_snapshot(const iobuf&) final;
 

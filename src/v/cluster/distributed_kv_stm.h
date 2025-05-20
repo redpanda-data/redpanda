@@ -173,6 +173,7 @@ public:
     // TODO: implement delete retention with incremental raft snapshots.
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
     /**
      * Discover the partition that is responsible for holding this key.
      */

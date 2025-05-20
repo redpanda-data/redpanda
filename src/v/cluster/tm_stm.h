@@ -400,6 +400,7 @@ private:
     void upsert_transaction(tx_metadata);
 
     fragmented_vector<tx_metadata> get_transactions_list() const;
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
 
 private:
     std::chrono::milliseconds _sync_timeout;

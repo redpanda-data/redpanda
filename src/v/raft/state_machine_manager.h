@@ -49,6 +49,11 @@ concept StateMachineIterateFunc = requires(
   Func f, const ss::sstring& name, const state_machine_base& stm) {
     { f(name, stm) } -> std::convertible_to<void>;
 };
+
+struct checksum_validation_error {
+    ss::sstring name;
+    model::offset last_applied_offset;
+};
 /**
  * State machine manager is an entry point for registering state machines
  * built on top of replicated log. State machine managers uses a single
@@ -135,6 +140,10 @@ public:
 
     ss::future<> remove_local_state();
 
+    state_machine_checksums get_stm_state_checksums();
+    std::optional<checksum_validation_error>
+    validate_checksums(const state_machine_checksums& checksums);
+
 private:
     using stm_ptr = ss::shared_ptr<state_machine_base>;
     struct named_stm {
@@ -192,6 +201,12 @@ private:
 
         ss::sstring name;
         ss::shared_ptr<state_machine_base> stm;
+
+        ss::future<> update_state_checksum();
+
+        // checksum of state machine state, it is only updated after one or more
+        // batches were applied to the state machine.
+        stm_state_checksum state_checksum;
         mutex background_apply_mutex{
           "state_machine_manager::background_apply_mutex"};
     };

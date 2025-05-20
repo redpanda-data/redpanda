@@ -13,6 +13,7 @@
 
 #include "bytes/iostream.h"
 #include "config/property.h"
+#include "hashing/murmur.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
@@ -243,6 +244,11 @@ ss::future<> state_machine_manager::stop() {
     co_await ss::coroutine::parallel_for_each(
       _machines, [](auto p) { return p.second->stm->stop(); });
     co_await std::move(gate_f);
+}
+ss::future<>
+state_machine_manager::state_machine_entry::update_state_checksum() {
+    state_checksum.last_applied_offset = stm->last_applied_offset();
+    state_checksum.checksum = co_await stm->get_state_checksum();
 }
 
 ss::future<> state_machine_manager::apply_initial_recovery_policy() {
@@ -540,6 +546,9 @@ ss::future<> state_machine_manager::try_apply_in_foreground() {
             co_await ss::sleep_abortable(100ms, _as);
             co_return;
         }
+        for (auto& [_, entry] : _machines) {
+            co_await entry->update_state_checksum();
+        }
         _next = std::max(model::next_offset(max_last_applied), _next);
         vlog(_log.trace, "updating _next offset with: {}", _next);
     } catch (const ss::timed_out_error&) {
@@ -670,6 +679,8 @@ ss::future<> state_machine_manager::background_apply_fiber(
             co_await ss::sleep_abortable(100ms, _as);
         }
     }
+
+    co_await entry->update_state_checksum();
     units.return_all();
     vlog(
       _log.debug,
@@ -854,6 +865,60 @@ ss::future<> state_machine_manager::write_initial_recovery_snapshot(
 
     co_await writer.close();
     co_await _initial_recovery_snapshot_mgr.finish_snapshot(writer);
+}
+namespace {
+state_machine_id get_numeric_id(const ss::sstring& name) {
+    return state_machine_id(murmurhash3_x86_32(name.c_str(), name.size()));
+}
+} // namespace
+state_machine_checksums state_machine_manager::get_stm_state_checksums() {
+    state_machine_checksums checksums;
+    checksums.reserve(_machines.size());
+    for (auto& [name, entry] : _machines) {
+        checksums.try_emplace(get_numeric_id(name), entry->state_checksum);
+    }
+    return checksums;
+}
+
+std::optional<checksum_validation_error>
+state_machine_manager::validate_checksums(
+  const state_machine_checksums& checksums) {
+    for (const auto& [name, entry] : _machines) {
+        auto id = get_numeric_id(name);
+        auto it = checksums.find(id);
+        if (it == checksums.end()) {
+            continue;
+        }
+        const auto& state_checksum = it->second;
+        /**
+         * Do not try to validate state checksums if the last applied offset
+         * does not match. It is possible that the state machine has not been
+         * updated yet.
+         */
+        if (
+          state_checksum.last_applied_offset
+          != entry->state_checksum.last_applied_offset) {
+            vlog(
+              _log.trace,
+              "last applied offsets mismatch for {}, expected: {}, actual: {}",
+              name,
+              state_checksum.last_applied_offset,
+              entry->state_checksum.last_applied_offset);
+            continue;
+        }
+        if (state_checksum.checksum != entry->state_checksum.checksum) {
+            vlog(
+              _log.error,
+              "state checksum mismatch for {}, expected: {}, actual: {}",
+              name,
+              state_checksum.checksum,
+              entry->state_checksum.checksum);
+            return checksum_validation_error{
+              .name = name,
+              .last_applied_offset = state_checksum.last_applied_offset};
+        }
+    }
+    return std::nullopt;
 }
 
 std::ostream& operator<<(

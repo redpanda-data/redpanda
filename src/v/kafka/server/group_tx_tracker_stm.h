@@ -130,6 +130,8 @@ public:
         return raft::stm_initial_recovery_policy::read_everything;
     }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
+
 private:
     static constexpr int8_t supported_local_snapshot_version = 1;
     struct snapshot

@@ -96,6 +96,8 @@ public:
         return raft::stm_initial_recovery_policy::skip_to_end;
     }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
+
 private:
     struct snapshot
       : serde::envelope<snapshot, serde::version<1>, serde::compat_version<0>> {

@@ -22,6 +22,8 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sleep.hh>
 
+#include <crc32c/crc32c.h>
+
 namespace cluster {
 
 struct snapshot_data
@@ -282,7 +284,13 @@ model::offset log_eviction_stm::effective_start_offset() const {
     return model::next_offset(
       std::max(_raft->last_snapshot_index(), _delete_records_eviction_offset));
 }
-
+ss::future<uint32_t> log_eviction_stm::get_state_checksum() const {
+    crc::crc32c c;
+    c.extend(
+      reinterpret_cast<const uint8_t*>(&_delete_records_eviction_offset),
+      sizeof(model::offset::type));
+    co_return c.value();
+}
 ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
   model::offset rp_start_offset,
   kafka::offset kafka_start_offset,

@@ -143,6 +143,13 @@ heartbeat_manager::requests_for_range() {
                 .prev_log_term = raft_metadata.prev_log_term,
                 .last_visible_index = raft_metadata.last_visible_index,
               };
+              if (
+                r->stm_manager()
+                && follower_metadata.match_committed_index()
+                     == raft_metadata.commit_index) {
+                  group_beat.data->checksums.emplace(
+                    r->stm_manager()->get_stm_state_checksums());
+              }
               it->second.emplace_back(
                 group_beat,
                 heartbeat_manager::follower_request_meta(

@@ -138,6 +138,7 @@ redpanda_cc_library(
         "//src/v/container:intrusive",
         "//src/v/features",
         "//src/v/hashing:crc32c",
+        "//src/v/hashing:murmur",
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:generators",

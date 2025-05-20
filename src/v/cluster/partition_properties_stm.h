@@ -54,6 +54,8 @@ public:
         return raft::stm_initial_recovery_policy::skip_to_end;
     }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
+
 protected:
     ss::future<raft::local_snapshot_applied>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;

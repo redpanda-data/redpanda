@@ -115,6 +115,22 @@ struct simple_kv_base : public BaseT {
     size_t get_local_state_size() const final { return 0; }
     ss::future<> remove_local_state() final { co_return; }
 
+    ss::future<uint32_t> get_state_checksum() const override {
+        /**
+         * We have to use sorted map as flat_hash_map is not ordered and
+         * randomized.
+         */
+        absl::btree_map<ss::sstring, value_entry> sorted_state(
+          state.begin(), state.end());
+
+        crc::crc32c c;
+        for (auto& [k, v] : sorted_state) {
+            c.extend(k.c_str(), k.size());
+            c.extend(v.value.c_str(), v.value.size());
+        }
+        co_return c.value();
+    }
+
     state_t state;
     raft_node_instance& raft_node;
 };
@@ -166,6 +182,20 @@ struct state_machine_fixture : raft_fixture {
 
     ss::future<result<raft::replicate_result>> remove(ss::sstring k) {
         return replicate({std::make_pair(std::move(k), std::nullopt)});
+    }
+
+    bool checksums_equal() {
+        const auto checksums = nodes()
+                                 .begin()
+                                 ->second->raft()
+                                 ->stm_manager()
+                                 ->get_stm_state_checksums();
+        return std::ranges::none_of(nodes(), [checksums](const auto& pair) {
+            return pair.second->raft()
+              ->stm_manager()
+              ->validate_checksums(checksums)
+              .has_value();
+        });
     }
 
     ss::future<result<raft::replicate_result>> replicate(

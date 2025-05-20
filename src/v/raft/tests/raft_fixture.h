@@ -605,6 +605,9 @@ public:
     std::chrono::milliseconds get_election_timeout() const {
         return _election_timeout();
     }
+    void disable_state_machine_inconsistency_validation() {
+        _validate_state_machine_inconsistency = false;
+    }
 
 protected:
     class raft_not_leader_exception : std::exception {};
@@ -638,6 +641,7 @@ private:
     config::mock_property<std::chrono::milliseconds> _election_timeout{500ms};
     config::mock_property<std::chrono::milliseconds> _heartbeat_interval{50ms};
     bool _with_offset_translation = false;
+    bool _validate_state_machine_inconsistency = true;
 };
 
 template<class... STM>

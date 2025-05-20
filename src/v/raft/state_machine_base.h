@@ -124,6 +124,14 @@ public:
      */
     virtual stm_initial_recovery_policy get_initial_recovery_policy() const = 0;
 
+    /**
+     * returns a checksum of the current state machine state, it is am
+     * implementer decision on how to reduce the state to a single uint32_t
+     * value.
+     * Simplest idea is to use crc32 of the state machine state.
+     */
+    virtual ss::future<uint32_t> get_state_checksum() const = 0;
+
 protected:
     /**
      * Must always be called under apply mutex scope and apply_units argument

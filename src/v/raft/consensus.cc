@@ -4124,6 +4124,21 @@ ss::future<full_heartbeat_reply> consensus::full_heartbeat(
         reply.result = reply_result::group_unavailable;
         co_return reply;
     }
+
+    if (_stm_manager && hb_data.checksums.has_value()) {
+        auto error = _stm_manager->validate_checksums(
+          hb_data.checksums.value());
+        if (error) [[unlikely]] {
+            vlog(
+              _ctxlog.error,
+              "state machine state inconsistency detected. stm: {}, last "
+              "applied offset: {}",
+              error->name,
+              error->last_applied_offset);
+            _probe->state_machine_inconsistency_error();
+        }
+    }
+
     /**
      * IMPORTANT: do not use request reference after the scheduling point
      */

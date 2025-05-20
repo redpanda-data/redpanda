@@ -53,6 +53,7 @@ public:
     get_initial_recovery_policy() const final {
         return raft::stm_initial_recovery_policy::read_everything;
     }
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
 
 private:
     // legacy structs left for backward compatibility with the "old"

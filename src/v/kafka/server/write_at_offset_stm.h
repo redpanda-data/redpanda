@@ -119,6 +119,7 @@ public:
      */
     ss::future<result<kafka::offset>>
     get_expected_last_offset(model::timeout_clock::duration sync_timeout);
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
 
 private:
     ss::future<> do_apply(const model::record_batch& b) final;

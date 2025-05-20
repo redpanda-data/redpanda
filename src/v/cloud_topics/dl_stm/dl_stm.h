@@ -31,6 +31,8 @@ public:
         return raft::stm_initial_recovery_policy::read_everything;
     }
 
+    ss::future<uint32_t> get_state_checksum() const final { co_return 0; }
+
 private:
     ss::future<> do_apply(const model::record_batch& batch) override;
 

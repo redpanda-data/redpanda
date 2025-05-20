@@ -66,10 +66,18 @@ public:
     void offset_translator_inconsistency_error() {
         ++_offset_translator_inconsistency_error;
     }
+    void state_machine_inconsistency_error() {
+        ++_state_machine_inconsistency_error;
+    }
+
     void append_entries_buffer_flush() { ++_append_entries_buffer_flush; }
     void clear() {
         _metrics.clear();
         _public_metrics.clear();
+    }
+
+    uint64_t get_state_machine_inconsistency_errors() const {
+        return _state_machine_inconsistency_error;
     }
 
 private:
@@ -94,6 +102,7 @@ private:
     uint64_t _lw_heartbeat_requests = 0;
     uint64_t _offset_translator_inconsistency_error = 0;
     uint64_t _append_entries_buffer_flush = 0;
+    uint64_t _state_machine_inconsistency_error = 0;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };

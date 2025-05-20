@@ -14,9 +14,11 @@
 #include "bytes/iobuf.h"
 #include "model/metadata.h"
 #include "raft/fundamental.h"
+#include "raft/types.h"
 #include "serde/async.h"
 #include "serde/envelope.h"
 #include "serde/rw/enum.h"
+#include "serde/rw/map.h"
 #include "serde/rw/rw.h"
 #include "utils/delta_for.h"
 
@@ -211,6 +213,7 @@ struct heartbeat_request_data
     model::offset prev_log_index;
     model::term_id prev_log_term;
     model::offset last_visible_index;
+    std::optional<state_machine_checksums> checksums;
 
     auto serde_fields() {
         return std::tie(
@@ -220,7 +223,8 @@ struct heartbeat_request_data
           term,
           prev_log_index,
           prev_log_term,
-          last_visible_index);
+          last_visible_index,
+          checksums);
     }
 
     friend bool
