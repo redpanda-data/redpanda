@@ -54,11 +54,17 @@ public:
       : _func(std::move(f)) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-        return _func(std::move(b));
+        auto batch_raw_size = b.size_bytes();
+        return _func(std::move(b))
+          .then([this, batch_raw_size](ss::stop_iteration si) {
+              _total_read_bytes += batch_raw_size;
+              return si;
+          });
     }
-    void end_of_stream() {}
+    uint64_t end_of_stream() { return _total_read_bytes; }
 
 private:
+    uint64_t _total_read_bytes{0};
     Func _func;
 };
 } // namespace
@@ -91,7 +97,7 @@ ss::future<> record_multiplexer::multiplex(
   kafka::offset start_offset,
   model::timeout_clock::time_point deadline,
   ss::abort_source& as) {
-    co_await std::move(reader).consume(
+    _reader_bytes_processed += co_await std::move(reader).consume(
       relaying_consumer{
         [this, start_offset, &as](model::record_batch b) mutable {
             return do_multiplex(std::move(b), start_offset, as);
@@ -379,6 +385,7 @@ record_multiplexer::finish() && {
         // no batches were processed.
         co_return writer_error::no_data;
     }
+    _result->kafka_bytes_processed = _reader_bytes_processed;
     co_return std::move(*_result);
 }
 
