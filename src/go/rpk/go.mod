@@ -1,6 +1,6 @@
 module github.com/redpanda-data/redpanda/src/go/rpk
 
-go 1.24.0
+go 1.24.3
 
 // add the git commit hash as the target version and `go mod tidy` will transform it into pseudo-version
 replace github.com/hamba/avro/v2 => github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525

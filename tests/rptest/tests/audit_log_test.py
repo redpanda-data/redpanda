@@ -1729,9 +1729,9 @@ class AuditLogTestInvalidConfig(AuditLogTestInvalidConfigBase):
             self.get_rpk().create_topic('test')
             assert False, "Should not have created a topic"
         except RpkException as e:
-            assert "audit system failure: BROKER_NOT_AVAILABLE" in str(
+            assert "Broker not available - audit system failure" in str(
                 e
-            ), f'{str(e)} does not contain "audit system failure: BROKER_NOT_AVAILABLE"'
+            ), f'{str(e)} does not contain "Broker not available - audit system failure"'
 
 
 class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):

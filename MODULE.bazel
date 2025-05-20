@@ -154,7 +154,21 @@ register_toolchains("@llvm_18_toolchain//:all")
 # Go Toolchain
 # ====================================
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.23.0")
+go_sdk.download(version = "1.24.3")
+
+# The microsoft compiler versions can be listed at their github release under the `asset.json` file
+go_sdk.download(
+    name = "go_sdk_with_systemcrypto",
+    experiments = ["systemcrypto"],
+    sdks = {
+        "linux_amd64": ("dfb7c8bd6b64c9fa9debd6efa724c609/go1.24.3-20250506.3.linux-amd64.tar.gz", "d1e9e4465951816b556f648dfebc1cf20fdef4832d7d3f01f1ef35a259375286"),
+        "linux_arm64": ("e4d43c57efd1a31cf8673bf43aa69412/go1.24.3-20250506.3.linux-arm64.tar.gz", "6d4232da7ca7d2bd19e0b6b69524448de8e5480f49e5d39f7a5507cef682a9ea"),
+        "darwin_amd64": ("a6a4d462a5d8a7be72e3222c112d2101/go1.24.3-20250506.3.darwin-amd64.tar.gz", "1f1d8e1537c4a8049e6f049a861c05d9709f7627178df36cb176872a2546fb7c"),
+        "darwin_arm64": ("02acaf96922416da68a7b15764e56e3c/go1.24.3-20250506.3.darwin-arm64.tar.gz", "330cb681a69cd32465b9e5381e1127eba3184a19d29e9216a9f36383f1bedff0"),
+    },
+    urls = ["https://download.visualstudio.microsoft.com/download/pr/18982fcf-1155-40cc-bf0e-4b7564f22251/{}"],
+    version = "1.24.3",
+)
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_work = "//bazel/thirdparty:go.work")
