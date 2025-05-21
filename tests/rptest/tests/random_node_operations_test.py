@@ -14,12 +14,15 @@ import threading
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.apache_iceberg_catalog import IcebergRESTCatalog
+from rptest.services.catalog_service import CatalogType
+from rptest.services.spark_service import SparkService
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 from ducktape.mark import matrix, ignore
 from ducktape.utils.util import wait_until
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
+from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
@@ -79,8 +82,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             **kwargs)
         self.nodes_with_prev_version = []
         self.installer = self.redpanda._installer
-        self.previous_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
         self._si_settings = SISettings(self.test_context,
                                        cloud_storage_enable_remote_read=True,
                                        cloud_storage_enable_remote_write=True,
@@ -88,7 +89,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self.catalog_service = IcebergRESTCatalog(
             test_context,
             cloud_storage_bucket=self._si_settings.cloud_storage_bucket,
-            filesystem_wrapper_mode=False)
+            filesystem_wrapper_mode=False,
+            log_level="INFO")
 
     def min_producer_records(self):
         return 20 * self.producer_throughput
@@ -120,8 +122,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
     def setUp(self):
         self.catalog_service.start()
+        self.spark = SparkService(
+            ctx=self.test_context,
+            iceberg_catalog_uri=self.catalog_service.iceberg_rest_url,
+            default_warehouse_dir=self.catalog_service.DEFAULT_WAREHOUSE_NAME,
+            catalog_type=CatalogType.REST_JDBC)
+        self.spark.start()
 
-    def _setup_test_scale(self):
+    def _setup_test_scale(self, with_iceberg):
         # test setup
         self.producer_timeout = 180
         self.consumer_timeout = 180
@@ -130,14 +138,14 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             # scale test setup
             self.max_partitions = 32
             self.producer_throughput = 20000
-            self.node_operations = 30
+            self.node_operations = 15 if with_iceberg else 30
             self.msg_size = 1024  # 1KiB
             self.rate_limit = 100 * 1024 * 1024  # 100 MBps
             self.total_data = 5 * 1024 * 1024 * 1024
         else:
             self.max_partitions = 32
             self.producer_throughput = 1000 if self.debug_mode else 10000
-            self.node_operations = 10
+            self.node_operations = 5 if with_iceberg else 10
             self.msg_size = 128
             self.rate_limit = 1024 * 1024
             self.total_data = 50 * 1024 * 1024
@@ -155,14 +163,12 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             f"running test with: [message_size {self.msg_size},  total_bytes: {self.total_data}, message_count: {self.msg_count}, rate_limit: {self.rate_limit}, cluster_operations: {self.node_operations}]"
         )
 
-    def _start_redpanda(self, mixed_versions, with_tiered_storage,
-                        with_iceberg, with_chunked_compaction):
+    def _start_redpanda(self, mixed_versions, with_iceberg,
+                        with_chunked_compaction):
 
-        if with_tiered_storage or with_iceberg:
-            # since this test is deleting topics we must tolerate missing manifests
-            self._si_settings.set_expected_damage(
-                {"ntr_no_topic_manifest", "ntpr_no_manifest"})
-            self.redpanda.set_si_settings(self._si_settings)
+        self._si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest", "ntpr_no_manifest"})
+        self.redpanda.set_si_settings(self._si_settings)
 
         if with_iceberg:
             self.redpanda.add_extra_rp_conf({
@@ -190,6 +196,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         self.redpanda.set_seed_servers(self.redpanda.nodes)
         if mixed_versions:
+            self.previous_version = self.installer.highest_from_prior_feature_version(
+                RedpandaInstaller.HEAD)
             node_count = len(self.redpanda.nodes)
             with_prev_version = math.ceil(node_count / 2.0)
             self.logger.info(
@@ -328,22 +336,30 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             client.alter_topic_config(topic_spec.name,
                                       TopicSpec.PROPERTY_ICEBERG_MODE,
                                       "key_value")
+            client.alter_topic_config(topic_spec.name,
+                                      TopicSpec.PROPERTY_ICEBERG_TARGET_LAG_MS,
+                                      "10000")
 
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @skip_debug_mode
-    @cluster(num_nodes=9,
+    @cluster(num_nodes=10,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             mixed_versions=[True, False],
-            with_tiered_storage=[True, False],
-            with_iceberg=[True, False],
+            with_iceberg=[True],
+            with_chunked_compaction=[True, False],
+            cloud_storage_type=get_cloud_storage_type())
+    @cluster(num_nodes=8)
+    @matrix(enable_failures=[True, False],
+            mixed_versions=[True, False],
+            with_iceberg=[False],
             with_chunked_compaction=[True, False],
             cloud_storage_type=get_cloud_storage_type())
     def test_node_operations(self, enable_failures, mixed_versions,
-                             with_tiered_storage, with_iceberg,
-                             with_chunked_compaction, cloud_storage_type):
+                             with_iceberg, with_chunked_compaction,
+                             cloud_storage_type):
         # In order to reduce the number of parameters and at the same time cover
         # as many use cases as possible this test uses 3 topics which 3 separate
         # producer/consumer pairs:
@@ -364,19 +380,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                     "Skipping test with iceberg and unsupported cloud storage type"
                 )
 
-        def enable_fast_partition_movement():
-            if not with_tiered_storage:
-                return False
-
-            initial_version = self.redpanda._installer.highest_from_prior_feature_version(
-                RedpandaInstaller.HEAD)
-            supported_by_prev = (initial_version[0] > 23) or \
-                                     (initial_version[0] == 23
-                                           and initial_version[1] > 2)
-            # do not enable fast partition movement with
-            # upgrades as the feature is not enabled
-            return supported_by_prev
-
         def enable_write_caching_testing():
             if not mixed_versions:
                 return True
@@ -389,7 +392,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         default_segment_size = 1024 * 1024
 
         # setup test case scale parameters
-        self._setup_test_scale()
+        self._setup_test_scale(with_iceberg)
 
         if self.should_skip:
             cleanup_on_early_exit(self)
@@ -397,7 +400,6 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         # start redpanda process
         self._start_redpanda(mixed_versions,
-                             with_tiered_storage=with_tiered_storage,
                              with_iceberg=with_iceberg,
                              with_chunked_compaction=with_chunked_compaction)
 
@@ -417,15 +419,13 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                   replication_factor=3,
                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
                                   segment_bytes=default_segment_size,
-                                  redpanda_remote_read=with_tiered_storage,
-                                  redpanda_remote_write=with_tiered_storage)
+                                  redpanda_remote_read=True,
+                                  redpanda_remote_write=True)
         client.create_topic(regular_topic)
         self.maybe_enable_iceberg_for_topic(regular_topic, with_iceberg)
 
-        if with_tiered_storage:
-            # change local retention policy to make some local segments will be deleted during the test
-            self._alter_local_topic_retention_bytes(regular_topic.name,
-                                                    3 * default_segment_size)
+        self._alter_local_topic_retention_bytes(regular_topic.name,
+                                                3 * default_segment_size)
 
         regular_producer_consumer = RandomNodeOperationsTest.producer_consumer(
             test_context=self.test_context,
@@ -443,8 +443,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                     partition_count=self.max_partitions,
                                     cleanup_policy=TopicSpec.CLEANUP_COMPACT,
                                     segment_bytes=default_segment_size,
-                                    redpanda_remote_read=with_tiered_storage,
-                                    redpanda_remote_write=with_tiered_storage)
+                                    redpanda_remote_read=True,
+                                    redpanda_remote_write=True)
         client.create_topic(compacted_topic)
         self.maybe_enable_iceberg_for_topic(compacted_topic, with_iceberg)
 
@@ -464,36 +464,35 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
 
-        if enable_fast_partition_movement():
-            # if running with tiered storage create a topic with fast partition
-            # moves enabled
-            fast_topic = TopicSpec(name='tp-workload-fast',
-                                   partition_count=self.max_partitions,
-                                   cleanup_policy=TopicSpec.CLEANUP_DELETE,
-                                   segment_bytes=default_segment_size,
-                                   redpanda_remote_read=with_tiered_storage,
-                                   redpanda_remote_write=with_tiered_storage)
+        # if running with tiered storage create a topic with fast partition
+        # moves enabled
+        fast_topic = TopicSpec(name='tp-workload-fast',
+                               partition_count=self.max_partitions,
+                               cleanup_policy=TopicSpec.CLEANUP_DELETE,
+                               segment_bytes=default_segment_size,
+                               redpanda_remote_read=True,
+                               redpanda_remote_write=True)
 
-            client.create_topic(fast_topic)
+        client.create_topic(fast_topic)
 
-            client.alter_topic_config(fast_topic.name,
-                                      'initial.retention.local.target.bytes',
-                                      default_segment_size)
-            self._alter_local_topic_retention_bytes(fast_topic.name,
-                                                    8 * default_segment_size)
-            self.maybe_enable_iceberg_for_topic(fast_topic, with_iceberg)
-            fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
-                test_context=self.test_context,
-                logger=self.logger,
-                topic_name=fast_topic.name,
-                redpanda=self.redpanda,
-                nodes=[self.preallocated_nodes[2]],
-                msg_size=self.msg_size,
-                rate_limit_bps=self.rate_limit,
-                msg_count=self.msg_count,
-                consumers_count=self.consumers_count,
-                compaction_enabled=False)
-            fast_producer_consumer.start()
+        client.alter_topic_config(fast_topic.name,
+                                  'initial.retention.local.target.bytes',
+                                  default_segment_size)
+        self._alter_local_topic_retention_bytes(fast_topic.name,
+                                                8 * default_segment_size)
+        self.maybe_enable_iceberg_for_topic(fast_topic, with_iceberg)
+        fast_producer_consumer = RandomNodeOperationsTest.producer_consumer(
+            test_context=self.test_context,
+            logger=self.logger,
+            topic_name=fast_topic.name,
+            redpanda=self.redpanda,
+            nodes=[self.preallocated_nodes[2]],
+            msg_size=self.msg_size,
+            rate_limit_bps=self.rate_limit,
+            msg_count=self.msg_count,
+            consumers_count=self.consumers_count,
+            compaction_enabled=False)
+        fast_producer_consumer.start()
 
         write_caching_enabled = enable_write_caching_testing()
         if write_caching_enabled:
@@ -504,8 +503,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 partition_count=self.max_partitions,
                 cleanup_policy=cleanup_policy,
                 segment_bytes=default_segment_size,
-                redpanda_remote_read=with_tiered_storage,
-                redpanda_remote_write=with_tiered_storage)
+                redpanda_remote_read=True,
+                redpanda_remote_write=True)
 
             client.create_topic(write_caching_topic)
             client.alter_topic_config(write_caching_topic.name,
@@ -526,6 +525,23 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                     is not TopicSpec.CLEANUP_DELETE),
                 tolerate_data_loss=True)
             write_caching_producer_consumer.start()
+        dl_verifiers = []
+        # when Iceberg is enabled, start a verifier for the two topics:
+        # - regular topic
+        # - topic with fast partition movements enabled
+        if with_iceberg:
+            dl_verifiers.append(
+                DatalakeVerifier(self.redpanda,
+                                 regular_topic.name,
+                                 self.spark,
+                                 tolerate_deleted_messages=True))
+            dl_verifiers.append(
+                DatalakeVerifier(self.redpanda,
+                                 fast_topic.name,
+                                 self.spark,
+                                 tolerate_deleted_messages=True))
+            for verifier in dl_verifiers:
+                verifier.start()
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
@@ -576,8 +592,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             assert write_caching_producer_consumer
             write_caching_producer_consumer.verify()
 
-        if enable_fast_partition_movement():
-            fast_producer_consumer.verify()
+        fast_producer_consumer.verify()
 
         if mixed_versions:
             self.logger.info("Upgrading cluster with current Redpanda version")
@@ -611,6 +626,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             )
 
         verify_offset_translator_state_consistent(self.redpanda)
+        for verifier in dl_verifiers:
+            verifier.wait(progress_timeout_sec=60)
+
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():

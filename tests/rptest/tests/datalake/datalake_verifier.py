@@ -48,6 +48,7 @@ class DatalakeVerifier():
                  query_engine: QueryEngineBase,
                  compacted: bool = False,
                  table_override: Optional[str] = None,
+                 tolerate_deleted_messages: bool = False,
                  max_buffered_msgs=5000):
         self.redpanda = redpanda
         self.topic = topic
@@ -107,6 +108,10 @@ class DatalakeVerifier():
         # it would imply an anomaly between the Iceberg table and the log).
         self._expected_compacted_keys = set()
 
+        # if set the verifier will tolerate messages that are missing in the
+        # topic but are present in the iceberg table
+        self._tolerate_deleted_messages = tolerate_deleted_messages
+
     def create_consumer(self):
         c = Consumer({
             'bootstrap.servers': self.redpanda.brokers(),
@@ -132,11 +137,12 @@ class DatalakeVerifier():
                 for p in positions:
                     if p.error is not None:
                         self.logger.warning(
-                            f"Error querying position for partition {p.partition}"
+                            f"[{self.topic}] Error querying position for partition {p.partition}"
                         )
                     else:
                         self.logger.debug(
-                            f"next position for {p.partition} is {p.offset}")
+                            f"[{self.topic}] next position for {p.partition} is {p.offset}"
+                        )
                         self._next_positions[p.partition] = p.offset
                 return self._next_positions.copy()
 
@@ -149,24 +155,26 @@ class DatalakeVerifier():
     # to be called no more than once
     def go_offline(self, timeout=60):
         assert not self._offline_mode_requested.is_set()
-        self.logger.debug(f"offline mode requested")
+        self.logger.debug(f"[{self.topic}] offline mode requested")
         self._offline_mode_requested.set()
         assert self._consumer_stopped.wait(timeout)
-        self.logger.debug(f"consistent state reached")
+        self.logger.debug(f"[{self.topic}] consistent state reached")
         self._consumer_positions = self.update_and_get_fetch_positions()
-        self.logger.debug(f"remembered {self._consumer_positions=}")
+        self.logger.debug(
+            f"[{self.topic}] remembered {self._consumer_positions=}")
         self._partition_hwms = self.partition_hwms()
         for p in self._partition_hwms:
             self.logger.debug(
-                f"remembered partition {p.id=} hwm={p.high_watermark}, ")
+                f"[{self.topic}] remembered partition {p.id=} hwm={p.high_watermark}, "
+            )
         with self._consumer_lock:
             self._consumer.close()
             self._consumer = None
-            self.logger.debug(f"offline mode established")
+            self.logger.debug(f"[{self.topic}] offline mode established")
             self._offline_mode_established = True
 
     def _consumed_till_hwm(self, update: bool):
-        self.logger.debug("checking _consumed_till_hwm")
+        self.logger.debug(f"[{self.topic}] checking _consumed_till_hwm")
         if update:
             # reduce _lock contention
             if not self._consumed_till_hwm(False):
@@ -175,14 +183,14 @@ class DatalakeVerifier():
         for p in self.partition_hwms():
             if self._next_positions[p.id] < p.high_watermark:
                 self.logger.debug(
-                    f"partition {p.id} high watermark: {p.high_watermark} max offset: {self._next_positions[p.id]} has not been consumed fully"
+                    f"[{self.topic}] partition {p.id} high watermark: {p.high_watermark} max offset: {self._next_positions[p.id]} has not been consumed fully"
                 )
                 return False
         return True
 
     def _consumer_thread(self):
         try:
-            self.logger.info("Starting consumer thread")
+            self.logger.info(f"[{self.topic}] Starting consumer thread")
             while not self._stop.is_set() and not (
                     self._offline_mode_requested.is_set()
                     and self._consumed_till_hwm(update=True)):
@@ -193,10 +201,17 @@ class DatalakeVerifier():
                 if msg is None:
                     continue
                 if msg.error():
-                    self.logger.error(f"Consumer error: {msg.error()}")
+                    self.logger.error(
+                        f"[{self.topic}] Consumer error: {msg.error()}")
                     continue
-
+                if msg.offset() <= self._max_consumed_offsets.get(
+                        msg.partition(), -1):
+                    self.logger.info(
+                        f"[{self.topic}] Duplicated message consumed from partition={msg.partition()}, current consumed: {msg.offset()}"
+                    )
+                    continue
                 with self._lock:
+
                     self._num_msgs_pending_verification += 1
                     self._consumed_messages[msg.partition()].append(msg)
                     if self._num_msgs_pending_verification >= self._query_batch_size:
@@ -205,8 +220,6 @@ class DatalakeVerifier():
                     self._max_consumed_offsets[msg.partition()] = max(
                         self._max_consumed_offsets.get(msg.partition(), -1),
                         msg.offset())
-                    self.logger.debug(
-                        f"Max consumed offsets: {self._max_consumed_offsets}")
                     if len(self._errors) > 0:
                         return
         finally:
@@ -223,7 +236,7 @@ class DatalakeVerifier():
     def _verify_next_message(self, partition, iceberg_offset, iceberg_key):
         if partition not in self._consumed_messages:
             self._errors.append(
-                f"Partition {partition} returned from Iceberg query not found in consumed messages"
+                f"[{self.topic}]Partition {partition} returned from Iceberg query not found in consumed messages"
             )
 
         p_messages = self._consumed_messages[partition]
@@ -233,15 +246,18 @@ class DatalakeVerifier():
 
         message = p_messages[0]
         consumer_offset = message.offset()
+        self.logger.debug(
+            f"[{self.topic}] verifying message on {partition=} consumed offset={consumer_offset} iceberg offset={iceberg_offset}"
+        )
         if iceberg_offset > consumer_offset:
             self._errors.append(
-                f"Offset from Iceberg table {iceberg_offset} is greater than next consumed offset {consumer_offset} for partition {partition}, most likely there is a gap in the table"
+                f"[{self.topic}] Offset from Iceberg table {iceberg_offset} is greater than next consumed offset {consumer_offset} for partition {partition}, most likely there is a gap in the table"
             )
             return
 
         if iceberg_offset <= self._max_queried_offsets.get(partition, -1):
             self._errors.append(
-                f"Duplicate entry detected at offset {iceberg_offset} for partition {partition} "
+                f"[{self.topic}] Duplicate entry detected at offset {iceberg_offset} for partition {partition}"
             )
             return
         if not self._max_queried_offsets:
@@ -253,9 +269,13 @@ class DatalakeVerifier():
                 self._expected_compacted_keys.add(iceberg_key)
                 return
             else:
+                if self._tolerate_deleted_messages:
+                    return
+
                 self._errors.append(
-                    f"Offset from iceberg table {iceberg_offset} for {partition} does not match the next consumed offset {consumer_offset}"
+                    f"Offset from iceberg table {iceberg_offset=} for {partition=} does not match the next consumed offset {consumer_offset}"
                 )
+                # the offset might have already been deleted from the topic but it is still present in Iceberg table as it should be
                 return
         else:
             if self._compacted:
@@ -267,7 +287,7 @@ class DatalakeVerifier():
         self._msg_semaphore.release()
 
     def _query_thread(self):
-        self.logger.info("Starting query thread")
+        self.logger.info(f"[{self.topic}] Starting query thread")
         while not self._stop.is_set():
             try:
                 with self._msgs_batched:
@@ -287,7 +307,8 @@ class DatalakeVerifier():
 
                     query = self._get_query(partition, last_queried_offset,
                                             max_consumed)
-                    self.logger.debug(f"Executing query: {query}")
+                    self.logger.debug(
+                        f"[{self.topic}] Executing query: {query}")
 
                     with self._query.run_query(query) as cursor:
                         with self._lock:
@@ -295,20 +316,18 @@ class DatalakeVerifier():
                                 self._verify_next_message(partition, *row)
                                 if len(self._errors) > 0:
                                     self.logger.error(
-                                        f"violations detected: {self._errors}, stopping verifier"
+                                        f"[{self.topic}] violations detected: {self._errors}, stopping verifier"
                                     )
                                     return
-                                self.logger.debug(
-                                    f"verified message on {partition=} offset={row[0]}"
-                                )
 
                     if len(self._max_queried_offsets) > 0:
                         self.logger.debug(
-                            f"Max queried offsets: {self._max_queried_offsets}"
+                            f"[[{self.topic}]] Max queried offsets: {self._max_queried_offsets}"
                         )
 
             except Exception as e:
-                self.logger.error(f"Error querying iceberg table: {e}")
+                self.logger.error(
+                    f"[{self.table}] Error querying iceberg table: {e}")
                 sleep(2)
 
     def start(self, wait_first_iceberg_msg=False):
@@ -325,7 +344,7 @@ class DatalakeVerifier():
             for p in partition_hwms:
                 if p.id not in self._max_queried_offsets:
                     self.logger.debug(
-                        f"partition {p.id} not found in max offsets: {self._max_queried_offsets}"
+                        f"[{self.topic}] partition {p.id} not found in max offsets: {self._max_queried_offsets}"
                     )
                     return False
                 # Ensure all the consumed messages are drained.
@@ -338,8 +357,10 @@ class DatalakeVerifier():
     def _made_progress(self):
         progress = False
         with self._lock:
-            self.logger.debug(f"{self._max_queried_offsets=}")
-            self.logger.debug(f"{self._last_checkpoint=}")
+            self.logger.debug(
+                f"[{self.topic}] {self._max_queried_offsets=} {self._max_consumed_offsets=}"
+            )
+            self.logger.debug(f"[{self.topic}] {self._last_checkpoint=}")
             for partition, offset in self._max_queried_offsets.items():
                 if offset > self._last_checkpoint.get(partition, -1):
                     progress = True
@@ -361,9 +382,9 @@ class DatalakeVerifier():
                 assert len(
                     self._errors
                 ) == 0, f"Topic {self.topic} validation errors: {self._errors}"
-            self.logger.debug(f"No errors around waiting")
+            self.logger.debug(f"[{self.topic}] No errors around waiting")
         except Exception as e:
-            self.logger.error(f"Error around waiting: {e}")
+            self.logger.error(f"[{self.topic}] Error around waiting: {e}")
             raise
         finally:
             self.stop()
@@ -380,7 +401,8 @@ class DatalakeVerifier():
 
             self.logger.debug(
                 f"consumed offsets: {self._max_consumed_offsets}")
-            self.logger.debug(f"queried offsets: {self._max_queried_offsets}")
+            self.logger.debug(
+                f"[{self.topic}] queried offsets: {self._max_queried_offsets}")
 
             assert self._max_queried_offsets == self._max_consumed_offsets, "Mismatch between maximum offsets in topic vs iceberg table"
 

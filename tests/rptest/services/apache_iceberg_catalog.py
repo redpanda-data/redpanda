@@ -31,6 +31,15 @@ class IcebergRESTCatalog(CatalogService):
     LOG_FILE = os.path.join(PERSISTENT_ROOT, "iceberg_rest_server.log")
     JAR = "iceberg-rest-catalog-all.jar"
     JAR_PATH = f"/opt/iceberg-rest-catalog/build/libs/{JAR}"
+    LOG4J_CONFIG_PATH = os.path.join(PERSISTENT_ROOT, "log4j.properties")
+
+    LOG4J_CONFIG_TPL = jinja2.Template("""
+log4j.rootLogger={{log_level}}, stdout
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.Target=System.out
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=%d{yyyy-MM-dd'T'HH:mm:ss.SSS} %-5p [%c] - %m%n
+""")
     logs = {"iceberg_rest_logs": {"path": LOG_FILE, "collect_default": True}}
 
     DB_CATALOG_IMPL = "org.apache.iceberg.jdbc.JdbcCatalog"
@@ -71,7 +80,8 @@ class IcebergRESTCatalog(CatalogService):
                  ctx,
                  cloud_storage_bucket: str,
                  warehouse_name: str = CatalogService.DEFAULT_WAREHOUSE_NAME,
-                 filesystem_wrapper_mode: bool = False):
+                 filesystem_wrapper_mode: bool = False,
+                 log_level: str = "TRACE"):
         super(IcebergRESTCatalog, self).__init__(ctx,
                                                  cloud_storage_bucket,
                                                  warehouse_name,
@@ -94,6 +104,7 @@ class IcebergRESTCatalog(CatalogService):
         # Trino <-> REST server (JDBC Catalog) <-> local sqllite DB.
         self.db_file = None
         self._catalog_url = None
+        self.log_level = log_level
 
     def catalog_type(self) -> CatalogType:
         if self.filesystem_wrapper_mode:
@@ -182,7 +193,7 @@ class IcebergRESTCatalog(CatalogService):
         java = "/opt/java/java-17"
         envs = self._make_env()
         env = " ".join(f"{k}={v}" for k, v in envs.items())
-        return f"{env} {java} -jar  {IcebergRESTCatalog.JAR_PATH} \
+        return f"{env} {java}  -Dlog4j.configuration=file:{IcebergRESTCatalog.LOG4J_CONFIG_PATH} -jar  {IcebergRESTCatalog.JAR_PATH} \
             1>> {IcebergRESTCatalog.LOG_FILE} 2>> {IcebergRESTCatalog.LOG_FILE} &"
 
     def start_node(self, node, timeout_sec=60, **kwargs):
@@ -229,6 +240,11 @@ class IcebergRESTCatalog(CatalogService):
         self.logger.debug(f"Using hadoop config: {config_tmpl}")
         node.account.create_file(IcebergRESTCatalog.FS_CATALOG_CONF_PATH,
                                  config_tmpl)
+
+        node.account.create_file(
+            IcebergRESTCatalog.LOG4J_CONFIG_PATH,
+            IcebergRESTCatalog.LOG4J_CONFIG_TPL.render(
+                log_level=self.log_level))
 
         cmd = self._cmd()
         self.logger.info(
