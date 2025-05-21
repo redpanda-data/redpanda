@@ -3892,7 +3892,7 @@ configuration::configuration()
       "iceberg_rest_catalog_trust_file",
       "Path to a file containing a certificate chain to trust for the REST "
       "Iceberg catalog",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_trust(
@@ -3901,7 +3901,9 @@ configuration::configuration()
       "The contents of a certificate chain to trust for the REST "
       "Iceberg catalog. Takes precedence over "
       "`iceberg_rest_catalog_trust_file`.",
-      {.visibility = visibility::user, .secret = is_secret::yes},
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_crl_file(
@@ -3909,7 +3911,7 @@ configuration::configuration()
       "iceberg_rest_catalog_crl_file",
       "Path to certificate revocation list for "
       "`iceberg_rest_catalog_trust_file`.",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_crl(
@@ -3918,7 +3920,9 @@ configuration::configuration()
       "The contents of a certificate revocation list for "
       "`iceberg_rest_catalog_trust`. Takes precedence over "
       "`iceberg_rest_catalog_crl_file`.",
-      {.visibility = visibility::user, .secret = is_secret::yes},
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_warehouse(
@@ -3927,7 +3931,8 @@ configuration::configuration()
       "Warehouse to use for the Iceberg REST catalog. Redpanda will query the "
       "catalog for configurations specific to the warehouse, for example, "
       "using it to automatically configure the appropriate prefix.",
-      {.visibility = visibility::user,
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
        .aliases = {"iceberg_rest_catalog_prefix"}},
       std::nullopt,
       &validate_non_empty_string_opt)
@@ -3937,7 +3942,7 @@ configuration::configuration()
       "The OAuth URI used to retrieve access tokens for Iceberg catalog "
       "authentication. If left undefined, the deprecated Iceberg catalog "
       "endpoint `/v1/oauth/tokens` is used instead.",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_oauth2_scope(
@@ -3946,7 +3951,7 @@ configuration::configuration()
       "The OAuth scope used to retrieve access tokens for Iceberg catalog "
       "authentication. Only meaningful when "
       "`iceberg_rest_catalog_authentication_mode` is set to `oauth2`",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       "PRINCIPAL_ROLE:ALL")
   , iceberg_rest_catalog_authentication_mode(
       *this,
