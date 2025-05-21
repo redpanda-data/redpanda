@@ -201,18 +201,6 @@ inline error_info versions_exhausted(const subject& sub) {
       fmt::format("Versions exhausted for subject {}", sub())};
 }
 
-inline error_info invalid_format(const ss::sstring& ss) {
-    return error_info{
-      error_code::invalid_format,
-      fmt::format("Format value '{}' is invalid", ss)};
-}
-
-inline error_info format_not_supported(const output_format f) {
-    return error_info{
-      error_code::format_not_supported,
-      fmt::format("Format value '{}' is not supported", f)};
-}
-
 inline bool failed_subject_schema_lookup(std::error_code ec) {
     return ec == error_code::subject_not_found
            || ec == error_code::subject_version_not_found;

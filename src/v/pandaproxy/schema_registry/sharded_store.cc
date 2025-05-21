@@ -371,16 +371,6 @@ sharded_store::maybe_get_schema_definition(schema_id id) {
 
 ss::future<schema_definition>
 sharded_store::get_schema_definition(schema_id id) {
-    return get_schema_definition(id, output_format::none);
-}
-
-ss::future<schema_definition>
-sharded_store::get_schema_definition(schema_id id, output_format format) {
-    // TODO: Implement support for the different modes of format
-    if (format != output_format::none) {
-        throw as_exception(format_not_supported(format));
-    }
-
     co_return co_await _store.invoke_on(
       shard_for(id), _smp_opts, [id](store& s) {
           return s.get_schema_definition(id).value();

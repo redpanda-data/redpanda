@@ -89,38 +89,6 @@ from_string_view<schema_type>(std::string_view sv) {
 
 std::ostream& operator<<(std::ostream& os, const schema_type& v);
 
-enum class output_format { none = 0, resolved, ignore_extensions, serialized };
-
-constexpr std::string_view to_string_view(output_format of) {
-    switch (of) {
-    case output_format::resolved:
-        return "resolved";
-    case output_format::ignore_extensions:
-        return "ignore_extensions";
-    case output_format::serialized:
-        return "serialized";
-    case output_format::none:
-        break;
-    }
-    return "";
-}
-
-template<>
-inline std::optional<output_format>
-from_string_view<output_format>(std::string_view sv) {
-    return string_switch<std::optional<output_format>>(sv)
-      .match(to_string_view(output_format::none), output_format::none)
-      .match(to_string_view(output_format::resolved), output_format::resolved)
-      .match(
-        to_string_view(output_format::ignore_extensions),
-        output_format::ignore_extensions)
-      .match(
-        to_string_view(output_format::serialized), output_format::serialized)
-      .default_match(std::nullopt);
-}
-
-std::ostream& operator<<(std::ostream& os, const output_format& of);
-
 ///\brief A subject is the name under which a schema is registered.
 ///
 /// Typically it will be "<topic>-key" or "<topic>-value".

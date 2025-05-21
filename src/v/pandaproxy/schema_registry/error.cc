@@ -82,10 +82,6 @@ struct error_category final : std::error_category {
             return "Invalid mode. Valid values are READWRITE, READONLY";
         case error_code::version_exhausted:
             return "Versions exhausted, maximum 2147483647 reached";
-        case error_code::invalid_format:
-            return "Invalid format parameter";
-        case error_code::format_not_supported:
-            return "Format parameter not supported";
         }
         return "(unrecognized error)";
     }
@@ -141,9 +137,6 @@ struct error_category final : std::error_category {
             return reply_error_code::mode_invalid; // 42204
         case error_code::version_exhausted:
             return reply_error_code::internal_server_error; // 500
-        case error_code::invalid_format:
-        case error_code::format_not_supported:
-            return reply_error_code::bad_request; // 400
         }
         return {};
     }
