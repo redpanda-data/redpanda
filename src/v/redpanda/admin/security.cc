@@ -447,7 +447,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto doc = co_await parse_json_body(req.get());
@@ -503,7 +503,7 @@ admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     ss::sstring user_v = req->get_path_param("user");
@@ -535,7 +535,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     ss::sstring user_v = req->get_path_param("user");
@@ -649,7 +649,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::create_role_handler(
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
     auto doc = co_await parse_json_body(req.get());
     auto role_name = parse_role_definition(doc);
@@ -683,7 +683,7 @@ admin_server::update_role_members_handler(
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     ss::sstring role_v = req->get_path_param("role");
@@ -828,7 +828,7 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw redirect_to_leader(*req, model::controller_ntp);
     }
 
     auto role_name = parse_role_name(*req);

@@ -50,7 +50,7 @@ admin_server::kafka_transfer_leadership_handler(
     auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
         // This node is not a member of the raft group, redirect.
-        throw co_await redirect_to_leader(*req, ntp);
+        throw redirect_to_leader(*req, ntp);
     }
 
     co_return co_await _partition_manager.invoke_on(
