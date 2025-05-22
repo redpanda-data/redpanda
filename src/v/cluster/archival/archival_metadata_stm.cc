@@ -41,6 +41,7 @@
 #include "serde/rw/vector.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "ssx/watchdog.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/record_batch_utils.h"
@@ -854,6 +855,10 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     // to race conditions/corruption/undefined behavior.
 
     auto holder = _gate.hold();
+    ssx::watchdog wd(100s, [this] {
+        vlog(_logger.error, "archival_stm.do_replicate_commands");
+        vassert(false, "archival_stm.do_replicate_commands");
+    });
 
     vassert(
       !_lock.try_get_units().has_value(),

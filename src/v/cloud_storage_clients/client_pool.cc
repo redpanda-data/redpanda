@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/s3_client.h"
 #include "model/timeout_clock.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -247,10 +248,23 @@ std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
 ///         are in use)
 ss::future<client_pool::client_lease>
 client_pool::acquire(ss::abort_source& as) {
+    static thread_local int64_t tls_acquire_cnt = 0;
+    auto acquire_id = ++tls_acquire_cnt;
+    vlog(
+      pool_log.debug,
+      "{} acquire called, pool size: {}, capacity: {}",
+      acquire_id,
+      _pool.size(),
+      _capacity);
     auto guard = _gate.hold();
 
     std::optional<unsigned int> source_sid;
     std::optional<http_client_ptr> client;
+
+    watchdog wd1(40s, [acquire_id] {
+        vlog(
+          pool_log.error, "NEEDLE {} client_pool::acquire hanged", acquire_id);
+    });
 
     try {
         // If credentials have not yet been acquired, wait for them. It is
@@ -267,12 +281,18 @@ client_pool::acquire(ss::abort_source& as) {
             // IAM-roles (or other source of credentials) is not configured
             // properly.
             try {
+                vlog(
+                  pool_log.debug,
+                  "{} get_units self config barrier (available units: {})",
+                  acquire_id,
+                  _self_config_barrier.available_units());
                 u = co_await ss::get_units(
                   _self_config_barrier, 1, self_config_timeout);
             } catch (const ss::timed_out_error&) {
                 vlog(
                   pool_log.error,
-                  "Failed to acquire credentials within timeout");
+                  "{} Failed to acquire credentials within timeout",
+                  acquire_id);
                 throw;
             }
         }
@@ -289,12 +309,24 @@ client_pool::acquire(ss::abort_source& as) {
                 // If borrowing is disabled or this shard borrowed '_capacity'
                 // client connections then wait util one of the clients is
                 // freed.
+
+                watchdog wd2(30s, [acquire_id] {
+                    vlog(
+                      pool_log.error,
+                      "NEEDLE {} client_pool::with_timeout_abortable(1) hanged",
+                      acquire_id);
+                });
+                vlog(
+                  pool_log.debug, "{} with_timeout_abortable(1)", acquire_id);
+                // FIXME: potentially infinite wait
+                // if nobody is borrowing
                 co_await ssx::with_timeout_abortable(
                   _cvar.wait(), model::no_timeout, as);
 
                 vlog(
                   pool_log.debug,
-                  "cvar triggered, pool size: {}",
+                  "{} cvar triggered, pool size: {}",
+                  acquire_id,
                   _pool.size());
             } else {
                 // Try borrowing from peer shard.
@@ -316,13 +348,21 @@ client_pool::acquire(ss::abort_source& as) {
                                               : std::tie(sid2, cnt2);
                 vlog(
                   pool_log.debug,
-                  "Going to borrow from {} which has {} clients in use out of "
+                  "{} Going to borrow from {} which has {} clients in use out "
+                  "of "
                   "{}",
+                  acquire_id,
                   sid,
                   cnt,
                   _capacity);
                 bool success = false;
                 if (cnt < _capacity) {
+                    watchdog wd3(30s, [acquire_id] {
+                        vlog(
+                          pool_log.error,
+                          "NEEDLE {} cross-shard borrow hanged",
+                          acquire_id);
+                    });
                     success = co_await container().invoke_on(
                       sid, [my_sid = ss::this_shard_id()](client_pool& other) {
                           return other.borrow_one(my_sid);
@@ -330,19 +370,36 @@ client_pool::acquire(ss::abort_source& as) {
                 }
                 // Depending on the result either wait or create new connection
                 if (success) {
-                    vlog(pool_log.debug, "successfully borrowed from {}", sid);
+                    vlog(
+                      pool_log.debug,
+                      "{} successfully borrowed from {}",
+                      acquire_id,
+                      sid);
                     if (_probe) {
                         _probe->register_borrow();
                     }
                     source_sid = sid;
                     client = make_client();
                 } else {
-                    vlog(pool_log.debug, "can't borrow connection, waiting");
+                    vlog(
+                      pool_log.debug,
+                      "{} can't borrow connection, waiting",
+                      acquire_id);
+
+                    watchdog wd4(30s, [acquire_id] {
+                        vlog(
+                          pool_log.error,
+                          "NEEDLE {} with_timeout_abortable(2) hanged",
+                          acquire_id);
+                    });
+                    // FIXME: potentially infinite wait
+                    // if nobody is borrowing
                     co_await ssx::with_timeout_abortable(
                       _cvar.wait(), model::no_timeout, as);
                     vlog(
                       pool_log.debug,
-                      "cvar triggered, pool size: {}",
+                      "{} cvar triggered, pool size: {}",
+                      acquire_id,
                       _pool.size());
                 }
             }
@@ -360,7 +417,8 @@ client_pool::acquire(ss::abort_source& as) {
     update_usage_stats();
     vlog(
       pool_log.debug,
-      "client lease is acquired, own usage stat: {}, is-borrowed: {}",
+      "{} client lease is acquired, own usage stat: {}, is-borrowed: {}",
+      acquire_id,
       normalized_num_clients_in_use(),
       source_sid.has_value());
 
@@ -373,6 +431,15 @@ client_pool::acquire(ss::abort_source& as) {
       client.value(),
       as,
       ss::make_deleter([pool = weak_from_this(),
+                        acquire_id,
+                        wd = std::make_unique<watchdog>(
+                          30s,
+                          [acquire_id] {
+                              vlog(
+                                pool_log.error,
+                                "NEEDLE {} client-lease exists longer than 30s",
+                                acquire_id);
+                          }),
                         client = client.value(),
                         g = std::move(guard),
                         source_sid]() mutable {
@@ -386,31 +453,49 @@ client_pool::acquire(ss::abort_source& as) {
                   if (!pool->_pool.empty()) {
                       vlog(
                         pool_log.debug,
-                        "disposing the oldest client connection and "
-                        "replacing it with the borrowed one");
+                        "{} disposing the oldest client connection and "
+                        "replacing it with the borrowed one",
+                        acquire_id);
                       pool->_pool.push_back(std::move(client));
                       client = std::move(pool->_pool.front());
                       pool->_pool.pop_front();
                   } else {
                       vlog(
                         pool_log.debug,
-                        "disposing the borrowed client connection");
+                        "{} disposing the borrowed client connection",
+                        acquire_id);
                   }
 
                   client->shutdown();
-                  ssx::spawn_with_gate(pool->_bg_gate, [client] {
-                      return client->stop().finally([client] {});
+                  ssx::spawn_with_gate(pool->_bg_gate, [client, acquire_id] {
+                      return client->stop().finally(
+                        [client,
+                         wd = std::make_unique<watchdog>(
+                           30s, [acquire_id] {
+                               vlog(
+                                 pool_log.error,
+                                 "NEEDLE {} client->stop hanged",
+                                 acquire_id);
+                           })] {});
                   });
                   // In the background return the client to the connection pool
                   // of the source shard. The lifetime is guaranteed by the gate
                   // guard.
-                  ssx::spawn_with_gate(pool->_bg_gate, [&pool, source_sid] {
-                      return pool->container().invoke_on(
-                        source_sid.value(),
-                        [my_sid = ss::this_shard_id()](client_pool& other) {
-                            other.return_one(my_sid);
-                        });
-                  });
+                  ssx::spawn_with_gate(
+                    pool->_bg_gate, [&pool, source_sid, acquire_id] {
+                        return pool->container().invoke_on(
+                          source_sid.value(),
+                          [my_sid = ss::this_shard_id(),
+                           wd = std::make_unique<watchdog>(
+                             30s, [acquire_id] {
+                                 vlog(
+                                   pool_log.error,
+                                   "NEEDLE {} client->return_one hanged",
+                                   acquire_id);
+                             })](client_pool& other) {
+                              other.return_one(my_sid);
+                          });
+                    });
               } else {
                   pool->release(client);
               }

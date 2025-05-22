@@ -42,10 +42,12 @@
 #include "net/connection.h"
 #include "raft/fundamental.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
+#include "types.h"
 #include "utils/human.h"
 #include "utils/lazy_abort_source.h"
 #include "utils/retry_chain_node.h"
@@ -70,6 +72,7 @@
 #include <fmt/format.h>
 
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <iterator>
 #include <numeric>
@@ -577,6 +580,12 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
         cloud_storage::topic_manifest tm(cfg_copy, _rev);
         auto key = tm.get_manifest_path(remote_path_provider());
         vlog(ctxlog.debug, "Topic manifest object key is '{}'", key);
+        watchdog w(30s, [this] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE Topic manifest upload timed out for {}",
+              _parent.ntp());
+        });
         auto res = co_await _remote.upload_manifest(
           _conf->bucket_name, tm, key, fib);
         if (res != cloud_storage::upload_result::success) {
@@ -630,7 +639,21 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
   std::optional<model::offset> last_scrubbed_offset,
   cloud_storage::scrub_status status,
   cloud_storage::anomalies detected) {
+    static thread_local int64_t tls_process_anomalies_count = 0;
+    auto process_anomalies_id = ++tls_process_anomalies_count;
+    watchdog wd(100s, [this, process_anomalies_id] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} process_anomalies _mutex",
+          process_anomalies_id);
+        vassert(false, "process_anomalies _mutex");
+    });
     // If there's ongoing housekeeping job, let it finish first.
+    vlog(
+      _rtclog.info,
+      "{} get_units _mutex (available {})",
+      process_anomalies_id,
+      _mutex.available_units());
     auto units = co_await ss::get_units(_mutex, 1, _as);
 
     auto sync_timeout = config::shard_local_cfg()
@@ -702,6 +725,8 @@ ss::future<> ntp_archiver::maybe_complete_flush() {
 }
 
 ss::future<> ntp_archiver::upload_until_term_change_legacy() {
+    static thread_local int64_t tls_upload_until_term_change_count = 0;
+    auto runid = ++tls_upload_until_term_change_count;
     auto backoff = _conf->upload_loop_initial_backoff();
 
     if (!_feature_table.local().is_active(
@@ -729,6 +754,21 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
     // as soon as we can, rather than potentially waiting for segment
     // uploads).
     {
+        watchdog wd(100s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} upload_until_term_change timed out waiting for "
+              "_uploads_active",
+              runid);
+            vassert(
+              false,
+              "upload_until_term_change timed out waiting for _uploads_active");
+        });
+        vlog(
+          _rtclog.info,
+          "{} get_units _uploads_active (available {})",
+          runid,
+          _uploads_active.available_units());
         auto units = co_await ss::get_units(_uploads_active, 1);
         co_await maybe_upload_manifest(upload_loop_prologue_ctx_label);
         co_await flush_manifest_clean_offset();
@@ -739,10 +779,29 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
         // the process of doing uploads + wait for us to drop out if they
         // e.g. set _paused.
         vassert(!_paused, "may_begin_uploads must ensure !_paused");
+        auto wd = std::make_optional<watchdog>(100s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} upload_until_term_change timed out waiting for "
+              "_uploads_active(2)",
+              runid);
+            vassert(
+              false,
+              "{} upload_until_term_change timed out waiting for "
+              "_uploads_active(2)",
+              runid);
+        });
+        vlog(
+          _rtclog.info,
+          "{} get_units _uploads_active (available {})",
+          runid,
+          _uploads_active.available_units());
         auto units = co_await ss::get_units(_uploads_active, 1);
+        wd = std::nullopt;
         vlog(
           _rtclog.trace,
-          "upload_until_term_change: got units (current {}), paused={}",
+          "{} upload_until_term_change: got units (current {}), paused={}",
+          runid,
           _uploads_active.current(),
           _paused);
 
@@ -1230,15 +1289,25 @@ ntp_archiver::get_last_sync_time() const {
 ss::future<
   std::pair<cloud_storage::partition_manifest, cloud_storage::download_result>>
 ntp_archiver::download_manifest() {
+    static thread_local int64_t tls_download_manifest_cnt = 0;
+    auto runid = ++tls_download_manifest_cnt;
     auto guard = _gate.hold();
     retry_chain_node fib(
       _conf->manifest_upload_timeout(),
       _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
-    vlog(_rtclog.debug, "Downloading manifest");
+    vlog(_rtclog.debug, "{} Downloading manifest", runid);
     cloud_storage::partition_manifest_downloader dl(
       get_bucket_name(), remote_path_provider(), _ntp, _rev, _remote);
+
+    watchdog w(30s, [this, runid] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} Manifest download timed out for {}",
+          runid,
+          _parent.ntp());
+    });
     auto result = co_await dl.download_manifest(fib, &tmp);
     if (result.has_error()) {
         co_return std::make_pair(
@@ -1337,6 +1406,13 @@ bool ntp_archiver::manifest_upload_required() const {
  * if we did not upload any segments.
  */
 ss::future<bool> ntp_archiver::maybe_upload_manifest(const char* upload_ctx) {
+    static thread_local int64_t tls_maybe_upload_manifest_count = 0;
+    auto runid = ++tls_maybe_upload_manifest_count;
+    vlog(_rtclog.debug, "{} maybe_upload_manifest", runid);
+    watchdog wd(100s, [this, runid] {
+        vlog(_rtclog.error, "NEEDLE {} maybe_upload_manifest", runid);
+        vassert(false, "maybe_upload_manifest");
+    });
     if (manifest_upload_required()) {
         auto result = co_await upload_manifest(upload_ctx);
         co_return result == cloud_storage::upload_result::success;
@@ -1353,6 +1429,13 @@ ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
 }
 
 ss::future<> ntp_archiver::flush_manifest_clean_offset() {
+    static thread_local int64_t tls_flush_manifest_clean_offset = 0;
+    auto runid = ++tls_flush_manifest_clean_offset;
+    vlog(_rtclog.debug, "{} flush_manifest_clean_offset", runid);
+    watchdog wd(100s, [this, runid] {
+        vlog(_rtclog.error, "NEEDLE {} flush_manifest_clean_offset", runid);
+        vassert(false, "flush_manifest_clean_offset");
+    });
     if (!_projected_manifest_clean_at.has_value()) {
         co_return;
     }
@@ -1384,6 +1467,8 @@ ss::future<> ntp_archiver::flush_manifest_clean_offset() {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
   const char* upload_ctx,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    static thread_local int64_t tls_upload_manifest = 0;
+    auto runid = ++tls_upload_manifest;
     if (!_feature_table.local().is_active(
           features::feature::cloud_storage_manifest_format_v2)) {
         vlog(
@@ -1409,11 +1494,19 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     auto path = manifest().get_manifest_path(remote_path_provider());
     vlog(
       _rtclog.debug,
-      "[{}] Uploading partition manifest, insync_offset={}, path={}",
+      "[{}] {} Uploading partition manifest, insync_offset={}, path={}",
       upload_ctx,
+      runid,
       upload_insync_offset,
       path());
 
+    watchdog w(30s, [this, runid] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} Upload manifest timed out for {}",
+          runid,
+          _parent.ntp());
+    });
     auto result = co_await _remote.upload_manifest(
       get_bucket_name(), manifest(), path, fib);
 
@@ -1546,8 +1639,18 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
         }
     };
 
+    static thread_local int64_t tls_do_upload_segment = 0;
+    auto runid = ++tls_do_upload_segment;
     auto response = cloud_storage::upload_result::success;
+    vlog(_rtclog.debug, "{} Uploading segment to {}", runid, path());
     try {
+        watchdog w(30s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} Upload segment timed out for {}",
+              runid,
+              _parent.ntp());
+        });
         response = co_await _remote.upload_segment(
           get_bucket_name(),
           path,
@@ -1594,7 +1697,10 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate,
   std::vector<ss::rwlock::holder> segment_read_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    static thread_local int64_t tls_upload_segment = 0;
+    auto runid = ++tls_upload_segment;
     auto holder = std::move(segment_read_locks);
+    vlog(_rtclog.debug, "{} Uploading segment", runid);
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
@@ -1631,6 +1737,13 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
         // the read path will create the index on the fly while downloading the
         // segment, so it is okay to ignore the index upload failure, we still
         // want to advance the offsets because the segment did get uploaded.
+        watchdog w(30s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} Upload segment index timed out for {}",
+              runid,
+              _parent.ntp());
+        });
         std::ignore = co_await _remote.upload_index(
           _conf->bucket_name,
           cloud_storage_clients::object_key{index_path},
@@ -1713,6 +1826,8 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
   upload_candidate candidate,
   fragmented_vector<model::tx_range> tx_range,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    static thread_local int64_t tls_upload_tx = 0;
+    auto runid = ++tls_upload_tx;
     auto guard = _gate.hold();
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
@@ -1722,7 +1837,10 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
     vlog(
-      ctxlog.debug, "Uploading segment's tx range {}", candidate.exposed_name);
+      ctxlog.debug,
+      "{} Uploading segment's tx range {}",
+      runid,
+      candidate.exposed_name);
 
     if (tx_range.empty()) {
         // The actual upload only happens if tx_range is not empty.
@@ -1735,6 +1853,13 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
 
     cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
 
+    watchdog w(30s, [this, runid] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} Upload manifest timed out for {}",
+          runid,
+          _parent.ntp());
+    });
     co_return co_await _remote.upload_manifest(
       get_bucket_name(), manifest, manifest.get_manifest_path(), fib);
 }
@@ -2252,11 +2377,14 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
 
         mdiff.push_back(*upload.meta);
     }
+    static thread_local int64_t tls_replicate_archival_metadata = 0;
+    auto runid = ++tls_replicate_archival_metadata;
 
     if (total.num_succeeded != 0) {
         vassert(
           _parent.archival_meta_stm(),
-          "Archival metadata STM is not created for {} archiver",
+          "{} Archival metadata STM is not created for {} archiver",
+          runid,
           _ntp.path());
 
         auto deadline = ss::lowres_clock::now()
@@ -2278,6 +2406,13 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
               ? _parent.highest_producer_id()
               : model::producer_id{};
 
+        watchdog wd(100s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} replicate_archival_metadata add_segments",
+              runid);
+            vassert(false, "replicate_archival_metadata add_segments");
+        });
         auto error = co_await _parent.archival_meta_stm()->add_segments(
           mdiff,
           manifest_clean_offset,
@@ -2397,16 +2532,28 @@ model::offset ntp_archiver::max_uploadable_offset_exclusive() const {
 
 ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
   std::optional<model::offset> unsafe_max_offset_override_exclusive) {
+    static thread_local int64_t tls_upload_next_candidates = 0;
+    auto runid = ++tls_upload_next_candidates;
     auto max_offset_exclusive = unsafe_max_offset_override_exclusive
                                   ? *unsafe_max_offset_override_exclusive
                                   : max_uploadable_offset_exclusive();
     vlog(
       _rtclog.debug,
-      "Uploading next candidates called for {} with max_offset_exclusive={}",
+      "{} Uploading next candidates called for {} with max_offset_exclusive={}",
+      runid,
       _ntp,
       max_offset_exclusive);
     ss::gate::holder holder(_gate);
     try {
+        watchdog wd_upload_segments(150s, [this, runid] {
+            vlog(_rtclog.error, "NEEDLE {} Upload watchdog triggered", runid);
+            vassert(false, "Upload watchdog triggered");
+        });
+        vlog(
+          _rtclog.info,
+          "{} get_units _mutex (available {})",
+          runid,
+          _mutex.available_units());
         auto units = co_await ss::get_units(_mutex, 1, _as);
         auto scheduled_uploads = co_await schedule_uploads(
           max_offset_exclusive);
@@ -2441,10 +2588,12 @@ uint64_t ntp_archiver::estimate_backlog_size() {
 
 ss::future<std::optional<cloud_storage::partition_manifest>>
 ntp_archiver::maybe_truncate_manifest() {
+    static thread_local int64_t tls_maybe_truncate_manifest = 0;
+    auto runid = ++tls_maybe_truncate_manifest;
     retry_chain_node rtc(_as);
     ss::gate::holder gh(_gate);
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
-    vlog(ctxlog.info, "archival metadata cleanup started");
+    vlog(ctxlog.info, "{} archival metadata cleanup started", runid);
     model::offset adjusted_start_offset = model::offset::min();
     const auto& m = manifest();
     for (const auto& meta : m) {
@@ -2453,6 +2602,14 @@ ntp_archiver::maybe_truncate_manifest() {
           _conf->upload_loop_initial_backoff(),
           &rtc);
         auto spath = m.generate_segment_path(meta, remote_path_provider());
+        watchdog w(30s, [this, spath, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} Segment {} exists timed out for {}",
+              runid,
+              spath,
+              _parent.ntp());
+        });
         auto result = co_await _remote.segment_exists(
           get_bucket_name(), spath, fib);
         if (result == cloud_storage::download_result::notfound) {
@@ -2557,11 +2714,25 @@ std::ostream& operator<<(std::ostream& os, wait_result fr) {
 }
 
 ss::future<> ntp_archiver::housekeeping() {
+    static thread_local int64_t tls_housekeeping = 0;
+    auto runid = ++tls_housekeeping;
+    vlog(_rtclog.debug, "{} housekeeping started", runid);
     try {
         if (may_begin_uploads()) {
             // Acquire mutex to prevent concurrency between
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
+            watchdog wd_housekeeping(150s, [this, runid] {
+                vlog(
+                  _rtclog.error,
+                  "NEEDLE {} housekeeping get_units WD triggered",
+                  runid);
+                vassert(false, "housekeeping get_units WD triggered");
+            });
+            vlog(
+              _rtclog.info,
+              "get_units _mutex (available {})",
+              _mutex.available_units());
             auto units = co_await ss::get_units(_mutex, 1, _as);
             if (stm_retention_needed()) {
                 co_await apply_retention();
@@ -2804,10 +2975,24 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         }
     }
 
+    static thread_local int64_t tls_gc_archive = 0;
+    auto runid = ++tls_gc_archive;
+    vlog(
+      _rtclog.debug,
+      "{} Garbage collecting {} segments from the cloud",
+      runid,
+      segments_to_remove_count);
     retry_chain_node fib(
       _conf->garbage_collect_timeout(),
       _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
+    watchdog w(30s, [this, runid] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} Delete objects timed out for {}",
+          runid,
+          _parent.ntp());
+    });
     const auto delete_result = co_await _remote.delete_objects(
       get_bucket_name(), objects_to_remove, fib);
     const auto backlog_size_exceeded = segments_to_remove_count
@@ -2845,6 +3030,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
               "Failed to clean up metadata after garbage collection: {}",
               error);
         } else {
+            watchdog w(30s, [this, runid] {
+                vlog(
+                  _rtclog.error,
+                  "NEEDLE {} Delete objects (archive) timed out for {}",
+                  runid,
+                  _parent.ntp());
+            });
             std::ignore = co_await _remote.delete_objects(
               get_bucket_name(), manifests_to_remove, fib);
         }
@@ -2945,9 +3137,21 @@ ss::future<> ntp_archiver::apply_spillover() {
           last,
           spillover_meta);
 
+        static thread_local int64_t tls_apply_spillover = 0;
+        auto runid = ++tls_apply_spillover;
+        vlog(
+          _rtclog.debug, "{} Uploading spillover manifest for {}", runid, _ntp);
+
         retry_chain_node upload_rtc(
           manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
         const auto path = tail.get_manifest_path(remote_path_provider());
+        watchdog w(30s, [this, runid] {
+            vlog(
+              _rtclog.error,
+              "NEEDLE {} upload spillover manifest timed out for {}",
+              runid,
+              _parent.ntp());
+        });
         auto res = co_await _remote.upload_manifest(
           get_bucket_name(), tail, path, upload_rtc);
         if (res != cloud_storage::upload_result::success) {
@@ -3200,10 +3404,24 @@ ss::future<> ntp_archiver::garbage_collect() {
           cloud_storage::generate_index_path(path));
     }
 
+    static thread_local int64_t tls_gc = 0;
+    auto runid = ++tls_gc;
+    vlog(
+      _rtclog.debug,
+      "{} Garbage collecting {} segments from the cloud",
+      runid,
+      to_remove.size());
     retry_chain_node fib(
       _conf->garbage_collect_timeout(),
       _conf->cloud_storage_initial_backoff(),
       &_rtcnode);
+    watchdog w(30s, [this, runid] {
+        vlog(
+          _rtclog.error,
+          "NEEDLE {} Delete objects (gc) timed out for {}",
+          runid,
+          _parent.ntp());
+    });
     const auto delete_result = co_await _remote.delete_objects(
       get_bucket_name(), objects_to_remove, fib);
 
@@ -3288,6 +3506,17 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
+    static thread_local int64_t tls_find_reupload_candidate = 0;
+    auto runid = ++tls_find_reupload_candidate;
+    vlog(_rtclog.debug, "{} Finding reupload candidate for {}", runid, _ntp);
+    watchdog wd(100s, [this, runid] {
+        vlog(_rtclog.error, "NEEDLE {} find_reupload_candidate _mutex", runid);
+        vassert(false, "find_reupload_candidate _mutex");
+    });
+    vlog(
+      _rtclog.info,
+      "get_units _mutex (available {})",
+      _mutex.available_units());
     auto units = co_await ss::get_units(_mutex, 1, _as);
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
@@ -3505,6 +3734,13 @@ ss::future<bool> ntp_archiver::do_upload_local(
           ? _parent.highest_producer_id()
           : model::producer_id{};
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout();
+    static thread_local int64_t tls_do_upload_local = 0;
+    auto runid = ++tls_do_upload_local;
+    vlog(_rtclog.debug, "{} replicating segment", runid);
+    watchdog wd_upload_segments(100s, [this, runid] {
+        vlog(_rtclog.error, "NEEDLE {} do_upload_local add_segments", runid);
+        vassert(false, "do_upload_local add_segments");
+    });
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta},
       std::nullopt,
@@ -3555,6 +3791,10 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 
     ss::gate::holder holder(_gate);
     try {
+        vlog(
+          _rtclog.info,
+          "get_units _uploads_active (available {})",
+          _uploads_active.available_units());
         co_await ss::get_units(_uploads_active, 1, timeout);
         vlog(
           _rtclog.trace,
