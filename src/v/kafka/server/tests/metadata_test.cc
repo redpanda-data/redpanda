@@ -9,8 +9,10 @@
 
 #include "absl/algorithm/container.h"
 #include "cluster/security_frontend.h"
+#include "cluster/topic_configuration.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/details/security.h"
@@ -79,6 +81,30 @@ protected:
                        user, credential, model::timeout_clock::now() + 5s)
                      .get();
         BOOST_REQUIRE_EQUAL(err, cluster::errc::success);
+    }
+
+    std::optional<model::topic_id>
+    get_topic_id(const model::topic& topic_name) {
+        return app.controller->get_topics_state()
+          .local()
+          .get_topic_cfg({model::kafka_namespace, topic_name})
+          .and_then(&cluster::topic_configuration::tp_id);
+    }
+
+    [[nodiscard]] auto set_auto_create_topics(bool value) {
+        auto current = config::shard_local_cfg().auto_create_topics_enabled();
+        auto apply = [this](bool value) {
+            cluster::config_update_request r{
+              .upsert = {
+                {"auto_create_topics_enabled", ssx::sformat("{}", value)}}};
+            auto res = app.controller->get_config_frontend()
+                         .local()
+                         .patch(r, model::timeout_clock::now() + 1s)
+                         .get();
+            BOOST_REQUIRE(!res.errc);
+        };
+        apply(value);
+        return ss::defer([current, apply] { apply(current); });
     }
 };
 
@@ -359,5 +385,48 @@ FIXTURE_TEST(metadata_cluster_auth, metadata_fixture) {
               ? cluster_ops
               : default_response.cluster_authorized_operations;
         BOOST_REQUIRE_EQUAL(resp.data.cluster_authorized_operations, expected);
+    }
+}
+
+FIXTURE_TEST(metadata_autocreate, metadata_fixture) {
+    using kafka::api_version;
+    constexpr auto max_supported = kafka::metadata_handler::max_supported;
+    const model::topic test_topic_query{"metadata_autocreate_query"};
+    const model::topic test_topic_create{"metadata_autocreate_create"};
+
+    auto undo = set_auto_create_topics(true);
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto close = ss::defer([&client] { client.stop().get(); });
+
+    auto create_resp = client
+                         .dispatch(
+                           kafka::create_topics_request{.data{
+                             .topics{
+                               {.name{test_topic_query},
+                                .num_partitions = 1,
+                                .replication_factor = 1}},
+                             .timeout_ms = 10s,
+                             .validate_only = false}},
+                           kafka::api_version{2})
+                         .get();
+    BOOST_REQUIRE(!create_resp.data.errored());
+
+    const kafka::metadata_response_data default_response;
+    for (api_version ver{8}; ver < max_supported; ++ver) {
+        auto req = kafka::metadata_request{.data{
+          .topics
+          = {{{.name{ssx::sformat("{}_{}_{}", test_topic_create, "by_name", ver)}}, {.name{test_topic_query}}}},
+          .allow_auto_topic_creation = true,
+          .include_cluster_authorized_operations = false,
+          .include_topic_authorized_operations = false}};
+        auto resp = client.dispatch(std::move(req), ver).get();
+
+        BOOST_REQUIRE(!resp.data.errored());
+        const auto& topics = resp.data.topics;
+        BOOST_REQUIRE_EQUAL(topics.size(), 2);
+        BOOST_REQUIRE_EQUAL(topics[0].error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(topics[1].error_code, kafka::error_code::none);
     }
 }
