@@ -41,7 +41,7 @@ class SaramaTest(RedpandaTest):
         self._timeout = 30 if self.scale.local else 1200
 
     @cluster(num_nodes=4)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_interceptors(self, version):
         sarama_example = SaramaExamples.SaramaInterceptors(
             self.redpanda, version, self.topic)
@@ -57,7 +57,7 @@ class SaramaTest(RedpandaTest):
                    backoff_sec=1)
 
     @cluster(num_nodes=4)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_http_server(self, version):
         sarama_example = SaramaExamples.SaramaHttpServer(
             self.redpanda, version)
@@ -95,7 +95,7 @@ class SaramaTest(RedpandaTest):
                    err_msg="sarama http_server test failed")
 
     @cluster(num_nodes=5)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_consumergroup(self, version):
         count = 10 if self.scale.local else 5000
 
@@ -152,7 +152,7 @@ class SaramaScramTest(RedpandaTest):
         super(SaramaScramTest, self).__init__(test_context, security=security)
 
     @cluster(num_nodes=3)
-    @matrix(version=["2.1.0"])
+    @matrix(version=["2.1.0", "2.6.0"])
     def test_sarama_sasl_scram(self, version):
         # Get the SASL SCRAM command and a ducktape node
         cmd = SaramaExamples.sarama_sasl_scram(self.redpanda, version,

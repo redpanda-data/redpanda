@@ -280,9 +280,6 @@ FIXTURE_TEST(metadata_v9_authz_acl, metadata_fixture) {
 
 FIXTURE_TEST(metadata_empty_topic_name, metadata_fixture) {
     using kafka::api_version;
-    if (kafka::metadata_handler::max_supported < api_version{12}) {
-        return;
-    }
 
     auto client = make_kafka_client().get();
     auto deferred_close = ss::defer([&client] { client.stop().get(); });
@@ -319,10 +316,8 @@ FIXTURE_TEST(metadata_empty_topic_name, metadata_fixture) {
 
 FIXTURE_TEST(metadata_non_empty_topic_id, metadata_fixture) {
     using kafka::api_version;
-    if (kafka::metadata_handler::max_supported < api_version{12}) {
-        return;
-    }
-    ss::sstring test_topic_name = "metadata_non_empty_topic_id";
+    constexpr auto max_supported = kafka::metadata_handler::max_supported;
+    const model::topic test_topic_name{"metadata_non_empty_topic_id"};
 
     create_topic(test_topic_name, 1, 1);
 
@@ -353,6 +348,24 @@ FIXTURE_TEST(metadata_non_empty_topic_id, metadata_fixture) {
         BOOST_REQUIRE_EQUAL(resp.data.cluster_id, default_response.cluster_id);
         BOOST_REQUIRE_EQUAL(
           resp.data.controller_id, default_response.controller_id);
+    }
+
+    for (api_version ver{12}; ver <= max_supported; ++ver) {
+        auto topic_id = get_topic_id(test_topic_name);
+        BOOST_REQUIRE(topic_id.has_value());
+        BOOST_REQUIRE_NE(topic_id.value(), model::topic_id{});
+
+        auto resp = client
+                      .dispatch(
+                        kafka::metadata_request{
+                          .data{.topics{{{.name{test_topic_name}}}}}},
+                        ver)
+                      .get();
+
+        BOOST_REQUIRE(!resp.data.errored());
+        BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(
+          resp.data.topics.front().topic_id, kafka::uuid{*topic_id});
     }
 }
 
@@ -388,6 +401,53 @@ FIXTURE_TEST(metadata_cluster_auth, metadata_fixture) {
     }
 }
 
+FIXTURE_TEST(metadata_v12_mixed, metadata_fixture) {
+    // Test specifying a topic name and a topic id in the same request
+    // If any topic is is present, only topic ids are used.
+    using namespace kafka;
+    const model::topic test_topic_name_0{"metadata_v12_mixed_0"};
+    const model::topic test_topic_name_1{"metadata_v12_mixed_1"};
+
+    auto undo = set_auto_create_topics(false);
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+
+    client
+      .dispatch(
+        kafka::create_topics_request{.data{
+          .topics{
+            {.name{test_topic_name_0},
+             .num_partitions = 1,
+             .replication_factor = 1},
+            {.name{test_topic_name_1},
+             .num_partitions = 1,
+             .replication_factor = 1}},
+          .timeout_ms = 10s,
+          .validate_only = false}},
+        kafka::api_version{2})
+      .get();
+
+    auto topic_1_id = get_topic_id(model::topic(test_topic_name_1));
+    BOOST_REQUIRE(topic_1_id.has_value());
+
+    // Request topic 0 by name and topic 1 by id (expect only topic 1)
+    auto resp
+      = client
+          .dispatch(
+            kafka::metadata_request{
+              .data{.topics{
+                {{.name{test_topic_name_0}}, {.topic_id{uuid{*topic_1_id}}}}}},
+            },
+            api_version{12})
+          .get();
+
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE(!resp.data.errored());
+    BOOST_REQUIRE(resp.data.topics[0].name == test_topic_name_1);
+    BOOST_REQUIRE(resp.data.topics[0].error_code == kafka::error_code::none);
+}
+
 FIXTURE_TEST(metadata_autocreate, metadata_fixture) {
     using kafka::api_version;
     constexpr auto max_supported = kafka::metadata_handler::max_supported;
@@ -418,6 +478,25 @@ FIXTURE_TEST(metadata_autocreate, metadata_fixture) {
         auto req = kafka::metadata_request{.data{
           .topics
           = {{{.name{ssx::sformat("{}_{}_{}", test_topic_create, "by_name", ver)}}, {.name{test_topic_query}}}},
+          .allow_auto_topic_creation = true,
+          .include_cluster_authorized_operations = false,
+          .include_topic_authorized_operations = false}};
+        auto resp = client.dispatch(std::move(req), ver).get();
+
+        BOOST_REQUIRE(!resp.data.errored());
+        const auto& topics = resp.data.topics;
+        BOOST_REQUIRE_EQUAL(topics.size(), 2);
+        BOOST_REQUIRE_EQUAL(topics[0].error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(topics[1].error_code, kafka::error_code::none);
+    }
+
+    auto query_topic_id = get_topic_id(model::topic(test_topic_query));
+    BOOST_REQUIRE(query_topic_id.has_value());
+
+    for (api_version ver{12}; ver <= max_supported; ++ver) {
+        auto req = kafka::metadata_request{.data{
+          .topics
+          = {{{.name{ssx::sformat("{}_{}_{}", test_topic_create, "by_id", ver)}}, {.topic_id{kafka::uuid{*query_topic_id}}}}},
           .allow_auto_topic_creation = true,
           .include_cluster_authorized_operations = false,
           .include_topic_authorized_operations = false}};
