@@ -90,6 +90,10 @@ public:
                 co_return -1;
             }
             if (
+              archiver.flush().response != archival::flush_response::accepted) {
+                co_return -1;
+            }
+            if (
               (co_await archiver.upload_next_candidates(
                  archival::archival_stm_fence{.emit_rw_fence_cmd = false}))
                 .non_compacted_upload_result.num_failed

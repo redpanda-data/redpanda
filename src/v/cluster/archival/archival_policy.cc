@@ -16,6 +16,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 
 #include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -27,6 +28,11 @@
 constexpr size_t compacted_segment_size_multiplier{3};
 
 namespace archival {
+
+bool use_v2_segment_collector() {
+    return config::shard_local_cfg().cloud_storage_segment_upload_mode()
+           == model::cloud_storage_segment_upload_mode::v2;
+}
 
 using namespace std::chrono_literals;
 
@@ -79,8 +85,12 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
       end_inclusive,
       force_upload);
 
+    auto mode = use_v2_segment_collector()
+                  ? segment_collector_mode::new_upload_v2
+                  : segment_collector_mode::new_upload;
+
     segment_collector segment_collector{
-      segment_collector_mode::new_upload,
+      mode,
       begin_inclusive,
       manifest,
       *log,
@@ -119,8 +129,12 @@ archival_policy::get_next_compacted_segment(
           _ntp);
         co_return candidate_creation_error::no_segments_collected;
     }
+
+    auto mode = use_v2_segment_collector()
+                  ? segment_collector_mode::compacted_reupload_v2
+                  : segment_collector_mode::compacted_reupload;
     segment_collector compacted_segment_collector{
-      segment_collector_mode::compacted_reupload,
+      mode,
       begin_inclusive,
       manifest,
       *log,

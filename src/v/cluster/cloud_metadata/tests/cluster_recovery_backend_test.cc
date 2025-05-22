@@ -168,6 +168,10 @@ TEST_P(ClusterRecoveryBackendLeadershipParamTest, TestRecoveryControllerState) {
     cluster::tx_executor{}.run_random_workload(
       spec, remote_p->raft()->term(), remote_p->rm_stm(), remote_p->log());
 
+    scoped_config cfg;
+    cfg.get("cloud_storage_segment_size_target")
+      .set_value(std::make_optional<size_t>(10_KiB));
+
     cluster::partition_manager::ntp_table_container partitions(
       app.partition_manager.local().partitions().begin(),
       app.partition_manager.local().partitions().end());

@@ -21,6 +21,8 @@
 
 namespace archival {
 
+bool use_v2_segment_collector();
+
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.
 ///

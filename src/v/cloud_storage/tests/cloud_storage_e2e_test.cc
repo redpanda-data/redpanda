@@ -324,6 +324,8 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
         log->force_roll().get();
 
         ASSERT_TRUE(archiver.sync_for_tests().get());
+        ASSERT_EQ(
+          archiver.flush().response, archival::flush_response::accepted);
         archiver
           .upload_next_candidates(
             archival::archival_stm_fence{.emit_rw_fence_cmd = false})
@@ -825,6 +827,7 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
         // drive the uploading
         auto& archiver = prt_l->archiver()->get();
         archiver.sync_for_tests().get();
+        archiver.flush();
         archiver
           .upload_next_candidates(
             archival::archival_stm_fence{.emit_rw_fence_cmd = false})

@@ -752,6 +752,7 @@ ss::future<bool> ntp_archiver::sync_for_tests() {
         if (!can_update_archival_metadata()) {
             co_return false;
         }
+        co_await maybe_complete_flush();
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         if (co_await _parent.archival_meta_stm()->sync(sync_timeout)) {
@@ -3308,8 +3309,11 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
+        auto mode = use_v2_segment_collector()
+                      ? segment_collector_mode::non_compacted_reupload_v2
+                      : segment_collector_mode::non_compacted_reupload;
         segment_collector collector(
-          segment_collector_mode::non_compacted_reupload,
+          mode,
           run->meta.base_offset,
           manifest(),
           log,
