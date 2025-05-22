@@ -199,6 +199,8 @@ std::string_view error_code_to_str(error_code error) {
         return "duplicate_resource";
     case error_code::unacceptable_credential:
         return "unacceptable_credential";
+    case error_code::unknown_topic_id:
+        return "unknown_topic_id";
     case error_code::transactional_id_not_found:
         return "transactional_id_not_found";
     default:
@@ -244,6 +246,7 @@ bool is_retriable(error_code error) {
     case error_code::kafka_storage_error:
     case error_code::fetch_session_id_not_found:
     case error_code::invalid_fetch_session_epoch:
+    case error_code::unknown_topic_id:
         return true;
     case error_code::unknown_server_error:
     case error_code::none:

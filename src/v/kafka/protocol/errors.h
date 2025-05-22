@@ -235,6 +235,8 @@ enum class error_code : int16_t {
     duplicate_resource = 92,
     // Requested credential would not meet criteria for acceptability
     unacceptable_credential = 93,
+    // This server does not host this topic ID.
+    unknown_topic_id = 100,
     // The transactional_id could not be found for describe tx request.
     transactional_id_not_found = 105,
 };

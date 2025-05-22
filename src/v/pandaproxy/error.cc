@@ -278,6 +278,7 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::reassignment_in_progress:
             return rec::kafka_retriable_error;
         case kec::unknown_topic_or_partition:
+        case kec::unknown_topic_id:
             return rec::partition_not_found;
         case kec::unknown_member_id:
             return rec::consumer_instance_not_found;

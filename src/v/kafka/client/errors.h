@@ -40,6 +40,7 @@ inline bool is_retriable_error(kafka::error_code ec) {
     case error_code::preferred_leader_not_available:
     case error_code::unstable_offset_commit:
     case error_code::throttling_quota_exceeded:
+    case error_code::unknown_topic_id:
         return true;
     case error_code::unknown_server_error:
     case error_code::invalid_fetch_size:
