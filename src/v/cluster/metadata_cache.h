@@ -101,6 +101,11 @@ public:
 
     const topic_table::underlying_t& all_topics_metadata() const;
 
+    std::optional<model::topic_namespace>
+    get_name_by_id(model::topic_id tp_id) const {
+        return _topics_state.local().get_name_by_id(tp_id);
+    }
+
     /// Returns all brokers, returns copy as the content of broker can change
     const members_table::cache_t& nodes() const;
 
