@@ -332,7 +332,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             # Disable time-based retention so that we can use synthetic
             # timestamps that may fall outside of the default retention window.
             'log_retention_ms':
-            -1
+            -1,
         })
 
         if cloud_storage:
@@ -340,6 +340,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 self.test_context,
                 cloud_storage_max_connections=5,
                 log_segment_size=self.log_segment_size,
+                cloud_storage_segment_size_target=self.log_segment_size,
 
                 # Off by default: test is parametrized to turn
                 # on if SI is wanted.
@@ -403,6 +404,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         # Reduce the segment size so we generate more segments and are more
         # likely to race timequeries with GC.
         self.log_segment_size = int(self.log_segment_size / 32)
+        print(self.log_segment_size)
         total_segments = 32 * 12
         self.set_up_cluster(cloud_storage=True,
                             batch_cache=False,

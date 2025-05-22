@@ -987,6 +987,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             log_segment_size=self.small_segment_size,
             cloud_storage_cache_size=20 * 2**30,
             cloud_storage_segment_max_upload_interval_sec=1,
+            cloud_storage_segment_size_target=self.small_segment_size,
         )
         super().__init__(
             test_context,
@@ -1034,7 +1035,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         producer.start()
         try:
             wait_until(
-                lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
+                lambda: nodes_report_cloud_segments(self.redpanda, 100 * 200),
                 timeout_sec=300,
                 backoff_sec=5)
         finally:

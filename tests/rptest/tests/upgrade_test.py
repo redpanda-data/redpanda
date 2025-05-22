@@ -396,7 +396,10 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             test_context=test_context,
             num_brokers=3,
             si_settings=SISettings(
-                test_context, cloud_storage_housekeeping_interval_ms=1000),
+                test_context,
+                cloud_storage_housekeeping_interval_ms=1000,
+                cloud_storage_segment_size_target=1024 * 1024,
+            ),
             extra_rp_conf={
                 # We will exercise storage/cloud_storage read paths, get the
                 # batch cache out of the way to ensure reads hit storage layer.

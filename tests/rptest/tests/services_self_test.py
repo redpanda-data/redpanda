@@ -213,12 +213,17 @@ class BucketScrubSelfTest(RedpandaTest):
     Verify that if we erase an object from tiered storage,
     the bucket validation will fail.
     """
+    segment_size = 1024 * 1024
+
     def __init__(self, test_context, *args, **kwargs):
-        super().__init__(test_context,
-                         *args,
-                         num_brokers=3,
-                         si_settings=SISettings(test_context),
-                         **kwargs)
+        super().__init__(
+            test_context,
+            *args,
+            num_brokers=3,
+            si_settings=SISettings(
+                test_context,
+                cloud_storage_segment_size_target=self.segment_size),
+            **kwargs)
 
     @skip_debug_mode  # We wait for a decent amount of traffic
     @cluster(num_nodes=4)
@@ -229,16 +234,15 @@ class BucketScrubSelfTest(RedpandaTest):
         topic = 'test'
 
         partition_count = 16
-        segment_size = 1024 * 1024
         msg_size = 16384
 
         self.client().create_topic(
             TopicSpec(name=topic,
                       partition_count=partition_count,
-                      retention_bytes=16 * segment_size,
-                      segment_bytes=segment_size))
+                      retention_bytes=16 * self.segment_size,
+                      segment_bytes=self.segment_size))
 
-        total_write_bytes = segment_size * partition_count * 4
+        total_write_bytes = self.segment_size * partition_count * 4
 
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,
