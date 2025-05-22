@@ -30,7 +30,7 @@ uuid uuid::from_string(std::string_view encoded) {
           decoded.size());
     }
     underlying_t ul;
-    std::copy_n(decoded.begin(), length, ul.begin());
+    std::copy_n(decoded.begin(), length, ul.mutable_uuid().begin());
     return uuid(ul);
 }
 

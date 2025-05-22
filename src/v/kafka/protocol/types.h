@@ -99,7 +99,7 @@ enum class describe_configs_source : int8_t {
 class uuid {
 public:
     static constexpr auto length = 16;
-    using underlying_t = std::array<uint8_t, length>;
+    using underlying_t = uuid_t;
 
     uuid() = default;
 
@@ -108,7 +108,11 @@ public:
     explicit uuid(const underlying_t& uuid)
       : _uuid(uuid) {}
 
-    bytes_view view() const { return {_uuid.data(), _uuid.size()}; }
+    explicit operator uuid_t() { return _uuid; }
+
+    bytes_view view() const {
+        return {_uuid.uuid().begin(), _uuid.uuid().size()};
+    }
 
     ss::sstring to_string() const;
 
