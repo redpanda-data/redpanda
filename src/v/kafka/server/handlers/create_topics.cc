@@ -127,7 +127,6 @@ using validators = make_validator_types<
   iceberg_config_validator,
   iceberg_invalid_record_action_validator,
   cloud_topic_config_validator,
-  delete_retention_ms_validator,
   iceberg_target_lag_ms_validator,
   min_max_compaction_lag_ms_validator>;
 

@@ -360,8 +360,7 @@ create_topic_properties_update(
                 parse_and_set_tristate(
                   update.properties.delete_retention_ms,
                   cfg.value,
-                  kafka::config_resource_operation::set,
-                  delete_retention_ms_validator{});
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_iceberg_delete) {

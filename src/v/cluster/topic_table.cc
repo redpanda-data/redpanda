@@ -66,10 +66,6 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         co_return schema_id_validation_validator::ec;
     }
 
-    if (!topic_multi_property_validation(cmd.value.cfg.properties)) {
-        co_return errc::topic_invalid_config;
-    }
-
     if (
       cmd.value.cfg.properties.iceberg_mode != model::iceberg_mode::disabled
       && !cmd.value.cfg.properties.iceberg_partition_spec) {
@@ -877,22 +873,6 @@ std::error_code topic_table::validate_force_reconfigurable_partitions(
     return result;
 }
 
-bool topic_table::topic_multi_property_validation(
-  const topic_properties& properties) const {
-    // delete.retention.ms validation. Cannot be enabled alongside tiered
-    // storage.
-    if (!properties.delete_retention_ms.is_disabled()) {
-        if (
-          properties.shadow_indexing.has_value()
-          && properties.shadow_indexing.value()
-               != model::shadow_indexing_mode::disabled) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 template<typename T>
 void incremental_update(
   std::optional<T>& property, property_update<std::optional<T>> override) {
@@ -1208,10 +1188,6 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
 
     if (!schema_id_validation_validator::is_valid(updated_properties)) {
         co_return schema_id_validation_validator::ec;
-    }
-
-    if (!topic_multi_property_validation(updated_properties)) {
-        co_return make_error_code(errc::topic_invalid_config);
     }
 
     // Apply the changes

@@ -290,9 +290,9 @@ class DescribeTopicsTest(RedpandaTest):
             "delete.retention.ms":
             ConfigProperty(
                 config_type="LONG",
-                value="-1",
+                value="86400000",
                 doc_string=
-                "The retention time for tombstone records in a compacted topic. Cannot be enabled at the same time as any of `cloud_storage_enabled`, `cloud_storage_enable_remote_read`, or `cloud_storage_enable_remote_write`."
+                "The retention time for tombstone records and transaction markers in a compacted topic."
             ),
             "redpanda.iceberg.delete":
             ConfigProperty(

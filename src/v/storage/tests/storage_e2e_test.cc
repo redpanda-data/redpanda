@@ -5874,3 +5874,58 @@ TEST_F(storage_test_fixture, log_compaction_enable_sliding_window) {
     storage::testing_details::log_manager_accessor::housekeeping_scan(mgr)
       .get();
 }
+
+TEST_F(storage_test_fixture, delete_retention_ms_with_ts) {
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    auto delete_retention_ms = 10ms;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    ov.delete_retention_ms = tristate<std::chrono::milliseconds>(
+      delete_retention_ms);
+    ov.shadow_indexing_mode = model::shadow_indexing_mode::full;
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    // tombstone_retention_ms should be nullopt
+    ASSERT_EQ(log->config().tombstone_retention_ms(), std::nullopt);
+
+    // tx_retention_ms should have value
+    auto tx_retention_ms = log->config().tx_retention_ms();
+    ASSERT_TRUE(tx_retention_ms.has_value());
+    ASSERT_EQ(tx_retention_ms.value(), delete_retention_ms);
+};
+
+TEST_F(storage_test_fixture, delete_retention_ms_without_ts) {
+    auto cfg = default_log_config(test_dir);
+    storage::log_manager mgr = make_log_manager(cfg);
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    auto delete_retention_ms = 10ms;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    ov.delete_retention_ms = tristate<std::chrono::milliseconds>(
+      delete_retention_ms);
+    ov.shadow_indexing_mode = model::shadow_indexing_mode::disabled;
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    // tombstone_retention_ms should have value
+    auto tombstone_retention_ms = log->config().tombstone_retention_ms();
+    ASSERT_TRUE(tombstone_retention_ms.has_value());
+    ASSERT_EQ(tombstone_retention_ms.value(), delete_retention_ms);
+
+    // tx_retention_ms should have value
+    auto tx_retention_ms = log->config().tx_retention_ms();
+    ASSERT_TRUE(tx_retention_ms.has_value());
+    ASSERT_EQ(tx_retention_ms.value(), delete_retention_ms);
+};

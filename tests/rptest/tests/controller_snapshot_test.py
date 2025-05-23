@@ -165,6 +165,13 @@ class ControllerState:
                 symdiff -= set({('cleanup.policy', ('delete',
                                                     'DYNAMIC_TOPIC_CONFIG'))})
 
+            # This property was changed away from a "disabled" default in v25.2.1.
+            DELETE_RETENTION_MS_DEFAULT_CHANGE_VERSION = RedpandaVersionTriple(
+                (25, 2, 1))
+            if self.version < DELETE_RETENTION_MS_DEFAULT_CHANGE_VERSION:
+                symdiff -= set({('delete.retention.ms',
+                                 ('-1', 'DYNAMIC_TOPIC_CONFIG'))})
+
             assert len(symdiff) == 0, f"configs differ, symdiff: {symdiff}"
 
             partitions = self.topic_partitions[t]

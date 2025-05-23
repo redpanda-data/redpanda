@@ -210,7 +210,7 @@ struct topic_properties
 
     bool cloud_topic_enabled{storage::ntp_config::default_cloud_topic_enabled};
 
-    tristate<std::chrono::milliseconds> delete_retention_ms{disable_tristate};
+    tristate<std::chrono::milliseconds> delete_retention_ms{std::nullopt};
     // Should we delete the corresponding iceberg table when deleting the topic.
     std::optional<bool> iceberg_delete;
     // Partition spec expression for the corresponding Iceberg table.

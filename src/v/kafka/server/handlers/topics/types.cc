@@ -173,25 +173,6 @@ get_leaders_preference(const config_map_t& config) {
     return std::nullopt;
 }
 
-static tristate<std::chrono::milliseconds>
-get_delete_retention_ms(const config_map_t& config) {
-    auto delete_retention_ms = get_tristate_value<std::chrono::milliseconds>(
-      config, topic_property_delete_retention_ms);
-
-    // If the config entry for delete.retention.ms is in the "empty" state, and
-    // the cluster default is also std::nullopt, ensure the option is disabled
-    // by default. DescribeConfigs calls should still return DEFAULT_CONFIG when
-    // describing this state, thanks to override_if_not_default in
-    // config_response_utils.cc.
-    if (
-      delete_retention_ms.is_empty()
-      && !config::shard_local_cfg().tombstone_retention_ms().has_value()) {
-        return tristate<std::chrono::milliseconds>{disable_tristate};
-    }
-
-    return delete_retention_ms;
-}
-
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
@@ -270,8 +251,9 @@ to_cluster_type(const creatable_topic& t) {
 
     cfg.properties.leaders_preference = get_leaders_preference(config_entries);
 
-    cfg.properties.delete_retention_ms = get_delete_retention_ms(
-      config_entries);
+    cfg.properties.delete_retention_ms
+      = get_tristate_value<std::chrono::milliseconds>(
+        config_entries, topic_property_delete_retention_ms);
 
     cfg.properties.iceberg_delete = get_bool_value(
       config_entries, topic_property_iceberg_delete);

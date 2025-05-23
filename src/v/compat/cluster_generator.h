@@ -661,7 +661,7 @@ struct instance_generator<cluster::topic_properties> {
           model::iceberg_mode::disabled,
           std::nullopt,
           false,
-          tristate<std::chrono::milliseconds>{disable_tristate},
+          tristate<std::chrono::milliseconds>{std::nullopt},
           std::nullopt,
           std::nullopt,
           tests::random_optional([] {

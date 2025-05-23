@@ -82,9 +82,7 @@ public:
         model::iceberg_mode iceberg_mode{default_iceberg_mode};
         bool cloud_topic_enabled{default_cloud_topic_enabled};
 
-        // Should not be enabled at the same time as any other tiered storage
-        // properties.
-        tristate<std::chrono::milliseconds> tombstone_retention_ms;
+        tristate<std::chrono::milliseconds> delete_retention_ms;
 
         // Controls segment compaction eligiblity.
         tristate<double> min_cleanable_dirty_ratio;
@@ -335,12 +333,12 @@ public:
                 return std::nullopt;
             }
             // If the tristate is disabled, return nullopt.
-            if (_overrides->tombstone_retention_ms.is_disabled()) {
+            if (_overrides->delete_retention_ms.is_disabled()) {
                 return std::nullopt;
             }
             // If the tristate has a value, use it.
-            if (_overrides->tombstone_retention_ms.has_optional_value()) {
-                return _overrides->tombstone_retention_ms.value();
+            if (_overrides->delete_retention_ms.has_optional_value()) {
+                return _overrides->delete_retention_ms.value();
             }
 
             // If the tristate holds an empty optional, fall back to cluster

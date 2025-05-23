@@ -363,10 +363,7 @@ create_topic_properties_update(
             }
             if (cfg.name == topic_property_delete_retention_ms) {
                 parse_and_set_tristate(
-                  update.properties.delete_retention_ms,
-                  cfg.value,
-                  op,
-                  delete_retention_ms_validator{});
+                  update.properties.delete_retention_ms, cfg.value, op);
                 continue;
             }
             if (cfg.name == topic_property_iceberg_delete) {

@@ -1002,12 +1002,10 @@ configuration::configuration()
   , tombstone_retention_ms(
       *this,
       "tombstone_retention_ms",
-      "The retention time for tombstone records in a compacted topic. Cannot "
-      "be enabled at the same time as any of `cloud_storage_enabled`, "
-      "`cloud_storage_enable_remote_read`, or "
-      "`cloud_storage_enable_remote_write`.",
+      "The retention time for tombstone records and transaction markers in a "
+      "compacted topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      std::nullopt,
+      24h,
       validate_tombstone_retention_ms)
   , min_cleanable_dirty_ratio(
       *this,
