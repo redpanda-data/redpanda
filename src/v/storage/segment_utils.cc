@@ -920,6 +920,19 @@ make_concatenated_segment(
       segments,
       [](const auto& s) { return s->index().may_have_tombstone_records(); });
 
+    // Every segment should have been self compacted at this point.
+    // Take the maximum self compact timestamp.
+    auto new_self_compact_timestamp
+      = (*std::ranges::max_element(
+           segments,
+           std::less<>{},
+           [](const auto& s) {
+               return s->index().self_compact_timestamp().value();
+           }))
+          ->index()
+          .self_compact_timestamp()
+          .value();
+
     segment_index index(
       index_name,
       offsets.get_base_offset(),
@@ -928,7 +941,8 @@ make_concatenated_segment(
       cfg.sanitizer_config,
       new_broker_timestamp,
       new_clean_compact_timestamp,
-      new_may_have_tombstone_records);
+      new_may_have_tombstone_records,
+      new_self_compact_timestamp);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(

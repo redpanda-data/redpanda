@@ -255,9 +255,11 @@ ss::future<index_state> deduplicate_segment(
           stats);
     }
 
-    // restore broker timestamp and clean compact timestamp
+    // restore broker timestamp, self compact timestamp and clean compact
+    // timestamp
     auto& new_idx = res.new_idx;
     new_idx.broker_timestamp = seg->index().broker_timestamp();
+    new_idx.self_compact_timestamp = seg->index().self_compact_timestamp();
     new_idx.clean_compact_timestamp = seg->index().clean_compact_timestamp();
 
     // Set may_have_tombstone_records

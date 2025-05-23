@@ -190,6 +190,7 @@ public:
     bool finished_self_compaction() const;
     void mark_as_finished_windowed_compaction();
     bool finished_windowed_compaction() const;
+    bool has_self_compact_timestamp() const;
     bool has_clean_compact_timestamp() const;
     /// \brief used for compaction, to reset the tracker from index
     void force_set_commit_offset_from_index();
@@ -472,6 +473,9 @@ inline void segment::mark_as_finished_windowed_compaction() {
 inline bool segment::finished_windowed_compaction() const {
     return (_flags & bitflags::finished_windowed_compaction)
            == bitflags::finished_windowed_compaction;
+}
+inline bool segment::has_self_compact_timestamp() const {
+    return index().has_self_compact_timestamp();
 }
 inline bool segment::has_clean_compact_timestamp() const {
     return index().has_clean_compact_timestamp();

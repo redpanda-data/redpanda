@@ -279,8 +279,9 @@ TEST(IndexState, BinaryCompatibilityTest) {
     expected_state.non_data_timestamps = false;
     expected_state.broker_timestamp = model::timestamp{2166582944039043549};
     expected_state.num_compactible_records_appended = 0;
-    expected_state.may_have_tombstone_records = true;
     expected_state.clean_compact_timestamp = model::timestamp();
+    expected_state.may_have_tombstone_records = true;
+    expected_state.self_compact_timestamp = model::timestamp();
     expected_state.bitflags = 123;
 
     chunked_vector<uint32_t> relative_offset_index = {
