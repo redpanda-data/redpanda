@@ -46,6 +46,7 @@
 #include "storage/record_batch_utils.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
@@ -313,7 +314,13 @@ command_batch_builder::command_batch_builder(
   , _builder(model::record_batch_type::archival_metadata, model::offset(0))
   , _deadline(deadline)
   , _as(as)
-  , _holder(stm._gate) {}
+  , _holder(stm._gate) {
+    vlog(_stm.get()._logger.debug, "command_batch_builder ctor");
+}
+
+command_batch_builder::~command_batch_builder() {
+    vlog(_stm.get()._logger.debug, "command_batch_builder dtor");
+}
 
 command_batch_builder& command_batch_builder::reset_metadata() {
     iobuf key_buf = serde::to_iobuf(
@@ -473,15 +480,18 @@ command_batch_builder& command_batch_builder::update_highest_producer_id(
 ss::future<std::error_code> command_batch_builder::replicate() {
     _as.check();
 
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 10");
     auto units = co_await _stm.get()._lock.get_units(_as);
     auto holder = _stm.get()._gate.hold();
 
-    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate called");
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 20");
     auto now = ss::lowres_clock::now();
     auto timeout = now < _deadline ? _deadline - now : 0ms;
 
     // Block on syncing the STM.
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 30");
     auto did_sync = co_await _stm.get().do_sync(timeout, &_as);
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 40");
     if (!did_sync) {
         co_return errc::not_leader;
     }
@@ -499,8 +509,14 @@ ss::future<std::error_code> command_batch_builder::replicate() {
     // The operation can continue safely in background because it holds the
     // lock and the gate. The lock also ensures that no concurrent replicate
     // calls can be made and we won't leak continuations.
-    co_return co_await ssx::with_timeout_abortable(
+    vlog(_stm.get()._logger.debug, "command_batch_builder::replicate 50");
+    auto res = co_await ssx::with_timeout_abortable(
       std::move(f), model::no_timeout, _as);
+
+    vlog(
+      _stm.get()._logger.debug, "command_batch_builder::replicate completed");
+
+    co_return res;
 }
 
 command_batch_builder archival_metadata_stm::batch_start(
@@ -805,6 +821,7 @@ ss::future<std::optional<model::offset>> archival_metadata_stm::sync(
 
 ss::future<bool> archival_metadata_stm::do_sync(
   model::timeout_clock::duration timeout, ss::abort_source* as) {
+    vlog(_log.debug, "do_sync started");
     auto holder = _gate.hold();
     if (!co_await raft::persisted_stm<>::sync(timeout)) {
         co_return false;
@@ -827,17 +844,21 @@ ss::future<bool> archival_metadata_stm::do_sync(
     // this is why we can use committed_offset
     auto commit = _raft->committed_offset();
     if (insync < commit) {
+        bool ret;
         if (as == nullptr) {
-            co_return co_await wait_no_throw(
+            ret = co_await wait_no_throw(
               commit, ss::lowres_clock::now() + timeout);
         } else {
-            co_return co_await wait_no_throw(
+            ret = co_await wait_no_throw(
               commit, ss::lowres_clock::now() + timeout, *as);
         }
+        vlog(_log.debug, "do_sync finished 1");
+        co_return ret;
     }
     // This should be impossible under lock
     vassert(
       _active_operation_res.has_value() == false, "Concurrency violation");
+    vlog(_log.debug, "do_sync finished 2");
     co_return true;
 }
 
@@ -853,6 +874,9 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     // early allowing for concurrent sync and replicate calls which will lead
     // to race conditions/corruption/undefined behavior.
 
+    auto crc = batch.header().header_crc;
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 10", crc);
     auto holder = _gate.hold();
 
     vassert(
@@ -883,6 +907,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         }
     }
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 20", crc);
     // Create a promise to deliver the result of the batch application
     _active_operation_res.emplace();
     auto broken_promise_to_shutdown = [](const ss::broken_promise&) {
@@ -895,8 +921,12 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     auto opts = raft::replicate_options(raft::consistency_level::quorum_ack);
     opts.set_force_flush();
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 30", crc);
     auto result = co_await _raft->replicate(
       current_term, std::move(batch), opts);
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 40", crc);
     if (!result) {
         vlog(
           _logger.warn,
@@ -913,21 +943,51 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         co_return result.error();
     }
 
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 50", crc);
     auto applied = co_await wait_no_throw(
       result.value().last_offset, model::no_timeout);
+    vlog(
+      _logger.debug, "archival_metadata_stm::do_replicate_commands {} 60", crc);
     if (!applied) {
+        vlog(
+          _logger.debug,
+          "archival_metadata_stm::do_replicate_commands {} 70",
+          crc);
         if (as.abort_requested()) {
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 80",
+              crc);
             co_return errc::shutting_down;
         }
 
         if (_raft->is_leader() && _raft->term() == current_term) {
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 90",
+              crc);
             co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
+            vlog(
+              _logger.debug,
+              "archival_metadata_stm::do_replicate_commands {} 100",
+              crc);
         }
         co_return errc::replication_error;
     }
 
-    co_return co_await std::move(apply_result);
+    vlog(
+      _logger.debug,
+      "archival_metadata_stm::do_replicate_commands {} 110",
+      crc);
+    auto res = co_await std::move(apply_result);
+    vlog(
+      _logger.debug,
+      "archival_metadata_stm::do_replicate_commands {} 120",
+      crc);
+
+    co_return res;
 }
 
 ss::future<std::error_code> archival_metadata_stm::mark_clean(
@@ -947,6 +1007,7 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
   ss::abort_source& as,
   segment_validated is_validated,
   emit_read_write_fence rw_fence) {
+    vlog(_log.debug, "add_segments started");
     auto holder = _gate.hold();
     if (segments.empty()) {
         co_return errc::success;
@@ -977,6 +1038,7 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
     // Replicate and log new metadata
     auto ec = co_await builder.replicate();
     if (ec) {
+        vlog(_log.debug, "add_segments failed");
         co_return ec;
     }
 
@@ -994,6 +1056,7 @@ ss::future<std::error_code> archival_metadata_stm::add_segments(
           highest_pid);
     }
 
+    vlog(_log.debug, "add_segments succeeded");
     co_return errc::success;
 }
 
@@ -1628,7 +1691,11 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
-    co_await raft::persisted_stm<>::stop();
+    auto f = raft::persisted_stm<>::stop();
+    _lock.broken();
+    maybe_notify_waiter(
+      std::make_exception_ptr(ss::abort_requested_exception{}));
+    co_await std::move(f);
 }
 
 const cloud_storage::partition_manifest&

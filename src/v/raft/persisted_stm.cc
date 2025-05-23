@@ -80,8 +80,11 @@ persisted_stm_base<BaseT, T>::load_local_snapshot() {
 }
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::stop() {
+    vlog(_log.debug, "persisted_stm_base::stop 10");
     co_await raft::state_machine_base::stop();
+    vlog(_log.debug, "persisted_stm_base::stop 20");
     co_await _gate.close();
+    vlog(_log.debug, "persisted_stm_base::stop 30");
 }
 
 template<typename BaseT, supported_stm_snapshot T>
@@ -327,10 +330,12 @@ void persisted_stm_base<BaseT, T>::write_local_snapshot_in_background() {
 
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::write_local_snapshot() {
-    return _op_lock.with([this]() {
+    vlog(_log.debug, "write_local_snapshot started");
+    co_await _op_lock.with([this]() {
         return wait_for_snapshot_hydrated().then(
           [this] { return do_write_local_snapshot(); });
     });
+    vlog(_log.debug, "write_local_snapshot finished");
 }
 
 template<typename BaseT, supported_stm_snapshot T>

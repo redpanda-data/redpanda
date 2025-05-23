@@ -1193,7 +1193,6 @@ partition::replicate_unsafe_reset(cloud_storage::partition_manifest manifest) {
     auto sync_timeout = config::shard_local_cfg()
                           .cloud_storage_metadata_sync_timeout_ms.value();
     auto replication_deadline = ss::lowres_clock::now() + sync_timeout;
-    std::vector<cluster::command_batch_builder> builders;
 
     // TODO: move this logic to the ntp_archiver
     // currently, the 'batch_start' method will work even if there is an

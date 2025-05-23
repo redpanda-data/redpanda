@@ -868,14 +868,18 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 }
 
 ss::future<> rm_stm::stop() {
+    vlog(_ctx_log.debug, "rm_stm::stop 10");
     _as.request_abort();
     _producers_pending_cleanup.abort(
       std::make_exception_ptr(ss::abort_requested_exception{}));
     auto_abort_timer.cancel();
     co_await _gate.close();
+    vlog(_ctx_log.debug, "rm_stm::stop 20");
     co_await reset_producers();
+    vlog(_ctx_log.debug, "rm_stm::stop 30");
     _metrics.clear();
     co_await raft::persisted_stm<>::stop();
+    vlog(_ctx_log.debug, "rm_stm::stop 40");
 }
 
 ss::future<> rm_stm::start() { return raft::persisted_stm<>::start(); }

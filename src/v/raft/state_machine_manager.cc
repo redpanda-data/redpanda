@@ -240,8 +240,12 @@ ss::future<> state_machine_manager::stop() {
     _as.request_abort();
 
     auto gate_f = _gate.close();
-    co_await ss::coroutine::parallel_for_each(
-      _machines, [](auto p) { return p.second->stm->stop(); });
+    co_await ss::coroutine::parallel_for_each(_machines, [this](auto p) {
+        vlog(_log.debug, "stopping state machine {}", p.first);
+        return p.second->stm->stop().then([this, name = p.first] {
+            vlog(_log.debug, "stopped state machine {}", name);
+        });
+    });
     co_await std::move(gate_f);
 }
 

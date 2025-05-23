@@ -66,7 +66,7 @@ public:
     command_batch_builder(command_batch_builder&&) = default;
     command_batch_builder& operator=(const command_batch_builder&) = delete;
     // command_batch_builder& operator=(command_batch_builder&&) = default;
-    ~command_batch_builder() = default;
+    ~command_batch_builder();
     /// Reset the manifest.
     command_batch_builder& reset_metadata();
     /// Add segments to the batch
