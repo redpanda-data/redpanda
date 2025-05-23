@@ -291,6 +291,12 @@ bool is_past_tombstone_delete_horizon(
 bool may_have_removable_tombstones(
   ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
 
+bool is_past_transaction_batch_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
+bool has_removable_transaction_batches(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg);
+
 // Mark a segment as completed window compaction, and whether it is "clean" (in
 // which case the `clean_compact_timestamp` is set in the segment's index).
 // Also potentially issues a call to seg->index()->flush(), if the

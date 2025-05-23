@@ -1201,10 +1201,11 @@ bool is_past_tombstone_delete_horizon(
     if (
       seg->has_clean_compact_timestamp()
       && cfg.tombstone_retention_ms.has_value()) {
-        auto tombstone_delete_horizon = model::timestamp(
-          seg->index().clean_compact_timestamp()->value()
-          + cfg.tombstone_retention_ms->count());
-        return (model::timestamp::now() > tombstone_delete_horizon);
+        const auto now = model::to_time_point(model::timestamp::now());
+        return (now
+                - model::to_time_point(
+                  seg->index().clean_compact_timestamp().value()))
+               > cfg.tombstone_retention_ms.value();
     }
 
     return false;
@@ -1226,6 +1227,25 @@ ss::future<bool> mark_segment_as_finished_self_compaction(
     }
 
     return ss::make_ready_future<bool>(false);
+}
+
+bool is_past_transaction_batch_delete_horizon(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    if (seg->has_self_compact_timestamp() && cfg.tx_retention_ms.has_value()) {
+        const auto now = model::to_time_point(model::timestamp::now());
+        return (now
+                - model::to_time_point(
+                  seg->index().self_compact_timestamp().value()))
+               > cfg.tx_retention_ms.value();
+    }
+
+    return false;
+}
+
+bool has_removable_transaction_batches(
+  ss::lw_shared_ptr<segment> seg, const compaction_config& cfg) {
+    return seg->index().has_transaction_batches()
+           && is_past_transaction_batch_delete_horizon(seg, cfg);
 }
 
 } // namespace storage::internal
