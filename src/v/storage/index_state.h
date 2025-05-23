@@ -137,7 +137,9 @@ struct index_state
     static constexpr auto num_compactible_records_version = 7;
     static constexpr auto clean_compact_timestamp_version = 8;
     static constexpr auto may_have_tombstone_records_version = 9;
+    // Added in the same version.
     static constexpr auto self_compact_timestamp_version = 10;
+    static constexpr auto has_transaction_batches_version = 10;
 
     static index_state
     make_empty_index(model::offset base_offset, offset_delta_time with_offset);
@@ -220,6 +222,12 @@ struct index_state
 
     // If set, the timestamp at which this segment was first self compacted.
     std::optional<model::timestamp> self_compact_timestamp{std::nullopt};
+
+    // has_transaction_batches is `false` by default, but set in
+    // segment::append() when transactional batches are added. It remains `true`
+    // until compaction deduplication/segment data copying is performed and all
+    // transaction batches are removed.
+    bool has_transaction_batches{false};
 
     size_t size() const;
 

@@ -197,6 +197,7 @@ ss::future<index_state> deduplicate_segment(
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
+    bool has_transaction_batches = false;
 
     auto is_latest_record = [&map](
                               const model::record_batch& b,
@@ -209,7 +210,8 @@ ss::future<index_state> deduplicate_segment(
                           segment_last_offset,
                           past_tombstone_delete_horizon,
                           &may_have_tombstone_records,
-                          &probe](
+                          &probe,
+                          &has_transaction_batches](
                            const model::record_batch& b,
                            const model::record& r,
                            bool is_last_record_in_batch) {
@@ -222,7 +224,8 @@ ss::future<index_state> deduplicate_segment(
           feature_table,
           segment_last_offset,
           past_tombstone_delete_horizon,
-          may_have_tombstone_records);
+          may_have_tombstone_records,
+          has_transaction_batches);
     };
 
     auto copy_reducer = internal::copy_data_segment_reducer(
@@ -264,6 +267,9 @@ ss::future<index_state> deduplicate_segment(
 
     // Set may_have_tombstone_records
     new_idx.may_have_tombstone_records = may_have_tombstone_records;
+
+    // Set has_transaction_batches
+    new_idx.has_transaction_batches = has_transaction_batches;
 
     if (
       seg->index().may_have_tombstone_records()

@@ -389,6 +389,7 @@ ss::future<storage::index_state> do_copy_segment_data(
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
+    bool has_transaction_batches = false;
 
     auto offset_in_compacted_list =
       [compacted_offsets = std::move(compacted_offsets)](
@@ -404,7 +405,8 @@ ss::future<storage::index_state> do_copy_segment_data(
                           segment_last_offset,
                           past_tombstone_delete_horizon,
                           &may_have_tombstone_records,
-                          &pb](
+                          &pb,
+                          &has_transaction_batches](
                            const model::record_batch& b,
                            const model::record& r,
                            bool is_last_record_in_batch) {
@@ -417,7 +419,8 @@ ss::future<storage::index_state> do_copy_segment_data(
           feature_table,
           segment_last_offset,
           past_tombstone_delete_horizon,
-          may_have_tombstone_records);
+          may_have_tombstone_records,
+          has_transaction_batches);
     };
 
     auto copy_reducer = copy_data_segment_reducer(
@@ -468,6 +471,9 @@ ss::future<storage::index_state> do_copy_segment_data(
 
     // Set may_have_tombstone_records
     new_index.may_have_tombstone_records = may_have_tombstone_records;
+
+    // Set has_transaction_batches
+    new_index.has_transaction_batches = has_transaction_batches;
 
     if (
       seg->index().may_have_tombstone_records()
@@ -937,6 +943,12 @@ make_concatenated_segment(
           .self_compact_timestamp()
           .value();
 
+    // If any of the segments contain a transactional batch, then the new index
+    // should reflect that.
+    auto new_has_transaction_batches = std::ranges::any_of(
+      segments,
+      [](const auto& s) { return s->index().has_transaction_batches(); });
+
     segment_index index(
       index_name,
       offsets.get_base_offset(),
@@ -946,7 +958,8 @@ make_concatenated_segment(
       new_broker_timestamp,
       new_clean_compact_timestamp,
       new_may_have_tombstone_records,
-      new_self_compact_timestamp);
+      new_self_compact_timestamp,
+      new_has_transaction_batches);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(

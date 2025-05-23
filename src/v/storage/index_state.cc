@@ -347,8 +347,9 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << s.num_compactible_records_appended
              << ", clean_compact_timestamp:" << s.clean_compact_timestamp
              << ", may_have_tombstone_records:" << s.may_have_tombstone_records
-             << ", self_compact_timestamp:" << s.self_compact_timestamp << ", "
-             << s.index << "}";
+             << ", self_compact_timestamp:" << s.self_compact_timestamp
+             << ", has_transaction_batches:" << s.has_transaction_batches
+             << ", " << s.index << "}";
 }
 
 void index_state::serde_write(iobuf& out) const {
@@ -371,6 +372,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, clean_compact_timestamp);
     write(tmp, may_have_tombstone_records);
     write(tmp, self_compact_timestamp);
+    write(tmp, has_transaction_batches);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -488,6 +490,11 @@ void read_nested(
     } else {
         st.self_compact_timestamp = std::nullopt;
     }
+    if (hdr._version >= index_state::has_transaction_batches_version) {
+        read_nested(p, st.has_transaction_batches, 0U);
+    } else {
+        st.has_transaction_batches = false;
+    }
 }
 
 index_state index_state::copy() const { return *this; }
@@ -554,7 +561,8 @@ index_state::index_state(const index_state& o) noexcept
   , num_compactible_records_appended(o.num_compactible_records_appended)
   , clean_compact_timestamp(o.clean_compact_timestamp)
   , may_have_tombstone_records(o.may_have_tombstone_records)
-  , self_compact_timestamp(o.self_compact_timestamp) {}
+  , self_compact_timestamp(o.self_compact_timestamp)
+  , has_transaction_batches(o.has_transaction_batches) {}
 
 namespace serde_compat {
 uint64_t index_state_serde::checksum(const index_state& r) {

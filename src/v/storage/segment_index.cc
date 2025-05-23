@@ -38,7 +38,8 @@ segment_index::segment_index(
   std::optional<model::timestamp> broker_timestamp,
   std::optional<model::timestamp> clean_compact_timestamp,
   bool may_have_tombstone_records,
-  std::optional<model::timestamp> self_compact_timestamp)
+  std::optional<model::timestamp> self_compact_timestamp,
+  bool has_transaction_batches)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
@@ -49,6 +50,7 @@ segment_index::segment_index(
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
     _state.self_compact_timestamp = self_compact_timestamp;
+    _state.has_transaction_batches = has_transaction_batches;
 }
 
 segment_index::segment_index(
