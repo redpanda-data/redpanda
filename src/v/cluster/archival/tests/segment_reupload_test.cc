@@ -861,7 +861,8 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
       | storage::add_random_batch(*first, spec.last_segment_num_records);
 
     for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).index().maybe_set_self_compact_timestamp(
+          model::timestamp::now());
         b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 
@@ -1022,7 +1023,8 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     // Mark self compaction as complete on the segment and collect
     // segments for re-upload. The upload candidate should be a noop
     // since the selected reupload has the same size as the existing segment.
-    b.get_segment(0).mark_as_finished_self_compaction();
+    b.get_segment(0).index().maybe_set_self_compact_timestamp(
+      model::timestamp::now());
     b.get_segment(0).mark_as_finished_windowed_compaction();
 
     {
@@ -1060,7 +1062,8 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
     // and collect segments for re-upload again. Again, the upload candidate
     // should be a no-op since the reupload of the two local segments
     // results in a segment of the same size as the one that should be replaced.
-    b.get_segment(1).mark_as_finished_self_compaction();
+    b.get_segment(1).index().maybe_set_self_compact_timestamp(
+      model::timestamp::now());
     b.get_segment(1).mark_as_finished_windowed_compaction();
 
     {
@@ -1130,7 +1133,8 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_self_concatenated) {
         .delta_offset_end = model::offset_delta(0)});
 
     b.update_start_offset(model::offset{3000}).get();
-    b.get_segment(0).mark_as_finished_self_compaction();
+    b.get_segment(0).index().maybe_set_self_compact_timestamp(
+      model::timestamp::now());
     b.get_segment(0).mark_as_finished_windowed_compaction();
 
     {
@@ -1204,7 +1208,8 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_prefix_truncated) {
     // Mark our local segments compacted, making them eligible for reupload.
     for (int i = 0; i < 3; i++) {
         b.get_segment(i).mark_as_compacted_segment();
-        b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).index().maybe_set_self_compact_timestamp(
+          model::timestamp::now());
         b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 
@@ -1286,7 +1291,8 @@ SEASTAR_THREAD_TEST_CASE(test_bump_start_when_not_aligned) {
     // Mark our local segments compacted, making them eligible for reupload.
     for (int i = 0; i < 3; i++) {
         b.get_segment(i).mark_as_compacted_segment();
-        b.get_segment(i).mark_as_finished_self_compaction();
+        b.get_segment(i).index().maybe_set_self_compact_timestamp(
+          model::timestamp::now());
         b.get_segment(i).mark_as_finished_windowed_compaction();
     }
 

@@ -280,11 +280,11 @@ TEST_F(log_builder_fixture, test_skipping_compaction_below_start_offset) {
     // Call into `disk_log_impl::compact`. The only segment eligible for
     // compaction is the below the start offset and it should be ignored.
     auto& first_seg = log.segments().front();
-    ASSERT_EQ(first_seg->finished_self_compaction(), false);
+    ASSERT_EQ(first_seg->has_self_compact_timestamp(), false);
 
     b.apply_adjacent_merge_compaction(cfg.compact, *new_start_offset).get();
 
-    ASSERT_EQ(first_seg->finished_self_compaction(), false);
+    ASSERT_EQ(first_seg->has_self_compact_timestamp(), false);
 
     b.stop().get();
 }

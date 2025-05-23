@@ -1962,7 +1962,8 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_range_u32_bounds) {
     // adjacent segment compaction.
     for (auto& seg : segs) {
         if (!seg->has_appender()) {
-            seg->mark_as_finished_self_compaction();
+            seg->index().maybe_set_self_compact_timestamp(
+              model::timestamp::now());
         }
     }
 

@@ -263,7 +263,7 @@ struct reupload_fixture : public archiver_fixture {
 
         ss::lw_shared_ptr<storage::segment> last_compacted_segment;
         for (auto& i : seg_set) {
-            if (i->finished_self_compaction()) {
+            if (i->has_self_compact_timestamp()) {
                 last_compacted_segment = i;
             }
         }

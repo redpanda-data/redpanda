@@ -57,7 +57,8 @@ ss::future<compaction_result> self_compact_segment(
   storage::probe&,
   storage::readers_cache&,
   storage::storage_resources&,
-  ss::sharded<features::feature_table>& feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  bool force_compaction = false);
 
 /// \brief, rebuilds a given segment's compacted index. This method acquires
 /// locks on the segment.

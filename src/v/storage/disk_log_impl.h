@@ -223,8 +223,10 @@ public:
     storage_resources& resources();
 
     // Self compacts a segment.
-    ss::future<compaction_result>
-    segment_self_compact(compaction_config, ss::lw_shared_ptr<segment> seg);
+    ss::future<compaction_result> segment_self_compact(
+      compaction_config,
+      ss::lw_shared_ptr<segment> seg,
+      bool force_compaction = false);
 
     // Finds a range of adjacent segments that can be compacted together.
     // A valid segment range consists of segments with the same raft term, a

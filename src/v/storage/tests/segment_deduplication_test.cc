@@ -56,7 +56,8 @@ void add_segments(
     }
     for (auto& seg : disk_log.segments()) {
         if (mark_compacted) {
-            seg->mark_as_finished_self_compaction();
+            seg->index().maybe_set_self_compact_timestamp(
+              model::timestamp::now());
             seg->mark_as_finished_windowed_compaction();
         }
 

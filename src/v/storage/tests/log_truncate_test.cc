@@ -564,7 +564,7 @@ TEST_F(storage_test_fixture, test_concurrent_truncate_and_compaction) {
             continue;
         }
         ASSERT_FALSE(s->finished_windowed_compaction());
-        ASSERT_TRUE(s->finished_self_compaction());
+        ASSERT_TRUE(s->has_self_compact_timestamp());
         ASSERT_TRUE(s->is_compacted_segment());
     }
 

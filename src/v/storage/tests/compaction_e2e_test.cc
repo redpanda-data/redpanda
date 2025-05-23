@@ -445,15 +445,15 @@ TEST_F(CompactionFixtureTest, TestChunkedCompaction) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     const auto& segs = disk_log.segments();
 
-    ASSERT_TRUE(segs[0]->finished_self_compaction());
+    ASSERT_TRUE(segs[0]->has_self_compact_timestamp());
     ASSERT_TRUE(segs[0]->finished_windowed_compaction());
     ASSERT_FALSE(segs[0]->has_clean_compact_timestamp());
 
-    ASSERT_TRUE(segs[1]->finished_self_compaction());
+    ASSERT_TRUE(segs[1]->has_self_compact_timestamp());
     ASSERT_TRUE(segs[1]->finished_windowed_compaction());
     ASSERT_FALSE(segs[1]->has_clean_compact_timestamp());
 
-    ASSERT_TRUE(segs[2]->finished_self_compaction());
+    ASSERT_TRUE(segs[2]->has_self_compact_timestamp());
     ASSERT_TRUE(segs[2]->finished_windowed_compaction());
     ASSERT_TRUE(segs[2]->has_clean_compact_timestamp());
 
@@ -531,14 +531,14 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
     for (size_t i = 0; i < segs.size() - 2; ++i) {
         auto& seg = segs[i];
         ASSERT_TRUE(seg->finished_windowed_compaction());
-        ASSERT_TRUE(seg->finished_self_compaction());
+        ASSERT_TRUE(seg->has_self_compact_timestamp());
         ASSERT_TRUE(seg->has_clean_compact_timestamp());
     }
 
     // The last added segment should not have had any compaction operations
     // performed.
     ASSERT_FALSE(segs[segs.size() - 2]->finished_windowed_compaction());
-    ASSERT_FALSE(segs[segs.size() - 2]->finished_self_compaction());
+    ASSERT_FALSE(segs[segs.size() - 2]->has_self_compact_timestamp());
     ASSERT_FALSE(segs[segs.size() - 2]->has_clean_compact_timestamp());
 
     // We should have compacted all the way down to the start of the log, and
@@ -551,7 +551,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
 
     // Now, these values should be set.
     ASSERT_TRUE(segs[segs.size() - 2]->finished_windowed_compaction());
-    ASSERT_TRUE(segs[segs.size() - 2]->finished_self_compaction());
+    ASSERT_TRUE(segs[segs.size() - 2]->has_self_compact_timestamp());
     ASSERT_TRUE(segs[segs.size() - 2]->has_clean_compact_timestamp());
 
     auto segments_compacted_3 = disk_log.get_probe().get_segments_compacted();
