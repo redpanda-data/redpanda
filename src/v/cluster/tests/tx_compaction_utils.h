@@ -108,6 +108,7 @@ public:
                     std::nullopt,
                     log->stm_manager()->max_removable_local_log_offset(),
                     std::nullopt,
+                    std::nullopt,
                     std::chrono::milliseconds{0},
                     dummy_as,
                   })
@@ -227,6 +228,7 @@ public:
           model::timestamp::min(),
           std::nullopt,
           model::offset::max(),
+          std::nullopt,
           std::nullopt,
           std::chrono::milliseconds{0},
           as);

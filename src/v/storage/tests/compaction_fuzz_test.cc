@@ -160,7 +160,7 @@ ss::future<ot_state> arrange_and_compact(
         }
         ss::abort_source as;
         auto compact_cfg = storage::compaction_config(
-          batches.back().last_offset(), std::nullopt, as);
+          batches.back().last_offset(), std::nullopt, std::nullopt, as);
         std::ignore = co_await b1.apply_sliding_window_compaction(compact_cfg);
         co_await b1.apply_adjacent_merge_compaction(compact_cfg);
     } catch (...) {

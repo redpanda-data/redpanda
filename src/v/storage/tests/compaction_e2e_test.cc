@@ -240,6 +240,7 @@ public:
         storage::compaction_config cfg(
           max_collect_offset,
           tombstone_ret_ms,
+          std::nullopt,
           never_abort,
           std::nullopt,
           max_keys,
@@ -261,6 +262,7 @@ public:
         storage::compaction_config cfg(
           max_collect_offset,
           tombstone_ret_ms,
+          std::nullopt,
           never_abort,
           std::nullopt,
           max_keys,
@@ -303,6 +305,7 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       std::nullopt,
       never_abort,
       std::nullopt,
@@ -372,6 +375,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       std::nullopt,
       never_abort,
       std::nullopt,
@@ -505,6 +509,7 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
+      std::nullopt,
       never_abort,
       std::nullopt,
       cardinality - 1);
@@ -601,6 +606,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
+      std::nullopt,
       never_abort,
       std::nullopt,
       cardinality);
@@ -619,6 +625,7 @@ TEST_P(CompactionFixtureBatchSizeParamTest, TestRecompactWithNewData) {
     generate_data(1, cardinality, records_per_segment).get();
     storage::compaction_config new_cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       std::nullopt,
       never_abort,
       std::nullopt,
@@ -662,6 +669,7 @@ TEST_F(CompactionFixtureTest, TestCompactWithNonDataBatches) {
       = disk_log.get_probe().get_segments_compacted();
     storage::compaction_config new_cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       std::nullopt,
       never_abort,
       std::nullopt);
@@ -746,6 +754,7 @@ TEST_P(CompactionFilledReaderTest, ReadFilledGaps) {
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
       std::nullopt,
+      std::nullopt,
       never_abort,
       std::nullopt,
       10);
@@ -799,6 +808,7 @@ TEST_F(CompactionFixtureTest, TestReadFilledGapsWithTerms) {
 
     storage::compaction_config cfg(
       disk_log.segments().back()->offsets().get_base_offset(),
+      std::nullopt,
       std::nullopt,
       never_abort,
       std::nullopt,
@@ -1535,7 +1545,7 @@ TEST_F(CompactionFixtureTest, TestSlidingWindowNoUnecessaryRewrites) {
     auto& segments = disk_log.segments();
 
     storage::compaction_config cfg(
-      model::offset::max(), std::nullopt, never_abort);
+      model::offset::max(), std::nullopt, std::nullopt, never_abort);
 
     for (auto& seg : segments) {
         if (!seg->has_appender()) {

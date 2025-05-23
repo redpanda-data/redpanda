@@ -252,6 +252,7 @@ struct reupload_fixture : public archiver_fixture {
             std::nullopt,
             max_removable,
             std::nullopt,
+            std::nullopt,
             std::chrono::milliseconds{0},
             abort_source})
           .get();

@@ -476,6 +476,7 @@ struct compaction_config {
     compaction_config(
       model::offset max_collect_offset,
       std::optional<std::chrono::milliseconds> tombstone_ret_ms,
+      std::optional<std::chrono::milliseconds> tx_ret_ms,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
@@ -484,6 +485,7 @@ struct compaction_config {
       scoped_file_tracker::set_t* to_clean = nullptr)
       : max_removable_local_log_offset(max_collect_offset)
       , tombstone_retention_ms(tombstone_ret_ms)
+      , tx_retention_ms(tx_ret_ms)
       , sanitizer_config(std::move(san_cfg))
       , key_offset_map_max_keys(max_keys)
       , min_lag_ms(min_lag_ms)
@@ -506,6 +508,18 @@ struct compaction_config {
     // disabled. As a result, this field will only have a value for compaction
     // ran on non-archival topics.
     std::optional<std::chrono::milliseconds> tombstone_retention_ms;
+
+    // The retention time for transactional markers. Tombstone removal occurs
+    // for self compacted segments past the transaction deletion horizon
+    // timestamp, which is a segment's self_compact_timestamp +
+    // tombstone_retention_ms. Similar to tombstone removal, there are two
+    // passes involved in removing transaction batches:
+    // 1. The first pass removes the `tx_fence` batch and unsets all the
+    // transactional bit in all raft data batch headers, and sets
+    // `self_compact_timestamp`.
+    // 2. The second pass removes the `commit/abort` control batch after the
+    // time horizon mentioned above is passed.
+    std::optional<std::chrono::milliseconds> tx_retention_ms;
 
     // use proxy fileops with assertions and/or failure injection
     std::optional<ntp_sanitizer_config> sanitizer_config;
@@ -541,6 +555,7 @@ struct housekeeping_config {
       std::optional<size_t> max_bytes_in_log,
       model::offset max_collect_offset,
       std::optional<std::chrono::milliseconds> tombstone_retention_ms,
+      std::optional<std::chrono::milliseconds> tx_retention_ms,
       std::chrono::milliseconds min_lag_ms,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt,
@@ -548,6 +563,7 @@ struct housekeeping_config {
       : compact(
           max_collect_offset,
           tombstone_retention_ms,
+          tx_retention_ms,
           as,
           std::move(san_cfg),
           std::nullopt,

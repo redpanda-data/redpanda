@@ -316,7 +316,7 @@ public:
                           : cluster_default;
     }
 
-    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
+    std::optional<std::chrono::milliseconds> delete_retention_ms() const {
         if (is_read_replica_mode_enabled()) {
             // RRR sanity check.
             return std::nullopt;
@@ -324,14 +324,6 @@ public:
         auto& cluster_default
           = config::shard_local_cfg().tombstone_retention_ms();
         if (_overrides) {
-            // Tombstone deletion should not be enabled at the same time as
-            // tiered storage.
-            if (
-              _overrides->shadow_indexing_mode.has_value()
-              && _overrides->shadow_indexing_mode.value()
-                   != model::shadow_indexing_mode::disabled) {
-                return std::nullopt;
-            }
             // If the tristate is disabled, return nullopt.
             if (_overrides->delete_retention_ms.is_disabled()) {
                 return std::nullopt;
@@ -345,9 +337,34 @@ public:
             // default.
             return cluster_default;
         }
-        // Fall back to cluster default, since _overrides being nullptr signals
-        // that remote.read and remote.write is disabled for this topic.
+
+        // Fall back to cluster default
         return cluster_default;
+    }
+
+    // Unfortunately delete.retention.ms has to be split into two logical
+    // properties- tombstone_retention_ms and tx_retention_ms.
+    // This is because of the race conditions that exist with tombstone removal
+    // within a tiered storage enabled topic that don't exist with tx batch
+    // removal.
+    // tombstone_retention_ms should always == std::nullopt if tiered storage is
+    // enabled.
+    std::optional<std::chrono::milliseconds> tombstone_retention_ms() const {
+        if (_overrides) {
+            // Tombstone deletion should not be enabled at the same time as
+            // tiered storage.
+            if (
+              _overrides->shadow_indexing_mode.has_value()
+              && _overrides->shadow_indexing_mode.value()
+                   != model::shadow_indexing_mode::disabled) {
+                return std::nullopt;
+            }
+        }
+        return delete_retention_ms();
+    }
+
+    std::optional<std::chrono::milliseconds> tx_retention_ms() const {
+        return delete_retention_ms();
     }
 
     std::optional<model::cleanup_policy_bitflags>
