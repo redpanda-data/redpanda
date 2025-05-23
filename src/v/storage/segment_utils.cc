@@ -1199,4 +1199,17 @@ bool may_have_removable_tombstones(
            && is_past_tombstone_delete_horizon(seg, cfg);
 }
 
+ss::future<bool> mark_segment_as_finished_self_compaction(
+  ss::lw_shared_ptr<segment> seg, probe& pb) {
+    seg->mark_as_finished_self_compaction();
+    bool did_set = seg->index().maybe_set_self_compact_timestamp(
+      model::timestamp::now());
+    if (did_set) {
+        pb.segment_compacted();
+        return seg->index().flush().then([] { return true; });
+    }
+
+    return ss::make_ready_future<bool>(false);
+}
+
 } // namespace storage::internal
