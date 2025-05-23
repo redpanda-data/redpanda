@@ -66,14 +66,7 @@ namespace {
 
 const model::record_batch_reader::data_t&
 readonly_data_view(const model::record_batch_reader::storage_t& batches) {
-    using data_t = model::record_batch_reader::data_t;
-    using foreign_data_t = model::record_batch_reader::foreign_data_t;
-    return ss::visit(
-      batches,
-      [](const data_t& data) { return std::ref(data); },
-      [](const foreign_data_t& data) -> std::reference_wrapper<const data_t> {
-          return std::ref(*data.buffer);
-      });
+    return std::ref(batches);
 }
 
 bool contains_control_or_txn_batch(
@@ -103,18 +96,9 @@ public:
         // through of the originally loaded slices if there are no control/txn
         // batches does not copy the batches over to a new buffer if it's not
         // needed.
-        ss::visit(
-          initial,
-          [this](model::record_batch_reader::data_t& d) {
-              for (auto& batch : d) {
-                  process(std::move(batch));
-              }
-          },
-          [this](model::record_batch_reader::foreign_data_t& d) {
-              for (const auto& batch : *d.buffer) {
-                  process(batch.copy());
-              }
-          });
+        for (auto& batch : initial) {
+            process(std::move(batch));
+        }
     }
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {

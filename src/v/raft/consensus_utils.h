@@ -69,8 +69,6 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
 
 class term_assigning_reader : public model::record_batch_reader::impl {
 public:
-    using data_t = model::record_batch_reader::data_t;
-    using foreign_data_t = model::record_batch_reader::foreign_data_t;
     using storage_t = model::record_batch_reader::storage_t;
 
     term_assigning_reader(model::record_batch_reader r, model::term_id term)
@@ -82,18 +80,8 @@ public:
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point tout) final {
         return _source->do_load_slice(tout).then([t = _term](storage_t ret) {
-            if (likely(std::holds_alternative<data_t>(ret))) {
-                auto& d = std::get<data_t>(ret);
-                for (auto& r : d) {
-                    r.set_term(t);
-                }
-            } else {
-                // NOTE: Ok to modify header here. since we are not
-                // touching the underlying IOBUF's
-                auto& d = std::get<foreign_data_t>(ret);
-                for (auto& r : *d.buffer) {
-                    r.set_term(t);
-                }
+            for (auto& r : ret) {
+                r.set_term(t);
             }
             return ret;
         });

@@ -33,7 +33,6 @@ model::record_batch_reader make_transforming_reader(
   model::record_batch_reader&& source, Transformation&& t) {
     using storage_t = model::record_batch_reader::storage_t;
     using data_t = model::record_batch_reader::data_t;
-    using foreign_t = model::record_batch_reader::foreign_data_t;
 
     class transforming_reader final : public model::record_batch_reader::impl {
     public:
@@ -73,22 +72,10 @@ model::record_batch_reader make_transforming_reader(
             co_return make_slice(source_slice, std::move(result));
         }
 
-        data_t& get_batches(storage_t& st) {
-            if (std::holds_alternative<data_t>(st)) {
-                return std::get<data_t>(st);
-            } else {
-                return *std::get<foreign_t>(st).buffer;
-            }
-        }
+        data_t& get_batches(storage_t& st) { return st; }
 
         storage_t make_slice(const storage_t& source, data_t new_data) {
-            if (std::holds_alternative<data_t>(source)) {
-                return new_data;
-            } else {
-                return foreign_t{
-                  .buffer = ss::make_foreign(
-                    std::make_unique<data_t>(std::move(new_data)))};
-            }
+            return new_data;
         }
 
         ss::future<std::optional<model::record_batch>>

@@ -25,7 +25,6 @@
 
 namespace model {
 using data_t = record_batch_reader::data_t;
-using foreign_data_t = record_batch_reader::foreign_data_t;
 using storage_t = record_batch_reader::storage_t;
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
@@ -78,20 +77,10 @@ record_batch_reader make_memory_record_batch_reader(storage_t batches) {
         explicit reader(storage_t batches)
           : _batches(std::move(batches)) {}
 
-        bool is_end_of_stream() const final {
-            return ss::visit(
-              _batches,
-              [](const data_t& d) { return d.empty(); },
-              [](const foreign_data_t& d) {
-                  return d.index >= d.buffer->size();
-              });
-        }
+        bool is_end_of_stream() const final { return _batches.empty(); }
 
         void print(std::ostream& os) final {
-            auto size = ss::visit(
-              _batches,
-              [](const data_t& d) { return d.size(); },
-              [](const foreign_data_t& d) { return d.buffer->size(); });
+            auto size = _batches.size();
             fmt::print(os, "memory reader {} batches", size);
         }
 
