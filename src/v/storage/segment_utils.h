@@ -225,46 +225,29 @@ struct clean_segment_value
     auto serde_fields() { return std::tie(segment_name); }
 };
 
-inline bool is_compactible_control_batch(
-  const model::ntp& ntp, const model::record_batch_type batch_type) {
+inline bool
+is_compactible_control_batch(const model::record_batch_type batch_type) {
     // Control batches in consumer offsets are special compared to
     // the ones in data partitions can be safely compacted away.
-    //
-    // tx_fence batches  in consumer offsets are special and should be
-    // compacted. They were used historically to mark the begin of a transaction
-    // but later switched to group_fence_tx.
-
-    // Note: This ugly hack of propagating the consumer offsets flag is
-    // temporary until we fix the compaction to compact away all the control
-    // batches (including the ones in data partitions), at which point we solely
-    // can make this decision on whether the batch is a control batch or not and
-    // avoid propagating the flag everywhere.
-    return unlikely(
-             batch_type == model::record_batch_type::tx_fence
-             && model::is_consumer_offsets_topic(ntp))
+    // Fence batches can also be safely removed.
+    return batch_type == model::record_batch_type::tx_fence
            || batch_type == model::record_batch_type::group_fence_tx
            || batch_type == model::record_batch_type::group_prepare_tx
            || batch_type == model::record_batch_type::group_abort_tx
            || batch_type == model::record_batch_type::group_commit_tx;
 }
 
-inline bool
-is_compactible(const model::ntp& ntp, const model::record_batch_header& h) {
-    if (
-      (h.attrs.is_control() && !is_compactible_control_batch(ntp, h.type))
-      || h.type == model::record_batch_type::compaction_placeholder) {
-        // Keep control batches to ensure we maintain transaction boundaries
-        // (unless it is CO topic). They should be rare.
+inline bool is_compactible(const model::record_batch_type& t) {
+    if (t == model::record_batch_type::compaction_placeholder) {
         return false;
     }
     static const auto filtered_types = model::offset_translator_batch_types();
-    auto n = std::count(filtered_types.begin(), filtered_types.end(), h.type);
+    auto n = std::count(filtered_types.begin(), filtered_types.end(), t);
     return n == 0;
 }
 
-inline bool
-is_compactible(const model::ntp& ntp, const model::record_batch& b) {
-    return is_compactible(ntp, b.header());
+inline bool is_compactible(const model::record_batch& b) {
+    return is_compactible(b.header().type);
 }
 
 offset_delta_time should_apply_delta_time_offset(

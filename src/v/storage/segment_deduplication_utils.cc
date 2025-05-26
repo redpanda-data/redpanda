@@ -12,6 +12,7 @@
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
 #include "storage/exceptions.h"
@@ -40,6 +41,14 @@ ss::future<ss::stop_iteration> put_entry(
   const compacted_index::entry& idx_entry,
   bool& fully_indexed) {
     auto offset = idx_entry.offset + model::offset_delta(idx_entry.delta);
+    auto key_view = bytes_view(idx_entry.key);
+    auto ctrl = is_control_from_enhanced_key(key_view);
+    auto bt = batch_type_from_enhanced_key(key_view);
+    if (ctrl || !internal::is_compactible(bt)) {
+        // We don't need to index control batches or uncompactible batch types
+        // in our map.
+        co_return ss::stop_iteration::no;
+    }
     bool success = co_await map.put(idx_entry.key, offset);
     if (success) {
         co_return ss::stop_iteration::no;
@@ -52,6 +61,11 @@ ss::future<bool> is_latest_record_for_key(
   const key_offset_map& map,
   const model::record_batch& b,
   const model::record& r) {
+    if (b.header().attrs.is_control()) {
+        // We _only_ remove control batches in internal::should_keep() if they
+        // are past the tx delete horizon.
+        co_return true;
+    }
     const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
     auto key_view = compaction_key{iobuf_to_bytes(r.key())};
     auto key = enhance_key(
@@ -229,7 +243,6 @@ ss::future<index_state> deduplicate_segment(
     };
 
     auto copy_reducer = internal::copy_data_segment_reducer(
-      seg->path().get_ntp(),
       std::move(record_filter),
       &appender,
       seg->path().is_internal_topic(),
@@ -294,8 +307,7 @@ ss::future<bool> index_chunk_of_segment_for_map(
     auto start_offset_inclusive = model::next_offset(last_indexed_offset);
     auto rdr = internal::create_segment_full_reader(
       seg, compact_cfg, pb, std::move(read_holder), start_offset_inclusive);
-    internal::map_building_reducer reducer(
-      seg->path().get_ntp(), &map, start_offset_inclusive);
+    internal::map_building_reducer reducer(&map, start_offset_inclusive);
 
     bool fully_indexed_segment = co_await std::move(rdr).consume(
       reducer, model::no_timeout);
