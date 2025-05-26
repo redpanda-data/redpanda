@@ -524,3 +524,18 @@ TEST_F(compacted_topic_fixture, v0_footers_compatibility) {
           storage::compacted_index::needs_rebuild_error);
     }
 }
+
+TEST_F(compacted_topic_fixture, enhanced_key) {
+    int num_test_cases = 1000;
+    for (int i = 0; i < num_test_cases; ++i) {
+        const auto key = tests::random_bytes(1024);
+        auto bt = tests::random_batch_type();
+        auto is_control = tests::random_bool();
+        auto compact_key = storage::enhance_key(bt, is_control, key);
+        auto bt_from_key = storage::batch_type_from_enhanced_key(compact_key);
+        auto is_control_from_key = storage::is_control_from_enhanced_key(
+          compact_key);
+        EXPECT_EQ(bt_from_key, bt);
+        EXPECT_EQ(is_control_from_key, is_control);
+    }
+}

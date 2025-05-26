@@ -38,6 +38,22 @@ inline compaction_key enhance_key(
     return compaction_key(std::move(enriched_key));
 }
 
+inline model::record_batch_type batch_type_from_enhanced_key(bytes_view key) {
+    std::underlying_type_t<model::record_batch_type> bt_le;
+    std::memcpy(&bt_le, key.data(), sizeof(bt_le));
+    auto batch_type = static_cast<model::record_batch_type>(
+      ss::le_to_cpu(bt_le));
+    return batch_type;
+}
+
+inline bool is_control_from_enhanced_key(bytes_view key) {
+    int8_t ctrl_le;
+    std::memcpy(
+      &ctrl_le, key.data() + sizeof(model::record_batch_type), sizeof(ctrl_le));
+    auto is_ctrl = static_cast<bool>(ss::le_to_cpu(ctrl_le));
+    return is_ctrl;
+}
+
 struct compacted_index {
     static constexpr const size_t max_entry_size = size_t(
       std::numeric_limits<uint16_t>::max());
