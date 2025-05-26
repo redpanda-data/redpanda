@@ -238,6 +238,16 @@ public:
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
     void end_of_stream() {}
 
+    friend std::ostream&
+    operator<<(std::ostream& o, const index_rebuilder_reducer& i) {
+        if (i._w) {
+            o << *i._w;
+        } else {
+            o << "nullptr";
+        }
+        return o;
+    }
+
 private:
     ss::future<> do_index(model::record_batch&&);
 

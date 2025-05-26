@@ -440,7 +440,11 @@ ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
           can_discard_tx_data_batch(b)
           || can_discard_consumer_offsets_batch(b)) {
             vlog(
-              gclog.trace, "discarded batch during compaction: {}", b.header());
+              gclog.trace,
+              "discarded tx batch within segment index writer {} during "
+              "compaction: {}",
+              _delegate,
+              b.header());
             _stats.batches_discarded++;
             co_return ss::stop_iteration::no;
         }
