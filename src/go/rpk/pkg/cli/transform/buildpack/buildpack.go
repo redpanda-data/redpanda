@@ -13,6 +13,7 @@ package buildpack
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
@@ -36,16 +38,17 @@ import (
 )
 
 var Tinygo = Buildpack{
-	Name:    "tinygo",
-	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/v0.31.0-rpk2",
+	Name:     "tinygo",
+	baseURL:  "https://github.com/tinygo-org/tinygo/releases/download/v0.37.0/tinygo0.37.0",
+	template: "{{.BaseURL}}.{{.GOOS}}-{{.GOARCH}}.tar.gz",
 	shaSums: map[string]map[string]string{
 		"darwin": {
-			"amd64": "54f9f295f04c4dfc9584b771f71a199940746306927780b6447abc9785126de5",
-			"arm64": "efcf565bb0036f9d6921a418f0809b3a14eca1b9af6739435aa9bbaa6398cd41",
+			"amd64": "90961d9302e147ccb296d0afb800f4fe3c65df9dcc08b470003f6bf130870508",
+			"arm64": "54e6d952164181a122dd98658da9f187b54a3e18eb767856945196dd46621754",
 		},
 		"linux": {
-			"amd64": "3c9f9b60efbbe4aecce847e6c0f5f5100558b1e4b44a1baf628c55c7c5fc74bb",
-			"arm64": "35f98e545992664b251d57f1674ea942d2528fcdeb6d0868294e7f63aa933c24",
+			"amd64": "ff3680acc0e2295db453e8e241a0cab5ea44f84586f4c5c00860822380713397",
+			"arm64": "dece4264cef3f553636482c2ba15e04ac4e1597dafc092b27c6e3da3acc4ad73",
 		},
 	},
 }
@@ -53,7 +56,8 @@ var Tinygo = Buildpack{
 var JavaScript = Buildpack{
 	Name: "javascript",
 	// TODO: Find a better place to host these binaries than the tinygo repo
-	baseURL: "https://github.com/redpanda-data/tinygo/releases/download/js-sdk-v1",
+	baseURL:  "https://github.com/redpanda-data/tinygo/releases/download/js-sdk-v1.1",
+	template: "{{.BaseURL}}/{{.Name}}-{{.GOOS}}-{{.GOARCH}}.tar.gz",
 	shaSums: map[string]map[string]string{
 		"darwin": {
 			"amd64": "03ae0af869ccdea74c5d80f187b01c797e7327abdf33e8df693836d471105dad",
@@ -71,9 +75,9 @@ type Buildpack struct {
 	// Name of the plugin, this will also be the command name.
 	Name string
 	// baseURL is where to download the plugin from.
-	//
-	// This baseURL will be appended with `/{name}-{goos}-{goarch}.tar.gz` to resolve the full URL.
 	baseURL string
+	// The pattern to resolve the full URL.
+	template string
 	// shaSums is the mapping of [GOOS][GOARCH] to sha256 of the tarball that is downloaded (before any decompression).
 	shaSums map[string]map[string]string
 }
@@ -95,13 +99,15 @@ func (bp *Buildpack) PlatformSha() (sha string, err error) {
 
 // URL is the fully resolved URL to download the gzipped tarball for the current platform.
 func (bp *Buildpack) URL() string {
-	return fmt.Sprintf(
-		"%s/%s-%s-%s.tar.gz",
-		bp.baseURL,
-		bp.Name,
-		runtime.GOOS,
-		runtime.GOARCH,
-	)
+	t := template.Must(template.New("URL").Parse(bp.template))
+	b := bytes.NewBuffer(nil)
+	template.Must(t, t.Execute(b, map[string]string{
+		"Name":    bp.Name,
+		"BaseURL": bp.baseURL,
+		"GOOS":    runtime.GOOS,
+		"GOARCH":  runtime.GOARCH,
+	}))
+	return b.String()
 }
 
 // BinPath returns the path to the main binary for the buildpack that needs to be linked as a plugin.
