@@ -389,6 +389,8 @@ ss::future<storage::index_state> do_copy_segment_data(
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
+    const bool past_tx_delete_horizon
+      = internal::is_past_transaction_batch_delete_horizon(seg, cfg);
     bool has_transaction_batches = false;
 
     auto offset_in_compacted_list =
@@ -406,6 +408,7 @@ ss::future<storage::index_state> do_copy_segment_data(
                           past_tombstone_delete_horizon,
                           &may_have_tombstone_records,
                           &pb,
+                          past_tx_delete_horizon,
                           &has_transaction_batches](
                            const model::record_batch& b,
                            const model::record& r,
@@ -420,6 +423,7 @@ ss::future<storage::index_state> do_copy_segment_data(
           segment_last_offset,
           past_tombstone_delete_horizon,
           may_have_tombstone_records,
+          past_tx_delete_horizon,
           has_transaction_batches);
     };
 
@@ -747,8 +751,11 @@ ss::future<compaction_result> self_compact_segment(
     }
 
     const bool may_remove_tombstones = may_have_removable_tombstones(s, cfg);
+    const bool will_remove_transaction_batches
+      = has_removable_transaction_batches(s, cfg);
 
-    auto should_force_compaction = force_compaction || may_remove_tombstones;
+    auto should_force_compaction = force_compaction || may_remove_tombstones
+                                   || will_remove_transaction_batches;
 
     // force_compaction will not invalidate max_removable_local_log_offset.
     auto segment_needs_compaction
@@ -771,6 +778,33 @@ ss::future<compaction_result> self_compact_segment(
           gclog.debug,
           "detected {} is already compacted",
           s->path().to_compacted_index());
+        if (!s->has_self_compact_timestamp()) {
+            // This is required for old segments that have not yet had a self
+            // compact timestamp set, nor were produced at a time where they
+            // would be properly marked as having transactional batches in the
+            // append path. We need to make sure that the `segment`, if it has a
+            // `self_compact_timestamp` set, has the correct value for
+            // `has_transaction_batches` (this is required for safe recovery in
+            // a `compact`-enabled topic with `delete.retention.ms` set).
+            struct contains_tx_consumer {
+                ss::future<ss::stop_iteration>
+                operator()(const model::record_batch& batch) {
+                    if (batch.contains_transactional_data()) {
+                        _has_transactional_batches = true;
+                        co_return ss::stop_iteration::yes;
+                    }
+                    co_return ss::stop_iteration::no;
+                }
+                bool end_of_stream() { return _has_transactional_batches; }
+                bool _has_transactional_batches;
+            };
+
+            auto rdr = create_segment_full_reader(
+              s, cfg, pb, std::move(read_holder));
+            auto has_transactional_batches = co_await std::move(rdr).consume(
+              contains_tx_consumer{}, model::no_timeout);
+            s->index().set_has_transaction_batches(has_transactional_batches);
+        }
         co_await internal::mark_segment_as_finished_self_compaction(s, pb);
         co_return compaction_result{s->size_bytes()};
     }

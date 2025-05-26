@@ -320,6 +320,7 @@ ss::future<bool> should_keep(
   model::offset segment_last_offset,
   bool past_tombstone_delete_horizon,
   bool& may_have_tombstone_records,
+  bool past_tx_delete_horizon,
   bool& has_tx_batches) {
     auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
@@ -339,6 +340,10 @@ ss::future<bool> should_keep(
             may_have_tombstone_records = true;
         }
 
+        if (b.contains_transactional_data()) {
+            has_tx_batches = true;
+        }
+
         co_return true;
     }
 
@@ -349,15 +354,29 @@ ss::future<bool> should_keep(
     }
 
     auto& header = b.header();
+    // Deal with transaction control batches. These should not be compacted
+    // away by the presence of other control batches, only removed once past the
+    // transaction delete horizon.
+    //
+    // We can also safely remove fence batches.
     if (header.attrs.is_control()) {
-        has_tx_batches = true;
-        co_return true;
+        if (
+          past_tx_delete_horizon || is_compactible_control_batch(header.type)) {
+            co_return false;
+        } else {
+            has_tx_batches = true;
+            co_return true;
+        }
     }
 
     auto keep = co_await is_latest_key(b, r);
 
     if (r.is_tombstone() && keep) {
         may_have_tombstone_records = true;
+    }
+
+    if (b.contains_transactional_data() && keep) {
+        has_tx_batches = true;
     }
 
     co_return keep;

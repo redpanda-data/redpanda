@@ -375,6 +375,9 @@ public:
 
     void set_transactional_type() { _attributes |= transactional_mask; }
 
+    // We remove the transactional type for raft data batches during compaction.
+    void remove_transactional_type() { _attributes &= ~transactional_mask; }
+
     bool operator==(const record_batch_attributes& other) const {
         return _attributes == other._attributes;
     }

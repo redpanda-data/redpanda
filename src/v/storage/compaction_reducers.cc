@@ -190,6 +190,17 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // 3. keep all records
     if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
+        auto& header = batch.header();
+        if (
+          header.type == model::record_batch_type::raft_data
+          && header.attrs.is_transactional() && !header.attrs.is_control()) {
+            vlog(
+              gclog.debug,
+              "Removing transactional bit for raft batch {}",
+              header);
+            header.attrs.remove_transactional_type();
+            reset_size_checksum_metadata(header, batch.data());
+        }
         co_return std::move(batch);
     }
 
@@ -270,6 +281,16 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
         last_time = model::timestamp(first_time() + last_timestamp_delta);
     }
     auto new_hdr = hdr;
+
+    // Remove transactional bit for committed raft data batches.
+    if (
+      new_hdr.type == model::record_batch_type::raft_data
+      && new_hdr.attrs.is_transactional() && !new_hdr.attrs.is_control()) {
+        vlog(
+          gclog.debug, "Removing transactional bit for raft batch {}", new_hdr);
+        new_hdr.attrs.remove_transactional_type();
+    }
+
     new_hdr.first_timestamp = first_time;
     new_hdr.max_timestamp = last_time;
     new_hdr.record_count = rec_count;

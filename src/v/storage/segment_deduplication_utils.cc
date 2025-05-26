@@ -211,6 +211,8 @@ ss::future<index_state> deduplicate_segment(
     const bool past_tombstone_delete_horizon
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
+    const bool past_tx_delete_horizon
+      = internal::is_past_transaction_batch_delete_horizon(seg, cfg);
     bool has_transaction_batches = false;
 
     auto is_latest_record = [&map](
@@ -225,6 +227,7 @@ ss::future<index_state> deduplicate_segment(
                           past_tombstone_delete_horizon,
                           &may_have_tombstone_records,
                           &probe,
+                          past_tx_delete_horizon,
                           &has_transaction_batches](
                            const model::record_batch& b,
                            const model::record& r,
@@ -239,6 +242,7 @@ ss::future<index_state> deduplicate_segment(
           segment_last_offset,
           past_tombstone_delete_horizon,
           may_have_tombstone_records,
+          past_tx_delete_horizon,
           has_transaction_batches);
     };
 

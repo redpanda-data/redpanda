@@ -154,7 +154,7 @@ public:
                 fence_batch_count++;
             }
         }
-        RPTEST_REQUIRE_EQ_CORO(fence_batch_count, expected_fences);
+        RPTEST_REQUIRE_CORO(fence_batch_count <= expected_fences);
     }
 
     void run_random_workload(
