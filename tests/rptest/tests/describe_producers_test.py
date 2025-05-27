@@ -60,7 +60,10 @@ class DescribeProducersTest(RedpandaTest):
 
         consumers = []
         if include_group_tx:
-            for _ in range(5):
+            for i in range(5):
+                self.logger.debug(
+                    f"Creating consumer for group transaction: test-tx-group-{i}"
+                )
                 c = ck.Consumer({
                     'bootstrap.servers': self.redpanda.brokers(),
                     'group.id': f'test-tx-group-{i}',
@@ -77,6 +80,8 @@ class DescribeProducersTest(RedpandaTest):
         producer_count = 20
         producers = []
         for idx in range(producer_count):
+            self.logger.debug(
+                f"Creating producer with transactional.id: tx-producer-{idx}")
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': f'tx-producer-{idx}',
