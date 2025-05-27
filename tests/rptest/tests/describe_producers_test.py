@@ -54,10 +54,6 @@ class DescribeProducersTest(RedpandaTest):
         assert ts == -1 or (ts_epoch >= range_start and ts_epoch <= range_end), \
             f"Producer timestamp must correspond to system clock. Returned timestamp: {ts}, range: [{range_start}, {range_end}]"
 
-    def _random_group_name(self):
-        return ''.join(
-            random.choice(string.ascii_uppercase) for _ in range(16))
-
     @cluster(num_nodes=3)
     @matrix(include_group_tx=[True, False])
     def test_describe_producer_with_tx(self, include_group_tx):
@@ -67,7 +63,7 @@ class DescribeProducersTest(RedpandaTest):
             for _ in range(5):
                 c = ck.Consumer({
                     'bootstrap.servers': self.redpanda.brokers(),
-                    'group.id': self._random_group_name(),
+                    'group.id': f'test-tx-group-{i}',
                     'auto.offset.reset': 'earliest',
                     'enable.auto.commit': False,
                     'max.poll.interval.ms': 10000,
