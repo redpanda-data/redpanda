@@ -68,7 +68,7 @@ public:
 
     bool is_end_of_stream() const override;
 
-    ss::future<model::record_batch_reader::storage_t>
+    ss::future<model::record_batch_reader::data_t>
     do_load_slice(model::timeout_clock::time_point deadline) override;
 
     void print(std::ostream& os) override;

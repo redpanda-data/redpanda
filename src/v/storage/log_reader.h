@@ -132,7 +132,7 @@ class log_reader final : public model::record_batch_reader::impl {
     friend struct fmt::formatter<log_reader>;
 
 public:
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
     static std::vector<model::record_batch> make_ghost_batches(
       model::offset start_offset,
       model::offset end_offset,
@@ -152,7 +152,7 @@ public:
         return _iterator.next_seg == _lease->range.end();
     }
 
-    ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
+    ss::future<data_t> do_load_slice(model::timeout_clock::time_point) final;
 
     virtual std::optional<private_flags> get_flags() const final;
 
@@ -239,7 +239,7 @@ private:
         const auto& offsets() const { return (*next_seg)->offsets(); }
     };
 
-    ss::future<storage_t> load_slice(model::timeout_clock::time_point);
+    ss::future<data_t> load_slice(model::timeout_clock::time_point);
     unsigned _load_slice_depth{0};
     bool log_load_slice_depth_warning() const;
     void maybe_log_load_slice_depth_warning(std::string_view) const;

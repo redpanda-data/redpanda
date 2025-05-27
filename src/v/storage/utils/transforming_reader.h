@@ -31,7 +31,6 @@ template<typename Transformation>
 requires batch_transformation<Transformation>
 model::record_batch_reader make_transforming_reader(
   model::record_batch_reader&& source, Transformation&& t) {
-    using storage_t = model::record_batch_reader::storage_t;
     using data_t = model::record_batch_reader::data_t;
 
     class transforming_reader final : public model::record_batch_reader::impl {
@@ -52,15 +51,15 @@ model::record_batch_reader make_transforming_reader(
 
         void print(std::ostream& os) final { _ptr->print(os); }
 
-        ss::future<storage_t>
+        ss::future<data_t>
         do_load_slice(model::timeout_clock::time_point t) final {
-            return _ptr->do_load_slice(t).then([this](storage_t source_slice) {
+            return _ptr->do_load_slice(t).then([this](data_t source_slice) {
                 return transform_slice(std::move(source_slice));
             });
         }
 
     private:
-        ss::future<storage_t> transform_slice(storage_t source_slice) {
+        ss::future<data_t> transform_slice(data_t source_slice) {
             data_t result;
             for (auto& batch : get_batches(source_slice)) {
                 auto opt_batch = co_await transform(std::move(batch));
@@ -72,9 +71,9 @@ model::record_batch_reader make_transforming_reader(
             co_return make_slice(source_slice, std::move(result));
         }
 
-        data_t& get_batches(storage_t& st) { return st; }
+        data_t& get_batches(data_t& st) { return st; }
 
-        storage_t make_slice(const storage_t& source, data_t new_data) {
+        data_t make_slice(const data_t& source, data_t new_data) {
             return new_data;
         }
 

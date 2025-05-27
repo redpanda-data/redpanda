@@ -47,7 +47,6 @@ concept ReferenceBatchReaderConsumer = requires(
 class record_batch_reader final {
 public:
     using data_t = chunked_circular_buffer<model::record_batch>;
-    using storage_t = data_t;
 
     struct private_flags;
 
@@ -64,8 +63,7 @@ public:
 
         virtual bool is_end_of_stream() const = 0;
 
-        virtual ss::future<storage_t>
-          do_load_slice(timeout_clock::time_point) = 0;
+        virtual ss::future<data_t> do_load_slice(timeout_clock::time_point) = 0;
 
         virtual void print(std::ostream&) = 0;
 
@@ -104,7 +102,7 @@ public:
             return batch;
         }
         ss::future<> load_slice(timeout_clock::time_point timeout) {
-            return do_load_slice(timeout).then([this](storage_t s) {
+            return do_load_slice(timeout).then([this](data_t s) {
                 // reassign the local cache
                 _slice = std::move(s);
             });
@@ -157,7 +155,7 @@ public:
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }
-        storage_t _slice;
+        data_t _slice;
     };
 
 public:
@@ -293,7 +291,7 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 }
 
 record_batch_reader
-  make_memory_record_batch_reader(record_batch_reader::storage_t);
+  make_memory_record_batch_reader(record_batch_reader::data_t);
 
 record_batch_reader make_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch>);

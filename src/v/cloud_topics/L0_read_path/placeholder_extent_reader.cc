@@ -107,7 +107,7 @@ public:
         return is_eos;
     }
 
-    ss::future<model::record_batch_reader::storage_t>
+    ss::future<model::record_batch_reader::data_t>
     do_load_slice(model::timeout_clock::time_point tm) override {
         struct consumer {
             consumer(

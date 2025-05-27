@@ -21,7 +21,7 @@
 namespace kafka::client {
 
 class client_fetcher final : public model::record_batch_reader::impl {
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
 
 public:
     client_fetcher(
@@ -39,8 +39,7 @@ public:
     bool is_end_of_stream() const final { return _next_offset >= _last_offset; }
 
     // Implements model::record_batch_reader::impl
-    ss::future<storage_t>
-    do_load_slice(model::timeout_clock::time_point t) final {
+    ss::future<data_t> do_load_slice(model::timeout_clock::time_point t) final {
         if (!_batch_reader || _batch_reader->is_end_of_stream()) {
             vlog(
               kclog.debug,

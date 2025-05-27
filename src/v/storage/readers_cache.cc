@@ -266,7 +266,7 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
             return _underlying->is_end_of_stream();
         };
 
-        ss::future<model::record_batch_reader::storage_t>
+        ss::future<model::record_batch_reader::data_t>
         do_load_slice(model::timeout_clock::time_point tout) final {
             return _underlying->do_load_slice(tout);
         }

@@ -56,7 +56,6 @@ using namespace std::chrono_literals;
 namespace cloud_storage {
 
 using data_t = model::record_batch_reader::data_t;
-using storage_t = model::record_batch_reader::storage_t;
 
 remote_partition::iterator remote_partition::get_or_materialize_segment(
   const remote_segment_path& path,
@@ -369,7 +368,7 @@ public:
         }
     }
 
-    ss::future<storage_t>
+    ss::future<data_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
         std::exception_ptr unknown_exception_ptr = nullptr;
         try {
@@ -378,7 +377,7 @@ public:
                   _ctxlog.debug,
                   "partition_record_batch_reader_impl do_load_slice - "
                   "empty");
-                co_return storage_t{};
+                co_return data_t{};
             }
             if (_seg_reader->config().over_budget) {
                 vlog(
@@ -391,12 +390,12 @@ public:
 
                 // The existing state have to be rebuilt
                 dispose_current_reader();
-                co_return storage_t{};
+                co_return data_t{};
             }
             while (co_await maybe_reset_reader()) {
                 if (_partition->_gate.is_closed()) {
                     co_await set_end_of_stream();
-                    co_return storage_t{};
+                    co_return data_t{};
                 }
 
                 throw_on_external_abort();
@@ -438,7 +437,7 @@ public:
                       _first_produced_offset);
                     if (_first_produced_offset != model::offset{}) {
                         co_await set_end_of_stream();
-                        co_return storage_t{};
+                        co_return data_t{};
                     } else {
                         _ot_state->reset();
                     }
@@ -500,7 +499,7 @@ public:
                         co_await set_end_of_stream();
                     }
                 }
-                co_return storage_t{std::move(d)};
+                co_return data_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -534,7 +533,7 @@ public:
           "EOS reached, reader available: {}, is end of stream: {}",
           static_cast<bool>(_seg_reader),
           is_end_of_stream());
-        co_return storage_t{};
+        co_return data_t{};
     }
 
     void print(std::ostream& o) override {

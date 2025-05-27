@@ -125,7 +125,7 @@ bool deletion_exempt(const model::ntp& ntp) {
 // calculations. For all other applications, the `log_reader` should be used.
 class single_segment_reader final : public model::record_batch_reader::impl {
 public:
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
     single_segment_reader(
       ss::lw_shared_ptr<segment> seg,
       ss::rwlock::holder seg_read_lock,
@@ -140,12 +140,12 @@ public:
 
     bool is_end_of_stream() const final { return _is_end_of_stream; }
 
-    ss::future<storage_t>
+    ss::future<data_t>
     do_load_slice(model::timeout_clock::time_point timeout) final {
         auto recs = co_await _rdr.read_some(timeout);
         if (!recs.has_value() || recs.value().empty()) {
             _is_end_of_stream = true;
-            co_return storage_t{};
+            co_return data_t{};
         }
 
         auto& batches = recs.value();

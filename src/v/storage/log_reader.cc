@@ -357,7 +357,7 @@ void log_reader::maybe_log_load_slice_depth_warning(
     }
 }
 
-ss::future<log_reader::storage_t>
+ss::future<log_reader::data_t>
 log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
     _load_slice_depth = 0;
     while (true) {
@@ -367,7 +367,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
             // but offsets might have exceeded the read
             set_end_of_stream();
             co_await _iterator.close();
-            co_return log_reader::storage_t{};
+            co_return log_reader::data_t{};
         }
 
         // We do not want to close the reader if we stopped because requested
@@ -379,13 +379,13 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
           || _config.bytes_consumed > _config.max_bytes
           || _config.over_budget) {
             set_end_of_stream();
-            co_return log_reader::storage_t{};
+            co_return log_reader::data_t{};
         }
 
         if (_last_base == _config.start_offset) {
             set_end_of_stream();
             co_await _iterator.close();
-            co_return log_reader::storage_t{};
+            co_return log_reader::data_t{};
         }
 
         maybe_log_load_slice_depth_warning("reading more");
@@ -393,7 +393,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         ss::future<> fut = find_next_valid_iterator();
         if (is_end_of_stream()) {
             co_await std::move(fut);
-            co_return log_reader::storage_t{};
+            co_return log_reader::data_t{};
         }
         std::exception_ptr e;
         try {
@@ -430,7 +430,7 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                     _probe.batch_parse_error();
                 }
                 co_await _iterator.close();
-                co_return log_reader::storage_t{};
+                co_return log_reader::data_t{};
             }
             if (recs.value().empty()) {
                 /*

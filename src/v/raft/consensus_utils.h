@@ -69,7 +69,7 @@ Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {
 
 class term_assigning_reader : public model::record_batch_reader::impl {
 public:
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
 
     term_assigning_reader(model::record_batch_reader r, model::term_id term)
       : _source(std::move(r).release())
@@ -77,9 +77,9 @@ public:
 
     bool is_end_of_stream() const final { return _source->is_end_of_stream(); }
 
-    ss::future<storage_t>
+    ss::future<data_t>
     do_load_slice(model::timeout_clock::time_point tout) final {
-        return _source->do_load_slice(tout).then([t = _term](storage_t ret) {
+        return _source->do_load_slice(tout).then([t = _term](data_t ret) {
             for (auto& r : ret) {
                 r.set_term(t);
             }

@@ -24,7 +24,7 @@ namespace kafka {
 ///
 /// The array bound is not serialized, c.f. array<kafka::thing>
 class batch_reader final : public model::record_batch_reader::impl {
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
 
 public:
     batch_reader() = default;
@@ -50,7 +50,7 @@ public:
     }
 
     // Implements model::record_batch_reader::impl
-    ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
+    ss::future<data_t> do_load_slice(model::timeout_clock::time_point) final;
 
     // Implements model::record_batch_reader::impl
     // NOTE: this stream is intentially devoid of user data.

@@ -122,7 +122,7 @@ kafka_batch_adapter batch_reader::consume_batch() {
     return kba;
 }
 
-ss::future<batch_reader::storage_t>
+ss::future<batch_reader::data_t>
 batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
     using data_t = model::record_batch_reader::data_t;
     return ss::do_with(data_t{}, [this, tp](data_t& batches) {
@@ -155,7 +155,7 @@ batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
             }
         };
         return ss::do_until(resources_exceeded, consume_one).then([&batches]() {
-            return storage_t(std::move(batches));
+            return data_t(std::move(batches));
         });
     });
 }
