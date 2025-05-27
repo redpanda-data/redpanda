@@ -266,4 +266,88 @@ struct stm_snapshot
     auto serde_fields() { return std::tie(topics); }
 };
 
+struct per_topic_usage_stats
+  : serde::envelope<
+      per_topic_usage_stats,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    per_topic_usage_stats() = default;
+    explicit per_topic_usage_stats(
+      model::topic topic,
+      model::revision_id revision,
+      uint64_t kafka_bytes_processed)
+      : topic(std::move(topic))
+      , revision(revision)
+      , total_kafka_bytes_processed(kafka_bytes_processed) {}
+
+    model::topic topic;
+    model::revision_id revision;
+    uint64_t total_kafka_bytes_processed{0};
+
+    friend std::ostream&
+    operator<<(std::ostream&, const per_topic_usage_stats&);
+
+    auto serde_fields() {
+        return std::tie(topic, revision, total_kafka_bytes_processed);
+    }
+};
+
+struct datalake_usage_stats
+  : serde::envelope<
+      datalake_usage_stats,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    friend std::ostream& operator<<(std::ostream&, const datalake_usage_stats&);
+
+    chunked_vector<per_topic_usage_stats> topic_usages;
+
+    auto serde_fields() { return std::tie(topic_usages); }
+};
+
+struct usage_stats_reply
+  : serde::
+      envelope<usage_stats_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    usage_stats_reply() = default;
+    explicit usage_stats_reply(errc err)
+      : errc(err) {}
+
+    friend std::ostream& operator<<(std::ostream&, const usage_stats_reply&);
+
+    errc errc;
+    // only valid if errc == errc::ok
+    datalake_usage_stats stats;
+
+    auto serde_fields() { return std::tie(errc, stats); }
+};
+
+// Request to fetch usage stats for all topics coordinated by a given
+// coordinator topic partition.
+struct usage_stats_request
+  : serde::envelope<
+      usage_stats_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    using resp_t = usage_stats_reply;
+
+    model::partition_id coordinator_partition;
+
+    usage_stats_request() = default;
+    explicit usage_stats_request(model::partition_id coordinator_partition)
+      : coordinator_partition(coordinator_partition) {}
+    friend std::ostream& operator<<(std::ostream&, const usage_stats_request&);
+
+    model::partition_id get_coordinator_partition() {
+        return coordinator_partition;
+    }
+
+    auto serde_fields() { return std::tie(coordinator_partition); }
+};
+
 } // namespace datalake::coordinator
