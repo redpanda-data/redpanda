@@ -43,7 +43,7 @@ require (
 	github.com/prometheus/client_model v0.6.1
 	github.com/prometheus/common v0.62.0
 	github.com/redpanda-data/common-go/proto v0.0.0-20250422172326-6a3bcb14b829
-	github.com/redpanda-data/common-go/rpadmin v0.1.13
+	github.com/redpanda-data/common-go/rpadmin v0.1.14
 	github.com/rs/xid v1.6.0
 	github.com/safchain/ethtool v0.5.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
