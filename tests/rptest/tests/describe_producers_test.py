@@ -85,6 +85,8 @@ class DescribeProducersTest(RedpandaTest):
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': f'tx-producer-{idx}',
+                # use long transaction timeout to avoid transaction expiration
+                'transaction.timeout.ms': 300000,
             })
             producer.init_transactions()
             producers.append(producer)
