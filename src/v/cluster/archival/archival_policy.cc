@@ -15,6 +15,7 @@
 #include "cluster/archival/segment_reupload.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "ssx/rwlock.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"

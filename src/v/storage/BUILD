@@ -415,6 +415,7 @@ redpanda_cc_library(
         "//src/v/ssx:async_algorithm",
         "//src/v/ssx:async_clear",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:rwlock",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/ssx:watchdog",

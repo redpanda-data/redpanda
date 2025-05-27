@@ -26,6 +26,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "ssx/event.h"
+#include "ssx/rwlock.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
@@ -565,7 +566,7 @@ private:
     ss::future<ntp_archiver_upload_result> upload_segment(
       model::term_id archiver_term,
       upload_candidate candidate,
-      std::vector<ss::rwlock::holder> segment_read_locks,
+      std::vector<ssx::logging_rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

@@ -21,6 +21,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "ssx/rwlock.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -345,7 +346,7 @@ ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<segment> seg,
   compaction_config cfg,
   storage::probe& pb,
-  ss::rwlock::holder rw_lock_holder,
+  ssx::logging_rwlock::holder rw_lock_holder,
   storage_resources& resources,
   offset_delta_time apply_offset,
   ss::sharded<features::feature_table>& feature_table) {
@@ -486,7 +487,7 @@ model::record_batch_reader create_segment_full_reader(
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
   storage::probe& pb,
-  ss::rwlock::holder h,
+  ssx::logging_rwlock::holder h,
   std::optional<model::offset> start_offset) {
     auto o = s->offsets();
     auto reader_cfg = log_reader_config(
@@ -544,7 +545,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources,
   offset_delta_time apply_offset,
-  ss::rwlock::holder read_holder,
+  ssx::logging_rwlock::holder read_holder,
   ss::sharded<features::feature_table>& feature_table) {
     if (cfg.asrc) {
         cfg.asrc->check();
@@ -685,7 +686,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
   ss::lw_shared_ptr<segment> s,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   const compaction_config& cfg,
-  ss::rwlock::holder& read_holder,
+  ssx::logging_rwlock::holder& read_holder,
   storage_resources& resources,
   storage::probe& pb) {
     segment_full_path idx_path = s->path().to_compacted_index();
@@ -809,7 +810,7 @@ make_concatenated_segment(
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table) {
     // read locks on source segments
-    std::vector<ss::rwlock::holder> locks;
+    std::vector<ssx::logging_rwlock::holder> locks;
     locks.reserve(segments.size());
     std::vector<segment::generation_id> generations;
     generations.reserve(segments.size());
@@ -1074,12 +1075,12 @@ ss::future<> write_concatenated_compacted_index(
       });
 }
 
-ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
+ss::future<std::vector<ssx::logging_rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
   probe& probe,
-  std::vector<ss::rwlock::holder> locks) {
+  std::vector<ssx::logging_rwlock::holder> locks) {
     co_await from->close();
 
     co_await to->index().drop_all_data();
@@ -1105,16 +1106,16 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
     co_return std::move(locks);
 }
 
-ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
+ss::future<std::vector<ssx::logging_rwlock::holder>> write_lock_segments(
   std::vector<ss::lw_shared_ptr<segment>>& segments,
   ss::semaphore::clock::duration timeout,
   int retries) {
     vassert(retries >= 0, "Invalid retries value");
-    std::vector<ss::rwlock::holder> held;
+    std::vector<ssx::logging_rwlock::holder> held;
     held.reserve(segments.size());
     while (true) {
         try {
-            std::vector<ss::future<ss::rwlock::holder>> held_f;
+            std::vector<ss::future<ssx::logging_rwlock::holder>> held_f;
             held_f.reserve(segments.size());
             for (auto& segment : segments) {
                 held_f.push_back(

@@ -15,6 +15,7 @@
 #include "cluster/archival/probe.h"
 #include "cluster/archival/types.h"
 #include "model/fundamental.h"
+#include "ssx/rwlock.h"
 #include "storage/fwd.h"
 #include "storage/ntp_config.h"
 
@@ -59,7 +60,7 @@ struct upload_candidate {
 
 struct upload_candidate_with_locks {
     upload_candidate candidate;
-    std::vector<ss::rwlock::holder> read_locks;
+    std::vector<ssx::logging_rwlock::holder> read_locks;
 };
 
 /// Wraps an error with an offset range, so that no
