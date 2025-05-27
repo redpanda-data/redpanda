@@ -589,17 +589,17 @@ size_t partition_balancer_backend::get_min_partition_size_threshold() const {
         return _min_partition_size_threshold().value();
     }
 
-    // TODO: replace partition_autobalancing_concurrent_moves after we have it
-    // as a field in balancer backend
-    const auto min_rate
-      = _raft_learner_recovery_rate()
-        / config::shard_local_cfg().partition_autobalancing_concurrent_moves();
+    auto num_concurrent_moves = _max_concurrent_actions();
+    if (num_concurrent_moves == 0) {
+        return 0;
+    }
 
     /**
      * We use a heuristic to calculate the minimum size of of partition, we
      * want that the partition with the threshold size to have enough data that
      * it will move for at least ten seconds.
      */
+    const auto min_rate = _raft_learner_recovery_rate() / num_concurrent_moves;
     return min_rate * 10;
 }
 
