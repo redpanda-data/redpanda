@@ -18,7 +18,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/noncopyable_function.hh>
-
 /// This tool can be used to detect anomalously long
 /// running operations or stuck async loops.
 /// You can create an instance of 'watchdog' and pass

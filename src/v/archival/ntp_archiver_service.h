@@ -24,6 +24,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/watchdog.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
@@ -489,7 +490,7 @@ private:
     ///
     /// Update the probe and manifest
     ss::future<ntp_archiver::batch_result> wait_all_scheduled_uploads(
-      std::vector<ntp_archiver::scheduled_upload> scheduled);
+      std::vector<ntp_archiver::scheduled_upload> scheduled, int64_t);
 
     /// Waits for scheduled segment uploads. The uploaded segments could be
     /// compacted or non-compacted, the actions taken are similar in both
@@ -498,7 +499,8 @@ private:
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
       std::vector<scheduled_upload> scheduled,
       segment_upload_kind segment_kind,
-      bool inline_manifest);
+      bool inline_manifest,
+      int64_t);
 
     /// Upload individual segment to S3.
     ///
@@ -527,7 +529,8 @@ private:
       upload_candidate candidate,
       ss::input_stream<char> stream,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
-      = std::nullopt);
+      = std::nullopt,
+      int64_t runid = -1);
 
     /// Get aborted transactions for upload
     ///
@@ -563,7 +566,8 @@ private:
       model::timestamp base_timestamp,
       retry_chain_logger& ctxlog,
       std::string_view index_path,
-      ss::input_stream<char> stream);
+      ss::input_stream<char> stream,
+      int64_t runid = -1);
 
     /// Upload manifest if it is dirty.  Proceed without raising on issues,
     /// in the expectation that we will be called again in the main upload loop.
