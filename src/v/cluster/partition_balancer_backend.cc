@@ -390,6 +390,11 @@ ss::future<> partition_balancer_backend::do_tick() {
           mode);
     }
 
+    const bool space_management_enabled = config::shard_local_cfg().space_management_enable()
+     && (
+      config::shard_local_cfg().retention_local_target_capacity_percent() > 0
+      || config::shard_local_cfg().retention_local_target_capacity_bytes() > 0);
+
     partition_balancer_planner planner(
       planner_config{
         .mode = mode,
@@ -403,8 +408,7 @@ ss::future<> partition_balancer_backend::do_tick() {
         .min_partition_size_threshold = get_min_partition_size_threshold(),
         .node_responsiveness_timeout = node_responsiveness_timeout,
         .topic_aware = _topic_aware(),
-        .space_management_enabled
-        = config::shard_local_cfg().space_management_enable,
+        .space_management_enabled = space_management_enabled,
       },
       _state,
       _partition_allocator);
