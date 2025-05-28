@@ -49,6 +49,7 @@ v_cc_library(
     server/requests.cc
     server/member.cc
     server/datalake_throttle_manager.cc
+    server/datalake_usage_api.cc
     server/group_stm.cc
     server/group.cc
     server/group_router.cc

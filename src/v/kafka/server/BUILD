@@ -354,6 +354,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "datalake_usage_api",
+    srcs = [
+        "datalake_usage_api.cc",
+    ],
+    hdrs = [
+        "datalake_usage_api.h",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/utils:to_string",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "datalake_throttle_manager",
     srcs = [
         "datalake_throttle_manager.cc",
