@@ -54,20 +54,19 @@ class DescribeProducersTest(RedpandaTest):
         assert ts == -1 or (ts_epoch >= range_start and ts_epoch <= range_end), \
             f"Producer timestamp must correspond to system clock. Returned timestamp: {ts}, range: [{range_start}, {range_end}]"
 
-    def _random_group_name(self):
-        return ''.join(
-            random.choice(string.ascii_uppercase) for _ in range(16))
-
     @cluster(num_nodes=3)
     @matrix(include_group_tx=[True, False])
     def test_describe_producer_with_tx(self, include_group_tx):
 
         consumers = []
         if include_group_tx:
-            for _ in range(5):
+            for i in range(5):
+                self.logger.debug(
+                    f"Creating consumer for group transaction: test-tx-group-{i}"
+                )
                 c = ck.Consumer({
                     'bootstrap.servers': self.redpanda.brokers(),
-                    'group.id': self._random_group_name(),
+                    'group.id': f'test-tx-group-{i}',
                     'auto.offset.reset': 'earliest',
                     'enable.auto.commit': False,
                     'max.poll.interval.ms': 10000,
@@ -81,9 +80,13 @@ class DescribeProducersTest(RedpandaTest):
         producer_count = 20
         producers = []
         for idx in range(producer_count):
+            self.logger.debug(
+                f"Creating producer with transactional.id: tx-producer-{idx}")
             producer = ck.Producer({
                 'bootstrap.servers': self.redpanda.brokers(),
                 'transactional.id': f'tx-producer-{idx}',
+                # use long transaction timeout to avoid transaction expiration
+                'transaction.timeout.ms': 300000,
             })
             producer.init_transactions()
             producers.append(producer)
