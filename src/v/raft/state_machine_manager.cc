@@ -23,6 +23,7 @@
 #include "serde/rw/rw.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "ssx/watchdog.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
@@ -159,14 +160,18 @@ state_machine_manager::named_stm::named_stm(ss::sstring name, stm_ptr stm)
   , stm(std::move(stm)) {}
 
 state_machine_manager::state_machine_manager(
-  consensus* raft, std::vector<named_stm> stms, ss::scheduling_group apply_sg)
+  consensus* raft,
+  std::vector<named_stm> stms,
+  ss::scheduling_group apply_sg,
+  config::binding<std::chrono::milliseconds> stm_shutdown_timeout)
   : _raft(raft)
   , _log(ctx_log(_raft->group(), _raft->ntp()))
   , _apply_sg(apply_sg)
   , _initial_recovery_snapshot_mgr(
       std::filesystem::path(_raft->log_config().work_directory()),
       "stm_manager.snapshot",
-      ss::default_priority_class()) {
+      ss::default_priority_class())
+  , _stm_shutdown_timeout(std::move(stm_shutdown_timeout)) {
     for (auto& n_stm : stms) {
         _supports_snapshot_at_offset
           = _supports_snapshot_at_offset
@@ -231,6 +236,19 @@ ss::future<> state_machine_manager::start() {
     });
 }
 
+ss::future<> state_machine_manager::do_stop_stm(entry_ptr entry) {
+    watchdog wd(
+      _stm_shutdown_timeout(), [ntp = _raft->ntp(), name = entry->name] {
+          vlog(
+            raftlog.error,
+            "[{}] Timedout waiting for {} state machine to stop",
+            ntp,
+            name);
+      });
+    // stop the state machine
+    co_await entry->stm->stop();
+}
+
 ss::future<> state_machine_manager::stop() {
     vlog(
       _log.debug,
@@ -241,7 +259,7 @@ ss::future<> state_machine_manager::stop() {
 
     auto gate_f = _gate.close();
     co_await ss::coroutine::parallel_for_each(
-      _machines, [](auto p) { return p.second->stm->stop(); });
+      _machines, [this](auto p) { return do_stop_stm(p.second); });
     co_await std::move(gate_f);
 }
 
