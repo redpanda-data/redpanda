@@ -269,12 +269,14 @@ ss::future<upload_result> remote::upload_stream(
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
+        vlog(ctxlog.info, "closing the reader_handle {}", path);
         co_await reader_handle->close();
 
         if (res) {
             transfer_details.on_success_size(content_length);
             co_return upload_result::success;
         }
+        vlog(ctxlog.info, "shutting down client lease {}", path);
 
         lease.client->shutdown();
         switch (res.error()) {

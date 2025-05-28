@@ -576,7 +576,8 @@ private:
       upload_candidate candidate,
       ss::input_stream<char> stream,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
-      = std::nullopt);
+      = std::nullopt,
+      int64_t runid = -1);
 
     /// Get aborted transactions for upload
     ///
@@ -612,7 +613,8 @@ private:
       model::timestamp base_timestamp,
       retry_chain_logger& ctxlog,
       std::string_view index_path,
-      ss::input_stream<char> stream);
+      ss::input_stream<char> stream,
+      int64_t runid = -1);
 
     /// Upload manifest if it is dirty.  Proceed without raising on issues,
     /// in the expectation that we will be called again in the main upload loop.
