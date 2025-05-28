@@ -85,6 +85,8 @@ public:
     ss::future<checked<last_offsets, errc>> sync_get_last_added_offsets(
       model::topic_partition tp, model::revision_id topic_rev);
 
+    ss::future<checked<datalake_usage_stats, errc>> sync_get_usage_stats();
+
     void notify_leadership(std::optional<model::node_id>);
 
     bool leader_loop_running() const { return term_as_.has_value(); }
