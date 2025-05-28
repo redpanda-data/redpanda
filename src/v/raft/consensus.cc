@@ -268,6 +268,7 @@ void consensus::shutdown_input() {
         _as.request_abort();
         _commit_index_updated.broken();
         _follower_reply.broken();
+        _consumable_offset_monitor.stop();
     }
 }
 
