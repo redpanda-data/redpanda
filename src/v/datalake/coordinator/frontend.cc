@@ -124,7 +124,7 @@ auto frontend::remote_dispatch(req_t request, model::node_id leader_id) {
               ::rpc::client_opts{model::timeout_clock::now() + rpc_timeout});
         })
       .then(&::rpc::get_ctx_data<resp_t>)
-      .then([leader_id, self = _self](result<resp_t> r) {
+      .then([leader_id, self = _self](result<resp_t> r) mutable {
           if (r.has_error()) {
               vlog(
                 datalake::datalake_log.warn,
@@ -134,7 +134,7 @@ auto frontend::remote_dispatch(req_t request, model::node_id leader_id) {
                 self);
               return resp_t{errc::timeout};
           }
-          return r.value();
+          return std::move(r.value());
       });
 }
 
@@ -142,6 +142,7 @@ template<auto LocalFunc, auto RemoteFunc, typename req_t>
 requires requires(
   datalake::coordinator::frontend f, const model::ntp& ntp, req_t req) {
     (f.*LocalFunc)(std::move(req), ntp, ss::shard_id{0});
+    request_has_topic<req_t> || request_has_coordinator_partition<req_t>;
 }
 auto frontend::process(req_t req, bool local_only) {
     using resp_t = req_t::resp_t;
@@ -151,15 +152,23 @@ auto frontend::process(req_t req, bool local_only) {
             return ss::make_ready_future<resp_t>(
               resp_t{errc::coordinator_topic_not_exists});
         }
-        auto cp = coordinator_partition(req.get_topic());
-        if (!cp) {
-            return ss::make_ready_future<resp_t>(
-              resp_t{errc::coordinator_topic_not_exists});
+        model::partition_id cp_result;
+        if constexpr (request_has_topic<req_t>) {
+            // If the request has a topic, we can use it to find the coordinator
+            // partition.
+            auto cp = coordinator_partition(req.get_topic());
+            if (!cp) {
+                return ss::make_ready_future<resp_t>(
+                  resp_t{errc::coordinator_topic_not_exists});
+            }
+            cp_result = cp.value();
+        } else {
+            cp_result = req.get_coordinator_partition();
         }
         model::ntp c_ntp{
           model::datalake_coordinator_nt.ns,
           model::datalake_coordinator_nt.tp,
-          cp.value()};
+          cp_result};
         auto leader = _leaders->local().get_leader(c_ntp);
         if (leader == _self) {
             auto shard = _shard_table->local().shard_for(c_ntp);
@@ -192,6 +201,13 @@ template auto frontend::process<
   &frontend::fetch_latest_translated_offset_locally,
   &frontend::client::fetch_latest_translated_offset>(
   fetch_latest_translated_offset_request, bool);
+
+template auto frontend::remote_dispatch<&frontend::client::get_usage_stats>(
+  usage_stats_request, model::node_id);
+
+template auto frontend::process<
+  &frontend::get_usage_stats_locally,
+  &frontend::client::get_usage_stats>(usage_stats_request, bool);
 
 // -- explicit instantiations ---
 
@@ -394,6 +410,38 @@ frontend::fetch_latest_translated_offset(
       &frontend::fetch_latest_translated_offset_locally,
       &client::fetch_latest_translated_offset>(
       std::move(request), bool(local_only_exec));
+}
+
+ss::future<usage_stats_reply> frontend::get_usage_stats_locally(
+  usage_stats_request,
+  const model::ntp& coordinator_partition,
+  ss::shard_id shard) {
+    auto holder = _gate.hold();
+    co_return co_await _coordinator_mgr->invoke_on(
+      shard, [coordinator_partition](coordinator_manager& mgr) mutable {
+          auto partition = mgr.get(coordinator_partition);
+          if (!partition) {
+              return ssx::now(usage_stats_reply{errc::not_leader});
+          }
+          return partition->sync_get_usage_stats().then([](auto result) {
+              usage_stats_reply resp;
+              if (result.has_error()) {
+                  resp.errc = to_rpc_errc(result.error());
+              } else {
+                  resp.errc = errc::ok;
+                  resp.stats = std::move(result.value());
+              }
+              return ssx::now(std::move(resp));
+          });
+      });
+}
+
+ss::future<usage_stats_reply> frontend::get_usage_stats(
+  usage_stats_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &frontend::get_usage_stats_locally,
+      &client::get_usage_stats>(std::move(request), bool(local_only_exec));
 }
 
 } // namespace datalake::coordinator
