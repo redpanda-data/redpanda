@@ -212,7 +212,7 @@ struct offset_commit_op : executable_op {
 
     ss::future<> execute(group_manager_fixture* fixture) override {
         vlog(logger.trace, "Executing offset_commit_op: {}", req);
-        auto result = co_await fixture->tx_offset_commit(req);
+        auto result = co_await fixture->tx_offset_commit(std::move(req));
         ASSERT_FALSE_CORO(result.data.errored());
     }
     kafka::txn_offset_commit_request req;
@@ -288,7 +288,8 @@ random_ops generate_workload(workload_parameters params) {
               {.partition_index = model::partition_id{0},
                .committed_offset = model::offset{j}});
             offset_req.data.topics.push_back(std::move(topic_data));
-            group_ops.emplace(ss::make_shared<offset_commit_op>(offset_req));
+            group_ops.emplace(
+              ss::make_shared<offset_commit_op>(std::move(offset_req)));
 
             auto commit_group_tx
               = params.tx_workload_type == workload_parameters::commit_only

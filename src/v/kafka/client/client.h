@@ -154,7 +154,7 @@ public:
     ss::future<offset_commit_response> consumer_offset_commit(
       const group_id& g_id,
       const member_id& m_id,
-      std::vector<offset_commit_request_topic> topics);
+      chunked_vector<offset_commit_request_topic> topics);
 
     ss::future<fetch_response> consumer_fetch(
       const group_id& g_id,

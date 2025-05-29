@@ -127,10 +127,13 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
         BOOST_REQUIRE(!resp.data.errored());
     }
     {
-        auto req = offset_commit_request{.data{
+        offset_commit_request req;
+        req.data = offset_commit_request_data{
           .group_id = kafka::group_id{"foo-partitions"},
-          .topics = {offset_commit_request_topic{
-            .name = model::topic{"foo"}, .partitions = {}}}}};
+          .topics = chunked_vector<offset_commit_request_topic>::single(
+            offset_commit_request_topic{
+              .name = model::topic{"foo"}, .partitions = {}})};
+
         req.data.group_instance_id = gr;
         auto resp = client.dispatch(std::move(req)).get();
         BOOST_REQUIRE(!resp.data.errored());
@@ -164,7 +167,8 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
 
         return offset_commit_request{.data{
           .group_id = kafka::group_id{fmt::format("foo-{}", offset)},
-          .topics = {std::move(topic)}}};
+          .topics = chunked_vector<offset_commit_request_topic>::single(
+            std::move(topic))}};
     };
     for (int i = 0; i < 10; i++) {
         auto req = rand_offset_commit();

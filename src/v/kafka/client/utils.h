@@ -16,6 +16,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/find_coordinator.h"
+#include "kafka/protocol/offset_commit.h"
 #include "utils/retry.h"
 
 namespace kafka::client {
@@ -144,6 +145,25 @@ ss::future<shared_broker_t> find_coordinator_with_retry_and_mitigation(
             net::unresolved_address(res.data.host, res.data.port),
             client_config);
       });
+}
+
+inline chunked_vector<kafka::offset_commit_request_topic>
+make_copy(const chunked_vector<kafka::offset_commit_request_topic>& topics) {
+    static_assert(
+      reflection::arity<kafka::offset_commit_request_topic>() == 3,
+      "kafka::offset_commit_request_topic must have 3 fields, otherwise this "
+      "function must be updated");
+
+    chunked_vector<kafka::offset_commit_request_topic> res;
+    res.reserve(topics.size());
+    for (const auto& topic : topics) {
+        res.push_back({
+          .name = topic.name,
+          .partitions = topic.partitions.copy(),
+          .unknown_tags = topic.unknown_tags,
+        });
+    }
+    return res;
 }
 
 } // namespace kafka::client

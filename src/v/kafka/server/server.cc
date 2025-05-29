@@ -1680,13 +1680,13 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         // for these are patched back into the final response after processing.
         absl::flat_hash_map<
           model::topic,
-          std::vector<offset_commit_response_partition>>
+          chunked_vector<offset_commit_response_partition>>
           nonexistent_tps;
 
         // topic partitions that principal is not authorized to read
         absl::flat_hash_map<
           model::topic,
-          std::vector<offset_commit_response_partition>>
+          chunked_vector<offset_commit_response_partition>>
           unauthorized_tps;
 
         offset_commit_ctx(
@@ -1714,86 +1714,81 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
      * flag to mark topic-partitions to be ignored by the group membership
      * subsystem.
      */
-    for (auto it = octx.request.data.topics.begin();
-         it != octx.request.data.topics.end();) {
+    chunked_vector<offset_commit_request_topic> valid_topics;
+    valid_topics.reserve(octx.request.data.topics.size());
+    for (auto& topic : octx.request.data.topics) {
         /*
          * not authorized for this group. all topics in the request are
          * responded to with a group authorization failed error code.
          */
         if (!group_authorized) {
-            auto& parts = octx.unauthorized_tps[it->name];
-            parts.reserve(it->partitions.size());
-            for (const auto& part : it->partitions) {
+            auto& parts = octx.unauthorized_tps[topic.name];
+            parts.reserve(topic.partitions.size());
+            for (const auto& part : topic.partitions) {
                 parts.push_back(offset_commit_response_partition{
                   .partition_index = part.partition_index,
                   .error_code = error_code::group_authorization_failed,
                 });
             }
-            it = octx.request.data.topics.erase(it);
             continue;
         }
 
         /*
          * check topic authorization
          */
-        if (!octx.rctx.authorized(security::acl_operation::read, it->name)) {
-            auto& parts = octx.unauthorized_tps[it->name];
-            parts.reserve(it->partitions.size());
-            for (const auto& part : it->partitions) {
+        if (!octx.rctx.authorized(security::acl_operation::read, topic.name)) {
+            auto& parts = octx.unauthorized_tps[topic.name];
+            parts.reserve(topic.partitions.size());
+            for (const auto& part : topic.partitions) {
                 parts.push_back(offset_commit_response_partition{
                   .partition_index = part.partition_index,
                   .error_code = error_code::topic_authorization_failed,
                 });
             }
-            it = octx.request.data.topics.erase(it);
             continue;
         }
 
         /*
          * check if topic exists
          */
-        const auto topic_name = model::topic(it->name);
-        model::topic_namespace_view tn(model::kafka_namespace, topic_name);
+        model::topic_namespace_view tn(model::kafka_namespace, topic.name);
 
-        if (octx.rctx.metadata_cache().contains(tn)) {
-            /*
-             * check if each partition exists
-             */
-            auto split = std::partition(
-              it->partitions.begin(),
-              it->partitions.end(),
-              [&octx, &tn](const offset_commit_request_partition& p) {
-                  return octx.rctx.metadata_cache().contains(
-                    tn, p.partition_index);
-              });
-            /*
-             * build responses for nonexistent topic partitions
-             */
-            if (split != it->partitions.end()) {
-                auto& parts = octx.nonexistent_tps[it->name];
-                for (auto part = split; part != it->partitions.end(); part++) {
-                    parts.push_back(offset_commit_response_partition{
-                      .partition_index = part->partition_index,
-                      .error_code = error_code::unknown_topic_or_partition,
-                    });
-                }
-                it->partitions.erase(split, it->partitions.end());
-            }
-            ++it;
-        } else {
+        if (!octx.rctx.metadata_cache().contains(tn)) {
             /*
              * the topic doesn't exist. build all partition responses.
              */
-            auto& parts = octx.nonexistent_tps[it->name];
-            for (const auto& part : it->partitions) {
+            auto& parts = octx.nonexistent_tps[topic.name];
+            for (const auto& part : topic.partitions) {
                 parts.push_back(offset_commit_response_partition{
                   .partition_index = part.partition_index,
                   .error_code = error_code::unknown_topic_or_partition,
                 });
             }
-            it = octx.request.data.topics.erase(it);
+            continue;
         }
+        chunked_vector<offset_commit_request_partition> valid_partitions;
+        valid_partitions.reserve(topic.partitions.size());
+        for (auto& p : topic.partitions) {
+            // non existing partition, build a response
+            if (octx.rctx.metadata_cache().contains(tn, p.partition_index)) {
+                valid_partitions.push_back(std::move(p));
+                continue;
+            }
+
+            auto& parts = octx.nonexistent_tps[topic.name];
+            parts.push_back(offset_commit_response_partition{
+              .partition_index = p.partition_index,
+              .error_code = error_code::unknown_topic_or_partition,
+            });
+        }
+
+        valid_topics.push_back({
+          .name = std::move(topic.name),
+          .partitions = std::move(valid_partitions),
+          .unknown_tags = std::move(topic.unknown_tags),
+        });
     }
+    octx.request.data.topics = std::move(valid_topics);
 
     if (!octx.rctx.audit()) {
         offset_commit_response resp(
@@ -1851,10 +1846,11 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                   for (auto& topic : resp.data.topics) {
                       auto it = octx.nonexistent_tps.find(topic.name);
                       if (it != octx.nonexistent_tps.end()) {
-                          topic.partitions.insert(
-                            topic.partitions.end(),
+                          std::copy(
                             it->second.begin(),
-                            it->second.end());
+                            it->second.end(),
+                            std::back_inserter(topic.partitions));
+
                           octx.nonexistent_tps.erase(it);
                       }
                   }

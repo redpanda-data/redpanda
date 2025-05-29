@@ -375,7 +375,7 @@ consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
 }
 
 ss::future<offset_commit_response>
-consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
+consumer::offset_commit(chunked_vector<offset_commit_request_topic> topics) {
     refresh_inactivity_timer();
     if (topics.empty()) { // commit all offsets
         for (const auto& s : _fetch_sessions) {
@@ -394,7 +394,7 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
           .group_id = me->_group_id,
           .generation_id = me->_generation_id,
           .member_id = me->_member_id,
-          .topics = topics}};
+          .topics = make_copy(topics)}};
     };
 
     co_return co_await req_res(std::move(req_builder));

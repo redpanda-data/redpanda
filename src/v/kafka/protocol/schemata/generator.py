@@ -497,18 +497,12 @@ override_member_container = {
     'createable_topic_config': 'std::vector',
     'creatable_topic_configs': 'std::vector',
     'creatable_replica_assignment': 'std::vector',
-    'offset_commit_request_partition': 'std::vector',
-    'offset_commit_response_partition': 'std::vector',
-    'offset_commit_request_topic': 'std::vector',
     'offset_fetch_request_topic': 'std::vector',
     'partition_produce_response': 'std::vector',
     'creatable_acl_result': 'std::vector',
     'offset_delete_request_partition': 'std::vector',
     'deletable_group_result': 'std::vector',
     'delete_acls_matching_acl': 'std::vector',
-    'txn_offset_commit_request_partition': 'std::vector',
-    'txn_offset_commit_request_topic': 'std::vector',
-    'txn_offset_commit_response_partition': 'std::vector',
 }
 
 

@@ -304,7 +304,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     // Commit 5 offsets, with metadata of the member id.
     for (size_t i = 0; i < sorted_members.size(); ++i) {
         auto m_id = sorted_members[i];
-        auto t = std::vector<kafka::offset_commit_request_topic>{};
+        auto t = chunked_vector<kafka::offset_commit_request_topic>{};
         t.reserve(3);
         std::transform(
           topics.begin(),
@@ -361,7 +361,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     // empty list means commit all offsets
     for (size_t i = 0; i < sorted_members.size(); ++i) {
         auto m_id = sorted_members[i];
-        auto t = std::vector<kafka::offset_commit_request_topic>{};
+        auto t = chunked_vector<kafka::offset_commit_request_topic>{};
         auto res
           = client.consumer_offset_commit(group_id, m_id, std::move(t)).get();
         BOOST_REQUIRE_EQUAL(res.data.topics.size(), 3);
