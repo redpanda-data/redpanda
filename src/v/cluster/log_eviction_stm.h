@@ -139,6 +139,39 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
 private:
+    /**
+     * Log eviction is critical component of Redpanda as it ensures that
+     * the log is kept within the configured retention limits. This state
+     * machine is responsible for monitoring the log eviction events and
+     * writing snapshots to ensure that the log is truncated correctly.
+     * If the state machine loop is stalled or exits unexpectedly,
+     * it can lead to log eviction not happening, which can cause the
+     * log to grow indefinitely and eventually run out of disk space.
+     * Therefore, we monitor the state of the loop and log an error if its state
+     * is not updated for long time.
+     */
+    enum class loop_state : uint8_t {
+        waiting_for_events,
+        waiting_for_visible_offset,
+        refreshing_commit_index,
+        stm_manager_ensure_snapshot_exists,
+        taking_raft_snapshot,
+        writing_raft_snapshot,
+        exited,
+    };
+
+    struct log_eviction_loop_state {
+        loop_state current_state = loop_state::waiting_for_events;
+        model::timeout_clock::time_point last_update_timestamp;
+        model::offset last_requested_eviction_offset = model::offset{};
+        uint64_t stall_errors = 0;
+        ss::timer<ss::lowres_clock> state_watchdog_timer;
+
+        void update_loop_state(loop_state);
+    };
+
+    void setup_metrics();
+
     ss::abort_source _as;
 
     // Offset we are able to truncate based on local retention policy, as
@@ -156,6 +189,14 @@ private:
 
     // Kafka offset of the last `prefix_truncate_record` applied to this stm.
     kafka::offset _cached_kafka_start_offset_override;
+
+    log_eviction_loop_state _loop_state;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const log_eviction_loop_state&);
+
+    friend std::ostream& operator<<(std::ostream&, loop_state);
+    metrics::internal_metric_groups _metrics;
 };
 
 class log_eviction_stm_factory : public state_machine_factory {

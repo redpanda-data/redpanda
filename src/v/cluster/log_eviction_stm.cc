@@ -43,14 +43,59 @@ log_eviction_stm::log_eviction_stm(
   : base_t("log_eviction_stm.snapshot", logger, raft, kvstore) {}
 
 ss::future<> log_eviction_stm::start() {
-    ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
-    ssx::spawn_with_gate(
-      _gate, [this] { return handle_log_eviction_events(); });
+    setup_metrics();
+    // setup state watchdog timer
+    _loop_state.state_watchdog_timer.set_callback([this] {
+        auto holder = _gate.hold();
+        // When partition retention is disabled, the log eviction loop will be
+        // waiting for the events, we do not need to report that.
+        if (_loop_state.current_state == loop_state::waiting_for_events) {
+            return;
+        }
+
+        vlog(
+          _log.error,
+          "log eviction loop stopped making progress, current state: {}",
+          _loop_state);
+        _loop_state.stall_errors++;
+        // Rearm the watchdog timer to trigger again in the future, this way an
+        // error will periodically be logged
+        _loop_state.state_watchdog_timer.rearm(
+          model::timeout_clock::now()
+          + config::shard_local_cfg()
+              .partition_manager_shutdown_watchdog_timeout());
+    });
+
+    ssx::spawn_with_gate(_gate, [this] {
+        return monitor_log_eviction().finally([this] {
+            if (!_as.abort_requested()) {
+                vlog(
+                  _log.error,
+                  "log eviction loop exited unexpectedly, "
+                  "this should never happen. Current state: {}",
+                  _loop_state);
+            }
+        });
+    });
+    ssx::spawn_with_gate(_gate, [this] {
+        return handle_log_eviction_events().finally([this] {
+            if (!_as.abort_requested()) {
+                vlog(
+                  _log.error,
+                  "log eviction loop exited unexpectedly, "
+                  "this should never happen. Current state: {}",
+                  _loop_state);
+            }
+            _loop_state.update_loop_state(loop_state::exited);
+        });
+    });
+
     return base_t::start();
 }
 
 ss::future<> log_eviction_stm::stop() {
     _as.request_abort();
+    _loop_state.state_watchdog_timer.cancel();
     _has_pending_truncation.broken();
     co_await base_t::stop();
 }
@@ -67,6 +112,7 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
         /// batches are processed or by the storage layer when local
         /// eviction is triggered.
         try {
+            _loop_state.update_loop_state(loop_state::waiting_for_events);
             if (previous_iter_truncated_everything) {
                 co_await _has_pending_truncation.wait();
             } else {
@@ -167,9 +213,14 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
     if (truncation_point <= _raft->last_snapshot_index()) {
         co_return;
     }
+    _loop_state.update_loop_state(loop_state::waiting_for_visible_offset);
+    _loop_state.last_requested_eviction_offset = truncation_point;
     co_await _raft->visible_offset_monitor().wait(
       truncation_point, model::no_timeout, _as);
+    _loop_state.update_loop_state(loop_state::refreshing_commit_index);
     co_await _raft->refresh_commit_index();
+    _loop_state.update_loop_state(
+      loop_state::stm_manager_ensure_snapshot_exists);
     co_await _raft->log()->stm_manager()->ensure_snapshot_exists(
       truncation_point);
     const auto max_removable_local_log_offset
@@ -197,6 +248,7 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       _log.trace,
       "Requesting state machine manage to take snapshot at {}",
       truncation_point);
+    _loop_state.update_loop_state(loop_state::taking_raft_snapshot);
     auto snapshot_result = co_await _raft->stm_manager()->take_snapshot(
       truncation_point);
     // we need to check snapshot index again as it may already progressed after
@@ -216,6 +268,7 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       "Writing snapshot raft snapshot of size: {} at offset: {}",
       snapshot_result.data.size_bytes(),
       truncation_point);
+    _loop_state.update_loop_state(loop_state::writing_raft_snapshot);
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(
       snapshot_result.last_included_offset, std::move(snapshot_result.data)));
 }
@@ -480,6 +533,73 @@ void log_eviction_stm_factory::create(
   const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<log_eviction_stm>(raft, clusterlog, _kvstore);
     raft->log()->stm_manager()->add_stm(stm);
+}
+void log_eviction_stm::log_eviction_loop_state::update_loop_state(
+  log_eviction_stm::loop_state new_state) {
+    current_state = new_state;
+    last_update_timestamp = model::timeout_clock::now();
+    state_watchdog_timer.rearm(
+      config::shard_local_cfg().partition_manager_shutdown_watchdog_timeout()
+      + model::timeout_clock::now());
+}
+
+void log_eviction_stm::setup_metrics() {
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+
+    const std::vector<sm::label_instance> labels = {
+      ns_label(_raft->ntp().ns),
+      topic_label(_raft->ntp().tp.topic),
+      partition_label(_raft->ntp().tp.partition)};
+
+    _metrics.add_group(
+      "log_eviction_stm",
+      {
+        sm::make_counter(
+          "stall_errors",
+          [this] { return _loop_state.stall_errors; },
+          sm::description("Number of times the log eviction loop stalled"),
+          labels),
+      },
+      {},
+      {sm::shard_label, partition_label});
+}
+
+std::ostream& operator<<(
+  std::ostream& os, const log_eviction_stm::log_eviction_loop_state& state) {
+    fmt::print(
+      os,
+      "{{ current_loop_state: {}, time_since_last_update: {}s, "
+      "last_requested_eviction_offset: {} }}",
+      state.current_state,
+      (model::timeout_clock::now() - state.last_update_timestamp) / 1s,
+      state.last_requested_eviction_offset);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, log_eviction_stm::loop_state state) {
+    switch (state) {
+    case log_eviction_stm::loop_state::waiting_for_events:
+        return os << "waiting_for_events";
+    case log_eviction_stm::loop_state::waiting_for_visible_offset:
+        return os << "waiting_for_visible_offset";
+    case log_eviction_stm::loop_state::refreshing_commit_index:
+        return os << "refreshing_commit_index";
+    case log_eviction_stm::loop_state::stm_manager_ensure_snapshot_exists:
+        return os << "stm_manager_ensure_snapshot_exists";
+    case log_eviction_stm::loop_state::taking_raft_snapshot:
+        return os << "taking_raft_snapshot";
+    case log_eviction_stm::loop_state::writing_raft_snapshot:
+        return os << "writing_raft_snapshot";
+    case log_eviction_stm::loop_state::exited:
+        return os << "exited";
+    }
 }
 
 } // namespace cluster
