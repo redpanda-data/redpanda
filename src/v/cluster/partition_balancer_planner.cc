@@ -1833,15 +1833,15 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
 
 ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
   request_context& ctx) {
-    if (!ctx.config().ondemand_rebalance_requested) {
-        if (ctx.state().nodes_to_rebalance().empty()) {
-            co_return;
-        }
+    if (
+      ctx.state().nodes_to_rebalance().empty()
+      && !ctx.config().ondemand_rebalance_requested) {
+        co_return;
+    }
 
-        if (ctx.config().mode < model::partition_autobalancing_mode::node_add) {
-            ctx._counts_rebalancing_finished = true;
-            co_return;
-        }
+    if (ctx.config().mode == model::partition_autobalancing_mode::off) {
+        ctx._counts_rebalancing_finished = true;
+        co_return;
     }
 
     if (!ctx.can_add_reassignment()) {
