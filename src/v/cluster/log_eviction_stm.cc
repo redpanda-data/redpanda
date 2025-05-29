@@ -153,7 +153,7 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
         } catch (const ss::gate_closed_exception&) {
             // ignore gate closed exception, shutting down
         } catch (const std::exception& e) {
-            vlog(_log.info, "Error handling log eviction - {}", e);
+            vlog(_log.error, "Error in monitor eviction loop - {}", e);
         }
     }
 }
@@ -175,20 +175,17 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
     const auto max_removable_local_log_offset
       = _raft->log()->stm_manager()->max_removable_local_log_offset();
     if (truncation_point > max_removable_local_log_offset) {
-        truncation_point = max_removable_local_log_offset;
-        if (truncation_point <= _raft->last_snapshot_index()) {
-            /// Cannot truncate, have already reached maximum allowable
-            co_return;
-        }
         vlog(
-          _log.trace,
-          "Can only evict up to offset: {}, asked to evict to: {} ",
-          max_removable_local_log_offset,
-          truncation_point);
+          _log.info,
+          "Requested prefix truncation offset {} is limited by max removable "
+          "local log offset: {}.",
+          truncation_point,
+          max_removable_local_log_offset);
+        truncation_point = max_removable_local_log_offset;
     }
     if (truncation_point <= _raft->last_snapshot_index()) {
         vlog(
-          _log.trace,
+          _log.info,
           "Skipping writing snapshot as Raft already progressed with the new "
           "snapshot. Current raft snapshot index: {}, requested truncation "
           "point: {}",
@@ -197,8 +194,8 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
         co_return;
     }
     vlog(
-      _log.debug,
-      "Requesting raft snapshot with final offset: {}",
+      _log.trace,
+      "Requesting state machine manage to take snapshot at {}",
       truncation_point);
     auto snapshot_result = co_await _raft->stm_manager()->take_snapshot(
       truncation_point);
@@ -214,6 +211,11 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
           truncation_point);
         co_return;
     }
+    vlog(
+      _log.trace,
+      "Writing snapshot raft snapshot of size: {} at offset: {}",
+      snapshot_result.data.size_bytes(),
+      truncation_point);
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(
       snapshot_result.last_included_offset, std::move(snapshot_result.data)));
 }
