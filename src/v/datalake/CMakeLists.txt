@@ -90,4 +90,16 @@ v_cc_library(
     v::serde_parquet
 )
 
+v_cc_library(
+   NAME datalake_usage_aggregator
+   SRCS
+     datalake_usage_aggregator.cc
+   DEPS
+     v::datalake_common
+     v::datalake_coordinator
+     v::cluster
+     v::kafka
+     Seastar::seastar
+)
+
 add_subdirectory(tests)

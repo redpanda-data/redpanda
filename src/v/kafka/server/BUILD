@@ -189,6 +189,7 @@ redpanda_cc_library(
     deps = [
         ":consumer_group_lag_metrics_rpc",
         ":datalake_throttle_manager",
+        ":datalake_usage_api",
         ":logger",
         ":qdc_monitor_config",
         "//src/v/base",

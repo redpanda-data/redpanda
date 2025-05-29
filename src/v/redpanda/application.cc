@@ -95,6 +95,7 @@
 #include "datalake/coordinator/service.h"
 #include "datalake/coordinator/state_machine.h"
 #include "datalake/datalake_manager.h"
+#include "datalake/datalake_usage_aggregator.h"
 #include "datalake/translation/state_machine.h"
 #include "debug_bundle/debug_bundle_service.h"
 #include "features/feature_table_snapshot.h"
@@ -2175,7 +2176,9 @@ void application::wire_up_redpanda_services(
       usage_manager,
       controller.get(),
       std::ref(controller->get_health_monitor()),
-      std::ref(storage))
+      std::ref(storage),
+      ss::sharded_parameter(
+        [this] { return make_datalake_usage_aggregator(); }))
       .get();
 
     syschecks::systemd_message("Creating tx coordinator frontend").get();
@@ -2408,6 +2411,12 @@ bool application::wasm_data_transforms_enabled() {
 bool application::datalake_enabled() {
     return config::shard_local_cfg().iceberg_enabled()
            && !config::node().recovery_mode_enabled();
+}
+
+ss::shared_ptr<kafka::datalake_usage_api>
+application::make_datalake_usage_aggregator() {
+    return ss::make_shared<datalake::disabled_datalake_usage_api_impl>(
+      controller.get());
 }
 
 ss::future<>

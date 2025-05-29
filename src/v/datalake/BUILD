@@ -692,3 +692,21 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "datalake_usage_aggregator",
+    srcs = [
+        "datalake_usage_aggregator.cc",
+    ],
+    hdrs = [
+        "datalake_usage_aggregator.h",
+    ],
+    include_prefix = "datalake",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logger",
+        ":types",
+        "//src/v/cluster",
+        "//src/v/kafka/server:datalake_usage_api",
+    ],
+)
