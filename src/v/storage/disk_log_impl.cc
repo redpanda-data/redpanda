@@ -390,28 +390,36 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
 
 ss::future<model::offset>
 disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
-    vlog(
-      gclog.debug,
-      "[{}] requested eviction of segments up to {} offset",
-      config().ntp(),
-      max_offset);
-    // we only notify eviction monitor if there are segments to evict
-    auto have_segments_to_evict
-      = (_segs.size() > 1)
-        && _segs.front()->offsets().get_committed_offset() <= max_offset;
+    const auto min_offset = [this]() -> std::optional<model::offset> {
+        if (_segs.size() > 1) {
+            return _segs.front()->offsets().get_committed_offset();
+        }
+        return std::nullopt;
+    }();
+
+    const auto have_segments_to_evict = min_offset.has_value()
+                                        && min_offset.value() <= max_offset;
 
     if (_eviction_monitor && have_segments_to_evict) {
         _eviction_monitor->promise.set_value(max_offset);
         _eviction_monitor.reset();
 
-        co_return model::next_offset(max_offset);
-    } else {
         vlog(
           gclog.debug,
-          "[{}] no segments to evict up to {} offset; skipping eviction",
+          "[{}] requested eviction of segments up to {} offset",
           config().ntp(),
           max_offset);
+
+        co_return model::next_offset(max_offset);
     }
+
+    vlog(
+      gclog.debug,
+      "[{}] skipping eviction: monitor {} min offset {} max offset {}",
+      config().ntp(),
+      _eviction_monitor.has_value(),
+      min_offset,
+      max_offset);
 
     co_return _start_offset;
 }
