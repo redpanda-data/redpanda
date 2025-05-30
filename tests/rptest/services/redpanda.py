@@ -72,6 +72,7 @@ from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorag
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import NodeCrash, LogSearchLocal, LogSearchCloud, Stopwatch
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
+from rptest.utils import cloud_provider
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
 from rptest.utils.expiring_value import ExpiringValue
 from rptest.utils.mode_checks import in_fips_environment
@@ -295,10 +296,7 @@ def one_or_many(value):
 
 
 def get_cloud_provider() -> str:
-    """
-    Returns the cloud provider in use.  If one is not set then return 'docker'
-    """
-    return os.getenv("CLOUD_PROVIDER", "docker")
+    return cloud_provider.get_cloud_provider()
 
 
 def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
