@@ -1255,6 +1255,16 @@ configuration::configuration()
       "only be used to debug unexpected problems.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , raft_recovery_disable_compaction_safety_checks(
+      *this,
+      "raft_recovery_disable_compaction_safety_checks",
+      "Disables safety checks in the Raft recovery subsystem which are used to "
+      "ensure divergence-free states when recovering from a compacted topic. "
+      "This will prevent redpanda from forcing followers from resetting their "
+      "log during a possibly unsafe recovery, but can lead to diverged "
+      "replica state. Normally, this option should be disabled.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , raft_smp_max_non_local_requests(
       *this,
       "raft_smp_max_non_local_requests",

@@ -292,6 +292,7 @@ struct configuration final : public config_store {
     property<size_t> raft_replicate_batch_window_size;
     property<size_t> raft_learner_recovery_rate;
     property<bool> raft_recovery_throttle_disable_dynamic_mode;
+    property<bool> raft_recovery_disable_compaction_safety_checks;
     property<std::optional<uint32_t>> raft_smp_max_non_local_requests;
     deprecated_property raft_max_concurrent_append_requests_per_follower;
     enum_property<model::write_caching_mode> write_caching_default;
