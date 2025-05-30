@@ -630,7 +630,9 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
         idx.next_index = log_max_offset;
         idx.expected_log_end_offset = model::offset{};
     }
-    idx.is_recovering = true;
+
+    idx.mark_as_recovering();
+
     // background
     ssx::background
       = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {

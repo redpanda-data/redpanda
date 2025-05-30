@@ -85,6 +85,19 @@ struct follower_index_metadata {
         return inflight_append_request_count > 0;
     }
 
+    void mark_as_recovering() {
+        is_recovering = true;
+        set_recovery_start_time();
+    }
+
+    void set_recovery_start_time() { recovery_start_time = clock_type::now(); }
+
+    void finish_recovery() {
+        is_recovering = false;
+        recovery_start_time.reset();
+        recovery_finished.broadcast();
+    }
+
     follower_req_seq next_follower_sequence() { return ++last_sent_seq; }
 
     static bool is_first_request(follower_req_seq seq) { return seq() == 1; }
@@ -184,6 +197,9 @@ struct follower_index_metadata {
     size_t inflight_append_request_count = 0;
 
     std::optional<protocol_metadata> last_sent_protocol_meta;
+
+    // Guaranteed to have a value iff is_recovering == true.
+    std::optional<clock_type::time_point> recovery_start_time{std::nullopt};
 
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);
