@@ -4514,4 +4514,30 @@ disk_log_impl::earliest_dirty_segment_ts() const {
     return *std::ranges::min_element(dirty_segments_ts);
 }
 
+std::optional<model::offset>
+disk_log_impl::max_clean_and_removable_offset() const {
+    if (!config().is_compacted()) {
+        return std::nullopt;
+    }
+    for (auto it = _segs.rbegin(); it != _segs.rend(); ++it) {
+        auto& seg = *it;
+        auto can_remove_tombstones
+          = config().tombstone_retention_ms().has_value()
+            && seg->has_clean_compact_timestamp()
+            && seg->index().may_have_tombstone_records();
+
+        auto can_remove_tx_batches = config().tx_retention_ms().has_value()
+                                     && seg->has_self_compact_timestamp()
+                                     && seg->index().has_transaction_batches();
+
+        if (can_remove_tombstones || can_remove_tx_batches) {
+            // Don't bother inspecting every batch/record. Return the dirty
+            // offset (may be overly restrictive, but it is a safe value).
+            return seg->offsets().get_dirty_offset();
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace storage

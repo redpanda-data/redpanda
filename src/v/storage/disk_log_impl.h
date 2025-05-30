@@ -284,6 +284,8 @@ public:
 
     std::optional<model::timestamp> earliest_dirty_segment_ts() const final;
 
+    std::optional<model::offset> max_clean_and_removable_offset() const final;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
