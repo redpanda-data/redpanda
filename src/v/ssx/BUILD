@@ -107,6 +107,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "checkpoint_mutex",
+    hdrs = [
+        "checkpoint_mutex.h",
+    ],
+    include_prefix = "ssx",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sformat",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "task_local",
     hdrs = [
         "task_local_ptr.h",
