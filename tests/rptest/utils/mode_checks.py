@@ -1,7 +1,10 @@
 import os
+from typing import List
 
 from ducktape.cluster.cluster_spec import ClusterSpec
 from ducktape.mark import ignore
+
+from rptest.utils.cloud_provider import get_cloud_provider
 
 
 def allocate_and_free(cluster, logger):
@@ -123,3 +126,45 @@ def skip_fips_mode(*args, **kwargs):
         return ignore(args, kwargs)
     else:
         return args[0]
+
+
+def skip_cloud_provider(skipped: str | List[str]):
+    """
+    Test method decorator which signals to the test runner to ignore a given test
+    unless it is running on the specified cloud provider(s).
+
+    Example::
+
+        When no parameters are provided to the @ignore decorator, ignore all parametrizations of the test function
+
+        @skip_cloud_provider("aws")  # Ignore all parametrizations
+        @parametrize(x=1, y=0)
+        @parametrize(x=2, y=3)
+        def the_test(...):
+            ...
+
+    Example::
+
+        If parameters are supplied to the @skip_cloud_provider decorator, only skip the parametrization with matching parameter(s)
+
+        @skip_cloud_provider("aws")(x=2, y=3)
+        @parametrize(x=1, y=0)  # This test will run as usual
+        @parametrize(x=2, y=3)  # This test will be ignored
+        def the_test(...):
+            ...
+    """
+    if isinstance(skipped, str):
+        skipped = [skipped]
+    current_provider = get_cloud_provider()
+
+    print(f"Current cloud provider: {current_provider}")
+
+    def wrapped(*args, **kwargs):
+        print(
+            f"Checking if current provider {current_provider} is in {skipped}")
+        if current_provider in skipped:
+            return ignore(args, kwargs)
+        else:
+            return args[0]
+
+    return wrapped

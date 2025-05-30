@@ -16,13 +16,12 @@ from rptest.services.redpanda import (
     PandaproxyConfig,
     SchemaRegistryConfig,
     SISettings,
-    get_cloud_provider,
 )
 from rptest.tests.datalake.datalake_services import DatalakeServices
 from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.mode_checks import cleanup_on_early_exit
+from rptest.utils.mode_checks import skip_cloud_provider
 
 
 class DatabricksTest(RedpandaTest):
@@ -53,22 +52,9 @@ class DatabricksTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=2)
+    @skip_cloud_provider(["gcp", "azure"])
     @matrix(cloud_storage_type=supported_storage_types())
     def test_e2e_basic(self, cloud_storage_type):
-        # TODO: Move this in the matrix decorator. Somehow.
-        if not DatabricksContext.available(self.test_context):
-            self.logger.warning(
-                "Skipping test because Databricks context is not available")
-            cleanup_on_early_exit(self)
-            return
-
-        if get_cloud_provider() != "aws":
-            self.logger.warning(
-                f"Skipping test because it is only supported on AWS, but the current cloud provider is {get_cloud_provider()}"
-            )
-            cleanup_on_early_exit(self)
-            return
-
         count = 100
         with DatalakeServices(self.test_context,
                               redpanda=self.redpanda,
