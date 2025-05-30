@@ -97,6 +97,19 @@ SEASTAR_THREAD_TEST_CASE(stop) {
     for (auto& f : fs) {
         BOOST_CHECK_THROW(f.get(), ss::abort_requested_exception);
     }
+
+    fs.clear();
+
+    // already reached offset is still regarded as reached by monitor
+    auto already_reached = mon.wait(
+      model::offset{}, model::no_timeout, std::nullopt);
+    BOOST_REQUIRE(already_reached.available());
+    BOOST_REQUIRE_NO_THROW(already_reached.get());
+
+    // but nothing beyond it is going to be waited for
+    auto never_happening = mon.wait(
+      model::offset(0), model::no_timeout, std::nullopt);
+    BOOST_CHECK_THROW(never_happening.get(), ss::abort_requested_exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(notify_abort) {
