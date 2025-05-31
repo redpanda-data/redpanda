@@ -27,6 +27,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/event.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
@@ -733,6 +734,10 @@ private:
     // Used by clients wait()'ing on flush. Will be signalled by a complete
     // flush(), or by a change in leadership.
     ss::condition_variable _flush_cond;
+
+    // Used to wakeup the upload loop if it has to run immediately (e.g. after a
+    // flush)
+    ssx::event _wakeup_event{"ntp_archiver"};
 
     // Indicates that a request to flush all local data up to and including
     // offset() (inclusive) has been made when has_value() is true.
