@@ -121,6 +121,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "execution_monitor",
+    hdrs = [
+        "execution_monitor.h",
+    ],
+    include_prefix = "ssx",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "task_local",
     hdrs = [
         "task_local_ptr.h",
