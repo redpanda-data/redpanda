@@ -41,6 +41,7 @@
 #include "model/record.h"
 #include "net/connection.h"
 #include "raft/fundamental.h"
+#include "ssx/checkpoint_mutex.h"
 #include "ssx/future-util.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
@@ -679,7 +680,8 @@ ss::future<std::error_code> ntp_archiver::process_anomalies(
   cloud_storage::scrub_status status,
   cloud_storage::anomalies detected) {
     // If there's ongoing housekeeping job, let it finish first.
-    auto units = co_await ss::get_units(_mutex, 1, _as);
+    auto units = co_await ssx::get_units_with_checkpoint(
+      _mutex, _as, "process_anomalies");
 
     auto sync_timeout = config::shard_local_cfg()
                           .cloud_storage_metadata_sync_timeout_ms.value();
@@ -777,7 +779,8 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
     // as soon as we can, rather than potentially waiting for segment
     // uploads).
     {
-        auto units = co_await ss::get_units(_uploads_active, 1);
+        auto units = co_await ssx::get_units_with_checkpoint(
+          _uploads_active, "upload_until_term_change/prologue");
         co_await maybe_upload_manifest(upload_loop_prologue_ctx_label);
         co_await flush_manifest_clean_offset();
     }
@@ -787,11 +790,12 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
         // the process of doing uploads + wait for us to drop out if they
         // e.g. set _paused.
         vassert(!_paused, "may_begin_uploads must ensure !_paused");
-        auto units = co_await ss::get_units(_uploads_active, 1);
+        auto units = co_await ssx::get_units_with_checkpoint(
+          _uploads_active, "upload_until_term_change/loop");
         vlog(
           _rtclog.trace,
           "upload_until_term_change: got units (current {}), paused={}",
-          _uploads_active.current(),
+          _uploads_active.has_units(),
           _paused);
 
         // Bump up archival STM's state to make sure that it's not lagging
@@ -897,11 +901,11 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
 
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
-        units.return_all();
+        units.release();
         vlog(
           _rtclog.trace,
           "upload_until_term_change: released units (current {})",
-          _uploads_active.current());
+          _uploads_active.has_units());
 
         if (
           !result.has_value()
@@ -2358,7 +2362,8 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       max_offset_exclusive);
     ss::gate::holder holder(_gate);
     try {
-        auto units = co_await ss::get_units(_mutex, 1, _as);
+        auto units = co_await ssx::get_units_with_checkpoint(
+          _mutex, _as, "upload_next_candidates");
         auto scheduled_uploads = co_await schedule_uploads(
           max_offset_exclusive);
         co_return co_await wait_all_scheduled_uploads(
@@ -2509,7 +2514,8 @@ ss::future<> ntp_archiver::housekeeping() {
             // Acquire mutex to prevent concurrency between
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
-            auto units = co_await ss::get_units(_mutex, 1, _as);
+            auto units = co_await ssx::get_units_with_checkpoint(
+              _mutex, _as, "housekeeping");
             if (stm_retention_needed()) {
                 co_await apply_retention();
                 co_await garbage_collect();
@@ -3315,7 +3321,8 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
-    auto units = co_await ss::get_units(_mutex, 1, _as);
+    auto units = co_await ssx::get_units_with_checkpoint(
+      _mutex, _as, "find_reupload_candidate");
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
@@ -3610,11 +3617,12 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 
     ss::gate::holder holder(_gate);
     try {
-        co_await ss::get_units(_uploads_active, 1, timeout);
+        auto units = co_await ssx::get_units_with_checkpoint(
+          _uploads_active, timeout, "prepare_transfer_leadership");
         vlog(
           _rtclog.trace,
           "prepare_transfer_leadership: got units (current {})",
-          _uploads_active.current());
+          _uploads_active.has_units());
     } catch (const ss::semaphore_timed_out&) {
         // In this situation, it is possible that the old leader (this node)
         // will leave an orphan object behind in object storage, because
@@ -3650,7 +3658,7 @@ void ntp_archiver::complete_transfer_leadership() {
     vlog(
       _rtclog.trace,
       "complete_transfer_leadership: current units (current {})",
-      _uploads_active.current());
+      _uploads_active.has_units());
     _paused = false;
     _leader_cond.signal();
 }

@@ -25,6 +25,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/checkpoint_mutex.h"
 #include "ssx/event.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
@@ -333,7 +334,7 @@ public:
         const cloud_storage::partition_manifest& manifest)>;
 
     struct find_reupload_candidate_result {
-        std::optional<ssx::semaphore_units> units;
+        std::optional<ssx::checkpoint_mutex_units> units;
         std::optional<upload_candidate_with_locks> locks;
         archival_stm_fence read_write_fence;
     };
@@ -717,7 +718,7 @@ private:
     // NOTE: must be taken before doing anything that acquires segment read
     // locks (e.g. selecting segments for upload, replicating and waiting on
     // the underlying Raft STM).
-    ssx::semaphore _mutex{1, "archive/ntp"};
+    ssx::checkpoint_mutex _mutex{"archive/ntp"};
 
     ss::lw_shared_ptr<const configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
@@ -749,7 +750,7 @@ private:
     // Held while the inner segment upload/manifest sync loop is running,
     // to enable code that uses _paused to wait until ongoing activity
     // has stopped.
-    ssx::named_semaphore<ss::lowres_clock> _uploads_active{1, "uploads_active"};
+    ssx::checkpoint_mutex _uploads_active{"uploads_active"};
 
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
