@@ -527,6 +527,35 @@ using topic_id = named_type<uuid_t, struct topic_id_type>;
 
 inline topic_id create_topic_id() { return topic_id{uuid_t::create()}; }
 
+enum class topic_mirror_state : uint8_t {
+    /// Topic mirroring is active, only write@offset state machine may commit
+    /// kafka offsets to the partitions
+    active,
+    /// Topic mirroring has stopped, write@offset disabled other stm's
+    /// re-enabled
+    stopped,
+    /// Mirroring has failed due to an issue on the source cluster
+    failed,
+    /// Mirroring has temporarily been paused, disabling write@offset but other
+    /// stm's are also still disabled
+    paused
+};
+
+constexpr std::string_view to_string_view(topic_mirror_state state) {
+    switch (state) {
+    case topic_mirror_state::active:
+        return "active";
+    case topic_mirror_state::stopped:
+        return "stopped";
+    case topic_mirror_state::failed:
+        return "failed";
+    case topic_mirror_state::paused:
+        return "paused";
+    }
+}
+
+std::istream& operator>>(std::istream&, topic_mirror_state&);
+
 } // namespace model
 
 namespace kafka {
@@ -581,3 +610,9 @@ struct hash<model::ntp> {
 };
 
 } // namespace std
+
+template<>
+struct fmt::formatter<model::topic_mirror_state> : fmt::formatter<string_view> {
+    auto format(model::topic_mirror_state, format_context& ctx) const
+      -> decltype(ctx.out());
+};

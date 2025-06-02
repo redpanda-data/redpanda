@@ -191,6 +191,8 @@ def read_topic_config(rdr: Reader, version):
     decoded['is_migrated'] = rdr.read_bool() if version >= 2 else False
     decoded['tp_id'] = rdr.read_optional(
         Reader.read_uuid) if version >= 3 else None
+    decoded['mirror_state'] = rdr.read_optional(
+        Reader.read_serde_enum) if version >= 3 else None
 
     return decoded
 

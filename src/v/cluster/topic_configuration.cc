@@ -83,6 +83,7 @@ void topic_configuration::serde_write(iobuf& out) {
     write(out, properties);
     write(out, is_migrated);
     write(out, tp_id);
+    write(out, mirror_state);
 }
 
 void topic_configuration::serde_read(iobuf_parser& in, const serde::header& h) {
@@ -109,18 +110,26 @@ void topic_configuration::serde_read(iobuf_parser& in, const serde::header& h) {
         // topic deletion.
         properties.remote_delete = storage::ntp_config::legacy_remote_delete;
     }
+
+    if (h._version >= 3) {
+        mirror_state = read_nested<std::optional<model::topic_mirror_state>>(
+          in, h._bytes_left_limit);
+    } else {
+        mirror_state = std::nullopt;
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
       "{{ topic: {}, partition_count: {}, replication_factor: {}, is_migrated: "
-      "{}, topic_id: {}, properties: {}}}",
+      "{}, topic_id: {}, mirror_state: {}, properties: {}}}",
       cfg.tp_ns,
       cfg.partition_count,
       cfg.replication_factor,
       cfg.is_migrated,
       cfg.tp_id,
+      cfg.mirror_state,
       cfg.properties);
 
     return o;

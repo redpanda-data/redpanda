@@ -723,6 +723,7 @@ inline void rjson_serialize(
     write_member(w, "replication_factor", cfg.replication_factor);
     write_member(w, "is_migrated", cfg.is_migrated);
     write_member(w, "tp_id", cfg.tp_id);
+    write_member(w, "mirror_state", cfg.mirror_state);
     write_member(w, "properties", cfg.properties);
     w.EndObject();
 }
@@ -734,6 +735,7 @@ read_value(const json::Value& rd, cluster::topic_configuration& cfg) {
     read_member(rd, "replication_factor", cfg.replication_factor);
     read_member(rd, "is_migrated", cfg.is_migrated);
     read_member(rd, "tp_id", cfg.tp_id);
+    read_member(rd, "mirror_state", cfg.mirror_state);
     read_member(rd, "properties", cfg.properties);
 }
 

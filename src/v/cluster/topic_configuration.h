@@ -32,12 +32,14 @@ struct topic_configuration
       int32_t partition_count,
       int16_t replication_factor,
       std::optional<model::topic_id> topic_id = std::nullopt,
-      bool is_migrated = false)
+      bool is_migrated = false,
+      std::optional<model::topic_mirror_state> mirror_state = std::nullopt)
       : tp_ns(std::move(ns), std::move(topic))
       , partition_count(partition_count)
       , replication_factor(replication_factor)
       , is_migrated(is_migrated)
-      , tp_id(topic_id) {}
+      , tp_id(topic_id)
+      , mirror_state(mirror_state) {}
 
     topic_configuration() = default;
 
@@ -87,6 +89,8 @@ struct topic_configuration
     // topic id, a UUID (as introduced in KIP-516), only std::nullopt until the
     // migration to using topic ids is completed
     std::optional<model::topic_id> tp_id{std::nullopt};
+    // state of mirroring on this topic
+    std::optional<model::topic_mirror_state> mirror_state{std::nullopt};
 
     topic_properties properties;
 

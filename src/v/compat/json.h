@@ -12,6 +12,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/partition_balancer_types.h"
+#include "cluster/topic_configuration.h"
 #include "cluster/types.h"
 #include "container/json.h"
 #include "json/document.h"
@@ -26,6 +27,7 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <sstream>
 #include <type_traits>
 
 namespace json {
@@ -155,6 +157,18 @@ inline void
 rjson_serialize(json::Writer<json::StringBuffer>& w, const uuid_t& value) {
     auto vec = value.to_vector();
     rjson_serialize(w, vec);
+}
+
+inline void read_value(const json::Value& v, model::topic_mirror_state& state) {
+    ss::sstring state_str;
+    read_value(v, state_str);
+    std::istringstream ss(state_str);
+    ss >> state;
+}
+
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::topic_mirror_state& state) {
+    rjson_serialize(w, model::to_string_view(state));
 }
 
 inline void

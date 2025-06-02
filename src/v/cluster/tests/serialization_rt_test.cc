@@ -548,6 +548,18 @@ ss::chunked_fifo<cluster::partition_assignment> random_partition_assignments() {
     return ret;
 }
 
+namespace {
+inline std::optional<model::topic_mirror_state> random_topic_mirror_state() {
+    return random_generators::random_choice<
+      std::optional<model::topic_mirror_state>>(
+      {std::nullopt,
+       model::topic_mirror_state::active,
+       model::topic_mirror_state::failed,
+       model::topic_mirror_state::paused,
+       model::topic_mirror_state::stopped});
+}
+} // namespace
+
 cluster::topic_configuration old_random_topic_configuration() {
     cluster::topic_configuration tp_cfg;
     tp_cfg.tp_ns = model::random_topic_namespace();
@@ -555,6 +567,7 @@ cluster::topic_configuration old_random_topic_configuration() {
     tp_cfg.replication_factor = random_generators::get_int<int16_t>(0, 10);
     tp_cfg.partition_count = random_generators::get_int(0, 100);
     tp_cfg.tp_id = model::create_topic_id();
+    tp_cfg.mirror_state = random_topic_mirror_state();
     return tp_cfg;
 }
 
@@ -565,6 +578,7 @@ cluster::topic_configuration random_topic_configuration() {
     tp_cfg.replication_factor = random_generators::get_int<int16_t>(0, 10);
     tp_cfg.partition_count = random_generators::get_int(0, 100);
     tp_cfg.tp_id = model::create_topic_id();
+    tp_cfg.mirror_state = random_topic_mirror_state();
     return tp_cfg;
 }
 

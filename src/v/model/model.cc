@@ -768,4 +768,33 @@ std::istream& operator>>(std::istream& is, fips_mode_flag& f) {
     return is;
 }
 
+std::istream& operator>>(std::istream& i, topic_mirror_state& state) {
+    ss::sstring s;
+    i >> s;
+    try {
+        state = string_switch<topic_mirror_state>(s)
+                  .match(
+                    to_string_view(topic_mirror_state::active),
+                    topic_mirror_state::active)
+                  .match(
+                    to_string_view(topic_mirror_state::stopped),
+                    topic_mirror_state::stopped)
+                  .match(
+                    to_string_view(topic_mirror_state::failed),
+                    topic_mirror_state::failed)
+                  .match(
+                    to_string_view(topic_mirror_state::paused),
+                    topic_mirror_state::paused);
+    } catch (const std::runtime_error&) {
+        i.setstate(std::ios::failbit);
+    }
+    return i;
+}
+
 } // namespace model
+
+auto fmt::formatter<model::topic_mirror_state>::format(
+  model::topic_mirror_state state, format_context& ctx) const
+  -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", model::to_string_view(state));
+}
