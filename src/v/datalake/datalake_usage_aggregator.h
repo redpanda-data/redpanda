@@ -10,11 +10,15 @@
 
 #pragma once
 
+#include "base/seastarx.h"
+#include "cluster/fwd.h"
+#include "datalake/fwd.h"
 #include "kafka/server/datalake_usage_api.h"
 
 namespace cluster {
 class controller;
 }
+#include <seastar/core/sharded.hh>
 
 namespace datalake {
 
@@ -27,5 +31,19 @@ public:
 
 private:
     cluster::controller* _controller{nullptr};
+};
+
+class default_datalake_usage_api_impl final : public kafka::datalake_usage_api {
+public:
+    explicit default_datalake_usage_api_impl(
+      cluster::controller*,
+      ss::sharded<cluster::topic_table>*,
+      ss::sharded<datalake::coordinator::frontend>*);
+    ss::future<usage_stats> compute_usage(ss::abort_source&) final;
+
+private:
+    cluster::controller* _controller;
+    ss::sharded<cluster::topic_table>* _topics;
+    ss::sharded<coordinator::frontend>* _frontend;
 };
 } // namespace datalake

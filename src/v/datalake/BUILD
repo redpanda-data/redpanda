@@ -706,7 +706,11 @@ redpanda_cc_library(
     deps = [
         ":logger",
         ":types",
+        "//src/v/base",
         "//src/v/cluster",
+        "//src/v/datalake/coordinator:frontend",
         "//src/v/kafka/server:datalake_usage_api",
+        "//src/v/utils:retry_chain_node",
+        "@seastar",
     ],
 )
