@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 
 #include <cstdint>
+#include <optional>
 
 namespace ssx {
 
@@ -69,6 +70,11 @@ struct execution_monitor_callsite {
 
     template<typename... Args>
     void log(fmt::format_string<Args...> format, Args&&... args) {
+        if (_mem_buf.size() >= 4096) {
+            // Don't log if the buffer is too large to avoid
+            // memory issues.
+            return;
+        }
         fmt::format_to(
           std::back_inserter(_mem_buf),
           "[{}|{}|{}] {}\n",
@@ -80,6 +86,8 @@ struct execution_monitor_callsite {
     }
 
     seastar::sstring str() const { return fmt::to_string(_mem_buf); }
+
+    bool has_context_str() const noexcept { return _mem_buf.size() > 0; }
 
 private:
     /// Buffer to format the messages.
@@ -229,6 +237,23 @@ public:
         for (auto& callsite : _shutdown_callsites) {
             callsite.get().is_expected_shutdown = true;
         }
+    }
+
+    /// List all callsites ordered by the last check time. The most recently
+    /// checkpointed callsite will be the first in the list.
+    std::vector<std::reference_wrapper<execution_monitor_callsite<Clock>>>
+    list_callsites() {
+        std::vector<std::reference_wrapper<execution_monitor_callsite<Clock>>>
+          result;
+        result.reserve(_callsites.size());
+        for (auto& cs : _callsites) {
+            result.emplace_back(cs);
+        }
+        std::sort(
+          result.begin(), result.end(), [](const auto& a, const auto& b) {
+              return a.get().last_check_time > b.get().last_check_time;
+          });
+        return result;
     }
 
 private:
