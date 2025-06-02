@@ -67,36 +67,25 @@ std::ostream& operator<<(std::ostream& os, segment_collector_mode m) {
 }
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
-    vassert(
-      c.sources.empty() || c.remote_sources.empty(),
-      "The upload candidate could have only local or only remote source");
-    if (c.sources.empty() && c.remote_sources.empty()) {
-        s << "{empty}";
-        return s;
+    if (c.content_length == 0) {
+        return s << "{empty}";
     }
-
     std::vector<ss::sstring> source_names;
-    source_names.reserve(std::max(c.sources.size(), c.remote_sources.size()));
-    if (c.remote_sources.empty()) {
-        std::transform(
-          c.sources.begin(),
-          c.sources.end(),
-          std::back_inserter(source_names),
-          [](const auto& src) { return src->filename(); });
-    } else if (c.sources.empty()) {
-        std::transform(
-          c.remote_sources.begin(),
-          c.remote_sources.end(),
-          std::back_inserter(source_names),
-          [](const auto& src) { return src().native(); });
-    }
+    source_names.reserve(c.sources.size() + c.remote_sources.size());
+    std::ranges::transform(
+      c.sources, std::back_inserter(source_names), [](const auto& src) {
+          return src->filename();
+      });
+    std::ranges::transform(
+      c.remote_sources, std::back_inserter(source_names), [](const auto& src) {
+          return src().native();
+      });
 
     fmt::print(
       s,
-      "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
+      "{{exposed_name: {}, starting_offset: {}, "
       "file_offset: {}, content_length: {}, final_offset: {}, "
       "final_file_offset: {}, term: {}, source names: {}}}",
-      c.sources.front()->offsets(),
       c.exposed_name,
       c.starting_offset,
       c.file_offset,
