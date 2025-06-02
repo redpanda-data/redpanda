@@ -13,8 +13,10 @@
 
 #include "base/outcome.h"
 #include "raft/fwd.h"
+#include "raft/recovery_client_protocol.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/types.h"
+#include "rpc/connection_cache.h"
 #include "storage/snapshot.h"
 #include "utils/prefix_logger.h"
 
@@ -24,7 +26,12 @@ namespace raft {
 
 class recovery_stm {
 public:
-    recovery_stm(consensus*, vnode, scheduling_config, recovery_memory_quota&);
+    recovery_stm(
+      consensus*,
+      vnode,
+      recovery_client_protocol&,
+      scheduling_config,
+      recovery_memory_quota&);
     ss::future<> apply();
 
 private:
@@ -98,6 +105,7 @@ private:
      */
     model::offset _inflight_snapshot_last_included_index;
     model::term_id _term;
+    recovery_client_protocol& _recovery_rpc;
     scheduling_config _scheduling;
     prefix_logger _ctxlog;
 

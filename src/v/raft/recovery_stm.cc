@@ -18,6 +18,8 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "raft/recovery_client_protocol.h"
+#include "rpc/connection_cache.h"
 #include "ssx/sformat.h"
 #include "storage/snapshot.h"
 #include "utils/human.h"
@@ -38,11 +40,13 @@ using namespace std::chrono_literals;
 recovery_stm::recovery_stm(
   consensus* p,
   vnode node_id,
+  recovery_client_protocol& recovery_rpc,
   scheduling_config scheduling,
   recovery_memory_quota& quota)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
+  , _recovery_rpc(recovery_rpc)
   , _scheduling(scheduling)
   , _ctxlog(
       raftlog,
