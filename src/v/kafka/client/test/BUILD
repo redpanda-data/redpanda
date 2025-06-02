@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
     name = "fixture",
@@ -253,5 +253,22 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "utils_test",
+    timeout = "short",
+    srcs = [
+        "utils_test.cc",
+    ],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/kafka/client",
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:offset_commit",
+        "//src/v/model",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
