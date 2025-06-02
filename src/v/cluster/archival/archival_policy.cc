@@ -94,12 +94,16 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
         co_return candidate_creation_error::no_segments_collected;
     }
 
-    if (_upload_limit) {
+    auto strm = co_await segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
+
+    if (
+      _upload_limit
+      && !std::holds_alternative<candidate_creation_error>(strm)) {
         _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
     }
 
-    co_return co_await segment_collector.make_segment_upload_stream(
-      *_parent, segment_lock_duration, *_gate);
+    co_return strm;
 }
 
 ss::future<segment_collector_stream_result>
