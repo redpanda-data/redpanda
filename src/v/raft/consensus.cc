@@ -1722,6 +1722,14 @@ ss::future<> consensus::truncate_state(model::offset truncate_at) {
     update_follower_stats(_configuration_manager.get_latest());
 }
 
+ss::future<> consensus::clear_state() {
+    auto units = co_await _op_lock.get_units();
+    auto t_fut = truncate_state(model::offset{0});
+    auto r_fut = remove_persistent_state();
+
+    co_await ss::when_all_succeed(std::move(t_fut), std::move(r_fut));
+}
+
 model::offset consensus::read_last_applied() const {
     const auto key = last_applied_key();
     auto value = _storage.kvs().get(

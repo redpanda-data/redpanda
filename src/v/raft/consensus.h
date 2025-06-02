@@ -419,6 +419,7 @@ public:
     model::offset read_last_applied() const;
 
     ss::future<> truncate_state(model::offset);
+    ss::future<> clear_state();
 
     probe& get_probe() { return *_probe; };
 
