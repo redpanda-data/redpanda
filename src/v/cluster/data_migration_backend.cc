@@ -113,7 +113,8 @@ ss::future<> backend::start() {
     _plt_raft0_leadership_notification_id
       = _leaders_table.register_leadership_change_notification(
         model::controller_ntp,
-        [this](model::ntp, model::term_id, model::node_id leader_node_id) {
+        [this](
+          const model::ntp&, model::term_id, model::node_id leader_node_id) {
             _is_raft0_leader = leader_node_id == _self;
             if (_is_raft0_leader != _is_coordinator) {
                 ssx::spawn_with_gate(

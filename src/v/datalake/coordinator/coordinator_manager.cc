@@ -61,7 +61,9 @@ ss::future<> coordinator_manager::start() {
 
     manage_notifications_ = pm_.register_manage_notification(
       model::datalake_coordinator_nt.ns,
-      [this](ss::lw_shared_ptr<cluster::partition> p) { start_managing(*p); });
+      [this](const ss::lw_shared_ptr<cluster::partition>& p) {
+          start_managing(*p);
+      });
     unmanage_notifications_ = pm_.register_unmanage_notification(
       model::datalake_coordinator_nt.ns,
       [this](model::topic_partition_view tp) {

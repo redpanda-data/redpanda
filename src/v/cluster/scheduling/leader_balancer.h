@@ -128,9 +128,11 @@ private:
     void on_enable_changed();
     void on_default_preference_changed();
 
-    void check_if_controller_leader(model::ntp, model::term_id, model::node_id);
+    void check_if_controller_leader(
+      const model::ntp&, model::term_id, model::node_id);
 
-    void on_leadership_change(model::ntp, model::term_id, model::node_id);
+    void
+    on_leadership_change(const model::ntp&, model::term_id, model::node_id);
 
     void on_maintenance_change(model::node_id, model::maintenance_state);
 

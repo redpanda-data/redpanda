@@ -162,7 +162,7 @@ public:
     }
 
     using leader_change_cb_t = ss::noncopyable_function<void(
-      model::ntp, model::term_id, model::node_id)>;
+      const model::ntp&, model::term_id, model::node_id)>;
 
     // Register a callback for all leadership changes
     notification_id_type
