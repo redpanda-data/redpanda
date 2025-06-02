@@ -167,8 +167,10 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
     if (truncation_point <= _raft->last_snapshot_index()) {
         co_return;
     }
-    co_await _raft->visible_offset_monitor().wait(
-      truncation_point, model::no_timeout, _as);
+    // Waiting for the snapshot at truncation_point ensures that the state
+    // machine has applied all entries up to that point. Since the state machine
+    // only applies Raft-committed entries (check state_machine_manager/apply),
+    // we can safely assume truncation_point is committed.
     co_await _raft->refresh_commit_index();
     co_await _raft->log()->stm_manager()->ensure_snapshot_exists(
       truncation_point);
