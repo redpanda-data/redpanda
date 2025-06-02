@@ -126,6 +126,7 @@
 #include "pandaproxy/schema_registry/api.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
+#include "raft/recovery_rpc_handler.h"
 #include "raft/service.h"
 #include "redpanda/admin/server.h"
 #include "resource_mgmt/memory_groups.h"
@@ -3207,6 +3208,13 @@ void application::start_runtime_services(
               sched_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(_consumer_group_lag_metrics_frontend)));
+
+          runtime_services.push_back(
+            std::make_unique<raft::recovery_rpc_handler>(
+              sched_groups.raft_heartbeats(),
+              smp_service_groups.raft_smp_sg(),
+              std::ref(controller->get_partition_manager()),
+              std::ref(controller->get_shard_table())));
 
           s.add_services(std::move(runtime_services));
 

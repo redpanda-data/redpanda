@@ -52,6 +52,7 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/pandaproxy",
         "//src/v/raft",
+        "//src/v/raft:raft_recovery_rpc_handler",
         "//src/v/redpanda/admin",
         "//src/v/resource_mgmt:cpu_profiler",
         "//src/v/resource_mgmt:cpu_scheduling",
