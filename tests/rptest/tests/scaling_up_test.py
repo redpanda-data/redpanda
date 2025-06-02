@@ -291,15 +291,23 @@ class ScalingUpTest(PreallocNodesTest):
         for n in self.redpanda.nodes[3:]:
             self.redpanda.clean_node(n)
             self.redpanda.start_node(n)
+        self.redpanda.wait_for_membership(first_start=True)
 
         # verify that all new nodes are empty
 
-        per_node = self._replicas_per_node()
+        admin = Admin(self.redpanda, retries_amount=20)
 
+        wait_until(
+            lambda: admin.get_partition_balancer_status()["status"] == "ready",
+            timeout_sec=90,
+            backoff_sec=5)
+
+        per_node = self._replicas_per_node()
         assert len(per_node) == 3
 
         # trigger rebalance
-        admin = Admin(self.redpanda, retries_amount=20)
+        self.redpanda.set_cluster_config(
+            {"partition_autobalancing_mode": "node_add"})
         admin.trigger_rebalance()
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
