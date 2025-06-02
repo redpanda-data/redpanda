@@ -164,7 +164,7 @@ class DatalakeServices():
         connect.start_stream(name, config=stream_conf)
         return connect
 
-    def service(self, engine_type: QueryEngineType):
+    def service(self, engine_type: QueryEngineType) -> QueryEngineBase | None:
         for e in self.query_engines:
             if e.engine_name() == engine_type:
                 return e
