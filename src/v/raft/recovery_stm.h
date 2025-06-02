@@ -63,6 +63,47 @@ private:
     // variant encapsulating two different reader types
     using snapshot_reader_t
       = std::variant<storage::snapshot_reader, on_demand_snapshot_reader>;
+    // Recovery of compacted topics needs special care and attention due to
+    // possible races with removed tombstones and transactional
+    // control batches. The following functions deal with making this process
+    // safe.
+    //
+    // Returns true iff the log being recovered is from a compacted topic, and
+    // if recovery safety checks are not disabled.
+    bool needs_recovery_checks() const;
+
+    // Issues an RPC to reset the follower node by invoking
+    // `consensus::clear_state()`. This suffix truncates the log and removes any
+    // snapshots/persistent state on the follower. Locally, it sets
+    // `_stop_requested` to `true` to allow recovery to restart organically per
+    // the follower's new state.
+    ss::future<> reset_follower(std::string_view ctx);
+
+    // We may need to reset the learner of a compacted topic if
+    // the learner is continuing (i.e it has performed a partial recovery
+    // from a previous leader, and is now reading another portion of the log
+    // from this leader) its recovery below the current log's
+    // max_clean_and_removable_offset().
+    bool needs_initial_reset();
+
+    // Issues an RPC via `reset_follower()` depending if recovery is un-safe and
+    // the follower needs resetting per the result of `needs_initial_reset()`.
+    // This check is only performed once, at the beginning of the `recovery_stm`
+    // lifecycle.
+    ss::future<> maybe_initial_reset_follower();
+
+    // Returns true iff the current time to recover has exceeded the log's
+    // configured `delete.retention.ms`. Always returns `false` if recovery
+    // checks are disabled.
+    bool recovery_time_exceeds_delete_retention_ms();
+
+    // Issues an RPC via `reset_follower()` iff
+    // `recovery_time_exceeds_delete_retention_ms()` has returned true. This
+    // check is performed on every invocation of `do_recover()` as a check that
+    // the current recovery is still safe from divergence as a result of removed
+    // state in the current log.
+    ss::future<> maybe_reset_follower();
+
     ss::future<> recover();
     ss::future<> do_recover();
     ss::future<

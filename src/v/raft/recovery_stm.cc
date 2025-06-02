@@ -20,6 +20,7 @@
 #include "raft/raftgen_service.h"
 #include "raft/recovery_client_protocol.h"
 #include "rpc/connection_cache.h"
+#include "rpc/types.h"
 #include "ssx/sformat.h"
 #include "storage/snapshot.h"
 #include "utils/human.h"
@@ -58,6 +59,131 @@ recovery_stm::recovery_stm(
         _ptr->ntp()))
   , _memory_quota(quota) {}
 
+bool recovery_stm::needs_recovery_checks() const {
+    // Recovery checks only apply to compacted topics, due to races with
+    // delete.retention.ms.
+    if (!_ptr->log()->config().is_compacted()) {
+        return false;
+    }
+
+    if (config::shard_local_cfg()
+          .raft_recovery_disable_compaction_safety_checks()) {
+        // Escape hatch to force unsafe recovery, when the user:
+        //  a) has encountered wide-spread node instability and frequent
+        //     recovery restarts due to these conditions
+        //  b) does not care about possibly diverged replica state w/r/t
+        //     tombstones & transactions
+        //  c) is ENTIRELY CONFIDENT that a diverged replica state is not
+        //     going to happen.
+        return false;
+    }
+
+    return true;
+}
+
+ss::future<> recovery_stm::reset_follower(std::string_view ctx) {
+    vlog(
+      _ctxlog.warn,
+      "Requesting reset of follower {} due to possibly diverged state during "
+      "recovery, reason: {}",
+      _node_id.id(),
+      ctx);
+    auto reset_timeout = 600s;
+    auto r = co_await _recovery_rpc.reset_learner_state(
+      _node_id.id(), _ptr->group(), reset_timeout);
+    if (r.has_error()) {
+        vlog(
+          _ctxlog.warn,
+          "Requested reset of follower {} failed, stopping recovery.",
+          _node_id.id());
+        _stop_requested = true;
+        co_return;
+    }
+
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        co_return;
+    }
+
+    // Reset the recovery start time.
+    meta.value()->set_recovery_start_time();
+}
+
+bool recovery_stm::needs_initial_reset() {
+    if (!needs_recovery_checks()) {
+        return false;
+    }
+
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        return false;
+    }
+
+    auto follower = meta.value();
+    auto max_clean_and_removable_offset
+      = _ptr->log()->max_clean_and_removable_offset();
+    if (
+      follower->next_index > _ptr->log()->offsets().start_offset
+      && max_clean_and_removable_offset.has_value()
+      && follower->next_index < max_clean_and_removable_offset) {
+        return true;
+    }
+
+    return false;
+}
+
+ss::future<> recovery_stm::maybe_initial_reset_follower() {
+    auto needs_reset = needs_initial_reset();
+    if (needs_reset) {
+        co_await reset_follower("Continuing recovery from new leader below "
+                                "max_clean_and_removable_offset");
+    }
+}
+
+bool recovery_stm::recovery_time_exceeds_delete_retention_ms() {
+    if (!needs_recovery_checks()) {
+        return false;
+    }
+
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        return false;
+    }
+
+    auto follower = meta.value();
+
+    auto delete_retention_ms = _ptr->log()->config().delete_retention_ms();
+    if (delete_retention_ms.has_value()) {
+        vassert(
+          follower->recovery_start_time.has_value(),
+          "Follower's recovery_start_time should have been assigned at this "
+          "point in the recovery_stm lifecycle.");
+        auto time_to_recover = clock_type::now()
+                               - follower->recovery_start_time.value();
+        if (time_to_recover > delete_retention_ms.value()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+ss::future<> recovery_stm::maybe_reset_follower() {
+    // We may need to reset the learner of a compacted topic if:
+    // The current time_to_recover > delete.retention.ms.
+    auto needs_reset = recovery_time_exceeds_delete_retention_ms();
+    if (needs_reset) {
+        co_await reset_follower(
+          "Time to recover has exceeded delete.retention.ms");
+    }
+}
+
 ss::future<> recovery_stm::recover() {
     auto meta = get_follower_meta();
     if (!meta) {
@@ -80,6 +206,8 @@ ss::future<> recovery_stm::do_recover() {
         _stop_requested = true;
         co_return;
     }
+
+    co_await maybe_reset_follower();
 
     auto lstats = _ptr->_log->offsets();
 
@@ -698,10 +826,12 @@ ss::future<> recovery_stm::apply() {
     return ss::with_gate(
              _ptr->_bg,
              [this] {
-                 return recover().then([this] {
-                     return ss::do_until(
-                       [this] { return is_recovery_finished(); },
-                       [this] { return recover(); });
+                 return maybe_initial_reset_follower().then([this] {
+                     return recover().then([this] {
+                         return ss::do_until(
+                           [this] { return is_recovery_finished(); },
+                           [this] { return recover(); });
+                     });
                  });
              })
       .finally([this] {
