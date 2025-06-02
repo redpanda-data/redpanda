@@ -21,24 +21,51 @@ class NetemSpec():
 
 
 class NodeQdisc():
+    """
+    Creates a default PRIO with number_of_prio_bands + 1 bands.
+    The first band is used for SSH traffic (not shaped), the rest are used for
+    traffic shaping with netem.
+
+      root 1: prio
+       /   |   \
+     1:1  1:1  1:3...
+
+    """
     def __init__(self, node, device_to_use, number_of_prio_bands):
         self.node = node
         self.dev = device_to_use
-        self.default_bands = 2 + number_of_prio_bands
-        self.flow = 3
+        self.default_bands = number_of_prio_bands + 1
+        # all traffic is by default assigned to the first band
+        self.default_prio_map = '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+        self.next_flow = 2
 
     def initialize(self):
-        # create PRIO queue with n+1 bands where n is number of classes to add
-        self._tc_qdisc_add(
-            ['root', 'handle', '1:', 'prio', 'bands',
-             str(self.default_bands)])
+        # create prio queue wit desired number of bands
+        self._tc_qdisc_add([
+            'root', 'handle', '1:', 'prio', 'bands',
+            str(self.default_bands), 'priomap', self.default_prio_map
+        ])
         # add SFQ for all not delayed traffic
         self._tc_qdisc_add(['parent', '1:1', 'handle', '10:', 'sfq'])
 
+        # pass SSH traffic to the first band
+        self._tc_execute([
+            'filter', 'add', 'dev', self.dev, 'protocol', 'ip', 'parent', '1:',
+            'prio', '0', 'u32', 'match', 'ip', 'dport', '22', '0xffff',
+            'flowid', f'1:1'
+        ])
+
+        self._tc_execute([
+            'filter', 'add', 'dev', self.dev, 'protocol', 'ip', 'parent', '1:',
+            'prio', '0', 'u32', 'match', 'ip', 'sport', '22', '0xffff',
+            'flowid', f'1:1'
+        ])
+
     def add(self, target_addresses, spec: NetemSpec):
         queue = [
-            'parent', f'1:{self.flow}', 'handle', f'{self.flow}0:', 'netem',
-            'delay', f'{spec.delay_ms}ms', f'{spec.jitter_ms}ms', '20.00'
+            'parent', f'1:{self.next_flow}', 'handle', f'{self.next_flow}0:',
+            'netem', 'delay', f'{spec.delay_ms}ms', f'{spec.jitter_ms}ms',
+            '20.00'
         ]
         if spec.loss:
             queue += ['loss', str(spec.loss)]
@@ -47,11 +74,11 @@ class NodeQdisc():
         for a in target_addresses:
             self._tc_execute([
                 'filter', 'add', 'dev', self.dev, 'protocol', 'ip', 'parent',
-                '1:0', 'prio', '1', 'u32', 'match', 'ip', 'dst', a, 'flowid',
-                f'1:{self.flow}'
+                '1:', 'prio', f'{self.next_flow-1}', 'u32', 'match', 'ip',
+                'dst', a, 'flowid', f'1:{self.next_flow}'
             ])
 
-        self.flow += 1
+        self.next_flow += 1
 
     def _tc_qdisc_add(self, queue_spec):
         return self._tc_execute(['qdisc', 'add', 'dev', self.dev] + queue_spec)
