@@ -27,6 +27,7 @@
 #include "model/record.h"
 #include "ssx/checkpoint_mutex.h"
 #include "ssx/event.h"
+#include "ssx/execution_monitor.h"
 #include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
@@ -47,6 +48,43 @@ using namespace std::chrono_literals;
 enum class segment_upload_kind { compacted, non_compacted };
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
+
+/// List of all callsites monitored by the execution monitor.
+struct ntp_archiver_callsites {
+    ssx::execution_monitor_shutdown_callsite<> upload_loop_shutdown{
+      "ntp_archiver/upload_loop_shutdown"};
+
+    ssx::execution_monitor_callsite<> upload_loop_prologue{
+      "ntp_archiver/upload_loop_prologue"};
+
+    ssx::execution_monitor_callsite<> upload_loop_iter{
+      "ntp_archiver/upload_loop_iter"};
+
+    ssx::execution_monitor_callsite<> upload_loop_term{
+      "ntp_archiver/upload_loop_term"};
+
+    ssx::execution_monitor_callsite<> segment_upload{
+      "ntp_archiver/segment_upload"};
+
+    ssx::execution_monitor_callsite<> metadata_validation{
+      "ntp_archiver/metadata_validation"};
+
+    ssx::execution_monitor_callsite<> metadata_replication{
+      "ntp_archiver/metadata_replication"};
+
+    auto shutdown_callsites() {
+        return std::make_tuple(std::ref(upload_loop_shutdown));
+    }
+
+    auto callsites() {
+        return std::make_tuple(
+          std::ref(upload_loop_prologue),
+          std::ref(upload_loop_iter),
+          std::ref(upload_loop_term),
+          std::ref(segment_upload),
+          std::ref(metadata_validation));
+    }
+};
 
 class ntp_archiver_upload_result {
 public:
@@ -438,6 +476,17 @@ private:
     static constexpr const char* segment_merger_ctx_label
       = "adjacent_segment_merger";
 
+    /// Log diagnostics for the ntp archiver, including
+    /// - list of all callsites and their current state
+    /// - status of the _mutex (has units, who holds it)
+    /// - status of the _uploads_active mutex (has units, who holds it)
+    /// - last manifest upload time
+    /// - last segment upload time
+    /// - last mark-clean time
+    /// - last housekeeping time
+    /// etc.
+    void log_diagnostics() noexcept;
+
     /// Delete objects, return true on success and false otherwise
     ss::future<bool>
     batch_delete(std::vector<cloud_storage_clients::object_key> paths);
@@ -803,6 +852,9 @@ private:
 
     config::binding<std::chrono::milliseconds> _initial_backoff;
     config::binding<std::chrono::milliseconds> _max_backoff;
+
+    ssx::execution_monitor<> _execution_monitor;
+    ntp_archiver_callsites _callsites;
 
     friend class archiver_fixture;
 };
