@@ -4341,7 +4341,7 @@ class RedpandaService(RedpandaServiceBase):
             cmd=f"dig -x {ip} +short",
             timeout_sec=10).decode('utf-8').split('\n')[0].removesuffix(".")
         fqdn = node.account.ssh_output(
-            cmd=f"host {hostname}",
+            cmd=f"host -t A {hostname}",
             timeout_sec=10).decode('utf-8').split(' ')[0]
         return fqdn
 
