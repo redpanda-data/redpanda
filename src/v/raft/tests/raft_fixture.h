@@ -27,6 +27,7 @@
 #include "raft/state_machine_manager.h"
 #include "raft/tests/failure_injectable_log.h"
 #include "raft/types.h"
+#include "rpc/fwd.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "test_utils/random_bytes.h"
@@ -317,6 +318,8 @@ private:
     config::mock_property<size_t> _default_recovery_read_size{128_KiB};
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::shared_ptr<buffered_protocol> _buffered_protocol;
+    ss::sharded<ss::abort_source> _as;
+    ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;

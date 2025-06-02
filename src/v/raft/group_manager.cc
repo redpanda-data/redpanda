@@ -16,6 +16,8 @@
 #include "model/metadata.h"
 #include "raft/buffered_protocol.h"
 #include "raft/group_configuration.h"
+#include "raft/recovery_client_protocol.h"
+#include "raft/recovery_rpc_client.h"
 #include "raft/rpc_client_protocol.h"
 
 #include <seastar/core/scheduling.hh>
@@ -39,6 +41,7 @@ group_manager::group_manager(
   , _raft_recv_sg(raft_recv_sg)
   , _raft_send_sg(raft_send_sg)
   , _configuration(cfg())
+  , _clients(clients)
   , _buffered_protocol(ss::make_shared<buffered_protocol>(
       _raft_send_sg,
       make_rpc_client_protocol(self, clients),
@@ -139,6 +142,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _configuration.raft_io_timeout_ms,
       _configuration.enable_longest_log_detection,
       consensus_client_protocol(_buffered_protocol),
+      recovery_client_protocol(
+        ss::make_shared<recovery_rpc_client>(_self, _clients)),
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
       },

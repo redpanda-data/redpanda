@@ -27,6 +27,8 @@
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
+#include "raft/recovery_client_protocol.h"
+#include "raft/recovery_rpc_client.h"
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
@@ -105,6 +107,7 @@ consensus::consensus(
   config::binding<std::chrono::milliseconds> disk_timeout,
   config::binding<bool> enable_longest_log_detection,
   consensus_client_protocol client,
+  recovery_client_protocol recovery_client,
   consensus::leader_cb_t cb,
   storage::api& storage,
   std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
@@ -122,6 +125,7 @@ consensus::consensus(
   , _disk_timeout(std::move(disk_timeout))
   , _enable_longest_log_detection(std::move(enable_longest_log_detection))
   , _client_protocol(client)
+  , _recovery_protocol(std::move(recovery_client))
   , _leader_notification(std::move(cb))
   , _fstats(_self)
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())

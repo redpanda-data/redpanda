@@ -27,11 +27,14 @@
 #include "raft/group_configuration.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/heartbeats.h"
+#include "raft/recovery_client_protocol.h"
+#include "raft/recovery_rpc_client.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/failure_injectable_log.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -446,6 +449,8 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     co_await _recovery_throttle.invoke_on_all(
       &coordinated_recovery_throttle::start);
 
+    co_await _as.start();
+    co_await _connections.start(std::ref(_as));
     co_await _storage.start(
       [this]() {
           return storage::kvstore_config(
@@ -476,6 +481,8 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       config::mock_binding<std::chrono::milliseconds>(1s),
       config::mock_binding<bool>(_enable_longest_log_detection),
       consensus_client_protocol(_buffered_protocol),
+      recovery_client_protocol(
+        ss::make_shared<recovery_rpc_client>(_id, _connections)),
       [this](leadership_status ls) { leadership_notification_callback(ls); },
       _storage.local(),
       _recovery_throttle.local(),
@@ -518,6 +525,8 @@ ss::future<> raft_node_instance::stop() {
         co_await _hb_manager->stop();
         vlog(_logger.debug, "stopping feature table");
         _raft = nullptr;
+        co_await _as.stop();
+        co_await _connections.stop();
 
         // group manager must be stopped before storage as consensus stores the
         // units of the storage resources semaphore.

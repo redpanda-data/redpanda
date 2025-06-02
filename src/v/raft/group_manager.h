@@ -19,6 +19,7 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
 #include "raft/types.h"
+#include "rpc/connection_cache.h"
 #include "rpc/fwd.h"
 #include "storage/fwd.h"
 #include "utils/notification_list.h"
@@ -114,6 +115,7 @@ private:
     ss::scheduling_group _raft_recv_sg;
     ss::scheduling_group _raft_send_sg;
     configuration _configuration;
+    ss::sharded<rpc::connection_cache>& _clients;
     ss::shared_ptr<raft::buffered_protocol> _buffered_protocol;
     raft::heartbeat_manager _heartbeats;
     ss::gate _gate;

@@ -30,6 +30,7 @@
 #include "raft/heartbeats.h"
 #include "raft/logger.h"
 #include "raft/probe.h"
+#include "raft/recovery_client_protocol.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_scheduler.h"
 #include "raft/replicate_batcher.h"
@@ -104,6 +105,7 @@ public:
       config::binding<std::chrono::milliseconds> disk_timeout,
       config::binding<bool> enable_longest_log_detection,
       consensus_client_protocol,
+      recovery_client_protocol,
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
@@ -821,6 +823,7 @@ private:
     config::binding<std::chrono::milliseconds> _disk_timeout;
     config::binding<bool> _enable_longest_log_detection;
     consensus_client_protocol _client_protocol;
+    recovery_client_protocol _recovery_protocol;
     leader_cb_t _leader_notification;
 
     // consensus state
