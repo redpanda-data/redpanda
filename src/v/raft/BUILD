@@ -9,6 +9,12 @@ redpanda_cc_rpc_library(
     include_prefix = "raft",
 )
 
+redpanda_cc_rpc_library(
+    name = "raft_recovery_rpc",
+    src = "recovery_rpc.json",
+    include_prefix = "raft",
+)
+
 redpanda_cc_library(
     name = "fundamental",
     hdrs = [
@@ -106,6 +112,7 @@ redpanda_cc_library(
         "persisted_stm.h",
         "probe.h",
         "recovery_memory_quota.h",
+        "recovery_rpc_types.h",
         "recovery_scheduler.h",
         "recovery_stm.h",
         "replicate.h",
@@ -127,6 +134,7 @@ redpanda_cc_library(
     deps = [
         ":broker_compat",
         ":fundamental",
+        ":raft_recovery_rpc",
         ":raft_rpc",
         ":voter_priority_tracker",
         "//src/v/base",
@@ -178,5 +186,25 @@ redpanda_cc_library(
         "@fmt",
         "@seastar",
         "@yaml-cpp",
+    ],
+)
+
+redpanda_cc_library(
+    name = "raft_recovery_rpc_handler",
+    srcs = [
+        "recovery_rpc_handler.cc",
+    ],
+    hdrs = [
+        "recovery_rpc_handler.h",
+    ],
+    include_prefix = "raft",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":raft_recovery_rpc",
+        "//src/v/cluster",
+        "//src/v/raft",
+        "//src/v/rpc",
+        "//src/v/storage",
+        "@seastar",
     ],
 )

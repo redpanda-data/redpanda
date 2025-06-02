@@ -1,0 +1,14 @@
+{
+    "namespace": "raft",
+    "service_name": "recovery_rpc",
+    "includes": [
+        "raft/recovery_rpc_types.h"
+    ],
+    "methods": [
+        {
+            "name": "reset_learner_state",
+            "input_type": "reset_learner_state_request",
+            "output_type": "reset_learner_state_reply"
+        }
+    ]
+}
