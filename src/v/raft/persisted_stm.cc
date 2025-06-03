@@ -80,8 +80,10 @@ persisted_stm_base<BaseT, T>::load_local_snapshot() {
 }
 template<typename BaseT, supported_stm_snapshot T>
 ss::future<> persisted_stm_base<BaseT, T>::stop() {
+    vlog(_log.debug, "Stopping");
     co_await raft::state_machine_base::stop();
     co_await _gate.close();
+    vlog(_log.debug, "Stopped");
 }
 
 template<typename BaseT, supported_stm_snapshot T>
