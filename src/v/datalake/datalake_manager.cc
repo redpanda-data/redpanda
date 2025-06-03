@@ -617,6 +617,9 @@ ss::future<> datalake_manager::shutdown() {
     if (_backlog_controller) {
         co_await _backlog_controller->stop();
     }
+    if (_schema_mgr) {
+        co_await _schema_mgr->stop();
+    }
     if (_catalog) {
         co_await _catalog->stop();
     }
