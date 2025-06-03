@@ -40,7 +40,8 @@ struct execution_monitor_callsite {
     void checkpoint() noexcept {
         last_check_time = Clock::now();
         ++check_count;
-        _mem_buf.clear();
+        _mem_buf = fmt::memory_buffer();
+        _truncated = false;
     }
 
     /// Suspend monitoring for a specified duration.
@@ -73,6 +74,15 @@ struct execution_monitor_callsite {
         if (_mem_buf.size() >= 4096) {
             // Don't log if the buffer is too large to avoid
             // memory issues.
+            if (!_truncated) {
+                fmt::format_to(
+                  std::back_inserter(_mem_buf),
+                  "[{}|{}|{}] truncated...\n",
+                  name,
+                  check_count,
+                  suspend_count);
+                _truncated = true;
+            }
             return;
         }
         fmt::format_to(
@@ -91,6 +101,7 @@ struct execution_monitor_callsite {
 
 private:
     /// Buffer to format the messages.
+    bool _truncated{false};
     fmt::memory_buffer _mem_buf;
 };
 
