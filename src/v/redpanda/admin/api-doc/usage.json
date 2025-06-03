@@ -24,6 +24,40 @@
         }
     ],
     "models": {
+        "datalake_topic_usage": {
+            "type": "object",
+            "description": "Datalake feature usage metrics of a single topic with datalake enabled.",
+            "properties": {
+                "topic_name": {
+                    "type": "string",
+                    "description": "Name of the topic."
+                },
+                "topic_revision": {
+                    "type": "long",
+                    "description": "Revision of the topic, used to detect delete and re-create scenarios."
+                },
+                "kafka_bytes_processed": {
+                    "type": "long",
+                    "description": "Total number of topic bytes successfully converted to Iceberg format. This is a counter that persists across restarts."
+                }
+            }
+        },
+        "datalake_usage": {
+            "description": "Datalake feature usage metrics.",
+            "type": "object",
+            "properties": {
+                "missing_reason": {
+                    "type": "string",
+                    "description": "Indicates the reason for missing datalake usage. This field is set only when usage data is unavailable. Possible values: 'feature_disabled', 'collection_error', 'not_controller_leader'."
+                },
+                "topics": {
+                    "type": "array",
+                    "items": {
+                        "type": "datalake_topic_usage"
+                    }
+                }
+            }
+        },
         "usage_response": {
             "id": "usage_response",
             "description": "Kafka & cloud storage usage metrics for this node",
@@ -51,6 +85,10 @@
                 "cloud_storage_bytes_gauge": {
                     "type": "long",
                     "description": "Number of bytes resting in cloud storage at window close"
+                },
+                "datalake_usage": {
+                    "type": "datalake_usage",
+                    "description": "Datalake feature usage metrics."
                 }
             }
         }
