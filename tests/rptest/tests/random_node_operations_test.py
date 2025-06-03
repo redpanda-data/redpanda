@@ -41,7 +41,12 @@ TS_LOG_ALLOW_LIST = [
     # topic deletion may happen before data were uploaded
     re.compile(".*cloud_storage.*Failed to fetch manifest during finalize().*"
                ),
-    re.compile(".*archival -.* System error during SSL read:.*")
+    re.compile(".*archival -.* System error during SSL read:.*"),
+    # When Redpanda is suspended manifest download may fail with timeout
+    # ERROR 2025-06-03 09:48:14,461 [shard 0:main] raft - [group_id:316, {kafka/tp-workload-fast/27}] state_machine_manager.cc:385 - error applying raft snapshot - std::runtime_error (couldn't download manifest: cloud_storage::error_outcome:2)
+    re.compile(
+        """state_machine_manager.* error applying raft snapshot - std::runtime_error (couldn't download manifest: cloud_storage::error_outcome:2)"""
+    )
 ]
 
 
