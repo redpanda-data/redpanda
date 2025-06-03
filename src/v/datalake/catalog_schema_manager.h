@@ -52,6 +52,7 @@ public:
       = std::nullopt)
       = 0;
 
+    virtual ss::future<> stop() = 0;
     virtual ~schema_manager() = default;
 };
 
@@ -72,6 +73,7 @@ public:
       const iceberg::table_identifier&,
       std::optional<std::reference_wrapper<iceberg::struct_type>> desired_type
       = std::nullopt) override;
+    ss::future<> stop() final { return ss::now(); }
 
 private:
     iceberg::uri table_location_prefix_;
@@ -102,6 +104,10 @@ public:
       std::optional<std::reference_wrapper<iceberg::struct_type>> desired_type
       = std::nullopt) override;
 
+    // Stops the schema manager, waiting for any ongoing operations to
+    // complete.
+    ss::future<> stop() override;
+
 private:
     // Attempts to fill the field ids in the given type with those from the
     // current schema of the given table metadata.
@@ -113,8 +119,9 @@ private:
       const iceberg::table_identifier&,
       const iceberg::table_metadata&,
       iceberg::struct_type&);
-
+    checked<ss::gate::holder, errc> maybe_gate();
     iceberg::catalog& catalog_;
+    ss::gate gate_;
 };
 
 } // namespace datalake

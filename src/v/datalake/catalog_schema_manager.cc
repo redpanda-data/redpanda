@@ -172,6 +172,10 @@ catalog_schema_manager::ensure_table_schema(
   const iceberg::table_identifier& table_id,
   const iceberg::struct_type& desired_type,
   const iceberg::unresolved_partition_spec& partition_spec) {
+    auto gh = maybe_gate();
+    if (gh.has_error()) {
+        co_return gh.error();
+    }
     auto load_res = co_await catalog_.load_or_create_table(
       table_id, desired_type, partition_spec);
     if (load_res.has_error()) {
@@ -236,6 +240,10 @@ ss::future<checked<schema_manager::table_info, schema_manager::errc>>
 catalog_schema_manager::get_table_info(
   const iceberg::table_identifier& table_id,
   std::optional<std::reference_wrapper<iceberg::struct_type>> desired_type) {
+    auto gh = maybe_gate();
+    if (gh.has_error()) {
+        co_return gh.error();
+    }
     auto load_res = co_await catalog_.load_table(table_id);
     if (load_res.has_error()) {
         co_return log_and_convert_catalog_err(
@@ -323,5 +331,16 @@ catalog_schema_manager::get_ids_from_table_meta(
     }
     return true;
 }
+
+checked<ss::gate::holder, catalog_schema_manager::errc>
+catalog_schema_manager::maybe_gate() {
+    auto holder = gate_.try_hold();
+    if (!holder) {
+        return errc::shutting_down;
+    }
+    return std::move(holder.value());
+}
+
+ss::future<> catalog_schema_manager::stop() { return gate_.close(); }
 
 } // namespace datalake
