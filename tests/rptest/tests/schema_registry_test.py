@@ -614,10 +614,20 @@ schema_proto_def = """
 syntax = "proto3";
 
 message ProtoType {
-  float f = 1;
+  float f =  1;
 }"""
 
-schema_avro_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+schema_avro_def = """
+{
+    "type": "record",
+    "name": "myrecord",
+    "fields": [
+        {
+            "name": "f1",
+            "type": "string"
+        }
+    ]
+}"""
 
 schema_proto_dependee_def = """
 syntax = "proto3";
@@ -1152,14 +1162,9 @@ class SchemaRegistryEndpoints(RedpandaTest):
                              tls_enabled=tls_enabled,
                              **kwargs)
 
-    def _get_schemas_ids_id(self,
-                            id,
-                            format=None,
-                            headers=HTTP_GET_HEADERS,
-                            **kwargs):
-        format_arg = f'?format={format}' if format is not None else ''
+    def _get_schemas_ids_id(self, id, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET",
-                             f"schemas/ids/{id}{format_arg}",
+                             f"schemas/ids/{id}",
                              headers=headers,
                              **kwargs)
 
@@ -3538,66 +3543,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_id == schema["id"], \
                     f"Expected id {schema['id']} but got {result_id}. "\
                     f"Request content: {result_raw.content}. Processing {name}."
-
-    @cluster(num_nodes=3)
-    def test_format_keyword(self):
-        """
-        Test support for the format keyword
-        """
-        result_raw = self._post_subjects_subject_versions(
-            subject="schema_proto",
-            data=json.dumps({
-                "schema": schema_proto_def,
-                "schemaType": "PROTOBUF"
-            }))
-        assert result_raw.status_code == requests.codes.ok, \
-                f"Expected {requests.codes.ok} but got {result_raw.status_code} during test setup. "\
-                f"Request content: {result_raw.content}. Posting PROTOBUF."
-
-        result_raw = self._post_subjects_subject_versions(
-            subject="schema_avro",
-            data=json.dumps({
-                "schema": schema_avro_def,
-                "schemaType": "AVRO"
-            }))
-        assert result_raw.status_code == requests.codes.ok, \
-                f"Expected {requests.codes.ok} but got {result_raw.status_code} during test setup. "\
-                f"Request content: {result_raw.content}. Posting AVRO."
-
-        result_raw = self._post_subjects_subject_versions(
-            subject="schema_json",
-            data=json.dumps({
-                "schema": json_number_schema_def,
-                "schemaType": "JSON"
-            }))
-        assert result_raw.status_code == requests.codes.ok, \
-                f"Expected {requests.codes.ok} but got {result_raw.status_code} during test setup. "\
-                f"Request content: {result_raw.content}. Posting JSON."
-
-        def test_ids_id(id, schema, format=None):
-            result_raw = self._get_schemas_ids_id(id, format)
-            assert result_raw.status_code == requests.codes.ok, \
-                    f"expected {requests.codes.ok} but got {result_raw.status_code} for id {id} and format {format}"
-            result = result_raw.json()['schema'].strip()
-            assert result == schema, \
-                    f"expected:\n{schema}\ngot:\n{result}\nfor id {id} and format {format}"
-
-        test_ids_id(1, schema_proto_def.strip())
-        test_ids_id(2, schema_avro_def.strip())
-        test_ids_id(3, json_number_schema_def.strip())
-
-        test_ids_id(1, schema_proto_def.strip(), format="")
-        test_ids_id(2, schema_avro_def.strip(), format="")
-        test_ids_id(3, json_number_schema_def.strip(), format="")
-
-        #Test invalid format value
-        result_raw = self._get_schemas_ids_id(1, format="badvalue")
-        assert result_raw.status_code == 400, \
-                f"expected {400} but got {result_raw.status_code} for id 1 and format 'badvalue'"
-        #Test unimplemented format value
-        result_raw = self._get_schemas_ids_id(2, format="resolved")
-        assert result_raw.status_code == 400, \
-                f"expected {400} but got {result_raw.status_code} for id 2 and format 'resolved'"
 
 
 class SchemaRegistryModeNotMutableTest(SchemaRegistryEndpoints):

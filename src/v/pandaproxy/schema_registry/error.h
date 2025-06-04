@@ -40,8 +40,6 @@ enum class error_code {
     compatibility_level_invalid,
     mode_invalid,
     version_exhausted,
-    invalid_format,
-    format_not_supported,
 };
 
 std::error_code make_error_code(error_code);

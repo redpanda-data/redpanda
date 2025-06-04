@@ -23,10 +23,6 @@ std::ostream& operator<<(std::ostream& os, const schema_type& v) {
     return os << to_string_view(v);
 }
 
-std::ostream& operator<<(std::ostream& os, const output_format& v) {
-    return os << to_string_view(v);
-}
-
 std::ostream& operator<<(std::ostream& os, const seq_marker& v) {
     if (v.seq.has_value() && v.node.has_value()) {
         fmt::print(

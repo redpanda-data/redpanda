@@ -74,10 +74,6 @@ public:
     ///\brief Return a schema definition by id.
     ss::future<schema_definition> get_schema_definition(schema_id id) override;
 
-    ///\brief Return a schema definition by id.
-    ss::future<schema_definition>
-    get_schema_definition(schema_id id, output_format format);
-
     ss::future<std::optional<schema_definition>>
     maybe_get_schema_definition(schema_id id) override;
 
