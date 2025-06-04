@@ -191,6 +191,7 @@ rest_catalog_factory::create_catalog() {
       .server_addr = endpoint_information.address,
     };
     if (endpoint_information.needs_tls) {
+        transport_config.tls_sni_hostname = endpoint_information.address.host();
         try {
             transport_config.credentials = co_await build_tls_credentials(
               *config_);
