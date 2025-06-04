@@ -83,6 +83,7 @@ struct gcp_credentials {
 
 std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc);
 
+using aws_service_name = named_type<ss::sstring, struct aws_service_name_>;
 using aws_region_name = named_type<ss::sstring, struct s3_aws_region_name>;
 using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
 using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;

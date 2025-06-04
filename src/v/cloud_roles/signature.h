@@ -84,11 +84,13 @@ class signature_v4 {
 public:
     /// \brief Initialize signature generator
     ///
+    /// \param service is the AWS service name (e.g., "s3", "glue")
     /// \param region is an AWS region that we're going to send request to
     /// \param access_key is an AWS access key
     /// \param private_key is an AWS private key
     /// \param time_source is a source of timestamps for the signature
     signature_v4(
+      aws_service_name service,
       aws_region_name region,
       public_key_str access_key,
       private_key_str private_key,
@@ -99,7 +101,7 @@ public:
     /// header.
     ///
     /// \param header is an in/out parameter that contains request headers
-    /// \param sha256 is a hash of the payload if payload is signed or defult
+    /// \param sha256 is a hash of the payload if payload is signed or default
     /// value otherwise
     std::error_code sign_header(
       http::client::request_header& header, std::string_view sha256) const;
@@ -120,6 +122,8 @@ private:
 
     /// Time of the signing key
     time_source _sig_time;
+    /// AWS service name
+    aws_service_name _service;
     /// AWS region
     aws_region_name _region;
     /// Access key
