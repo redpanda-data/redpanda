@@ -21,6 +21,8 @@ namespace iceberg {
 namespace rest_client {
 class catalog_client;
 }
+
+struct create_table_request;
 /**
  * Iceberg REST catalog implementation, the catalog manages lifecycle of a rest
  * provided catalog client and manages concurency control.
@@ -30,7 +32,8 @@ public:
     explicit rest_catalog(
       std::unique_ptr<rest_client::catalog_client>,
       config::binding<std::chrono::milliseconds> request_timeout,
-      datalake::credential_manager& credential_mgr);
+      datalake::credential_manager& credential_mgr,
+      std::optional<ss::sstring> base_location = std::nullopt);
 
     rest_catalog(const rest_catalog&) = delete;
     rest_catalog(rest_catalog&&) noexcept = default;
@@ -57,8 +60,11 @@ public:
 
 private:
     retry_chain_node create_rtc();
+    void set_table_location_if_needed(
+      create_table_request& request, const table_identifier& t_id) const;
     std::unique_ptr<rest_client::catalog_client> client_;
     config::binding<std::chrono::milliseconds> request_timeout_;
+    std::optional<ss::sstring> base_location_;
     // currently we use very simple concurrency control i.e. we only allow one
     // REST request at a time
     mutex lock_;

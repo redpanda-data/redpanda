@@ -3822,10 +3822,19 @@ configuration::configuration()
   , iceberg_catalog_base_location(
       *this,
       "iceberg_catalog_base_location",
-      "Base path for the cloud object storage-backed Iceberg catalog. After "
-      "Iceberg is enabled, do not change this value.",
+      "Base path for the cloud-storage-object-backed Iceberg filesystem "
+      "catalog. "
+      "After Iceberg is enabled, do not change this value.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       "redpanda-iceberg-catalog")
+  , iceberg_rest_catalog_base_location(
+      *this,
+      "iceberg_rest_catalog_base_location",
+      "Base URI for the Iceberg REST catalog. If unset, the REST catalog "
+      "server "
+      "determines the location. Some REST catalogs, like AWS Glue, require the "
+      "client to set this. After Iceberg is enabled, do not change this value.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user})
   , datalake_coordinator_snapshot_max_delay_secs(
       *this,
       "datalake_coordinator_snapshot_max_delay_secs",
