@@ -24,6 +24,10 @@
 #include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
 
+namespace datalake {
+class credential_manager;
+} // namespace datalake
+
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
 
@@ -78,8 +82,8 @@ public:
     /// \param client_source returns unique ptrs to clients for making API calls
     /// \param endpoint the rest catalog server hostname to connect to,
     /// including scheme
-    /// \param credentials credentials to be used to acquire oauth token from
-    /// catalog server
+    /// \param credentials credentials to be used to acquire oauth token
+    /// from catalog server
     /// \param base_path an optional path to be prefixed to all API calls made
     /// by this client
     /// \param prefix an optional prefix to be added after the
@@ -96,6 +100,7 @@ public:
     catalog_client(
       std::unique_ptr<http::abstract_client> client,
       ss::sstring endpoint,
+      datalake::credential_manager& credential_mgr,
       std::optional<credentials> credentials = std::nullopt,
       std::optional<base_path> base_path = std::nullopt,
       std::optional<warehouse> warehouse = std::nullopt,
@@ -219,6 +224,7 @@ private:
     config::datalake_catalog_auth_mode _auth_mode;
     ss::shared_ptr<client_probe> _probe;
     bool _configured{false};
+    datalake::credential_manager& _credential_manager;
 
     friend class catalog_client_tester;
 };

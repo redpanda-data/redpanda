@@ -12,6 +12,7 @@
 
 #include "bytes/streambuf.h"
 #include "config/types.h"
+#include "datalake/credential_manager.h"
 #include "http/request_builder.h"
 #include "http/rest_client/rest_entity.h"
 #include "http/utils.h"
@@ -23,6 +24,7 @@
 #include "iceberg/table_requests_json.h"
 #include "json/istreamwrapper.h"
 #include "ssx/future-util.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
@@ -52,6 +54,7 @@ iobuf serialize_payload_as_json(const T& payload) {
 static constexpr std::string_view json_content_type = "application/json";
 static constexpr std::string_view oauth_token_endpoint = "oauth/tokens";
 static constexpr std::string_view config_endpoint = "config";
+
 } // namespace
 
 namespace iceberg::rest_client {
@@ -94,6 +97,7 @@ expected<json::Document> parse_json(iobuf&& raw_response) {
 catalog_client::catalog_client(
   std::unique_ptr<http::abstract_client> http_client,
   ss::sstring endpoint,
+  datalake::credential_manager& credential_mgr,
   std::optional<credentials> credentials,
   std::optional<base_path> base_path,
   std::optional<warehouse> warehouse,
@@ -110,7 +114,8 @@ catalog_client::catalog_client(
   , _oauth_token{std::move(token)}
   , _retry_policy{retry_policy ? std::move(retry_policy) : std::make_unique<default_retry_policy>()}
   , _auth_mode(auth_mode)
-  , _probe(std::move(probe)) {}
+  , _probe(std::move(probe))
+  , _credential_manager(credential_mgr) {}
 
 ss::future<expected<std::monostate>>
 catalog_client::maybe_configure(retry_chain_node& rtc) {
@@ -268,6 +273,11 @@ ss::future<expected<std::monostate>> catalog_client::maybe_add_bearer_auth(
         }
 
         request.with_bearer_auth(token.value());
+        break;
+    }
+    case config::datalake_catalog_auth_mode::aws_sigv4: {
+        // AWS SigV4 signing will be handled after build() is called
+        break;
     }
     }
     co_return std::monostate{};
@@ -317,6 +327,18 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         auto request = request_builder.host(host).build();
         if (!request.has_value()) {
             co_return tl::unexpected(request.error());
+        }
+
+        // Apply AWS SigV4 authentication if needed
+        if (_auth_mode == config::datalake_catalog_auth_mode::aws_sigv4) {
+            auto auth_result = co_await _credential_manager.maybe_sign(
+              payload, request.value());
+            if (auth_result.has_error()) {
+                co_return tl::unexpected(
+                  domain_error{http_call_error{fmt::format(
+                    "Failed to sign request with credential manager: {}",
+                    auth_result.error().message())}});
+            }
         }
         auto request_target = ss::sstring{
           request->target().begin(), request->target().end()};

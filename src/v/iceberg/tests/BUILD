@@ -661,6 +661,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_io/tests:scoped_remote",
         "//src/v/config",
+        "//src/v/datalake:credential_manager",
         "//src/v/iceberg:json_writer",
         "//src/v/iceberg:partition_json",
         "//src/v/iceberg:rest_catalog",

@@ -7,15 +7,15 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
+
 #include "base/seastarx.h"
 
 #include <seastar/core/sstring.hh>
 
-#pragma once
-
 namespace iceberg::rest_client {
-// Static credentials expected to be supplied by redpanda when requesting an
-// oauth token
+// Static credentials expected to be supplied by redpanda when requesting
+// an oauth token
 struct credentials {
     ss::sstring client_id;
     ss::sstring client_secret;

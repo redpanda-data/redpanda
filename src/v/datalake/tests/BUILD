@@ -443,3 +443,24 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "credential_manager_test",
+    timeout = "short",
+    srcs = [
+        "credential_manager_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_roles",
+        "//src/v/cloud_roles:types",
+        "//src/v/config",
+        "//src/v/datalake:credential_manager",
+        "//src/v/hashing:secure",
+        "//src/v/http",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "@boost//:beast",
+        "@googletest//:gtest",
+    ],
+)

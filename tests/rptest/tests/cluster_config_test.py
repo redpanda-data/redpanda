@@ -48,6 +48,7 @@ SECRET_CONFIG_NAMES = frozenset([
     "cloud_storage_azure_shared_key",
     "iceberg_rest_catalog_client_secret",
     "iceberg_rest_catalog_token",
+    "iceberg_rest_catalog_aws_secret_key",
 ])
 
 
@@ -1735,7 +1736,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         """
         Tests that the Iceberg authentication properties are properly validated when set.
         """
-        validated_auth_modes = ["bearer", "oauth2"]
+        validated_auth_modes = ["bearer", "oauth2", "aws_sigv4"]
 
         # Check that setting the authentication mode to anything other than "none" alone returns an error.
         for mode in validated_auth_modes:
@@ -1745,7 +1746,8 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                     {'iceberg_rest_catalog_authentication_mode': mode},
                     expect_restart=True)
 
-        # Bearer mode needs catalog_token set, oauth2 mode needs both client_id/secret set.
+        # Bearer mode needs catalog_token set, oauth2 mode needs both client_id/secret set,
+        # aws_sigv4 needs region, access_key, and secret_key.
         invalid_auth_mode_props = [{
             'iceberg_rest_catalog_authentication_mode':
             'bearer',
@@ -1754,6 +1756,16 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             'oauth2',
             'iceberg_rest_catalog_client_id':
             'panda_id',
+        }, {
+            'iceberg_rest_catalog_authentication_mode': 'aws_sigv4',
+            'cloud_storage_region': 'us-west-2',
+        }, {
+            'iceberg_rest_catalog_authentication_mode':
+            'aws_sigv4',
+            'cloud_storage_region':
+            'us-west-2',
+            'cloud_storage_access_key':
+            'AKIAIOSFODNN7EXAMPLE',
         }]
 
         for invalid_props in invalid_auth_mode_props:
@@ -1773,6 +1785,15 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             'panda_id',
             'iceberg_rest_catalog_client_secret':
             'panda_secret'
+        }, {
+            'iceberg_rest_catalog_authentication_mode':
+            'aws_sigv4',
+            'cloud_storage_region':
+            'us-west-2',
+            'cloud_storage_access_key':
+            'AKIAIOSFODNN7EXAMPLE',
+            'cloud_storage_secret_key':
+            'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
         }]
 
         for valid_props in valid_auth_mode_props:

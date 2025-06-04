@@ -738,6 +738,12 @@ struct configuration final : public config_store {
     property<ss::sstring> iceberg_rest_catalog_oauth2_scope;
     enum_property<datalake_catalog_auth_mode>
       iceberg_rest_catalog_authentication_mode;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_service_name;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_access_key;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_secret_key;
+    property<std::optional<ss::sstring>> iceberg_rest_catalog_aws_region;
+    enum_property<std::optional<model::cloud_credentials_source>>
+      iceberg_rest_catalog_aws_credentials_source;
     property<double> iceberg_backlog_controller_p_coeff;
     property<double> iceberg_backlog_controller_i_coeff;
     bounded_property<uint32_t> iceberg_target_backlog_size;

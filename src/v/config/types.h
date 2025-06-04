@@ -151,7 +151,7 @@ inline std::istream& operator>>(std::istream& is, datalake_catalog_type& ct) {
     return is;
 }
 
-enum class datalake_catalog_auth_mode { none, bearer, oauth2 };
+enum class datalake_catalog_auth_mode { none, bearer, oauth2, aws_sigv4 };
 
 constexpr std::string_view to_string_view(datalake_catalog_auth_mode cam) {
     switch (cam) {
@@ -161,6 +161,8 @@ constexpr std::string_view to_string_view(datalake_catalog_auth_mode cam) {
         return "bearer";
     case datalake_catalog_auth_mode::oauth2:
         return "oauth2";
+    case datalake_catalog_auth_mode::aws_sigv4:
+        return "aws_sigv4";
     }
 }
 
@@ -168,7 +170,8 @@ static constexpr auto acceptable_datalake_catalog_auth_modes() {
     return std::to_array(
       {to_string_view(datalake_catalog_auth_mode::none),
        to_string_view(datalake_catalog_auth_mode::bearer),
-       to_string_view(datalake_catalog_auth_mode::oauth2)});
+       to_string_view(datalake_catalog_auth_mode::oauth2),
+       to_string_view(datalake_catalog_auth_mode::aws_sigv4)});
 }
 
 inline std::ostream&
@@ -188,8 +191,11 @@ operator>>(std::istream& is, datalake_catalog_auth_mode& cam) {
               to_string_view(datalake_catalog_auth_mode::bearer),
               datalake_catalog_auth_mode::bearer)
             .match(
-              to_string_view(datalake_catalog_auth_mode::bearer),
-              datalake_catalog_auth_mode::bearer);
+              to_string_view(datalake_catalog_auth_mode::oauth2),
+              datalake_catalog_auth_mode::oauth2)
+            .match(
+              to_string_view(datalake_catalog_auth_mode::aws_sigv4),
+              datalake_catalog_auth_mode::aws_sigv4);
     return is;
 }
 

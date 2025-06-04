@@ -13,6 +13,10 @@
 #include "iceberg/catalog.h"
 #include "utils/mutex.h"
 
+namespace datalake {
+class credential_manager;
+} // namespace datalake
+
 namespace iceberg {
 namespace rest_client {
 class catalog_client;
@@ -25,12 +29,13 @@ class rest_catalog final : public catalog {
 public:
     explicit rest_catalog(
       std::unique_ptr<rest_client::catalog_client>,
-      config::binding<std::chrono::milliseconds> request_timeout);
+      config::binding<std::chrono::milliseconds> request_timeout,
+      datalake::credential_manager& credential_mgr);
 
     rest_catalog(const rest_catalog&) = delete;
     rest_catalog(rest_catalog&&) noexcept = default;
     rest_catalog& operator=(const rest_catalog&) = delete;
-    rest_catalog& operator=(rest_catalog&&) noexcept = default;
+    rest_catalog& operator=(rest_catalog&&) noexcept = delete;
 
     ss::future<checked<table_metadata, errc>> create_table(
       const table_identifier& table_ident,
@@ -58,5 +63,6 @@ private:
     // REST request at a time
     mutex lock_;
     ss::abort_source as_;
+    datalake::credential_manager& credential_manager_;
 };
 }; // namespace iceberg

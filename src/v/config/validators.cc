@@ -288,6 +288,73 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
         }
         break;
     }
+    case datalake_catalog_auth_mode::aws_sigv4: {
+        // Determine effective credentials source
+        auto effective_creds_source
+          = config.iceberg_rest_catalog_aws_credentials_source().has_value()
+              ? config.iceberg_rest_catalog_aws_credentials_source().value()
+              : config.cloud_storage_credentials_source();
+
+        if (
+          effective_creds_source != model::cloud_credentials_source::config_file
+          && effective_creds_source
+               != model::cloud_credentials_source::aws_instance_metadata) {
+            // SigV4 only makes sense for config or instance metadata.
+            return fmt::format(
+              "SigV4 authentication (iceberg_rest_catalog_authentication_mode "
+              "= {}) "
+              "is only supported with credentials sources 'config_file' or "
+              "'aws_instance_metadata'. Current effective credentials source "
+              "is '{}'.",
+              auth_mode,
+              effective_creds_source);
+        }
+
+        // When using aws_instance_metadata, AWS credentials are not required
+        if (
+          effective_creds_source
+          == model::cloud_credentials_source::aws_instance_metadata) {
+            // We still require the region of the Glue endpoint.
+            auto effective_region
+              = config.iceberg_rest_catalog_aws_region().has_value()
+                  ? config.iceberg_rest_catalog_aws_region()
+                  : config.cloud_storage_region();
+            if (!effective_region.has_value()) {
+                return fmt::format(
+                  "Must set AWS region when using SigV4 authentication with "
+                  "aws_instance_metadata credentials source.");
+            }
+        } else {
+            auto effective_access_key
+              = config.iceberg_rest_catalog_aws_access_key().has_value()
+                  ? config.iceberg_rest_catalog_aws_access_key()
+                  : config.cloud_storage_access_key();
+            auto effective_secret_key
+              = config.iceberg_rest_catalog_aws_secret_key().has_value()
+                  ? config.iceberg_rest_catalog_aws_secret_key()
+                  : config.cloud_storage_secret_key();
+            auto effective_region
+              = config.iceberg_rest_catalog_aws_region().has_value()
+                  ? config.iceberg_rest_catalog_aws_region()
+                  : config.cloud_storage_region();
+
+            if (!(effective_region.has_value()
+                  && effective_access_key.has_value()
+                  && effective_secret_key.has_value())) {
+                return fmt::format(
+                  "Must set AWS region, access key, and secret key when "
+                  "iceberg_rest_catalog_authentication_mode is set to {} with "
+                  "config_file credentials source. Configure either "
+                  "iceberg-specific "
+                  "parameters (iceberg_rest_catalog_aws_region, "
+                  "iceberg_rest_catalog_aws_access_key, "
+                  "iceberg_rest_catalog_aws_secret_key) or cloud storage "
+                  "parameters).",
+                  auth_mode);
+            }
+        }
+        break;
+    }
     }
     return std::nullopt;
 }
