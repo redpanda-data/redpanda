@@ -52,6 +52,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::invalid_request;
     case cluster::errc::throttling_quota_exceeded:
         return error_code::throttling_quota_exceeded;
+    case cluster::errc::update_in_progress:
+        return error_code::reassignment_in_progress;
     case cluster::errc::no_update_in_progress:
         return error_code::no_reassignment_in_progress;
     case cluster::errc::topic_disabled:
@@ -68,7 +70,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::partition_already_exists:
     case cluster::errc::waiting_for_recovery:
     case cluster::errc::waiting_for_reconfiguration_finish:
-    case cluster::errc::update_in_progress:
     case cluster::errc::user_exists:
     case cluster::errc::user_does_not_exist:
     case cluster::errc::invalid_producer_epoch:
