@@ -77,6 +77,7 @@ private:
 
     waiters_type _waiters;
     model::offset _last_applied;
+    bool stopped{false};
 };
 
 } // namespace raft
