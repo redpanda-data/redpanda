@@ -40,22 +40,30 @@ using namespace std::chrono_literals; // NOLINT
 class recreate_test_fixture : public redpanda_thread_fixture {
 public:
     void create_topic(ss::sstring tp, int32_t partitions, int16_t rf) {
-        kafka::creatable_topic topic{
-          .name = model::topic(tp),
-          .num_partitions = partitions,
-          .replication_factor = rf,
-        };
+        for (int current_retry = 0; current_retry < 5; ++current_retry) {
+            kafka::creatable_topic topic{
+              .name = model::topic(tp),
+              .num_partitions = partitions,
+              .replication_factor = rf,
+            };
 
-        auto req = kafka::create_topics_request{.data{
-          .topics = {topic},
-          .timeout_ms = 10s,
-          .validate_only = false,
-        }};
+            auto req = kafka::create_topics_request{.data{
+              .topics = {topic},
+              .timeout_ms = 10s,
+              .validate_only = false,
+            }};
 
-        auto client = make_kafka_client().get();
-        client.connect().get();
-        auto resp
-          = client.dispatch(std::move(req), kafka::api_version(2)).get();
+            auto client = make_kafka_client().get();
+            client.connect().get();
+            auto resp
+              = client.dispatch(std::move(req), kafka::api_version(2)).get();
+            if (
+              resp.data.topics.begin()->error_code == kafka::error_code::none) {
+                return;
+            }
+            // wait before retrying
+            ss::sleep(500ms).get();
+        }
     }
     kafka::delete_topics_request make_delete_topics_request(
       chunked_vector<model::topic> topics, std::chrono::milliseconds timeout) {
