@@ -14,6 +14,7 @@
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cluster/archival/ntp_archiver_service.h"
+#include "cluster/archival/probe.h"
 #include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -170,6 +171,10 @@ public:
       archival::ntp_archiver&,
       archival::ntp_archiver::batch_result,
       std::optional<model::offset> lso = std::nullopt);
+
+    std::optional<ntp_level_probe>& get_probe(ntp_archiver& archiver) const {
+        return archiver._probe;
+    }
 
     ss::future<> upload_until_term_change(archival::ntp_archiver& archiver) {
         auto sync_timeout = config::shard_local_cfg()
