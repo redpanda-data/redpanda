@@ -12,12 +12,12 @@
 
 #include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cluster/archival/types.h"
-#include "config/configuration.h"
 #include "logger.h"
-#include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
+#include "storage/log.h"
 #include "storage/offset_to_filepos.h"
+#include "storage/segment.h"
+#include "storage/segment_set.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
