@@ -366,7 +366,8 @@ make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
         cfg.access_key.value(),
         cfg.secret_key.value(),
         std::nullopt,
-        cfg.region}));
+        cfg.region,
+        cloud_roles::aws_service_name{"s3"}}));
 }
 
 /// Create server and client, server is initialized with default

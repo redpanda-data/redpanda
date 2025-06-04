@@ -186,9 +186,11 @@ api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {
         sts_response_schema::access_key_id.data())},
       .secret_access_key = private_key_str{creds_node.get<std::string>(
         sts_response_schema::secret_access_key.data())},
-      .session_token = s3_session_token{creds_node.get<std::string>(
+      .session_token = session_token{creds_node.get<std::string>(
         sts_response_schema::session_token.data())},
       .region = region(),
+      // TODO: Generalize refresh for multiple services.
+      .service = cloud_roles::aws_service_name{"s3"},
     };
 }
 

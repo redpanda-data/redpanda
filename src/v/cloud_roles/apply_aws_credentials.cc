@@ -59,9 +59,8 @@ static std::string_view sha_for_verb(boost::beast::http::verb verb) {
     }
 }
 
-// TODO: Generalize credentials to support other AWS services.
 apply_aws_credentials::apply_aws_credentials(aws_credentials credentials)
-  : _signature{aws_service_name{"s3"}, credentials.region, credentials.access_key_id, credentials.secret_access_key}
+  : _signature{credentials.service, credentials.region, credentials.access_key_id, credentials.secret_access_key}
   , _session_token{credentials.session_token} {}
 
 std::error_code
@@ -92,9 +91,8 @@ void apply_aws_credentials::reset_creds(credentials creds) {
           creds));
     }
     auto aws_creds = std::get<aws_credentials>(creds);
-    // TODO: Generalize credentials to support other AWS services.
     _signature = signature_v4(
-      aws_service_name{"s3"},
+      aws_creds.service,
       aws_creds.region,
       aws_creds.access_key_id,
       aws_creds.secret_access_key);

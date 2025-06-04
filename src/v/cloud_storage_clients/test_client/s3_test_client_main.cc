@@ -233,10 +233,11 @@ static ss::lw_shared_ptr<cloud_roles::apply_credentials>
 make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
     return ss::make_lw_shared(
       cloud_roles::make_credentials_applier(cloud_roles::aws_credentials{
-        cfg.access_key.value(),
-        cfg.secret_key.value(),
-        std::nullopt,
-        cfg.region}));
+        .access_key_id = cfg.access_key.value(),
+        .secret_access_key = cfg.secret_key.value(),
+        .session_token = std::nullopt,
+        .region = cfg.region,
+        .service = cloud_roles::aws_service_name{"s3"}}));
 }
 
 static ss::output_stream<char>

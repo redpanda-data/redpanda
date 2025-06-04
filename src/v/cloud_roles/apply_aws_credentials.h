@@ -28,7 +28,7 @@ public:
 
 private:
     signature_v4 _signature;
-    std::optional<s3_session_token> _session_token;
+    std::optional<session_token> _session_token;
 };
 
 } // namespace cloud_roles

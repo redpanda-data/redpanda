@@ -74,7 +74,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
             conf.access_key.value(),
             conf.secret_key.value(),
             std::nullopt,
-            conf.region};
+            conf.region,
+            cloud_roles::aws_service_name{"s3"}};
           p.load_credentials(cred);
       })
       .get();
