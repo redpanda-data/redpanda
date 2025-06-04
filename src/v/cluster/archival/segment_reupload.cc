@@ -186,7 +186,7 @@ segment_collector::segment_seq segment_collector::segments() {
 void segment_collector::do_collect(segment_collector_mode mode) {
     auto projected_end_inclusive = _target_end_inclusive.value_or(
       model::offset{});
-    if (projected_end_inclusive == model::offset{}) {
+    if (projected_end_inclusive == model::offset{} || is_reupload_mode(mode)) {
         projected_end_inclusive = find_replacement_boundary(mode);
     }
     // In case of the new upload:
