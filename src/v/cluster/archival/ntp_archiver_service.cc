@@ -624,11 +624,30 @@ ss::future<> ntp_archiver::upload_until_abort() {
 
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group, do_upload)
-          .handle_exception_type([](const ss::abort_requested_exception&) {})
-          .handle_exception_type([](const ss::gate_closed_exception&) {})
-          .handle_exception_type([](const ss::broken_semaphore&) {})
-          .handle_exception_type([](const ss::broken_named_semaphore&) {})
+          .handle_exception_type([this](const ss::abort_requested_exception&) {
+              _callsites.upload_loop_iter.log(
+                "abort_requested_exception in the upload loop: {}",
+                std::current_exception());
+          })
+          .handle_exception_type([this](const ss::gate_closed_exception&) {
+              _callsites.upload_loop_iter.log(
+                "gate_closed_exception in the upload loop: {}",
+                std::current_exception());
+          })
+          .handle_exception_type([this](const ss::broken_semaphore&) {
+              _callsites.upload_loop_iter.log(
+                "broken_semaphore in the upload loop: {}",
+                std::current_exception());
+          })
+          .handle_exception_type([this](const ss::broken_named_semaphore&) {
+              _callsites.upload_loop_iter.log(
+                "broken_named_semaphore in the upload loop: {}",
+                std::current_exception());
+          })
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
+              _callsites.upload_loop_iter.log(
+                "semaphore_timed_out in the upload loop: {}",
+                std::current_exception());
               vlog(
                 _rtclog.warn,
                 "Semaphore timed out in the upload loop: {}. This may be "
@@ -1531,8 +1550,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
         // On first attempt to upload, the stream-ref passed in is used.
         if (stream_state.has_value()) {
             _callsites.segment_upload.log("use stream_wrapper");
-            // TODO: remove
-            log_diagnostics();
             auto f = ss::make_ready_future<provider_t>(
               std::make_unique<stream_wrapper>(
                 std::move(stream_state.value())));
@@ -1559,8 +1576,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           std::move(reset_func),
           fib,
           lazy_abort);
-        // TODO: remove
-        log_diagnostics();
     } catch (const ss::gate_closed_exception&) {
         _callsites.segment_upload.log("gate_closed_exception");
         response = cloud_storage::upload_result::cancelled;
@@ -1650,6 +1665,11 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
 
         co_return ntp_archiver_upload_result(idx_res->stats);
     } else {
+        _callsites.segment_upload.log(
+          "not uploading the index {}, {} - {}",
+          path,
+          upload_res,
+          idx_res.has_value());
         if (upload_res != cloud_storage::upload_result::success) {
             vlog(
               _rtclog.warn,
@@ -1797,6 +1817,14 @@ ntp_archiver::make_segment_index(
         co_return std::nullopt;
     }
 
+    _callsites.segment_upload.log(
+      "segment stats: [base: {}, last: {}, size: {}, data records: {}, conf "
+      "records: {}]",
+      stats.base_rp_offset,
+      stats.last_rp_offset,
+      stats.size_bytes,
+      stats.total_data_records,
+      stats.total_conf_records);
     co_return make_segment_index_result{.index = std::move(ix), .stats = stats};
 }
 
@@ -2477,7 +2505,8 @@ ntp_archiver::replicate_archival_metadata(
           total.num_succeeded,
           total.num_failed);
         _callsites.metadata_replication.log(
-          "successfully uploaded {} segments", total.num_succeeded);
+          "successfully replicated metadata for {} segments",
+          total.num_succeeded);
 
         if (
           inline_manifest
