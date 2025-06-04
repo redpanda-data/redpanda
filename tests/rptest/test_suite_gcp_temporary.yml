@@ -3,6 +3,7 @@ gcp:
   included:
     - tests
     - transactions
+    - scale_tests
 
   excluded:
     - tests/librdkafka_test.py # normally disabled
