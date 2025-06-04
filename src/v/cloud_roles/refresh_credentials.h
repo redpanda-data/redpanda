@@ -174,6 +174,7 @@ template<typename CredentialsProvider>
 refresh_credentials make_refresh_credentials(
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
+  aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params) {
@@ -197,6 +198,7 @@ refresh_credentials make_refresh_credentials(
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
       net::unresolved_address{{host.data(), host.size()}, port},
+      service,
       region,
       as,
       retry_params);
@@ -210,6 +212,7 @@ refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
+  aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params);

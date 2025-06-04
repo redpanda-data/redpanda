@@ -19,12 +19,14 @@ inline ss::logger test_log("test"); // NOLINT
 
 SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
     ss::abort_source as;
+    cloud_roles::aws_service_name service{"s3"};
     cloud_roles::aws_region_name region{"atlantis"};
     {
         auto rc = cloud_roles::make_refresh_credentials(
           model::cloud_credentials_source::gcp_instance_metadata,
           as,
           [](auto) { return ss::now(); },
+          service,
           region);
         BOOST_REQUIRE_EQUAL(
           "gcp_refresh_impl{address:{host: 169.254.169.254, port: 80}}",
@@ -36,6 +38,7 @@ SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
           model::cloud_credentials_source::aws_instance_metadata,
           as,
           [](auto) { return ss::now(); },
+          service,
           region);
         BOOST_REQUIRE_EQUAL(
           "aws_refresh_impl{address:{host: 169.254.169.254, port: 80}}",
@@ -50,6 +53,7 @@ SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
           model::cloud_credentials_source::sts,
           as,
           [](auto) { return ss::now(); },
+          service,
           region);
         BOOST_REQUIRE_EQUAL(
           "aws_sts_refresh_impl{address:{host: sts.amazonaws.com, port: 443}}",
@@ -66,6 +70,7 @@ SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
           model::cloud_credentials_source::azure_aks_oidc_federation,
           as,
           [](auto) { return ss::now(); },
+          service,
           region);
         BOOST_REQUIRE_EQUAL(
           "azure_aks_refresh_impl{address:{host: host.test.contoso.com, port: "
@@ -78,6 +83,7 @@ SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
         model::cloud_credentials_source::config_file,
         as,
         [](auto) { return ss::now(); },
+        service,
         region),
       std::invalid_argument);
 }

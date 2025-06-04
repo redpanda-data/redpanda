@@ -37,6 +37,7 @@ struct gcp_response_schema {
 
 gcp_refresh_impl::gcp_refresh_impl(
   net::unresolved_address address,
+  aws_service_name, // Ignored for GCP
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)

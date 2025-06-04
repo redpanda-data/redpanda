@@ -57,11 +57,13 @@ struct ec2_response_schema {
 
 aws_refresh_impl::aws_refresh_impl(
   net::unresolved_address address,
+  aws_service_name service,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-      std::move(address), std::move(region), as, retry_params) {}
+      std::move(address), std::move(region), as, retry_params)
+  , _service(std::move(service)) {}
 
 bool aws_refresh_impl::is_fallback_required(const api_request_error& response) {
     return std::find(
@@ -176,8 +178,7 @@ api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
       = session_token{doc[ec2_response_schema::session_token.data()]
                         .GetString()},
       .region = region(),
-      // TODO: Generalize refresh for multiple services.
-      .service = cloud_roles::aws_service_name{"s3"},
+      .service = _service,
     };
 }
 

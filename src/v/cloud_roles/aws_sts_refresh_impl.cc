@@ -89,13 +89,15 @@ static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
 
 aws_sts_refresh_impl::aws_sts_refresh_impl(
   net::unresolved_address address,
+  aws_service_name service,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
       std::move(address), std::move(region), as, retry_params)
   , _role{load_from_env(aws_injected_env_vars::role_arn)}
-  , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)} {}
+  , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)}
+  , _service(std::move(service)) {}
 
 ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     // The content of the token file is periodically rotated by k8s, so we
@@ -189,8 +191,7 @@ api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {
       .session_token = session_token{creds_node.get<std::string>(
         sts_response_schema::session_token.data())},
       .region = region(),
-      // TODO: Generalize refresh for multiple services.
-      .service = cloud_roles::aws_service_name{"s3"},
+      .service = _service,
     };
 }
 

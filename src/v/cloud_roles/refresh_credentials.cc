@@ -378,6 +378,7 @@ refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
+  aws_service_name service,
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint,
   retry_params retry_params) {
@@ -393,6 +394,7 @@ refresh_credentials make_refresh_credentials(
         return make_refresh_credentials<aws_refresh_impl>(
           as,
           std::move(creds_update_cb),
+          std::move(service),
           std::move(region),
           std::move(endpoint),
           retry_params);
@@ -400,6 +402,7 @@ refresh_credentials make_refresh_credentials(
         return make_refresh_credentials<aws_sts_refresh_impl>(
           as,
           std::move(creds_update_cb),
+          std::move(service),
           std::move(region),
           std::move(endpoint),
           retry_params);
@@ -407,6 +410,7 @@ refresh_credentials make_refresh_credentials(
         return make_refresh_credentials<gcp_refresh_impl>(
           as,
           std::move(creds_update_cb),
+          std::move(service),
           std::move(region),
           std::move(endpoint),
           retry_params);
@@ -414,6 +418,7 @@ refresh_credentials make_refresh_credentials(
         return make_refresh_credentials<azure_aks_refresh_impl>(
           as,
           std::move(creds_update_cb),
+          std::move(service),
           std::move(region),
           std::move(endpoint),
           retry_params);
@@ -421,6 +426,7 @@ refresh_credentials make_refresh_credentials(
         return make_refresh_credentials<azure_vm_refresh_impl>(
           as,
           std::move(creds_update_cb),
+          std::move(service),
           std::move(region),
           std::move(endpoint),
           retry_params);

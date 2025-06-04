@@ -196,6 +196,7 @@ archiver_fixture::get_configurations() {
     s3conf.access_key = cloud_roles::public_key_str("access-key");
     s3conf.secret_key = cloud_roles::private_key_str("secret-key");
     s3conf.region = cloud_roles::aws_region_name("us-east-1");
+    s3conf.service = cloud_roles::aws_service_name("s3");
     s3conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     s3conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
       net::metrics_disabled::yes,
