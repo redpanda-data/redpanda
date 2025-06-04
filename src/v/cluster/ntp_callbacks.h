@@ -61,9 +61,8 @@ public:
 
     /// Invoke all matching callbacks.
     template<typename... Args>
-    void notify(const model::ntp& ntp, Args&&... args) const {
-        notify(
-          ntp.ns, ntp.tp.topic, ntp.tp.partition, std::forward<Args>(args)...);
+    void notify(const model::ntp& ntp, const Args&... args) const {
+        notify(ntp.ns, ntp.tp.topic, ntp.tp.partition, args...);
     }
 
     /// Invoke all matching callbacks.
@@ -72,24 +71,24 @@ public:
       const model::ns& ns,
       const model::topic& topic,
       model::partition_id part,
-      Args&&... args) const {
+      const Args&... args) const {
         // invoke for wildcard watchers
-        notify(_root.callbacks, std::forward<Args>(args)...);
+        notify(_root.callbacks, args...);
 
         // invoke for namespace watchers
         const auto& n_nodes = _root.next;
         if (auto n = n_nodes.find(ns); n != n_nodes.end()) {
-            notify(n->second.callbacks, std::forward<Args>(args)...);
+            notify(n->second.callbacks, args...);
 
             // invoke for topic watchers
             const auto& t_nodes = n->second.next;
             if (auto t = t_nodes.find(topic); t != t_nodes.end()) {
-                notify(t->second.callbacks, std::forward<Args>(args)...);
+                notify(t->second.callbacks, args...);
 
                 // invoke for partition watchers
                 const auto& p_nodes = t->second.next;
                 if (auto p = p_nodes.find(part); p != p_nodes.end()) {
-                    notify(p->second, std::forward<Args>(args)...);
+                    notify(p->second, args...);
                 }
             }
         }
@@ -159,9 +158,9 @@ private:
     }
 
     template<typename... Args>
-    void notify(const callbacks_t& callbacks, Args&&... args) const {
+    void notify(const callbacks_t& callbacks, const Args&... args) const {
         for (auto cb_i = callbacks.cbegin(); cb_i != callbacks.cend();) {
-            (cb_i++)->second(std::forward<Args>(args)...);
+            (cb_i++)->second(args...);
         }
     }
 
