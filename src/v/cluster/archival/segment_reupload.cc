@@ -331,14 +331,11 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         _can_replace_manifest_segment = true;
     }
 
+    _end_inclusive = std::min(
+      _target_end_inclusive.value_or(last_collected), last_collected);
+
     if (is_reupload_mode(mode)) {
-        _end_inclusive = _target_end_inclusive.value_or(last_collected);
         align_end_offset_to_manifest();
-    } else {
-        // In case of new upload we want to end at the end of the segment
-        // or at LSO (which is passed through the _target_end_inclusive).
-        _end_inclusive = std::min(
-          _target_end_inclusive.value_or(last_collected), last_collected);
     }
 }
 
