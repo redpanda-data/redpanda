@@ -307,6 +307,7 @@ public:
         size_t position{};
         model::timestamp base_timestamp{model::timestamp::missing()};
         model::timestamp last_timestamp{model::timestamp::missing()};
+        bool offset_in_batch{false};
     };
 
     /// Compute file offset of the batch inside the segment
