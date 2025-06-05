@@ -282,16 +282,20 @@ ss::future<xshard_transfer_state> consensus::stop() {
     if (_stm_manager) {
         co_await _stm_manager->stop();
     }
+    vlog(_ctxlog.info, "stopping append requests buffer");
     co_await _append_requests_buffer.stop();
+    vlog(_ctxlog.info, "stopping batcher");
     co_await _batcher.stop();
 
     _election_lock.broken();
     _op_lock.broken();
     _deferred_flusher.cancel();
+    vlog(_ctxlog.info, "waiting for gate");
     co_await _bg.close();
 
     // close writer if we have to
     if (unlikely(_snapshot_writer)) {
+        vlog(_ctxlog.info, "stopping snapshot writer");
         co_await _snapshot_writer->close();
         _snapshot_writer.reset();
     }
