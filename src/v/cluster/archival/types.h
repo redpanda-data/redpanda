@@ -172,6 +172,7 @@ enum class error_outcome {
     scan_failed,
     shutting_down,
     not_enough_data,
+    offset_in_batch,
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -195,6 +196,8 @@ struct error_outcome_category final : public std::error_category {
             return "archival_shutting_down";
         case error_outcome::not_enough_data:
             return "archival_not_enough_data";
+        case error_outcome::offset_in_batch:
+            return "archival_offset_in_batch";
         default:
             return "archival_unknown_error";
         }
