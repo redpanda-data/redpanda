@@ -351,6 +351,9 @@ segment_upload::compute_upload_parameters(
             // to satisfy the request.
             co_return make_error_code(error_outcome::not_enough_data);
         }
+        if (sz.value().boundary_in_batch) {
+            co_return make_error_code(error_outcome::offset_in_batch);
+        }
         upload_reconciliation_result result{
           .size_bytes = sz->on_disk_size,
           .is_compacted = _part->log()->is_compacted(
@@ -368,8 +371,8 @@ segment_upload::compute_upload_parameters(
         vlog(_ctxlog.warn, "Index out of range: {}", std::current_exception());
         co_return make_error_code(error_outcome::out_of_range);
     } catch (const ss::semaphore_timed_out&) {
-        // This means we weren't able to acquire read locks for the offset range
-        // in time, not exactly sure why that happens!
+        // This means we weren't able to acquire read locks for the offset
+        // range in time, not exactly sure why that happens!
         vlog(_ctxlog.warn, "Semaphore timed out: {}", std::current_exception());
         co_return make_error_code(error_outcome::timed_out);
     } catch (...) {
