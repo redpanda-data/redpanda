@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import random
-import threading
 import time
 from enum import Enum
 from typing import Callable, Literal, List, TypedDict, get_type_hints
@@ -31,6 +30,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.tests.e2e_finjector import Finjector
 from rptest.clients.rpk import RpkTool, RpkException
+from rptest.util import bg_thread_cm
 from rptest.utils.data_migrations import DataMigrationTestMixin
 import requests
 import re
@@ -48,39 +48,23 @@ def now():
     return int(time.time() * 1000)
 
 
-class TransferLeadersBackgroundThread:
-    def __init__(self, redpanda: RedpandaServiceBase, topic: str):
-        self.redpanda = redpanda
-        self.logger = redpanda.logger
-        self.stop_ev = threading.Event()
-        self.topic = topic
-        self.admin = Admin(self.redpanda, retry_codes=[503, 504])
-        self.thread = threading.Thread(target=lambda: self._loop())
-        self.thread.daemon = True
-
-    def __enter__(self):
-        self.thread.start()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stop_ev.set()
-
-    def _loop(self):
-        while not self.stop_ev.is_set():
-            p_id = None
-            try:
-                partitions = self.admin.get_partitions(namespace="kafka",
-                                                       topic=self.topic)
-                partition = random.choice(partitions)
-                p_id = partition['partition_id']
-                self.logger.info(
-                    f"Transferring leadership of {self.topic}/{p_id}")
-                self.admin.partition_transfer_leadership(namespace="kafka",
-                                                         topic=self.topic,
-                                                         partition=p_id)
-            except Exception as e:
-                self.logger.info(
-                    f"error transferring leadership of {self.topic}/{p_id} - {e}"
-                )
+@bg_thread_cm
+def TransferLeadersBackgroundThread(redpanda: RedpandaServiceBase, topic: str):
+    logger = redpanda.logger
+    admin = Admin(redpanda, retry_codes=[503, 504])
+    while (yield):
+        p_id = None
+        try:
+            partitions = admin.get_partitions(namespace="kafka", topic=topic)
+            partition = random.choice(partitions)
+            p_id = partition['partition_id']
+            logger.info(f"Transferring leadership of {topic}/{p_id}")
+            admin.partition_transfer_leadership(namespace="kafka",
+                                                topic=topic,
+                                                partition=p_id)
+        except Exception as e:
+            logger.info(
+                f"error transferring leadership of {topic}/{p_id} - {e}")
 
 
 class CancellationStage(TypedDict):

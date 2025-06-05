@@ -9,8 +9,9 @@
 
 import os
 import pprint
+import threading
 from contextlib import contextmanager
-from typing import Callable, Optional, Any
+from typing import Callable, Optional, Any, ContextManager
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
@@ -488,3 +489,49 @@ def ssh_output_stderr(source_service,
     source_service.logger.debug(
         f"Returning ssh command output:\n{stdoutdata}\n")
     return stdoutdata, stderrdata
+
+
+def bg_thread_cm(func) -> Callable[..., ContextManager]:
+    """
+    Decorator for a context manager repeating an action in a background thread
+
+    Usage:
+    @bg_thread_cm
+    def some_action_repeater(parameters_if_needed):  # can be a method too
+        # Some preparations if needed
+        while (yield):
+            try:
+                # Some action we'd like to repeat
+            catch Exception as e:
+                # Handle exception, typically just log it.
+                # If we (re-)throw an exception, the background thread stops
+        # Some cleanup if needed
+
+    with some_action_repeater():
+        # do some checks while the background thread repeats the action
+    """
+    def ctx(*args, **kwargs):
+        stop_ev = threading.Event()
+
+        def loop():
+            gen = func(*args, **kwargs)
+            gen.send(None)  # prime the generator
+            while not stop_ev.is_set():
+                gen.send(True)  # tell gen loop to carry on
+            try:
+                gen.send(False)  # tell gen loop to stop
+            except StopIteration:
+                pass  # expected, gen loop stopped cleanly
+            else:
+                assert False, "Background thread function did not stop cleanly"
+
+        thread = threading.Thread(target=loop)
+        thread.daemon = True
+        thread.start()
+        try:
+            yield
+        finally:
+            stop_ev.set()
+            thread.join()
+
+    return contextmanager(ctx)
