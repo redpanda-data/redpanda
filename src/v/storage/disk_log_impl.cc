@@ -2330,13 +2330,21 @@ disk_log_impl::make_cached_reader(log_reader_config config) {
 }
 
 namespace details {
+
+bool is_offset_in_batch(
+  const model::record_batch_header& header, model::offset o) {
+    // Note: header.contains also matches if offset is on the boundary. This
+    // function checks if the offset lies strictly inside the batch.
+    return header.base_offset < o && header.last_offset() > o;
+}
+
 // This accumulator is used to compute size of the on-disk representation of the
 // record batches
 struct batch_size_accumulator {
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         vassert(
           result_size_bytes != nullptr && base_timestamp != nullptr
-            && max_timestamp != nullptr,
+            && max_timestamp != nullptr && target_offset_in_batch != nullptr,
           "batch_size_accumulator is not initialized properly");
         // Target is exclusive:
         // 'target' offset corresponds to the base offset of the
@@ -2352,6 +2360,10 @@ struct batch_size_accumulator {
         //                  target---v
         //     |++++++++++++++[+++++++]X          |
         //
+        // omits cases where target is perfectly aligned to batch boundary
+        *target_offset_in_batch = *target_offset_in_batch
+                                  || is_offset_in_batch(b.header(), target);
+
         *base_timestamp = b.header().first_timestamp;
         if (boundary == boundary_type::inclusive) {
             if (b.last_offset() > target) {
@@ -2382,6 +2394,7 @@ struct batch_size_accumulator {
     boundary_type boundary;
     model::timestamp* base_timestamp{nullptr};
     model::timestamp* max_timestamp{nullptr};
+    bool* target_offset_in_batch{nullptr};
 };
 } // namespace details
 
@@ -2398,12 +2411,14 @@ auto disk_log_impl::get_file_offset(
     size_t size_bytes{index_entry.filepos};
     model::timestamp base_timestamp = index_entry.timestamp;
     model::timestamp max_timestamp = model::timestamp::max();
+    bool offset_in_batch = false;
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
       .target = target,
       .boundary = boundary,
       .base_timestamp = &base_timestamp,
       .max_timestamp = &max_timestamp,
+      .target_offset_in_batch = &offset_in_batch,
     };
 
     auto reader_start_offset = index_entry.offset;
@@ -2442,6 +2457,7 @@ auto disk_log_impl::get_file_offset(
       .position = size_bytes,
       .base_timestamp = base_timestamp,
       .last_timestamp = max_timestamp,
+      .offset_in_batch = offset_in_batch,
     };
 }
 
@@ -2651,6 +2667,8 @@ disk_log_impl::offset_range_size(
       .last_offset = last,
       .first_timestamp = left_scan_offset.base_timestamp,
       .last_timestamp = right_scan_offset.last_timestamp,
+      .boundary_in_batch = left_scan_offset.offset_in_batch
+                           || right_scan_offset.offset_in_batch,
     };
 }
 

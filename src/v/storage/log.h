@@ -172,6 +172,7 @@ public:
         model::offset last_offset;
         model::timestamp first_timestamp;
         model::timestamp last_timestamp;
+        bool boundary_in_batch{false};
     };
 
     struct offset_range_size_requirements_t {
