@@ -18,6 +18,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
 #include "kafka/client/fetcher.h"
+#include "kafka/client/manual_consumer.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
@@ -157,6 +158,16 @@ public:
       const member_id& m_id,
       std::optional<std::chrono::milliseconds> timeout,
       std::optional<int32_t> max_bytes);
+
+    shared_manual_consumer_t
+    create_manual_consumer(manual_consumer::cursors cursors) {
+        return ss::make_lw_shared<manual_consumer>(
+          _config,
+          _topic_cache,
+          _brokers,
+          std::move(cursors),
+          [this](std::exception_ptr ex) { return mitigate_error(ex); });
+    }
 
     ss::future<describe_configs_response> describe_topics(
       chunked_vector<model::topic> topics,

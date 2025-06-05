@@ -201,6 +201,8 @@ ss::future<shared_consumer_t> make_consumer(
 
 namespace detail {
 
+fetch_response reduce_fetch_response(fetch_response result, fetch_response val);
+
 struct consumer_hash {
     using is_transparent = void;
     size_t operator()(const member_id& id) const {

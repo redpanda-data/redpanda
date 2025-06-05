@@ -75,6 +75,9 @@ struct partition_comp {
 fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
     result.data.throttle_time_ms += val.data.throttle_time_ms;
+    if (result.data.error_code == error_code::none) {
+        result.data.error_code = val.data.error_code;
+    }
     std::move(
       val.data.responses.begin(),
       val.data.responses.end(),
@@ -411,6 +414,8 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
         throw broker_error(broker->id(), res.data.error_code);
     }
 
+    // TODO: check that this CG-based consumer still works after the fetch
+    // session changes, and consider adapting it to use fetch sessions properly
     _fetch_sessions[broker].apply(res);
     co_return res;
 }

@@ -169,6 +169,7 @@ ss::future<> client::external_mitigate_error(std::exception_ptr ex) const {
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return external_mitigate_error(ex).handle_exception(
       [this](std::exception_ptr ex) {
+          vlog(kclog.warn, "Mitigating: {}", ex);
           _gate.check();
           try {
               std::rethrow_exception(ex);

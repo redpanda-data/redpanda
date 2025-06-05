@@ -1,3 +1,4 @@
+load("//bazel:build.bzl", "redpanda_cc_binary")
 load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_test_cc_library(
@@ -334,5 +335,19 @@ redpanda_cc_btest(
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_binary(
+    name = "kc_consumer",
+    testonly = True,
+    srcs = ["kc_consumer.cc"],
+    deps = [
+        "//src/v/base",
+        "//src/v/kafka/client",
+        "//src/v/model",
+        "//src/v/utils:file_io",
+        "@boost//:program_options",
+        "@seastar",
     ],
 )
