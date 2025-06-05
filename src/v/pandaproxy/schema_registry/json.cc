@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/json_schema/dialect.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 
@@ -56,55 +57,11 @@
 
 namespace pandaproxy::schema_registry {
 
+using namespace pandaproxy::schema_registry::json_schema;
+
 namespace {
 
 using json_compatibility_result = raw_compatibility_result;
-
-// this is the list of supported dialects
-enum class json_schema_dialect {
-    draft4,
-    draft6,
-    draft7,
-    draft201909,
-    draft202012,
-};
-
-constexpr std::string_view
-to_uri(json_schema_dialect draft, bool strip = false) {
-    using enum json_schema_dialect;
-    auto dialect_str = [&]() -> std::string_view {
-        switch (draft) {
-        case draft4:
-            return "http://json-schema.org/draft-04/schema#";
-        case draft6:
-            return "http://json-schema.org/draft-06/schema#";
-        case draft7:
-            return "http://json-schema.org/draft-07/schema#";
-        case draft201909:
-            return "https://json-schema.org/draft/2019-09/schema#";
-        case draft202012:
-            return "https://json-schema.org/draft/2020-12/schema#";
-        }
-    }();
-
-    if (strip) {
-        // strip final # from uri
-        dialect_str.remove_suffix(1);
-    }
-
-    return dialect_str;
-}
-
-constexpr std::optional<json_schema_dialect> from_uri(std::string_view uri) {
-    using enum json_schema_dialect;
-    return string_switch<std::optional<json_schema_dialect>>{uri}
-      .match_all(to_uri(draft4), to_uri(draft4, true), draft4)
-      .match_all(to_uri(draft6), to_uri(draft6, true), draft6)
-      .match_all(to_uri(draft7), to_uri(draft7, true), draft7)
-      .match_all(to_uri(draft201909), to_uri(draft201909, true), draft201909)
-      .match_all(to_uri(draft202012), to_uri(draft202012, true), draft202012)
-      .default_match(std::nullopt);
-}
 
 // type to contain the canonical uri for an id, in the form host/path
 // useful to limit the degree of freedom of the uri (https vs http, ports, user
@@ -420,7 +377,7 @@ result<document_context> parse_json(iobuf buf) {
         if (auto it = schema.find("$schema");
             it != schema.object_range().end()) {
             if (it->value().is_string()) {
-                maybe_dialect = from_uri(it->value().as_string_view());
+                maybe_dialect = dialect_from_uri(it->value().as_string_view());
             }
 
             if (
@@ -2246,7 +2203,7 @@ void collect_bundled_schemas_and_fix_refs(
 
         // we have a $schema keyword, use this dialect if we find out that
         // this_obj is a bundled schema
-        return from_uri(dialect_it->value().as_string_view());
+        return dialect_from_uri(dialect_it->value().as_string_view());
     }();
 
     if (!maybe_new_dialect.has_value()) {
