@@ -113,6 +113,7 @@ redpanda_cc_library(
     deps = [
         ":config",
         ":json_schema_dialect",
+        ":json_schema_jsoncons_dialect",
         ":rest_swagger",
         ":schema_registry_swagger",
         ":subject_name_strategy",
@@ -261,5 +262,25 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/strings:string_switch",
+    ],
+)
+
+redpanda_cc_library(
+    name = "json_schema_jsoncons_dialect",
+    srcs = [
+        "schema_registry/json_schema/jsoncons_dialect.cc",
+    ],
+    hdrs = [
+        "schema_registry/json_schema/jsoncons_dialect.h",
+    ],
+    implementation_deps = [
+        "@fmt",
+    ],
+    include_prefix = "pandaproxy",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":json_schema_dialect",
+        ":pandaproxy_result",
+        "@jsoncons",
     ],
 )
