@@ -92,6 +92,7 @@ redpanda_cc_library(
         "schema_registry/requests/get_subject_versions_version.h",
         "schema_registry/requests/mode.h",
         "schema_registry/requests/post_subject_versions.h",
+        "schema_registry/result.h",
         "schema_registry/schema_getter.h",
         "schema_registry/schema_id_cache.h",
         "schema_registry/seq_writer.h",
@@ -216,6 +217,38 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/strings:string_switch",
+    ],
+)
+
+redpanda_cc_library(
+    name = "pandaproxy_error",
+    hdrs = [
+        "schema_registry/error.h",
+    ],
+    include_prefix = "pandaproxy",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "pandaproxy_exceptions",
+    hdrs = [
+        "schema_registry/exceptions.h",
+    ],
+    include_prefix = "pandaproxy",
+    visibility = ["//visibility:public"],
+)
+
+redpanda_cc_library(
+    name = "pandaproxy_result",
+    hdrs = [
+        "schema_registry/result.h",
+    ],
+    include_prefix = "pandaproxy",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pandaproxy_error",
+        ":pandaproxy_exceptions",
+        "//src/v/base",
     ],
 )
 

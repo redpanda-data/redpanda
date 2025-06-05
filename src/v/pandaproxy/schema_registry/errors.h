@@ -11,51 +11,13 @@
 
 #pragma once
 
-#include "base/outcome.h"
 #include "pandaproxy/schema_registry/error.h"
-#include "pandaproxy/schema_registry/exceptions.h"
+#include "pandaproxy/schema_registry/result.h"
 #include "pandaproxy/schema_registry/types.h"
 
 #include <fmt/format.h>
 
 namespace pandaproxy::schema_registry {
-
-/// \brief error_info stores an error_code and custom message.
-///
-/// This class is useful for transporting via an outcome::result
-/// and automatic conversion to an `exception`.
-/// See `outcome_throw_as_system_error_with_payload`.
-class error_info {
-public:
-    error_info() = default;
-    error_info(error_code ec, std::string msg)
-      : _ec{ec}
-      , _msg{std::move(msg)} {}
-
-    const error_code& code() const noexcept { return _ec; }
-    const std::string& message() const noexcept { return _msg; }
-
-private:
-    error_code _ec;
-    std::string _msg;
-};
-
-inline exception as_exception(const error_info& ei) {
-    return exception(ei.code(), ei.message());
-}
-
-///\brief Integrate error_info with outcome
-inline std::error_code make_error_code(const error_info& ei) {
-    return make_error_code(ei.code());
-}
-
-///\brief Integrate error_info with outcome
-inline void outcome_throw_as_system_error_with_payload(const error_info& ei) {
-    throw as_exception(ei);
-}
-
-template<typename T>
-using result = result<T, error_info>;
 
 inline error_info schema_not_found() {
     return error_info{
