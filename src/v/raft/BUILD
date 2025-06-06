@@ -111,6 +111,7 @@ redpanda_cc_library(
         "offset_monitor.h",
         "persisted_stm.h",
         "probe.h",
+        "recovery_client_protocol.h",
         "recovery_memory_quota.h",
         "recovery_rpc_types.h",
         "recovery_scheduler.h",
