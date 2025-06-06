@@ -829,6 +829,49 @@ class DataMigrationsApiTest(RedpandaTest, DataMigrationTestMixin):
         self.cancel(migration_id, topic_name)
         self.assert_no_topics()
 
+    @bg_thread_cm
+    def transaction_producer_thread(self, topic: str):
+        producer = self.get_ck_producer(use_transactional=True)
+        producer.init_transactions()
+        while (yield):
+            try:
+                producer.begin_transaction()
+                producer.produce(topic, key="key1", value="value1")
+                producer.commit_transaction()
+            except Exception as e:
+                self.logger.info(f"error producing with a transaction: {e}")
+
+    def ensure_no_inflight_transactions(self, topic_name, partition):
+        producers = self.admin.get_producers_state(namespace="kafka",
+                                                   topic=topic_name,
+                                                   partition=partition)
+        self.redpanda.logger.debug(f"{producers=}")
+        for producer in producers.get('producers', []):
+            assert 'transaction_begin_offset' not in producer, \
+                "unexpected transaction in progress"
+
+    @cluster(num_nodes=3, log_allow_list=MIGRATION_LOG_ALLOW_LIST)
+    @matrix(transfer_leadership=[True])
+    def test_transactions(self, transfer_leadership: bool):
+        workload_topic = TopicSpec(partition_count=1)
+        self.client().create_topic(workload_topic)
+        tl_topic_name = workload_topic.name if transfer_leadership else None
+        with self.tl_thread(tl_topic_name):
+            with self.transaction_producer_thread(workload_topic.name):
+                out_migration = OutboundDataMigration(
+                    topics=[make_namespaced_topic(workload_topic.name)],
+                    consumer_groups=[])
+                out_migration_id = self.create_and_wait(out_migration)
+
+                self.admin.execute_data_migration_action(
+                    out_migration_id, MigrationAction.prepare)
+                self.wait_for_migration_states(out_migration_id, ['prepared'])
+                self.admin.execute_data_migration_action(
+                    out_migration_id, MigrationAction.execute)
+                self.wait_for_migration_states(out_migration_id, ['executed'])
+
+                self.ensure_no_inflight_transactions(workload_topic.name, 0)
+
     @cluster(
         num_nodes=4,
         log_allow_list=MIGRATION_LOG_ALLOW_LIST + [
