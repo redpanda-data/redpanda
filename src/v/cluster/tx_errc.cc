@@ -74,6 +74,8 @@ std::ostream& operator<<(std::ostream& o, errc err) {
         return o << "tx::errc::invalid_timeout";
     case errc::producer_creation_error:
         return o << "tx::errc::producer_creation_error";
+    case errc::partition_writes_locked:
+        return o << "tx::errc::partition_writes_locked";
     }
     return o;
 }

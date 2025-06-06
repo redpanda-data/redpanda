@@ -167,6 +167,9 @@ constexpr error_code map_tx_errc(cluster::tx::errc ec) {
         return error_code::unknown_server_error;
     case cluster::tx::errc::invalid_timeout:
         return error_code::invalid_transaction_timeout;
+    // should be consistent with cluster::errc::resource_is_being_migrated
+    case cluster::tx::errc::partition_writes_locked:
+        return error_code::policy_violation;
     }
 }
 
