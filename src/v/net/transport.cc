@@ -87,6 +87,12 @@ void base_transport::set_keepalive_parameters(
     }
 }
 
+void base_transport::set_keepalive(bool keepalive) {
+    if (_fd) {
+        _fd->set_keepalive(keepalive);
+    }
+}
+
 ss::future<>
 base_transport::connect(clock_type::time_point connection_timeout) {
     // in order to hold concurrency correctness invariants we must guarantee 3
