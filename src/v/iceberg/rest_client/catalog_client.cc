@@ -118,6 +118,9 @@ catalog_client::maybe_configure(retry_chain_node& rtc) {
     if (!gh.has_value()) {
         co_return tl::unexpected(gh.error());
     }
+    if (_configured) {
+        co_return std::monostate{};
+    }
     vlog(log.debug, "Configuring Iceberg REST catalog client");
     auto http_request = http::request_builder{}
                           .method(boost::beast::http::verb::get)
