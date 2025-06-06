@@ -72,6 +72,8 @@ public:
         _public_metrics.clear();
     }
 
+    uint32_t get_log_truncations() const { return _log_truncations; }
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
