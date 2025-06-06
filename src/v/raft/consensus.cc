@@ -1710,6 +1710,18 @@ ss::future<> consensus::write_last_applied(model::offset o) {
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
 }
 
+ss::future<> consensus::truncate_state(model::offset truncate_at) {
+    co_await _log->truncate(storage::truncate_config(truncate_at));
+    _probe->log_truncated();
+    // update flushed offset
+    _flushed_offset = std::min(
+      model::prev_offset(truncate_at), _flushed_offset);
+
+    co_await _configuration_manager.truncate(truncate_at);
+    _probe->configuration_update();
+    update_follower_stats(_configuration_manager.get_latest());
+}
+
 model::offset consensus::read_last_applied() const {
     const auto key = last_applied_key();
     auto value = _storage.kvs().get(
@@ -2236,7 +2248,6 @@ consensus::do_append_entries(append_entries_request&& r) {
           last_visible_index(),
           _last_leader_visible_offset,
           truncate_at);
-        _probe->log_truncated();
 
         _majority_replicated_index = std::min(
           model::prev_offset(truncate_at), _majority_replicated_index);
@@ -2249,17 +2260,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           model::prev_offset(truncate_at), _flushed_offset);
 
         try {
-            co_await _log->truncate(storage::truncate_config(truncate_at));
-            // update flushed offset once again after truncation as flush is
-            // executed concurrently to append entries and it may race with
-            // the truncation
-            _flushed_offset = std::min(
-              model::prev_offset(truncate_at), _flushed_offset);
-
-            co_await _configuration_manager.truncate(truncate_at);
-            _probe->configuration_update();
-            update_follower_stats(_configuration_manager.get_latest());
-
+            co_await truncate_state(truncate_at);
             auto lstats = _log->offsets();
             if (unlikely(lstats.dirty_offset != adjusted_prev_log_index)) {
                 vlog(

@@ -418,6 +418,8 @@ public:
 
     model::offset read_last_applied() const;
 
+    ss::future<> truncate_state(model::offset);
+
     probe& get_probe() { return *_probe; };
 
     ss::shared_ptr<storage::log> log() { return _log; }
