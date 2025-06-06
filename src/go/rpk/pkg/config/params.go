@@ -1809,6 +1809,11 @@ func (c *Config) loadCloudEnvToOverrides() {
 			case "ppd", CloudEnvironmentPreprod:
 				env = CloudEnvironmentPreprod
 			}
+			setEnvIfUnset := func(env, val string) {
+				if _, ok := os.LookupEnv(env); !ok {
+					os.Setenv(env, val)
+				}
+			}
 			if override, ok := cloudEnvConfig[env]; ok {
 				c.devOverrides.PublicAPIURL = override.PublicAPIURL
 				c.devOverrides.CloudAPIURL = override.CloudAPIURL
@@ -1817,7 +1822,14 @@ func (c *Config) loadCloudEnvToOverrides() {
 				c.devOverrides.CloudAuthAudience = override.CloudAuthAudience
 				// The BYOC plugin uses a different environment var to set the
 				// cloud URL, and it's not part of the overrides.
-				os.Setenv("CLOUD_URL", fmt.Sprintf("%v/api/v1", override.CloudAPIURL))
+				setEnvIfUnset("CLOUD_URL", fmt.Sprintf("%v/api/v1", override.CloudAPIURL))
+				// And we also want to set the environment variable for
+				// the BYOC plugin to pick up.
+				setEnvIfUnset("RPK_PUBLIC_API_URL", override.PublicAPIURL)
+				setEnvIfUnset("RPK_CLOUD_URL", override.CloudAPIURL)
+				setEnvIfUnset("RPK_AUTH_APP_CLIENT_ID", override.CloudAuthAppClientID)
+				setEnvIfUnset("RPK_CLOUD_AUTH_URL", override.CloudAuthURL)
+				setEnvIfUnset("RPK_CLOUD_AUTH_AUDIENCE", override.CloudAuthAudience)
 			}
 		}
 	}
