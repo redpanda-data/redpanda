@@ -244,6 +244,16 @@ rm_partition_frontend::do_begin_tx_on_partition_shard(
         co_return begin_tx_reply{std::move(ntp), tx::errc::partition_not_found};
     }
 
+    auto maybe_partition_units = co_await partition->hold_writes_enabled();
+    if (!maybe_partition_units.has_value()) {
+        vlog(
+          txlog.warn,
+          "partition {} is not writable, errc: {}",
+          ntp,
+          maybe_partition_units.error());
+        co_return begin_tx_reply{
+          std::move(ntp), tx::errc::partition_writes_locked};
+    }
 
     auto stm = partition->rm_stm();
     if (!stm) {
