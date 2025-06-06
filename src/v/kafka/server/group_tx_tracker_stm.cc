@@ -270,7 +270,9 @@ group_tx_tracker_stm_factory::group_tx_tracker_stm_factory(
   : _feature_table(feature_table) {}
 
 void group_tx_tracker_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<kafka::group_tx_tracker_stm>(
       cg_klog, raft, _feature_table);
     raft->log()->stm_manager()->add_stm(stm);

@@ -460,7 +460,8 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      raft::consensus* raft,
+      const cluster::stm_instance_config& cfg) final;
 
 private:
     ss::sharded<features::feature_table>& _feature_table;

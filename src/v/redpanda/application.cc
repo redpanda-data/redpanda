@@ -2751,22 +2751,19 @@ void application::start_runtime_services(
       .invoke_on_all([this](cluster::partition_manager& pm) {
           pm.register_factory<cluster::tm_stm_factory>(feature_table);
           pm.register_factory<cluster::id_allocator_stm_factory>();
-          pm.register_factory<transform::transform_offsets_stm_factory>(
-            controller->get_topics_state());
+          pm.register_factory<transform::transform_offsets_stm_factory>();
           pm.register_factory<cluster::rm_stm_factory>(
             config::shard_local_cfg().enable_transactions.value(),
             config::shard_local_cfg().enable_idempotence.value(),
             tx_gateway_frontend,
             producer_manager,
-            feature_table,
-            controller->get_topics_state());
+            feature_table);
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
           pm.register_factory<cluster::archival_metadata_stm_factory>(
             config::shard_local_cfg().cloud_storage_enabled(),
             cloud_storage_api,
-            feature_table,
-            controller->get_topics_state());
+            feature_table);
           pm.register_factory<kafka::group_tx_tracker_stm_factory>(
             feature_table);
       })

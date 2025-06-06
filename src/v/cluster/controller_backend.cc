@@ -1158,20 +1158,24 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
             // Configuration will be replicate to the new replica
             initial_replicas = {};
         }
-
+        auto tt_revision_on_create = _topics.local().last_applied_revision();
+        auto topic_md = _topics.local().get_topic_metadata_ref(
+          model::topic_namespace_view(ntp));
+        vassert(topic_md, "topic metadata disappeared for {}", ntp);
         auto ec = co_await create_partition(
           ntp,
           group_id,
           expected_log_revision.value(),
-          std::move(initial_replicas));
+          std::move(initial_replicas),
+          topic_md->get());
         if (ec) {
             co_return ec;
         }
 
         // The partition that we just created uses topic properties queried from
-        // topic_table at last_applied_revision(). Thus all properties updates
-        // with revisions <= last_applied_revision() are already reconciled.
-        rs.mark_properties_reconciled(_topics.local().last_applied_revision());
+        // topic_table at tt_revision_on_create. Thus all properties updates
+        // with revisions <= tt_revision_on_create are already reconciled.
+        rs.mark_properties_reconciled(tt_revision_on_create);
 
         co_return ss::stop_iteration::no;
     }
@@ -1183,6 +1187,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
           *rs.properties_changed_at,
           partition_operation_type::update_properties);
 
+        auto tt_prop_revision = _topics.local().last_applied_revision();
         auto cfg = _topics.local().get_topic_cfg(
           model::topic_namespace_view{ntp});
         vassert(cfg, "[{}] expected topic cfg to be present", ntp);
@@ -1194,7 +1199,7 @@ ss::future<result<ss::stop_iteration>> controller_backend::reconcile_ntp_step(
         co_await partition->update_configuration(
           std::move(cfg).value().properties);
 
-        rs.mark_properties_reconciled(_topics.local().last_applied_revision());
+        rs.mark_properties_reconciled(tt_prop_revision);
         co_return ss::stop_iteration::no;
     }
 
@@ -1358,7 +1363,8 @@ ss::future<std::error_code> controller_backend::create_partition(
   model::ntp ntp,
   raft::group_id group_id,
   model::revision_id log_revision,
-  replicas_t initial_replicas) {
+  replicas_t initial_replicas,
+  const topic_metadata& topic_md) {
     vlog(
       clusterlog.debug,
       "[{}] creating partition, log revision: {}, initial_replicas: {}",
@@ -1366,11 +1372,10 @@ ss::future<std::error_code> controller_backend::create_partition(
       log_revision,
       initial_replicas);
 
-    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
-    if (!cfg) {
-        // partition was already removed, do nothing
-        co_return errc::success;
-    }
+    // Reference `topic_md` is only valid until the first scheduling point.
+    // Copy required data from it early even though we may not need it
+    // eventually.
+    topic_configuration cfg = topic_md.get_configuration();
 
     auto ec = co_await _shard_placement.prepare_create(ntp, log_revision);
     if (ec) {
@@ -1394,9 +1399,9 @@ ss::future<std::error_code> controller_backend::create_partition(
           initial_replicas, _members_table.local());
 
         std::optional<cloud_storage_clients::bucket_name> read_replica_bucket;
-        if (cfg->is_read_replica()) {
+        if (cfg.is_read_replica()) {
             read_replica_bucket = cloud_storage_clients::bucket_name(
-              cfg->properties.read_replica_bucket.value());
+              cfg.properties.read_replica_bucket.value());
         }
 
         std::optional<xshard_transfer_state> xst_state;
@@ -1409,7 +1414,7 @@ ss::future<std::error_code> controller_backend::create_partition(
          * storage and current node is joining replica set. A node is joining
          * replica set if its initial nodes set is empty.
          */
-        auto rtp = cfg->properties.remote_topic_properties;
+        auto rtp = cfg.properties.remote_topic_properties;
         if (initial_brokers.empty() && rtp.has_value()) {
             // reset remote topic properties
             vlog(
@@ -1423,7 +1428,7 @@ ss::future<std::error_code> controller_backend::create_partition(
         // increases while ntp is being created again
         try {
             co_await _partition_manager.local().manage(
-              cfg->make_ntp_config(
+              cfg.make_ntp_config(
                 _data_directory,
                 ntp.tp.partition,
                 log_revision,
@@ -1435,8 +1440,7 @@ ss::future<std::error_code> controller_backend::create_partition(
               std::move(xst_state),
               std::move(rtp),
               read_replica_bucket,
-              cfg->properties.remote_label,
-              cfg->properties.remote_topic_namespace_override);
+              &cfg);
 
             _xst_states.erase(ntp);
 
@@ -1462,7 +1466,7 @@ ss::future<std::error_code> controller_backend::create_partition(
         auto partition = _partition_manager.local().get(ntp);
         if (partition) {
             partition->set_topic_config(
-              std::make_unique<topic_configuration>(std::move(*cfg)));
+              std::make_unique<topic_configuration>(std::move(cfg)));
         }
     }
 

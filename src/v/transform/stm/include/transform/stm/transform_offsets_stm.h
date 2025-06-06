@@ -24,14 +24,11 @@ using transform_offsets_stm_t = cluster::distributed_kv_stm<
 
 class transform_offsets_stm_factory : public cluster::state_machine_factory {
 public:
-    explicit transform_offsets_stm_factory(ss::sharded<cluster::topic_table>&);
     bool is_applicable_for(const storage::ntp_config& cfg) const final;
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
-
-private:
-    ss::sharded<cluster::topic_table>& _topics;
+      raft::consensus* raft,
+      const cluster::stm_instance_config&) final;
 };
 } // namespace transform

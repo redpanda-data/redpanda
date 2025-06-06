@@ -34,6 +34,9 @@
 #include <utility>
 #include <vector>
 
+namespace cluster {
+struct topic_configuration;
+}
 namespace raft {
 
 template<typename T>

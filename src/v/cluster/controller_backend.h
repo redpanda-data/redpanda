@@ -292,7 +292,8 @@ private:
       model::ntp,
       raft::group_id,
       model::revision_id log_revision,
-      replicas_t initial_replicas);
+      replicas_t initial_replicas,
+      const topic_metadata& topic_md);
 
     ss::future<> add_to_shard_table(
       model::ntp,
