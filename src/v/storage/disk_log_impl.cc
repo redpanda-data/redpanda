@@ -2793,7 +2793,7 @@ disk_log_impl::offset_range_size(
     model::offset last_included_offset = {};
     size_t num_segments = 0;
     auto it = _segs.lower_bound(first);
-    for (; it < _segs.end(); it++) {
+    for (; it < _segs.end() && current_size < target.target_size; it++) {
         if (it->get()->is_closed()) {
             co_return std::nullopt;
         }
