@@ -1777,9 +1777,36 @@ class seastar_output_stream:
 class seastar_data_source:
     def __init__(self, ref):
         self.ref = ref
+        self.casted = ref.address.dynamic_cast(
+            gdb.lookup_type('seastar::tls::tls_connected_socket_impl::source_impl').pointer()).dereference()    
+        self.session = seastar_shared_ptr(self.casted['_session']).get().dynamic_cast(  gdb.lookup_type('seastar::tls::session').pointer()).dereference()
+        self.session_in_sem = named_samaphore(self.session['_in_sem'])
+        self.session_out_sem = named_samaphore(self.session['_out_sem'])
+        self.session_input = self.session['_input']
+        self.session_eof = self.session['_eof']
 
+        self.session_error = self.session['_error']
+        self.session_shutdown = self.session['_shutdown']
+        self.session_out_pending = self.session['_output_pending']
+        self.session_in = std_unique_ptr(self.session['_in']['_dsi']).get().dynamic_cast(gdb.lookup_type("seastar::net::posix_data_source_impl").pointer()).dereference()
+        self.out_pending = self.session['_output_pending']
+        self.session_ssl = std_unique_ptr(self.session['_ssl']).get().dereference()
+        self.rbio = self.session_ssl['rbio'].dereference()
     def __repr__(self):
-        return f"seastar_data_source(ref={self.ref})"
+        return f"""
+seastar_data_source(ref={self.ref}, 
+session_in_sem={self.session_in_sem}, 
+session_out_sem={self.session_out_sem}, 
+session_input={self.session_input}, 
+session_eof={self.session_eof}, 
+session_error={self.session_error}, 
+session_shutdown={self.session_shutdown}, 
+session_out_pending={self.session_out_pending},
+ssl = {self.session_ssl}, 
+rbio={self.rbio}, 
+session_in={self.session_in},
+out_pending={self.out_pending})"
+"""
 
 
 class seastar_input_stream:
