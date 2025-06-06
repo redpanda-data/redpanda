@@ -84,6 +84,7 @@ redpanda_test_cc_library(
         "//src/v/features",
         "//src/v/model",
         "//src/v/raft",
+        "//src/v/raft:raft_recovery_rpc_handler",
         "//src/v/random:generators",
         "//src/v/rpc",
         "//src/v/ssx:future_util",
@@ -656,5 +657,30 @@ redpanda_test_cc_library(
     deps = [
         "//src/v/raft",
         "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "raft_recovery_test",
+    timeout = "long",
+    srcs = [
+        "raft_recovery_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":common",
+        "//src/v/cluster",
+        "//src/v/cluster/tests:tx_compaction_utils_gtest",
+        "//src/v/model",
+        "//src/v/raft",
+        "//src/v/raft/tests:raft_fixture",
+        "//src/v/storage",
+        "//src/v/test_utils:fixture",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/utils:tristate",
+        "@googletest//:gtest",
+        "@seastar",
+        "@seastar//:testing",
     ],
 )

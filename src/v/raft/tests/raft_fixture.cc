@@ -29,6 +29,8 @@
 #include "raft/heartbeats.h"
 #include "raft/recovery_client_protocol.h"
 #include "raft/recovery_rpc_client.h"
+#include "raft/recovery_rpc_handler.h"
+#include "raft/recovery_rpc_types.h"
 #include "raft/state_machine_manager.h"
 #include "raft/tests/failure_injectable_log.h"
 #include "raft/timeout_jitter.h"
@@ -399,6 +401,7 @@ raft_node_instance::raft_node_instance(
   , _revision(revision)
   , _logger(test_log, fmt::format("[node: {}]", _id))
   , _base_directory(std::move(base_directory))
+  , _node_map(node_map)
   , _protocol(ss::make_shared<in_memory_test_protocol>(node_map, _logger))
   , _buffered_protocol(ss::make_shared<buffered_protocol>(
       ss::default_scheduling_group(),
@@ -431,8 +434,9 @@ raft_node_instance::raft_node_instance(
     config::shard_local_cfg().disable_metrics.set_value(true);
 }
 
-ss::future<>
-raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
+ss::future<> raft_node_instance::initialise(
+  std::vector<raft::vnode> initial_nodes,
+  std::optional<storage::ntp_config::default_overrides> overrides) {
     co_await _group_manager.start_single();
     _hb_manager = std::make_unique<heartbeat_manager>(
       ss::default_scheduling_group(),
@@ -449,8 +453,6 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
     co_await _recovery_throttle.invoke_on_all(
       &coordinated_recovery_throttle::start);
 
-    co_await _as.start();
-    co_await _connections.start(std::ref(_as));
     co_await _storage.start(
       [this]() {
           return storage::kvstore_config(
@@ -463,6 +465,9 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       std::ref(_features));
     co_await _storage.invoke_on_all(&storage::api::start);
     storage::ntp_config ntp_cfg(ntp(), _base_directory);
+    if (overrides.has_value()) {
+        ntp_cfg.set_overrides(std::move(overrides.value()));
+    }
 
     auto log = co_await _storage.local().log_mgr().manage(
       std::move(ntp_cfg),
@@ -482,7 +487,7 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
       config::mock_binding<bool>(_enable_longest_log_detection),
       consensus_client_protocol(_buffered_protocol),
       recovery_client_protocol(
-        ss::make_shared<recovery_rpc_client>(_id, _connections)),
+        ss::make_shared<in_memory_recovery_client>(_id, _node_map)),
       [this](leadership_status ls) { leadership_notification_callback(ls); },
       _storage.local(),
       _recovery_throttle.local(),
@@ -495,8 +500,9 @@ raft_node_instance::initialise(std::vector<raft::vnode> initial_nodes) {
 
 ss::future<> raft_node_instance::init_and_start(
   std::vector<vnode> initial_nodes,
-  std::optional<raft::state_machine_manager_builder> builder) {
-    co_await initialise(std::move(initial_nodes));
+  std::optional<raft::state_machine_manager_builder> builder,
+  std::optional<storage::ntp_config::default_overrides> overrides) {
+    co_await initialise(std::move(initial_nodes), std::move(overrides));
     co_await start(std::move(builder));
 }
 
@@ -525,11 +531,9 @@ ss::future<> raft_node_instance::stop() {
         co_await _hb_manager->stop();
         vlog(_logger.debug, "stopping feature table");
         _raft = nullptr;
-        co_await _as.stop();
-        co_await _connections.stop();
 
-        // group manager must be stopped before storage as consensus stores the
-        // units of the storage resources semaphore.
+        // group manager must be stopped before storage as consensus stores
+        // the units of the storage resources semaphore.
         co_await _group_manager.stop();
         vlog(_logger.debug, "stopping storage");
         co_await _storage.stop();
@@ -853,6 +857,24 @@ std::ostream& operator<<(std::ostream& o, msg_type type) {
         o << "transfer_leadership";
         return o;
     }
+}
+
+ss::lw_shared_ptr<consensus>
+in_memory_recovery_client::get_raft_for_node(model::node_id n) {
+    auto node = _node_map.node_for(n);
+    if (!node.has_value()) {
+        return nullptr;
+    }
+    return node.value().get().raft();
+}
+
+ss::future<result<reset_learner_state_reply>>
+in_memory_recovery_client::reset_learner_state(
+  model::node_id n, group_id, std::chrono::milliseconds) {
+    auto c = get_raft_for_node(n);
+    auto r = co_await recovery_rpc_handler::do_reset_learner_state(
+      reset_learner_state_request{}, c);
+    co_return r;
 }
 
 } // namespace raft

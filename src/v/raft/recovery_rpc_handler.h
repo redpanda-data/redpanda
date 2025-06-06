@@ -66,6 +66,7 @@ private:
     ss::scheduling_group _sg;
     ss::sharded<cluster::partition_manager>& _pm;
     ss::sharded<cluster::shard_table>& _st;
+    friend class in_memory_recovery_client;
 };
 
 } // namespace raft

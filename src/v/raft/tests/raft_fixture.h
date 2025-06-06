@@ -178,6 +178,24 @@ private:
     std::optional<reply_interceptor_t> _reply_interceptor;
 };
 
+class in_memory_recovery_client final : public recovery_client_protocol::impl {
+public:
+    ~in_memory_recovery_client() noexcept override = default;
+    explicit in_memory_recovery_client(
+      model::node_id n, raft_node_map& _node_map)
+      : _self(n)
+      , _node_map(_node_map) {}
+
+    ss::future<result<reset_learner_state_reply>> reset_learner_state(
+      model::node_id n, group_id g, std::chrono::milliseconds t) final;
+
+private:
+    ss::lw_shared_ptr<consensus> get_raft_for_node(model::node_id n);
+
+    model::node_id _self;
+    raft_node_map& _node_map;
+};
+
 inline model::timeout_clock::time_point default_timeout() {
     return model::timeout_clock::now() + 30s;
 }
@@ -234,7 +252,10 @@ public:
     }
 
     // Initialise the node instance and create the consensus instance
-    ss::future<> initialise(std::vector<raft::vnode> initial_nodes);
+    ss::future<> initialise(
+      std::vector<raft::vnode> initial_nodes,
+      std::optional<storage::ntp_config::default_overrides> overrides
+      = std::nullopt);
 
     // Start the node instance with an optionally provided state machine builder
     ss::future<>
@@ -243,7 +264,8 @@ public:
     // Initialise and start the node instance
     ss::future<> init_and_start(
       std::vector<raft::vnode> initial_nodes,
-      std::optional<raft::state_machine_manager_builder> builder
+      std::optional<raft::state_machine_manager_builder> builder = std::nullopt,
+      std::optional<storage::ntp_config::default_overrides> overrides
       = std::nullopt);
 
     ss::future<> stop();
@@ -316,10 +338,9 @@ private:
     config::mock_property<size_t> _max_inflight_requests{16};
     config::mock_property<size_t> _max_queued_bytes{1_MiB};
     config::mock_property<size_t> _default_recovery_read_size{128_KiB};
+    raft_node_map& _node_map;
     ss::shared_ptr<in_memory_test_protocol> _protocol;
     ss::shared_ptr<buffered_protocol> _buffered_protocol;
-    ss::sharded<ss::abort_source> _as;
-    ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table>& _features;
     ss::sharded<coordinated_recovery_throttle> _recovery_throttle;
