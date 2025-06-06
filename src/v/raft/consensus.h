@@ -54,6 +54,11 @@
 #include <string_view>
 
 namespace raft {
+
+namespace testing_details {
+class consensus_accessor;
+};
+
 class replicate_entries_stm;
 class vote_stm;
 class recovery_stm;
@@ -566,6 +571,7 @@ private:
     friend event_manager;
     friend append_entries_buffer;
     friend heartbeat_manager;
+    friend class testing_details::consensus_accessor;
     using update_last_quorum_index
       = ss::bool_class<struct update_last_quorum_index>;
     using flush_delay_t

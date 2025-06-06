@@ -646,3 +646,15 @@ redpanda_cc_bench(
         "@seastar//:benchmark",
     ],
 )
+
+redpanda_test_cc_library(
+    name = "common",
+    hdrs = [
+        "common.h",
+    ],
+    include_prefix = "raft/tests",
+    deps = [
+        "//src/v/raft",
+        "@seastar",
+    ],
+)
