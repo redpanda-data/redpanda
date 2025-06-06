@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Scylla is free software: you can redistribute it and/or modify
+# redpanda is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# Scylla is distributed in the hope that it will be useful,
+# redpanda is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Scylla.  If not, see <http://www.gnu.org/licenses/>.
+# along with redpanda.  If not, see <http://www.gnu.org/licenses/>.
 #
-#   - Copyright (C) 2015 ScyllaDB
+#   - Copyright (C) 2015 redpandaDB
 #   - Copyright 2020 Redpanda Data, Inc. - libc++ support and redpanda types
 #
 # -----
@@ -38,6 +38,7 @@ import os
 import subprocess
 import time
 import socket
+import functools
 
 from enum import Enum
 import struct
@@ -657,6 +658,16 @@ class seastar_lw_shared_ptr():
             return self.ref['_p'].cast(self._no_esft_type())['_value'].address
 
 
+class seastar_promise:
+    def __init__(self, ref):
+        self.ref = ref
+        self._state = ref['_state'].dereference()
+        self._task = ref['_task'].dereference()
+
+    def __repr__(self):
+        return f"promise(state={self._state}, task_ptr={self.ref['_task']} task={self._task})"
+
+
 class seastar_basic_rwlock():
     def __init__(self, ref):
         self.ref = ref
@@ -666,7 +677,8 @@ class seastar_basic_rwlock():
             int(std_optional(e.payload).get()['nr']) for e in self.wait_list
         ]
         self.wait_list_prs = [
-            std_optional(e.payload).get()['pr'] for e in self.wait_list
+            seastar_promise(std_optional(e.payload).get()['pr'])
+            for e in self.wait_list
         ]
 
     def __repr__(self):
@@ -743,10 +755,10 @@ class seastar_static_vector:
         except:
             try:
                 data = self.ref['m_holder']['storage']['dummy']['dummy'].cast(
-                    value_type.pointer())  # Scylla 3.1 compatibility
+                    value_type.pointer())  # redpanda 3.1 compatibility
             except gdb.error:
                 data = self.ref['m_holder']['storage']['dummy'].cast(
-                    value_type.pointer())  # Scylla 3.0 compatibility
+                    value_type.pointer())  # redpanda 3.0 compatibility
         for i in range(self.__len__()):
             yield data[i]
 
@@ -1014,7 +1026,7 @@ class span(object):
         """
         Returns the number of pages at the front of the span which are used by the allocator.
 
-        Due to https://github.com/scylladb/seastar/issues/625 there may be some
+        Due to https://github.com/redpandadb/seastar/issues/625 there may be some
         pages at the end of the span which are not used by the small pool.
         We try to detect this. It's not 100% accurate but should work in most cases.
 
@@ -1137,10 +1149,14 @@ class segment_index:
 class segment_reader:
     def __init__(self, ref):
         self.ref = ref
-        self.filename = self.ref["_filename"]
+        self.path = ref['_path']
+        self.streams = boost_intrusive_list(self.ref['_streams'], "_hook")
+        for s in self.streams:
+            opt_iss = std_optional(s['_stream'])
+            print(f"Stream: has_value: {bool(opt_iss)}")
 
     def __str__(self):
-        return "{}".format(self.filename)
+        return "{}".format(self.path)
 
 
 class spill_key_index:
@@ -1219,7 +1235,8 @@ class segment:
         return seastar_basic_rwlock(self.ref['_destructive_ops'])
 
     def reader(self):
-        return segment_reader(self.ref["_reader"])
+        return segment_reader(
+            std_unique_ptr(self.ref["_reader"]).get().dereference())
 
     def index(self):
         return segment_index(self.ref["_idx"])
@@ -1554,11 +1571,15 @@ class redpanda_storage(gdb.Command):
         print(f"# Log segments")
 
         for ntp, log in find_logs():
+
+            if str(model_ntp(ntp).partition()) != "40":
+                continue
             print(f"{ntp} segment count {log.segments().size()}")
             for segment in log.segments():
                 offsets = segment.offsets_tracker()
-                destructive_ops = segment.destructive_ops()
-                print(f"{ntp} - {offsets} - {destructive_ops}")
+                #destructive_ops = segment.destructive_ops()
+                print(f"{ntp} - {offsets} - {0} - reader: {segment.reader()}")
+                break
 
     def print_readers_cache_memory(self):
         print(f"# Readers cache")
@@ -1722,14 +1743,108 @@ class time_point:
         return f"time_point(value={self.value}, time_from_now={self.time_from_now/1000000}ms)"
 
 
+class abort_source:
+    def __init__(self, ref):
+        self.ref = ref
+        self.ex = ref['_ex']
+        self.subscriptions = boost_intrusive_list(ref['_subscriptions'])
+
+    def __repr__(self):
+        return f"abort_source(abort_requested={self.ex}, subscriptions_count={len(self.subscriptions)})"
+
+
+class seastar_output_stream:
+    def __init__(self, ref):
+        self.ref = ref
+        self.fd = ref['_fd']
+        self._buf = ref['_buf']
+        self.size = ref['_size']
+        self.begin = ref['_begin']
+        self.end = ref['_end']
+        self.trim_to_size = ref['_trim_to_size']
+        self.batch_flushes = ref['_batch_flushes']
+        self.in_batch = std_optional(ref['_in_batch'])
+        if self.in_batch:
+            self.in_batch = seastar_promise(self.in_batch.get())
+        self.flush = ref['_flush']
+        self.flushing = ref['_flushing']
+        self.ex = ref['_ex']
+
+    def __repr__(self):
+        return f"seastar_output_stream(fd={self.fd}, size={self.size}, begin={self.begin}, end={self.end}, trim_to_size={self.trim_to_size}, batch_flushes={self.batch_flushes}, in_batch={self.in_batch}, flush={self.flush}, flushing={self.flushing}, ex={self.ex})"
+
+
+class seastar_data_source:
+    def __init__(self, ref):
+        self.ref = ref
+
+    def __repr__(self):
+        return f"seastar_data_source(ref={self.ref})"
+
+
+class seastar_input_stream:
+    def __init__(self, ref):
+        self.ref = ref
+        self.fd_ptr = std_unique_ptr(ref['_fd']['_dsi'])
+        self.fd = None
+        if self.fd_ptr:
+            self.fd = seastar_data_source(self.fd_ptr.get().dereference())
+        self.buf = ref['_buf']
+        self.eof = ref['_eof']
+
+    def __repr__(self):
+        return f"seastar_input_stream(fd={self.fd}, eof={self.eof}, buf={self.buf})"
+
+
+class batched_output_stream:
+    def __init__(self, ref):
+        self.ref = ref
+        self.out = seastar_output_stream(ref['_out'])
+        self.cache_size = ref['_cache_size']
+        self.unflushed_bytes = ref['_unflushed_bytes']
+        self.write_sem_ptr = std_unique_ptr(ref['_write_sem'])
+
+        if self.write_sem_ptr:
+            self.write_sem = named_samaphore(
+                self.write_sem_ptr.get().dereference())
+        else:
+            self.write_sem = None
+        self._closed = ref['_closed']
+
+    def __repr__(self):
+        return f"batched_output_stream(out={self.out},cache_size={self.cache_size}, unflushed_bytes={self.unflushed_bytes}, write_sem={self.write_sem}, closed={self._closed})"
+
+
+class net_base_transport:
+    def __init__(self, ref):
+        self.ref = ref
+        self.out = batched_output_stream(ref['_out'])
+        self.ins = seastar_input_stream(ref['_in'])
+
+    def __repr__(self):
+        return f"net_base_transport(out={self.out},in={self.ins})"
+
+
 class cloud_client_ptr:
     def __init__(self, shared_ptr):
         self.client_raw_ptr = seastar_shared_ptr(shared_ptr).get()
         self.client = self.client_raw_ptr.dereference()
+        self.s3_client = self.client_raw_ptr.dynamic_cast(
+            gdb.lookup_type(
+                'cloud_storage_clients::s3_client').pointer()).dereference()
+        self.http_client = self.s3_client['_client']
+        self.http_client_last = time_point(
+            self.s3_client['_client']['_last_response'])
+        self.probe = seastar_shared_ptr(
+            self.http_client['_probe']).get().dereference()
+        self.abort_source = abort_source(self.http_client['_as'].dereference())
+        self.base_transport = net_base_transport(
+            self.http_client.address.dynamic_cast(
+                gdb.lookup_type(
+                    'net::base_transport').pointer()).dereference())
 
     def __repr__(self):
-
-        return f"client({self.client_raw_ptr}, {self.client})"
+        return f"client(last_response={self.http_client_last}, probe={self.probe}, as={self.abort_source}, bt={self.base_transport})"
 
 
 class cloud_client_lease:
@@ -1895,7 +2010,9 @@ class redpanda_cloud_clients(gdb.Command):
                              gdb.COMPLETE_NONE, True)
 
     def invoke(self, arg, from_tty):
-        for i in range(cpus()):
+        cpu = arg
+        cpu_list = range(cpus()) if cpu is None else [int(cpu)]
+        for i in cpu_list:
             client_pool_ref = find_cloud_storage_clients(i)
             client_pool = cloud_client_pool(client_pool_ref)
             print(f"Client pool on shard {i}")
@@ -2018,16 +2135,16 @@ class redpanda_small_objects(gdb.Command):
     only be exploited withing the same pool and only with monotonically
     increasing pages.
 
-    For usage see: scylla small-objects --help
+    For usage see: redpanda small-objects --help
 
     Examples:
 
-    (gdb) scylla small-objects -o 32 --summarize
+    (gdb) redpanda small-objects -o 32 --summarize
     number of objects: 60196912
     page size        : 20
     number of pages  : 3009845
 
-    (gdb) scylla small-objects -o 32 -p 100
+    (gdb) redpanda small-objects -o 32 -p 100
     page 100: 2000-2019
     [2000] 0x635002ecba00
     [2001] 0x635002ecba20
@@ -2154,7 +2271,7 @@ class redpanda_small_objects(gdb.Command):
         return None
 
     def init_parser(self):
-        parser = argparse.ArgumentParser(description="scylla small-objects")
+        parser = argparse.ArgumentParser(description="redpanda small-objects")
         parser.add_argument("-o",
                             "--object-size",
                             action="store",
@@ -2529,7 +2646,7 @@ class redpanda_smp_queues(gdb.Command):
 
             if offset is None:
                 q = None
-                ptr_meta = scylla_ptr.analyze(obj)
+                ptr_meta = redpanda_ptr.analyze(obj)
                 for offset in range(0, ptr_meta.size, self._ptr_type.sizeof):
                     ptr = int(
                         gdb.Value(obj + offset).reinterpret_cast(
@@ -2861,6 +2978,871 @@ class redpanda_heapprof(gdb.Command):
                        printer=gdb.write)
 
 
+def reactors():
+    orig = gdb.selected_thread()
+    for t in gdb.selected_inferior().threads():
+        t.switch()
+        reactor = gdb.parse_and_eval('\'seastar\'::local_engine')
+        if reactor:
+            yield reactor.dereference()
+    orig.switch()
+
+
+class task_symbol_matcher:
+    def __init__(self):
+        self._coro_pattern = re.compile(r'\)( \[clone \.\w+\])?$')
+
+        # List of whitelisted symbol names. Each symbol is a tuple, where each
+        # element is a component of the name, the last element being the class
+        # name itself.
+        # We can't just merge them as `info symbol` might return mangled names too.
+        self._whitelist = task_symbol_matcher._make_symbol_matchers([
+            ("seastar", "continuation"),
+            ("seastar", "future",
+             "thread_wake_task"),  # backward compatibility with older versions
+            ("seastar", "(anonymous namespace)", "thread_wake_task"),
+            ("seastar", "thread_context"),
+            ("seastar", "internal", "do_until_state"),
+            ("seastar", "internal", "do_with_state"),
+            ("seastar", "internal", "do_for_each_state"),
+            ("seastar", "parallel_for_each_state"),
+            ("seastar", "internal", "repeat_until_value_state"),
+            ("seastar", "internal", "repeater"),
+            ("seastar", "internal", "when_all_state"),
+            ("seastar", "internal", "when_all_state_component"),
+            ("seastar", "internal", "coroutine_traits_base", "promise_type"),
+            ("seastar", "lambda_task"),
+            ("seastar", "smp_message_queue", "async_work_item"),
+        ])
+
+    @staticmethod
+    def _make_symbol_matchers(symbol_specs):
+        return list(map(task_symbol_matcher._make_symbol_matcher,
+                        symbol_specs))
+
+    @staticmethod
+    def _make_symbol_matcher(symbol_spec):
+        unmangled_prefix = 'vtable for {}'.format('::'.join(symbol_spec))
+
+        def matches_symbol(name):
+            if name.startswith(unmangled_prefix):
+                return True
+
+            try:
+                positions = [name.index(part) for part in symbol_spec]
+                return sorted(positions) == positions
+            except ValueError:
+                return False
+
+        return matches_symbol
+
+    def __call__(self, name):
+        name = name.strip()
+        if re.search(self._coro_pattern, name) is not None:
+            return True
+
+        for matcher in self._whitelist:
+            if matcher(name):
+                return True
+        return False
+
+
+class pointer_metadata(object):
+    def __init__(self, ptr, *args):
+        print(f">>> args={args}")
+        if isinstance(args[0], gdb.InferiorThread):
+            self._init_seastar_ptr(ptr, *args)
+        else:
+            self._init_generic_ptr(ptr, *args)
+
+    def _init_seastar_ptr(self, ptr, thread):
+        self.ptr = ptr
+        self.thread = thread
+        self._is_containing_page_free = False
+        self.is_small = False
+        self.is_live = False
+        self.is_lsa = False
+        self.size = 0
+        self.offset_in_object = 0
+
+    def _init_generic_ptr(self, ptr, speculative_size):
+        self.ptr = ptr
+        self.thread = None
+        self._is_containing_page_free = None
+        self.is_small = None
+        self.is_live = None
+        self.is_lsa = None
+        self.size = speculative_size
+        self.offset_in_object = 0
+
+    def is_managed_by_seastar(self):
+        return self.thread is not None
+
+    @property
+    def is_containing_page_free(self):
+        return self._is_containing_page_free
+
+    def mark_free(self):
+        self._is_containing_page_free = True
+        self._is_live = False
+
+    @property
+    def obj_ptr(self):
+        return self.ptr - self.offset_in_object
+
+    def __str__(self):
+        if not self.is_managed_by_seastar():
+            return "0x{:x} (default allocator)".format(self.ptr)
+
+        msg = "thread %d" % self.thread.num
+
+        if self.is_containing_page_free:
+            msg += ', page is free'
+            return msg
+
+        if self.is_small:
+            msg += ', small (size <= %d)' % self.size
+        else:
+            msg += ', large (size=%d)' % self.size
+
+        if self.is_live:
+            msg += ', live (0x%x +%d)' % (self.obj_ptr, self.offset_in_object)
+        else:
+            msg += ', free (0x%x +%d)' % (self.obj_ptr, self.offset_in_object)
+
+        if self.is_lsa:
+            msg += ', LSA-managed'
+
+        return msg
+
+
+def has_reactor():
+    if gdb.parse_and_eval('\'seastar\'::local_engine'):
+        return True
+    return False
+
+
+def get_lsa_segment_pool():
+    try:
+        tracker = gdb.parse_and_eval('\'logalloc::tracker_instance\'')
+        tracker_impl = std_unique_ptr(tracker["_impl"]).get().dereference()
+        return std_unique_ptr(
+            tracker_impl["_segment_pool"]).get().dereference()
+    except gdb.error:
+        return gdb.parse_and_eval('\'logalloc::shard_segment_pool\'')
+
+
+@functools.cache
+def _vptr_type():
+    return gdb.lookup_type('uintptr_t').pointer()
+
+
+def reactor_threads():
+    orig = gdb.selected_thread()
+    for t in gdb.selected_inferior().threads():
+        t.switch()
+        if has_reactor():
+            yield t
+    orig.switch()
+
+
+def get_seastar_memory_start_and_size():
+    cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
+    print("cpu_mem = {}".format(cpu_mem))
+    page_size = int(gdb.parse_and_eval('\'seastar::memory::page_size\''))
+    print("page_size = {}".format(page_size))
+    total_mem = int(cpu_mem['nr_pages']) * page_size
+    start = int(cpu_mem['memory'])
+    return start, total_mem
+
+
+def seastar_memory_layout():
+    results = []
+    for t in reactor_threads():
+        start, total_mem = get_seastar_memory_start_and_size()
+        results.append((t, start, total_mem))
+    return results
+
+
+def get_segment_base(segment_pool):
+    try:
+        segment_store = segment_pool["_store"]
+        try:
+            return int(
+                std_unique_ptr(
+                    segment_store["_backend"]).get()["_segments_base"])
+        except gdb.error:
+            return int(segment_store["_segments_base"])
+    except gdb.error:
+        return int(segment_pool["_segments_base"])
+
+
+class redpanda_ptr(gdb.Command):
+    _is_seastar_allocator_used = None
+
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda ptr', gdb.COMMAND_USER,
+                             gdb.COMPLETE_COMMAND)
+
+    @staticmethod
+    def is_seastar_allocator_used():
+        if redpanda_ptr._is_seastar_allocator_used is not None:
+            return redpanda_ptr._is_seastar_allocator_used
+
+        try:
+            cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
+
+            redpanda_ptr._is_seastar_allocator_used = True
+            return True
+        except:
+            redpanda_ptr._is_seastar_allocator_used = False
+            return False
+
+    @staticmethod
+    def _do_analyze(ptr):
+        owning_thread = None
+        for t, start, size in seastar_memory_layout():
+            if ptr >= start and ptr < start + size:
+                owning_thread = t
+                break
+
+        ptr_meta = pointer_metadata(ptr, owning_thread)
+
+        if not owning_thread:
+            return ptr_meta
+
+        owning_thread.switch()
+
+        cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
+        page_size = int(gdb.parse_and_eval('\'seastar::memory::page_size\''))
+        offset = ptr - int(cpu_mem['memory'])
+        ptr_page_idx = offset / page_size
+        pages = cpu_mem['pages']
+        page = pages[ptr_page_idx]
+
+        span = span_checker().get_span(ptr)
+        offset_in_span = ptr - span.start
+        if offset_in_span >= span.used_span_size() * page_size:
+            ptr_meta.mark_free()
+        elif span.is_small():
+            pool = span.pool()
+            object_size = int(pool['_object_size'])
+            ptr_meta.size = object_size
+            ptr_meta.is_small = True
+            offset_in_object = offset_in_span % object_size
+            free_object_ptr = gdb.lookup_type('void').pointer().pointer()
+            char_ptr = gdb.lookup_type('char').pointer()
+            # pool's free list
+            next_free = pool['_free']
+            free = False
+            while next_free:
+                if ptr >= next_free and ptr < next_free.reinterpret_cast(
+                        char_ptr) + object_size:
+                    free = True
+                    break
+                next_free = next_free.reinterpret_cast(
+                    free_object_ptr).dereference()
+            if not free:
+                # span's free list
+                first_page_in_span = span.page
+                next_free = first_page_in_span['freelist']
+                while next_free:
+                    if ptr >= next_free and ptr < next_free.reinterpret_cast(
+                            char_ptr) + object_size:
+                        free = True
+                        break
+                    next_free = next_free.reinterpret_cast(
+                        free_object_ptr).dereference()
+            ptr_meta.offset_in_object = offset_in_object
+            ptr_meta.is_live = not free
+        else:
+            ptr_meta.is_small = False
+            ptr_meta.is_live = not span.is_free()
+            ptr_meta.size = span.size() * page_size
+            ptr_meta.offset_in_object = ptr - span.start
+
+        # FIXME: handle debug-mode build
+        segment_pool = get_lsa_segment_pool()
+        segments_base = get_segment_base(segment_pool)
+        segment_size = int(gdb.parse_and_eval('\'logalloc::segment\'::size'))
+        index = int((int(ptr) - segments_base) / segment_size)
+        desc = std_vector(segment_pool["_segments"])[index]
+        ptr_meta.is_lsa = bool(desc['_region'])
+
+        return ptr_meta
+
+    @staticmethod
+    def analyze(ptr):
+        orig = gdb.selected_thread()
+        try:
+            return redpanda_ptr._do_analyze(ptr)
+        finally:
+            orig.switch()
+
+    def invoke(self, arg, from_tty):
+        ptr = int(gdb.parse_and_eval(arg))
+
+        ptr_meta = self.analyze(ptr)
+
+        gdb.write("{}\n".format(str(ptr_meta)))
+
+
+def switch_to_shard(shard):
+    for r in reactors():
+        if int(r['_id']) == shard:
+            return
+
+
+def find_objects(mem_start,
+                 mem_size,
+                 value,
+                 size_selector='g',
+                 only_live=True):
+    for line in gdb.execute("find/%s 0x%x, +0x%x, 0x%x" %
+                            (size_selector, mem_start, mem_size, value),
+                            to_string=True).split('\n'):
+        if line.startswith('0x'):
+            ptr_meta = redpanda_ptr.analyze(int(line, base=16))
+            if not only_live or ptr_meta.is_live:
+                yield ptr_meta
+
+
+class redpanda_find(gdb.Command):
+    """ Finds live objects on seastar heap of current shard which contain given value.
+    Prints results in 'redpanda ptr' format.
+
+    See `redpanda find --help` for more details on usage.
+
+    Example:
+
+      (gdb) redpanda find 0x600005321900
+      thread 1, small (size <= 512), live (0x6000000f3800 +48)
+      thread 1, small (size <= 56), live (0x6000008a1230 +32)
+    """
+
+    _size_char_to_size = {
+        'b': 8,
+        'h': 16,
+        'w': 32,
+        'g': 64,
+    }
+
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda find', gdb.COMMAND_USER,
+                             gdb.COMPLETE_NONE, True)
+
+    @staticmethod
+    def find(value,
+             size_selector='g',
+             value_range=0,
+             find_all=False,
+             only_live=True):
+        step = int(redpanda_find._size_char_to_size[size_selector] / 8)
+        offset = 0
+        print(">> find start")
+        mem_start, mem_size = get_seastar_memory_start_and_size()
+        print(">> find start {mem_start}, {mem_size}".format(
+            mem_start=mem_start, mem_size=mem_size))
+        it = iter(
+            find_objects(mem_start, mem_size, value, size_selector, only_live))
+
+        # Find the first value in the range for which the search has results.
+        while offset < value_range:
+            try:
+                yield next(it), offset
+                if not find_all:
+                    break
+            except StopIteration:
+                offset += step
+                it = iter(
+                    find_objects(mem_start, mem_size, value + offset,
+                                 size_selector, only_live))
+
+        # List the rest of the results for value.
+        try:
+            while True:
+                yield next(it), offset
+        except StopIteration:
+            pass
+
+    def invoke(self, arg, for_tty):
+        parser = argparse.ArgumentParser(description="redpanda find")
+        parser.add_argument(
+            "-s",
+            "--size",
+            action="store",
+            choices=['b', 'h', 'w', 'g', '8', '16', '32', '64'],
+            default='g',
+            help="Size of the searched value."
+            " Accepted values are the size expressed in number of bits: 8, 16, 32 and 64."
+            " GDB's size classes are also accepted: b(byte), h(half-word), w(word) and g(giant-word)."
+            " Defaults to g (64 bits).")
+        parser.add_argument(
+            "-r",
+            "--resolve",
+            action="store_true",
+            help=
+            "Attempt to resolve the first pointer in the found objects as vtable pointer. "
+            " If the resolve is successful the vtable pointer as well as the vtable symbol name will be printed in the listing."
+        )
+        parser.add_argument(
+            "--value-range",
+            action="store",
+            type=int,
+            default=0,
+            help="Find a range of values of the specified size."
+            " Will start from VALUE, then use SIZE increments until VALUE + VALUE_RANGE is reached, or at least one usage is found."
+            " By default only VALUE is searched.")
+        parser.add_argument(
+            "-a",
+            "--find-all",
+            action="store_true",
+            help=
+            "Find all references, don't stop at the first offset which has usages. See --value-range."
+        )
+        parser.add_argument("-f",
+                            "--include-free",
+                            action="store_true",
+                            help="Include freed object in the result.")
+        parser.add_argument("value",
+                            action="store",
+                            help="The value to be searched.")
+
+        try:
+            args = parser.parse_args(arg.split())
+        except SystemExit:
+            return
+
+        size_arg_to_size_char = {
+            'b': 'b',
+            '8': 'b',
+            'h': 'h',
+            '16': 'h',
+            'w': 'w',
+            '32': 'w',
+            'g': 'g',
+            '64': 'g',
+        }
+
+        size_char = size_arg_to_size_char[args.size]
+        print(f">>> gdb.parse_and_eval(args.value)")
+        print(f">>> {gdb.parse_and_eval(args.value)}")
+        for ptr_meta, offset in redpanda_find.find(
+                int(gdb.parse_and_eval(args.value)),
+                size_char,
+                args.value_range,
+                find_all=args.find_all,
+                only_live=(not args.include_free)):
+            if args.value_range and offset:
+                formatted_offset = "+{}; ".format(offset)
+            else:
+                formatted_offset = ""
+            if args.resolve:
+                maybe_vptr = int(
+                    gdb.Value(ptr_meta.obj_ptr).reinterpret_cast(
+                        _vptr_type()).dereference())
+                symbol = resolve(maybe_vptr, cache=False)
+                if symbol is None:
+                    gdb.write('{}{}\n'.format(formatted_offset, ptr_meta))
+                else:
+                    gdb.write('{}{} 0x{:016x} {}\n'.format(
+                        formatted_offset, ptr_meta, maybe_vptr, symbol))
+            else:
+                gdb.write('{}{}\n'.format(formatted_offset, ptr_meta))
+
+
+def align_up(ptr, alignment):
+    res = ptr % alignment
+    if not res:
+        return ptr
+    return ptr + alignment - res
+
+
+class redpanda_fiber(gdb.Command):
+    """ Walk the continuation chain starting from the given task
+
+    Example (cropped for brevity):
+    (gdb) redpanda fiber 0x600016217c80
+    [shard  0] #-1 (task*) 0x000060001a305910 0x0000000004aa5260 vtable for seastar::continuation<...> + 16
+    [shard  0] #0  (task*) 0x0000600016217c80 0x0000000004aa5288 vtable for seastar::continuation<...> + 16
+    [shard  0] #1  (task*) 0x000060000ac42940 0x0000000004aa2aa0 vtable for seastar::continuation<...> + 16
+    [shard  0] #2  (task*) 0x0000600023f59a50 0x0000000004ac1b30 vtable for seastar::continuation<...> + 16
+     ^          ^          ^                  ^                  ^
+    (1)        (2)        (3)                (4)                (5)
+
+    1) Shard the task lives on (continuation chains can spawn multiple shards)
+    2) Task index:
+        - 0 is the task passed to the command
+        - < 0 are tasks this task waits on
+        - > 0 are tasks waiting on this task
+    3) Pointer to the task object.
+    4) Pointer to the task's vtable.
+    5) Symbol name of the task's vtable.
+
+    Invoke `redpanda fiber --help` for more information on usage.
+    """
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda fiber', gdb.COMMAND_USER,
+                             gdb.COMPLETE_NONE, True)
+        self._task_symbol_matcher = task_symbol_matcher()
+        self._thread_map = None
+
+    def _name_is_on_whitelist(self, name):
+        return self._task_symbol_matcher(name)
+
+    def _maybe_log(self, msg, verbose):
+        if verbose:
+            gdb.write(msg)
+
+    def _probe_pointer(self, ptr, scanned_region_size, using_seastar_allocator,
+                       verbose):
+        """ Check if the pointer is a task pointer
+
+        The pattern we are looking for is:
+        ptr -> vtable ptr for a symbol that matches our whitelist
+
+        In addition, ptr has to point to an allocation block, managed by
+        seastar, that contains a live object.
+        """
+        # Save work if caller already analyzed the pointer
+        if isinstance(ptr, pointer_metadata):
+            ptr_meta = ptr
+            ptr = ptr.ptr
+        else:
+            ptr_meta = None
+
+        try:
+            maybe_vptr = int(
+                gdb.Value(ptr).reinterpret_cast(_vptr_type()).dereference())
+            self._maybe_log("\t-> 0x{:016x}\n".format(maybe_vptr), verbose)
+        except gdb.MemoryError:
+            self._maybe_log("\tNot a pointer\n", verbose)
+            return
+
+        resolved_symbol = resolve(maybe_vptr, False)
+        if resolved_symbol is None:
+            self._maybe_log("\t\tNot a vtable ptr\n", verbose)
+            return
+
+        self._maybe_log("\t\t=> {}\n".format(resolved_symbol), verbose)
+
+        if not self._name_is_on_whitelist(resolved_symbol):
+            self._maybe_log(
+                "\t\t\tSymbol name doesn't match whitelisted symbols\n",
+                verbose)
+            return
+
+        # The promise object starts on the third `uintptr_t` in the frame.
+        # The resume_fn pointer is the first `uintptr_t`.
+        # So if the task is a coroutine, we should be able to find the resume function via offsetting by -2.
+        # AFAIK both major compilers respect this convention.
+        if resolved_symbol.startswith(
+                'vtable for seastar::internal::coroutine_traits_base'):
+            if block := gdb.block_for_pc(
+                (gdb.Value(ptr).cast(_vptr_type()) - 2).dereference()):
+                resume = block.function
+                resolved_symbol += f" ({resume.print_name} at {resume.symtab.filename}:{resume.line})"
+            else:
+                resolved_symbol += f" (unknown coroutine)"
+
+        if using_seastar_allocator:
+            if ptr_meta is None:
+                ptr_meta = redpanda_ptr.analyze(ptr)
+            if not ptr_meta.is_managed_by_seastar() or not ptr_meta.is_live:
+                self._maybe_log("\t\t\tNot a live object\n", verbose)
+                return
+        else:
+            ptr_meta = pointer_metadata(ptr, scanned_region_size)
+
+        self._maybe_log("\t\t\tTask found\n", verbose)
+
+        return ptr_meta, maybe_vptr, resolved_symbol
+
+    # Find futures waiting on this task
+    def _walk_forward(self, ptr_meta, name, i, max_depth, scanned_region_size,
+                      using_seastar_allocator, verbose):
+        ptr = ptr_meta.ptr
+
+        # thread_context has a self reference in its `_func` field which will be
+        # found before the ref to the next task if the whole object is scanned.
+        # Exploit that thread_context is a type we can cast to and scan the
+        # `_done` field explicitly to avoid that.
+        if 'thread_context' in name:
+            self._maybe_log(
+                "Current task is a thread, using its _done field to continue\n",
+                verbose)
+            thread_context_ptr_type = gdb.lookup_type(
+                'seastar::thread_context').pointer()
+            ctxt = gdb.Value(int(ptr_meta.ptr)).reinterpret_cast(
+                thread_context_ptr_type).dereference()
+            pr = ctxt['_done']
+            region_start = pr.address
+            region_end = region_start + pr.type.sizeof
+        else:
+            region_start = ptr + _vptr_type().sizeof  # ignore our own vtable
+            region_end = region_start + (ptr_meta.size -
+                                         ptr_meta.size % _vptr_type().sizeof)
+
+        self._maybe_log(
+            "Scanning task #{} @ 0x{:016x}: {}\n".format(
+                i, ptr, str(ptr_meta)), verbose)
+
+        for it in range(region_start, region_end, _vptr_type().sizeof):
+            maybe_tptr = int(
+                gdb.Value(it).reinterpret_cast(_vptr_type()).dereference())
+            self._maybe_log(
+                "0x{:016x}+0x{:04x} -> 0x{:016x}\n".format(
+                    ptr, it - ptr, maybe_tptr), verbose)
+
+            res = self._probe_pointer(maybe_tptr, scanned_region_size,
+                                      using_seastar_allocator, verbose)
+
+            if res is None:
+                continue
+
+            if int(res[0].ptr) == int(ptr):
+                self._maybe_log("Rejecting self reference\n", verbose)
+                continue
+
+            return res
+
+        return None
+
+    # Find futures waited-on by this task
+    def _walk_backward(self, ptr_meta, name, i, max_depth, scanned_region_size,
+                       using_seastar_allocator, verbose):
+        orig = gdb.selected_thread()
+        res = None
+
+        # Threads need special handling as they allocate the thread_wait_task object on their stack.
+        if 'thread_context' in name:
+            context = gdb.parse_and_eval(
+                '(seastar::thread_context*)0x{:x}'.format(ptr_meta.ptr))
+            stack_ptr = int(std_unique_ptr(context['_stack']).get())
+            self._maybe_log(
+                "Current task is a thread, trying to find the thread_wake_task on its stack: 0x{:x}\n"
+                .format(stack_ptr), verbose)
+            stack_meta = redpanda_ptr.analyze(stack_ptr)
+            # stack grows downwards, so walk from end of buffer towards the beginning
+            for maybe_tptr in range(
+                    stack_ptr + stack_meta.size - _vptr_type().sizeof,
+                    stack_ptr - _vptr_type().sizeof, -_vptr_type().sizeof):
+                res = self._probe_pointer(maybe_tptr, scanned_region_size,
+                                          using_seastar_allocator, verbose)
+                if res is not None and 'thread_wake_task' in res[2]:
+                    return res
+            return None
+
+        if name.startswith('vtable for seastar::internal::when_all_state'):
+            when_all_state_base_ptr_type = gdb.lookup_type(
+                'seastar::internal::when_all_state_base').pointer()
+            when_all_state_base = gdb.Value(int(
+                ptr_meta.ptr)).reinterpret_cast(when_all_state_base_ptr_type)
+            ptr = int(when_all_state_base['_continuation'])
+            self._maybe_log(
+                "Current task is a when_all_state, looking for references to its continuation field 0x{:x}\n"
+                .format(ptr), verbose)
+            return self._probe_pointer(ptr, scanned_region_size,
+                                       using_seastar_allocator, verbose)
+
+        # Async work items will have references on the remote shard, so we first
+        # have to find out which is the remote shard and then switch to it.
+        # Have to match the start of the name, as async_work_item kicks off
+        # continuation and so it will be found in the name of those lambdas.
+        if name.startswith(
+                'vtable for seastar::smp_message_queue::async_work_item'):
+            self._maybe_log(
+                "Current task is a async work item, trying to deduce the remote shard\n",
+                verbose)
+            smp_mmessage_queue_ptr_type = gdb.lookup_type(
+                'seastar::smp_message_queue').pointer()
+            work_item_type = gdb.lookup_type(
+                'seastar::smp_message_queue::work_item')
+            # Casts to templates with lambda template arguments just don't work.
+            # We know the offset of the message queue reference in
+            # async_work_item (first field) so we calculate and cast a pointer to it.
+            q_ptr = align_up(
+                int(ptr_meta.ptr) + work_item_type.sizeof,
+                _vptr_type().sizeof)
+            q = gdb.Value(q_ptr).reinterpret_cast(
+                smp_mmessage_queue_ptr_type.pointer()).dereference()
+            shard = int(q['_pending']['remote']['_id'])
+            self._maybe_log(
+                "Deduced shard is {} (message queue 0x{:x} @ 0x{:x} + {})\n".
+                format(shard, int(q), int(ptr_meta.ptr),
+                       q_ptr - int(ptr_meta.ptr)), verbose)
+            # Sanity check.
+            if shard < 0 or shard >= cpus():
+                return None
+            switch_to_shard(shard)
+        else:
+            print(f">>> META: {ptr_meta}")
+            ptr_meta.thread.switch()
+
+        try:
+            for maybe_tptr_meta, _ in redpanda_find.find(ptr_meta.ptr):
+                maybe_tptr_meta.ptr -= maybe_tptr_meta.offset_in_object
+                res = self._probe_pointer(maybe_tptr_meta.ptr,
+                                          scanned_region_size,
+                                          using_seastar_allocator, verbose)
+                if res is None:
+                    continue
+
+                if int(res[0].ptr) == int(ptr_meta.ptr):
+                    self._maybe_log("Rejecting self reference\n", verbose)
+                    continue
+
+                return res
+        finally:
+            orig.switch()
+
+        return res
+
+    def _walk(self, walk_method, tptr_meta, name, max_depth,
+              scanned_region_size, using_seastar_allocator, verbose):
+        i = 0
+        fiber = []
+        known_tasks = set([tptr_meta.ptr])
+        while True:
+            if max_depth > -1 and i >= max_depth:
+                break
+
+            self._maybe_log(
+                "_walk() 0x{:x} {}\n".format(int(tptr_meta.ptr), name),
+                verbose)
+            print(">>> walk_method: {}".format(walk_method.__name__))
+            res = walk_method(tptr_meta, name, i + 1, max_depth,
+                              scanned_region_size, using_seastar_allocator,
+                              verbose)
+            if res is None:
+                break
+
+            tptr_meta, vptr, name = res
+
+            if tptr_meta.ptr in known_tasks:
+                gdb.write(
+                    "Stopping because loop is detected: task 0x{:016x} was seen before.\n"
+                    .format(tptr_meta.ptr))
+                break
+
+            known_tasks.add(tptr_meta.ptr)
+
+            fiber.append((tptr_meta, vptr, name))
+
+            i += 1
+
+        return fiber
+
+    def invoke(self, arg, for_tty):
+        parser = argparse.ArgumentParser(description="redpanda fiber")
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            action="store_true",
+            default=False,
+            help="Make the command more verbose about what it is doing")
+        parser.add_argument(
+            "-d",
+            "--max-depth",
+            action="store",
+            type=int,
+            default=-1,
+            help="Maximum depth to traverse on the continuation chain")
+        parser.add_argument(
+            "-s",
+            "--scanned-region-size",
+            action="store",
+            type=int,
+            default=512,
+            help=
+            "The size of the memory region to be scanned when examining a task object."
+            " Only used in fallback-mode. Fallback mode is used either when the default allocator is used by the application"
+            " (and hence pointer-metadata is not available) or when `redpanda fiber` was invoked with `--force-fallback-mode`."
+        )
+        parser.add_argument(
+            "--force-fallback-mode",
+            action="store_true",
+            default=False,
+            help=
+            "Force fallback mode to be used, that is, scan a fixed-size region of memory"
+            " (configurable via --scanned-region-size), instead of relying on `redpanda ptr` for determining the size of the task objects."
+        )
+        parser.add_argument(
+            "task",
+            action="store",
+            help=
+            "An expression that evaluates to a valid `seastar::task*` value. Cannot contain white-space."
+        )
+
+        try:
+            args = parser.parse_args(arg.split())
+        except SystemExit:
+            return
+
+        if self._thread_map is None:
+            self._thread_map = {}
+            for r in reactors():
+                self._thread_map[gdb.selected_thread().num] = int(r['_id'])
+
+        def format_task_line(i, task_info):
+            tptr_meta, vptr, name = task_info
+            tptr = tptr_meta.ptr
+            shard = self._thread_map[tptr_meta.thread.num]
+            gdb.write(
+                "[shard {:2}] #{:<2d} (task*) 0x{:016x} 0x{:016x} {}\n".format(
+                    shard, i, int(tptr), int(vptr), name))
+
+        try:
+            using_seastar_allocator = not args.force_fallback_mode and redpanda_ptr.is_seastar_allocator_used(
+            )
+            if not using_seastar_allocator:
+                gdb.write(
+                    "Not using the seastar allocator, falling back to scanning a fixed-size region of memory\n"
+                )
+
+            initial_task_ptr = int(gdb.parse_and_eval(args.task))
+            this_task = self._probe_pointer(initial_task_ptr,
+                                            args.scanned_region_size,
+                                            using_seastar_allocator,
+                                            args.verbose)
+            if this_task is None:
+                gdb.write(
+                    "Provided pointer 0x{:016x} is not an object managed by seastar or not a task pointer\n"
+                    .format(initial_task_ptr))
+                return
+
+            backwards_fiber = self._walk(self._walk_backward, this_task[0],
+                                         this_task[2], args.max_depth,
+                                         args.scanned_region_size,
+                                         using_seastar_allocator, args.verbose)
+
+            for i, task_info in enumerate(reversed(backwards_fiber)):
+                format_task_line(i - len(backwards_fiber), task_info)
+
+            format_task_line(0, this_task)
+
+            forward_fiber = self._walk(self._walk_forward, this_task[0],
+                                       this_task[2], args.max_depth,
+                                       args.scanned_region_size,
+                                       using_seastar_allocator, args.verbose)
+
+            for i, task_info in enumerate(forward_fiber):
+                format_task_line(i + 1, task_info)
+
+            gdb.write("\nFound no further pointers to task objects.\n")
+            if not backwards_fiber and not forward_fiber:
+                gdb.write(
+                    "If this is unexpected, run `redpanda fiber 0x{:016x} --verbose` to learn more.\n"
+                    .format(initial_task_ptr))
+            else:
+                gdb.write(
+                    "If you think there should be more, run `redpanda fiber 0x{:016x} --verbose` to learn more.\n"
+                    "Note that continuation across user-created seastar::promise<> objects are not detected by redpanda-fiber.\n"
+                    .format(int(this_task[0].ptr)))
+        except KeyboardInterrupt:
+            return
+
+
 redpanda()
 redpanda_memory()
 redpanda_storage()
@@ -2873,3 +3855,6 @@ redpanda_tasks()
 redpanda_heapprof()
 redpanda_partitions()
 redpanda_cloud_clients()
+redpanda_ptr()
+redpanda_find()
+redpanda_fiber()
