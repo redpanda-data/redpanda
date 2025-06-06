@@ -45,7 +45,7 @@ TS_LOG_ALLOW_LIST = [
     # When Redpanda is suspended manifest download may fail with timeout
     # ERROR 2025-06-03 09:48:14,461 [shard 0:main] raft - [group_id:316, {kafka/tp-workload-fast/27}] state_machine_manager.cc:385 - error applying raft snapshot - std::runtime_error (couldn't download manifest: cloud_storage::error_outcome:2)
     re.compile(
-        """state_machine_manager.* error applying raft snapshot - std::runtime_error (couldn't download manifest: cloud_storage::error_outcome:2)"""
+        """.*state_machine_manager.* error applying raft snapshot - std::runtime_error (couldn't download manifest: cloud_storage::error_outcome:2).*"""
     )
 ]
 
