@@ -80,6 +80,13 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
     co_return;
 }
 
+void base_transport::set_keepalive_parameters(
+  const ss::net::keepalive_params& params) {
+    if (_fd) {
+        _fd->set_keepalive_parameters(params);
+    }
+}
+
 ss::future<>
 base_transport::connect(clock_type::time_point connection_timeout) {
     // in order to hold concurrency correctness invariants we must guarantee 3

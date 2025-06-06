@@ -79,6 +79,8 @@ public:
     void shutdown() noexcept;
     ss::future<> wait_input_shutdown();
 
+    void set_keepalive_parameters(const ss::net::keepalive_params& params);
+
     [[gnu::always_inline]] bool is_valid() const {
         return _fd && !_shutdown && !_in.eof();
     }
