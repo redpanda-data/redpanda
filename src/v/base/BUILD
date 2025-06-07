@@ -19,6 +19,7 @@ redpanda_cc_library(
         "vassert-register.h",
         "vformat.h",
         "vlog.h",
+        "opt.h",
     ],
     include_prefix = "base",
     visibility = ["//visibility:public"],
