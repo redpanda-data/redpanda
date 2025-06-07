@@ -127,7 +127,7 @@ public:
     using storage_t = model::record_batch_reader::storage_t;
     single_segment_reader(
       ss::lw_shared_ptr<segment> seg,
-      ss::rwlock::holder seg_read_lock,
+      ssx::logging_rwlock::holder seg_read_lock,
       log_reader_config reader_cfg,
       probe& pb)
       : _seg(seg)
@@ -163,7 +163,7 @@ public:
 
 private:
     ss::lw_shared_ptr<segment> _seg;
-    ss::rwlock::holder _seg_read_lock;
+    ssx::logging_rwlock::holder _seg_read_lock;
     log_reader_config _config;
     log_segment_batch_reader _rdr;
     bool _is_end_of_stream{false};
@@ -2502,7 +2502,7 @@ disk_log_impl::offset_range_size(model::offset first, model::offset last) {
         co_return std::nullopt;
     }
 
-    std::vector<ss::future<ss::rwlock::holder>> f_locks;
+    std::vector<ss::future<ssx::logging_rwlock::holder>> f_locks;
     f_locks.reserve(segments.size());
     for (auto& s : segments) {
         f_locks.emplace_back(s->read_lock());
@@ -2659,7 +2659,7 @@ disk_log_impl::offset_range_size(
     auto first_segment_offsets = first_segment->offsets();
 
     auto [f_locks, segments] = [&]() {
-        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        std::vector<ss::future<ssx::logging_rwlock::holder>> f_locks;
         std::vector<ss::lw_shared_ptr<segment>> segments;
         size_t locked_range_size = 0;
         model::offset last_locked_offset;
@@ -3143,7 +3143,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
                    ptr,
                    prefix_truncate_offset,
                    cache_lock = std::move(cache_lock)](
-                    ss::rwlock::holder lock_holder) {
+                    ssx::logging_rwlock::holder lock_holder) {
                       // after the lock is acquired, check if the segment is
                       // still eligible for deletion as there might have been
                       // concurrent appends. If segments collection is empty we

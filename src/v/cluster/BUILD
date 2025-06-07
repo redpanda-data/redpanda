@@ -712,6 +712,7 @@ redpanda_cc_library(
         "//src/v/ssx:event",
         "//src/v/ssx:future_util",
         "//src/v/ssx:rate_limited_function",
+        "//src/v/ssx:rwlock",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sformat",
         "//src/v/ssx:single_sharded",

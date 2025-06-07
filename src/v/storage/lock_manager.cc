@@ -11,11 +11,11 @@
 
 #include "container/fragmented_vector.h"
 #include "model/offset_interval.h"
+#include "ssx/rwlock.h"
 #include "ssx/when_all.h"
 #include "storage/segment.h"
 
 #include <seastar/core/future-util.hh>
-#include <seastar/core/rwlock.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <stdexcept>
@@ -27,18 +27,18 @@ range(segment_set::underlying_t segs) {
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
 
-    chunked_vector<ss::future<ss::rwlock::holder>> dispatch;
+    chunked_vector<ss::future<ssx::logging_rwlock::holder>> dispatch;
     for (auto& s : ctx->range) {
         dispatch.push_back(s->read_lock());
     }
 
-    return ssx::when_all_succeed<chunked_vector<ss::rwlock::holder>>(
+    return ssx::when_all_succeed<chunked_vector<ssx::logging_rwlock::holder>>(
              std::move(dispatch))
-      .then(
-        [ctx = std::move(ctx)](chunked_vector<ss::rwlock::holder> lks) mutable {
-            ctx->locks = std::move(lks);
-            return std::move(ctx);
-        });
+      .then([ctx = std::move(ctx)](
+              chunked_vector<ssx::logging_rwlock::holder> lks) mutable {
+          ctx->locks = std::move(lks);
+          return std::move(ctx);
+      });
 }
 
 ss::future<std::unique_ptr<lock_manager::lease>>

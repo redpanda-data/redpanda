@@ -12,6 +12,7 @@
 #pragma once
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
+#include "ssx/rwlock.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
@@ -44,7 +45,7 @@ ss::future<compacted_index::recovery_state> maybe_rebuild_compaction_index(
   ss::lw_shared_ptr<segment> s,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   const compaction_config& cfg,
-  ss::rwlock::holder& read_holder,
+  ssx::logging_rwlock::holder& read_holder,
   storage_resources& resources,
   storage::probe& pb);
 
@@ -100,12 +101,12 @@ ss::future<> write_concatenated_compacted_index(
   compaction_config,
   storage_resources& resources);
 
-ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
+ss::future<std::vector<ssx::logging_rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
   probe& probe,
-  std::vector<ss::rwlock::holder>);
+  std::vector<ssx::logging_rwlock::holder>);
 
 /*
  * Acquire write locks on multiple segments. The process will proceed until
@@ -114,7 +115,7 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
  * fairness. If a lock cannot be acquired all held locks are released and the
  * process is retried. Favor more retries over longer timeouts.
  */
-ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
+ss::future<std::vector<ssx::logging_rwlock::holder>> write_lock_segments(
   std::vector<ss::lw_shared_ptr<segment>>& segments,
   ss::semaphore::clock::duration timeout,
   int retries);
@@ -186,14 +187,14 @@ model::record_batch_reader create_segment_full_reader(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  ss::rwlock::holder,
+  ssx::logging_rwlock::holder,
   std::optional<model::offset> start_offset = std::nullopt);
 
 ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   storage::probe&,
-  ss::rwlock::holder,
+  ssx::logging_rwlock::holder,
   storage_resources&);
 
 ss::future<> do_swap_data_file_handles(
