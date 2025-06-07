@@ -1783,10 +1783,26 @@ class seastar_pollable_fd:
     def __init__(self, ref):
         self.ref = ref
         self.state_ptr = ref['_s']['px']
-        self.state = self.state_ptr.dynamic_cast(gdb.lookup_type('seastar::aio_pollable_fd_state').pointer()).dereference()
+        self.state = self.state_ptr.dynamic_cast(
+            gdb.lookup_type(
+                'seastar::aio_pollable_fd_state').pointer()).dereference()
+        #self.state_completion_pollin = seastar_fd_state_completion(self.state['_completion_pollin'])
+        #self.state_completion_pollout = seastar_fd_state_completion(self.state['_completion_pollout'])
+        #self.state_completion_pollrdhup = seastar_fd_state_completion(self.state['_completion_pollrdhup'])
 
     def __repr__(self):
         return f"pollable_fd(state={self.state})"
+        #return f"pollable_fd(state={self.state}, pollin={self.state_completion_pollin}, pollout={self.state_completion_pollout}, pollrdhup={self.state_completion_pollrdhup})"
+
+
+class seastar_fd_state_completion:
+    def __init__(self, ref):
+        self.ref = ref
+        self.pr = seastar_promise(ref['_pr'])
+
+    def __repr__(self):
+        return f"pollable_fd_state_completion(pr={self.pr})"
+
 
 class statem:
     def __init__(self, ref):
@@ -1841,16 +1857,21 @@ class ssl_st:
         self.rlayer = rlayer(ref['rlayer'])
         self.statem = statem(ref['statem'])
 
-
     def __repr__(self):
         return f"ssl_st(statem={self.statem}, rlayer={self.rlayer}, version={self.version}, error={self.error}, error_code={self.error_code}, init_num={self.init_num}, init_off={self.init_off}, renegotiate= {self.renegotiate}, key_update= {self.key_update}, s3_renegotiation= {self.s3_renegotiation}, s3_total_renegotiations= {self.s3_total_renegotiations}, s3_num_renegotiations= {self.s3_num_renegotiations}, s3_change_cipher_spec= {self.s3_change_cipher_spec}, s3_warn_alert= {self.s3_warn_alert}, s3_fatal_alert= {self.s3_fatal_alert}"
+
 
 class seastar_data_source:
     def __init__(self, ref):
         self.ref = ref
         self.casted = ref.address.dynamic_cast(
-            gdb.lookup_type('seastar::tls::tls_connected_socket_impl::source_impl').pointer()).dereference()    
-        self.session = seastar_shared_ptr(self.casted['_session']).get().dynamic_cast(  gdb.lookup_type('seastar::tls::session').pointer()).dereference()
+            gdb.lookup_type(
+                'seastar::tls::tls_connected_socket_impl::source_impl').
+            pointer()).dereference()
+        self.session = seastar_shared_ptr(
+            self.casted['_session']).get().dynamic_cast(
+                gdb.lookup_type(
+                    'seastar::tls::session').pointer()).dereference()
         self.session_in_sem = named_samaphore(self.session['_in_sem'])
         self.session_out_sem = named_samaphore(self.session['_out_sem'])
         self.session_input = self.session['_input']
@@ -1859,7 +1880,10 @@ class seastar_data_source:
         self.session_error = self.session['_error']
         self.session_shutdown = self.session['_shutdown']
         self.session_out_pending = self.session['_output_pending']
-        self.session_sock = std_unique_ptr(self.session['_sock']).get().dynamic_cast(gdb.lookup_type('seastar::net::posix_connected_socket_impl').pointer()).dereference()
+        self.session_sock = std_unique_ptr(
+            self.session['_sock']).get().dynamic_cast(
+                gdb.lookup_type('seastar::net::posix_connected_socket_impl').
+                pointer()).dereference()
         self.session_sock_fd = seastar_pollable_fd(self.session_sock['_fd'])
         self.ssl = ssl_st(std_unique_ptr(self.session['_ssl']).get())
 
@@ -1923,13 +1947,15 @@ class cloud_client_ptr:
         self.probe = seastar_shared_ptr(
             self.http_client['_probe']).get().dereference()
         self.abort_source = abort_source(self.http_client['_as'].dereference())
+        self.http_connect_gate_count = self.http_client['_connect_gate'][
+            '_count']
         self.base_transport = net_base_transport(
             self.http_client.address.dynamic_cast(
                 gdb.lookup_type(
                     'net::base_transport').pointer()).dereference())
 
     def __repr__(self):
-        return f"client(last_response={self.http_client_last}, probe={self.probe}, as={self.abort_source}, bt={self.base_transport})"
+        return f"client(last_response={self.http_client_last}, probe={self.probe}, as={self.abort_source}, bt={self.base_transport}, connect_gate_count={self.http_connect_gate_count})"
 
 
 class cloud_client_lease:
