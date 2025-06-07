@@ -34,6 +34,7 @@ option(Redpanda_ENABLE_SANITIZERS "Enable sanitizers (address, leak, undefined)"
 if(Redpanda_ENABLE_SANITIZERS)
   add_link_options(-fsanitize=address,leak,undefined)
   add_compile_options(-fsanitize=address,leak,undefined)
+  add_compile_options(-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG)
 endif()
 
 # We use enums as bitflags in seastar and Redpanda, which
