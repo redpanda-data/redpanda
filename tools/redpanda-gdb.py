@@ -918,6 +918,11 @@ def resolve(addr, cache=True, startswith=None):
     return name
 
 
+def get_reactor_backend():
+    reactor_backend = gdb.parse_and_eval('seastar::local_engine->_backend')
+    return std_unique_ptr(reactor_backend).get()
+
+
 def get_text_range():
     try:
         vptr_type = gdb.lookup_type('uintptr_t').pointer()
@@ -3923,6 +3928,26 @@ class redpanda_fiber(gdb.Command):
             return
 
 
+class redpanda_reactors(gdb.Command):
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda reactors', gdb.COMMAND_USER,
+                             gdb.COMPLETE_COMMAND)
+
+    def print(self):
+        ref = gdb.parse_and_eval('seastar::local_engine')
+        reactor_backend = std_unique_ptr(ref['_backend']).get()
+        self.reactor_backend_aio = reactor_backend.dynamic_cast(
+            gdb.lookup_type(
+                'seastar::reactor_backend_aio').pointer()).dereference()
+        self.aio_polling_io = self.reactor_backend_aio['_polling_io']
+        print(
+            f"reactor_backend_aio(reactor={self.reactor_backend_aio}, polling_io={self.aio_polling_io})"
+        )
+
+    def invoke(self, arg, from_tty):
+        self.print()
+
+
 redpanda()
 redpanda_memory()
 redpanda_storage()
@@ -3938,3 +3963,4 @@ redpanda_cloud_clients()
 redpanda_ptr()
 redpanda_find()
 redpanda_fiber()
+redpanda_reactors()
