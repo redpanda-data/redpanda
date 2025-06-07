@@ -155,7 +155,7 @@ public:
     /// \return initialized segment_upload object
     static ss::future<result<std::unique_ptr<segment_upload>>>
     make_segment_upload(
-      ss::lw_shared_ptr<cluster::partition> part,
+      cluster::partition* part,
       inclusive_offset_range range,
       size_t read_buffer_size,
       ss::scheduling_group sg,
@@ -189,7 +189,7 @@ public:
     /// \return initialized segment_upload object
     static ss::future<result<std::unique_ptr<segment_upload>>>
     make_segment_upload(
-      ss::lw_shared_ptr<cluster::partition> part,
+      cluster::partition* part,
       size_limited_offset_range range,
       size_t read_buffer_size,
       ss::scheduling_group sg,
@@ -197,7 +197,7 @@ public:
 
 private:
     explicit segment_upload(
-      ss::lw_shared_ptr<cluster::partition> part,
+      cluster::partition* part,
       size_t read_buffer_size,
       ss::scheduling_group sg);
 
@@ -218,7 +218,7 @@ private:
       std::variant<inclusive_offset_range, size_limited_offset_range> range);
 
     model::ntp _ntp;
-    ss::lw_shared_ptr<cluster::partition> _part;
+    cluster::partition* _part;
     size_t _rd_buffer_size;
     ss::scheduling_group _sg;
     std::optional<ss::input_stream<char>> _stream;

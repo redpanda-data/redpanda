@@ -175,7 +175,7 @@ public:
     }
 
     auto get_test_partition() {
-        return app.partition_manager.local().get(test_ntp);
+        return app.partition_manager.local().get(test_ntp).get();
     }
 
     storage::disk_log_impl* get_partition_log() {
