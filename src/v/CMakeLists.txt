@@ -42,6 +42,7 @@ if(REDPANDA_RUN_CLANG_TIDY)
     unset(clang_tidy_checks)
 endif()
 
+
 #
 # The `enable_clang_tidy` macro should be used to turn on clang-tidy checks in
 # sub-directories that are clang-tidy clean according to .clang-tidy-strict and
