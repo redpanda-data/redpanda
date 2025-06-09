@@ -121,6 +121,9 @@ from_string_view<output_format>(std::string_view sv) {
 
 std::ostream& operator<<(std::ostream& os, const output_format& of);
 
+///\brief Type representing a global resource for ACLs.
+using global_resource = named_type<ss::sstring, struct global_resource_tag>;
+
 ///\brief A subject is the name under which a schema is registered.
 ///
 /// Typically it will be "<topic>-key" or "<topic>-value".
