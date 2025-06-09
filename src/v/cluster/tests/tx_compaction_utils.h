@@ -68,17 +68,21 @@ public:
         // Interleave tx_ops if set to true.
         bool _interleave = false;
         bool _compact = true;
+        int _num_records = 5;
+        int _num_batches = 1;
 
         friend std::ostream& operator<<(std::ostream& os, const spec& s) {
             fmt::print(
               os,
               "{{ num_txes: {}, num_rolls: {}, type: {}, interleave: {}, "
-              "compact: {} }}",
+              "compact: {}, num_records: {}, num_batches: {} }}",
               s._num_txes,
               s._num_rolls,
               s._types,
               s._interleave,
-              s._compact);
+              s._compact,
+              s._num_records,
+              s._num_batches);
             return os;
         }
     };
@@ -107,8 +111,8 @@ public:
                       model::timestamp::now().value() - ret_duration.count()),
                     std::nullopt,
                     log->stm_manager()->max_removable_local_log_offset(),
-                    std::nullopt,
-                    std::nullopt,
+                    log->config().tombstone_retention_ms(),
+                    log->config().tx_retention_ms(),
                     std::chrono::milliseconds{0},
                     dummy_as,
                   })
@@ -191,8 +195,11 @@ public:
             // For mixed type spec, we randomly pick a commit/abort.
             ops.emplace(ss::make_shared(
               begin_op{tx_op_ctx{_data_gen, stm, log, pid, term}, weight0}));
-            ops.emplace(ss::make_shared(
-              data_op{tx_op_ctx{_data_gen, stm, log, pid, term}, weight1}));
+            ops.emplace(ss::make_shared(data_op{
+              tx_op_ctx{_data_gen, stm, log, pid, term},
+              weight1,
+              s._num_records,
+              s._num_batches}));
 
             if (
               s._types == tx_types::commit_only
@@ -228,8 +235,8 @@ public:
           model::timestamp::min(),
           std::nullopt,
           model::offset::max(),
-          std::nullopt,
-          std::nullopt,
+          log->config().tombstone_retention_ms(),
+          log->config().tx_retention_ms(),
           std::chrono::milliseconds{0},
           as);
         // Compacts until a single sealed segment remains, other than the
@@ -300,9 +307,11 @@ public:
 
     struct data_op final : tx_op {
     public:
-        explicit data_op(tx_op_ctx&& ctx, int weight, int records = 5)
+        explicit data_op(
+          tx_op_ctx&& ctx, int weight, int records = 5, int batches = 1)
           : tx_op(std::move(ctx), weight)
-          , _num_records(records) {}
+          , _num_records(records)
+          , _num_batches(batches) {}
 
         ss::future<> execute() override {
             model::test::record_batch_spec spec;
@@ -310,9 +319,9 @@ public:
             spec.producer_epoch = _ctx._pid.epoch;
             spec.is_transactional = true;
             spec.count = _num_records;
-            auto batches = _ctx._data_gen->operator()(spec, 1);
+            auto batches = _ctx._data_gen->operator()(spec, _num_batches);
             _data_idx = _ctx._data_gen->_idx - 1;
-            RPTEST_REQUIRE_EQ_CORO(batches.size(), 1);
+            RPTEST_REQUIRE_EQ_CORO(batches.size(), _num_batches);
             model::batch_identity bid{
               .pid = _ctx._pid,
               .first_seq = 0,
@@ -320,14 +329,16 @@ public:
               .record_count = spec.count,
               .is_transactional = true};
 
-            auto result = co_await _ctx._stm->replicate(
-              bid,
-              std::move(batches[0]),
-              raft::replicate_options(raft::consistency_level::quorum_ack));
-            if (!result.has_value()) {
-                vlog(clusterlog.error, "Error {}", result.error());
+            for (auto& batch : batches) {
+                auto result = co_await _ctx._stm->replicate(
+                  bid,
+                  std::move(batch),
+                  raft::replicate_options(raft::consistency_level::quorum_ack));
+                if (!result.has_value()) {
+                    vlog(clusterlog.error, "Error {}", result.error());
+                }
+                RPTEST_REQUIRE_EQ_CORO((bool)result, true);
             }
-            RPTEST_REQUIRE_EQ_CORO((bool)result, true);
         }
 
         tx_op_type type() override { return tx_op_type::data; }
@@ -337,6 +348,7 @@ public:
 
     private:
         int _num_records;
+        int _num_batches;
         int _data_idx{};
     };
 
