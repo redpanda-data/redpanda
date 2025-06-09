@@ -305,9 +305,13 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     ++_stats.batches_processed;
     using stop_t = ss::stop_iteration;
     const auto record_count_before = b.record_count();
+    auto is_control_batch = b.header().attrs.is_control();
     auto to_copy = co_await filter(std::move(b));
     if (to_copy == std::nullopt) {
         ++_stats.batches_discarded;
+        if (is_control_batch) {
+            ++_stats.control_batches_discarded;
+        }
         _stats.records_discarded += record_count_before;
         co_return stop_t::no;
     }

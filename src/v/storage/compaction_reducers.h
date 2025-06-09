@@ -134,6 +134,8 @@ public:
         // Number of batches that were ignored because they are not
         // of a compactible type.
         size_t non_compactible_batches{0};
+        // Number of transactional control batches that were removed.
+        size_t control_batches_discarded{0};
 
         // Returns whether any data was removed by this reducer.
         bool has_removed_data() const {
@@ -144,11 +146,13 @@ public:
             fmt::print(
               os,
               "{{ batches_processed: {}, batches_discarded: {}, "
-              "records_discarded: {}, non_compactible_batches: {} }}",
+              "records_discarded: {}, non_compactible_batches: {}, "
+              "control_batches_discarded: {}}}",
               s.batches_processed,
               s.batches_discarded,
               s.records_discarded,
-              s.non_compactible_batches);
+              s.non_compactible_batches,
+              s.control_batches_discarded);
             return os;
         }
     };
