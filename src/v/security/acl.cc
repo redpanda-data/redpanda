@@ -331,6 +331,10 @@ std::ostream& operator<<(std::ostream& os, resource_type type) {
         return os << "cluster";
     case resource_type::transactional_id:
         return os << "transactional_id";
+    case resource_type::sr_subject:
+        return os << "schema_registry_subject";
+    case resource_type::sr_global:
+        return os << "schema_registry_global";
     }
     __builtin_unreachable();
 }
@@ -407,13 +411,26 @@ operator<<(std::ostream& os, const resource_pattern_filter::pattern_match&) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, resource_pattern_filter::resource_subsystem s) {
+    using resource_subsystem = resource_pattern_filter::resource_subsystem;
+    switch (s) {
+    case resource_subsystem::kafka:
+        return os << "kafka";
+    case resource_subsystem::schema_registry:
+        return os << "schema_registry";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream& o, const resource_pattern_filter& f) {
     fmt::print(
       o,
-      "{{ resource: {} name: {} pattern: {} }}",
+      "{{ resource: {} name: {} pattern: {} subsystem: {}}}",
       f._resource,
       f._name,
-      f._pattern);
+      f._pattern,
+      f._subsystem);
     return o;
 }
 
@@ -498,6 +515,19 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
         return false;
     }
 
+    switch (_subsystem) {
+    case resource_subsystem::kafka:
+        if (pattern.resource() > resource_type::transactional_id) {
+            return false;
+        }
+        break;
+    case resource_subsystem::schema_registry:
+        if (pattern.resource() < resource_type::sr_subject) {
+            return false;
+        }
+        break;
+    }
+
     if (
       _pattern && std::holds_alternative<pattern_type>(*_pattern)
       && std::get<pattern_type>(*_pattern) != pattern.pattern()) {
@@ -558,6 +588,11 @@ void read_nested(
         filter._pattern = security::resource_pattern_filter::pattern_match{};
         break;
     }
+    if (in.bytes_left() > 0) {
+        filter._subsystem
+          = read_nested<resource_pattern_filter::resource_subsystem>(
+            in, bytes_left_limit);
+    }
 }
 
 void write(iobuf& out, resource_pattern_filter filter) {
@@ -581,6 +616,7 @@ void write(iobuf& out, resource_pattern_filter filter) {
     write(out, filter._resource);
     write(out, filter._name);
     write(out, pattern);
+    write(out, filter._subsystem);
 }
 
 } // namespace security

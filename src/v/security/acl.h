@@ -13,6 +13,7 @@
 #include "base/type_traits.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "serde/envelope.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/optional.h"
@@ -50,10 +51,13 @@ enum class resource_type : int8_t {
     group = 1,
     cluster = 2,
     transactional_id = 3,
+    sr_subject = 4,
+    sr_global = 5,
 };
 
 template<typename T>
 consteval resource_type get_resource_type() {
+    namespace ppsr = pandaproxy::schema_registry;
     if constexpr (std::is_same_v<T, model::topic>) {
         return resource_type::topic;
     } else if constexpr (std::is_same_v<T, kafka::group_id>) {
@@ -62,6 +66,10 @@ consteval resource_type get_resource_type() {
         return resource_type::cluster;
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
+    } else if constexpr (std::is_same_v<T, ppsr::subject>) {
+        return resource_type::sr_subject;
+    } else if constexpr (std::is_same_v<T, ppsr::global_resource>) {
+        return resource_type::sr_global;
     } else {
         static_assert(base::unsupported_type<T>::value, "Unsupported type");
     }
@@ -416,6 +424,11 @@ public:
         match = 2,
     };
 
+    enum class resource_subsystem : uint8_t {
+        kafka = 0,
+        schema_registry = 1,
+    };
+
     static serialized_pattern_type to_pattern(security::pattern_type from) {
         switch (from) {
         case security::pattern_type::literal:
@@ -439,10 +452,12 @@ public:
     resource_pattern_filter(
       std::optional<resource_type> type,
       std::optional<ss::sstring> name,
-      std::optional<pattern_filter_type> pattern)
+      std::optional<pattern_filter_type> pattern,
+      resource_subsystem subsystem = resource_subsystem::kafka)
       : _resource(type)
       , _name(std::move(name))
-      , _pattern(pattern) {}
+      , _pattern(pattern)
+      , _subsystem(subsystem) {}
 
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     resource_pattern_filter(const resource_pattern& resource)
@@ -452,10 +467,16 @@ public:
     /*
      * A filter that matches any resource.
      */
-    static const resource_pattern_filter& any() {
-        static const resource_pattern_filter filter(
-          std::nullopt, std::nullopt, std::nullopt);
-        return filter;
+    static const resource_pattern_filter&
+    any(resource_subsystem subsystem = resource_subsystem::kafka) {
+        static const resource_pattern_filter k_filter(
+          std::nullopt, std::nullopt, std::nullopt, resource_subsystem::kafka);
+        static const resource_pattern_filter sr_filter(
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          resource_subsystem::schema_registry);
+        return subsystem == resource_subsystem::kafka ? k_filter : sr_filter;
     }
 
     bool matches(const resource_pattern& pattern) const;
@@ -464,6 +485,7 @@ public:
     std::optional<resource_type> resource() const { return _resource; }
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
+    resource_subsystem subsystem() const { return _subsystem; }
 
     template<typename H>
     friend H AbslHashValue(H h, const pattern_match&) {
@@ -492,6 +514,7 @@ private:
     std::optional<resource_type> _resource;
     std::optional<ss::sstring> _name;
     std::optional<pattern_filter_type> _pattern;
+    resource_subsystem _subsystem{resource_subsystem::kafka};
 };
 
 std::ostream&
@@ -581,12 +604,23 @@ public:
     }
 
     /*
-     * A filter that matches any ACL binding.
+     * A filter that matches any ACL binding for the given subsystem.
      */
-    static const acl_binding_filter& any() {
-        static const acl_binding_filter filter(
-          resource_pattern_filter::any(), acl_entry_filter::any());
-        return filter;
+    static const acl_binding_filter& any(
+      resource_pattern_filter::resource_subsystem subsystem
+      = resource_pattern_filter::resource_subsystem::kafka) {
+        static const acl_binding_filter k_filter(
+          resource_pattern_filter::any(
+            resource_pattern_filter::resource_subsystem::kafka),
+          acl_entry_filter::any());
+        static const acl_binding_filter sr_filter(
+          resource_pattern_filter::any(
+            resource_pattern_filter::resource_subsystem::schema_registry),
+          acl_entry_filter::any());
+
+        return subsystem == resource_pattern_filter::resource_subsystem::kafka
+                 ? k_filter
+                 : sr_filter;
     }
 
     bool matches(const acl_binding& binding) const {
