@@ -16,6 +16,7 @@
 #include "kafka/protocol/types.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "security/role.h"
 #include "security/role_store.h"
 
@@ -309,6 +310,18 @@ template auth_result authorizer::authorized(
 
 template auth_result authorizer::authorized(
   const kafka::transactional_id&,
+  acl_operation,
+  const acl_principal&,
+  const acl_host&) const;
+
+template auth_result authorizer::authorized(
+  const pandaproxy::schema_registry::subject&,
+  acl_operation,
+  const acl_principal&,
+  const acl_host&) const;
+
+template auth_result authorizer::authorized(
+  const pandaproxy::schema_registry::global_resource&,
   acl_operation,
   const acl_principal&,
   const acl_host&) const;
