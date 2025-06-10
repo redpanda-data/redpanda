@@ -20,6 +20,21 @@
 namespace datalake {
 
 namespace {
+
+// NB: Use the concrete type not the alias iceberg::table_properties_t
+// so changes to the alias can't silently destroy the deep copy semantics
+// of this function.
+chunked_hash_map<ss::sstring, ss::sstring, sstring_hash, sstring_eq>
+copy_properties(
+  const chunked_hash_map<ss::sstring, ss::sstring, sstring_hash, sstring_eq>&
+    props) {
+    chunked_hash_map<ss::sstring, ss::sstring, sstring_hash, sstring_eq> result;
+    for (const auto& [key, value] : props) {
+        result.emplace(key, value);
+    }
+    return result;
+}
+
 schema_manager::errc log_and_convert_catalog_err(
   iceberg::catalog::errc e, std::string_view log_msg) {
     switch (e) {
@@ -146,6 +161,7 @@ simple_schema_manager::ensure_table_schema(
           table_location_prefix_(),
           fmt::join(table_id.ns, "/"),
           table_id.table)),
+        .properties = std::nullopt,
       });
 
     co_return std::nullopt;
@@ -164,6 +180,7 @@ simple_schema_manager::get_table_info(
       .schema = it->second.schema.copy(),
       .partition_spec = it->second.partition_spec.copy(),
       .location = it->second.location,
+      .properties = it->second.properties.transform(copy_properties),
     };
 }
 
@@ -281,6 +298,7 @@ catalog_schema_manager::get_table_info(
       .schema = cur_schema->copy(),
       .partition_spec = cur_spec->copy(),
       .location = table.location,
+      .properties = table.properties.transform(copy_properties),
     };
 }
 

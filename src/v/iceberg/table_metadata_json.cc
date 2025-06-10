@@ -130,7 +130,7 @@ table_metadata parse_table_meta(const json::Value& v) {
     auto last_partition_id = parse_required_i32(v, "last-partition-id");
 
     auto properties_json = parse_optional_object(v, "properties");
-    std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
+    std::optional<table_properties_t> properties;
     if (properties_json.has_value()) {
         properties.emplace();
         for (const auto& m : properties_json.value()) {

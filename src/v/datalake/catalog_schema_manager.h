@@ -40,6 +40,7 @@ public:
         iceberg::schema schema;
         iceberg::partition_spec partition_spec;
         iceberg::uri location;
+        std::optional<iceberg::table_properties_t> properties;
 
         // Fills the field IDs of the given type with those in the current
         // schema. Returns true on success.

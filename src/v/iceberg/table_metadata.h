@@ -17,12 +17,16 @@
 #include "iceberg/snapshot.h"
 #include "iceberg/transform.h"
 #include "iceberg/uri.h"
+#include "utils/absl_sstring_hash.h"
 #include "utils/named_type.h"
 #include "utils/uuid.h"
 
 #include <optional>
 
 namespace iceberg {
+
+using table_properties_t
+  = chunked_hash_map<ss::sstring, ss::sstring, sstring_hash, sstring_eq>;
 
 enum class sort_direction {
     asc,
@@ -67,7 +71,7 @@ struct table_metadata {
     partition_spec::id_t default_spec_id;
     partition_field::id_t last_partition_id;
 
-    std::optional<chunked_hash_map<ss::sstring, ss::sstring>> properties;
+    std::optional<table_properties_t> properties;
     std::optional<snapshot_id> current_snapshot_id;
     std::optional<chunked_vector<snapshot>> snapshots;
 
