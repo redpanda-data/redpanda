@@ -36,6 +36,7 @@
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/ntp_config.h"
@@ -2541,10 +2542,21 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
         co_return;
     }
 
-    // Release the lock when truncating the log because it can take some
-    // time while we wait for readers to be evicted.
-    co_await _log->truncate_prefix(storage::truncate_prefix_config(
-      model::next_offset(last_included_index), _scheduling.default_iopc));
+    {
+        auto truncation_offset = model::next_offset(last_included_index);
+        watchdog wd15min(15min, [this, truncation_offset] {
+            vlog(
+              _ctxlog.warn,
+              "Truncation at offset {} is taking more than 15min, log offsets: "
+              "{}",
+              truncation_offset,
+              _log->offsets());
+        });
+        // Release the lock when truncating the log because it can take some
+        // time while we wait for readers to be evicted.
+        co_await _log->truncate_prefix(storage::truncate_prefix_config(
+          truncation_offset, _scheduling.default_iopc));
+    }
 
     /*
      * We do not need to keep an oplock when updating the flushed offset here as
