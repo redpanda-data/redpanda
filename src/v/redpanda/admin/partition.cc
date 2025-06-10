@@ -37,7 +37,7 @@ using admin::apply_validator;
 
 ss::future<ss::json::json_return_type>
 admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
-    const model::ntp ntp = parse_ntp_from_request(req->param);
+    model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         throw redirect_to_leader(*req, ntp);
@@ -169,7 +169,7 @@ admin_server::mark_transaction_expired_handler(
       *shard,
       [_ntp = std::move(ntp), pid, _req = std::move(req), this](
         cluster::partition_manager& pm) mutable
-        -> ss::future<ss::json::json_return_type> {
+      -> ss::future<ss::json::json_return_type> {
           auto ntp = std::move(_ntp);
           auto req = std::move(_req);
           auto partition = pm.get(ntp);
@@ -550,7 +550,7 @@ admin_server::toggle_append_entries_error_injection(
     co_return co_await _partition_manager.invoke_on(
       *shard,
       [ntp = std::move(ntp), inject](cluster::partition_manager& pm) mutable
-        -> ss::future<ss::json::json_return_type> {
+      -> ss::future<ss::json::json_return_type> {
           auto partition = pm.get(ntp);
           if (!partition) {
               return ss::make_exception_future<ss::json::json_return_type>(
