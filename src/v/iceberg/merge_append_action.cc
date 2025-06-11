@@ -27,18 +27,38 @@
 namespace iceberg {
 
 namespace {
+
+// Derive the metadata location from table properties.
+// Some catalogs require respecting the property `write.metadata.path`,
+// but the default location is <table location>/metadata.
+uri get_metadata_location(const table_metadata& table) {
+    static constexpr std::string_view write_metadata_path_prop
+      = "write.metadata.path";
+
+    if (table.properties.has_value()) {
+        auto it = table.properties->find(write_metadata_path_prop);
+        if (it != table.properties->end()) {
+            return uri(it->second);
+        }
+    }
+
+    return uri(fmt::format("{}/metadata", table.location));
+}
+
 uri get_manifest_path(
-  const uri& location, const uuid_t& commit_uuid, size_t num) {
+  const table_metadata& table, const uuid_t& commit_uuid, size_t num) {
+    auto metadata_location = get_metadata_location(table);
     return uri(
-      fmt::format("{}/metadata/{}-m{}.avro", location, commit_uuid, num));
+      fmt::format("{}/{}-m{}.avro", metadata_location, commit_uuid, num));
 }
 uri get_manifest_list_path(
-  const uri& location,
+  const table_metadata& table,
   snapshot_id snap_id,
   const uuid_t& commit_uuid,
   size_t num) {
+    auto metadata_location = get_metadata_location(table);
     return uri{fmt::format(
-      "{}/metadata/snap-{}-{}-{}.avro", location, snap_id(), commit_uuid, num)};
+      "{}/snap-{}-{}-{}.avro", metadata_location, snap_id(), commit_uuid, num)};
 }
 
 action::errc to_action_errc(metadata_io::errc e) {
@@ -248,7 +268,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     // naming uniqueness. Retries for us are expected to take the form of an
     // entirely new transaction.
     const auto new_mlist_path = get_manifest_list_path(
-      table_.location, new_snap_id, commit_uuid_, 0);
+      table_, new_snap_id, commit_uuid_, 0);
 
     vlog(
       log.info,
@@ -516,7 +536,7 @@ merge_append_action::merge_mfiles(
     }
 
     const auto merged_manifest_path = get_manifest_path(
-      table_.location, ctx.commit_uuid, generate_manifest_num());
+      table_, ctx.commit_uuid, generate_manifest_num());
     const auto mfile_up_res = co_await upload_as_manifest(
       merged_manifest_path, *schema, pspec, std::move(merged_entries));
     if (mfile_up_res.has_error()) {
