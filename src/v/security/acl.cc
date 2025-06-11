@@ -12,6 +12,11 @@
 
 #include "security/acl_store.h"
 #include "security/logger.h"
+#include "serde/rw/enum.h"
+#include "serde/rw/envelope.h"
+#include "serde/rw/inet_address.h"
+#include "serde/rw/optional.h"
+#include "serde/rw/rw.h"
 #include "utils/to_string.h"
 
 #include <seastar/coroutine/maybe_yield.hh>
@@ -581,6 +586,18 @@ void write(iobuf& out, resource_pattern_filter filter) {
     write(out, filter._resource);
     write(out, filter._name);
     write(out, pattern);
+}
+
+void acl_binding_filter::serde_read(iobuf_parser& in, const serde::header& h) {
+    read_nested(in, _pattern, h._bytes_left_limit);
+    using serde::read_nested;
+    read_nested(in, _acl, h._bytes_left_limit);
+}
+
+void acl_binding_filter::serde_write(iobuf& out) const {
+    using serde::write;
+    write(out, _pattern);
+    write(out, _acl);
 }
 
 } // namespace security
