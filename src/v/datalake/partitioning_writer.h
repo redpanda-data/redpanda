@@ -58,7 +58,7 @@ public:
 
     struct partitioned_file {
         local_file_metadata local_file;
-        remote_path table_location;
+        remote_path data_location;
         iceberg::schema::id_t schema_id;
         iceberg::partition_spec::id_t partition_spec_id;
         iceberg::partition_key partition_key;

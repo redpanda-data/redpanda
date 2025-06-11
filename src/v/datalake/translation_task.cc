@@ -65,11 +65,10 @@ ss::future<checked<remote_path, translation_task::errc>> execute_single_upload(
   prefix_logger& logger,
   cloud_data_io& _cloud_io,
   const partitioning_writer::partitioned_file& file,
-  const remote_path& remote_path_prefix,
   retry_chain_node& parent_rcn,
   lazy_abort_source& lazy_as) {
     auto file_remote_path = remote_path{
-      file.table_location / remote_path_prefix / file.partition_key_path
+      file.data_location / file.partition_key_path
       / file.local_file.path().filename()};
 
     // (Approximate because I'm ignoring backoff) ~5 retries at 1
@@ -126,7 +125,6 @@ upload_files(
   cloud_data_io& _cloud_io,
   const chunked_vector<partitioning_writer::partitioned_file>& files,
   translation_task::custom_partitioning_enabled is_custom_partitioning_enabled,
-  const remote_path& remote_path_prefix,
   retry_chain_node& rcn,
   lazy_abort_source& lazy_as) {
     chunked_vector<coordinator::data_file> ret;
@@ -135,7 +133,7 @@ upload_files(
     std::optional<translation_task::errc> upload_error;
     for (auto& file : files) {
         auto r = co_await execute_single_upload(
-          logger, _cloud_io, file, remote_path_prefix, rcn, lazy_as);
+          logger, _cloud_io, file, rcn, lazy_as);
 
         if (r.has_error()) {
             vlog(
@@ -280,7 +278,6 @@ ss::future<
   checked<coordinator::translated_offset_range, translation_task::errc>>
 translation_task::finish(
   custom_partitioning_enabled is_custom_partitioning_enabled,
-  const remote_path& remote_path_prefix,
   retry_chain_node& rcn,
   ss::abort_source& as) && {
     auto mux_result = co_await std::move(_multiplexer).finish();
@@ -331,7 +328,6 @@ translation_task::finish(
           *_cloud_io,
           write_result.data_files,
           is_custom_partitioning_enabled,
-          remote_path_prefix,
           rcn,
           lazy_as);
         if (upload_res.has_error()) {
@@ -347,7 +343,6 @@ translation_task::finish(
           *_cloud_io,
           write_result.dlq_files,
           is_custom_partitioning_enabled,
-          remote_path_prefix,
           rcn,
           lazy_as);
         if (dlq_upload_res.has_error()) {

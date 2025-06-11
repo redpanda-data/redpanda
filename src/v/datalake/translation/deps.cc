@@ -493,7 +493,6 @@ public:
       std::unique_ptr<record_translator> record_translator,
       std::unique_ptr<table_creator> table_creator,
       location_provider location_provider,
-      remote_path upload_path_prefix,
       scheduling::reservations_tracker& reservations,
       ss::sharded<cluster::topic_table>* topics,
       ss::sharded<features::feature_table>* features,
@@ -507,7 +506,6 @@ public:
       , _record_translator(std::move(record_translator))
       , _table_creator(std::move(table_creator))
       , _location_provider(std::move(location_provider))
-      , _upload_path_prefix(std::move(upload_path_prefix))
       , _reservations(reservations)
       , _topics(topics->local())
       , _features(features->local())
@@ -605,8 +603,8 @@ public:
         }
         vlog(datalake_log.debug, "[{}] finishing translation", _ntp);
         auto task = std::exchange(_in_progress_translation, std::nullopt);
-        auto result = co_await std::move(task.value())
-                        .finish(_cp_enabled, _upload_path_prefix, rcn, as);
+        auto result
+          = co_await std::move(task.value()).finish(_cp_enabled, rcn, as);
 
         if (result.has_error()) {
             co_return map_error_code(result.error());
@@ -668,7 +666,6 @@ private:
     std::unique_ptr<record_translator> _record_translator;
     std::unique_ptr<table_creator> _table_creator;
     location_provider _location_provider;
-    remote_path _upload_path_prefix;
     scheduling::reservations_tracker& _reservations;
     cluster::topic_table& _topics;
     features::feature_table& _features;
@@ -690,7 +687,6 @@ translation_context::make_default_translation_context(
   std::unique_ptr<record_translator> record_translator,
   std::unique_ptr<table_creator> table_creator,
   location_provider location_provider,
-  remote_path upload_path_prefix,
   scheduling::reservations_tracker& reservations,
   ss::sharded<cluster::topic_table>* topics,
   ss::sharded<features::feature_table>* features,
@@ -705,7 +701,6 @@ translation_context::make_default_translation_context(
       std::move(record_translator),
       std::move(table_creator),
       std::move(location_provider),
-      std::move(upload_path_prefix),
       reservations,
       topics,
       features,
