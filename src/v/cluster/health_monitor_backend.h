@@ -198,6 +198,15 @@ private:
     };
 
     static aggregated_report aggregate_reports(const report_cache_t& reports);
+    /**
+     * Offline nodes are missing the health reports, therefore the partitions
+     * that replicas are only on those nodes will not be directly reported as
+     * leader less. Therefore, we need to check the partitions that are only on
+     * offline nodes and add them to the report.
+     */
+    ss::future<> fill_aggregate_with_offline_partitions(
+      const std::vector<model::node_id>& offline_nodes,
+      aggregated_report& aggr_report);
 
     ss::lw_shared_ptr<raft::consensus> _raft0;
     ss::sharded<members_table>& _members;
