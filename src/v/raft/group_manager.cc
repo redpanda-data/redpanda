@@ -116,7 +116,7 @@ void group_manager::set_ready() {
     _is_ready = true;
     std::for_each(
       _groups.begin(), _groups.end(), [](ss::lw_shared_ptr<consensus>& c) {
-          c->reset_node_priority();
+          c->mark_ready_for_leader_election();
       });
 }
 
@@ -152,7 +152,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
       _recovery_mem_quota,
       _recovery_scheduler,
       _feature_table,
-      _is_ready ? std::nullopt : std::make_optional(min_voter_priority),
+      _is_ready,
       keep_snapshotted_log);
 
     return ss::with_gate(_gate, [this, raft] {
@@ -162,7 +162,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
                 // set_ready() was called after we created this consensus
                 // instance but before we insert it into the _groups
                 // collection.
-                raft->reset_node_priority();
+                raft->mark_ready_for_leader_election();
             }
             _groups.push_back(raft);
             return raft;

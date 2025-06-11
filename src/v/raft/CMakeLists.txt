@@ -37,6 +37,7 @@ v_cc_library(
     persisted_stm.cc
     replication_monitor.cc
     buffered_protocol.cc
+    voter_priority_tracker.cc
   DEPS
     v::storage
     raft_rpc
