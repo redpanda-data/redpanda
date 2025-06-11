@@ -35,6 +35,8 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/cluster_link/model",
         "//src/v/container:fragmented_vector",
+        "//src/v/kafka/protocol:describe_configs",
+        "//src/v/kafka/protocol:metadata",
         "//src/v/model",
         "//src/v/ssx:work_queue",
         "@abseil-cpp//absl/container:flat_hash_map",

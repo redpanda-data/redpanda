@@ -11,9 +11,12 @@
 
 #pragma once
 
+#include "base/outcome.h"
 #include "cluster_link/link.h"
 #include "cluster_link/model/types.h"
 #include "container/fragmented_vector.h"
+#include "kafka/protocol/describe_configs.h"
+#include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "ssx/work_queue.h"
 
@@ -44,6 +47,61 @@ public:
     find_link_by_name(const model::name_t&) const = 0;
 
     virtual chunked_vector<model::id_t> get_all_link_ids() const = 0;
+};
+
+/**
+ * @brief Abstract class that represents a Kafka connection to a remote cluster
+ *
+ */
+class remote_cluster_connection {
+public:
+    remote_cluster_connection() = default;
+    remote_cluster_connection(const remote_cluster_connection&) = delete;
+    remote_cluster_connection& operator=(const remote_cluster_connection&)
+      = delete;
+    remote_cluster_connection(remote_cluster_connection&&) = delete;
+    remote_cluster_connection& operator=(remote_cluster_connection&&) = delete;
+    virtual ~remote_cluster_connection() = default;
+
+    template<typename T>
+    using result = result<T, std::exception_ptr>;
+
+    /// Connects to the remote cluster
+    virtual ss::future<result<void>> connect() = 0;
+    /// Disconnects from the remote cluster
+    virtual ss::future<result<void>> disconnect() = 0;
+    /// Fetches the metadata from the remote cluster
+    virtual ss::future<result<kafka::metadata_response>>
+      fetch_metadata(kafka::metadata_request) = 0;
+    /// Describes the configurations for a list of topics
+    virtual ss::future<result<kafka::describe_configs_response>>
+      describe_topic_configs(
+        chunked_vector<::model::topic>,
+        std::optional<chunked_vector<ss::sstring>>)
+      = 0;
+};
+
+/**
+ * @brief Factory used to create remote cluster connections
+ *
+ */
+class remote_cluster_connection_factory {
+public:
+    remote_cluster_connection_factory() = default;
+    remote_cluster_connection_factory(const remote_cluster_connection_factory&)
+      = delete;
+    remote_cluster_connection_factory(remote_cluster_connection_factory&&)
+      = delete;
+    remote_cluster_connection_factory&
+    operator=(const remote_cluster_connection_factory&)
+      = delete;
+    remote_cluster_connection_factory&
+    operator=(remote_cluster_connection_factory&&)
+      = delete;
+    virtual ~remote_cluster_connection_factory() = default;
+
+    virtual std::unique_ptr<remote_cluster_connection>
+    create_remote_cluster_connection() = 0;
 };
 
 /**
