@@ -348,6 +348,9 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         .sname_format = cloud_storage::segment_name_format::v2,
       });
     m.advance_insync_offset(model::offset{42});
+    // When the snapshot is restored the applied offset is set to be
+    // equal to the insync offset of the snapshot.
+    m.advance_applied_offset(model::offset{42});
 
     BOOST_REQUIRE(m.advance_highest_producer_id(model::producer_id{1000}));
     BOOST_REQUIRE_EQUAL(m.highest_producer_id(), model::producer_id{1000});
@@ -376,7 +379,16 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
         m.serialize_json(s1);
         archival_stm->manifest().serialize_json(s2);
         vlog(logger.info, "original manifest: {}", s1.str());
+        vlog(
+          logger.info,
+          "original manifest applied offset: {}",
+          m.get_applied_offset());
         vlog(logger.info, "restored manifest: {}", s2.str());
+        vlog(logger.info, "restored manifest: {}", s2.str());
+        vlog(
+          logger.info,
+          "restored manifest applied offset: {}",
+          archival_stm->manifest().get_applied_offset());
     }
 
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset{100});

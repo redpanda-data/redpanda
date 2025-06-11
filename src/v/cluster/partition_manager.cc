@@ -250,8 +250,27 @@ ss::future<consensus_ptr> partition_manager::manage(
               dl_result.ot_state);
 
             // Initialize archival snapshot
-            co_await archival_metadata_stm::make_snapshot(
-              ntp_cfg, manifest, max_offset);
+            /*
+             [segment 1] [segment 2] [segment 3]
+                       ^                 ^
+                       |                 |
+                   last_offset      in-sync offset
+
+            Here the ISO is no longer correct because
+            it belongs to the old cluster. We're using last uploaded
+            offset to set up the snapshot.
+            */
+            if (max_offset != model::offset(0)) {
+                vlog(
+                  clusterlog.info,
+                  "Creating snapshot for {} partition, "
+                  "min_offset: {}, max_offset: {}",
+                  ntp_cfg.ntp(),
+                  min_offset,
+                  max_offset);
+                co_await archival_metadata_stm::make_snapshot(
+                  ntp_cfg, manifest, model::prev_offset(max_offset));
+            }
         }
     }
     auto translator_batch_types = raft::offset_translator_batch_types(
