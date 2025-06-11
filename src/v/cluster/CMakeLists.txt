@@ -185,6 +185,7 @@ v_cc_library(
     partition_balancer_backend.cc
     partition_balancer_state.cc
     partition_balancer_rpc_handler.cc
+    partition_balancer_types.cc
     producer_state.cc
     producer_state_manager.cc
     node_status_backend.cc

@@ -94,7 +94,8 @@ private:
     ss::future<std::optional<backend_operation>>
       get_current_op(model::ntp, ss::shard_id);
 
-    ss::future<result<ss::chunked_fifo<model::ntp>>>
+    ss::future<
+      result<chunked_hash_map<model::ntp, reallocation_failure_details>>>
       get_decommission_allocation_failures(model::node_id);
 
     model::node_id _self;
