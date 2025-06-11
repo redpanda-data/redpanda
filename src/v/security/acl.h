@@ -401,19 +401,27 @@ private:
 /*
  * A filter for matching resources.
  *
- * Note: This type does not have a serde::header.
+ * version 1 adds subsystem.
+ *
+ * Note: This type does not have a serde::header, the version must be provided
+ * by the caller of nested_read, which has the wrong signature for serde.
  *
  */
 class resource_pattern_filter
   : public serde::envelope<
       resource_pattern_filter,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
 public:
     enum class serialized_pattern_type {
         literal = 0,
         prefixed = 1,
         match = 2,
+    };
+
+    enum class resource_subsystem : uint8_t {
+        kafka = 0,
+        schema_registry = 1,
     };
 
     static serialized_pattern_type to_pattern(security::pattern_type from) {
@@ -439,10 +447,12 @@ public:
     resource_pattern_filter(
       std::optional<resource_type> type,
       std::optional<ss::sstring> name,
-      std::optional<pattern_filter_type> pattern)
+      std::optional<pattern_filter_type> pattern,
+      resource_subsystem subsystem = resource_subsystem::kafka)
       : _resource(type)
       , _name(std::move(name))
-      , _pattern(pattern) {}
+      , _pattern(pattern)
+      , _subsystem(subsystem) {}
 
     // NOLINTNEXTLINE(hicpp-explicit-conversions)
     resource_pattern_filter(const resource_pattern& resource)
@@ -452,10 +462,16 @@ public:
     /*
      * A filter that matches any resource.
      */
-    static const resource_pattern_filter& any() {
-        static const resource_pattern_filter filter(
-          std::nullopt, std::nullopt, std::nullopt);
-        return filter;
+    static const resource_pattern_filter&
+    any(resource_subsystem subsystem = resource_subsystem::kafka) {
+        static const resource_pattern_filter k_filter(
+          std::nullopt, std::nullopt, std::nullopt, resource_subsystem::kafka);
+        static const resource_pattern_filter sr_filter(
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          resource_subsystem::schema_registry);
+        return subsystem == resource_subsystem::kafka ? k_filter : sr_filter;
     }
 
     bool matches(const resource_pattern& pattern) const;
@@ -464,6 +480,7 @@ public:
     std::optional<resource_type> resource() const { return _resource; }
     const std::optional<ss::sstring>& name() const { return _name; }
     std::optional<pattern_filter_type> pattern() const { return _pattern; }
+    resource_subsystem subsystem() const { return _subsystem; }
 
     template<typename H>
     friend H AbslHashValue(H h, const pattern_match&) {
@@ -474,10 +491,22 @@ public:
         return H::combine(std::move(h), f._resource, f._name, f._pattern);
     }
 
+    /*
+     * Reads nested data into a resource_pattern_filter object from an input
+     * stream.
+     *
+     * nested_read intentionally has the wrong signature for serde.
+     *
+     * \param in The input stream to read from
+     * \param filter The filter to read into
+     * \param bytes_left_limit The maximum number of bytes to read
+     * \param version The serde version to use
+     */
     friend void read_nested(
       iobuf_parser& in,
       resource_pattern_filter& filter,
-      const size_t bytes_left_limit);
+      const size_t bytes_left_limit,
+      serde::version_t version);
 
     friend void write(iobuf& out, resource_pattern_filter filter);
 
@@ -492,6 +521,7 @@ private:
     std::optional<resource_type> _resource;
     std::optional<ss::sstring> _name;
     std::optional<pattern_filter_type> _pattern;
+    resource_subsystem _subsystem{resource_subsystem::kafka};
 };
 
 std::ostream&
@@ -563,11 +593,14 @@ private:
 
 /*
  * A filter for matching ACL bindings.
+ *
+ * version 1 adds resource_pattern_filter::subsystem, since
+ * resource_pattern_filter does not have a header for it to be versioned.
  */
 class acl_binding_filter
   : public serde::envelope<
       acl_binding_filter,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
 public:
     acl_binding_filter() = default;
@@ -581,12 +614,23 @@ public:
     }
 
     /*
-     * A filter that matches any ACL binding.
+     * A filter that matches any ACL binding for the given subsystem.
      */
-    static const acl_binding_filter& any() {
-        static const acl_binding_filter filter(
-          resource_pattern_filter::any(), acl_entry_filter::any());
-        return filter;
+    static const acl_binding_filter& any(
+      resource_pattern_filter::resource_subsystem subsystem
+      = resource_pattern_filter::resource_subsystem::kafka) {
+        static const acl_binding_filter k_filter(
+          resource_pattern_filter::any(
+            resource_pattern_filter::resource_subsystem::kafka),
+          acl_entry_filter::any());
+        static const acl_binding_filter sr_filter(
+          resource_pattern_filter::any(
+            resource_pattern_filter::resource_subsystem::schema_registry),
+          acl_entry_filter::any());
+
+        return subsystem == resource_pattern_filter::resource_subsystem::kafka
+                 ? k_filter
+                 : sr_filter;
     }
 
     bool matches(const acl_binding& binding) const {

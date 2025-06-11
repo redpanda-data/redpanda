@@ -911,7 +911,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::delete_acls_cmd_data data;
         for (auto i = 0, mi = random_generators::get_int(5, 25); i < mi; ++i) {
-            data.filters.push_back(tests::random_acl_binding_filter());
+            data.filters.push_back(tests::random_acl_binding_filter(
+              tests::serialization_format::serde));
         }
         roundtrip_test(data);
     }
@@ -1477,8 +1478,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::delete_acls_cmd_data delete_acls_data{};
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            delete_acls_data.filters.push_back(
-              tests::random_acl_binding_filter());
+            delete_acls_data.filters.push_back(tests::random_acl_binding_filter(
+              tests::serialization_format::serde));
         }
         cluster::delete_acls_request data{
           delete_acls_data, random_timeout_clock_duration()};
@@ -2136,7 +2137,7 @@ void adl_roundtrip_cmd(Key key, Value value) {
                           .get();
     auto deserialized_cmd = std::get<Cmd>(deserialized);
 
-    BOOST_REQUIRE(deserialized_cmd.key == cmd.key);
+    BOOST_REQUIRE_EQUAL(deserialized_cmd.key, cmd.key);
 
     if constexpr (std::equality_comparable<Value>) {
         BOOST_REQUIRE(deserialized_cmd.value == cmd.value);
@@ -2199,8 +2200,8 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
         cluster::delete_acls_cmd_data delete_acl_data;
 
         for (auto i = 0, mi = random_generators::get_int(1, 20); i < mi; ++i) {
-            delete_acl_data.filters.push_back(
-              tests::random_acl_binding_filter());
+            delete_acl_data.filters.push_back(tests::random_acl_binding_filter(
+              tests::serialization_format::adl));
         }
 
         roundtrip_cmd<cluster::delete_acls_cmd>(std::move(delete_acl_data), 0);

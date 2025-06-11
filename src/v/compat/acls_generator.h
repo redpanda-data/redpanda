@@ -68,8 +68,10 @@ template<>
 struct instance_generator<cluster::delete_acls_request> {
     static cluster::delete_acls_request random() {
         cluster::delete_acls_cmd_data data;
-        auto rand_filters = tests::random_vector(
-          [] { return tests::random_acl_binding_filter(); });
+        auto rand_filters = tests::random_vector([] {
+            return tests::random_acl_binding_filter(
+              tests::serialization_format::adl);
+        });
         data.filters.insert(
           data.filters.end(), rand_filters.begin(), rand_filters.end());
         return {data, tests::random_duration<model::timeout_clock::duration>()};

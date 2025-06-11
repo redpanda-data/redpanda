@@ -412,13 +412,26 @@ operator<<(std::ostream& os, const resource_pattern_filter::pattern_match&) {
     return os;
 }
 
+std::ostream&
+operator<<(std::ostream& os, resource_pattern_filter::resource_subsystem s) {
+    using resource_subsystem = resource_pattern_filter::resource_subsystem;
+    switch (s) {
+    case resource_subsystem::kafka:
+        return os << "kafka";
+    case resource_subsystem::schema_registry:
+        return os << "schema_registry";
+    }
+    __builtin_unreachable();
+}
+
 std::ostream& operator<<(std::ostream& o, const resource_pattern_filter& f) {
     fmt::print(
       o,
-      "{{ resource: {} name: {} pattern: {} }}",
+      "{{ resource: {} name: {} pattern: {} subsystem: {}}}",
       f._resource,
       f._name,
-      f._pattern);
+      f._pattern,
+      f._subsystem);
     return o;
 }
 
@@ -503,6 +516,19 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
         return false;
     }
 
+    switch (_subsystem) {
+    case resource_subsystem::kafka:
+        if (pattern.resource() > resource_type::transactional_id) {
+            return false;
+        }
+        break;
+    case resource_subsystem::schema_registry:
+        if (pattern.resource() <= resource_type::transactional_id) {
+            return false;
+        }
+        break;
+    }
+
     if (
       _pattern && std::holds_alternative<pattern_type>(*_pattern)
       && std::get<pattern_type>(*_pattern) != pattern.pattern()) {
@@ -534,7 +560,8 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
 void read_nested(
   iobuf_parser& in,
   resource_pattern_filter& filter,
-  const size_t bytes_left_limit) {
+  const size_t bytes_left_limit,
+  serde::version_t version) {
     using serde::read_nested;
 
     read_nested(in, filter._resource, bytes_left_limit);
@@ -548,20 +575,25 @@ void read_nested(
 
     if (!pattern) {
         filter._pattern = std::nullopt;
-        return;
+    } else {
+        switch (*pattern) {
+        case serialized_pattern_type::literal:
+            filter._pattern = pattern_type::literal;
+            break;
+
+        case serialized_pattern_type::prefixed:
+            filter._pattern = pattern_type::prefixed;
+            break;
+        case serialized_pattern_type::match:
+            filter._pattern = resource_pattern_filter::pattern_match{};
+            break;
+        }
     }
 
-    switch (*pattern) {
-    case serialized_pattern_type::literal:
-        filter._pattern = security::pattern_type::literal;
-        break;
-
-    case serialized_pattern_type::prefixed:
-        filter._pattern = security::pattern_type::prefixed;
-        break;
-    case serialized_pattern_type::match:
-        filter._pattern = security::resource_pattern_filter::pattern_match{};
-        break;
+    if (version >= 1) {
+        filter._subsystem
+          = read_nested<resource_pattern_filter::resource_subsystem>(
+            in, bytes_left_limit);
     }
 }
 
@@ -586,10 +618,11 @@ void write(iobuf& out, resource_pattern_filter filter) {
     write(out, filter._resource);
     write(out, filter._name);
     write(out, pattern);
+    write(out, filter._subsystem);
 }
 
 void acl_binding_filter::serde_read(iobuf_parser& in, const serde::header& h) {
-    read_nested(in, _pattern, h._bytes_left_limit);
+    read_nested(in, _pattern, h._bytes_left_limit, h._version);
     using serde::read_nested;
     read_nested(in, _acl, h._bytes_left_limit);
 }
