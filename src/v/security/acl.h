@@ -14,9 +14,6 @@
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "serde/envelope.h"
-#include "serde/rw/enum.h"
-#include "serde/rw/optional.h"
-#include "serde/rw/rw.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
@@ -403,6 +400,9 @@ private:
 
 /*
  * A filter for matching resources.
+ *
+ * Note: This type does not have a serde::header.
+ *
  */
 class resource_pattern_filter
   : public serde::envelope<
@@ -602,7 +602,8 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const acl_binding_filter&);
 
-    auto serde_fields() { return std::tie(_pattern, _acl); }
+    void serde_read(iobuf_parser& in, const serde::header& h);
+    void serde_write(iobuf& out) const;
 
 private:
     resource_pattern_filter _pattern;

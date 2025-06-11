@@ -151,6 +151,7 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/serde:bytes",
         "//src/v/serde:enum",
+        "//src/v/serde:inet_address",
         "//src/v/serde:optional",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
