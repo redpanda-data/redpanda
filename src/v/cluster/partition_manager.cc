@@ -374,13 +374,18 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
     try {
         auto ntp = partition->ntp();
         shutdown_state.update(partition_shutdown_stage::stopping_raft);
+        vlog(clusterlog.debug, "shutdown partition {} - stopping raft", ntp);
         xst_state.raft = co_await _raft_manager.local().shutdown(
           partition->raft());
         _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
         shutdown_state.update(partition_shutdown_stage::stopping_partition);
+        vlog(
+          clusterlog.debug, "shutdown partition {} - stopping partition", ntp);
         co_await partition->stop();
         shutdown_state.update(partition_shutdown_stage::stopping_storage);
+        vlog(clusterlog.debug, "shutdown partition {} - stopping log", ntp);
         co_await _storage.log_mgr().shutdown(partition->ntp());
+        vlog(clusterlog.debug, "shutdown partition {} - stopped", ntp);
     } catch (...) {
         vassert(
           false,
@@ -390,7 +395,6 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
           *this,
           std::current_exception());
     }
-
     co_return xst_state;
 }
 
