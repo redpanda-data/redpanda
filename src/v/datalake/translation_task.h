@@ -88,7 +88,6 @@ public:
      */
     ss::future<checked<coordinator::translated_offset_range, errc>> finish(
       custom_partitioning_enabled is_custom_partitioning_enabled,
-      const remote_path& remote_path_prefix,
       retry_chain_node& parent_rcn,
       ss::abort_source&) &&;
 

@@ -136,7 +136,7 @@ partitioning_writer::finish() && {
 
         files.push_back(partitioned_file{
           .local_file = std::move(file_res.value()),
-          .table_location = remote_prefix_,
+          .data_location = remote_prefix_,
           .schema_id = schema_id_,
           .partition_spec_id = spec_.spec_id,
           .partition_key = std::move(pk),

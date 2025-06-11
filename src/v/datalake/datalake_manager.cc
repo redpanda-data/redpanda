@@ -33,7 +33,6 @@
 
 constexpr std::chrono::milliseconds translation_jitter{500};
 constexpr std::chrono::milliseconds translation_jitter_base{5000};
-static constexpr std::string_view iceberg_data_path_prefix = "data";
 
 namespace datalake {
 
@@ -702,7 +701,6 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
         std::move(record_translator),
         std::move(table_creator),
         _location_provider,
-        remote_path{iceberg_data_path_prefix},
         *reservations,
         _topic_table,
         _features,
