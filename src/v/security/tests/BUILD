@@ -72,6 +72,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/config",
+        "//src/v/pandaproxy/schema_registry:types",
         "//src/v/random:generators",
         "//src/v/security",
         "//src/v/test_utils:seastar_boost",

@@ -336,6 +336,10 @@ std::ostream& operator<<(std::ostream& os, resource_type type) {
         return os << "cluster";
     case resource_type::transactional_id:
         return os << "transactional_id";
+    case resource_type::sr_subject:
+        return os << "schema_registry_subject";
+    case resource_type::sr_global:
+        return os << "schema_registry_global";
     }
     __builtin_unreachable();
 }
@@ -523,7 +527,7 @@ bool resource_pattern_filter::matches(const resource_pattern& pattern) const {
         }
         break;
     case resource_subsystem::schema_registry:
-        if (pattern.resource() <= resource_type::transactional_id) {
+        if (pattern.resource() < resource_type::sr_subject) {
             return false;
         }
         break;

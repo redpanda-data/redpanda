@@ -13,6 +13,7 @@
 #include "base/type_traits.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 
@@ -47,10 +48,13 @@ enum class resource_type : int8_t {
     group = 1,
     cluster = 2,
     transactional_id = 3,
+    sr_subject = 4,
+    sr_global = 5,
 };
 
 template<typename T>
 consteval resource_type get_resource_type() {
+    namespace ppsr = pandaproxy::schema_registry;
     if constexpr (std::is_same_v<T, model::topic>) {
         return resource_type::topic;
     } else if constexpr (std::is_same_v<T, kafka::group_id>) {
@@ -59,6 +63,10 @@ consteval resource_type get_resource_type() {
         return resource_type::cluster;
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
+    } else if constexpr (std::is_same_v<T, ppsr::subject>) {
+        return resource_type::sr_subject;
+    } else if constexpr (std::is_same_v<T, ppsr::global_resource>) {
+        return resource_type::sr_global;
     } else {
         static_assert(base::unsupported_type<T>::value, "Unsupported type");
     }
