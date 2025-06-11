@@ -415,6 +415,10 @@ class KgoRepeaterService(Service):
             r = requests.get(self._remote_url(node, "reset"), timeout=10)
             r.raise_for_status()
 
+    def free(self):
+        assert self._stopped, "Cannot free KgoRepeaterService before stopping it"
+        return super().free()
+
 
 @contextmanager
 def repeater_traffic(context,
