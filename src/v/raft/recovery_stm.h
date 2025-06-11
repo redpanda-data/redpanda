@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/outcome.h"
+#include "model/timestamp.h"
 #include "raft/fwd.h"
 #include "raft/recovery_client_protocol.h"
 #include "raft/recovery_memory_quota.h"
@@ -31,7 +32,8 @@ public:
       vnode,
       recovery_client_protocol&,
       scheduling_config,
-      recovery_memory_quota&);
+      recovery_memory_quota&,
+      model::timestamp safe_recovery_timestamp = model::timestamp::now());
     ss::future<> apply();
 
 private:
@@ -83,7 +85,7 @@ private:
     // the learner is continuing (i.e it has performed a partial recovery
     // from a previous leader, and is now reading another portion of the log
     // from this leader) its recovery below the current log's
-    // max_clean_and_removable_offset().
+    // earliest_removable_timestamp().
     bool needs_initial_reset();
 
     // Issues an RPC via `reset_follower()` depending if recovery is un-safe and
@@ -95,10 +97,10 @@ private:
     // Returns true iff the current time to recover has exceeded the log's
     // configured `delete.retention.ms`. Always returns `false` if recovery
     // checks are disabled.
-    bool recovery_time_exceeds_delete_retention_ms();
+    bool recovery_time_exceeds_safe_horizon();
 
     // Issues an RPC via `reset_follower()` iff
-    // `recovery_time_exceeds_delete_retention_ms()` has returned true. This
+    // `recovery_time_exceeds_safe_horizon()` has returned true. This
     // check is performed on every invocation of `do_recover()` as a check that
     // the current recovery is still safe from divergence as a result of removed
     // state in the current log.
@@ -133,6 +135,8 @@ private:
     bool is_recovery_finished();
     flush_after_append should_flush(model::offset) const;
     bool is_snapshot_at_offset_supported() const;
+    void set_safe_recovery_timestamp(
+      model::offset next_offset, model::timestamp ts_override);
     consensus* _ptr;
     vnode _node_id;
     model::offset _base_batch_offset;
@@ -157,6 +161,15 @@ private:
     bool _stop_requested = false;
     recovery_memory_quota& _memory_quota;
     size_t _recovered_bytes_since_flush = 0;
+    // The timestamp that sets the base of the horizon for a safe recovery in
+    // the presence of delete.retention.ms. That is, recovery is guaranteed to
+    // be divergence free if it finishes by the timestamp t =
+    // _safe_recovery_timestamp + delete.retention.ms. This is set upon
+    // construction of the recovery_stm to the earliest removable timestamp in
+    // the log, and set again in the case the learner is forced to reset. In the
+    // case the log doesn't yet have any removable records, this is equivalent
+    // to the timestamp at which recovery was started.
+    model::timestamp _safe_recovery_timestamp;
 };
 
 } // namespace raft

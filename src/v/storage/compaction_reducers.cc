@@ -11,6 +11,7 @@
 
 #include "base/vlog.h"
 #include "compression/compression.h"
+#include "config/configuration.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -284,7 +285,8 @@ copy_data_segment_reducer::filter(model::record_batch batch) {
 
     // Remove transactional bit for committed raft data batches.
     if (
-      new_hdr.type == model::record_batch_type::raft_data
+      !config::shard_local_cfg().log_compaction_disable_tx_batch_removal()
+      && new_hdr.type == model::record_batch_type::raft_data
       && new_hdr.attrs.is_transactional() && !new_hdr.attrs.is_control()) {
         vlog(
           gclog.debug, "Removing transactional bit for raft batch {}", new_hdr);

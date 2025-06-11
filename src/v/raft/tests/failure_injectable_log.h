@@ -136,8 +136,10 @@ public:
     virtual std::optional<model::timestamp>
     earliest_dirty_segment_ts() const final;
 
-    virtual std::optional<model::offset>
-    max_clean_and_removable_offset() const final;
+    virtual std::optional<model::timestamp>
+      earliest_removable_timestamp(model::offset) const final;
+
+    virtual std::optional<model::offset> max_removed_offset() const final;
 
 private:
     ss::shared_ptr<storage::log> _underlying_log;

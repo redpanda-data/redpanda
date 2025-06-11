@@ -12,6 +12,7 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tests/tx_compaction_utils.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "raft/fundamental.h"
 #include "raft/recovery_client_protocol.h"
 #include "raft/recovery_memory_quota.h"
@@ -86,8 +87,10 @@ protected:
         std::unique_ptr<recovery_memory_quota> memory_quota;
     };
 
-    recovery_stm_state
-    make_recovery_stm_state(consensus* p, vnode target_node) {
+    recovery_stm_state make_recovery_stm_state(
+      consensus* p,
+      vnode target_node,
+      model::timestamp recovery_start_time_override = model::timestamp::now()) {
         recovery_stm_state state;
         auto scfg = scheduling_config(
           ss::default_scheduling_group(), ss::default_scheduling_group());
@@ -106,7 +109,8 @@ protected:
           target_node,
           *state.recovery_client,
           std::move(scfg),
-          *state.memory_quota);
+          *state.memory_quota,
+          recovery_start_time_override);
         return state;
     }
 
@@ -144,7 +148,7 @@ struct recovery_test_case {
     bool has_tombstone_records;
     bool has_tx_batches;
     std::optional<model::offset> next_index;
-    clock_type::time_point recovery_start_time{clock_type::now()};
+    model::timestamp recovery_start_time{model::timestamp::now()};
     tristate<std::chrono::milliseconds> delete_retention_ms{24h};
     bool disable_checks{false};
     bool expect_reset;
@@ -178,8 +182,6 @@ struct recovery_test_case {
             to_recover_metadata.next_index = next_index.value();
         }
 
-        to_recover_metadata.recovery_start_time = recovery_start_time;
-
         auto& ot = const_cast<storage::segment::offset_tracker&>(
           seg->offsets());
         ot.set_offsets(
@@ -210,8 +212,8 @@ TEST_F(RaftRecoveryFixture, SafeRecoveryUnitTestCases) {
                 "recovery, even with all possible flags set and an extreme "
                 "value for delete.retention.ms.",
         .cleanup_policy = model::cleanup_policy_bitflags::deletion,
-        .clean_compact_timestamp = model::timestamp(0),
-        .self_compact_timestamp = model::timestamp(0),
+        .clean_compact_timestamp = model::timestamp::min(),
+        .self_compact_timestamp = model::timestamp::min(),
         .has_tombstone_records = true,
         .has_tx_batches = true,
         .next_index = std::nullopt,
@@ -226,15 +228,15 @@ TEST_F(RaftRecoveryFixture, SafeRecoveryUnitTestCases) {
         .has_tombstone_records = false,
         .has_tx_batches = false,
         .next_index = std::nullopt,
-        .recovery_start_time = clock_type::time_point(std::chrono::seconds(1)),
+        .recovery_start_time = model::timestamp::min(),
         .expect_reset = true},
       recovery_test_case{
         .desc = "Learner who is continuing recovery below "
-                "max_clean_and_removable_offset() due to potential tx batch "
+                "earliest_removable_timestamp() due to potential tx batch "
                 "removal needs to reset its state.",
         .cleanup_policy = model::cleanup_policy_bitflags::compaction,
         .clean_compact_timestamp = std::nullopt,
-        .self_compact_timestamp = model::timestamp::now(),
+        .self_compact_timestamp = model::timestamp::min(),
         .has_tombstone_records = false,
         .has_tx_batches = true,
         .next_index = model::offset(20),
@@ -242,11 +244,11 @@ TEST_F(RaftRecoveryFixture, SafeRecoveryUnitTestCases) {
       recovery_test_case{
         .desc
         = "Learner who is continuing recovery below "
-          "max_clean_and_removable_offset() due to potential tombstone record "
+          "earliest_removable_timestamp() due to potential tombstone record "
           "removal needs to reset its state.",
         .cleanup_policy = model::cleanup_policy_bitflags::compaction,
-        .clean_compact_timestamp = model::timestamp::now(),
-        .self_compact_timestamp = model::timestamp::now(),
+        .clean_compact_timestamp = model::timestamp::min(),
+        .self_compact_timestamp = std::nullopt,
         .has_tombstone_records = true,
         .has_tx_batches = false,
         .next_index = model::offset(20),
@@ -254,12 +256,12 @@ TEST_F(RaftRecoveryFixture, SafeRecoveryUnitTestCases) {
       recovery_test_case{
         .desc = "Disabling checks at the cluster level prevents resets.",
         .cleanup_policy = model::cleanup_policy_bitflags::compaction,
-        .clean_compact_timestamp = model::timestamp(0),
-        .self_compact_timestamp = model::timestamp(0),
+        .clean_compact_timestamp = model::timestamp::min(),
+        .self_compact_timestamp = model::timestamp::min(),
         .has_tombstone_records = true,
         .has_tx_batches = true,
         .next_index = std::nullopt,
-        .recovery_start_time = clock_type::time_point(std::chrono::seconds(1)),
+        .recovery_start_time = model::timestamp::min(),
         .delete_retention_ms = tristate<std::chrono::milliseconds>(1ms),
         .disable_checks = true,
         .expect_reset = false},
@@ -284,10 +286,10 @@ TEST_F(RaftRecoveryFixture, SafeRecoveryUnitTestCases) {
           .set_value(test_case.disable_checks);
 
         auto recovery_stm_state = make_recovery_stm_state(
-          leader_raft.get(), to_recover_id);
+          leader_raft.get(), to_recover_id, test_case.recovery_start_time);
         auto& recovery = *recovery_stm_state.stm;
         recovery.apply().get();
-        auto new_resets = to_recover.raft()->get_probe().get_log_truncations();
+        auto new_resets = to_recover.raft()->get_probe().get_recovery_resets();
         if (test_case.expect_reset) {
             ASSERT_GT(new_resets, prev_resets);
         } else {

@@ -1028,6 +1028,9 @@ class LoggingConfig:
                 or redpanda_version >= self.LOGGER_GENESIS.get(k, (0, 0, 0))
             ])
             args += f" --logger-log-level={levels_arg}"
+        args += f" --logger-log-level=storage-gc=trace"
+        args += f" --logger-log-level=cluster=trace"
+        args += f" --logger-log-level=raft=trace"
 
         return args
 
@@ -1674,6 +1677,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
             return []
 
     def trim_logs(self):
+        return
         if not self._trim_logs:
             return
 

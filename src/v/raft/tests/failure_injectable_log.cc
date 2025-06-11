@@ -261,9 +261,14 @@ failure_injectable_log::earliest_dirty_segment_ts() const {
     return _underlying_log->earliest_dirty_segment_ts();
 }
 
+std::optional<model::timestamp>
+failure_injectable_log::earliest_removable_timestamp(model::offset o) const {
+    return _underlying_log->earliest_removable_timestamp(o);
+}
+
 std::optional<model::offset>
-failure_injectable_log::max_clean_and_removable_offset() const {
-    return _underlying_log->max_clean_and_removable_offset();
+failure_injectable_log::max_removed_offset() const {
+    return _underlying_log->max_removed_offset();
 }
 
 } // namespace raft

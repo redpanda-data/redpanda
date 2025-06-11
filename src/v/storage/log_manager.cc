@@ -734,23 +734,13 @@ ss::future<ss::shared_ptr<log>> log_manager::manage(
 }
 
 ss::future<> log_manager::maybe_clear_kvstore(const ntp_config& cfg) {
-    return ss::file_exists(cfg.work_directory())
-      .then([this,
-             offset_key = internal::start_offset_key(cfg.ntp()),
-             segment_key = internal::clean_segment_key(cfg.ntp())](
-              bool dir_exists) {
-          if (dir_exists) {
-              return ss::now();
-          }
-          // directory was deleted, make sure we do not have any state in KV
-          // store.
-          // NOTE: this only removes state in the storage key space.
-          return _kvstore.remove(kvstore::key_space::storage, offset_key)
-            .then([this, segment_key] {
-                return _kvstore.remove(
-                  kvstore::key_space::storage, segment_key);
-            });
-      });
+    if (co_await ss::file_exists(cfg.work_directory())) {
+        co_return;
+    }
+    // directory was deleted, make sure we do not have any state in KV
+    // store.
+    // NOTE: this only removes state in the storage key space.
+    co_await disk_log_impl::remove_kvstore_state(cfg.ntp(), _kvstore);
 }
 
 ss::future<ss::shared_ptr<log>> log_manager::do_manage(

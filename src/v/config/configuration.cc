@@ -1076,6 +1076,14 @@ configuration::configuration()
       "when this is set to `true`.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , log_compaction_disable_tx_batch_removal(
+      *this,
+      "log_compaction_disable_tx_batch_removal",
+      "Disable removal of transactional control batches. This should only be "
+      "toggled to `true` in extreme cases of proven instability due to issues "
+      "with transactional control batch removal.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , log_compaction_adjacent_merge_self_compaction_count(
       *this,
       "log_compaction_adjacent_merge_self_compaction_count",

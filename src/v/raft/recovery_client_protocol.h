@@ -23,8 +23,8 @@ public:
         virtual ~impl() noexcept = default;
 
         virtual ss::future<result<reset_learner_state_reply>>
-          reset_learner_state(
-            model::node_id, group_id, std::chrono::milliseconds)
+        reset_learner_state(
+          model::node_id, const model::ntp&, std::chrono::milliseconds)
           = 0;
     };
 
@@ -36,8 +36,10 @@ public:
       : _impl(std::move(i)) {}
 
     ss::future<result<reset_learner_state_reply>> reset_learner_state(
-      model::node_id node, group_id group, std::chrono::milliseconds timeout) {
-        return _impl->reset_learner_state(node, group, timeout);
+      model::node_id node,
+      const model::ntp& ntp,
+      std::chrono::milliseconds timeout) {
+        return _impl->reset_learner_state(node, ntp, timeout);
     }
 };
 

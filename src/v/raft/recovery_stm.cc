@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "model/timestamp.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -43,7 +44,8 @@ recovery_stm::recovery_stm(
   vnode node_id,
   recovery_client_protocol& recovery_rpc,
   scheduling_config scheduling,
-  recovery_memory_quota& quota)
+  recovery_memory_quota& quota,
+  model::timestamp safe_recovery_timestamp)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
@@ -57,7 +59,18 @@ recovery_stm::recovery_stm(
         _term,
         _ptr->group(),
         _ptr->ntp()))
-  , _memory_quota(quota) {}
+  , _memory_quota(quota) {
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        return;
+    }
+
+    auto next_offset = meta.value()->next_index;
+
+    set_safe_recovery_timestamp(next_offset, safe_recovery_timestamp);
+}
 
 bool recovery_stm::needs_recovery_checks() const {
     // Recovery checks only apply to compacted topics, due to races with
@@ -82,6 +95,7 @@ bool recovery_stm::needs_recovery_checks() const {
 }
 
 ss::future<> recovery_stm::reset_follower(std::string_view ctx) {
+    _ptr->get_probe().recovery_reset();
     vlog(
       _ctxlog.warn,
       "Requesting reset of follower {} due to possibly diverged state during "
@@ -90,7 +104,7 @@ ss::future<> recovery_stm::reset_follower(std::string_view ctx) {
       ctx);
     auto reset_timeout = 600s;
     auto r = co_await _recovery_rpc.reset_learner_state(
-      _node_id.id(), _ptr->group(), reset_timeout);
+      _node_id.id(), _ptr->ntp(), reset_timeout);
     if (r.has_error()) {
         vlog(
           _ctxlog.warn,
@@ -100,15 +114,8 @@ ss::future<> recovery_stm::reset_follower(std::string_view ctx) {
         co_return;
     }
 
-    auto meta = get_follower_meta();
-    if (!meta) {
-        // stop recovery when node was removed
-        _stop_requested = true;
-        co_return;
-    }
-
-    // Reset the recovery start time.
-    meta.value()->set_recovery_start_time();
+    // Reset the safe recovery timestamp.
+    set_safe_recovery_timestamp(model::offset{0}, model::timestamp::now());
 }
 
 bool recovery_stm::needs_initial_reset() {
@@ -124,12 +131,10 @@ bool recovery_stm::needs_initial_reset() {
     }
 
     auto follower = meta.value();
-    auto max_clean_and_removable_offset
-      = _ptr->log()->max_clean_and_removable_offset();
+    auto max_removed_offset = _ptr->log()->max_removed_offset();
     if (
-      follower->next_index > _ptr->log()->offsets().start_offset
-      && max_clean_and_removable_offset.has_value()
-      && follower->next_index < max_clean_and_removable_offset) {
+      max_removed_offset.has_value()
+      && follower->next_index <= max_removed_offset) {
         return true;
     }
 
@@ -140,11 +145,11 @@ ss::future<> recovery_stm::maybe_initial_reset_follower() {
     auto needs_reset = needs_initial_reset();
     if (needs_reset) {
         co_await reset_follower("Continuing recovery from new leader below "
-                                "max_clean_and_removable_offset");
+                                "earliest_removable_timestamp");
     }
 }
 
-bool recovery_stm::recovery_time_exceeds_delete_retention_ms() {
+bool recovery_stm::recovery_time_exceeds_safe_horizon() {
     if (!needs_recovery_checks()) {
         return false;
     }
@@ -156,17 +161,12 @@ bool recovery_stm::recovery_time_exceeds_delete_retention_ms() {
         return false;
     }
 
-    auto follower = meta.value();
-
     auto delete_retention_ms = _ptr->log()->config().delete_retention_ms();
     if (delete_retention_ms.has_value()) {
-        vassert(
-          follower->recovery_start_time.has_value(),
-          "Follower's recovery_start_time should have been assigned at this "
-          "point in the recovery_stm lifecycle.");
-        auto time_to_recover = clock_type::now()
-                               - follower->recovery_start_time.value();
-        if (time_to_recover > delete_retention_ms.value()) {
+        auto now = model::to_time_point(model::timestamp::now());
+        if (
+          (now - model::to_time_point(_safe_recovery_timestamp))
+          > delete_retention_ms.value()) {
             return true;
         }
     }
@@ -177,10 +177,10 @@ bool recovery_stm::recovery_time_exceeds_delete_retention_ms() {
 ss::future<> recovery_stm::maybe_reset_follower() {
     // We may need to reset the learner of a compacted topic if:
     // The current time_to_recover > delete.retention.ms.
-    auto needs_reset = recovery_time_exceeds_delete_retention_ms();
+    auto needs_reset = recovery_time_exceeds_safe_horizon();
     if (needs_reset) {
-        co_await reset_follower(
-          "Time to recover has exceeded delete.retention.ms");
+        co_await reset_follower("Time to recover has exceeded the safe "
+                                "recovery horizon set by delete.retention.ms");
     }
 }
 
@@ -854,6 +854,13 @@ std::optional<follower_index_metadata*> recovery_stm::get_follower_meta() {
         return std::nullopt;
     }
     return &it->second;
+}
+
+void recovery_stm::set_safe_recovery_timestamp(
+  model::offset next_offset, model::timestamp ts_override) {
+    _safe_recovery_timestamp = _ptr->log()
+                                 ->earliest_removable_timestamp(next_offset)
+                                 .value_or(ts_override);
 }
 
 } // namespace raft

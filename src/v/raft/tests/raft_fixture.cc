@@ -870,11 +870,9 @@ in_memory_recovery_client::get_raft_for_node(model::node_id n) {
 
 ss::future<result<reset_learner_state_reply>>
 in_memory_recovery_client::reset_learner_state(
-  model::node_id n, group_id, std::chrono::milliseconds) {
+  model::node_id n, const model::ntp&, std::chrono::milliseconds) {
     auto c = get_raft_for_node(n);
-    auto r = co_await recovery_rpc_handler::do_reset_learner_state(
-      reset_learner_state_request{}, c);
-    co_return r;
+    return c->clear_state();
 }
 
 } // namespace raft

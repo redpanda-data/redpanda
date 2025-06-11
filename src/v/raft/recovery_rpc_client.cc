@@ -24,16 +24,18 @@ namespace raft {
 
 ss::future<result<reset_learner_state_reply>>
 recovery_rpc_client::reset_learner_state(
-  model::node_id node, group_id group, std::chrono::milliseconds timeout) {
+  model::node_id node,
+  const model::ntp& ntp,
+  std::chrono::milliseconds timeout) {
     return _ccache.local()
       .with_node_client<recovery_rpc_client_protocol>(
         _self,
         ss::this_shard_id(),
         node,
         timeout,
-        [group, timeout](recovery_rpc_client_protocol cp) mutable {
+        [timeout, ntp](recovery_rpc_client_protocol cp) mutable {
             return cp.reset_learner_state(
-              reset_learner_state_request{.id = group},
+              reset_learner_state_request{.ntp = ntp},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<reset_learner_state_reply>);

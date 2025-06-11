@@ -197,6 +197,7 @@ ss::future<index_state> deduplicate_segment(
   probe& probe,
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>& feature_table,
+  kvstore& kvs,
   bool inject_reader_failure) {
     auto read_holder = co_await seg->read_lock();
     if (seg->is_closed()) {
@@ -214,6 +215,7 @@ ss::future<index_state> deduplicate_segment(
     const bool past_tx_delete_horizon
       = internal::is_past_transaction_batch_delete_horizon(seg, cfg);
     bool has_transaction_batches = false;
+    model::offset max_removed_offset = model::offset::min();
 
     auto is_latest_record = [&map](
                               const model::record_batch& b,
@@ -228,7 +230,8 @@ ss::future<index_state> deduplicate_segment(
                           &may_have_tombstone_records,
                           &probe,
                           past_tx_delete_horizon,
-                          &has_transaction_batches](
+                          &has_transaction_batches,
+                          &max_removed_offset](
                            const model::record_batch& b,
                            const model::record& r,
                            bool is_last_record_in_batch) {
@@ -243,7 +246,8 @@ ss::future<index_state> deduplicate_segment(
           past_tombstone_delete_horizon,
           may_have_tombstone_records,
           past_tx_delete_horizon,
-          has_transaction_batches);
+          has_transaction_batches,
+          max_removed_offset);
     };
 
     auto copy_reducer = internal::copy_data_segment_reducer(
@@ -292,6 +296,14 @@ ss::future<index_state> deduplicate_segment(
       seg->index().may_have_tombstone_records()
       && !may_have_tombstone_records) {
         probe.add_segment_marked_tombstone_free();
+    }
+
+    const auto& ntp = seg->path().get_ntp();
+    auto curr_max_removed_offset = internal::read_max_removed_offset(kvs, ntp)
+                                     .value_or(model::offset::min());
+    if (max_removed_offset > curr_max_removed_offset) {
+        co_await internal::write_max_removed_offset(
+          kvs, ntp, max_removed_offset);
     }
 
     co_return std::move(new_idx);

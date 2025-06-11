@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "raft/fundamental.h"
+#include "model/fundamental.h"
 #include "serde/rw/bool_class.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/scalar.h"
@@ -35,13 +35,13 @@ struct reset_learner_state_request
 
     friend std::ostream&
     operator<<(std::ostream& o, const reset_learner_state_request& r) {
-        fmt::print(o, "id: {}", r.id);
+        fmt::print(o, "ntp: {}", r.ntp);
         return o;
     }
 
-    auto serde_fields() { return std::tie(id); }
+    auto serde_fields() { return std::tie(ntp); }
 
-    group_id id;
+    model::ntp ntp;
 };
 
 struct reset_learner_state_reply

@@ -187,7 +187,9 @@ public:
       , _node_map(_node_map) {}
 
     ss::future<result<reset_learner_state_reply>> reset_learner_state(
-      model::node_id n, group_id g, std::chrono::milliseconds t) final;
+      model::node_id n,
+      const model::ntp& ntp,
+      std::chrono::milliseconds t) final;
 
 private:
     ss::lw_shared_ptr<consensus> get_raft_for_node(model::node_id n);

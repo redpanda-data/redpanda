@@ -314,6 +314,13 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
                          node_prealloc_count=1,
                          extra_rp_conf=self.extra_rp_conf)
 
+    def get_recovery_resets(self):
+        return self.redpanda.metric_sum(
+            metric_name="vectorized_raft_recovery_resets",
+            metrics_endpoint=MetricsEndpoint.METRICS,
+            topic=self.topic_spec.name,
+            expect_metric=True)
+
     def get_complete_sliding_window_rounds(self, node):
         return self.redpanda.metric_sum(
             metric_name=
@@ -322,19 +329,12 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
             topic=self.topic_spec.name,
             nodes=[node])
 
-    def get_log_truncations(self, node):
-        return self.redpanda.metric_sum(
-            metric_name="vectorized_raft_log_truncations_total",
-            metrics_endpoint=MetricsEndpoint.METRICS,
-            topic=self.topic_spec.name,
-            nodes=[node],
-            expect_metric=True)
-
     @skip_debug_mode
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(producer_mode=[
         ProducerMode.WITH_TOMBSTONES, ProducerMode.WITH_TRANSACTIONS
     ])
+    #@matrix(producer_mode=[ProducerMode.WITH_TRANSACTIONS])
     def test_recovery_with_compaction(self, producer_mode):
         partition_count = 1
 
@@ -342,7 +342,6 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
         total_size = 2 * 1024**3  # 2 GiB
         segment_bytes = 1024**2  # 1 MiB
         produce_bandwidth = 5 * 1024**2
-        recovery_data_target = 60 * produce_bandwidth
 
         self.topic_spec = TopicSpec(partition_count=partition_count,
                                     cleanup_policy=TopicSpec.CLEANUP_COMPACT,
@@ -351,6 +350,11 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
                                     segment_bytes=segment_bytes,
                                     retention_bytes=16 * segment_bytes)
         self.client().create_topic(self.topic_spec)
+
+        # Arbitrary choice of node to be restarted
+        victim_node = self.redpanda.nodes[1]
+
+        self.redpanda.stop_node(victim_node)
 
         if producer_mode == ProducerMode.WITH_TOMBSTONES:
             validate_latest_values = True
@@ -365,6 +369,8 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
                 validate_latest_values=validate_latest_values,
                 custom_node=self.preallocated_nodes)
         elif producer_mode == ProducerMode.WITH_TRANSACTIONS:
+            total_size //= 20
+            produce_bandwidth *= 2
             validate_latest_values = False
             producer = KgoVerifierProducer(self.test_context,
                                            self.redpanda,
@@ -373,43 +379,20 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
                                            msg_count=total_size // msg_size,
                                            rate_limit_bps=produce_bandwidth,
                                            use_transactions=True,
-                                           msgs_per_transaction=15,
+                                           msgs_per_transaction=5,
                                            transaction_abort_rate=0.4,
                                            custom_node=self.preallocated_nodes)
         producer.start()
 
-        # Arbitrary choice of node to be restarted
-        victim_node = self.redpanda.nodes[1]
-
-        rpk = RpkTool(self.redpanda)
-
-        _await_progress_in_all_partitions(rpk, self.topic_spec.name)
-        self.redpanda.stop_node(victim_node)
-
-        # Wait for recovery lag to accumulate.
-        recovery_msgs_target = recovery_data_target // msg_size
-        expect_progress_time = recovery_data_target / produce_bandwidth
-
-        start_count = producer.produce_status.acked
-        target_count = start_count + recovery_msgs_target
-
-        self.logger.info(
-            f"wait for producer to reach {target_count} acked msgs in {expect_progress_time} s."
-        )
-
-        time.sleep(expect_progress_time)
-        # give producer 2x expected time to produce the required amount of data
-        wait_until(lambda: producer.produce_status.acked >= target_count,
-                   backoff_sec=1,
-                   timeout_sec=expect_progress_time)
+        if validate_latest_values:
+            producer.wait_for_latest_value_map()
+        producer.wait(timeout_sec=180)
+        producer.stop()
 
         self.redpanda.start_node(victim_node)
 
         admin = Admin(self.redpanda)
 
-        # We will wait for various conditions, but continously want to validate
-        # general invariants such as that the concurrent recovery count
-        # is not violated.
         def wait_with_invariants(check_fn, *, timeout_sec, backoff_sec):
             def wrapped():
                 state = admin.get_raft_recovery_status(node=victim_node)
@@ -441,17 +424,14 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
         time.sleep(5)
 
         # We should have seen the log truncated as a result of recovery safety checks.
-        assert self.get_log_truncations(victim_node) > 0
+        assert self.get_recovery_resets() > 0
 
         # Recovery would never be able to finish with such a low delete.retention.ms. Raise it to a reasonable value.
+        rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic_spec.name, "delete.retention.ms",
                                86400000)
 
         wait_with_invariants(recovery_finished, timeout_sec=120, backoff_sec=1)
-
-        if validate_latest_values:
-            producer.wait_for_latest_value_map()
-        producer.wait(timeout_sec=180)
 
         # Transfer leadership to the victim node
         victim_node_id = self.redpanda.node_id(victim_node)
@@ -495,8 +475,6 @@ class RaftRecoveryWithCompactionTest(PreallocNodesTest):
 
         consumer.start(clean=False)
         consumer.wait(timeout_sec=180)
-
-        producer.stop()
         consumer.stop()
 
         assert consumer.consumer_status.validator.invalid_reads == 0

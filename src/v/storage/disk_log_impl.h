@@ -284,7 +284,15 @@ public:
 
     std::optional<model::timestamp> earliest_dirty_segment_ts() const final;
 
-    std::optional<model::offset> max_clean_and_removable_offset() const final;
+    // Returns the timestamp of the earliest removable data in the log above
+    // the offset o. This data can be either a tombstone record in a segment
+    // with a clean_compact_timestamp set, or a transactional batch in a segment
+    // with self_compact_timestamp set. Returns std::nullopt if neither of the
+    // above are found.
+    std::optional<model::timestamp>
+      earliest_removable_timestamp(model::offset) const final;
+
+    std::optional<model::offset> max_removed_offset() const final;
 
 private:
     friend class disk_log_appender; // for multi-term appends

@@ -3213,8 +3213,7 @@ void application::start_runtime_services(
             std::make_unique<raft::recovery_rpc_handler>(
               sched_groups.raft_heartbeats(),
               smp_service_groups.raft_smp_sg(),
-              std::ref(controller->get_partition_manager()),
-              std::ref(controller->get_shard_table())));
+              std::ref(controller->get_api())));
 
           s.add_services(std::move(runtime_services));
 

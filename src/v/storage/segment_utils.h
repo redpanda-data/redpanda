@@ -58,6 +58,7 @@ ss::future<compaction_result> self_compact_segment(
   storage::readers_cache&,
   storage::storage_resources&,
   ss::sharded<features::feature_table>& feature_table,
+  kvstore& kvs,
   bool force_compaction = false);
 
 /// \brief, rebuilds a given segment's compacted index. This method acquires
@@ -195,7 +196,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage::compaction_config,
   storage::probe&,
   ss::rwlock::holder,
-  storage_resources&);
+  storage_resources&,
+  kvstore&);
 
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
@@ -211,10 +213,12 @@ float random_jitter(jitter_percents);
 enum class kvstore_key_type : int8_t {
     start_offset = 0,
     clean_segment = 1,
+    max_removed_offset = 2,
 };
 
 bytes start_offset_key(model::ntp ntp);
 bytes clean_segment_key(model::ntp ntp);
+bytes max_removed_offset_key(model::ntp ntp);
 
 struct clean_segment_value
   : serde::envelope<
@@ -230,7 +234,8 @@ is_compactible_control_batch(const model::record_batch_type batch_type) {
     // Control batches in consumer offsets are special compared to
     // the ones in data partitions can be safely compacted away.
     // Fence batches can also be safely removed.
-    return batch_type == model::record_batch_type::tx_fence
+    return (!config::shard_local_cfg().log_compaction_disable_tx_batch_removal()
+            && batch_type == model::record_batch_type::tx_fence)
            || batch_type == model::record_batch_type::group_fence_tx
            || batch_type == model::record_batch_type::group_prepare_tx
            || batch_type == model::record_batch_type::group_abort_tx
@@ -321,7 +326,8 @@ ss::future<bool> should_keep(
   bool past_tombstone_delete_horizon,
   bool& may_have_tombstone_records,
   bool past_tx_delete_horizon,
-  bool& has_tx_batches) {
+  bool& has_tx_batches,
+  model::offset& max_removed_offset) {
     auto compaction_placeholder_enabled = feature_table.local().is_active(
       features::feature::compaction_placeholder_batch);
     auto is_last_batch = b.last_offset() == segment_last_offset;
@@ -349,6 +355,8 @@ ss::future<bool> should_keep(
 
     // Deal with tombstone record removal
     if (r.is_tombstone() && past_tombstone_delete_horizon) {
+        max_removed_offset = b.base_offset()
+                             + model::offset_delta(r.offset_delta());
         pb.add_removed_tombstone();
         co_return false;
     }
@@ -361,12 +369,19 @@ ss::future<bool> should_keep(
     // We can also safely remove fence batches.
     if (header.attrs.is_control()) {
         if (
-          past_tx_delete_horizon || is_compactible_control_batch(header.type)) {
+          !config::shard_local_cfg().log_compaction_disable_tx_batch_removal()
+          && past_tx_delete_horizon) {
+            max_removed_offset = b.base_offset()
+                                 + model::offset_delta(r.offset_delta());
             co_return false;
-        } else {
-            has_tx_batches = true;
-            co_return true;
         }
+
+        if (is_compactible_control_batch(header.type)) {
+            co_return false;
+        }
+
+        has_tx_batches = true;
+        co_return true;
     }
 
     auto keep = co_await is_latest_key(b, r);
@@ -381,5 +396,11 @@ ss::future<bool> should_keep(
 
     co_return keep;
 }
+
+std::optional<model::offset>
+read_max_removed_offset(kvstore&, const model::ntp&);
+
+ss::future<>
+write_max_removed_offset(kvstore&, const model::ntp&, model::offset);
 
 } // namespace storage::internal

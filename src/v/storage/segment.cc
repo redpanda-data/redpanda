@@ -624,10 +624,12 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
     if (b.contains_transactional_data()) {
-        vlog(
-          gclog.trace,
-          "Marking index for segment {} as has transaction batches",
-          filename());
+        if (!_idx.has_transaction_batches()) {
+            vlog(
+              gclog.trace,
+              "Marking index for segment {} as has transaction batches",
+              filename());
+        }
         _idx.set_has_transaction_batches(true);
         if (has_compaction_index()) {
             // With transactional batches, we do not know ahead of time whether

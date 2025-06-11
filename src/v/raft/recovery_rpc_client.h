@@ -30,7 +30,7 @@ public:
       , _ccache(ccache) {}
 
     ss::future<result<reset_learner_state_reply>> reset_learner_state(
-      model::node_id, group_id, std::chrono::milliseconds) final;
+      model::node_id, const model::ntp&, std::chrono::milliseconds) final;
 
 private:
     model::node_id _self;
