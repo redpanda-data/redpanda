@@ -247,7 +247,30 @@ class UpgradeBackToBackTest(PreallocNodesTest):
 
             # Wait for consumers to finish work and check invariants.
             for consumer in self._consumers:
-                consumer.wait()
+                max_retries = 5
+                while max_retries > 0:
+                    max_retries -= 1
+                    try:
+                        self.logger.info(
+                            f"Waiting for consumer {consumer} to finish work..."
+                        )
+                        consumer.wait()
+                        break
+                    except Exception as e:
+                        # consumer status endpoint timeout, in v22 we need to tolerate the offset for leader epoch handler error
+                        if current_version[0] <= 22:
+                            self.logger.info(
+                                f"restarting consumer, Redpanda running {current_version} version, error: {e}"
+                            )
+                            try:
+                                consumer.stop()
+                            except Exception as stop_exception:
+                                self.logger.info(
+                                    f"failed to stop consumer {consumer} - {stop_exception}"
+                                )
+                            consumer.start(clean=False)
+                        else:
+                            raise e
 
             # Check consumer invariants after each upgrade.
             assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
