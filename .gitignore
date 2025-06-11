@@ -60,6 +60,7 @@ build_release/
 
 # clang-tidy
 compile_commands.json
+link_commands.json
 
 # vim
 .*.sw?

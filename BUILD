@@ -43,6 +43,11 @@ alias(
     actual = "//bazel/compilation_database_generator",
 )
 
+alias(
+    name = "lc_gen",
+    actual = "//bazel/compilation_database_generator:linking_database_generator",
+)
+
 filegroup(
     name = "lsan_suppressions",
     testonly = True,
