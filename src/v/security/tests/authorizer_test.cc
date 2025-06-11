@@ -7,7 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #include "config/mock_property.h"
+#include "pandaproxy/schema_registry/types.h"
 #include "random/generators.h"
+#include "security/acl.h"
 #include "security/authorizer.h"
 #include "security/role.h"
 #include "security/role_store.h"
@@ -70,10 +72,10 @@ static auto get_acls(authorizer& auth, acl_principal principal) {
     return found;
 }
 
-static auto get_acls(authorizer& auth, acl_binding_filter filter) {
+static auto get_acls(authorizer& auth, const acl_binding_filter& filter) {
     absl::flat_hash_set<acl_entry> found;
     auto acls = auth.acls(filter);
-    for (auto acl : acls) {
+    for (const auto& acl : acls) {
         found.emplace(acl.entry());
     }
     return found;
@@ -100,6 +102,12 @@ BOOST_AUTO_TEST_CASE(authz_resource_type_auto) {
     BOOST_REQUIRE(
       get_resource_type<kafka::transactional_id>()
       == security::resource_type::transactional_id);
+    BOOST_REQUIRE(
+      get_resource_type<pandaproxy::schema_registry::subject>()
+      == security::resource_type::sr_subject);
+    BOOST_REQUIRE(
+      get_resource_type<pandaproxy::schema_registry::global_resource>()
+      == security::resource_type::sr_global);
 
     BOOST_REQUIRE(
       get_resource_type<model::topic>() == get_resource_type<model::topic>());
@@ -1591,6 +1599,84 @@ BOOST_AUTO_TEST_CASE(role_authz_remove_binding_multiple_match) {
 
     absl::flat_hash_set<acl_entry> expected{};
     BOOST_REQUIRE(get_acls(auth, wildcard_resource) == expected);
+}
+
+BOOST_AUTO_TEST_CASE(authz_filter_out_non_kafka_resources) {
+    namespace ppsr = pandaproxy::schema_registry;
+    acl_principal user(principal_type::user, "alice");
+    acl_host host("192.168.2.1");
+
+    auto auth = make_test_instance();
+
+    const acl_entry allow_all(
+      acl_wildcard_user,
+      acl_wildcard_host,
+      acl_operation::all,
+      acl_permission::allow);
+
+    const acl_entry allow_read(
+      acl_wildcard_user,
+      acl_wildcard_host,
+      acl_operation::read,
+      acl_permission::allow);
+
+    const acl_entry allow_describe(
+      acl_wildcard_user,
+      acl_wildcard_host,
+      acl_operation::describe,
+      acl_permission::allow);
+
+    std::vector<acl_binding> bindings;
+    resource_pattern subject_resource(
+      resource_type::sr_subject, "model-", pattern_type::prefixed);
+    resource_pattern global_resource(
+      resource_type::sr_global,
+      resource_pattern::wildcard,
+      pattern_type::literal);
+    resource_pattern topic_resource(
+      resource_type::topic, "model", pattern_type::literal);
+    bindings.emplace_back(subject_resource, allow_read);
+    bindings.emplace_back(global_resource, allow_describe);
+    bindings.emplace_back(topic_resource, allow_all);
+    auth.add_bindings(bindings);
+
+    auto result = auth.authorized(
+      model::topic("model"), acl_operation::read, user, host);
+    BOOST_REQUIRE(result.is_authorized());
+
+    auto kafka_acls = get_acls(auth, acl_binding_filter::any());
+    BOOST_REQUIRE_EQUAL(kafka_acls.size(), 1);
+
+    auto sr_acls = get_acls(
+      auth,
+      acl_binding_filter::any(
+        resource_pattern_filter::resource_subsystem::schema_registry));
+    BOOST_REQUIRE_EQUAL(sr_acls.size(), 2);
+
+    // Check prefix match for schema registry subject
+    result = auth.authorized(
+      ppsr::subject("model-value"), acl_operation::read, user, host);
+    BOOST_REQUIRE(result.is_authorized());
+
+    // Check read implies describe
+    result = auth.authorized(
+      ppsr::subject("model-key"), acl_operation::describe, user, host);
+    BOOST_REQUIRE(result.is_authorized());
+
+    // Check read does not imply write
+    result = auth.authorized(
+      ppsr::subject("model-key"), acl_operation::write, user, host);
+    BOOST_REQUIRE(!result.is_authorized());
+
+    // Check global resource
+    result = auth.authorized(
+      ppsr::global_resource(), acl_operation::describe, user, host);
+    BOOST_REQUIRE(result.is_authorized());
+
+    // Check that describe does not imply read
+    result = auth.authorized(
+      ppsr::global_resource(), acl_operation::read, user, host);
+    BOOST_REQUIRE(!result.is_authorized());
 }
 
 } // namespace security
