@@ -556,8 +556,13 @@ static ss::temporary_buffer<char> iobuf_as_tmpbuf(iobuf&& buf) {
 }
 /// Represents response body as a data source for ss::input_stream
 struct response_data_source final : ss::data_source_impl {
-    explicit response_data_source(client::response_stream_ref resp)
-      : _io(std::move(resp)) {}
+    explicit response_data_source(
+      client::response_stream_ref resp,
+      std::optional<ss::lowres_clock::time_point> timeout = std::nullopt)
+      : _io(std::move(resp))
+      , _timeout(
+          timeout.value_or(ss::lowres_clock::now() + default_connect_timeout)) {
+    }
     ss::future<> close() final {
         _done = true;
         return ss::now();
@@ -575,23 +580,24 @@ struct response_data_source final : ss::data_source_impl {
                              return ss::make_ready_future<ss::stop_iteration>(
                                ss::stop_iteration::yes);
                          }
-                         return _io->recv_some().then([this, &result](
-                                                        iobuf&& bufseq) {
-                             if (_skip) {
-                                 auto n = std::min(bufseq.size_bytes(), _skip);
-                                 bufseq.trim_front(n);
-                                 _skip -= n;
-                             }
-                             if (bufseq.begin() == bufseq.end()) {
-                                 return ss::make_ready_future<
-                                   ss::stop_iteration>(
-                                   _io->is_done() ? ss::stop_iteration::yes
-                                                  : ss::stop_iteration::no);
-                             }
-                             result = iobuf_as_tmpbuf(std::move(bufseq));
-                             return ss::make_ready_future<ss::stop_iteration>(
-                               ss::stop_iteration::yes);
-                         });
+                         return ss::with_timeout(_timeout, _io->recv_some())
+                           .then([this, &result](iobuf&& bufseq) {
+                               if (_skip) {
+                                   auto n = std::min(
+                                     bufseq.size_bytes(), _skip);
+                                   bufseq.trim_front(n);
+                                   _skip -= n;
+                               }
+                               if (bufseq.begin() == bufseq.end()) {
+                                   return ss::make_ready_future<
+                                     ss::stop_iteration>(
+                                     _io->is_done() ? ss::stop_iteration::yes
+                                                    : ss::stop_iteration::no);
+                               }
+                               result = iobuf_as_tmpbuf(std::move(bufseq));
+                               return ss::make_ready_future<ss::stop_iteration>(
+                                 ss::stop_iteration::yes);
+                           });
                      })
                 .then([&result] {
                     return ss::make_ready_future<ss::temporary_buffer<char>>(
@@ -600,12 +606,18 @@ struct response_data_source final : ss::data_source_impl {
           });
     }
     client::response_stream_ref _io;
+    ss::lowres_clock::time_point _timeout;
     size_t _skip{0};
     bool _done{false};
 };
 struct request_data_sink final : ss::data_sink_impl {
-    explicit request_data_sink(client::request_stream_ref req)
-      : _io(std::move(req)) {}
+    explicit request_data_sink(
+      client::request_stream_ref req,
+      std::optional<ss::lowres_clock::time_point> timeout = std::nullopt)
+      : _io(std::move(req))
+      , _timeout(
+          timeout.value_or(ss::lowres_clock::now() + default_connect_timeout)) {
+    }
     ss::future<> put(ss::net::packet data) final { return put(data.release()); }
     ss::future<> put(std::vector<ss::temporary_buffer<char>> all) final {
         return ss::do_with(
@@ -617,11 +629,12 @@ struct request_data_sink final : ss::data_sink_impl {
           });
     }
     ss::future<> put(ss::temporary_buffer<char> buf) final {
-        return _io->send_some(std::move(buf));
+        return ss::with_timeout(_timeout, _io->send_some(std::move(buf)));
     }
     ss::future<> flush() final { return ss::now(); }
     ss::future<> close() final { return _io->send_eof(); }
     client::request_stream_ref _io;
+    ss::lowres_clock::time_point _timeout;
 };
 
 ss::future<client::response_stream_ref> client::request(
@@ -633,8 +646,11 @@ ss::future<client::response_stream_ref> client::request(
     if (plen != header.cend()) {
         empty_input_stream = plen->value() == "0";
     }
+    // TODO(oren): should this cover the time to connect? idk.
+    auto deadline = ss::lowres_clock::now() + timeout;
     return make_request(std::move(header), timeout)
-      .then([&input, empty_input_stream](request_response_t reqresp) mutable {
+      .then([&input, empty_input_stream, deadline](
+              request_response_t reqresp) mutable {
           auto [request, response] = std::move(reqresp);
           auto fsend = ss::now();
           if (empty_input_stream) {
@@ -646,7 +662,7 @@ ss::future<client::response_stream_ref> client::request(
               // since the input stream has some data we can use
               // output_stream interace of the request
               fsend = ss::do_with(
-                request->as_output_stream(),
+                request->as_output_stream(deadline),
                 [&input](ss::output_stream<char>& output) {
                     return ss::copy(input, output).finally([&output] {
                         return output.close();
@@ -682,15 +698,17 @@ ss::future<http::downloaded_response> client::request_and_collect_response(
       .status = status_code, .body = std::move(body)};
 }
 
-ss::output_stream<char> client::request_stream::as_output_stream() {
+ss::output_stream<char> client::request_stream::as_output_stream(
+  std::optional<ss::lowres_clock::time_point> timeout) {
     auto ds = ss::data_sink(
-      std::make_unique<request_data_sink>(shared_from_this()));
+      std::make_unique<request_data_sink>(shared_from_this(), timeout));
     return ss::output_stream<char>(std::move(ds), max_chunk_size);
 }
 
-ss::input_stream<char> client::response_stream::as_input_stream() {
+ss::input_stream<char> client::response_stream::as_input_stream(
+  std::optional<ss::lowres_clock::time_point> timeout) {
     auto ds = ss::data_source(
-      std::make_unique<response_data_source>(shared_from_this()));
+      std::make_unique<response_data_source>(shared_from_this(), timeout));
     return ss::input_stream<char>(std::move(ds));
 }
 

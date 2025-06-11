@@ -189,7 +189,8 @@ public:
 
         /// Returns input_stream that can be used to fetch response body.
         /// Can be used instead of 'recv_some'.
-        ss::input_stream<char> as_input_stream();
+        ss::input_stream<char> as_input_stream(
+          std::optional<ss::lowres_clock::time_point> timeout = std::nullopt);
 
     private:
         client* _client;
@@ -229,7 +230,8 @@ public:
 
         /// Returns output_stream that can be used to send request headers and
         /// the body. Can be used instead of 'send_some' and 'send_eof'.
-        ss::output_stream<char> as_output_stream();
+        ss::output_stream<char> as_output_stream(
+          std::optional<ss::lowres_clock::time_point> timeout = std::nullopt);
 
     private:
         client* _client;

@@ -38,6 +38,7 @@ redpanda_cc_btest(
         "//src/v/http",
         "//src/v/json",
         "//src/v/net",
+        "//src/v/test_utils:fixture",
         "//src/v/test_utils:seastar_boost",
         "@boost//:algorithm",
         "@boost//:beast",

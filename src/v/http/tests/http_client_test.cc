@@ -18,6 +18,7 @@
 #include "json/json.h"
 #include "net/dns.h"
 #include "net/transport.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
@@ -27,7 +28,9 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/handlers.hh>
 #include <seastar/http/httpd.hh>
@@ -997,4 +1000,109 @@ SEASTAR_THREAD_TEST_CASE(post_method) {
     BOOST_REQUIRE_EQUAL(expected, actual);
 
     server->stop().get();
+}
+
+namespace {
+enum class timeout_side : uint8_t {
+    send,
+    recv,
+};
+
+std::ostream& operator<<(std::ostream& os, timeout_side ts) {
+    switch (ts) {
+    case timeout_side::send:
+        return os << "timeout_side::send";
+    case timeout_side::recv:
+        return os << "timeout_side::recv";
+    }
+}
+
+void test_http_streaming_timeout(
+  const net::base_transport::configuration& conf,
+  http::client::request_header header,
+  std::optional<ss::sstring> request_data,
+  timeout_side which) {
+    auto [server, client] = started_client_and_server(conf);
+    auto defer = ss::defer([server] { server->stop().get(); });
+
+    auto request_to = which == timeout_side::send ? 0us : 5s;
+
+    using rsp_fut_t = ss::future<http::client::response_stream_ref>;
+
+    ss::input_stream<char> body_stream;
+    auto make_request = [&client,
+                         &request_data,
+                         &body_stream,
+                         header = std::move(header),
+                         request_to]() mutable -> rsp_fut_t {
+        if (request_data) {
+            iobuf body;
+            body.append(request_data->data(), request_data->size());
+            body_stream = make_iobuf_input_stream(std::move(body));
+            return client->request(std::move(header), body_stream, request_to);
+        } else {
+            return client->request(std::move(header), request_to);
+        }
+    };
+
+    std::exception_ptr eptr;
+
+    if (which == timeout_side::send) {
+        BOOST_REQUIRE_THROW(
+          ss::futurize_invoke(make_request).get(), ss::timed_out_error);
+        return;
+    }
+
+    http::client::response_stream_ref response = make_request().get();
+
+    // If we got this far, we'll always timeout on the response
+    BOOST_REQUIRE_EQUAL(which, timeout_side::recv);
+
+    auto stream = response->as_input_stream(ss::lowres_clock::now());
+    auto read_stream = [](auto& stream) { return stream.read(); };
+
+    BOOST_REQUIRE_THROW(
+      ss::futurize_invoke(read_stream, stream).get(), ss::timed_out_error);
+
+    stream.close().get();
+
+    tests::cooperative_spin_wait_with_timeout(5s, [&response] {
+        return response->is_done();
+    }).get();
+}
+} // namespace
+
+SEASTAR_THREAD_TEST_CASE(test_http_GET_streaming_timeout) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/get");
+    header.insert(
+      boost::beast::http::field::content_length, fmt::format("{}", 0));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+
+    test_http_streaming_timeout(
+      config, header, std::nullopt, timeout_side::send);
+
+    test_http_streaming_timeout(
+      config, header, std::nullopt, timeout_side::recv);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_PUT_streaming_timeout) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target("/echo");
+    header.insert(
+      boost::beast::http::field::content_length,
+      fmt::format("{}", std::strlen(httpd_server_reply)));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+
+    test_http_streaming_timeout(
+      config, header, ss::sstring(httpd_server_reply), timeout_side::send);
+
+    test_http_streaming_timeout(
+      config, header, ss::sstring(httpd_server_reply), timeout_side::recv);
 }
