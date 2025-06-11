@@ -362,6 +362,9 @@ class PartitionBalancerTest(PartitionBalancerService):
              log_allow_list=CHAOS_LOG_ALLOW_LIST + RECONCILIATION_TIMEOUT_LOG)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
+        # set partition shutdown watchdog timeout to a large value to prevent spurious detection when Redpanda node is suspended
+        self.redpanda.set_cluster_config(
+            {"partition_manager_shutdown_watchdog_timeout": 90000})
 
         self.topic = TopicSpec(partition_count=random.randint(20, 30))
         self.client().create_topic(self.topic)
