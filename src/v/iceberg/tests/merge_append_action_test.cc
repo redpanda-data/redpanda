@@ -852,3 +852,36 @@ TEST_F(MergeAppendActionTest, TestMergeWithMultiplePartitionSpecs) {
     ASSERT_EQ(merged_mfile->deleted_files_count, 0);
     ASSERT_EQ(merged_mfile->deleted_rows_count, 0);
 }
+
+TEST_F(MergeAppendActionTest, TestWriteMetadataPathProperty) {
+    // Create a table with a custom metadata path.
+    const auto custom_path = fmt::format(
+      "s3://{}/custom/metadata", bucket_name());
+    auto table = create_table();
+    table_properties_t props;
+    props.emplace("write.metadata.path", custom_path);
+    table.properties = std::move(props);
+
+    // Add some data files to trigger manifest creation.
+    transaction tx(std::move(table));
+    auto files = create_data_files(tx.table(), "test_file", 2, 10);
+    auto res = tx.merge_append(io, std::move(files)).get();
+    ASSERT_FALSE(res.has_error()) << res.error();
+
+    const auto& updated_table = tx.table();
+    ASSERT_TRUE(updated_table.snapshots.has_value());
+    ASSERT_EQ(updated_table.snapshots->size(), 1);
+
+    // Check that the manifest list path uses the custom metadata location
+    const auto& snapshot = updated_table.snapshots->back();
+    const auto& manifest_list_path = snapshot.manifest_list_path;
+    ASSERT_TRUE(manifest_list_path().starts_with(custom_path));
+
+    // Download the manifest list and check manifest paths.
+    auto mlist_res = io.download_manifest_list(manifest_list_path).get();
+    ASSERT_TRUE(mlist_res.has_value());
+    ASSERT_EQ(mlist_res.value().files.size(), 1);
+
+    const auto& manifest_path = mlist_res.value().files[0].manifest_path;
+    ASSERT_TRUE(manifest_path().starts_with(custom_path));
+}
