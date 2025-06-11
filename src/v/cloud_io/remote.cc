@@ -260,24 +260,32 @@ ss::future<upload_result> remote::upload_stream(
 
         auto reader_handle = co_await reset_str();
         // Segment upload attempt
-        auto res = co_await lease.client->put_object(
-          bucket,
-          path,
-          content_length,
-          reader_handle->take_stream(),
-          fib.get_timeout());
+        auto put_fut = co_await ss::coroutine::as_future(ss::with_timeout(
+          fib.get_deadline(),
+          lease.client->put_object(
+            bucket,
+            path,
+            content_length,
+            reader_handle->take_stream(),
+            fib.get_timeout())));
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
         co_await reader_handle->close();
 
-        if (res) {
+        cloud_storage_clients::error_outcome ec{};
+        if (put_fut.failed()) {
+            ec = cloud_storage_clients::util::handle_client_transport_error(
+              put_fut.get_exception(), log);
+        } else if (auto res = put_fut.get(); res) {
             transfer_details.on_success_size(content_length);
             co_return upload_result::success;
+        } else {
+            ec = res.error();
         }
 
         lease.client->shutdown();
-        switch (res.error()) {
+        switch (ec) {
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -360,10 +368,17 @@ ss::future<download_result> remote::download_stream(
 
         auto download_latency_measure
           = transfer_details.scoped_latency_measurement();
-        auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), false, byte_range);
 
-        if (resp) {
+        auto get_fut = co_await ss::coroutine::as_future(ss::with_timeout(
+          fib.get_deadline(),
+          lease.client->get_object(
+            bucket, path, fib.get_timeout(), false, byte_range)));
+
+        cloud_storage_clients::error_outcome ec{};
+        if (get_fut.failed()) {
+            ec = cloud_storage_clients::util::handle_client_transport_error(
+              get_fut.get_exception(), log);
+        } else if (auto resp = get_fut.get(); resp.has_value()) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             auto length = boost::lexical_cast<uint64_t>(
               resp.value()->get_headers().at(
@@ -372,8 +387,9 @@ ss::future<download_result> remote::download_stream(
                 auto underlying_st = resp.value()->as_input_stream();
                 auto throttled_st = _resources->throttle_download(
                   std::move(underlying_st), _as, throttle_metric_ms_cb);
-                uint64_t content_length = co_await cons_str(
-                  length, std::move(throttled_st));
+                uint64_t content_length = co_await with_timeout(
+                  fib.get_deadline(),
+                  cons_str(length, std::move(throttled_st)));
                 transfer_details.on_success_size(content_length);
                 co_return download_result::success;
             } catch (...) {
@@ -382,17 +398,18 @@ ss::future<download_result> remote::download_stream(
                   ctxlog.debug,
                   "unexpected error when consuming stream {}",
                   ex);
-                resp
-                  = cloud_storage_clients::util::handle_client_transport_error(
-                    ex, log);
+                ec = cloud_storage_clients::util::handle_client_transport_error(
+                  ex, log);
             }
+        } else {
+            ec = resp.error();
         }
 
         download_latency_measure.reset();
 
         lease.client->shutdown();
 
-        switch (resp.error()) {
+        switch (ec) {
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -456,28 +473,36 @@ remote::download_object(download_request download_request) {
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         download_request.transfer_details.on_request(fib.retry_count());
-        auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), download_request.expect_missing);
+        auto get_fut = co_await ss::coroutine::as_future(ss::with_timeout(
+          fib.get_deadline(),
+          lease.client->get_object(
+            bucket, path, fib.get_timeout(), download_request.expect_missing)));
 
-        if (resp) {
+        cloud_storage_clients::error_outcome ec{};
+        if (get_fut.failed()) {
+            ec = cloud_storage_clients::util::handle_client_transport_error(
+              get_fut.get_exception(), log);
+        } else if (auto resp = get_fut.get(); resp.has_value()) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             try {
-                auto buffer
-                  = co_await cloud_storage_clients::util::drain_response_stream(
-                    resp.value());
+                auto buffer = co_await ss::with_timeout(
+                  fib.get_deadline(),
+                  cloud_storage_clients::util::drain_response_stream(
+                    resp.value()));
                 download_request.payload.append_fragments(std::move(buffer));
                 transfer_details.on_success();
                 co_return download_result::success;
             } catch (...) {
-                resp
-                  = cloud_storage_clients::util::handle_client_transport_error(
-                    std::current_exception(), ctxlog);
+                ec = cloud_storage_clients::util::handle_client_transport_error(
+                  std::current_exception(), ctxlog);
             }
+        } else {
+            ec = resp.error();
         }
 
         lease.client->shutdown();
 
-        switch (resp.error()) {
+        switch (ec) {
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -1073,21 +1098,29 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
         upload_request.transfer_details.on_request(fib.retry_count());
 
         auto to_upload = upload_request.payload.copy();
-        auto res = co_await lease.client->put_object(
-          transfer_details.bucket,
-          path,
-          content_length,
-          make_iobuf_input_stream(std::move(to_upload)),
-          fib.get_timeout(),
-          upload_request.accept_no_content_response);
+        auto put_fut = co_await ss::coroutine::as_future(ss::with_timeout(
+          fib.get_deadline(),
+          lease.client->put_object(
+            transfer_details.bucket,
+            path,
+            content_length,
+            make_iobuf_input_stream(std::move(to_upload)),
+            fib.get_timeout(),
+            upload_request.accept_no_content_response)));
 
-        if (res) {
+        cloud_storage_clients::error_outcome ec{};
+        if (put_fut.failed()) {
+            ec = cloud_storage_clients::util::handle_client_transport_error(
+              put_fut.get_exception(), log);
+        } else if (auto res = put_fut.get(); res.has_value()) {
             transfer_details.on_success();
             co_return upload_result::success;
+        } else {
+            ec = res.error();
         }
 
         lease.client->shutdown();
-        switch (res.error()) {
+        switch (ec) {
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
