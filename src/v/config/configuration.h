@@ -679,6 +679,7 @@ struct configuration final : public config_store {
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
+    enterprise<property<bool>> schema_registry_enable_authorization;
     property<bool> schema_registry_always_normalize;
     deprecated_property schema_registry_protobuf_renderer_v2;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;

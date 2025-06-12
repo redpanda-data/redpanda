@@ -3644,6 +3644,16 @@ configuration::configuration()
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128)
+  , schema_registry_enable_authorization(
+      *this,
+      true,
+      "schema_registry_enable_authorization",
+      "Enable authorization for Schema Registry requests. If set to `true`, "
+      "Schema Registry will require authentication and authorization for all "
+      "requests. If set to `false`, Schema Registry will allow unauthenticated "
+      "and unauthorized requests.",
+      meta{.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , schema_registry_always_normalize(
       *this,
       "schema_registry_always_normalize",
