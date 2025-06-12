@@ -90,6 +90,13 @@ private:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
+    ss::future<begin_tx_reply> do_begin_tx_on_partition_shard(
+      model::ntp ntp,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      std::chrono::milliseconds transaction_timeout_ms,
+      model::partition_id tm,
+      cluster::partition_manager& mgr);
     ss::future<commit_tx_reply> dispatch_commit_tx(
       model::node_id,
       model::ntp,

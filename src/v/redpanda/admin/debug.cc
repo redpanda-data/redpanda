@@ -885,8 +885,7 @@ admin_server::get_producers_state_handler(
     auto result = co_await _tx_gateway_frontend.local().get_producers(
       cluster::get_producers_request{ntp, timeout, limit});
     if (result.error_code != cluster::tx::errc::none) {
-        throw ss::httpd::server_error_exception(fmt::format(
-          "Error {} getting producers for ntp: {}", result.error_code, ntp));
+        co_await throw_on_error(*req, result.error_code, ntp);
     }
     vlog(
       adminlog.debug,

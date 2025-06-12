@@ -397,9 +397,10 @@ public:
     bool started() const noexcept { return _started; }
     void mark_started() noexcept { _started = true; }
 
-private:
+    // Acquire a shared lock for producing to the partition.
     ss::future<result<ssx::rwlock_unit>> hold_writes_enabled();
 
+private:
     ss::future<>
     replicate_unsafe_reset(cloud_storage::partition_manifest manifest);
 

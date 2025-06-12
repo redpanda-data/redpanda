@@ -1454,10 +1454,19 @@ ss::future<add_partitions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         add_partitions_tx_reply::partition_result res_partition;
         res_partition.partition_index = reply.ntp.tp.partition;
         res_partition.error_code = reply.ec;
+
+        auto level_for = [](tx::errc ec) {
+            if (ec == tx::errc::none) {
+                return ss::log_level::trace;
+            }
+            if (ec == tx::errc::partition_writes_locked) {
+                return ss::log_level::warn;
+            }
+            return ss::log_level::error;
+        };
         vlogl(
           txlog,
-          reply.ec == tx::errc::none ? ss::log_level::trace
-                                     : ss::log_level::error,
+          level_for(reply.ec),
           "[tx_id={}] begin_tx request for pid: {} at ntp: {} result: {}",
           request.transactional_id,
           pid,
