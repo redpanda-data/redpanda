@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "ssx/watchdog.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -241,7 +242,8 @@ ss::future<upload_result> remote::upload_stream(
         if (max_retries.has_value()) {
             max_retries = max_retries.value() - 1;
         }
-        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+        auto lease = co_await _pool.local().acquire_with_timeout(
+          fib.root_abort_source(), fib.get_deadline(), fib());
         transfer_details.on_request(fib.retry_count());
 
         // Client acquisition can take some time. Do a check before starting
@@ -348,7 +350,8 @@ ss::future<download_result> remote::download_stream(
 
     auto lease = co_await [this, &fib, &transfer_details] {
         transfer_details.on_client_acquire();
-        return _pool.local().acquire(fib.root_abort_source());
+        return _pool.local().acquire_with_timeout(
+          fib.root_abort_source(), fib.get_deadline(), fib());
     }();
 
     auto permit = fib.retry();
@@ -447,7 +450,8 @@ remote::download_object(download_request download_request) {
     const auto bucket = transfer_details.bucket;
     const auto object_type = download_request.display_str;
 
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire_with_timeout(
+      fib.root_abort_source(), fib.get_deadline(), fib());
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Downloading {} from {}", object_type, path);
@@ -531,7 +535,8 @@ ss::future<download_result> remote::object_exists(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire_with_timeout(
+      fib.root_abort_source(), fib.get_deadline(), fib());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check {} {}", object_type, path);
     std::optional<download_result> result;
@@ -601,7 +606,8 @@ remote::delete_object(transfer_details transfer_details) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire_with_timeout(
+      fib.root_abort_source(), fib.get_deadline(), fib());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
@@ -754,7 +760,8 @@ ss::future<upload_result> remote::delete_object_batch(
 
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire_with_timeout(
+      fib.root_abort_source(), fib.get_deadline(), fib());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Deleting a batch of size {}", keys.size());
     std::optional<upload_result> result;
@@ -938,7 +945,8 @@ ss::future<list_result> remote::list_objects(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire_with_timeout(
+      fib.root_abort_source(), fib.get_deadline(), fib());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "List objects {}", bucket);
     std::optional<list_result> result;
@@ -1061,7 +1069,8 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
 
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+        auto lease = co_await _pool.local().acquire_with_timeout(
+          fib.root_abort_source(), fib.get_deadline(), fib());
 
         vlog(
           ctxlog.debug,
