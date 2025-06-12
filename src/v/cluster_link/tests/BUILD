@@ -18,6 +18,23 @@ redpanda_test_cc_library(
     ],
 )
 
+redpanda_test_cc_library(
+    name = "test_utils",
+    srcs = [
+        "test_utils.cc",
+    ],
+    hdrs = [
+        "test_utils.h",
+    ],
+    include_prefix = "cluster_link/tests",
+    visibility = ["//src/v/cluster_link/tests:__subpackages__"],
+    deps = [
+        ":source_cluster",
+        "//src/v/cluster_link:impl",
+        "//src/v/kafka/server",
+    ],
+)
+
 redpanda_cc_gtest(
     name = "link_test",
     timeout = "short",
