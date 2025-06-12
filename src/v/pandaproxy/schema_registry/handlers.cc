@@ -339,6 +339,15 @@ get_schemas_ids_id(server::request_t rq, server::reply_t rp) {
     parse_accept_header(rq, rp);
     auto id = parse::request_param<schema_id>(*rq.req, "id");
 
+    // TODO: Authorization check
+    //
+    // if auth::op::read for auth::global is satisfied
+    //    continue
+    // else if auth::op::read for any subject that references this is satisfied
+    //    continue
+    // else
+    //    fail
+
     const auto format = parse_output_format(*rq.req);
 
     // With deferred schema validation, there might be a schema that

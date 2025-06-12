@@ -43,12 +43,6 @@ public:
     using op = security::acl_operation;
     using resource = std::variant<none, deferred, global, subject>;
 
-    // temporary constructor
-    explicit auth(level lvl)
-      : _lvl{lvl}
-      , _op{op::all}
-      , _res{global{}} {}
-
     auth(level lvl, op op, resource res)
       : _lvl{lvl}
       , _op{op}
