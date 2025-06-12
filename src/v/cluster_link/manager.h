@@ -154,6 +154,6 @@ private:
     std::unique_ptr<link_factory> _link_factory;
     ssx::work_queue _queue;
 
-    absl::flat_hash_map<id_t, std::unique_ptr<link>> _links;
+    absl::flat_hash_map<model::id_t, std::unique_ptr<link>> _links;
 };
 } // namespace cluster_link
