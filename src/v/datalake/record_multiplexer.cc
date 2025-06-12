@@ -28,6 +28,22 @@
 namespace datalake {
 
 namespace {
+
+// Get the data location for the table. Some catalogs require using the property
+// `write.data.path`. Otherwise, it defaults to <table location>/data.
+iceberg::uri get_data_location(const schema_manager::table_info& table_info) {
+    static constexpr std::string_view write_data_path_prop = "write.data.path";
+
+    if (table_info.properties.has_value()) {
+        auto it = table_info.properties->find(write_data_path_prop);
+        if (it != table_info.properties->end()) {
+            return iceberg::uri(it->second);
+        }
+    }
+
+    return iceberg::uri(fmt::format("{}/data", table_info.location));
+}
+
 template<typename Func>
 requires requires(Func f, model::record_batch batch) {
     { f(std::move(batch)) } -> std::same_as<ss::future<ss::stop_iteration>>;
@@ -258,9 +274,9 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 co_return ss::stop_iteration::yes;
             }
 
-            auto table_remote_path = _location_provider.from_uri(
-              load_res.value().location);
-            if (!table_remote_path) {
+            auto data_location = get_data_location(load_res.value());
+            auto data_remote_path = _location_provider.from_uri(data_location);
+            if (!data_remote_path) {
                 vlog(
                   _log.warn,
                   "Error getting location prefix for {} while creating writer "
@@ -278,7 +294,7 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
                 load_res.value().schema.schema_id,
                 std::move(record_type.type),
                 std::move(load_res.value().partition_spec),
-                std::move(table_remote_path.value())));
+                std::move(data_remote_path.value())));
             writer_iter = iter;
         }
 
@@ -476,9 +492,9 @@ record_multiplexer::handle_invalid_record(
                 co_return writer_error::unknown_error;
             }
 
-            auto table_remote_path = _location_provider.from_uri(
-              load_res.value().location);
-            if (!table_remote_path) {
+            auto data_location = get_data_location(load_res.value());
+            auto data_remote_path = _location_provider.from_uri(data_location);
+            if (!data_remote_path) {
                 vlog(
                   _log.warn,
                   "Error getting location prefix for {} while creating writer "
@@ -493,7 +509,7 @@ record_multiplexer::handle_invalid_record(
               load_res.value().schema.schema_id,
               std::move(record_type.type),
               std::move(load_res.value().partition_spec),
-              std::move(table_remote_path.value()));
+              std::move(data_remote_path.value()));
         }
 
         int64_t estimated_size = (key ? key->size_bytes() : 0)

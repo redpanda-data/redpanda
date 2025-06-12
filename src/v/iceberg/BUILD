@@ -821,6 +821,7 @@ redpanda_cc_library(
         ":uri",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
+        "//src/v/utils:absl_sstring_hash",
         "//src/v/utils:named_type",
         "//src/v/utils:uuid",
     ],

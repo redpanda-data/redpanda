@@ -294,7 +294,6 @@ public:
       std::unique_ptr<record_translator>,
       std::unique_ptr<table_creator>,
       location_provider,
-      remote_path,
       scheduling::reservations_tracker&,
       ss::sharded<cluster::topic_table>*,
       ss::sharded<features::feature_table>*,

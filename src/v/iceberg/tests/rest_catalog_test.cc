@@ -226,9 +226,8 @@ iceberg::table_metadata create_table_metadata() {
       .partition_specs = create_test_partition_spec(),
       .default_spec_id = iceberg::partition_spec::id_t{1},
       .last_partition_id = iceberg::partition_field::id_t{1},
-      .properties = chunked_hash_map<
-        ss::sstring,
-        ss::sstring>{{"read.split.target.size", "134217728"}},
+      .properties
+      = iceberg::table_properties_t{{"read.split.target.size", "134217728"}},
       .current_snapshot_id = iceberg::snapshot_id(200),
       .snapshots = chunked_vector<iceberg::snapshot>{iceberg::snapshot{
         .id = iceberg::snapshot_id{200},
@@ -438,9 +437,8 @@ iceberg::table_metadata create_empty_table_metadata(const ss::sstring& bucket) {
       .partition_specs = create_test_partition_spec(),
       .default_spec_id = iceberg::partition_spec::id_t{1},
       .last_partition_id = iceberg::partition_field::id_t{1},
-      .properties = chunked_hash_map<
-        ss::sstring,
-        ss::sstring>{{"read.split.target.size", "134217728"}},
+      .properties
+      = iceberg::table_properties_t{{"read.split.target.size", "134217728"}},
       .current_snapshot_id = std::nullopt,
       .snapshots = chunked_vector<iceberg::snapshot>{},
       .sort_orders = create_sort_orders(),
