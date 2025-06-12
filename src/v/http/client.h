@@ -85,7 +85,7 @@ public:
       ss::lowres_clock::duration timeout = default_connect_timeout)
       = 0;
 
-    virtual ss::future<> shutdown_and_stop() = 0;
+    virtual ss::future<> stop() = 0;
 
     virtual ~abstract_client() = default;
 };
@@ -116,7 +116,7 @@ public:
       ss::lowres_clock::duration max_idle_time);
 
     /// Stop must be called before destroying the client object.
-    ss::future<> stop();
+    ss::future<> stop() final;
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
 
@@ -137,9 +137,6 @@ public:
         _shutdown_now = true;
         shutdown();
     }
-
-    // close the connect gate and fail_outstanding_futures which calls shutdown
-    ss::future<> shutdown_and_stop() final { co_return co_await stop(); }
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error

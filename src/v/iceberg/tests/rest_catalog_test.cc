@@ -38,7 +38,7 @@ public:
        ss::lowres_clock::duration),
       (override));
 
-    MOCK_METHOD(ss::future<>, shutdown_and_stop, (), (override));
+    MOCK_METHOD(ss::future<>, stop, (), (override));
 };
 
 static constexpr auto endpoint = "http://localhost:8181";

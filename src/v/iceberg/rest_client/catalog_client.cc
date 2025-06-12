@@ -226,7 +226,7 @@ ss::sstring catalog_client::root_path() const {
 }
 ss::future<> catalog_client::shutdown() {
     auto gate_f = _gate.close();
-    co_await _http_client->shutdown_and_stop();
+    co_await _http_client->stop();
     co_await std::move(gate_f);
 }
 ss::future<expected<ss::sstring>>

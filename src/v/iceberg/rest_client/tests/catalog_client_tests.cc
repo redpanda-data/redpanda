@@ -45,7 +45,7 @@ public:
        std::optional<iobuf>,
        ss::lowres_clock::duration),
       (override));
-    MOCK_METHOD(ss::future<>, shutdown_and_stop, (), (override));
+    MOCK_METHOD(ss::future<>, stop, (), (override));
 };
 
 std::unique_ptr<http::abstract_client>
