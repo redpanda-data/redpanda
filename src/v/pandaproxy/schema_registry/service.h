@@ -54,6 +54,7 @@ public:
     seq_writer& writer() { return _writer.local(); }
     sharded_store& schema_store() { return _store; }
     request_authenticator& authenticator() { return _auth; }
+    security::authorizer& authorizor();
     ss::future<> mitigate_error(std::exception_ptr);
     ss::future<> ensure_started() { return _ensure_started(); }
     security::audit::audit_log_manager& audit_mgr() {

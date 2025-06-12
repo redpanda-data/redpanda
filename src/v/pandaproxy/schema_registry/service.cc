@@ -501,4 +501,8 @@ kafka::client::configuration& service::client_config() {
     return _client.local().config();
 }
 
+security::authorizer& service::authorizor() {
+    return _controller->get_authorizer().local();
+}
+
 } // namespace pandaproxy::schema_registry
