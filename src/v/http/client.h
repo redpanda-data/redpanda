@@ -116,7 +116,13 @@ public:
       ss::lowres_clock::duration max_idle_time);
 
     /// Stop must be called before destroying the client object.
+    /// The http client can not be used after that.
     ss::future<> stop() final;
+
+    /// The 'shutdown' method can be used to disconnect the http client
+    /// from the server. The client can be reconnected after that.
+    /// To permanently spin down a client for destruction, call the 'stop'
+    /// method instead.
     using net::base_transport::shutdown;
     using net::base_transport::wait_input_shutdown;
 
