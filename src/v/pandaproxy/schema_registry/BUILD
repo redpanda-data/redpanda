@@ -143,12 +143,14 @@ redpanda_cc_library(
     name = "server",
     srcs = [
         "api.cc",
+        "auth.cc",
         "handlers.cc",
         "service.cc",
         "validation.cc",
     ],
     hdrs = [
         "api.h",
+        "auth.h",
         "configuration.h",
         "fwd.h",
         "handlers.h",
