@@ -246,11 +246,10 @@ ss::future<> client::stop() {
     }
     _stopped = true;
     co_await _connect_gate.close();
+    shutdown();
     // Can safely stop base_transport
     co_return co_await base_transport::stop();
 }
-
-void client::fail_outstanding_futures() noexcept { shutdown(); }
 
 ss::future<ss::temporary_buffer<char>> client::receive() {
     return _in.read()

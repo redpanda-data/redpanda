@@ -143,8 +143,6 @@ public:
     ss::future<reconnect_result_t>
     get_connected(ss::lowres_clock::duration timeout, prefix_logger ctxlog);
 
-    void fail_outstanding_futures() noexcept override;
-
     // Response state machine
     class response_stream final
       : public ss::enable_shared_from_this<response_stream> {
