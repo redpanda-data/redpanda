@@ -137,6 +137,27 @@ void audit_authz_failure(
     }
 }
 
+void handle_authz(
+  server::request_t& rq, auth::level lvl, request_auth_result& auth_result) {
+    try {
+        switch (lvl) {
+        case auth::level::superuser:
+            auth_result.require_superuser();
+            break;
+        case auth::level::user:
+            auth_result.require_authenticated();
+            break;
+        case auth::level::publik:
+            auth_result.pass();
+            break;
+        }
+    } catch (const ss::httpd::base_exception& e) {
+        audit_authz_failure(rq, auth_result, e.what());
+        throw;
+    }
+    audit_authz_success(rq);
+}
+
 } // namespace
 
 void auth::handle_auth(server::request_t& rq) const {
@@ -166,26 +187,7 @@ void auth::handle_auth(server::request_t& rq) const {
 
         // Will throw 403 if user enabled HTTP Basic Auth but
         // did not give the authorization header.
-        [this, &rq, &auth_result]() {
-            try {
-                switch (_lvl) {
-                case auth::level::superuser:
-                    auth_result.require_superuser();
-                    break;
-                case auth::level::user:
-                    auth_result.require_authenticated();
-                    break;
-                case auth::level::publik:
-                    auth_result.pass();
-                    break;
-                }
-            } catch (const ss::httpd::base_exception& e) {
-                audit_authz_failure(rq, auth_result, e.what());
-                throw;
-            }
-        }();
-
-        audit_authz_success(rq);
+        handle_authz(rq, _lvl, auth_result);
     } else {
         rq.user = credential_t{};
         audit_authn_success(rq);
