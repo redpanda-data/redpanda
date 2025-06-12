@@ -28,6 +28,7 @@ range(segment_set::underlying_t segs) {
       segment_set(std::move(segs)));
 
     chunked_vector<ss::future<ss::rwlock::holder>> dispatch;
+    dispatch.reserve(ctx->range.size());
     for (auto& s : ctx->range) {
         dispatch.push_back(s->read_lock());
     }
