@@ -102,7 +102,6 @@ struct resolved_type {
     // Iceberg-compatible type. Note, the field IDs may not necessarily
     // correspond to their final IDs in the catalog.
     iceberg::field_type type;
-    ss::sstring type_name;
 
     resolved_type copy() const;
 };

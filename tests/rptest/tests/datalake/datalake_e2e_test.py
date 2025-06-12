@@ -126,6 +126,20 @@ avro_schema_with_null_union_str = """
 """
 
 AVRO_SCHEMA_TEST_CASES = {
+    "primitive":
+    AvroSchema(
+        schema_str="""{"type": "long", "name": "a_number"}""",
+        record_generator=lambda t: int(t),
+        expected_trino=
+        [('redpanda',
+          'row(partition integer, offset bigint, timestamp timestamp(6), headers array(row(key varbinary, value varbinary)), key varbinary)',
+          '', ''), ('root', 'bigint', '', '')],
+        expected_spark=
+        [('redpanda',
+          'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
+          None), ('root', 'bigint', None), ('', '', ''),
+         ('# Partitioning', '', ''),
+         ('Part 0', 'hours(redpanda.timestamp)', '')]),
     "basic":
     AvroSchema(
         schema_str=avro_schema_str,

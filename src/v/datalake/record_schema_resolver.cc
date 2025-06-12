@@ -57,7 +57,6 @@ checked<resolved_type, type_resolver::errc> translate_avro_schema(
                 .schema = resolved_schema(std::cref(avro_schema), std::move(schema)),
                 .id = { .schema_id = id, .protobuf_offsets = std::nullopt, },
                 .type = std::move(result.value()),
-                .type_name = avro_schema.root()->name().fullname(),
               };
     } catch (...) {
         vlog(
@@ -86,7 +85,6 @@ checked<resolved_type, type_resolver::errc> translate_protobuf_schema(
           .id
           = {.schema_id = id, .protobuf_offsets = std::move(protobuf_offsets)},
           .type = std::move(type),
-          .type_name = d->name(),
         };
     } catch (...) {
         vlog(
@@ -450,7 +448,6 @@ resolved_type resolved_type::copy() const {
       .schema = schema,
       .id = id,
       .type = iceberg::make_copy(type),
-      .type_name = type_name,
     };
 }
 } // namespace datalake
