@@ -1331,7 +1331,7 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
             metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
             namespace: str | None = None,
             topic: str | None = None,
-            expect_metric: bool = False):
+            expect_metric: bool = True):
         '''Does the main work of the metric_sum() implementation given a list of ns to iterate over.
         '''
 
@@ -1593,7 +1593,7 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                    namespace: str | None = None,
                    topic: str | None = None,
                    nodes: Any = None,
-                   expect_metric: bool = False):
+                   expect_metric: bool = True):
         '''
         Pings the 'metrics_endpoint' of each node and returns the summed values
         of the given metric, optionally filtering by namespace and topic.
