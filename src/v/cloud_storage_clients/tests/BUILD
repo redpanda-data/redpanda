@@ -22,6 +22,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_io/tests:s3_imposter",
         "//src/v/cloud_storage_clients",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
