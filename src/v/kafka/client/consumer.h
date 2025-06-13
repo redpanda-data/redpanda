@@ -74,7 +74,7 @@ public:
     ss::future<offset_fetch_response>
     offset_fetch(std::vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
-    offset_commit(std::vector<offset_commit_request_topic> topics);
+    offset_commit(chunked_vector<offset_commit_request_topic> topics);
     ss::future<fetch_response>
     fetch(std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes);
 

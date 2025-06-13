@@ -166,12 +166,15 @@ public:
                  .committed_offset = model::offset{o},
                  .committed_metadata{mid()}}}};
             auto res = co_await client.consumer_offset_commit(
-              gid, mid, {std::move(t)});
+              gid,
+              mid,
+              chunked_vector<kafka::offset_commit_request_topic>::single(
+                std::move(t)));
 
             // Sanity checks the result: only one partition committed per
             // group, no errors.
             BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
-            auto topic_res = res.data.topics[0];
+            auto& topic_res = res.data.topics[0];
             BOOST_REQUIRE_EQUAL(topic_res.partitions.size(), 1);
             auto& p = topic_res.partitions[0];
             BOOST_REQUIRE_EQUAL(p.partition_index, 0);

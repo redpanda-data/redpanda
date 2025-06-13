@@ -525,11 +525,11 @@ ss::future<offset_fetch_response> client::consumer_offset_fetch(
 ss::future<offset_commit_response> client::consumer_offset_commit(
   const group_id& g_id,
   const member_id& name,
-  std::vector<offset_commit_request_topic> topics) {
+  chunked_vector<offset_commit_request_topic> topics) {
     return get_consumer(g_id, name)
       .then([this, topics{std::move(topics)}](shared_consumer_t c) mutable {
           return gated_retry_with_mitigation([c, topics{std::move(topics)}]() {
-              return c->offset_commit(topics);
+              return c->offset_commit(make_copy(topics));
           });
       });
 }

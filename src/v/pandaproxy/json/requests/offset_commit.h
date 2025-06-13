@@ -22,10 +22,10 @@
 
 namespace pandaproxy::json {
 
-inline std::vector<kafka::offset_commit_request_topic>
+inline chunked_vector<kafka::offset_commit_request_topic>
 partition_offsets_request_to_offset_commit_request(
   std::vector<topic_partition_offset> tps) {
-    std::vector<kafka::offset_commit_request_topic> res;
+    chunked_vector<kafka::offset_commit_request_topic> res;
     if (tps.empty()) {
         return res;
     }
