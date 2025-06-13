@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "container/intrusive_list_helpers.h"
+#include "ssx/watchdog.h"
 #include "utils/stop_signal.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -48,6 +49,7 @@ public:
         ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
         std::unique_ptr<client_probe::hist_t::measurement> _track_duration;
+        std::unique_ptr<ssx::watchdog> _wd;
 
         client_lease(
           http_client_ptr p,
@@ -76,7 +78,8 @@ public:
         client_lease(client_lease&& other) noexcept
           : client(std::move(other.client))
           , deleter(std::move(other.deleter))
-          , as_sub(std::move(other.as_sub)) {
+          , as_sub(std::move(other.as_sub))
+          , _wd(std::move(other._wd)) {
             _hook.swap_nodes(other._hook);
         }
 
@@ -85,6 +88,7 @@ public:
             deleter = std::move(other.deleter);
             as_sub = std::move(other.as_sub);
             _hook.swap_nodes(other._hook);
+            _wd = std::move(other._wd);
             return *this;
         }
 
@@ -127,6 +131,24 @@ public:
     /// \return client pointer (via future that can wait if all clients
     ///         are in use)
     ss::future<client_lease> acquire(ss::abort_source& as);
+
+    /// \brief Acquire http client from the pool for a specified duration.
+    ///
+    /// Same invariants as ::acquire apply (see above).
+    /// The provided timeout is applied in two distinct ways:
+    ///   - Fed through to a watchdog timer governing the lifetime of the lease.
+    ///     If it fires before the lease is returned, immediately calls shutdown
+    ///     on the enclosed client.
+    ///
+    /// \param as
+    /// \param deadline - Lease expiration time, after which the client is
+    ///                   forcibly shut down.
+    /// \param ctx - Optional context for the log message. e.g. the string
+    ///              representation of a retry_chain_node.
+    ss::future<client_lease> acquire_with_timeout(
+      ss::abort_source& as,
+      ss::lowres_clock::time_point deadline,
+      std::optional<ss::sstring> ctx = std::nullopt);
 
     /// \brief Get number of connections
     size_t size() const noexcept;
