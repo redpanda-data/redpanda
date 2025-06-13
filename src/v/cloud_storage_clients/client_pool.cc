@@ -426,6 +426,35 @@ client_pool::acquire(ss::abort_source& as) {
     co_return lease;
 }
 
+auto client_pool::acquire_with_timeout(
+  ss::abort_source& as,
+  ss::lowres_clock::time_point deadline,
+  std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
+    auto lease = co_await acquire(as);
+    if (deadline < ss::lowres_clock::time_point::max()) {
+        // take a copy of the shared_ptr held by the lease to avoid racing with
+        // client_pool teardown
+        auto to = deadline - ss::lowres_clock::now();
+        lease._wd = std::make_unique<ssx::watchdog>(
+          to, [client = lease.client, to, ctx = std::move(ctx)]() mutable {
+              if (ctx.has_value()) {
+                  vlog(
+                    pool_log.debug,
+                    "{} - Lease expired after {}. Shutting down client...",
+                    ctx.value(),
+                    to);
+              } else {
+                  vlog(
+                    pool_log.debug,
+                    "Lease expired after {}. Shutting down client...",
+                    to);
+              }
+              client->shutdown();
+          });
+    }
+    co_return lease;
+}
+
 void client_pool::update_usage_stats() {
     if (_probe) {
         _probe->register_utilization(normalized_num_clients_in_use());

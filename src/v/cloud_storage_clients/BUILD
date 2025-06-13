@@ -48,6 +48,7 @@ redpanda_cc_library(
         "//src/v/net",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
+        "//src/v/ssx:watchdog",
         "//src/v/strings:string_switch",
         "//src/v/thirdparty/libxml2",
         "//src/v/utils:base64",
