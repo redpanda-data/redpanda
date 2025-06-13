@@ -55,9 +55,11 @@ class DatalakeBatchingTest(RedpandaTest):
                               catalog_type=catalog_type) as dl:
             lag = 60 * 60 * 1000 if expect_large_files else 60 * 1000
             rate = 30 * 2**20 if expect_large_files else 2**20
-            dl.create_iceberg_enabled_topic(self.topic_name,
-                                            partitions=1,
-                                            target_lag_ms=lag)
+            dl.create_iceberg_enabled_topic(
+                self.topic_name,
+                partitions=1,
+                target_lag_ms=lag,
+                config={"redpanda.iceberg.partition.spec": "()"})
 
             producer = KgoVerifierProducer(self.test_ctx,
                                            self.redpanda,
