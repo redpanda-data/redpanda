@@ -38,6 +38,7 @@ class NodeQdisc():
         # all traffic is by default assigned to the first band
         self.default_prio_map = '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
         self.next_flow = 2
+        self.has_ingress_shaping = False
 
     def initialize(self):
         # create prio queue wit desired number of bands
@@ -72,13 +73,30 @@ class NodeQdisc():
         self._tc_qdisc_add(queue_spec=queue)
 
         for a in target_addresses:
+            match_rule = ['ip', 'dst', a]
+            if a[0] == ':':
+                match_rule = ['ip', 'dport', a[1:], "0xffff"]
+
             self._tc_execute([
                 'filter', 'add', 'dev', self.dev, 'protocol', 'ip', 'parent',
-                '1:', 'prio', f'{self.next_flow-1}', 'u32', 'match', 'ip',
-                'dst', a, 'flowid', f'1:{self.next_flow}'
+                '1:', 'prio', f'{self.next_flow-1}', 'u32', 'match',
+                *match_rule, 'flowid', f'1:{self.next_flow}'
             ])
 
         self.next_flow += 1
+
+    def drop_incoming(self, src_address):
+        self.has_ingress_shaping = True
+        self._tc_execute(
+            ['qdisc', 'add', 'dev', self.dev, 'handle', 'ffff:', 'ingress'])
+        match_rule = ['ip', 'src', src_address]
+        if src_address[0] == ':':
+            match_rule = ['ip', 'sport', src_address[1:], "0xffff"]
+
+        self._tc_execute([
+            'filter', 'add', 'dev', self.dev, 'parent', 'ffff:', 'protocol',
+            'ip', 'u32', 'match', *match_rule, "action", "drop"
+        ])
 
     def _tc_qdisc_add(self, queue_spec):
         return self._tc_execute(['qdisc', 'add', 'dev', self.dev] + queue_spec)
@@ -99,6 +117,8 @@ class NodeQdisc():
 
     def remove_all(self):
         self._tc_execute(['qdisc', 'del', 'dev', self.dev, 'root'])
+        if self.has_ingress_shaping:
+            self._tc_execute(['qdisc', 'del', 'dev', self.dev, 'ingress'])
 
 
 class TopologyNode():

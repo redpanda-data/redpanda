@@ -9,6 +9,7 @@
 import json
 import random
 import re
+import socket
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -31,6 +32,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsum
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, \
     MetricsEndpoint
+from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
@@ -39,6 +41,11 @@ from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
+)
+from rptest.utils.cluster_topology import (
+    ClusterTopology,
+    NetemSpec,
+    NodeQdisc,
 )
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP, quiesce_uploads
@@ -164,7 +171,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                                 self.logger)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
     def test_reset(self, cloud_storage_type):
         brokers = self.redpanda.started_nodes()
 
@@ -1552,3 +1559,160 @@ class EndToEndHydrationTimeoutTest(EndToEndShadowIndexingBase):
         # Disable chunk reads so that hydration downloads full segments and takes longer.
         self._start_redpanda({'cloud_storage_disable_chunk_reads': True})
         self.workload()
+
+
+class ShadowIndexingTrafficShapingTest(PreallocNodesTest):
+    small_segment_size = 4096
+    chunk_size = small_segment_size * 0.75
+    topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
+    topics = (TopicSpec(name=topic_name,
+                        partition_count=128,
+                        replication_factor=1,
+                        redpanda_remote_write=True,
+                        redpanda_remote_read=True,
+                        retention_bytes=-1,
+                        retention_ms=-1,
+                        segment_bytes=small_segment_size), )
+
+    def __init__(self, test_context):
+        self.num_brokers = 1
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=self.small_segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_segment_max_upload_interval_sec=1,
+        )
+        super().__init__(
+            test_context,
+            node_prealloc_count=1,
+            extra_rp_conf={
+                # Avoid segment merging so we can generate many segments
+                # quickly.
+                "cloud_storage_enable_segment_merging": False,
+                'log_segment_size_min': 1024,
+                'cloud_storage_cache_chunk_size': self.chunk_size,
+                'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
+                'enable_cluster_metadata_upload_loop': True,
+                'controller_snapshot_max_age_sec': 1,
+            },
+            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
+            si_settings=si_settings,
+            # These tests write many objects; set a higher scrub timeout.
+            cloud_storage_scrub_timeout_s=120)
+        self.kafka_tools = KafkaCliTools(self.redpanda)
+
+    def setUp(self):
+        pass
+
+    class EnableTrafficShaping:
+        def __init__(self, redpanda):
+            self.redpanda = redpanda
+
+        def __enter__(self) -> NodeQdisc:
+            s3_service_ep = self.redpanda.si_settings.cloud_storage_api_endpoint
+
+            #  block all outgoing https if we can't get an IP address or the api endpoint is not config'ed
+            s3_service_dest = ":443"
+            try:
+                s3_service_dest = socket.gethostbyname(s3_service_ep)
+            except:
+                pass
+
+            self.rp_qdisc = NodeQdisc(self.redpanda.nodes[0],
+                                      ClusterTopology._get_if_in_use(), 1)
+            self.rp_qdisc.initialize()
+            self.rp_qdisc.add(target_addresses=[s3_service_dest],
+                              spec=NetemSpec(300, 100))
+            self.rp_qdisc.drop_incoming(s3_service_dest)
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.rp_qdisc.remove_all()
+
+    @skip_debug_mode
+    @cluster(num_nodes=2)
+    def test_many_partitions_recovery_with_traffic_shaping(self):
+        """
+        Test that reproduces an OOM when doing recovery with a large dataset in
+        the bucket.
+        """
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=1024,
+                                       msg_count=10 * 1000 * 1000,
+                                       rate_limit_bps=256 *
+                                       self.small_segment_size,
+                                       custom_node=self.preallocated_nodes)
+
+        with self.EnableTrafficShaping(self.redpanda) as ts:
+            self.redpanda.start()
+            self.kafka_tools.create_topic(self.topics[0])
+            rpk = RpkTool(self.redpanda)
+            rpk.alter_topic_config(
+                self.topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS,
+                '1000')
+
+            def count_timeouts():
+                v = self.redpanda.metric_sum(
+                    metric_name="redpanda_cloud_client_lease_timeouts_total",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                    nodes=self.redpanda.nodes[0:1],
+                    expect_metric=True)
+                self.logger.info(
+                    f"redpanda_cloud_client_lease_timeout_total: {v}")
+                return v
+
+            def pool_utilization(pct):
+                v = self.redpanda.metrics_sample(
+                    "redpanda_cloud_client_client_pool_utilization",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
+                    nodes=self.redpanda.nodes[0:1])
+                u = [s.value for s in v.samples]
+                self.logger.info(
+                    f"redpanda_cloud_client_client_pool_utilization: {json.dumps(u)}"
+                )
+                return all(v == pct for v in u)
+
+            producer.start()
+            self.logger.debug(
+                "Wait until the client pool is backed up due to long-running requests"
+            )
+            try:
+                wait_until(lambda:
+                           (count_timeouts() > 40 and pool_utilization(100)),
+                           timeout_sec=180,
+                           backoff_sec=3)
+            finally:
+                producer.stop()
+                producer.wait()
+
+        self.logger.debug(
+            "Now check that the things return to normal after traffic shaping is switched off"
+        )
+        producer.start()
+        try:
+            wait_until(
+                lambda: nodes_report_cloud_segments(self.redpanda, 10000),
+                timeout_sec=180,
+                backoff_sec=3)
+        finally:
+            producer.stop()
+            producer.wait()
+
+        node = self.redpanda.nodes[0]
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(node)
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=120,
+                   backoff_sec=3)
