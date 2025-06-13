@@ -123,26 +123,10 @@ public:
     /// from the server. The client can be reconnected after that.
     /// To permanently spin down a client for destruction, call the 'stop'
     /// method instead.
-    using net::base_transport::shutdown;
-    using net::base_transport::wait_input_shutdown;
+    void shutdown() noexcept;
 
-    /**
-     * Calling transport::shutdown will shutdown the underlying transport and
-     * cause active connections and on-going connection attempts to fail.
-     * However, the underlying transport can be reused by calling
-     * transport::connect. This behavior is not sufficient to break out of a
-     * connection retry loop, such as `client::get_connected`. Instead, we set a
-     * flag that is checked in such situations so that fast tear down can occur.
-     *
-     * Note that we avoid doing this by closing the _connect_gate because http
-     * clients are stored in a pool and reused. Closing this gate is reserved
-     * for shutting down the pool and all the connections, making reuse more
-     * difficult to orchestrate correctly.
-     */
-    void shutdown_now() noexcept {
-        _shutdown_now = true;
-        shutdown();
-    }
+    /// Wait until the remote client shut down the connection gracefully.
+    using net::base_transport::wait_input_shutdown;
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error

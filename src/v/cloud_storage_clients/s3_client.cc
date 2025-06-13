@@ -648,7 +648,7 @@ ss::future<bool> s3_client::self_configure_test(const bucket_name& bucket) {
 
 ss::future<> s3_client::stop() { return _client.stop(); }
 
-void s3_client::shutdown() { _client.shutdown_now(); }
+void s3_client::shutdown() { _client.shutdown(); }
 
 ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(

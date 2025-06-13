@@ -173,6 +173,25 @@ ss::future<client::request_response_t> client::make_request(
       });
 }
 
+void client::shutdown() noexcept {
+    /**
+     * Calling transport::shutdown will shutdown the underlying transport
+     * and cause active connections and on-going connection attempts to
+     * fail. However, the underlying transport can be reused by calling
+     * transport::connect. This behavior is not sufficient to break out of a
+     * connection retry loop, such as `client::get_connected`. Instead, we
+     * set a flag that is checked in such situations so that fast tear down
+     * can occur.
+     *
+     * Note that we avoid doing this by closing the _connect_gate because
+     * http clients are stored in a pool and reused. Closing this gate is
+     * reserved for shutting down the pool and all the connections, making
+     * reuse more difficult to orchestrate correctly.
+     */
+    _shutdown_now = true;
+    net::base_transport::shutdown();
+}
+
 ss::future<reconnect_result_t> client::get_connected(
   ss::lowres_clock::duration timeout, prefix_logger ctxlog) {
     auto clear_shutdown_signal = ss::defer(
