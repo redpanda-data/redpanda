@@ -4174,9 +4174,11 @@ class RedpandaService(RedpandaServiceBase):
             "vectorized_storage_log_batches_written")
 
     def stop_node(self, node, timeout=None, forced=False):
-        # collect usage stats before the node is stopped, the usage stats
-        # accumulate metrics from all the nodes before they are stopped.
-        self._update_usage_stats(node)
+        if node in self._started:
+            # collect usage stats before the node is stopped, the usage stats
+            # accumulate metrics from all the nodes before they are stopped.
+            self._update_usage_stats(node)
+
         # Assume node is stopped once we enter this path. If stopping succeeds
         # it is the obvious thing to do. If stopping fails we can't differentiate
         # between a node that stopped or will eventually stop so for all intents
