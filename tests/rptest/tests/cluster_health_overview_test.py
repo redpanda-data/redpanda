@@ -16,7 +16,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 from ducktape.utils.util import wait_until
 
-from rptest.util import wait_until_result
+from rptest.util import wait_until_result, repeat_check
 
 
 class ClusterHealthOverviewTest(RedpandaTest):
@@ -25,6 +25,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
             test_context=test_context,
             num_brokers=5,
             extra_rp_conf={
+                'health_monitor_max_metadata_age': 100,  # ms
                 # Work around bug where leadership transfers cause bad health reports
                 # https://github.com/redpanda-data/redpanda/issues/5253
                 'enable_leader_balancer': False
@@ -90,6 +91,14 @@ class ClusterHealthOverviewTest(RedpandaTest):
         first_down = random.choice(self.redpanda.nodes)
         self.redpanda.stop_node(first_down)
 
+        # when one node is down some partitions with replication factor of 1
+        # should be reported as leaderless
+        rf_1_topics = {
+            spec.name
+            for spec in topics if spec.replication_factor == 1
+        }
+
+        @repeat_check(5)  # wait for leaderhip and leaderlessness to stabilize
         def one_node_down():
             hov = self.get_health()
             if not hov['is_healthy'] and len(hov['nodes_down']) > 0:
@@ -98,23 +107,18 @@ class ClusterHealthOverviewTest(RedpandaTest):
                 assert [self.redpanda.idx(first_down)] == hov['nodes_down']
                 # next check is "in" instead of "==" because we may also have under_replicated_partitions
                 assert 'nodes_down' in hov['unhealthy_reasons']
+                assert len(hov['leaderless_partitions']) > 0
+                assert hov['leaderless_count'] == len(
+                    hov['leaderless_partitions'])
+                # Only rf=1 topics should be leaderless after one node is stopped
+                if any(
+                        ntp.split("/")[1] not in rf_1_topics
+                        for ntp in hov['leaderless_partitions']):
+                    return False
                 return True, hov
             return False, None
 
         hov = wait_until_result(one_node_down, 30, 2)
-
-        # when one node is down some partitions with replication factor of 1
-        # should be reported as leaderless
-        rf_1_topics = {
-            spec.name
-            for spec in topics if spec.replication_factor == 1
-        }
-
-        assert len(hov['leaderless_partitions']) > 0
-        assert hov['leaderless_count'] > 0
-
-        assert all(ntp.split("/")[1] in rf_1_topics for ntp in hov['leaderless_partitions']),\
-            "Only rf=1 topics should be leaderless after one node is stopped"
 
         # stop another node, cluster should start reporting leaderless
         # partitions with two out of five nodes down
@@ -125,6 +129,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         self.redpanda.stop_node(second_down)
 
+        @repeat_check(5)  # wait for leaderhip and leaderlessness to stabilize
         def two_nodes_down():
             hov = self.get_health()
             if hov['is_healthy'] or len(hov['nodes_down']) != 2:
