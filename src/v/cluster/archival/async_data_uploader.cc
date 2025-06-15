@@ -190,11 +190,12 @@ segment_upload::make_segment_upload(
   inclusive_offset_range range,
   size_t read_buffer_size,
   ss::scheduling_group sg,
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline,
+  bool allow_unstable_reads) {
     std::unique_ptr<segment_upload> upl(
       new segment_upload(part, read_buffer_size, sg));
 
-    auto res = co_await upl->initialize(range, deadline);
+    auto res = co_await upl->initialize(range, deadline, allow_unstable_reads);
     if (res.has_failure()) {
         co_return res.as_failure();
     }
@@ -219,7 +220,9 @@ segment_upload::make_segment_upload(
 }
 
 ss::future<result<void>> segment_upload::initialize(
-  inclusive_offset_range range, model::timeout_clock::time_point deadline) {
+  inclusive_offset_range range,
+  model::timeout_clock::time_point deadline,
+  bool allow_unstable_reads) {
     auto holder = _gate.hold();
     auto params = co_await compute_upload_parameters(range);
     if (params.has_failure()) {
@@ -239,7 +242,12 @@ ss::future<result<void>> segment_upload::initialize(
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
-    auto reader = co_await _part->make_reader(reader_cfg);
+    auto reader = co_await [this, &reader_cfg, allow_unstable_reads]() {
+        if (allow_unstable_reads) {
+            return _part->log()->make_reader(reader_cfg);
+        }
+        return _part->make_reader(reader_cfg);
+    }();
     _stream = make_reader_input_stream(
       _ntp,
       std::move(reader),
@@ -264,7 +272,7 @@ ss::future<result<void>> segment_upload::initialize(
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
-    auto reader = co_await _part->make_reader(reader_cfg);
+    auto reader = co_await _part->log()->make_reader(reader_cfg);
     _stream = make_reader_input_stream(
       _ntp,
       std::move(reader),
