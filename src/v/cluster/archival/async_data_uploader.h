@@ -152,6 +152,9 @@ public:
     /// \param sg is a scheduling group used to upload the data
     /// \param deadline is a deadline for the upload object to be created (not
     ///                 for the actual upload to happen)
+    /// \param allow_unstable_reads If set, initialize the enclosed log_reader
+    ///                             directly from the disk log, circumventing
+    ///                             visible offset checks in the raft layer.
     /// \return initialized segment_upload object
     static ss::future<result<std::unique_ptr<segment_upload>>>
     make_segment_upload(
@@ -159,7 +162,8 @@ public:
       inclusive_offset_range range,
       size_t read_buffer_size,
       ss::scheduling_group sg,
-      model::timeout_clock::time_point deadline);
+      model::timeout_clock::time_point deadline,
+      bool allow_unstable_reads = false);
 
     /// \brief Make new segment upload
     ///
@@ -204,7 +208,8 @@ private:
     /// Initialize segment upload using offset range
     ss::future<result<void>> initialize(
       inclusive_offset_range offsets,
-      model::timeout_clock::time_point deadline);
+      model::timeout_clock::time_point deadline,
+      bool allow_unstable_reads);
 
     /// Initialize segment upload using offset range
     ss::future<result<void>> initialize(
