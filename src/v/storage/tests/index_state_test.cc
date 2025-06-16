@@ -408,3 +408,36 @@ BOOST_AUTO_TEST_CASE(non_data_timestamps_with_overflow) {
       true,
       0);
 }
+
+BOOST_AUTO_TEST_CASE(index_overflow_truncate) {
+    storage::index_state state;
+
+    // Previous versions of Redpanda can have an index with offsets spanning
+    // greater than uint32 offset space. In these cases, the index is not
+    // reliable and truncation shouldn't attempt to truncate entries based on
+    // an overflown lookup. But, queries should fallback to returning the
+    // beginning of the index.
+    const model::timestamp dummy_ts;
+    const storage::offset_delta_time should_offset{false};
+    storage::offset_time_index time_idx{dummy_ts, should_offset};
+    constexpr long uint32_max = std::numeric_limits<uint32_t>::max();
+    state.add_entry(0, time_idx, 1);
+    state.add_entry(100, time_idx, 2);
+    state.add_entry(static_cast<uint32_t>(uint32_max + 1), time_idx, 3);
+    state.add_entry(static_cast<uint32_t>(uint32_max + 10), time_idx, 4);
+    state.max_offset = model::offset{uint32_max + 10};
+    BOOST_CHECK_EQUAL(4, state.size());
+
+    // The truncation shouldn't remove index entries, given the overflow.
+    auto needs_flush = state.truncate(
+      model::offset(uint32_max + 1), model::timestamp::now());
+    BOOST_CHECK(needs_flush);
+    BOOST_CHECK_EQUAL(4, state.size());
+    BOOST_CHECK_EQUAL(state.max_offset, model::offset{uint32_max + 1});
+
+    // Queries for the offset should start from the beginning of the segment.
+    auto res = state.find_nearest(model::offset(uint32_max + 1));
+    BOOST_REQUIRE(res.has_value());
+    BOOST_CHECK_EQUAL(res->offset, model::offset{0});
+    BOOST_CHECK_EQUAL(res->filepos, 1);
+}
