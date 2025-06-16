@@ -330,12 +330,8 @@ auto with_client(client&& cl, Func func) {
       "Func's move constructor must not throw");
     return ss::do_with(
       std::move(cl), [func = std::move(func)](client& cl) mutable {
-          return ss::futurize_invoke(func, cl).finally([&cl] {
-              return cl.stop().then([&cl] {
-                  cl.shutdown();
-                  return ss::make_ready_future<>();
-              });
-          });
+          return ss::futurize_invoke(func, cl).finally(
+            [&cl] { return cl.stop(); });
       });
 }
 
