@@ -954,6 +954,10 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     # waits until the Redpanda broker replica count reaches the target value
     def wait_cluster_replicas(self, cluster_name: str, replicas: int):
+        self.logger.debug(
+            f"Waiting for {replicas} replicas in cluster '{cluster_name}' (Operator version: {self.operator_version})"
+        )
+
         if self.operator_version == 2:
             self._wait_cluster_ready_replicas_v2(cluster_name, replicas)
         else:
@@ -961,6 +965,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     # operator V1
     def _get_cluster_replicas(self, cluster_name: str):
+        self.logger.debug(
+            f"Fetching replicas for cluster '{cluster_name}' (Operator V1)")
         # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.replicas}'
         return self._kube_autoretry_int([
             'get', 'cluster', cluster_name, '-n=redpanda',
@@ -969,6 +975,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     # operator V1
     def _get_cluster_ready_replicas(self, cluster_name: str):
+        self.logger.debug(
+            f"Fetching ready replicas for cluster '{cluster_name}' (Operator V1)"
+        )
         # kubectl get cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda -o=jsonpath='{.status.readyReplicas}'
         return self._kube_autoretry_int([
             'get', 'cluster', cluster_name, '-n=redpanda',
@@ -977,6 +986,8 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     # operator v2
     def _get_cluster_replicas_v2(self, cluster_name: str):
+        self.logger.debug(
+            f"Fetching replicas for cluster '{cluster_name}' (Operator V2)")
         # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
         return self._kube_autoretry_int([
             'get', 'statefulset', cluster_name, '-n=redpanda',
@@ -985,6 +996,9 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
 
     # operator V2
     def _get_cluster_ready_replicas_v2(self, cluster_name: str):
+        self.logger.debug(
+            f"Fetching ready replicas for cluster '{cluster_name}' (Operator V2)"
+        )
         # kubectl get statefulset redpanda-broker -n=redpanda -o=jsonpath='{.status.readyReplicas}'
         return self._kube_autoretry_int([
             'get', 'statefulset', cluster_name, '-n=redpanda',
@@ -992,16 +1006,43 @@ class HighThroughputTest(PreallocNodesMixin, RedpandaCloudTest):
         ])
 
     # operator V1
-    def _wait_cluster_ready_replicas(self, cluster_name, ready_replicas):
-        # kubectl wait cluster rp-clkd0n22nfn1jf7vd9t0 -n=redpanda --for=jsonpath='{.status.readyReplicas}'=4 --timeout=900s
-        return self.redpanda.kubectl.cmd([
-            'wait', 'cluster', cluster_name, '-n=redpanda',
-            "--for=jsonpath='{.status.readyReplicas}'=" + str(ready_replicas),
-            '--timeout=1200s'
-        ])
+    def _wait_cluster_ready_replicas(self,
+                                     cluster_name,
+                                     ready_replicas,
+                                     max_retries=3):
+        self.logger.debug(
+            f"Waiting for {ready_replicas} ready replicas in cluster '{cluster_name}' (Operator V1) with retries"
+        )
+
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                result = self.redpanda.kubectl.cmd([
+                    'wait', 'cluster', cluster_name, '-n=redpanda',
+                    "--for=jsonpath='{.status.readyReplicas}'=" +
+                    str(ready_replicas), '--timeout=900s'
+                ])
+                self.logger.debug(
+                    f"Cluster {cluster_name} has {ready_replicas} ready replicas."
+                )
+                return result
+            except Exception as e:
+                retry_count += 1
+                self.logger.debug(
+                    f"Attempt {retry_count} failed for cluster '{cluster_name}', waiting for {ready_replicas} ready replicas. Retrying..."
+                )
+                if retry_count == max_retries:
+                    self.logger.error(
+                        f"Max retries reached for cluster '{cluster_name}'. Could not achieve {ready_replicas} ready replicas."
+                    )
+                    raise e
+                time.sleep(120)
 
     # operator V2
     def _wait_cluster_ready_replicas_v2(self, cluster_name, ready_replicas):
+        self.logger.debug(
+            f"Waiting for {ready_replicas} ready replicas in cluster '{cluster_name}' (Operator V2)"
+        )
         # kubectl wait statefulset redpanda-broker -n=redpanda --for=condition=Ready --timeout=900s
         return self.redpanda.kubectl.cmd([
             'wait', 'redpanda', cluster_name, '-n=redpanda',
