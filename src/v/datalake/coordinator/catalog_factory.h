@@ -26,7 +26,8 @@ namespace datalake::coordinator {
 class catalog_factory {
 public:
     virtual ~catalog_factory() = default;
-    virtual ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() = 0;
+    virtual ss::future<std::unique_ptr<iceberg::catalog>>
+    create_catalog(ss::abort_source&) = 0;
 };
 /**
  * Rest catalog factory, the catalog properties are set based on the
@@ -38,7 +39,8 @@ public:
       config::configuration& config, ss::metrics::label_instance);
     ~rest_catalog_factory() override;
 
-    ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() final;
+    ss::future<std::unique_ptr<iceberg::catalog>>
+    create_catalog(ss::abort_source&) final;
 
 private:
     struct credentials_and_token {
@@ -63,7 +65,8 @@ public:
       cloud_io::remote& remote,
       const cloud_storage_clients::bucket_name& bucket);
 
-    ss::future<std::unique_ptr<iceberg::catalog>> create_catalog() final;
+    ss::future<std::unique_ptr<iceberg::catalog>>
+    create_catalog(ss::abort_source&) final;
 
 private:
     config::configuration* config_;
