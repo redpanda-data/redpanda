@@ -95,6 +95,16 @@ static std::vector<model::record_header>
 parse_record_headers(Parser& parser, ParserData parser_data) {
     std::vector<model::record_header> headers;
     auto [header_count, _] = parser.read_varlong();
+    /**
+     * If records buffer is corrupted, it may result in reading very large
+     * number, check if it is the case and throw an exception.
+     */
+    if (static_cast<size_t>(header_count) > parser.bytes_left()) [[unlikely]] {
+        throw std::out_of_range(fmt::format(
+          "Expected {} headers, but only {} bytes left",
+          header_count,
+          parser.bytes_left()));
+    }
     headers.reserve(header_count);
     for (int i = 0; i < header_count; ++i) {
         auto [key_length, kv] = parser.read_varlong();
