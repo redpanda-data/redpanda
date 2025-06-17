@@ -10,7 +10,6 @@ import datetime
 import re
 import time
 import random
-from rptest.clients.default import DefaultClient, TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -1128,23 +1127,26 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
     @skip_debug_mode
     def test_enabling_iceberg_in_existing_cluster(self, cloud_storage_type,
                                                   catalog_type):
-        count = 100
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
                               include_query_engines=[QueryEngineType.SPARK],
                               catalog_type=catalog_type) as dl:
 
-            topic = TopicSpec(name="delayed-iceberg-topic",
-                              partition_count=3,
-                              replication_factor=3,
-                              segment_bytes=1024 * 1024,
-                              redpanda_remote_read=False,
-                              redpanda_remote_write=False)
-
-            DefaultClient(dl.redpanda).create_topic(topic)
+            topic_name = "delayed-iceberg-topic"
+            RpkTool(self.redpanda).create_topic(topic_name,
+                                                partitions=3,
+                                                replicas=3,
+                                                config={
+                                                    "segment.bytes":
+                                                    1024 * 1024,
+                                                    "redpanda.remote.read":
+                                                    False,
+                                                    "redpanda.remote.write":
+                                                    False
+                                                })
 
             # produce ~120 MiB to the topic
-            dl.produce_to_topic(topic.name, 1024, 120 * 1024)
+            dl.produce_to_topic(topic_name, 1024, 120 * 1024)
             # wait for a while for the local snapshot to be taken
             time.sleep(5)
             dl.redpanda.restart_nodes(dl.redpanda.nodes)
@@ -1156,15 +1158,17 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
                            err_msg=f"Error waiting for topic {topic_name} \
                         state machines to catch up")
 
-            wait_for_topic(topic.name)
+            wait_for_topic(topic_name)
             bytes_read_before = self.redpanda.estimate_total_disk_bytes_read()
+            assert bytes_read_before, "Bytes read before enabling Iceberg should not be zero/none"
 
             # enable iceberg, this will restart the cluster
             dl.redpanda.set_cluster_config({"iceberg_enabled": True},
                                            expect_restart=True)
 
-            wait_for_topic(topic.name)
+            wait_for_topic(topic_name)
             bytes_read_after = self.redpanda.estimate_total_disk_bytes_read()
+            assert bytes_read_after, "Bytes read after enabling Iceberg should not be zero/none"
 
             self.logger.info(
                 f"Bytes read before: {bytes_read_before}, bytes read after: {bytes_read_after}"
@@ -1172,4 +1176,5 @@ class DatalakeDelayedEnablementTest(RedpandaTest):
             # we introduce a small tolerance here, since the read bytes may
             # increase slightly due to term changes and leader elections.
             assert bytes_read_after <= bytes_read_before * 1.01,\
-            f"Enabling Iceberg in the cluster should not cause a major read increase"
+                "Enabling Iceberg in the cluster should not cause a major read increase," \
+                " expected ({bytes_read_after=}) <= ({bytes_read_before * 1.01=})"
