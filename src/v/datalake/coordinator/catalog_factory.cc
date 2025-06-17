@@ -203,10 +203,8 @@ rest_catalog_factory::create_catalog() {
             throw;
         }
     }
-    std::unique_ptr<http::abstract_client> http_client
-      = static_cast<std::unique_ptr<http::abstract_client>>(
-        std::make_unique<http::client>(
-          std::move(transport_config), nullptr, client_probe_));
+    auto http_client = std::make_unique<http::client>(
+      std::move(transport_config), nullptr, client_probe_);
 
     auto creds_and_token = make_credentials_or_token();
 
