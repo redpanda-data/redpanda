@@ -128,9 +128,14 @@ public:
     /// \note it's guaranteed that the client can only be acquired once
     ///       before it gets released (release happens implicitly, when
     ///       the lifetime of the pointer ends).
+    /// \param as
+    /// \param deadline - Optional timeout. If deadline is reached before a
+    ///                   client becomes available, throw ss::timed_out_error
     /// \return client pointer (via future that can wait if all clients
     ///         are in use)
-    ss::future<client_lease> acquire(ss::abort_source& as);
+    ss::future<client_lease> acquire(
+      ss::abort_source& as,
+      std::optional<ss::lowres_clock::time_point> deadline = std::nullopt);
 
     /// \brief Acquire http client from the pool for a specified duration.
     ///
@@ -139,6 +144,8 @@ public:
     ///   - Fed through to a watchdog timer governing the lifetime of the lease.
     ///     If it fires before the lease is returned, immediately calls shutdown
     ///     on the enclosed client.
+    ///   - Passed to client_pool::acquire, which throws if we reach the
+    ///     deadline before a client becomes available.
     ///
     /// \param as
     /// \param deadline - Lease expiration time, after which the client is
