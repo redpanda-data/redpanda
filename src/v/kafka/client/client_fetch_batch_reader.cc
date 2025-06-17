@@ -21,7 +21,7 @@
 namespace kafka::client {
 
 class client_fetcher final : public model::record_batch_reader::impl {
-    using storage_t = model::record_batch_reader::storage_t;
+    using data_t = model::record_batch_reader::data_t;
 
 public:
     client_fetcher(
@@ -39,8 +39,7 @@ public:
     bool is_end_of_stream() const final { return _next_offset >= _last_offset; }
 
     // Implements model::record_batch_reader::impl
-    ss::future<storage_t>
-    do_load_slice(model::timeout_clock::time_point t) final {
+    ss::future<data_t> do_load_slice(model::timeout_clock::time_point t) final {
         if (!_batch_reader || _batch_reader->is_end_of_stream()) {
             vlog(
               _client.logger().debug,
@@ -65,13 +64,7 @@ public:
             }
             _batch_reader = std::move(res.begin()->partition_response->records);
         }
-        auto ret = co_await _batch_reader->do_load_slice(t);
-        using data_t = model::record_batch_reader::data_t;
-        vassert(
-          std::holds_alternative<data_t>(ret),
-          "Expected kafka::batch_reader to hold "
-          "model::record_batch_reader::data_t");
-        auto& data = std::get<data_t>(ret);
+        auto data = co_await _batch_reader->do_load_slice(t);
         if (data.empty()) {
             throw kafka::exception(
               kafka::error_code::unknown_server_error, "No records returned");
@@ -81,7 +74,7 @@ public:
           _client.logger().debug,
           "fetch_batch_reader: next_offset: {}",
           _next_offset);
-        co_return ret;
+        co_return data;
     }
 
     // Implements model::record_batch_reader::impl

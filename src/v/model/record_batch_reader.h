@@ -47,11 +47,6 @@ concept ReferenceBatchReaderConsumer = requires(
 class record_batch_reader final {
 public:
     using data_t = chunked_circular_buffer<model::record_batch>;
-    struct foreign_data_t {
-        ss::foreign_ptr<std::unique_ptr<data_t>> buffer;
-        size_t index{0};
-    };
-    using storage_t = std::variant<data_t, foreign_data_t>;
 
     struct private_flags;
 
@@ -68,24 +63,13 @@ public:
 
         virtual bool is_end_of_stream() const = 0;
 
-        virtual ss::future<storage_t>
-          do_load_slice(timeout_clock::time_point) = 0;
+        virtual ss::future<data_t> do_load_slice(timeout_clock::time_point) = 0;
 
         virtual void print(std::ostream&) = 0;
 
         virtual std::optional<private_flags> get_flags() const { return {}; }
 
-        bool is_slice_empty() const {
-            return ss::visit(
-              _slice,
-              [](const data_t& d) {
-                  // circular buffer is the default
-                  return d.empty();
-              },
-              [](const foreign_data_t& d) {
-                  return d.index >= d.buffer->size();
-              });
-        }
+        bool is_slice_empty() const { return _slice.empty(); }
 
         virtual ss::future<> finally() noexcept { return ss::now(); }
 
@@ -113,21 +97,12 @@ public:
 
     private:
         record_batch pop_batch() {
-            return ss::visit(
-              _slice,
-              [](data_t& d) {
-                  record_batch batch = std::move(d.front());
-                  d.pop_front();
-                  return batch;
-              },
-              [](foreign_data_t& d) {
-                  // cannot have a move-only type from a remote core
-                  // we must make a copy. for iteration use for_each_ref
-                  return (*d.buffer)[d.index++].copy();
-              });
+            record_batch batch = std::move(_slice.front());
+            _slice.pop_front();
+            return batch;
         }
         ss::future<> load_slice(timeout_clock::time_point timeout) {
-            return do_load_slice(timeout).then([this](storage_t s) {
+            return do_load_slice(timeout).then([this](data_t s) {
                 // reassign the local cache
                 _slice = std::move(s);
             });
@@ -136,16 +111,9 @@ public:
         auto do_for_each_ref(
           ReferenceConsumer& refc, timeout_clock::time_point timeout) {
             return do_action(refc, timeout, [this](ReferenceConsumer& c) {
-                return ss::visit(
-                  _slice,
-                  [&c](data_t& d) {
-                      return c(d.front()).finally([&d] { d.pop_front(); });
-                  },
-                  [&c](foreign_data_t& d) {
-                      // for remote core, next simply means advancing the
-                      // pointer, we need to release the batches wholesale
-                      return c((*d.buffer)[d.index++]);
-                  });
+                return c(_slice.front()).finally([this] {
+                    _slice.pop_front();
+                });
             });
         }
         template<typename Consumer>
@@ -158,25 +126,12 @@ public:
         auto do_peek_each_ref(
           ReferenceConsumer& refc, timeout_clock::time_point timeout) {
             return do_action(refc, timeout, [this](ReferenceConsumer& c) {
-                return ss::visit(
-                  _slice,
-                  [&c](data_t& d) {
-                      return c(d.front()).then([&](ss::stop_iteration stop) {
-                          if (!stop) {
-                              d.pop_front();
-                          }
-                          return stop;
-                      });
-                  },
-                  [&c](foreign_data_t& d) {
-                      return c((*d.buffer)[d.index])
-                        .then([&](ss::stop_iteration stop) {
-                            if (!stop) {
-                                ++d.index;
-                            }
-                            return stop;
-                        });
-                  });
+                return c(_slice.front()).then([&](ss::stop_iteration stop) {
+                    if (!stop) {
+                        _slice.pop_front();
+                    }
+                    return stop;
+                });
             });
         }
         template<typename ConsumerType, typename ActionFn>
@@ -200,7 +155,7 @@ public:
                    })
               .then([&consumer] { return consumer.end_of_stream(); });
         }
-        storage_t _slice;
+        data_t _slice;
     };
 
 public:
@@ -336,7 +291,7 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 }
 
 record_batch_reader
-  make_memory_record_batch_reader(record_batch_reader::storage_t);
+  make_memory_record_batch_reader(record_batch_reader::data_t);
 
 record_batch_reader make_fragmented_memory_record_batch_reader(
   fragmented_vector<model::record_batch>);

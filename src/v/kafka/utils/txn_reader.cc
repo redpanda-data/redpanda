@@ -65,19 +65,12 @@ aborted_transaction_tracker::create_default(
 namespace {
 
 const model::record_batch_reader::data_t&
-readonly_data_view(const model::record_batch_reader::storage_t& batches) {
-    using data_t = model::record_batch_reader::data_t;
-    using foreign_data_t = model::record_batch_reader::foreign_data_t;
-    return ss::visit(
-      batches,
-      [](const data_t& data) { return std::ref(data); },
-      [](const foreign_data_t& data) -> std::reference_wrapper<const data_t> {
-          return std::ref(*data.buffer);
-      });
+readonly_data_view(const model::record_batch_reader::data_t& batches) {
+    return std::ref(batches);
 }
 
 bool contains_control_or_txn_batch(
-  const model::record_batch_reader::storage_t& batches) {
+  const model::record_batch_reader::data_t& batches) {
     for (const model::record_batch& batch : readonly_data_view(batches)) {
         model::record_batch_attributes attrs = batch.header().attrs;
         if (attrs.is_control() || attrs.is_transactional()) {
@@ -94,7 +87,7 @@ struct drain_result {
 
 class drainer {
 public:
-    explicit drainer(model::record_batch_reader::storage_t initial) {
+    explicit drainer(model::record_batch_reader::data_t initial) {
         // TODO(perf): This initial slice is iterated over twice, once to look
         // for control/transactional batches, and another time here.
         //
@@ -103,18 +96,9 @@ public:
         // through of the originally loaded slices if there are no control/txn
         // batches does not copy the batches over to a new buffer if it's not
         // needed.
-        ss::visit(
-          initial,
-          [this](model::record_batch_reader::data_t& d) {
-              for (auto& batch : d) {
-                  process(std::move(batch));
-              }
-          },
-          [this](model::record_batch_reader::foreign_data_t& d) {
-              for (const auto& batch : *d.buffer) {
-                  process(batch.copy());
-              }
-          });
+        for (auto& batch : initial) {
+            process(std::move(batch));
+        }
     }
 
     ss::future<ss::stop_iteration> operator()(model::record_batch batch) {
@@ -199,10 +183,10 @@ ss::future<> read_committed_reader::finally() noexcept {
     return _underlying->finally();
 }
 
-ss::future<model::record_batch_reader::storage_t>
+ss::future<model::record_batch_reader::data_t>
 read_committed_reader::do_load_slice(
   model::timeout_clock::time_point deadline) {
-    model::record_batch_reader::storage_t loaded
+    model::record_batch_reader::data_t loaded
       = co_await _underlying->do_load_slice(deadline);
     // We delete the tracker when we've filtered the stream already.
     if (!_tracker || !contains_control_or_txn_batch(loaded)) {

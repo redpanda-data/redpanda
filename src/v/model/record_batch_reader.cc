@@ -25,8 +25,6 @@
 
 namespace model {
 using data_t = record_batch_reader::data_t;
-using foreign_data_t = record_batch_reader::foreign_data_t;
-using storage_t = record_batch_reader::storage_t;
 
 /// \brief wraps a reader into a foreign_ptr<unique_ptr>
 record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
@@ -53,7 +51,7 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             _ptr->print(os);
         }
 
-        ss::future<storage_t> do_load_slice(timeout_clock::time_point t) final {
+        ss::future<data_t> do_load_slice(timeout_clock::time_point t) final {
             auto shard = _ptr.get_owner_shard();
             if (shard == ss::this_shard_id()) {
                 return _ptr->do_load_slice(t);
@@ -61,7 +59,7 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
             // TODO: this function should take an SMP group
             return ss::smp::submit_to(shard, [this, t] {
                 return _ptr->do_load_slice(t).then(
-                  [](storage_t recs) { return recs; });
+                  [](data_t recs) { return recs; });
             });
         }
 
@@ -72,38 +70,28 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     return record_batch_reader(std::move(frn));
 }
 
-record_batch_reader make_memory_record_batch_reader(storage_t batches) {
+record_batch_reader make_memory_record_batch_reader(data_t batches) {
     class reader final : public record_batch_reader::impl {
     public:
-        explicit reader(storage_t batches)
+        explicit reader(data_t batches)
           : _batches(std::move(batches)) {}
 
-        bool is_end_of_stream() const final {
-            return ss::visit(
-              _batches,
-              [](const data_t& d) { return d.empty(); },
-              [](const foreign_data_t& d) {
-                  return d.index >= d.buffer->size();
-              });
-        }
+        bool is_end_of_stream() const final { return _batches.empty(); }
 
         void print(std::ostream& os) final {
-            auto size = ss::visit(
-              _batches,
-              [](const data_t& d) { return d.size(); },
-              [](const foreign_data_t& d) { return d.buffer->size(); });
+            auto size = _batches.size();
             fmt::print(os, "memory reader {} batches", size);
         }
 
     protected:
-        ss::future<record_batch_reader::storage_t>
+        ss::future<record_batch_reader::data_t>
         do_load_slice(timeout_clock::time_point) final {
-            return ss::make_ready_future<record_batch_reader::storage_t>(
+            return ss::make_ready_future<record_batch_reader::data_t>(
               std::exchange(_batches, {}));
         }
 
     private:
-        storage_t _batches;
+        data_t _batches;
     };
 
     return make_record_batch_reader<reader>(std::move(batches));
@@ -125,7 +113,7 @@ record_batch_reader make_empty_record_batch_reader() {
     public:
         bool is_end_of_stream() const final { return true; }
 
-        ss::future<storage_t> do_load_slice(timeout_clock::time_point) final {
+        ss::future<data_t> do_load_slice(timeout_clock::time_point) final {
             co_return data_t{};
         }
 
@@ -152,14 +140,14 @@ record_batch_reader make_generating_record_batch_reader(
         }
 
     protected:
-        ss::future<record_batch_reader::storage_t>
+        ss::future<record_batch_reader::data_t>
         do_load_slice(timeout_clock::time_point) final {
             return _gen().then([this](record_batch_reader::data_t data) {
                 if (data.empty()) {
                     _end_of_stream = true;
-                    return storage_t();
+                    return data_t();
                 }
-                return storage_t(std::move(data));
+                return data_t(std::move(data));
             });
         }
 
@@ -174,10 +162,10 @@ record_batch_reader make_generating_record_batch_reader(
 
 namespace {
 record_batch_reader make_fragmented_memory_record_batch_reader(
-  std::vector<record_batch_reader::storage_t> data) {
+  std::vector<record_batch_reader::data_t> data) {
     class reader final : public record_batch_reader::impl {
     public:
-        explicit reader(std::vector<storage_t> data)
+        explicit reader(std::vector<data_t> data)
           : _data(std::move(data)) {}
 
         bool is_end_of_stream() const final { return _index >= _data.size(); }
@@ -190,24 +178,24 @@ record_batch_reader make_fragmented_memory_record_batch_reader(
         }
 
     protected:
-        ss::future<storage_t> do_load_slice(timeout_clock::time_point) final {
+        ss::future<data_t> do_load_slice(timeout_clock::time_point) final {
             if (is_end_of_stream()) {
-                return ss::make_ready_future<storage_t>(storage_t(data_t{}));
+                return ss::make_ready_future<data_t>();
             }
-            return ss::make_ready_future<storage_t>(std::move(_data[_index++]));
+            return ss::make_ready_future<data_t>(std::move(_data[_index++]));
         }
 
     private:
-        std::vector<storage_t> _data;
+        std::vector<data_t> _data;
         size_t _index = 0;
     };
     return make_record_batch_reader<reader>(std::move(data));
 }
 
 template<typename Container>
-std::vector<record_batch_reader::storage_t>
+std::vector<record_batch_reader::data_t>
 make_fragmented_memory_storage_batches(Container batches) {
-    std::vector<record_batch_reader::storage_t> data;
+    std::vector<record_batch_reader::data_t> data;
     size_t elements_per_fragment
       = fragmented_vector<model::record_batch>::elements_per_fragment();
     data.reserve(batches.size() / elements_per_fragment);

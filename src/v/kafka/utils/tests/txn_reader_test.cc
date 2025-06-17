@@ -384,12 +384,12 @@ TEST_F_CORO(seastar_test, UncleanDestroy) {
 
         bool is_end_of_stream() const final { return false; };
 
-        ss::future<model::record_batch_reader::storage_t>
+        ss::future<model::record_batch_reader::data_t>
         do_load_slice(model::timeout_clock::time_point) final {
             auto result = model::record_batch_reader::data_t{};
             result.push_back(
               model::test::make_random_batch(model::test::record_batch_spec{}));
-            return ss::make_ready_future<model::record_batch_reader::storage_t>(
+            return ss::make_ready_future<model::record_batch_reader::data_t>(
               std::move(result));
         }
 
