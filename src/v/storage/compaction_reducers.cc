@@ -147,7 +147,7 @@ ss::future<std::optional<model::record_batch>>
 copy_data_segment_reducer::filter(model::record_batch batch) {
     // do not compact raft configuration and archival metadata as they shift
     // offset translation
-    if (!is_compactible(batch)) {
+    if (!is_compactible(_ntp, batch)) {
         co_return std::move(batch);
     }
 
@@ -288,7 +288,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     const auto records_to_remove = record_count_before
                                    - to_copy->record_count();
     _stats.records_discarded += records_to_remove;
-    bool compactible_batch = is_compactible(to_copy.value());
+    bool compactible_batch = is_compactible(_ntp, to_copy.value());
     if (!compactible_batch) {
         ++_stats.non_compactible_batches;
     }
@@ -313,7 +313,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     // caller who has more context
     if (_idx.maybe_index(
           _acc,
-          32_KiB,
+          segment_index::default_data_buffer_step,
           start_pos,
           batch.base_offset(),
           batch.last_offset(),
@@ -424,7 +424,7 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
     // committed data has already been rewritten as separate raft_data batches,
     // so no need to retain originally written group_prepare_tx batches while
     // the transaction is in progress.
-    return is_compactible_control_batch(b.header().type);
+    return is_compactible_control_batch(_ntp, b.header().type);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {

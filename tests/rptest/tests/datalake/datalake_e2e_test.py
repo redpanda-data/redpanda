@@ -9,9 +9,12 @@
 from typing import Optional
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
+from rptest.clients.default import DefaultClient, TopicSpec
 from rptest.clients.rpk import RpkTool
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from random import randint
+import time
 
 from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
 from rptest.services.serde_client import SerdeClient
@@ -23,6 +26,7 @@ from rptest.tests.datalake.utils import supported_storage_types
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.services.metrics_check import MetricCheck
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class DatalakeE2ETests(RedpandaTest):
@@ -288,3 +292,97 @@ class DatalakeMetricsTest(RedpandaTest):
 
             self.wait_for_lag(m, DatalakeMetricsTest.translation_lag, 0)
             self.wait_for_lag(m, DatalakeMetricsTest.commit_lag, 0)
+
+
+class DatalakeDelayedEnablementTest(RedpandaTest):
+    def __init__(self, test_ctx, *args, **kwargs):
+        super(DatalakeDelayedEnablementTest, self).__init__(
+            test_ctx,
+            num_brokers=3,
+            si_settings=SISettings(test_context=test_ctx),
+            extra_rp_conf={
+                "iceberg_catalog_commit_interval_ms": 5000,
+                "log_compaction_interval_ms": 2000,
+                "storage_target_replay_bytes": 5 * 1024 * 1024
+            },
+            schema_registry_config=SchemaRegistryConfig(),
+            pandaproxy_config=PandaproxyConfig(),
+            environment={
+                "__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"
+            },
+            *args,
+            **kwargs)
+        self.test_ctx = test_ctx
+
+    def setUp(self):
+        pass
+
+    def is_topic_fully_caught_up(self, topic_name: str):
+        admin = Admin(self.redpanda)
+        partitions = admin.get_partitions(topic=topic_name)
+
+        for p in partitions:
+            p_id = p['partition_id']
+            status = admin.get_partition_state("kafka",
+                                               topic=topic_name,
+                                               partition=p['partition_id'])
+            for replica in status['replicas']:
+                c_index = replica['raft_state']['commit_index']
+                for stm in replica['raft_state']['stms']:
+                    self.logger.debug(
+                        f"{topic_name}/{p_id} state machine: {stm['name']} on: {replica['raft_state']['node_id']} last_applied_offset: {stm['last_applied_offset']}"
+                    )
+                    if stm['last_applied_offset'] < c_index:
+                        return False
+
+        return True
+
+    @cluster(num_nodes=6)
+    @matrix(cloud_storage_type=supported_storage_types())
+    @skip_debug_mode
+    def test_enabling_iceberg_in_existing_cluster(self, cloud_storage_type):
+        count = 100
+        with DatalakeServices(self.test_ctx,
+                              redpanda=self.redpanda,
+                              include_query_engines=[QueryEngineType.SPARK
+                                                     ]) as dl:
+
+            topic = TopicSpec(name="delayed-iceberg-topic",
+                              partition_count=3,
+                              replication_factor=3,
+                              segment_bytes=1024 * 1024,
+                              redpanda_remote_read=False,
+                              redpanda_remote_write=False)
+
+            DefaultClient(dl.redpanda).create_topic(topic)
+
+            # produce ~120 MiB to the topic
+            dl.produce_to_topic(topic.name, 1024, 120 * 1024)
+            # wait for a while for the local snapshot to be taken
+            time.sleep(5)
+            dl.redpanda.restart_nodes(dl.redpanda.nodes)
+
+            def wait_for_topic(topic_name: str):
+                wait_until(lambda: self.is_topic_fully_caught_up(topic_name),
+                           timeout_sec=30,
+                           backoff_sec=1,
+                           err_msg=f"Error waiting for topic {topic_name} \
+                        state machines to catch up")
+
+            wait_for_topic(topic.name)
+            bytes_read_before = self.redpanda.estimate_total_disk_bytes_read()
+
+            # enable iceberg, this will restart the cluster
+            dl.redpanda.set_cluster_config({"iceberg_enabled": True},
+                                           expect_restart=True)
+
+            wait_for_topic(topic.name)
+            bytes_read_after = self.redpanda.estimate_total_disk_bytes_read()
+
+            self.logger.info(
+                f"Bytes read before: {bytes_read_before}, bytes read after: {bytes_read_after}"
+            )
+            # we introduce a small tolerance here, since the read bytes may
+            # increase slightly due to term changes and leader elections.
+            assert bytes_read_after <= bytes_read_before * 1.01,\
+            f"Enabling Iceberg in the cluster should not cause a major read increase"

@@ -54,7 +54,7 @@ public:
     ~partition_manager();
 
     using manage_cb_t
-      = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
+      = ss::noncopyable_function<void(const ss::lw_shared_ptr<partition>&)>;
     using unmanage_cb_t
       = ss::noncopyable_function<void(model::topic_partition_view)>;
 
@@ -97,8 +97,7 @@ public:
       std::optional<xshard_transfer_state>,
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
-      std::optional<cloud_storage::remote_label> = std::nullopt,
-      std::optional<model::topic_namespace> = std::nullopt);
+      const topic_configuration* = nullptr);
 
     ss::future<xshard_transfer_state> shutdown(const model::ntp& ntp);
 
@@ -119,9 +118,8 @@ public:
          * partitions.
          */
         ntp_callbacks<manage_cb_t> init;
-        init.register_notify(ns, topic, [&cb](ss::lw_shared_ptr<partition> p) {
-            cb(std::move(p));
-        });
+        init.register_notify(
+          ns, topic, [&cb](const ss::lw_shared_ptr<partition>& p) { cb(p); });
         for (auto& e : _ntp_table) {
             if (e.second->started()) {
                 init.notify(e.first, e.second);
@@ -135,7 +133,7 @@ public:
     register_manage_notification(const model::ns& ns, manage_cb_t cb) {
         ntp_callbacks<manage_cb_t> init;
         init.register_notify(
-          ns, [&cb](ss::lw_shared_ptr<partition> p) { cb(std::move(p)); });
+          ns, [&cb](const ss::lw_shared_ptr<partition>& p) { cb(p); });
         for (auto& e : _ntp_table) {
             if (e.second->started()) {
                 init.notify(e.first, e.second);

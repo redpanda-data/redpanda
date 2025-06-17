@@ -39,10 +39,12 @@ ss::future<kafka_produce_transport::pid_to_offset_map_t>
 kafka_produce_transport::produce(
   model::topic topic_name,
   pid_to_kvs_map_t records_per_partition,
-  std::optional<model::timestamp> ts) {
+  std::optional<model::timestamp> ts,
+  model::compression compression_type) {
     kafka::produce_request::topic tp;
     tp.name = topic_name;
-    tp.partitions = produce_partition_requests(records_per_partition, ts);
+    tp.partitions = produce_partition_requests(
+      records_per_partition, ts, compression_type);
     chunked_vector<kafka::produce_request::topic> topics;
     topics.push_back(std::move(tp));
     kafka::produce_request req(std::nullopt, -1, std::move(topics));
@@ -66,16 +68,42 @@ kafka_produce_transport::produce(
     co_return ret;
 }
 
+ss::future<model::offset> kafka_produce_transport::produce_to_partition(
+  model::topic topic_name,
+  model::partition_id pid,
+  std::vector<kv_t> records,
+  std::optional<model::timestamp> ts,
+  model::compression compression_type) {
+    pid_to_kvs_map_t m;
+    m.emplace(pid, std::move(records));
+    auto ret_m = co_await produce(
+      topic_name, std::move(m), ts, compression_type);
+    if (ret_m.size() != 1) {
+        throw std::runtime_error(fmt::format(
+          "unexpected produce results {}/{}: {} results",
+          topic_name(),
+          pid(),
+          ret_m.size()));
+    }
+    auto it = ret_m.find(pid);
+    if (it == ret_m.end()) {
+        throw std::runtime_error(fmt::format(
+          "produce result missing partition {}/{}", topic_name(), pid()));
+    }
+    co_return it->second;
+}
+
 chunked_vector<kafka::partition_produce_data>
 kafka_produce_transport::produce_partition_requests(
   const pid_to_kvs_map_t& records_per_partition,
-  std::optional<model::timestamp> ts) {
+  std::optional<model::timestamp> ts,
+  model::compression compression_type) {
     chunked_vector<kafka::partition_produce_data> ret;
     ret.reserve(records_per_partition.size());
     for (const auto& [pid, records] : records_per_partition) {
         storage::record_batch_builder builder(
           model::record_batch_type::raft_data, model::offset(0));
-        kafka::produce_request::partition partition;
+        builder.set_compression(compression_type);
         for (auto& kv : records) {
             const auto& k = kv.key;
             const auto& v_opt = kv.val;
@@ -91,6 +119,7 @@ kafka_produce_transport::produce_partition_requests(
         if (ts.has_value()) {
             builder.set_timestamp(ts.value());
         }
+        kafka::produce_request::partition partition;
         partition.partition_index = pid;
         partition.records.emplace(std::move(builder).build());
         ret.emplace_back(std::move(partition));
@@ -188,6 +217,23 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
         }
     }
     co_return ret;
+}
+
+ss::future<std::vector<kv_t>> kafka_consume_transport::consume_from_partition(
+  model::topic topic_name,
+  model::partition_id pid,
+  model::offset kafka_offset_inclusive) {
+    auto m = co_await consume(topic_name, {pid}, kafka_offset_inclusive);
+    if (m.empty()) {
+        throw std::runtime_error(
+          fmt::format("empty fetch {}/{}", topic_name(), pid()));
+    }
+    auto it = m.find(pid);
+    if (it == m.end()) {
+        throw std::runtime_error(fmt::format(
+          "fetch result missing partition {}/{}", topic_name(), pid()));
+    }
+    co_return it->second;
 }
 
 } // namespace tests

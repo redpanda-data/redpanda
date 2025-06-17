@@ -47,6 +47,11 @@ public:
     // Returns a current value of the writes disabled property.
     writes_disabled are_writes_disabled() const;
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::skip_to_end;
+    }
+
 protected:
     ss::future<raft::local_snapshot_applied>
     apply_local_snapshot(raft::stm_snapshot_header, iobuf&&) override;
@@ -150,7 +155,8 @@ public:
 
     void create(
       raft::state_machine_manager_builder& builder,
-      raft::consensus* raft) final;
+      raft::consensus* raft,
+      const cluster::stm_instance_config& cfg) final;
 
 private:
     storage::kvstore& _kvstore;

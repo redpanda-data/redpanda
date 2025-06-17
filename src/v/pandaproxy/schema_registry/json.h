@@ -17,10 +17,10 @@
 namespace pandaproxy::schema_registry {
 
 ss::future<json_schema_definition>
-make_json_schema_definition(schema_getter& store, canonical_schema schema);
+make_json_schema_definition(schema_getter& store, subject_schema schema);
 
-ss::future<canonical_schema> make_canonical_json_schema(
-  sharded_store& store, unparsed_schema def, normalize norm = normalize::no);
+ss::future<subject_schema> make_canonical_json_schema(
+  sharded_store& store, subject_schema def, normalize norm = normalize::no);
 
 compatibility_result check_compatible(
   const json_schema_definition& reader,

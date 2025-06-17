@@ -33,6 +33,7 @@ redpanda_cc_gtest(
         "//src/v/cloud_topics/dl_stm:dl_stm_api",
         "//src/v/cloud_topics/dl_stm:dl_stm_factory",
         "//src/v/cloud_topics/dl_stm:dl_stm_state",
+        "//src/v/cluster:state_machine_registry",
         "//src/v/model",
         "//src/v/raft/tests:raft_fixture",
         "//src/v/test_utils:gtest",

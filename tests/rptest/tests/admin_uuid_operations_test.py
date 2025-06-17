@@ -16,6 +16,7 @@ import numpy as np
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
+from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.util import expect_exception
 from ducktape.cluster.cluster import ClusterNode
@@ -188,6 +189,9 @@ class AdminUUIDOperationsTest(RedpandaTest):
     @parametrize(mode=TestMode.NO_OVERRIDE)
     @parametrize(mode=TestMode.CLI_OVERRIDE)
     def test_force_uuid_override(self, mode):
+        # create a topic so that the cluster is not completely empty
+        RpkTool(self.redpanda).create_topic("foo", 10, 3)
+
         to_stop = self.redpanda.nodes[0]
         initial_to_stop_id = self.redpanda.node_id(to_stop)
 
@@ -311,6 +315,9 @@ class AdminUUIDOperationsTest(RedpandaTest):
     @parametrize(mode=TestMode.CFG_OVERRIDE)
     @parametrize(mode=TestMode.CLI_OVERRIDE)
     def test_force_uuid_override_multinode(self, mode):
+        # create a topic so that the cluster is not completely empty
+        RpkTool(self.redpanda).create_topic("foo", 10, 3)
+
         to_stop = self.redpanda.nodes[1:]
         initial_to_stop_ids = [self.redpanda.node_id(n) for n in to_stop]
 

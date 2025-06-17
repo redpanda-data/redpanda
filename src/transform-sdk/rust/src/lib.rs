@@ -19,7 +19,7 @@
 //! that require you to redact credit card numbers or convert JSON to Avro.
 //!
 //! Data transforms use a WebAssembly (Wasm) engine inside a Redpanda broker.
-//! Thus, transforms must compile to WebAssembly via `--target=wasm32-wasi`.
+//! Thus, transforms must compile to WebAssembly via `--target=wasm32-wasip1`.
 //! A Wasm function acts on a single record in an input topic.
 //! You can develop and manage data transforms with `rpk transform` commands.
 //!

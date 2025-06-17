@@ -22,11 +22,11 @@ namespace ppsr = pandaproxy::schema_registry;
 
 } // namespace
 
-ss::future<ppsr::subject_schema> schema::fake_store::get_subject_schema(
+ss::future<ppsr::stored_schema> schema::fake_store::get_subject_schema(
   ppsr::subject sub,
   std::optional<ppsr::schema_version> version,
   ppsr::include_deleted) {
-    std::optional<ppsr::subject_schema> found;
+    std::optional<ppsr::stored_schema> found;
     for (const auto& s : schemas) {
         if (s.schema.sub() != sub) {
             continue;
@@ -42,7 +42,7 @@ ss::future<ppsr::subject_schema> schema::fake_store::get_subject_schema(
     co_return std::move(found).value();
 }
 
-ss::future<ppsr::canonical_schema_definition>
+ss::future<ppsr::schema_definition>
 schema::fake_store::get_schema_definition(ppsr::schema_id id) {
     for (const auto& s : schemas) {
         if (s.id == id) {
@@ -52,7 +52,7 @@ schema::fake_store::get_schema_definition(ppsr::schema_id id) {
     throw std::runtime_error("unknown schema id");
 }
 
-ss::future<std::optional<ppsr::canonical_schema_definition>>
+ss::future<std::optional<ppsr::schema_definition>>
 schema::fake_store::maybe_get_schema_definition(ppsr::schema_id id) {
     for (const auto& s : schemas) {
         if (s.id == id) {
@@ -68,12 +68,12 @@ void schema::fake_registry::maybe_throw_injected_failure() const {
     }
 }
 
-ss::future<ppsr::canonical_schema_definition>
+ss::future<ppsr::schema_definition>
 schema::fake_registry::get_schema_definition(ppsr::schema_id id) const {
     maybe_throw_injected_failure();
     return _store.get_schema_definition(id);
 }
-ss::future<ppsr::subject_schema> schema::fake_registry::get_subject_schema(
+ss::future<ppsr::stored_schema> schema::fake_registry::get_subject_schema(
   ppsr::subject sub, std::optional<ppsr::schema_version> version) const {
     maybe_throw_injected_failure();
     return _store.get_subject_schema(sub, version, ppsr::include_deleted::no);
@@ -83,7 +83,7 @@ ss::future<ppsr::schema_getter*> schema::fake_registry::getter() const {
     co_return &_store;
 }
 ss::future<ppsr::schema_id>
-schema::fake_registry::create_schema(ppsr::unparsed_schema unparsed) {
+schema::fake_registry::create_schema(ppsr::subject_schema unparsed) {
     maybe_throw_injected_failure();
     // This is wrong, but simple for our testing.
     for (const auto& s : _store.schemas) {
@@ -98,22 +98,15 @@ schema::fake_registry::create_schema(ppsr::unparsed_schema unparsed) {
         }
     }
     // TODO: validate references too
-    auto [sub, unparsed_def] = std::move(unparsed).destructure();
-    auto [def, type, refs] = std::move(unparsed_def).destructure();
     _store.schemas.push_back({
-      .schema = ppsr::canonical_schema(
-        std::move(sub),
-        ppsr::canonical_schema_definition(
-          ppsr::canonical_schema_definition::raw_string{std::move(def)()},
-          type,
-          std::move(refs))),
+      .schema = std::move(unparsed),
       .version = version + 1,
       .id = ppsr::schema_id(int32_t(_store.schemas.size() + 1)),
       .deleted = ppsr::is_deleted::no,
     });
     co_return _store.schemas.back().id;
 }
-const std::vector<ppsr::subject_schema>& schema::fake_registry::get_all() {
+const std::vector<ppsr::stored_schema>& schema::fake_registry::get_all() {
     maybe_throw_injected_failure();
     return _store.schemas;
 }

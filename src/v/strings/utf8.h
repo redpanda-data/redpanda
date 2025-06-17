@@ -18,7 +18,6 @@
 
 #include <string>
 #include <string_view>
-#include <vector>
 
 /*
  * Used to access/modify the flag that permits/prevents reporting an error
@@ -63,29 +62,39 @@ inline std::string replace_control_chars_in_string(std::string_view s) {
     return rv;
 }
 
+/// Used to report an invalid character
+struct invalid_character_exception : public std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+/// Used to report an invalid UTF8 character
+struct invalid_utf8_exception : public invalid_character_exception {
+    using invalid_character_exception::invalid_character_exception;
+};
+
 template<typename T>
 concept ExceptionThrower = requires(T obj) { obj.conversion_error(); };
 
 struct default_utf8_thrower {
     [[noreturn]] [[gnu::cold]] void conversion_error() {
-        throw std::runtime_error("Cannot decode string as UTF8");
+        throw invalid_utf8_exception("Cannot decode string as UTF8");
     }
 };
 
+/// Used to report a control character being present
+struct control_character_present_exception
+  : public invalid_character_exception {
+    using invalid_character_exception::invalid_character_exception;
+};
+
 struct default_control_character_thrower {
-    explicit default_control_character_thrower(
-      std::string_view unsanitized_string)
-      : sanitized_string(replace_control_chars_in_string(unsanitized_string)) {}
     virtual ~default_control_character_thrower() = default;
     [[noreturn]] [[gnu::cold]] virtual void conversion_error() {
-        throw std::runtime_error(
-          "String contains control character: " + sanitized_string);
+        throw control_character_present_exception(
+          "String contains control character");
     }
 
-    const std::string& get_sanitized_string() const { return sanitized_string; }
-
 private:
-    std::string sanitized_string;
 };
 
 inline bool contains_control_character(std::string_view v) {
@@ -102,7 +111,7 @@ void validate_no_control(std::string_view s, ExceptionThrower auto thrower) {
 }
 
 inline void validate_no_control(std::string_view s) {
-    validate_no_control(s, default_control_character_thrower{s});
+    validate_no_control(s, default_control_character_thrower{});
 }
 
 template<typename Thrower>

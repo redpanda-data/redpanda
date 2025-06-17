@@ -53,7 +53,7 @@ security::scram_credential parse_scram_credential(const json::Document& doc) {
     const auto algorithm = std::string_view(
       doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
     validate_no_control(
-      algorithm, admin_server::string_conversion_exception{algorithm});
+      algorithm, admin_server::string_conversion_exception{"algorithm"});
 
     if (!doc.HasMember("password") || !doc["password"].IsString()) {
         throw ss::httpd::bad_request_exception(
@@ -61,7 +61,7 @@ security::scram_credential parse_scram_credential(const json::Document& doc) {
     }
     const auto password = doc["password"].GetString();
     validate_no_control(
-      password, admin_server::string_conversion_exception{"PASSWORD"});
+      password, admin_server::string_conversion_exception{"password"});
 
     security::scram_credential credential;
 
@@ -88,7 +88,7 @@ bool match_scram_credential(
     const auto algorithm = std::string_view(
       doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
     validate_no_control(
-      algorithm, admin_server::string_conversion_exception{algorithm});
+      algorithm, admin_server::string_conversion_exception{"algorithm"});
 
     if (algorithm == security::scram_sha256_authenticator::name) {
         return security::scram_sha256::validate_password(
@@ -289,7 +289,7 @@ security::role_name parse_role_definition(const json::Document& doc) {
 
     auto role_name = security::role_name{doc["role"].GetString()};
     validate_no_control(
-      role_name(), admin_server::string_conversion_exception{role_name()});
+      role_name(), admin_server::string_conversion_exception{"role"});
 
     if (!security::validate_scram_username(role_name())) {
         throw_role_exception(role_errc::invalid_name);
@@ -460,7 +460,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
     }
 
     auto username = security::credential_user(doc["username"].GetString());
-    validate_no_control(username(), string_conversion_exception{username()});
+    validate_no_control(username(), string_conversion_exception{"username"});
 
     if (!security::validate_scram_username(username())) {
         throw ss::httpd::bad_request_exception(

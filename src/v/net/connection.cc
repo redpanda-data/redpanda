@@ -13,6 +13,7 @@
 #include "net/exceptions.h"
 #include "net/types.h"
 #include "ssx/abort_source.h"
+#include "strings/utf8.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/net/tls.hh>
@@ -132,6 +133,16 @@ bool is_auth_error(std::exception_ptr e) {
     }
 
     __builtin_unreachable();
+}
+
+bool is_invalid_character_error(std::exception_ptr e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const invalid_character_exception&) {
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 connection::connection(

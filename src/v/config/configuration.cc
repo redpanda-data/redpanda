@@ -1540,6 +1540,17 @@ configuration::configuration()
       "authorization is disabled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt)
+  , tls_certificate_name_format(
+      *this,
+      "tls_certificate_name_format",
+      "The format of the certificates's distinguished name to use for mTLS "
+      "principal mapping.  Legacy format would appear as "
+      "'C=US,ST=California,L=San Francisco,O=Redpanda,CN=redpanda', while "
+      "rfc2253 format would appear as 'CN=redpanda,O=Redpanda,L=San "
+      "Francisco,ST=California,C=US'.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      tls_name_format::legacy,
+      {tls_name_format::legacy, tls_name_format::rfc2253})
   , kafka_mtls_principal_mapping_rules(
       *this,
       "kafka_mtls_principal_mapping_rules",
@@ -3555,11 +3566,14 @@ configuration::configuration()
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128)
-  , schema_registry_normalize_on_startup(
+  , schema_registry_always_normalize(
       *this,
-      "schema_registry_normalize_on_startup",
-      "Normalize schemas as they are read from the topic on startup.",
-      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      "schema_registry_always_normalize",
+      "Always normalize schemas. If set, this overrides the "
+      "normalize parameter in API requests.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::user,
+       .aliases = {"schema_registry_normalize_on_startup"}},
       false)
   , schema_registry_protobuf_renderer_v2(
       *this,

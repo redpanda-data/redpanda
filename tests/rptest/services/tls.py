@@ -7,7 +7,7 @@ import os
 import string
 import random
 
-from enum import Enum
+from enum import Enum, IntEnum
 
 _ca_config_tmpl = """
 # OpenSSL CA configuration file
@@ -309,6 +309,11 @@ class TLSKeyType(Enum):
     ECDSA = 1
 
 
+class DNFormat(IntEnum):
+    LEGACY = 0,
+    RFC2253 = 1
+
+
 class TLSCertManager:
     """
     When a TLSCertManager is instantiated a new CA is automatically created and
@@ -345,7 +350,7 @@ class TLSCertManager:
     def _with_dir(self, *args):
         return os.path.join(self._dir.name, *args)
 
-    def _exec(self, cmd):
+    def _exec(self, cmd) -> str:
         self._logger.info(f"Running command: {cmd}")
         retries = 0
         output = None
@@ -355,6 +360,7 @@ class TLSCertManager:
                                                  cwd=self._dir.name,
                                                  stderr=subprocess.STDOUT)
                 retries = 3  # Stop retry
+                return output.decode('utf-8')
             except subprocess.CalledProcessError as e:
                 self._logger.error(f"openssl error: {e.output}")
                 output = subprocess.check_output(
@@ -460,6 +466,21 @@ class TLSCertManager:
         cert = Certificate(cfg, key, crt, self.ca, p12_file, p12_password)
         self.certs[name] = cert
         return cert
+
+    def get_cert_subject_dn(self, cert: Certificate, format: DNFormat) -> str:
+        if format == DNFormat.LEGACY:
+            nameopt = "-nameopt esc_2253,esc_ctrl,esc_msb,utf8,dump_nostr,dump_unknown,dump_der,sep_comma_plus,sname"
+        elif format == DNFormat.RFC2253:
+            nameopt = "-nameopt rfc2253"
+        else:
+            raise ValueError(f"Unknown DN format: {format}")
+
+        resp = self._exec(
+            f'openssl x509 -in {cert.crt} -noout -subject {nameopt}')
+        assert resp.startswith(
+            "subject="
+        ), f'Output for DN command invalid: {resp}.  Should start with "subject="'
+        return resp[len("subject="):].strip()
 
     def generate_pkcs12_file(self,
                              p12_file: str,

@@ -1,0 +1,26 @@
+# This configuration contains common yaml anchors between
+# the ducktape-pr-retry.yml and the ducktape-merge-retry.yml
+# configs
+#
+# See https://redpandadata.atlassian.net/wiki/x/CAAIRg
+
+zero-drift: &zero-drift
+  zero-drift:
+    mode:
+      dynamic_reliability:
+        compare_with_branch: v24.3.x
+        time_window: 2w
+        allowed_drift: 0 # upstream_reliability - current_ci_reliability <= allowed_drift
+        fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
+  fifty-drift:
+    mode:
+      dynamic_reliability:
+        compare_with_branch: v24.3.x
+        time_window: 2w
+        allowed_drift: 50 # upstream_reliability - current_ci_reliability <= allowed_drift
+        fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
+retry-all-except-nodecrash: &retry-all-except-nodecrash
+  include: # match stacktrace of failure
+    - .*
+  exclude:
+    - (\n|.)*NodeCrash # excludes NodeCrash errors from retries

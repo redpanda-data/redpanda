@@ -92,12 +92,34 @@ ss::future<> disk_space_manager::stop() {
         _storage_node->local().unregister_disk_notification(
           node::disk_type::data, _data_disk_nid);
     }
+    _as.request_abort();
     _control_sem.broken();
     co_await _gate.close();
 }
 
 ss::future<> disk_space_manager::run_loop() {
     vassert(ss::this_shard_id() == run_loop_core, "Run on wrong core");
+
+    // Always wait for the trim interval after startup to ensure that
+    // partitions are fully started. Known sources of skew early in the node
+    // startup phase:
+    // 1. controller_backend::start() doesn't wait for the first reconciliation
+    // round, so not all partitions may yet exist in the partition manager.
+    // 2. Even though partition::start() waits for STMs to apply local snapshots
+    // (and therefore have a recent-enough state), some STMs don't return
+    // a sensible max_collectible_offset until later. For example:
+    //   * rm_stm waits until it is replayed up to raft committed index
+    //   * archival_metadata_stm waits until the state is marked "clean"
+    //     (i.e. until the corresponding manifest is uploaded to the cloud).
+    //     Moreover, because the snapshot stores only the boolean "dirty" flag,
+    //     we can't reliably restore the "last clean at" offset just from the
+    //     snapshot.
+    try {
+        co_await ss::sleep_abortable(
+          config::shard_local_cfg().retention_local_trim_interval(), _as);
+    } catch (ss::sleep_aborted&) {
+        co_return;
+    }
 
     while (!_gate.is_closed()) {
         try {

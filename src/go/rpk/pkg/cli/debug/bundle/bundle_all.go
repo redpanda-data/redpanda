@@ -12,21 +12,19 @@
 package bundle
 
 import (
-	"context"
-	"errors"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
-func executeBundle(context.Context, bundleParams) error {
-	return errors.New("rpk debug bundle is unsupported on your operating system")
-}
-
-func executeK8SBundle(context.Context, bundleParams) error {
-	return errors.New("rpk debug bundle is unsupported on your operating system")
-}
-
-func determineFilepath(afero.Fs, *config.RedpandaYaml, string, bool) (string, error) {
-	return "", errors.New("rpk debug bundle is not supported on your operating system")
+func NewCommand(_ afero.Fs, _ *config.Params) *cobra.Command {
+	return &cobra.Command{
+		Use:   "bundle",
+		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
+		Args:  cobra.NoArgs,
+		Run: func(_ *cobra.Command, _ []string) {
+			out.Die("rpk debug bundle is not supported on your operating system")
+		},
+	}
 }

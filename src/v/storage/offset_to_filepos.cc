@@ -155,10 +155,9 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
     if (!offset_found && fail_on_missing_offset) {
         vlog(
           stlog.warn,
-          "Segment does not contain searched for offset: {}, segment offsets: "
-          "{}",
-          sto,
-          segment->offsets());
+          "Segment {} does not contain searched for offset: {}",
+          segment,
+          sto);
         co_return std::make_error_code(std::errc::invalid_seek);
     }
 

@@ -331,6 +331,7 @@ struct configuration final : public config_store {
     bounded_property<std::optional<std::chrono::milliseconds>>
       kafka_sasl_max_reauth_ms;
     property<std::optional<bool>> kafka_enable_authorization;
+    enum_property<tls_name_format> tls_certificate_name_format;
     property<std::optional<std::vector<ss::sstring>>>
       kafka_mtls_principal_mapping_rules;
     property<bool> kafka_enable_partition_reassignment;
@@ -663,7 +664,7 @@ struct configuration final : public config_store {
       enable_schema_id_validation;
     config::property<size_t> kafka_schema_id_validation_cache_capacity;
 
-    property<bool> schema_registry_normalize_on_startup;
+    property<bool> schema_registry_always_normalize;
     property<bool> schema_registry_protobuf_renderer_v2;
     property<std::optional<uint32_t>> pp_sr_smp_max_non_local_requests;
     bounded_property<size_t> max_in_flight_schema_registry_requests_per_shard;

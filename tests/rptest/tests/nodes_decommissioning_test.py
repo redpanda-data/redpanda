@@ -665,6 +665,10 @@ class NodesDecommissioningTest(PreallocNodesTest):
     @parametrize(shutdown_decommissioned=True)
     @parametrize(shutdown_decommissioned=False)
     def test_decommissioning_rebalancing_node(self, shutdown_decommissioned):
+        # lower space management loop interval to make partition balancing
+        # start faster after node restart.
+        self.redpanda.add_extra_rp_conf(
+            {"retention_local_trim_interval": 5_000})
 
         # start 4 nodes
         self.redpanda.start(nodes=self.redpanda.nodes[0:4])
@@ -697,7 +701,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
         to_decommission_id = self.redpanda.node_id(to_decommission)
         first_node = self.redpanda.nodes[0]
         wait_until(lambda: self._partitions_moving(node=first_node),
-                   timeout_sec=15,
+                   timeout_sec=30,
                    backoff_sec=1)
 
         # request decommission of newly added broker
@@ -1308,3 +1312,69 @@ class NodeDecommissionSpaceManagementTest(RedpandaTest):
                                         progress_timeout=60)
         waiter.wait_for_removal()
         self.redpanda.stop_node(to_decommission)
+
+
+class NodeIdReuseTest(RedpandaTest):
+    """
+    Test reusing node id after decommissioning a node.
+    This is not recommended but should still work.
+    """
+    def __init__(self, test_context):
+        super(NodeIdReuseTest, self).__init__(test_context=test_context,
+                                              num_brokers=3)
+
+    def setup(self):
+        # defer starting redpanda to test body
+        pass
+
+    @cluster(num_nodes=3)
+    def test_node_status(self):
+        """
+        Reproducer for bug https://redpandadata.atlassian.net/browse/CORE-8625
+        """
+        self.redpanda.add_extra_rp_conf({'controller_snapshot_max_age_sec': 5})
+
+        orig_nodes = self.redpanda.nodes[0:2]
+        self.redpanda.start(nodes=orig_nodes, auto_assign_node_id=False)
+
+        admin = Admin(self.redpanda)
+        controller_id = admin.await_stable_leader("controller",
+                                                  namespace="redpanda",
+                                                  timeout_s=30)
+
+        controller = self.redpanda.get_node_by_id(controller_id)
+        for n in self.redpanda.started_nodes():
+            node_id = self.redpanda.node_id(n)
+            if node_id != controller_id:
+                other_node = n
+                other_node_id = node_id
+
+        self.logger.info(
+            f"decomming node {other_node.name} (id: {other_node_id})...")
+        admin.decommission_broker(other_node_id)
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        node_id=other_node_id,
+                                        logger=self.logger)
+        waiter.wait_for_removal()
+
+        self.logger.info("re-adding the node")
+        self.redpanda.stop_node(other_node)
+        self.redpanda.clean_node(other_node, preserve_current_install=True)
+        self.redpanda.start_node(other_node, auto_assign_node_id=False)
+        self.redpanda.wait_for_membership(first_start=False)
+        # verify that the node id is reused
+        assert admin.get_node_config(other_node)["node_id"] == other_node_id
+
+        # wait until all controller commands are snapshotted
+        controller_offset = admin.get_controller_status(
+            controller)["dirty_offset"]
+        self.redpanda.wait_for_controller_snapshot(
+            controller, prev_start_offset=controller_offset)
+
+        self.logger.info("adding the last node")
+        joiner_node = self.redpanda.nodes[2]
+        self.redpanda.start_node(joiner_node, auto_assign_node_id=False)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        brokers = admin.get_brokers(joiner_node)
+        assert all(b["is_alive"] for b in brokers)

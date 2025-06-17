@@ -11,9 +11,11 @@
 
 #include "error.h"
 
+#include "bytes/iobuf_parser.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
+#include "pandaproxy/schema_registry/types.h"
 
 #include <ranges>
 
@@ -33,6 +35,8 @@ struct error_category final : std::error_category {
             return "Invalid schema";
         case error_code::schema_empty:
             return "Empty schema";
+        case error_code::schema_missing_reference:
+            return "Schema references a schema that doesn't exist";
         case error_code::schema_incompatible:
             return "Schema being registered is incompatible with an earlier "
                    "schema for subject";
@@ -111,6 +115,7 @@ struct error_category final : std::error_category {
         case error_code::schema_invalid:
             return reply_error_code::unprocessable_entity;
         case error_code::schema_empty:
+        case error_code::schema_missing_reference:
             return reply_error_code::schema_empty; // 42201
         case error_code::schema_version_invalid:
             return reply_error_code::schema_version_invalid; // 42202
@@ -146,14 +151,15 @@ std::error_code make_error_code(error_code e) {
 }
 
 error_info no_reference_found_for(
-  const canonical_schema& schema, const subject& sub, schema_version ver) {
+  const subject_schema& schema, const subject& sub, schema_version ver) {
     // fmt v8 doesn't support formatting for elements in a range
     auto fmt_refs = schema.def().refs()
                     | std::views::transform([](const auto& ref) {
                           return fmt::format("{{{:e}}}", ref);
                       });
+    iobuf_const_parser parser{schema.def().raw()};
     return {
-      error_code::schema_empty,
+      error_code::schema_missing_reference,
       fmt::format(
         "Invalid schema "
         "{{subject={},version=0,id=-1,schemaType={},references=[{}],metadata="
@@ -162,7 +168,7 @@ error_info no_reference_found_for(
         schema.sub()(),
         to_string_view(schema.def().type()),
         fmt::join(fmt_refs, ", "),
-        schema.def().raw()(),
+        parser.read_string(parser.bytes_left()),
         fmt::join(fmt_refs, ", "),
         to_string_view(schema.type()),
         sub(),

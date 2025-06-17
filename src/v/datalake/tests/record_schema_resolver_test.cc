@@ -79,16 +79,16 @@ public:
 
     void SetUp() override {
         auto avro_schema_id = sr
-                                ->create_schema(unparsed_schema{
+                                ->create_schema(subject_schema{
                                   subject{"foo"},
-                                  unparsed_schema_definition{
+                                  schema_definition{
                                     avro_record_schema, schema_type::avro}})
                                 .get();
         ASSERT_EQ(1, avro_schema_id());
         auto pb_schema_id = sr
-                              ->create_schema(unparsed_schema{
+                              ->create_schema(subject_schema{
                                 subject{"foo"},
-                                unparsed_schema_definition{
+                                schema_definition{
                                   pb_record_schema, schema_type::protobuf}})
                               .get();
         ASSERT_EQ(2, pb_schema_id());

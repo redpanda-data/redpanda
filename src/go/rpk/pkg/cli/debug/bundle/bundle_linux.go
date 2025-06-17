@@ -171,11 +171,27 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		if err != nil {
 			errs = multierror.Append(errs, err)
 		}
+		errs.ErrorFormat = errorFormat
 		fmt.Println(errs.Error())
 	}
 
 	fmt.Printf("Debug bundle saved to '%s'\n", bp.path)
 	return nil
+}
+
+func errorFormat(errs []error) string {
+	if len(errs) == 1 {
+		return fmt.Sprintf("Debug bundle successfully generated. 1 diagnostic failed:\n\t* %s\n\n", errs[0])
+	}
+
+	points := make([]string, len(errs))
+	for i, err := range errs {
+		points[i] = fmt.Sprintf("* %s", err)
+	}
+
+	return fmt.Sprintf(
+		"Debug bundle successfully generated. %d diagnostics failed:\n\t%s\n\n",
+		len(errs), strings.Join(points, "\n\t"))
 }
 
 type step func() error

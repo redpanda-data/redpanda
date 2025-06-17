@@ -30,6 +30,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/net/socket_defs.hh>
@@ -383,6 +384,7 @@ private:
 
         sequence_id _next_response;
         sequence_id _seq_idx;
+        ssx::semaphore _resp_sem{1, "k/conn_ctx/response"};
         map_t _responses;
     };
 

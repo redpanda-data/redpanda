@@ -18,7 +18,6 @@
 #include "storage/fwd.h"
 #include "storage/segment.h"
 
-#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sharded.hh>
 
 #include <deque>
@@ -42,13 +41,11 @@ public:
     // for readers and writers taking refs.
     using type = ss::lw_shared_ptr<segment>;
 
-    // NOTE: gcc has an ABI problem and cannot make std::deque noexcept
-    // so we use a circular instead of a dequeue that *is* noexcept ctor
-    // and allow us to truly have an empty container at ctor time
-    // We loose reverse-iterators tho
-    using underlying_t = ss::circular_buffer<type>;
+    using underlying_t = std::deque<type>;
     using const_iterator = underlying_t::const_iterator;
     using iterator = underlying_t::iterator;
+    using reverse_iterator = underlying_t::reverse_iterator;
+    using const_reverse_iterator = underlying_t::const_reverse_iterator;
 
     explicit segment_set(underlying_t);
     ~segment_set() noexcept;
@@ -88,6 +85,11 @@ public:
     iterator end() { return _handles.end(); }
     const_iterator begin() const { return _handles.begin(); }
     const_iterator end() const { return _handles.end(); }
+
+    reverse_iterator rbegin() { return _handles.rbegin(); }
+    reverse_iterator rend() { return _handles.rend(); }
+    const_reverse_iterator rbegin() const { return _handles.rbegin(); }
+    const_reverse_iterator rend() const { return _handles.rend(); }
 
 private:
     underlying_t _handles;

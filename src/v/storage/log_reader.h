@@ -135,6 +135,10 @@ public:
     using data_t = model::record_batch_reader::data_t;
     using foreign_data_t = model::record_batch_reader::foreign_data_t;
     using storage_t = model::record_batch_reader::storage_t;
+    static std::vector<model::record_batch> make_ghost_batches(
+      model::offset start_offset,
+      model::offset end_offset,
+      model::term_id term);
 
     log_reader(
       std::unique_ptr<lock_manager::lease>,
@@ -293,8 +297,8 @@ private:
  * \param t The timestamp to search for
  * \param max_offset The maximum offset to consider
  */
-timequery_result batch_timequery(
-  const model::record_batch& b,
+ss::future<timequery_result> batch_timequery(
+  model::record_batch b,
   model::offset min_offset,
   model::timestamp t,
   model::offset max_offset);

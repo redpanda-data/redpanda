@@ -674,4 +674,24 @@ struct convert<config::datalake_catalog_type> {
     }
 };
 
+template<>
+struct convert<config::tls_name_format> {
+    static Node encode(const config::tls_name_format& rhs) {
+        return Node(fmt::format("{}", rhs));
+    }
+
+    static bool decode(const Node& node, config::tls_name_format& rhs) {
+        static constexpr auto acceptable_values
+          = config::acceptable_tls_name_format_values();
+        auto value = node.as<std::string>();
+        if (
+          std::find(acceptable_values.cbegin(), acceptable_values.cend(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+        std::istringstream iss(value);
+        iss >> rhs;
+        return true;
+    }
+};
 } // namespace YAML

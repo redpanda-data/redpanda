@@ -351,6 +351,11 @@ public:
         co_return _num_partitions.value();
     }
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::read_everything;
+    }
+
 private:
     static constexpr model::partition_id routing_partition{0};
     static constexpr std::chrono::seconds sync_timeout{5};

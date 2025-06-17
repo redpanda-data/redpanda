@@ -54,7 +54,7 @@ deserialize_schema_type(serialized_schema_type st) {
 
 template<typename T>
 void write_encoded_schema_def(
-  const pandaproxy::schema_registry::canonical_schema_definition& def, T* w) {
+  const pandaproxy::schema_registry::schema_definition& def, T* w) {
     w->append(serialize_schema_type(def.type()));
     w->append_with_length(def.raw()());
     w->append(def.refs().size());
@@ -65,7 +65,7 @@ void write_encoded_schema_def(
     }
 }
 
-pandaproxy::schema_registry::unparsed_schema_definition
+pandaproxy::schema_registry::schema_definition
 read_encoded_schema_def(ffi::reader* r) {
     using namespace pandaproxy::schema_registry;
     auto serialized_type = serialized_schema_type(r->read_varint());
@@ -76,7 +76,7 @@ read_encoded_schema_def(ffi::reader* r) {
     }
     auto def = r->read_sized_string();
     auto rc = r->read_varint();
-    unparsed_schema_definition::references refs;
+    schema_definition::references refs;
     refs.reserve(rc);
     for (int i = 0; i < rc; ++i) {
         auto name = r->read_sized_string();
@@ -89,7 +89,7 @@ read_encoded_schema_def(ffi::reader* r) {
 
 template<typename T>
 void write_encoded_schema_subject(
-  const pandaproxy::schema_registry::subject_schema& schema, T* w) {
+  const pandaproxy::schema_registry::stored_schema& schema, T* w) {
     w->append(schema.id());
     w->append(schema.version());
     // not writing the subject because the client should already have it.
@@ -199,7 +199,7 @@ ss::future<int32_t> schema_registry_module::create_subject_schema(
     using namespace pandaproxy::schema_registry;
     try {
         *out_schema_id = co_await _sr->create_schema(
-          unparsed_schema(sub, read_encoded_schema_def(&r)));
+          subject_schema(sub, read_encoded_schema_def(&r)));
     } catch (const std::exception& ex) {
         vlog(wasm_log.warn, "error registering subject schema: {}", ex);
         co_return SCHEMA_REGISTRY_ERROR;

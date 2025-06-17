@@ -216,6 +216,9 @@ func generateManifest(p transformProject) (map[string][]genFile, error) {
 			path.Join(p.Path, "src"): {
 				genFile{name: "main.rs", content: template.WasmRustMain()},
 			},
+			path.Join(p.Path, ".cargo"): {
+				genFile{name: "config.toml", content: template.WasmRustConfig()},
+			},
 		}, nil
 	case project.WasmLangJavaScript:
 		return map[string][]genFile{
@@ -304,7 +307,8 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		} else if err != nil {
 			return fmt.Errorf("unable to lookup rustup executable: %v", err)
 		}
-		if err := runCli(rustup, "target", "add", "wasm32-wasi"); err != nil {
+		if err := runCli(rustup, "target", "add", "wasm32-wasip1"); err != nil {
+			fmt.Println("rust recently renamed the 'wasm32-wasi' target to 'wasm32-wasip1', please update your version of rust if this target is not found")
 			return fmt.Errorf("unable to install wasm toolchain: %v", err)
 		}
 		cargo, err := exec.LookPath("cargo")

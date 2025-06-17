@@ -13,10 +13,18 @@
 
 #include "base/likely.h"
 #include "base/seastarx.h"
+#include "base/vlog.h"
+#include "bytes/iobuf_parser.h"
+#include "pandaproxy/logger.h"
 #include "ssx/semaphore.h"
+#include "utils/truncating_logger.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/http/request.hh>
+#include <seastar/net/inet_address.hh>
 #include <seastar/util/noncopyable_function.hh>
+
+#include <string_view>
 
 namespace pandaproxy {
 
@@ -58,5 +66,30 @@ private:
     ss::noncopyable_function<ss::future<>()> _func;
     ssx::semaphore _started_sem{0, "pproxy/oneshot"};
 };
+
+inline void log_request(
+  const ss::http::request& req, std::string_view body, truncating_logger& log) {
+    if (log.is_enabled(ss::log_level::trace)) {
+        vlog(
+          log.trace,
+          "[{}:{}] handling {} {}: body={:?}",
+          req.get_client_address().addr(),
+          req.get_client_address().port(),
+          req._method,
+          req._url,
+          body);
+    }
+}
+
+inline void log_request(
+  const ss::http::request& req, const iobuf& body, truncating_logger& log) {
+    if (log.is_enabled(ss::log_level::trace)) {
+        iobuf_const_parser parser{body};
+        log_request(
+          req,
+          parser.read_string(std::min(parser.bytes_left(), max_log_line_bytes)),
+          log);
+    }
+}
 
 } // namespace pandaproxy

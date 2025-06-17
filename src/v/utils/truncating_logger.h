@@ -89,6 +89,10 @@ public:
         log(ss::log_level::trace, format, std::forward<Args>(args)...);
     }
 
+    bool is_enabled(ss::log_level level) const noexcept {
+        return _logger.is_enabled(level);
+    }
+
 private:
     ss::logger& _logger;
     size_t _max_line_bytes;

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <iosfwd>
 #include <limits>
@@ -43,10 +44,21 @@ enum class compression : uint8_t {
     lz4 = 3,
     zstd = 4,
 
+    // the number of batch compression types (put new types above this)
+    count,
+
     // values below must not intersect with the value range used to encode
     // compression codecs in kafka batch attributes.
     producer = std::numeric_limits<std::underlying_type_t<compression>>::max()
 };
+
+constexpr auto all_batch_compression_types = [] {
+    std::array<compression, static_cast<size_t>(compression::count)> types{};
+    for (int c = 0; c < static_cast<int>(compression::count); ++c) {
+        types[c] = static_cast<compression>(c);
+    }
+    return types;
+}();
 
 /// operators needed for boost::lexical_cast<compression>
 /// inline to prevent library depdency with the v::compression module

@@ -587,14 +587,16 @@ ss::future<> controller::start(
     _tp_frontend.local().print_rf_warning_message();
 
     co_await cluster_creation_hook(discovery);
-
-    // start shard_balancer before controller_backend so that it bootstraps
-    // shard_placement_table and controller_backend can start with already
-    // initialized table.
-    co_await _shard_balancer.invoke_on(
-      shard_balancer::shard_id,
-      &shard_balancer::start,
-      conf_invariants.core_count);
+    {
+        auto u = _stm.local().lock_apply();
+        // start shard_balancer before controller_backend so that it bootstraps
+        // shard_placement_table and controller_backend can start with already
+        // initialized table.
+        co_await _shard_balancer.invoke_on(
+          shard_balancer::shard_id,
+          &shard_balancer::start,
+          conf_invariants.core_count);
+    }
 
     if (conf_invariants.core_count > ss::smp::count) {
         // Successfully starting shard_balancer with reduced core count means

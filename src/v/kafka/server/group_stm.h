@@ -44,6 +44,9 @@ public:
         model::producer_epoch epoch;
         std::unique_ptr<ongoing_tx> tx;
     };
+    explicit group_stm(ss::sstring group_id)
+      : _group_id(std::move(group_id)) {}
+
     void overwrite_metadata(group_metadata_value&&);
 
     void update_offset(
@@ -81,7 +84,7 @@ public:
 private:
     chunked_hash_map<model::topic_partition, logged_metadata> _offsets;
     chunked_hash_map<model::producer_id, producer> _producers;
-
+    ss::sstring _group_id;
     group_metadata_value _metadata;
     bool _is_loaded{false};
     bool _is_removed{false};

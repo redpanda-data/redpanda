@@ -64,8 +64,10 @@ struct produce_request final {
     /**
      * Build a generic error response for a given request.
      */
-    produce_response make_error_response(error_code error) const;
-    produce_response make_full_disk_response() const;
+    produce_response make_error_response(
+      error_code error,
+      const std::optional<ss::sstring>& error_msg = std::nullopt) const;
+    produce_response make_full_disk_response(api_version) const;
 
     /// True if the request contains a batch with a transactional id.
     bool has_transactional = false;

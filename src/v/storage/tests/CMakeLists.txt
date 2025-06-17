@@ -48,7 +48,7 @@ rp_test(
         BINARY_NAME storage_e2e_single_thread
         SOURCES
         storage_e2e_test.cc
-        LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
+        LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils v::resource_mgmt
         LABELS storage
         ARGS "-- -c 1"
 )

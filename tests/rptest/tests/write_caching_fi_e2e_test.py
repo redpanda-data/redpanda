@@ -70,7 +70,7 @@ class WriteCachingFailureInjectionE2ETest(RedpandaTest):
         consumer.start()
 
         num_restart_rounds = 2
-        num_msg_per_round = 5000
+        num_msg_per_round = 1500
 
         # Transactions are slower, so we reduce the number of messages to
         # produce and consume to keep the test duration reasonable.

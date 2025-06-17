@@ -45,6 +45,9 @@
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
+#include <fmt/ranges.h>
+
+#include <chrono>
 #include <system_error>
 
 using cluster::cloud_metadata::group_offsets;
@@ -225,7 +228,7 @@ std::optional<std::chrono::seconds> group_manager::offset_retention_enabled() {
      */
     if (_prev_offset_retention_enabled != enabled) {
         vlog(
-          klog.info,
+          cg_klog.info,
           "Group offset retention is now {} (prev {}). Legacy enabled {} "
           "retention_sec {} original version {}.",
           enabled ? "enabled" : "disabled",
@@ -255,23 +258,34 @@ ss::future<> group_manager::handle_offset_expiration() {
      * build a light-weight snapshot of the groups to process. the snapshot
      * allows us to avoid concurrent modifications to _groups container.
      */
-    fragmented_vector<group_ptr> groups;
+    fragmented_vector<std::pair<group_ptr, size_t>> groups;
     for (auto& group : _groups) {
-        groups.push_back(group.second);
+        groups.emplace_back(group.second, 0);
     }
 
-    size_t total = 0;
     co_await ss::max_concurrent_for_each(
       groups,
       max_concurrent_expirations,
-      [this, &total, retention_period = retention_period.value()](auto group) {
-          return delete_expired_offsets(group, retention_period)
-            .then([&total](auto removed) { total += removed; });
+      [this, retention_period = retention_period.value()](auto& group_count) {
+          return delete_expired_offsets(group_count.first, retention_period)
+            .then(
+              [&group_count](auto removed) { group_count.second = removed; });
       });
 
-    if (total) {
+    auto groups_with_expired_offsets
+      = groups | std::ranges::views::filter([](auto& group_count) {
+            return group_count.second > 0;
+        })
+        | std::ranges::views::transform([](auto& group_count) {
+              return std::pair<std::string_view, size_t>(
+                group_count.first->id()(), group_count.second);
+          });
+
+    if (!groups_with_expired_offsets.empty()) {
         vlog(
-          klog.info, "Removed {} offsets from {} groups", total, groups.size());
+          cg_klog.info,
+          "Removed (group, offsets) {} due to offset retention",
+          groups_with_expired_offsets);
     }
 }
 
@@ -300,7 +314,7 @@ ss::future<size_t> group_manager::delete_offsets(
 
     for (auto& offset : offsets) {
         vlog(
-          klog.trace,
+          cg_klog.trace,
           "Preparing tombstone for expired group offset {}:{}",
           group,
           offset);
@@ -314,7 +328,7 @@ ss::future<size_t> group_manager::delete_offsets(
             _groups.erase(it);
             if (group->generation() > 0) {
                 vlog(
-                  klog.trace,
+                  cg_klog.trace,
                   "Preparing tombstone for dead group following offset "
                   "expiration {}",
                   group);
@@ -343,7 +357,7 @@ ss::future<size_t> group_manager::delete_offsets(
 
         if (result) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Wrote {} tombstone records for group {} expired offsets",
               offsets.size(),
               group);
@@ -351,19 +365,19 @@ ss::future<size_t> group_manager::delete_offsets(
 
         } else if (result.error() == raft::errc::shutting_down) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Cannot replicate tombstone records for group {}: shutting down",
               group);
 
         } else if (result.error() == raft::errc::not_leader) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Cannot replicate tombstone records for group {}: not leader",
               group);
 
         } else {
             vlog(
-              klog.error,
+              cg_klog.error,
               "Cannot replicate tombstone records for group {}: {} {}",
               group,
               result.error().message(),
@@ -372,7 +386,7 @@ ss::future<size_t> group_manager::delete_offsets(
 
     } catch (...) {
         vlog(
-          klog.error,
+          cg_klog.error,
           "Exception occurred replicating tombstones for group {}: {}",
           group,
           std::current_exception());
@@ -417,7 +431,7 @@ ss::future<> group_manager::stop() {
 }
 
 void group_manager::detach_partition(const model::ntp& ntp) {
-    klog.debug("detaching group metadata partition {}", ntp);
+    vlog(cg_klog.debug, "detaching group metadata partition {}", ntp);
     ssx::spawn_with_gate(_gate, [this, _ntp{ntp}]() mutable {
         return do_detach_partition(std::move(_ntp));
     });
@@ -437,6 +451,7 @@ ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
     for (auto g_it = _groups.begin(); g_it != _groups.end();) {
         if (g_it->second->partition()->ntp() == p->partition->ntp()) {
             groups_for_shutdown.push_back(g_it->second);
+            g_it->second->pre_shutdown();
             _groups.erase(g_it++);
             continue;
         }
@@ -455,7 +470,7 @@ ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
 }
 
 void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
-    klog.debug("attaching group metadata partition {}", p->ntp());
+    vlog(cg_klog.debug, "attaching group metadata partition {}", p->ntp());
     auto attached = ss::make_lw_shared<attached_partition>(p);
     auto res = _partitions.try_emplace(p->ntp(), attached);
     // TODO: this is not a forever assertion. this should just generally never
@@ -492,7 +507,8 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
                     if (it->second != g) {
                         return ss::now();
                     }
-                    vlog(klog.trace, "Removed group {}", g);
+                    vlog(cg_klog.trace, "Removed group {}", g);
+                    it->second->pre_shutdown();
                     _groups.erase(it);
                     _groups.rehash(0);
                     return ss::now();
@@ -529,7 +545,7 @@ void group_manager::handle_topic_delta(
                 });
           })
           .handle_exception([](std::exception_ptr e) {
-              vlog(klog.warn, "Topic clean-up encountered error: {}", e);
+              vlog(cg_klog.warn, "Topic clean-up encountered error: {}", e);
           });
 }
 
@@ -592,7 +608,7 @@ ss::future<std::error_code> group_manager::inject_noop(
 
 ss::future<>
 group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
-    vlog(klog.trace, "Removing groups of {}", p->partition->ntp());
+    vlog(cg_klog.trace, "Removing groups of {}", p->partition->ntp());
 
     /**
      * since this operation is destructive for partitions group we hold a
@@ -606,7 +622,8 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
     for (auto it = _groups.begin(); it != _groups.end();) {
         if (it->second->partition()->ntp() == p->partition->ntp()) {
             groups_for_shutdown.push_back(it->second);
-            vlog(klog.trace, "Removed group {}", it->second);
+            vlog(cg_klog.trace, "Removed group {}", it->second);
+            it->second->pre_shutdown();
             _groups.erase(it++);
             continue;
         }
@@ -670,7 +687,7 @@ ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
     snapshots.emplace_back();
     auto* cur_snap = &snapshots.back();
     cur_snap->offsets_topic_pid = ntp.tp.partition;
-    vlog(klog.debug, "Snapshotting {} groups from {}", groups.size(), ntp);
+    vlog(cg_klog.debug, "Snapshotting {} groups from {}", groups.size(), ntp);
     for (const auto& [group_id, group] : groups) {
         group_offsets go;
         go.group_id = group_id();
@@ -686,7 +703,7 @@ ss::future<group_offsets_snapshot_result> group_manager::snapshot_groups(
             go.offsets.emplace_back(t, std::move(ps));
         }
         vlog(
-          klog.debug,
+          cg_klog.debug,
           "Snapshotting offsets for {} topics from group {}",
           go.offsets.size(),
           go.group_id);
@@ -711,7 +728,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
       snap.offsets_topic_pid,
     };
     vlog(
-      klog.info,
+      cg_klog.info,
       "Received request to recover {} groups from snapshot on partition {}",
       snap.groups.size(),
       offsets_ntp);
@@ -731,7 +748,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
     auto lock = co_await attached_partition->catchup_lock->hold_write_lock();
 
     vlog(
-      klog.info,
+      cg_klog.info,
       "Proceeding to recover {} groups on {}",
       snap.groups.size(),
       offsets_ntp);
@@ -746,7 +763,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
             // begun using ths group, and we can't overwrite the commits since
             // this is a destructive operation.
             vlog(
-              klog.info,
+              cg_klog.info,
               "Skipping restore of group {} from snapshot on {}, already "
               "exists in state {}",
               kafka_r.data.group_id,
@@ -769,7 +786,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
             co_await ss::maybe_yield();
         }
         vlog(
-          klog.info,
+          cg_klog.info,
           "Recovering group {} from snapshot on {}",
           kafka_r.data.group_id,
           offsets_ntp);
@@ -781,7 +798,7 @@ group_manager::recover_offsets(group_offsets_snapshot snap) {
             for (const auto& kafka_p : kafka_t.partitions) {
                 if (kafka_p.error_code != kafka::error_code::none) {
                     vlog(
-                      klog.warn,
+                      cg_klog.warn,
                       "Error on {}/{} while recovering group {} on {}: {}",
                       kafka_t.name,
                       kafka_p.partition_index,
@@ -810,7 +827,7 @@ ss::future<> group_manager::handle_partition_leader_change(
         return gc_partition_state(p);
     }
 
-    vlog(klog.trace, "Recovering groups of {}", p->partition->ntp());
+    vlog(cg_klog.trace, "Recovering groups of {}", p->partition->ntp());
 
     p->loading = true;
     auto timeout
@@ -828,7 +845,7 @@ ss::future<> group_manager::handle_partition_leader_change(
             .then([this, term, timeout, p](std::error_code error) {
                 if (error) {
                     vlog(
-                      klog.warn,
+                      cg_klog.warn,
                       "error injecting partition {} linearizable barrier - {}",
                       p->partition->ntp(),
                       error.message());
@@ -853,6 +870,14 @@ ss::future<> group_manager::handle_partition_leader_change(
                   std::nullopt);
                 auto expected_to_read = model::prev_offset(
                   p->partition->high_watermark());
+                vlog(
+                  cg_klog.info,
+                  "Recovering group state from {}, offset expected to read {}, "
+                  "log offsets: {}, raft protocol state: {}",
+                  p->partition->ntp(),
+                  expected_to_read,
+                  p->partition->log()->offsets(),
+                  p->partition->raft()->meta());
                 return p->partition->make_reader(reader_config)
                   .then([this, term, p, timeout, expected_to_read](
                           model::record_batch_reader reader) {
@@ -864,7 +889,7 @@ ss::future<> group_manager::handle_partition_leader_change(
                                 group_recovery_consumer_state state) {
                             if (state.last_read_offset < expected_to_read) {
                                 vlog(
-                                  klog.error,
+                                  cg_klog.error,
                                   "error recovering group state from {}. "
                                   "Expected to read up to {} but last offset "
                                   "consumed is equal to {}",
@@ -907,7 +932,7 @@ ss::future<> group_manager::recover_partition(
      */
     if (!ctx.has_offset_retention_feature_fence) {
         vlog(
-          klog.info,
+          cg_klog.info,
           "Scheduling write of offset retention feature fence for partition {}",
           p->partition);
         ssx::spawn_with_gate(
@@ -936,9 +961,13 @@ ss::future<> group_manager::do_recover_group(
     if (group_stm.has_data()) {
         auto group = get_group(group_id);
         vlog(
-          klog.info, "Recovering {} - {}", group_id, group_stm.get_metadata());
+          cg_klog.info,
+          "Recovering {} - {}",
+          group_id,
+          group_stm.get_metadata());
         for (const auto& member : group_stm.get_metadata().members) {
-            vlog(klog.debug, "Recovering group {} member {}", group_id, member);
+            vlog(
+              cg_klog.debug, "Recovering group {} member {}", group_id, member);
         }
 
         if (!group) {
@@ -999,7 +1028,8 @@ ss::future<> group_manager::do_recover_group(
 
         if (group_stm.is_removed()) {
             if (group_stm.offsets().size() > 0) {
-                klog.warn(
+                vlog(
+                  cg_klog.warn,
                   "Unexpected active group unload {} while loading {}",
                   group_id,
                   p->partition->ntp());
@@ -1035,7 +1065,7 @@ ss::future<> group_manager::write_version_fence(
 
             if (result) {
                 vlog(
-                  klog.info,
+                  cg_klog.info,
                   "Prepared partition {} for consumer offset retention feature "
                   "during upgrade",
                   p->partition->ntp());
@@ -1043,7 +1073,7 @@ ss::future<> group_manager::write_version_fence(
 
             } else if (result.error() == raft::errc::shutting_down) {
                 vlog(
-                  klog.debug,
+                  cg_klog.debug,
                   "Cannot write offset retention version fence for partition "
                   "{}: shutting down",
                   p->partition->ntp());
@@ -1051,7 +1081,7 @@ ss::future<> group_manager::write_version_fence(
 
             } else if (result.error() == raft::errc::not_leader) {
                 vlog(
-                  klog.debug,
+                  cg_klog.debug,
                   "Cannot write offset retention version fence for partition "
                   "{}: not leader",
                   p->partition->ntp());
@@ -1059,7 +1089,7 @@ ss::future<> group_manager::write_version_fence(
 
             } else {
                 vlog(
-                  klog.warn,
+                  cg_klog.warn,
                   "Could not write offset retention feature fence for "
                   "partition {}: {} {}",
                   p->partition->ntp(),
@@ -1068,7 +1098,7 @@ ss::future<> group_manager::write_version_fence(
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Cannot write offset retention version fence for partition {}: "
               "partition shutting down",
               p->partition->ntp());
@@ -1076,7 +1106,7 @@ ss::future<> group_manager::write_version_fence(
 
         } catch (const ss::abort_requested_exception&) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Cannot write offset retention version fence for partition {}: "
               "partition abort requested",
               p->partition->ntp());
@@ -1084,7 +1114,7 @@ ss::future<> group_manager::write_version_fence(
 
         } catch (...) {
             vlog(
-              klog.error,
+              cg_klog.error,
               "Exception occurred writing offset retention feature fence for "
               "partition {}: {}",
               p->partition,
@@ -1107,7 +1137,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
       r.data.session_timeout_ms < _conf.group_min_session_timeout_ms()
       || r.data.session_timeout_ms > _conf.group_max_session_timeout_ms()) {
         vlog(
-          klog.trace,
+          cg_klog.trace,
           "Join group {} rejected for invalid session timeout {} valid range "
           "[{},{}]. Request {}",
           r.data.group_id,
@@ -1128,7 +1158,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
         // not exist we should reject the request.</kafka>
         if (r.data.member_id != unknown_member_id) {
             vlog(
-              klog.trace,
+              cg_klog.trace,
               "Join group {} rejected for known member {} joining unknown "
               "group. Request {}",
               r.data.group_id,
@@ -1145,7 +1175,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
             // gone. this is generally not going to be a scenario that can
             // happen until we have rebalancing / partition deletion feature.
             vlog(
-              klog.trace,
+              cg_klog.trace,
               "Join group {} rejected for unavailable ntp {}",
               r.data.group_id,
               r.ntp);
@@ -1167,7 +1197,8 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
         is_new_group = true;
-        vlog(klog.trace, "Created new group {} while joining", r.data.group_id);
+        vlog(
+          cg_klog.trace, "Created new group {} while joining", r.data.group_id);
     }
 
     auto ret = group->handle_join_group(std::move(r), is_new_group);
@@ -1201,7 +1232,7 @@ group::sync_group_stages group_manager::sync_group(sync_group_request&& r) {
           stages.result.finally([group] {}));
     } else {
         vlog(
-          klog.trace,
+          cg_klog.trace,
           "Cannot handle sync group request for unknown group {}",
           r.data.group_id);
         return group::sync_group_stages(
@@ -1227,7 +1258,7 @@ ss::future<heartbeat_response> group_manager::heartbeat(heartbeat_request&& r) {
     }
 
     vlog(
-      klog.trace,
+      cg_klog.trace,
       "Cannot handle heartbeat request for unknown group {}",
       r.data.group_id);
 
@@ -1247,7 +1278,7 @@ group_manager::leave_group(leave_group_request&& r) {
         return group->handle_leave_group(std::move(r)).finally([group] {});
     } else {
         vlog(
-          klog.trace,
+          cg_klog.trace,
           "Cannot handle leave group request for unknown group {}",
           r.data.group_id);
         if (r.version < api_version(3)) {
@@ -1623,7 +1654,7 @@ group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
 
 group_manager::partition_producers
 group_manager::describe_partition_producers(const model::ntp& ntp) {
-    vlog(klog.debug, "describe producers: {}", ntp);
+    vlog(cg_klog.debug, "describe producers: {}", ntp);
     partition_producers response;
     response.partition_index = ntp.tp.partition;
     auto it = _partitions.find(ntp);
@@ -1708,6 +1739,7 @@ ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
         // - batch tombstones same backing partition
         error = co_await group->remove();
         if (error == error_code::none) {
+            group->pre_shutdown();
             _groups.erase(group_info.second);
         }
         results.push_back(deletable_group_result{
@@ -1748,24 +1780,44 @@ error_code group_manager::validate_group_status(
   const model::ntp& ntp, const group_id& group, api_key api) {
     if (!valid_group_id(group, api)) {
         vlog(
-          klog.debug, "Group name {} is invalid for operation {}", group, api);
+          cg_klog.debug,
+          "Group name {} is invalid for operation {}",
+          group,
+          api);
         return error_code::invalid_group_id;
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
         if (!it->second->partition->is_leader()) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Group {} operation {} sent to non-leader coordinator {}",
               group,
               api,
               ntp);
             return error_code::not_coordinator;
         }
+        /**
+         * Check if term changed, this can happen if a node that stepped down
+         * became a leader again.
+         */
+        if (it->second->partition->term() != it->second->term()) {
+            vlog(
+              cg_klog.info,
+              "Group {} operation {} for partition {} processed while term "
+              "changed. "
+              "Group term: {} current term: {}",
+              group,
+              api,
+              ntp,
+              it->second->term(),
+              it->second->partition->term());
+            return error_code::not_coordinator;
+        }
 
         if (it->second->loading) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "Group {} operation {} sent to loading coordinator {}",
               group,
               api,
@@ -1790,7 +1842,7 @@ error_code group_manager::validate_group_status(
     }
 
     vlog(
-      klog.debug,
+      cg_klog.debug,
       "Group {} operation {} misdirected to non-coordinator {}",
       group,
       api,

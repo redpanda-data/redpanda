@@ -843,8 +843,8 @@ ss::future<> ntp_archiver::upload_until_term_change_legacy() {
             // grow very large disabling the archival storage
             vlog(
               _rtclog.trace, "Nothing to upload, applying backoff algorithm");
-            co_await ss::sleep_abortable(
-              backoff + _backoff_jitter.next_jitter_duration(), _as);
+            co_await _wakeup_event.wait(
+              backoff + _backoff_jitter.next_jitter_duration());
             backoff = std::min(backoff * 2, _conf->upload_loop_max_backoff());
         } else {
             backoff = _conf->upload_loop_initial_backoff();
@@ -1213,6 +1213,7 @@ ss::future<> ntp_archiver::stop() {
     _uploads_active.broken();
     _leader_cond.broken();
     _flush_cond.broken();
+    _wakeup_event.broken();
     co_await _gate.close();
 }
 
@@ -1981,6 +1982,18 @@ ntp_archiver::schedule_uploads(model::offset max_offset_exclusive) {
                                    && last_offset == model::offset(0)
                                  ? model::offset(0)
                                  : last_offset + model::offset(1);
+
+    // If tiered storage was paused and gaps were allowed to be created
+    // then we need to start from the first offset in the log.
+    if (start_upload_offset < _parent.log()->offsets().start_offset) {
+        vlog(
+          _rtclog.warn,
+          "Start upload offset {} is less than log start offset {}. Resetting "
+          "start upload offset to log start offset.",
+          start_upload_offset,
+          _parent.log()->offsets().start_offset);
+        start_upload_offset = _parent.log()->offsets().start_offset;
+    }
 
     auto compacted_segments_upload_start = model::next_offset(
       manifest().get_last_uploaded_compacted_offset());
@@ -3001,6 +3014,7 @@ flush_result ntp_archiver::flush() {
 
     _flush_uploads_offset = model::prev_offset(
       max_uploadable_offset_exclusive());
+    _wakeup_event.set();
     vlog(
       _rtclog.debug,
       "Accepted flush, flush offset is {}",
@@ -3324,8 +3338,10 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 std::move(units), std::move(upload_candidate));
           },
           [this](skip_offset_range& skip_offsets) -> ret_t {
-              vlog(
-                _rtclog.warn,
+              const auto log_level = log_level_for_error(skip_offsets.reason);
+              vlogl(
+                _rtclog,
+                log_level,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
               return std::make_pair(std::nullopt, std::nullopt);

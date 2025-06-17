@@ -123,7 +123,7 @@ ss::future<http::downloaded_response> handle_token_request(
     EXPECT_TRUE(query_params_equal(
       absl::flat_hash_map<ss::sstring, ss::sstring>{
         {"grant_type", "client_credentials"},
-        {"scope", "PRINCIPAL_ROLE%3aALL"},
+        {"scope", "PRINCIPAL_ROLE%3AALL"},
         {"client_secret", get_credentials().client_secret},
         {"client_id", get_credentials().client_id}},
       received));

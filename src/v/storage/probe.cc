@@ -201,6 +201,20 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of tombstone records removed by compaction "
                           "due to the delete.retention.ms setting."),
           labels),
+        sm::make_counter(
+          "adjacent_segments_compacted",
+          [this] { return _num_adjacent_segments_compacted; },
+          sm::description("Number of segments that have been compacted away "
+                          "during adjacent merge compaction."),
+          labels),
+        sm::make_counter(
+          "cleanly_compacted_segment",
+          [this] { return _segment_cleanly_compacted; },
+          sm::description(
+            "Number of segments cleanly compacted (i.e, had their "
+            "keys de-duplicated with all previous segments "
+            "before them to the front of the log)"),
+          labels),
       },
       {},
       {sm::shard_label, partition_label});

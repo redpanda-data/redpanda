@@ -188,6 +188,7 @@ ss::future<index_state> deduplicate_segment(
       = internal::is_past_tombstone_delete_horizon(seg, cfg);
     bool may_have_tombstone_records = false;
     auto copy_reducer = internal::copy_data_segment_reducer(
+      seg->path().get_ntp(),
       [&map,
        &may_have_tombstone_records,
        &probe,
@@ -230,6 +231,7 @@ ss::future<index_state> deduplicate_segment(
       &appender,
       seg->path().is_internal_topic(),
       should_offset_delta_times,
+      seg->index().base_offset(),
       seg->offsets().get_committed_offset(),
       &cmp_idx_writer,
       inject_reader_failure,

@@ -2,6 +2,7 @@
 
 #include "cluster/logger.h"
 #include "kafka/server/group_metadata.h"
+#include "kafka/server/logger.h"
 #include "model/record.h"
 
 namespace kafka {
@@ -19,8 +20,27 @@ void group_stm::update_offset(
   const model::topic_partition& key,
   model::offset offset,
   offset_metadata_value&& meta) {
-    _offsets[key] = logged_metadata{
+    logged_metadata logged_md{
       .log_offset = offset, .metadata = std::move(meta)};
+
+    auto it = _offsets.find(key);
+    if (it == _offsets.end()) {
+        _offsets.emplace(key, std::move(logged_md));
+        return;
+    }
+    if (it->second.metadata.offset > logged_md.metadata.offset) {
+        vlog(
+          cg_klog.info,
+          "[group: {}] offset metadata for {}/{} is older than the one "
+          "already stored, stored offset: {}, new offset: {}. Log offset: {}",
+          _group_id,
+          key.topic,
+          key.partition,
+          it->second.metadata.offset,
+          logged_md.metadata.offset,
+          logged_md.log_offset);
+    }
+    it->second = std::move(logged_md);
 }
 
 void group_stm::update_tx_offset(

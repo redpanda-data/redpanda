@@ -362,8 +362,9 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage_resources& resources,
   offset_delta_time apply_offset,
   ss::sharded<features::feature_table>& feature_table) {
-    // preserve broker_timestamp and clean_compact_timestamp from the segment's
-    // index
+    // preserve base_offset, broker_timestamp, and clean_compact_timestamp from
+    // the segment's index
+    auto old_base_offset = seg->index().base_offset();
     auto old_broker_timestamp = seg->index().broker_timestamp();
     auto old_clean_compact_timestamp = seg->index().clean_compact_timestamp();
 
@@ -430,10 +431,12 @@ ss::future<storage::index_state> do_copy_segment_data(
         segment_last_offset = seg->offsets().get_committed_offset();
     }
     auto copy_reducer = copy_data_segment_reducer(
+      seg->path().get_ntp(),
       std::move(should_keep),
       appender.get(),
       seg->path().is_internal_topic(),
       apply_offset,
+      old_base_offset,
       segment_last_offset,
       /*cidx=*/nullptr,
       /*inject_failure=*/false,
@@ -488,7 +491,6 @@ model::record_batch_reader create_segment_full_reader(
       o.get_base_offset(), o.get_dirty_offset(), cfg.iopc);
     reader_cfg.skip_batch_cache = true;
     segment_set::underlying_t set;
-    set.reserve(1);
     set.push_back(s);
     auto lease = std::make_unique<lock_manager::lease>(
       segment_set(std::move(set)));
@@ -614,7 +616,8 @@ ss::future<> build_compaction_index(
   storage_resources& resources) {
     auto w = co_await make_compacted_index_writer(
       p, cfg.iopc, resources, cfg.sanitizer_config);
-    auto reducer = tx_reducer(stm_manager, std::move(aborted_txs), &w);
+    auto reducer = tx_reducer(
+      p.get_ntp(), stm_manager, std::move(aborted_txs), &w);
     auto index_builder = co_await ss::coroutine::as_future<tx_reducer::stats>(
       std::move(rdr)
         .consume(std::move(reducer), model::no_timeout)
@@ -1157,12 +1160,13 @@ offset_delta_time should_apply_delta_time_offset(
 }
 
 ss::future<> mark_segment_as_finished_window_compaction(
-  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp) {
+  ss::lw_shared_ptr<segment> seg, bool set_clean_compact_timestamp, probe& pb) {
     seg->mark_as_finished_windowed_compaction();
     if (set_clean_compact_timestamp) {
         bool did_set = seg->index().maybe_set_clean_compact_timestamp(
           model::timestamp::now());
         if (did_set) {
+            pb.add_cleanly_compacted_segment();
             return seg->index().flush();
         }
     }

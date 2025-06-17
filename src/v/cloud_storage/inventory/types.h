@@ -67,17 +67,17 @@ struct error_outcome_category final : public std::error_category {
     }
 };
 
-inline const std::error_category& error_category() noexcept {
+inline const std::error_category& inventory_error_category() noexcept {
     static error_outcome_category e;
     return e;
 }
 
 inline std::error_code make_error_code(error_outcome e) noexcept {
-    return {static_cast<int>(e), error_category()};
+    return {static_cast<int>(e), inventory_error_category()};
 }
 
 inline std::ostream& operator<<(std::ostream& o, error_outcome e) {
-    o << error_category().message(static_cast<int>(e));
+    o << inventory_error_category().message(static_cast<int>(e));
     return o;
 }
 

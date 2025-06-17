@@ -119,7 +119,7 @@ ss::future<> datalake_manager::start() {
     auto partition_managed_notification
       = _partition_mgr->local().register_manage_notification(
         model::kafka_namespace,
-        [this](ss::lw_shared_ptr<cluster::partition> new_partition) {
+        [this](const ss::lw_shared_ptr<cluster::partition>& new_partition) {
             on_group_notification(new_partition->ntp());
         });
     auto partition_unmanaged_notification
@@ -180,7 +180,8 @@ ss::future<> datalake_manager::start() {
     });
 }
 
-ss::future<> datalake_manager::stop() {
+ss::future<> datalake_manager::shutdown() {
+    vlog(datalake_log.debug, "Stopping datalake manager...");
     auto f = _gate.close();
     _deregistrations.clear();
     co_await ss::max_concurrent_for_each(

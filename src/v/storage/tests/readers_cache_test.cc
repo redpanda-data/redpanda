@@ -31,7 +31,8 @@
 
 namespace storage {
 struct readers_cache_test_fixture : seastar_test {
-    using segment_ptr = ss::lw_shared_ptr<storage::segment>;
+    using segment_ptr = segment_set::type;
+    using segments_t = segment_set::underlying_t;
     bool intersects_locked_range(
       const readers_cache& cache, model::offset begin, model::offset end) {
         return cache.intersects_with_locked_range(begin, end);
@@ -64,8 +65,7 @@ struct readers_cache_test_fixture : seastar_test {
           default_value);
     }
 
-    std::unique_ptr<storage::log_reader>
-    make_reader(ss::circular_buffer<segment_ptr> segments = {}) {
+    std::unique_ptr<storage::log_reader> make_reader(segments_t segments = {}) {
         auto lease = std::make_unique<lock_manager::lease>(
           segment_set(std::move(segments)));
         return std::make_unique<log_reader>(
@@ -196,7 +196,7 @@ TEST_F(readers_cache_test_fixture, test_size_based_eviction) {
     auto close = ss::defer([&cache] { cache.stop().get(); });
 
     for (int i = 0; i < 10; ++i) {
-        ss::circular_buffer<segment_ptr> set;
+        segments_t set;
         set.push_back(make_segment(model::offset(i)));
         cache.put(make_reader(std::move(set)));
     }
@@ -212,7 +212,7 @@ TEST_F(readers_cache_test_fixture, test_size_based_eviction) {
      * in a background.
      */
     for (int i = 10; i < 15; ++i) {
-        ss::circular_buffer<segment_ptr> set;
+        segments_t set;
         set.push_back(make_segment(model::offset(i)));
         cache.put(make_reader(std::move(set)));
     }
@@ -222,7 +222,7 @@ TEST_F(readers_cache_test_fixture, test_size_based_eviction) {
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [&] { return cache.get_stats().cached_readers == 10; });
 
-    ss::circular_buffer<segment_ptr> set;
+    segments_t set;
     set.push_back(make_segment(model::offset(100)));
     auto reader = cache.put(make_reader(std::move(set)));
     EXPECT_EQ(cache.get_stats().in_use_readers, 1);

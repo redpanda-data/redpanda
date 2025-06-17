@@ -14,7 +14,7 @@
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
 
-const auto simple = pps::canonical_schema_definition{
+const auto simple = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -23,7 +23,7 @@ message Simple {
 })",
   pps::schema_type::protobuf};
 
-const auto imported_no_ref = pps::canonical_schema_definition{
+const auto imported_no_ref = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -34,7 +34,7 @@ message Test2 {
 })",
   pps::schema_type::protobuf};
 
-const auto imported = pps::canonical_schema_definition{
+const auto imported = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -46,7 +46,7 @@ message Test2 {
   pps::schema_type::protobuf,
   {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}}}};
 
-const auto imported_again = pps::canonical_schema_definition{
+const auto imported_again = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -58,7 +58,7 @@ message Test3 {
   pps::schema_type::protobuf,
   {{"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
 
-const auto imported_twice = pps::canonical_schema_definition{
+const auto imported_twice = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -72,7 +72,7 @@ message Test3 {
   {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}},
    {"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
 
-const auto nested = pps::canonical_schema_definition{
+const auto nested = pps::schema_definition{
   R"(
 syntax = "proto3";
 
@@ -152,6 +152,5 @@ constexpr std::string_view base64_raw_proto{
   "CXRpbWVzdGFtcBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHbWVzc2FnZRgD"
   "IAEoCUILUAFaBy4vO21haW5iBnByb3RvMw=="};
 
-const pps::canonical_schema_definition base64_proto{
-  pps::canonical_schema_definition{
-    base64_raw_proto, pps::schema_type::protobuf}};
+const pps::schema_definition base64_proto{
+  base64_raw_proto, pps::schema_type::protobuf};

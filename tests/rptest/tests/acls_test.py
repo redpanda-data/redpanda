@@ -16,7 +16,7 @@ from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.clients.kcl import RawKCL
 from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException, AclList
-from rptest.services.redpanda import SecurityConfig, TLSProvider
+from rptest.services.redpanda import LoggingConfig, SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
 from typing import Optional
@@ -92,6 +92,8 @@ class AccessControlListTest(AccessControlListTestBase):
         super().__init__(*args,
                          num_brokers=3,
                          skip_if_no_redpanda_log=True,
+                         log_config=LoggingConfig(
+                             'info', logger_levels={'kafka': 'trace'}),
                          **kwargs)
         self.base_user_cert = None
         self.cluster_describe_user_cert = None
@@ -532,6 +534,38 @@ class AccessControlListTest(AccessControlListTestBase):
             pass_w_cluster_user=True,
             pass_w_super_user=True,
             err_msg='check_permissions failed after migration')
+
+    @cluster(num_nodes=3)
+    @matrix(dn_format=[tls.DNFormat.LEGACY, tls.DNFormat.RFC2253])
+    def test_tls_dn_format(self, dn_format: tls.DNFormat):
+        """
+        This test will verify that the selected format is applied in ACL rules
+        """
+        self.prepare_cluster(use_tls=True,
+                             use_sasl=False,
+                             enable_authz=True,
+                             authn_method="mtls_identity")
+
+        def get_name_format(format: tls.DNFormat):
+            if format == tls.DNFormat.LEGACY:
+                return "legacy"
+            elif format == tls.DNFormat.RFC2253:
+                return "rfc2253"
+            else:
+                raise ValueError(f"Unknown format: {format}")
+
+        dn_name = self.tls.get_cert_subject_dn(self.cluster_describe_user_cert,
+                                               format=dn_format)
+        self.logger.info(f"DN name: {dn_name}")
+        self.get_super_client().acl_create_allow_cluster(dn_name, "describe")
+
+        self.redpanda.set_cluster_config(
+            values={
+                'tls_certificate_name_format': get_name_format(dn_format),
+                'kafka_mtls_principal_mapping_rules': ['DEFAULT']
+            })
+        # Expect failure when set to RFC2253 format
+        self.check_permissions(pass_w_cluster_user=True)
 
 
 class AccessControlListTestUpgrade(AccessControlListTest):

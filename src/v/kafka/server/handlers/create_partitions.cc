@@ -276,6 +276,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
         co_return co_await ctx.respond(std::move(resp));
     }
 
+    const auto now = quota_manager::clock::now();
     valid_range_end = co_await validate_range_async(
       request.data.topics.begin(),
       valid_range_end,
@@ -284,7 +285,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
          ? error_code::throttling_quota_exceeded
          : error_code::unknown_server_error),
       "Too many partition mutations requested",
-      [&ctx, &resp](const create_partitions_topic& tp) {
+      [&ctx, &resp, now](const create_partitions_topic& tp) {
           const auto cfg = ctx.metadata_cache().get_topic_cfg(
             model::topic_namespace_view(model::kafka_namespace, tp.name));
           vassert(cfg, "Topic exist check has already occurred");
@@ -293,7 +294,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
             "Sanity check for request increase partition count failed");
           const auto mutations = (tp.count - cfg->partition_count);
           return ctx.quota_mgr()
-            .record_partition_mutations(ctx.header().client_id, mutations)
+            .record_partition_mutations(ctx.header().client_id, mutations, now)
             .then([&resp](std::chrono::milliseconds delay) {
                 resp.data.throttle_time_ms = std::max(
                   resp.data.throttle_time_ms, delay);

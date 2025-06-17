@@ -169,12 +169,13 @@ std::ostream& operator<<(std::ostream& o, const segment_set& s) {
             o << p;
         }
     } else {
-        for (size_t i = 0; i < halved; i++) {
-            o << s[i];
+        for (auto it = s.begin(); it != std::next(s.begin(), halved); ++it) {
+            o << *it;
         }
         o << "...";
-        for (size_t i = s.size() - halved; i < s.size(); i++) {
-            o << s[i];
+        for (auto it = std::next(s.begin(), s.size() - halved); it != s.end();
+             ++it) {
+            o << *it;
         }
     }
     return o << "]}";
@@ -202,11 +203,10 @@ static ss::future<segment_set> unsafe_do_recover(
         }
         segment_set::underlying_t good = std::move(segments).release();
         absl::btree_set<segment*> to_recover_set;
-        for (size_t i = 0; i < good.size(); ++i) {
-            auto& s = *good[i];
-            if (i > 0) {
-                auto& prev = *good[i - 1];
-
+        for (auto it = good.begin(); it != good.end(); ++it) {
+            auto& s = *(*it);
+            if (it != good.begin()) {
+                auto& prev = *(*std::prev(it));
                 if (
                   prev.offsets().get_dirty_offset()
                   >= s.offsets().get_base_offset()) {
@@ -357,7 +357,6 @@ static ss::future<segment_set> do_recover(
   ss::abort_source& as) {
     // light-weight copy used for clean-up if recovery fails
     segment_set::underlying_t copy;
-    copy.reserve(segments.size());
     std::copy(segments.cbegin(), segments.cend(), std::back_inserter(copy));
 
     // if an exception occurs during recovery close all the segments that are

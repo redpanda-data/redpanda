@@ -274,6 +274,7 @@ void quota_manager::update_client_quotas() {
 }
 
 ss::future<> quota_manager::do_update_client_quotas() {
+    vlog(client_quota_log.debug, "Updating client quotas");
     constexpr auto set_bucket = [](
                                   std::optional<atomic_token_bucket>& bucket,
                                   std::optional<uint64_t> rate,
@@ -332,7 +333,7 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
         _probe->record_throttle_time(value.rule, ctx.q_type, 0ms);
         vlog(
           client_quota_log.trace,
-          "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
+          "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}, "
           "capped_delay:{}",
           ctx,
           key,
@@ -360,7 +361,7 @@ ss::future<std::chrono::milliseconds> quota_manager::record_partition_mutations(
     _probe->record_throttle_time(value.rule, ctx.q_type, capped_delay);
     vlog(
       client_quota_log.trace,
-      "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}"
+      "request: ctx:{}, key:{}, value:{}, mutations: {}, delay:{}, "
       "capped_delay:{}",
       ctx,
       key,

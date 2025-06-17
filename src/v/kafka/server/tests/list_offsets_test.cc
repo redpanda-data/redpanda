@@ -222,10 +222,8 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
     // Arbitrary synthetic timestamp for start of produce
     auto base_timestamp = 100000;
 
-    for (long i = 0; i < batch_count; ++i) {
-        // Mixture of compressed and uncompressed, they have distinct offset
-        // lookup behavior when searching by timequery, which will be
-        // validated
+    for (size_t i = 0; i < batch_count; ++i) {
+        // Mixture of compressed and uncompressed batches.
         bool compressed = i % 3 == 0;
         batches.push_back(make_random_batch(model::test::record_batch_spec{
           // after queries below.
@@ -279,30 +277,17 @@ FIXTURE_TEST(list_offsets_by_time, redpanda_thread_fixture) {
           }},
         });
 
-        const auto& batch = batches[i];
         auto resp_midbatch
           = client.dispatch(std::move(req2), kafka::api_version(1)).get();
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics.size(), 1);
         BOOST_REQUIRE_EQUAL(resp_midbatch.data.topics[0].partitions.size(), 1);
-        if (batch.compressed()) {
-            // Compressed batch: result will point to start of batch, slightly
-            // earlier than the query timestamp
-            BOOST_CHECK(
-              resp_midbatch.data.topics[0].partitions[0].timestamp
-              == model::timestamp(base_timestamp + i * record_count));
-            BOOST_CHECK(
-              resp_midbatch.data.topics[0].partitions[0].offset
-              == model::offset(i * record_count));
-        } else {
-            // Uncompressed batch: result should have seeked to correct record
-            BOOST_CHECK(
-              resp_midbatch.data.topics[0].partitions[0].timestamp
-              == model::timestamp(
-                base_timestamp + i * record_count + record_offset));
-            BOOST_CHECK(
-              resp_midbatch.data.topics[0].partitions[0].offset
-              == model::offset(i * record_count + record_offset));
-        }
+        BOOST_CHECK(
+          resp_midbatch.data.topics[0].partitions[0].timestamp
+          == model::timestamp(
+            base_timestamp + i * record_count + record_offset));
+        BOOST_CHECK(
+          resp_midbatch.data.topics[0].partitions[0].offset
+          == model::offset(i * record_count + record_offset));
     }
 
     client.stop().then([&client] { client.shutdown(); }).get();

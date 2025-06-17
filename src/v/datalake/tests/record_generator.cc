@@ -27,9 +27,8 @@ record_generator::register_avro_schema(
   std::string_view name, std::string_view schema) {
     using namespace pandaproxy::schema_registry;
     auto id = co_await ss::coroutine::as_future(
-      _sr->create_schema(unparsed_schema{
-        subject{"foo"},
-        unparsed_schema_definition{schema, schema_type::avro}}));
+      _sr->create_schema(subject_schema{
+        subject{"foo"}, schema_definition{schema, schema_type::avro}}));
     if (id.failed()) {
         co_return error{fmt::format(
           "Error creating schema {}: {}", name, id.get_exception())};

@@ -27,7 +27,7 @@ using parse_result
 SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
     const ss::sstring escaped_schema_def{
       R"({\"type\":\"record\",\"name\":\"test\",\"fields\":[{\"type\":\"string\",\"name\":\"field1\"},{\"type\":\"com.acme.Referenced\",\"name\":\"int\"}]})"};
-    const pps::unparsed_schema_definition expected_schema_def{
+    const pps::schema_definition expected_schema_def{
       R"({"type":"record","name":"test","fields":[{"type":"string","name":"field1"},{"type":"com.acme.Referenced","name":"int"}]})",
       pps::schema_type::avro,
       {{.name{"com.acme.Referenced"},
@@ -61,9 +61,8 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
 
     result.def = {
       std::move(rsub),
-      pps::unparsed_schema_definition{
-        pps::unparsed_schema_definition::raw_string{
-          ::json::minify(std::move(def)())},
+      pps::schema_definition{
+        pps::schema_definition::raw_string{::json::minify(std::move(def)())},
         pps::schema_type::avro,
         std::move(refs)}};
 

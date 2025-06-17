@@ -1361,7 +1361,7 @@ void admin_server::register_config_routes() {
                 "Invalid parameter 'name' got {{{}}}",
                 req->get_path_param("name")));
           }
-          validate_no_control(name, string_conversion_exception{name});
+          validate_no_control(name, string_conversion_exception{"name"});
 
           ss::log_level cur_level;
           try {
@@ -1401,7 +1401,7 @@ void admin_server::register_config_routes() {
                 "Invalid parameter 'name' got {{{}}}",
                 req->get_path_param("name")));
           }
-          validate_no_control(name, string_conversion_exception{name});
+          validate_no_control(name, string_conversion_exception{"name"});
 
           // current level: will be used revert after a timeout (optional)
           ss::log_level cur_level;
@@ -1599,10 +1599,18 @@ void config_multi_property_validation(
             // Some superusers must be defined, or nobody will be able
             // to use the admin API after this request.
             errors["admin_api_require_auth"] = "No superusers defined";
-        } else if (!superusers_set.contains(username) && !auth_was_enabled) {
-            // When enabling auth, user making the change must be in the list of
-            // superusers, or they would be locking themselves out.
-            errors["admin_api_require_auth"] = "May only be set by a superuser";
+        } else if (!superusers_set.contains(username)) {
+            if (!auth_was_enabled) {
+                // When enabling auth, user making the change must be in the
+                // list of superusers, or they would be locking themselves out.
+                errors["admin_api_require_auth"]
+                  = "May only be set by a superuser";
+            } else {
+                // When auth is enabled, user making the change must be in the
+                // list of superusers, or they would be locking themselves out.
+                errors["superusers"] = "superusers must contain the user "
+                                       "making the change when auth is enabled";
+            }
         }
     }
 

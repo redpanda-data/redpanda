@@ -22,6 +22,7 @@
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/error.h"
+#include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -299,9 +300,8 @@ public:
     }
 };
 
-template<typename Tag>
 struct schema_value {
-    typed_schema<Tag> schema;
+    subject_schema schema;
     schema_version version;
     schema_id id;
     is_deleted deleted{false};
@@ -320,12 +320,8 @@ struct schema_value {
     }
 };
 
-using unparsed_schema_value = schema_value<unparsed_schema_defnition_tag>;
-using canonical_schema_value = schema_value<canonical_schema_definition_tag>;
-
-template<typename Buffer, typename Tag>
-void rjson_serialize(
-  ::json::iobuf_writer<Buffer>& w, const schema_value<Tag>& val) {
+template<typename Buffer>
+void rjson_serialize(::json::iobuf_writer<Buffer>& w, const schema_value& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.schema.sub());
@@ -360,7 +356,7 @@ void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Tag, typename Encoding = ::json::UTF8<>>
+template<typename Encoding = ::json::UTF8<>>
 class schema_value_handler final : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -381,15 +377,15 @@ class schema_value_handler final : public json::base_handler<Encoding> {
 
     struct mutable_schema {
         subject sub{invalid_subject};
-        typename typed_schema_definition<Tag>::raw_string def;
+        typename schema_definition::raw_string def;
         schema_type type{schema_type::avro};
-        typename typed_schema_definition<Tag>::references refs;
+        typename schema_definition::references refs;
     };
     mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
-    using rjson_parse_result = schema_value<Tag>;
+    using rjson_parse_result = schema_value;
     rjson_parse_result result;
 
     schema_value_handler()
@@ -505,8 +501,7 @@ public:
             return true;
         }
         case state::definition: {
-            _schema.def = typename typed_schema_definition<Tag>::raw_string{
-              ss::sstring{sv}};
+            _schema.def = schema_definition::raw_string{sv};
             _state = state::object;
             return true;
         }
@@ -605,13 +600,6 @@ public:
         return std::exchange(_state, state::object) == state::references;
     }
 };
-
-template<typename Encoding = ::json::UTF8<>>
-using unparsed_schema_value_handler
-  = schema_value_handler<unparsed_schema_defnition_tag, Encoding>;
-template<typename Encoding = ::json::UTF8<>>
-using canonical_schema_value_handler
-  = schema_value_handler<canonical_schema_definition_tag, Encoding>;
 
 struct config_key {
     static constexpr topic_key_type keytype{topic_key_type::config};
@@ -1390,7 +1378,7 @@ struct consume_to_store {
 
         auto key_type = from_string_view<topic_key_type>(key_type_str);
         if (!key_type.has_value()) {
-            vlog(plog.error, "Ignoring keytype: {}", key_type_str);
+            vlog(srlog.error, "Ignoring keytype: {}", key_type_str);
             co_await _sequencer.advance_offset(offset);
             co_return;
         }
@@ -1399,9 +1387,9 @@ struct consume_to_store {
         case topic_key_type::noop:
             break;
         case topic_key_type::schema: {
-            std::optional<unparsed_schema_value> val;
+            std::optional<schema_value> val;
             if (!record.value().empty()) {
-                val.emplace(from_json_iobuf<unparsed_schema_value_handler<>>(
+                val.emplace(from_json_iobuf<schema_value_handler<>>(
                   record.release_value()));
             }
             co_await apply(
@@ -1452,11 +1440,8 @@ struct consume_to_store {
         co_await _sequencer.advance_offset(offset);
     }
 
-    template<typename Tag>
     ss::future<> apply(
-      model::offset offset,
-      schema_key key,
-      std::optional<schema_value<Tag>> val) {
+      model::offset offset, schema_key key, std::optional<schema_value> val) {
         if (key.magic != 0 && key.magic != 1) {
             throw exception(
               error_code::topic_parse_error,
@@ -1472,7 +1457,7 @@ struct consume_to_store {
         // compatibility, which can't collide.
         if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
-              plog.debug,
+              srlog.debug,
               "Ignoring out of order {} (at offset {})",
               key,
               offset);
@@ -1481,7 +1466,7 @@ struct consume_to_store {
 
         try {
             vlog(
-              plog.debug,
+              srlog.debug,
               "Applying: {} tombstone={} (at offset {})",
               key,
               !val.has_value(),
@@ -1495,11 +1480,9 @@ struct consume_to_store {
                     // tombstone all the records referring to a particular
                     // version, we will see more than one get applied, and
                     // after the first one, the rest will not find it.
-                    if (
-                      e.code() == error_code::subject_not_found
-                      || e.code() == error_code::subject_version_not_found) {
+                    if (failed_subject_schema_lookup(e.code())) {
                         vlog(
-                          plog.debug,
+                          srlog.debug,
                           "Ignoring tombstone at offset={}, subject or version "
                           "already removed ({})",
                           offset,
@@ -1521,7 +1504,7 @@ struct consume_to_store {
                   val->deleted);
             }
         } catch (const exception& e) {
-            vlog(plog.debug, "Error replaying: {}: {}", key, e.what());
+            vlog(srlog.debug, "Error replaying: {}: {}", key, e.what());
         }
     }
 
@@ -1533,7 +1516,7 @@ struct consume_to_store {
         // compatibility, which can't collide.
         if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
-              plog.debug,
+              srlog.debug,
               "Ignoring out of order {} (at offset {})",
               key,
               offset);
@@ -1546,7 +1529,7 @@ struct consume_to_store {
               fmt::format("Unexpected magic: {}", key));
         }
         try {
-            vlog(plog.debug, "Applying: {}", key);
+            vlog(srlog.debug, "Applying: {}", key);
             if (key.sub.has_value()) {
                 if (!val.has_value()) {
                     co_await _store.clear_compatibility(
@@ -1570,11 +1553,11 @@ struct consume_to_store {
                 co_await _store.set_compatibility(val->compat);
             } else {
                 vlog(
-                  plog.warn,
+                  srlog.warn,
                   "Tried to apply config with neither subject nor value");
             }
         } catch (const exception& e) {
-            vlog(plog.debug, "Error replaying: {}: {}", key, e);
+            vlog(srlog.debug, "Error replaying: {}: {}", key, e);
         }
     }
 
@@ -1586,7 +1569,7 @@ struct consume_to_store {
         // compatibility, which can't collide.
         if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
-              plog.debug,
+              srlog.debug,
               "Ignoring out of order {} (at offset {})",
               key,
               offset);
@@ -1599,7 +1582,7 @@ struct consume_to_store {
               fmt::format("Unexpected magic: {}", key));
         }
         try {
-            vlog(plog.debug, "Applying: {}", key);
+            vlog(srlog.debug, "Applying: {}", key);
             if (key.sub.has_value()) {
                 if (!val.has_value()) {
                     co_await _store.clear_mode(
@@ -1625,11 +1608,11 @@ struct consume_to_store {
                 co_await _store.set_mode(val->mode, force::yes);
             } else {
                 vlog(
-                  plog.warn,
+                  srlog.warn,
                   "Tried to apply mode with neither subject nor value");
             }
         } catch (const exception& e) {
-            vlog(plog.debug, "Error replaying: {}: {}", key, e);
+            vlog(srlog.debug, "Error replaying: {}: {}", key, e);
         }
     }
 
@@ -1645,7 +1628,7 @@ struct consume_to_store {
         // compatibility, which can't collide.
         if (val && key.seq.has_value() && offset != key.seq) {
             vlog(
-              plog.debug,
+              srlog.debug,
               "Ignoring out of order {} (at offset {})",
               key,
               offset);
@@ -1658,7 +1641,8 @@ struct consume_to_store {
             // actual removal of subjects/versions happens on hard delete, i.e.
             // the tombstone for the schema/version itself, not the tombstone
             // for the soft deletion.
-            vlog(plog.debug, "Ignoring delete_subject tombstone at {}", offset);
+            vlog(
+              srlog.debug, "Ignoring delete_subject tombstone at {}", offset);
             co_return;
         }
 
@@ -1668,7 +1652,7 @@ struct consume_to_store {
               fmt::format("Unexpected magic: {}", key));
         }
         try {
-            vlog(plog.debug, "Applying: {}", key);
+            vlog(srlog.debug, "Applying: {}", key);
             co_await _store.delete_subject(
               seq_marker{
                 .seq = key.seq,
@@ -1678,7 +1662,7 @@ struct consume_to_store {
               key.sub,
               permanent_delete::no);
         } catch (const exception& e) {
-            vlog(plog.debug, "Error replaying: {}: {}", key, e);
+            vlog(srlog.debug, "Error replaying: {}: {}", key, e);
         }
     }
 

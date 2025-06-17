@@ -467,8 +467,7 @@ class InvalidNewUserStrings(BaseScramTest):
             algorithm='SCRAM-SHA-256',
             expected_status_code=400,
             err_msg=
-            f'Parameter contained invalid control characters: {username.translate(CONTROL_CHARS_MAP)}'
-        )
+            f'Parameter \'username\' contained invalid control characters')
 
         # Two ordinals (corresponding to ',' and '=') are explicitly excluded from SASL usernames
         for ordinal in [0x2c, 0x3d]:
@@ -491,8 +490,7 @@ class InvalidNewUserStrings(BaseScramTest):
             algorithm=algorithm,
             expected_status_code=400,
             err_msg=
-            f'Parameter contained invalid control characters: {algorithm.translate(CONTROL_CHARS_MAP)}'
-        )
+            f'Parameter \'algorithm\' contained invalid control characters')
 
     @cluster(num_nodes=3)
     def test_invalid_password(self):
@@ -505,7 +503,8 @@ class InvalidNewUserStrings(BaseScramTest):
             algorithm="SCRAM-SHA-256",
             password=password,
             expected_status_code=400,
-            err_msg='Parameter contained invalid control characters: PASSWORD')
+            err_msg=
+            'Parameter \'password\' contained invalid control characters')
 
 
 class EscapedNewUserStrings(BaseScramTest):

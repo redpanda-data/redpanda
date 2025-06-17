@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/seastarx.h"
 #include "bytes/iostream.h"
 #include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
@@ -21,6 +22,7 @@
 #include "json/stringbuffer.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
+#include "pandaproxy/util.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/sstring.hh>
@@ -140,16 +142,19 @@ typename Handler::rjson_parse_result rjson_parse(iobuf buf, Handler&& handler) {
       std::move(buf), std::forward<Handler>(handler));
 }
 
-///\brief Parse a request body using the handler.
 template<impl::RjsonParseHandler Handler>
 typename ss::future<typename Handler::rjson_parse_result>
-rjson_parse(std::unique_ptr<ss::http::request> req, Handler handler) {
-    if (!req->content.empty()) {
-        co_return impl::rjson_parse(req->content.data(), std::move(handler));
+rjson_parse(ss::http::request& req, Handler handler, truncating_logger& log) {
+    if (!req.content.empty()) {
+        pandaproxy::log_request(req, req.content, log);
+
+        // Consume the content here to reduce memory usage
+        auto content = std::move(req.content);
+        co_return impl::rjson_parse(content.data(), std::move(handler));
     }
 
     iobuf buf;
-    auto is = req->content_stream;
+    auto is = req.content_stream;
     co_await ss::repeat([&buf, &is]() {
         return is->read().then([&buf](ss::temporary_buffer<char> tmp_buf) {
             if (tmp_buf.empty()) {
@@ -162,6 +167,7 @@ rjson_parse(std::unique_ptr<ss::http::request> req, Handler handler) {
         });
     });
 
+    pandaproxy::log_request(req, buf, log);
     co_return rjson_parse(std::move(buf), std::move(handler));
 }
 

@@ -138,7 +138,8 @@ struct index_state
     static constexpr auto clean_compact_timestamp_version = 8;
     static constexpr auto may_have_tombstone_records_version = 9;
 
-    static index_state make_empty_index(offset_delta_time with_offset);
+    static index_state
+    make_empty_index(model::offset base_offset, offset_delta_time with_offset);
 
     struct entry {
         model::offset offset;

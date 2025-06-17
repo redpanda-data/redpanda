@@ -10,6 +10,7 @@
 
 #include "segment_reupload.h"
 
+#include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
 #include "config/configuration.h"
 #include "logger.h"
@@ -190,6 +191,21 @@ void segment_collector::do_collect(segment_collector_mode mode) {
                result.segment->offsets().get_base_offset()});
             align_begin_offset_to_manifest();
         }
+
+        // Only segments from the same term can be concatenated together.
+        if (
+          !_segments.empty()
+          && _segments.back()->offsets().get_term()
+               != result.segment->offsets().get_term()) {
+            archival_log.debug(
+              "Segment collect for ntp {} stopping collection, last segment "
+              "term {} is different from current segment term: {}",
+              _manifest.get_ntp(),
+              _segments.back()->offsets().get_term(),
+              result.segment->offsets().get_term());
+            break;
+        }
+
         _segments.push_back(result.segment);
         current_segment_end = result.segment->offsets().get_committed_offset();
         start = current_segment_end + model::offset{1};

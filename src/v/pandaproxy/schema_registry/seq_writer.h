@@ -28,6 +28,9 @@ static const int max_retries = 4;
 
 class seq_writer final : public ss::peering_sharded_service<seq_writer> {
 public:
+    // All reads of the topic must occur on shard 0
+    static constexpr ss::shard_id reader_shard = 0;
+
     seq_writer(
       model::node_id node_id,
       ss::smp_service_group smp_group,
@@ -46,7 +49,7 @@ public:
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
-    ss::future<schema_id> write_subject_version(subject_schema schema);
+    ss::future<schema_id> write_subject_version(stored_schema schema);
 
     ss::future<bool>
     write_config(std::optional<subject> sub, compatibility_level compat);
@@ -77,7 +80,7 @@ private:
     void advance_offset_inner(model::offset offset);
 
     ss::future<std::optional<schema_id>>
-    do_write_subject_version(subject_schema schema, model::offset write_at);
+    do_write_subject_version(stored_schema schema, model::offset write_at);
 
     ss::future<std::optional<bool>> do_write_config(
       std::optional<subject> sub,
@@ -112,7 +115,7 @@ private:
         auto remote = [base_backoff, f](seq_writer& seq) {
             if (auto waiters = seq._write_sem.waiters(); waiters != 0) {
                 vlog(
-                  plog.trace,
+                  srlog.trace,
                   "sequenced_write waiting for {} waiters",
                   waiters);
             }
@@ -121,7 +124,7 @@ private:
                   if (auto waiters = seq._wait_for_sem.waiters();
                       waiters != 0) {
                       vlog(
-                        plog.debug,
+                        srlog.debug,
                         "sequenced_write acquired write_sem with {} "
                         "wait_for_sem waiters",
                         waiters);
@@ -133,9 +136,9 @@ private:
               });
         };
 
-        return container().invoke_on(0, _smp_opts, remote).then([](auto res) {
-            return std::move(res).value();
-        });
+        return container()
+          .invoke_on(reader_shard, _smp_opts, remote)
+          .then([](auto res) { return std::move(res).value(); });
     }
 
     /// The part of sequenced_write that runs on shard zero

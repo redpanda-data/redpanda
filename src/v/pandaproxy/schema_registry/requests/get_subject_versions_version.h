@@ -18,7 +18,7 @@
 namespace pandaproxy::schema_registry {
 
 struct post_subject_versions_version_response {
-    canonical_schema schema;
+    subject_schema schema;
     schema_id id;
     schema_version version;
 };

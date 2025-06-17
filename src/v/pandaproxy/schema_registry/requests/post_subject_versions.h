@@ -24,7 +24,7 @@
 namespace pandaproxy::schema_registry {
 
 struct post_subject_versions_request {
-    canonical_schema schema;
+    subject_schema schema;
 };
 
 template<typename Encoding = ::json::UTF8<>>
@@ -49,16 +49,16 @@ class post_subject_versions_request_handler
 
     struct mutable_schema {
         subject sub{invalid_subject};
-        unparsed_schema_definition::raw_string def;
+        schema_definition::raw_string def;
         schema_type type{schema_type::avro};
-        unparsed_schema_definition::references refs;
+        schema_definition::references refs;
     };
     mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
     struct rjson_parse_result {
-        unparsed_schema def;
+        subject_schema def;
         std::optional<schema_id> id;
         std::optional<schema_version> version;
     };
@@ -150,8 +150,7 @@ public:
         case state::schema: {
             iobuf buf;
             buf.append(sv.data(), sv.size());
-            _schema.def = unparsed_schema_definition::raw_string{
-              std::move(buf)};
+            _schema.def = schema_definition::raw_string{std::move(buf)};
             _state = state::record;
             return true;
         }

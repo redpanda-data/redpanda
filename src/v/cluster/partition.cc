@@ -454,17 +454,15 @@ kafka_stages partition::replicate_in_stages(
 raft::group_id partition::group() const { return _raft->group(); }
 
 ss::future<> partition::start(
-  state_machine_registry& stm_registry,
-  const std::optional<xshard_transfer_state>& xst_state) {
+  raft::state_machine_manager_builder&& stm_builder,
+  std::optional<xshard_transfer_state>&& xst_state) {
     const auto& ntp = _raft->ntp();
-    raft::state_machine_manager_builder builder = stm_registry.make_builder_for(
-      _raft.get());
 
     std::optional<raft::xshard_transfer_state> raft_xst_state;
     if (xst_state) {
         raft_xst_state = xst_state->raft;
     }
-    co_await _raft->start(std::move(builder), std::move(raft_xst_state));
+    co_await _raft->start(std::move(stm_builder), std::move(raft_xst_state));
     // store rm_stm pointer in partition as this is commonly used stm
     _rm_stm = _raft->stm_manager()->get<cluster::rm_stm>();
     _log_eviction_stm = _raft->stm_manager()->get<cluster::log_eviction_stm>();
@@ -1147,7 +1145,6 @@ partition::replicate_unsafe_reset(cloud_storage::partition_manifest manifest) {
     auto sync_timeout = config::shard_local_cfg()
                           .cloud_storage_metadata_sync_timeout_ms.value();
     auto replication_deadline = ss::lowres_clock::now() + sync_timeout;
-    std::vector<cluster::command_batch_builder> builders;
 
     // TODO: move this logic to the ntp_archiver
     // currently, the 'batch_start' method will work even if there is an
@@ -1529,6 +1526,10 @@ model::producer_id partition::highest_producer_id() {
 const ss::shared_ptr<cluster::archival_metadata_stm>&
 partition::archival_meta_stm() const {
     return _archival_meta_stm;
+}
+
+model::offset partition::max_collectible_offset() {
+    return _raft->log()->stm_manager()->max_collectible_offset();
 }
 
 std::optional<model::offset> partition::kafka_start_offset_override() const {

@@ -191,8 +191,12 @@ model::record_batch make_random_batch(record_batch_spec spec) {
 }
 
 model::record_batch make_random_batch(
-  model::offset o, bool allow_compression, std::optional<model::timestamp> ts) {
-    auto num_records = get_int(2, 30);
+  model::offset o,
+  bool allow_compression,
+  std::optional<model::timestamp> ts,
+  int records_per_batch) {
+    auto num_records = records_per_batch > 0 ? records_per_batch
+                                             : get_int(2, 30);
     return make_random_batch(
       o,
       num_records,
@@ -206,7 +210,8 @@ ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
   model::offset o,
   int count,
   bool allow_compression,
-  std::optional<model::timestamp> base_ts) {
+  std::optional<model::timestamp> base_ts,
+  int records_per_batch) {
     // start offset + count
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(count);
@@ -215,7 +220,7 @@ ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
         // TODO: it looks like a bug: make_random_batch adds
         // random number of records like we increment offset
         // always by one
-        auto b = make_random_batch(o, allow_compression, ts);
+        auto b = make_random_batch(o, allow_compression, ts, records_per_batch);
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));

@@ -375,6 +375,7 @@ private:
 
     eviction_policy _policy;
 
+    ss::abort_source _as;
     ss::gate _gate;
     ss::future<> run_loop();
     ssx::semaphore _control_sem{0, "resource_mgmt::space_manager"};

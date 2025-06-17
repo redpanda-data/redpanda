@@ -45,4 +45,14 @@ ss::future<> state_machine_base::wait(
     co_await _waiters.wait(offset, timeout, as);
 }
 
+std::ostream&
+operator<<(std::ostream& o, const stm_initial_recovery_policy& p) {
+    switch (p) {
+    case stm_initial_recovery_policy::read_everything:
+        return o << "read_everything";
+    case stm_initial_recovery_policy::skip_to_end:
+        return o << "skip_to_end";
+    }
+}
+
 } // namespace raft

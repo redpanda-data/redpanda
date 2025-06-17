@@ -27,7 +27,7 @@ namespace pps = pp::schema_registry;
 using make_values_unsigned = ss::bool_class<struct make_values_unsigned_tag>;
 
 struct request {
-    pps::canonical_schema schema;
+    pps::subject_schema schema;
     std::optional<pps::schema_id> id = std::nullopt;
     std::optional<pps::schema_version> version = std::nullopt;
     // If the below is set to true, then cast id and version to an unsigned int
@@ -539,9 +539,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
 
-    const auto company_req = request{pps::canonical_schema{
+    const auto company_req = request{pps::subject_schema{
       pps::subject{"company-value"},
-      pps::canonical_schema_definition(
+      pps::schema_definition(
         R"({
   "namespace": "com.redpanda",
   "type": "record",
@@ -563,9 +563,9 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 })",
         pps::schema_type::avro)}};
 
-    const auto employee_req = request{pps::canonical_schema{
+    const auto employee_req = request{pps::subject_schema{
       pps::subject{"employee-value"},
-      pps::canonical_schema_definition{
+      pps::schema_definition{
         R"({
   "namespace": "com.redpanda",
   "type": "record",
@@ -618,9 +618,9 @@ FIXTURE_TEST(
     using namespace std::chrono_literals;
 
     const auto simple_req_id_0 = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -636,9 +636,9 @@ FIXTURE_TEST(
       pps::schema_id{0}};
 
     const auto simple_req_id_minus_1 = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -686,9 +686,9 @@ FIXTURE_TEST(
     using namespace std::chrono_literals;
 
     const auto simple_req_id_invalid = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -721,9 +721,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   schema_registry_post_subjects_version_zero, pandaproxy_test_fixture) {
     const auto simple_req_first = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -740,9 +740,9 @@ FIXTURE_TEST(
       pps::schema_version{0}};
 
     const auto simple_req_second = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -796,9 +796,9 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   schema_registry_post_subjects_version_exhausted, pandaproxy_test_fixture) {
     const auto simple_req_first = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",
@@ -815,9 +815,9 @@ FIXTURE_TEST(
       pps::schema_version{std::numeric_limits<int>::max()}};
 
     const auto simple_req_second = request{
-      pps::canonical_schema{
+      pps::subject_schema{
         pps::subject{"simple-value"},
-        pps::canonical_schema_definition(
+        pps::schema_definition(
           R"({
 "namespace": "com.redpanda",
   "type": "record",

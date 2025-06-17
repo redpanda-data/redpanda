@@ -276,10 +276,11 @@ TEST_F_CORO(cg_recovery_test_fixture, test_single_group_recovery) {
     auto state = co_await recover_from_batches(std::move(batches));
     const auto gr = meta.key.group_id;
     EXPECT_EQ(state.groups.size(), 1);
-    EXPECT_EQ(state.groups[gr].get_metadata(), meta.value);
-    EXPECT_EQ(state.groups[gr].offsets().size(), 2);
+    auto& group_state = state.groups.find(gr)->second;
+    EXPECT_EQ(group_state.get_metadata(), meta.value);
+    EXPECT_EQ(group_state.offsets().size(), 2);
     expect_committed_offsets(
-      state.groups[gr].offsets(), "test-1/0@1024", "test-2/10@256");
+      group_state.offsets(), "test-1/0@1024", "test-2/10@256");
 }
 
 TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
@@ -324,12 +325,15 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
     const auto gr_1 = g_1_metadata.key.group_id;
     const auto gr_2 = g_2_metadata.key.group_id;
     EXPECT_EQ(state.groups.size(), 2);
-    EXPECT_EQ(state.groups[gr_1].get_metadata(), g_1_metadata.value);
+    auto& gr_1_state = state.groups.find(gr_1)->second;
+    EXPECT_EQ(gr_1_state.get_metadata(), g_1_metadata.value);
     expect_committed_offsets(
-      state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
+      gr_1_state.offsets(), "test-1/0@1024", "test-2/10@256");
 
     expect_committed_offsets(
-      state.groups[gr_2].offsets(), "test-20/2@123", "test-123/10@45");
+      state.groups.find(gr_2)->second.offsets(),
+      "test-20/2@123",
+      "test-123/10@45");
 
     // add group 1 tombstone
     auto g_1_ts_kv = group_metadata_kv{
@@ -357,7 +361,8 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tombstone_recovery) {
       std::move(batches_with_tombstones));
     EXPECT_EQ(state_new.groups.size(), 1);
     EXPECT_FALSE(state_new.groups.contains(gr_1));
-    EXPECT_FALSE(state_new.groups[gr_2].offsets().contains(
+    auto& gr_2_state = state_new.groups.find(gr_2)->second;
+    EXPECT_FALSE(gr_2_state.offsets().contains(
       model::topic_partition(model::topic("t-20"), model::partition_id(2))));
 }
 
@@ -389,31 +394,34 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
         .offsets = std::vector<group_tx::partition_offset>{
           make_tx_offset("test-1", 0, 2048),
           make_tx_offset("topic-3", 12, 1)}}));
+    {
+        auto state = co_await recover_from_batches(copy_batches(batches));
+        EXPECT_EQ(state.groups.size(), 1);
+        auto& gr_1_state = state.groups.find(gr_1)->second;
+        EXPECT_EQ(gr_1_state.producers().size(), 1);
+        // tx is ongoing offsets included in the transaction should not be
+        // visible in state machine
 
-    auto state = co_await recover_from_batches(copy_batches(batches));
-    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
-    // tx is ongoing offsets included in the transaction should not be
-    // visible in state machine
+        expect_committed_offsets(
+          gr_1_state.offsets(), "test-1/0@1024", "test-2/10@256");
 
-    EXPECT_EQ(state.groups.size(), 1);
-    expect_committed_offsets(
-      state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
+        batches.push_back(make_tx_batch(
+          model::record_batch_type::group_commit_tx,
+          0,
+          pid,
+          group_tx::commit_metadata{.group_id = gr_1}));
+    }
+    {
+        auto state = co_await recover_from_batches(copy_batches(batches));
+        auto& gr_1_state = state.groups.find(gr_1)->second;
+        EXPECT_EQ(gr_1_state.producers().size(), 1);
 
-    batches.push_back(make_tx_batch(
-      model::record_batch_type::group_commit_tx,
-      0,
-      pid,
-      group_tx::commit_metadata{.group_id = gr_1}));
-
-    state = co_await recover_from_batches(copy_batches(batches));
-
-    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
-
-    expect_committed_offsets(
-      state.groups[gr_1].offsets(),
-      "test-1/0@2048",
-      "test-2/10@256",
-      "topic-3/12@1");
+        expect_committed_offsets(
+          gr_1_state.offsets(),
+          "test-1/0@2048",
+          "test-2/10@256",
+          "topic-3/12@1");
+    }
 
     /**
      * try aborting already committed tx, this should fail
@@ -424,15 +432,13 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_happy_path) {
       pid,
       group_tx::abort_metadata{.group_id = gr_1, .tx_seq = tx_seq}));
 
-    state = co_await recover_from_batches(copy_batches(batches));
+    auto state = co_await recover_from_batches(copy_batches(batches));
+    auto& gr_1_state = state.groups.find(gr_1)->second;
     expect_committed_offsets(
-      state.groups[gr_1].offsets(),
-      "test-1/0@2048",
-      "test-2/10@256",
-      "topic-3/12@1");
+      gr_1_state.offsets(), "test-1/0@2048", "test-2/10@256", "topic-3/12@1");
 
-    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
-    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
+    EXPECT_EQ(gr_1_state.producers().size(), 1);
+    EXPECT_EQ(gr_1_state.producers().begin()->second.tx, nullptr);
 }
 
 TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
@@ -472,11 +478,12 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       pid,
       group_tx::abort_metadata{.group_id = gr_1, .tx_seq = tx_seq}));
     auto state = co_await recover_from_batches(copy_batches(batches));
-    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
-    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
+    auto& gr_1_state = state.groups.find(gr_1)->second;
+    EXPECT_EQ(gr_1_state.producers().size(), 1);
+    EXPECT_EQ(gr_1_state.producers().begin()->second.tx, nullptr);
 
     expect_committed_offsets(
-      state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
+      gr_1_state.offsets(), "test-1/0@1024", "test-2/10@256");
 
     // commit of aborted tx should be ignored
     batches.push_back(make_tx_batch(
@@ -485,9 +492,9 @@ TEST_F_CORO(cg_recovery_test_fixture, test_tx_abort) {
       pid,
       group_tx::commit_metadata{.group_id = gr_1}));
 
-    EXPECT_EQ(state.groups[gr_1].producers().size(), 1);
-    EXPECT_EQ(state.groups[gr_1].producers().begin()->second.tx, nullptr);
+    EXPECT_EQ(gr_1_state.producers().size(), 1);
+    EXPECT_EQ(gr_1_state.producers().begin()->second.tx, nullptr);
 
     expect_committed_offsets(
-      state.groups[gr_1].offsets(), "test-1/0@1024", "test-2/10@256");
+      gr_1_state.offsets(), "test-1/0@1024", "test-2/10@256");
 }

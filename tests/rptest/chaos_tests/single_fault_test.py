@@ -510,5 +510,8 @@ class TxSubscribeTest(SingleFaultTestBase):
 
         timings = TimingConfig()
 
+        # Avoid partition rebalancing during the test
+        self.redpanda.set_cluster_config(
+            {'partition_autobalancing_mode': 'off'})
         self.prepare(workload, timings)
         self.run(workload, fault, timings, case.check_progress_during_fault)

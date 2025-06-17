@@ -1344,7 +1344,7 @@ class RpkTool:
             "acl",
             "create",
             "--allow-principal",
-            f"{principal_type}:{username}",
+            f"\"{principal_type}:{username}\"",
             "--operation",
             op,
             "--cluster",

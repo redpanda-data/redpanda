@@ -60,13 +60,15 @@ model::record_batch make_random_batch(record_batch_spec);
 model::record_batch make_random_batch(
   model::offset o,
   bool allow_compression = true,
-  std::optional<model::timestamp> ts = std::nullopt);
+  std::optional<model::timestamp> ts = std::nullopt,
+  int records_per_batch = 0);
 
 ss::future<ss::circular_buffer<model::record_batch>> make_random_batches(
   model::offset o,
   int count,
   bool allow_compression = true,
-  std::optional<model::timestamp> ts = std::nullopt);
+  std::optional<model::timestamp> ts = std::nullopt,
+  int records_per_batch = 0);
 
 ss::future<ss::circular_buffer<model::record_batch>>
 make_random_batches(model::offset o = model::offset(0));

@@ -287,6 +287,11 @@ public:
         return _remote_path_provider;
     }
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::read_everything;
+    }
+
 private:
     ss::future<bool>
     do_sync(model::timeout_clock::duration timeout, ss::abort_source* as);
@@ -401,17 +406,18 @@ public:
     archival_metadata_stm_factory(
       bool cloud_storage_enabled,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::topic_table>&);
+      ss::sharded<features::feature_table>&);
 
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      raft::consensus*,
+      const cluster::stm_instance_config&) final;
 
 private:
     bool _cloud_storage_enabled;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<topic_table>& _topics;
 };
 
 } // namespace cluster

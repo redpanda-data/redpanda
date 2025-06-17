@@ -347,6 +347,21 @@ void application::shutdown() {
     if (cloud_io.local_is_initialized()) {
         cloud_io.invoke_on_all(&cloud_io::remote::request_stop).get();
     }
+    /**
+     * Shutdown the datalake services before stopping all the partitions.
+     * NOTE: translators may call into the coordinator via the coordinator
+     * frontend; stop the coordinators first to stop all work as quickly as
+     * possible.
+     */
+    if (_datalake_coordinator_mgr.local_is_initialized()) {
+        _datalake_coordinator_mgr
+          .invoke_on_all(&datalake::coordinator::coordinator_manager::shutdown)
+          .get();
+    }
+    if (_datalake_manager.local_is_initialized()) {
+        _datalake_manager.invoke_on_all(&datalake::datalake_manager::shutdown)
+          .get();
+    }
 
     // Stop all partitions before destructing the subsystems (transaction
     // coordinator, etc). This interrupts ongoing replication requests,
@@ -2936,22 +2951,19 @@ void application::start_runtime_services(
       .invoke_on_all([this](cluster::partition_manager& pm) {
           pm.register_factory<cluster::tm_stm_factory>(feature_table);
           pm.register_factory<cluster::id_allocator_stm_factory>();
-          pm.register_factory<transform::transform_offsets_stm_factory>(
-            controller->get_topics_state());
+          pm.register_factory<transform::transform_offsets_stm_factory>();
           pm.register_factory<cluster::rm_stm_factory>(
             config::shard_local_cfg().enable_transactions.value(),
             config::shard_local_cfg().enable_idempotence.value(),
             tx_gateway_frontend,
             producer_manager,
-            feature_table,
-            controller->get_topics_state());
+            feature_table);
           pm.register_factory<cluster::log_eviction_stm_factory>(
             storage.local().kvs());
           pm.register_factory<cluster::archival_metadata_stm_factory>(
             config::shard_local_cfg().cloud_storage_enabled(),
             cloud_storage_api,
-            feature_table,
-            controller->get_topics_state());
+            feature_table);
           pm.register_factory<kafka::group_tx_tracker_stm_factory>(
             feature_table);
           pm.register_factory<cluster::partition_properties_stm_factory>(
@@ -2959,7 +2971,8 @@ void application::start_runtime_services(
             config::shard_local_cfg().rm_sync_timeout_ms.bind());
 #ifndef BAZEL_DISABLE_DATALAKE_FEATURE
           pm.register_factory<datalake::coordinator::stm_factory>();
-          pm.register_factory<datalake::translation::stm_factory>();
+          pm.register_factory<datalake::translation::stm_factory>(
+            config::shard_local_cfg().iceberg_enabled());
 #endif
           if (config::shard_local_cfg().development_enable_cloud_topics()) {
               pm.register_factory<experimental::cloud_topics::dl_stm_factory>();

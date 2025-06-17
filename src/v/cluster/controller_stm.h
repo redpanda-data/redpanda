@@ -81,6 +81,12 @@ public:
     /// peer of the more general maybe_make_snapshot
     ss::future<std::optional<iobuf>> maybe_make_join_snapshot();
 
+    /**
+     * By calling this function caller may take a lock and prevent applying any
+     * new updates to the controller state machine even if they are available.
+     */
+    ss::future<ssx::semaphore_units> lock_apply();
+
 private:
     ss::future<> on_batch_applied() final;
     void snapshot_timer_callback();

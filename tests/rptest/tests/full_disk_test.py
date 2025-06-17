@@ -15,7 +15,7 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from kafka import KafkaProducer
-from kafka.errors import BrokerNotAvailableError, NotLeaderForPartitionError
+from kafka.errors import KafkaStorageError, NotLeaderForPartitionError
 
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -97,7 +97,7 @@ class WriteRejectTest(RedpandaTest):
                     i = i + 1
                     f = producer.send(topic, msg)
                     f.get(30)
-            except BrokerNotAvailableError as e1:
+            except KafkaStorageError as e1:
                 was_blocked = True
                 if expect_blocked:
                     self.logger.info(f"Write rejected as expected: {e1}")

@@ -844,7 +844,20 @@ ss::future<usage_report> log_manager::disk_usage() {
       logs.end(),
       [&limit, cfg](ss::shared_ptr<log> log) {
           return ss::with_semaphore(
-            limit, 1, [cfg, log] { return log->disk_usage(cfg); });
+                   limit, 1, [cfg, log] { return log->disk_usage(cfg); })
+            .then_wrapped([log](ss::future<usage_report> f) {
+                if (f.failed()) {
+                    auto e = f.get_exception();
+                    vlog(
+                      gclog.warn,
+                      "Unable to collect disk usage from ntp {}: {}",
+                      log->config().ntp(),
+                      e);
+                    return ss::make_ready_future<usage_report>();
+                } else {
+                    return f;
+                }
+            });
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });

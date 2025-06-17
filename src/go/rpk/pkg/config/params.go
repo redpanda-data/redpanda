@@ -149,9 +149,20 @@ var xflags = map[string]xflag{
 		"kafka_api.tls.enabled",
 		"true",
 		xkindProfile,
-		func(_ string, y *RpkYaml) error {
+		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
-			mkKafkaTLS(&p.KafkaAPI)
+			if v == "" {
+				v = "true"
+			}
+			enabled, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			if enabled {
+				mkKafkaTLS(&p.KafkaAPI)
+			} else {
+				p.KafkaAPI.TLS = nil
+			}
 			return nil
 		},
 	},
@@ -244,9 +255,20 @@ var xflags = map[string]xflag{
 		"admin_api.tls.enabled",
 		"false",
 		xkindProfile,
-		func(_ string, y *RpkYaml) error {
+		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
-			mkAdminTLS(&p.AdminAPI)
+			if v == "" {
+				v = "true"
+			}
+			enabled, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			if enabled {
+				mkAdminTLS(&p.AdminAPI)
+			} else {
+				p.AdminAPI.TLS = nil
+			}
 			return nil
 		},
 	},
@@ -307,9 +329,20 @@ var xflags = map[string]xflag{
 		"schema_registry.tls.enabled",
 		"false",
 		xkindProfile,
-		func(_ string, y *RpkYaml) error {
+		func(v string, y *RpkYaml) error {
 			p := y.Profile(y.CurrentProfile)
-			mkSchemaRegistryTLS(&p.SR)
+			if v == "" {
+				v = "true"
+			}
+			enabled, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			if enabled {
+				mkSchemaRegistryTLS(&p.SR)
+			} else {
+				p.SR.TLS = nil
+			}
 			return nil
 		},
 	},
@@ -574,7 +607,7 @@ brokers=127.0.0.1:9092,localhost:9094
   By default, this is 127.0.0.1:9092.
 
 tls.enabled=true
-  A boolean that enableenables rpk to speak TLS to your broker's Kafka API listeners.
+  A boolean that enables rpk to speak TLS to your broker's Kafka API listeners.
   You can use this if you have well known certificates setup on your Kafka API.
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.

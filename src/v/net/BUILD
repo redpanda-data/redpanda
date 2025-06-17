@@ -29,6 +29,9 @@ redpanda_cc_library(
         "transport.h",
         "types.h",
     ],
+    implementation_deps = [
+        "//src/v/strings:utf8",
+    ],
     include_prefix = "net",
     visibility = ["//visibility:public"],
     deps = [

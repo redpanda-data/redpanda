@@ -33,7 +33,7 @@ func (o *DebugBundleSharedOptions) InstallFlags(f *pflag.FlagSet) {
 	f.DurationVar(&o.MetricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots. For example: 30s, 1.5m")
 	f.IntVar(&o.MetricsSampleCount, "metrics-samples", 2, "Number of metrics samples to take (at the interval of --metrics-interval). Must be >= 2")
 	f.StringArrayVarP(&o.PartitionFlag, "partition", "p", nil, "Comma-separated partition IDs. When provided, rpk saves extra Admin API requests for those partitions. See the help for extended usage")
-	f.StringVarP(&o.Namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (K8s only)")
+	f.StringVarP(&o.Namespace, "namespace", "n", "", "The namespace to use to collect the resources from (K8s only)")
 	f.StringArrayVarP(&o.LabelSelector, "label-selector", "l", []string{"app.kubernetes.io/name=redpanda"}, "Comma-separated label selectors to filter your resources. For example: <label>=<value>,<label>=<value> (K8s only)")
 }
 

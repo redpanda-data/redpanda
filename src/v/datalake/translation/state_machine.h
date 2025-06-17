@@ -45,6 +45,11 @@ public:
       model::timeout_clock::duration timeout,
       ss::abort_source&);
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::skip_to_end;
+    }
+
 private:
     struct snapshot
       : serde::envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
@@ -56,9 +61,15 @@ private:
 
 class stm_factory : public cluster::state_machine_factory {
 public:
-    stm_factory() = default;
+    explicit stm_factory(bool is_iceberg_enabled);
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      raft::consensus*,
+      const cluster::stm_instance_config&) final;
+
+private:
+    bool _iceberg_enabled;
 };
 
 } // namespace datalake::translation

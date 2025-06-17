@@ -21,13 +21,13 @@ TEST(uri_encoding, encode_special_chars) {
     constexpr auto input = "afgz0119!#$&'()*+,/:;=?@[]afgz0119";
     ASSERT_EQ(
       http::uri_encode(input, http::uri_encode_slash::yes),
-      "afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%3f%"
-      "40%5b%5dafgz0119");
+      "afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%"
+      "40%5B%5Dafgz0119");
 
     ASSERT_EQ(
       http::uri_encode(input, http::uri_encode_slash::no),
-      "afgz0119%21%23%24%26%27%28%29%2a%2b%2c/"
-      "%3a%3b%3d%3f%40%5b%5dafgz0119");
+      "afgz0119%21%23%24%26%27%28%29%2A%2B%2C/"
+      "%3A%3B%3D%3F%40%5B%5Dafgz0119");
 }
 
 TEST(uri_encoding, form_encoded_data) {
@@ -38,15 +38,15 @@ TEST(uri_encoding, form_encoded_data) {
     iobuf_parser p{http::form_encode_data(input)};
 
     // Order of kv pairs is not guaranteed due to map iteration order
+    auto s = p.read_string(p.bytes_left());
+    fmt::print(">>> {}\n", s);
     ASSERT_THAT(
-      p.read_string(p.bytes_left()),
+      s,
       AnyOf(
-        "foo=bar&afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%3f%40%"
-        "5b%"
-        "5dafgz0119=afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%3f%"
-        "40%"
-        "5b%5dafgz0119",
-        "afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%3f%"
-        "40%5b%5dafgz0119=afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%"
-        "3b%3d%3f%40%5b%5dafgz0119&foo=bar"));
+        "foo=bar&afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%"
+        "5Dafgz0119=afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%"
+        "5B%5Dafgz0119",
+        "afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%"
+        "40%5B%5Dafgz0119=afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%"
+        "3B%3D%3F%40%5B%5Dafgz0119&foo=bar"));
 }

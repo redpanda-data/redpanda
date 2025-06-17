@@ -11,16 +11,16 @@
 
 #include "http/utils.h"
 
-#include "bytes/bytes.h"
-
 #include <boost/algorithm/string/join.hpp>
-
 namespace {
-
+/**
+ * Each URI encoded byte is formed by a '%' and the two-digit hexadecimal
+ * value of the byte.
+ * from:
+ * https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+ */
 inline void append_hex_utf8(ss::sstring& result, char ch) {
-    bytes b = {static_cast<uint8_t>(ch)};
-    result.append("%", 1);
-    auto h = to_hex(b);
+    auto h = fmt::format("%{:02X}", static_cast<uint8_t>(ch));
     result.append(h.data(), h.size());
 }
 

@@ -208,9 +208,6 @@ record_multiplexer::operator()(model::record_batch batch) {
 
 ss::future<result<record_multiplexer::write_result, writer_error>>
 record_multiplexer::end_of_stream() {
-    if (_error) {
-        co_return *_error;
-    }
     if (!_result) {
         // no batches were processed.
         co_return writer_error::no_data;

@@ -19,5 +19,9 @@ public:
     static batch_cache& batch_cache(storage::log_manager& m) {
         return m._batch_cache;
     }
+
+    static ss::future<> housekeeping_scan(storage::log_manager& m) {
+        return m.housekeeping_scan(m.lowest_ts_to_retain());
+    }
 };
 } // namespace storage::testing_details

@@ -25,6 +25,7 @@
 #include "serde/rw/iobuf.h"
 #include "serde/rw/rw.h"
 
+#include <seastar/core/loop.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>
 
@@ -871,7 +872,18 @@ public:
     ss::future<> for_each_record_async(Func f) const {
         auto it = record_batch_iterator::create(*this);
         while (it.has_next()) {
-            co_await ss::futurize_invoke(f, it.next());
+            if constexpr (std::is_same_v<
+                            ss::futurize_t<
+                              std::invoke_result_t<Func, model::record>>,
+                            ss::future<ss::stop_iteration>>) {
+                ss::stop_iteration s = co_await ss::futurize_invoke(
+                  f, it.next());
+                if (s == ss::stop_iteration::yes) {
+                    co_return;
+                }
+            } else {
+                co_await ss::futurize_invoke(f, it.next());
+            }
         }
     }
 

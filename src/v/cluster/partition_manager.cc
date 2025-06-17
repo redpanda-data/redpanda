@@ -13,7 +13,6 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
-#include "cloud_storage/remote_label.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_path_provider.h"
 #include "cluster/archival/archival_metadata_stm.h"
@@ -23,6 +22,7 @@
 #include "cluster/logger.h"
 #include "cluster/partition.h"
 #include "cluster/partition_recovery_manager.h"
+#include "cluster/topic_configuration.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
@@ -47,6 +47,7 @@
 #include <algorithm>
 #include <exception>
 #include <iterator>
+#include <optional>
 #include <utility>
 
 namespace cluster {
@@ -121,8 +122,12 @@ ss::future<consensus_ptr> partition_manager::manage(
   std::optional<xshard_transfer_state> xst_state,
   std::optional<remote_topic_properties> rtp,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
-  std::optional<cloud_storage::remote_label> remote_label,
-  std::optional<model::topic_namespace> topic_namespace_override) {
+  const topic_configuration* topic_cfg) {
+    auto remote_label = topic_cfg ? topic_cfg->properties.remote_label
+                                  : std::nullopt;
+    auto remote_topic_namespace_override
+      = topic_cfg ? topic_cfg->properties.remote_topic_namespace_override
+                  : std::nullopt;
     vlog(
       clusterlog.trace,
       "Creating partition with configuration: {}, raft group_id: {}, "
@@ -133,20 +138,20 @@ ss::future<consensus_ptr> partition_manager::manage(
       initial_nodes,
       rtp,
       remote_label,
-      topic_namespace_override);
+      remote_topic_namespace_override);
 
     auto guard = _gate.hold();
     // topic_namespace_override is used in case of a cluster migration.
     // The original ("source") topic name must be used in the tiered
     // storage/archival subsystems, while the alias ("destination") will be used
     // for local storage on the new cluster.
-    if (topic_namespace_override.has_value()) {
+    if (remote_topic_namespace_override.has_value()) {
         vlog(
           clusterlog.info,
           "Topic namespace override present for ntp {}: topic namespace {} "
           "used for remote path providing",
           ntp_cfg.ntp(),
-          topic_namespace_override.value());
+          remote_topic_namespace_override.value());
     }
 
     // NOTE: while the source cluster UUIDs of the path providers will
@@ -155,7 +160,7 @@ ss::future<consensus_ptr> partition_manager::manage(
     // metadata STM and its lifecycle is therefore tied to the partition, which
     // hasn't been constructed yet.
     cloud_storage::remote_path_provider path_provider(
-      remote_label, topic_namespace_override);
+      std::move(remote_label), std::move(remote_topic_namespace_override));
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp, path_provider);
 
     auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
@@ -245,8 +250,27 @@ ss::future<consensus_ptr> partition_manager::manage(
               dl_result.ot_state);
 
             // Initialize archival snapshot
-            co_await archival_metadata_stm::make_snapshot(
-              ntp_cfg, manifest, max_offset);
+            /*
+             [segment 1] [segment 2] [segment 3]
+                       ^                 ^
+                       |                 |
+                   last_offset      in-sync offset
+
+            Here the ISO is no longer correct because
+            it belongs to the old cluster. We're using last uploaded
+            offset to set up the snapshot.
+            */
+            if (max_offset != model::offset(0)) {
+                vlog(
+                  clusterlog.info,
+                  "Creating snapshot for {} partition, "
+                  "min_offset: {}, max_offset: {}",
+                  ntp_cfg.ntp(),
+                  min_offset,
+                  max_offset);
+                co_await archival_metadata_stm::make_snapshot(
+                  ntp_cfg, manifest, model::prev_offset(max_offset));
+            }
         }
     }
     auto translator_batch_types = raft::offset_translator_batch_types(
@@ -294,7 +318,9 @@ ss::future<consensus_ptr> partition_manager::manage(
         p->block_new_leadership();
     }
 
-    co_await p->start(_stm_registry, xst_state);
+    auto stm_builder = _stm_registry.make_builder_for(c.get(), topic_cfg);
+
+    co_await p->start(std::move(stm_builder), std::move(xst_state));
 
     // this is not done in partition::start itself because the purpose of this
     // flag is to operate in an uninterruptible context with watcher

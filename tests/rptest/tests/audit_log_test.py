@@ -2089,7 +2089,7 @@ class AuditLogTestSchemaRegistry(AuditLogTestBase):
             log_config=LoggingConfig('info',
                                      logger_levels={
                                          'auditing': 'trace',
-                                         'pandaproxy': 'trace'
+                                         'schemaregistry': 'trace'
                                      }),
             schema_registry_config=sr_config)
 

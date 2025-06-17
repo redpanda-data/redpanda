@@ -13,6 +13,7 @@
 #include "cloud_topics/dl_stm/dl_stm_factory.h"
 #include "cloud_topics/logger.h"
 #include "cloud_topics/types.h"
+#include "cluster/state_machine_registry.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "raft/tests/raft_fixture.h"
@@ -35,7 +36,8 @@ public:
             raft::state_machine_manager_builder builder;
 
             experimental::cloud_topics::dl_stm_factory stm_factory;
-            stm_factory.create(builder, &*node->raft());
+            stm_factory.create(
+              builder, &*node->raft(), cluster::stm_instance_config{nullptr});
 
             vlog(ct::cd_log.info, "Starting node {}", id);
 

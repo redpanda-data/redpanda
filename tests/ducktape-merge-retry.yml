@@ -1,0 +1,16 @@
+# This configuration is parsed by pandatriage on merge builds in order to:
+# 1. decide which tests should be retried based on the stacktrace of
+#    failures
+# 2. consider a test passed or failed based on the pass_criteria
+#    configuration
+#
+# See https://redpandadata.atlassian.net/wiki/x/CAAIRg
+
+pass_criteria:
+  <<: *zero-drift
+retry:
+  default:
+    repeat: 20
+    retry_on:
+      *retry-all-except-nodecrash
+    pass_criteria: zero-drift

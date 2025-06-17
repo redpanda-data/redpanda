@@ -318,3 +318,114 @@ SEASTAR_THREAD_TEST_CASE(iobuf_is_zero_test) {
     zero.append(zeros.data(), zeros.size());
     BOOST_REQUIRE_EQUAL(storage::internal::is_zero(zero), true);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_ghosts_gap) {
+    long twice_i32max = static_cast<long>(std::numeric_limits<int32_t>::max())
+                        * 2;
+    auto ghost_batches = log_reader::make_ghost_batches(
+      model::offset{0}, model::offset{twice_i32max}, model::term_id{0});
+    BOOST_REQUIRE_EQUAL(3, ghost_batches.size());
+    size_t num_records = 0;
+    for (const auto& b : ghost_batches) {
+        BOOST_REQUIRE_GT(b.record_count(), 0);
+        num_records += b.record_count();
+    }
+    BOOST_REQUIRE_EQUAL(twice_i32max + 1, num_records);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_ghost_read_with_index_overflow) {
+    auto cfg = log_builder_config();
+    cfg.cache = with_cache::no;
+    disk_log_builder b(cfg);
+    b | start() | add_segment(model::offset{0});
+    auto s = b.get_log_segments().back();
+
+    // Set a pathologically low step size so we'll add every batch into the
+    // index.
+    s->index().set_step_for_tests(1);
+    ss::circular_buffer<model::record_batch> batches;
+    auto add = [&batches](model::offset o) {
+        auto b = model::test::make_random_batches(
+                   o, /*count=*/1, false, std::nullopt, /*records_per_batch=*/1)
+                   .get();
+        batches.push_back(std::move(b.front()));
+    };
+    constexpr long uint32_max = std::numeric_limits<uint32_t>::max();
+    add(model::offset(0));
+    add(model::offset(100));
+    add(model::offset(uint32_max + 1));
+    add(model::offset(uint32_max + 100));
+    add(model::offset(uint32_max + 200));
+    write(copy(batches), b);
+
+    // Regression test: a bug previously meant that we would seek to an
+    // incorrect offset and return the wrong batch.
+    storage::log_reader_config reader_config(
+      model::offset{100},
+      model::offset::max(),
+      0,
+      model::model_limits<model::offset>::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+    reader_config.fill_gaps = true;
+    auto res = b.consume(reader_config).get();
+    b | stop();
+    BOOST_REQUIRE(!res.empty());
+    auto& first = res.front();
+    BOOST_CHECK_EQUAL(first.base_offset(), model::offset{100});
+    BOOST_CHECK_EQUAL(first.last_offset(), model::offset{100});
+    BOOST_CHECK_EQUAL(first.header().type, model::record_batch_type::raft_data);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_read_with_index_overflow_base) {
+    auto cfg = log_builder_config();
+    cfg.cache = with_cache::no;
+    disk_log_builder b(cfg);
+    constexpr long uint32_max = std::numeric_limits<uint32_t>::max();
+    b | start() | add_segment(model::offset{uint32_max});
+    auto s = b.get_log_segments().back();
+
+    // Set a pathologically low step size so we'll add every batch into the
+    // index.
+    s->index().set_step_for_tests(1);
+    // Reset the index base offset to 0 before adding any entries, simulating a
+    // bug in Redpanda where compaction would start indexes off with base
+    // offset 0. This is important to have this test reproduce a bad seek to
+    // the start of the segment.
+    s->index().set_base_offset_for_tests(model::offset(0));
+    ss::circular_buffer<model::record_batch> batches;
+    auto add = [&batches](model::offset o) {
+        auto b = model::test::make_random_batches(
+                   o, /*count=*/1, false, std::nullopt, /*records_per_batch=*/1)
+                   .get();
+        batches.push_back(std::move(b.front()));
+    };
+    add(model::offset(uint32_max));
+    add(model::offset(uint32_max + 100));
+    add(model::offset(2 * uint32_max + 1));
+    add(model::offset(2 * uint32_max + 100));
+    add(model::offset(2 * uint32_max + 200));
+    write(copy(batches), b);
+
+    // Regression test: a bug previously meant that we would seek to an
+    // incorrect offset and return the wrong batch even when seeking at the
+    // start of the segment.
+    storage::log_reader_config reader_config(
+      s->offsets().get_base_offset(),
+      model::offset::max(),
+      0,
+      model::model_limits<model::offset>::max(),
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+    auto res = b.consume(reader_config).get();
+    b | stop();
+    BOOST_REQUIRE(!res.empty());
+    auto& first = res.front();
+    BOOST_CHECK_EQUAL(first.base_offset(), model::offset{uint32_max});
+    BOOST_CHECK_EQUAL(first.last_offset(), model::offset{uint32_max});
+    BOOST_CHECK_EQUAL(first.header().type, model::record_batch_type::raft_data);
+}

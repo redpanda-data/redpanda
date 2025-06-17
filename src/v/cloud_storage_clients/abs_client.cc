@@ -205,7 +205,7 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 
@@ -235,7 +235,7 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 
@@ -260,7 +260,7 @@ abs_request_creator::make_get_blob_metadata_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 
@@ -286,7 +286,7 @@ abs_request_creator::make_delete_blob_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 
@@ -336,7 +336,7 @@ abs_request_creator::make_list_blobs_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 
@@ -355,6 +355,7 @@ abs_request_creator::make_get_account_info_request() {
     if (error_code) {
         return error_code;
     }
+    util::url_encode_target(header);
 
     return header;
 }
@@ -388,6 +389,7 @@ abs_request_creator::make_set_expiry_to_blob_request(
         error_code != std::error_code{}) {
         return error_code;
     }
+    util::url_encode_target(header);
     return header;
 }
 
@@ -414,7 +416,7 @@ abs_request_creator::make_delete_file_request(
     if (error_code) {
         return error_code;
     }
-
+    util::url_encode_target(header);
     return header;
 }
 

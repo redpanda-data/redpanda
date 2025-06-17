@@ -391,6 +391,18 @@ using ntp2target_t
   = chunked_hash_map<model::ntp, std::optional<shard_placement_target>>;
 
 ss::future<> shard_balancer::do_assign_ntps(mutex::units& lock) {
+    if (
+      _features.is_active(features::feature::node_local_core_assignment)
+      && !_shard_placement.is_persistence_enabled()) {
+        vlog(
+          clusterlog.warn,
+          "node_local_core_assignment feature got activated after node "
+          "startup, but shard placement persistence was not properly enabled, "
+          "enabling it now. This can happen if a node is joining with the same "
+          "id after its disk was erased.");
+        co_await _shard_placement.enable_persistence();
+    }
+
     ntp2target_t new_targets;
     auto to_assign = std::exchange(_to_assign, {});
     co_await ssx::async_for_each(

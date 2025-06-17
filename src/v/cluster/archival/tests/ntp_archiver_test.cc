@@ -34,6 +34,7 @@
 #include "storage/parser.h"
 #include "storage/storage_resources.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/archival.h"
 #include "test_utils/fixture.h"
 #include "test_utils/scoped_config.h"
@@ -1964,6 +1965,123 @@ FIXTURE_TEST(test_upload_with_gap_blocked, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(stm_manifest.size(), 1);
     BOOST_REQUIRE_EQUAL(
       stm_manifest.last_segment()->base_offset, segments[0].base_offset);
+}
+
+// NOLINTNEXTLINE
+FIXTURE_TEST(test_upload_with_gap, archiver_fixture) {
+    auto cfg = scoped_config{};
+    cfg.get("cloud_storage_disable_upload_consistency_checks").set_value(true);
+
+    std::vector<segment_desc> segments = {
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(0),
+        .term = model::term_id(4),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+      {
+        .ntp = manifest_ntp,
+        .base_offset = model::offset(1000),
+        .term = model::term_id(4),
+        .num_records = 1000,
+        .records_per_batch = 1,
+      },
+    };
+
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->last_stable_offset() >= model::offset(1000);
+    }).get();
+
+    // Offset in the middle of the active segment.
+    auto truncate_offset = model::offset(1500);
+    auto truncate_kafka_offset = kafka::offset(
+      part->log()->from_log_offset(truncate_offset));
+
+    BOOST_REQUIRE(!part
+                     ->prefix_truncate(
+                       truncate_offset,
+                       truncate_kafka_offset,
+                       ss::lowres_clock::time_point::max())
+                     .get());
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&part]() {
+        return part->log()->offsets().start_offset >= model::offset(1000);
+    }).get();
+
+    // As-if a segment was already uploaded but leave a gap before the local
+    // storage segment.
+    part->archival_meta_stm()
+      ->add_segments(
+        {
+          cloud_storage::segment_meta{
+            .is_compacted = false,
+            .size_bytes = 1, // doesn't matter
+            .base_offset = model::offset(0),
+            .committed_offset = model::offset(100),
+            .ntp_revision
+            = part->archival_meta_stm()->manifest().get_revision_id(),
+            .archiver_term = model::term_id(4),
+            .segment_term = model::term_id(4),
+            .delta_offset_end = model::offset_delta{0},
+          },
+        },
+        std::nullopt,
+        model::producer_id{},
+        ss::lowres_clock::now() + 1s,
+        never_abort,
+        cluster::segment_validated::yes)
+      .get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, log start-offset: {}, high-watermark: {}, "
+      "partition: {}",
+      part->log()->offsets().start_offset(),
+      part->high_watermark(),
+      *part);
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+
+    auto manifest_view = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      path_provider);
+
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      manifest_view);
+
+    auto action = ss::defer([&archiver, &manifest_view] {
+        archiver.stop().get();
+        manifest_view->stop().get();
+    });
+
+    auto res = upload_next_with_retries(archiver).get();
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_last_offset(),
+      model::offset(1999));
+
+    // Second segment start offset should be the same as the partition start
+    // offset.
+    BOOST_REQUIRE_EQUAL(
+      std::next(part->archival_meta_stm()->manifest().begin())->base_offset,
+      part->log()->offsets().start_offset);
 }
 
 FIXTURE_TEST(test_flush_not_leader, cloud_storage_manual_multinode_test_base) {

@@ -16,6 +16,8 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
 from ducktape.utils.util import wait_until
 
+from rptest.util import wait_until_result
+
 
 class ClusterHealthOverviewTest(RedpandaTest):
     def __init__(self, test_context):
@@ -36,8 +38,12 @@ class ClusterHealthOverviewTest(RedpandaTest):
             topics.append(
                 TopicSpec(partition_count=random.randint(1, 6),
                           replication_factor=3))
-
+        for i in range(0, 8):
+            topics.append(
+                TopicSpec(partition_count=random.randint(1, 6),
+                          replication_factor=1))
         self.client().create_topic(topics)
+        return topics
 
     def get_health(self):
         """Wrapper around admin.get_cluster_health_overview which validates some invariants
@@ -73,7 +79,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def cluster_health_overview_baseline_test(self):
-        self.create_topics()
+        topics = self.create_topics()
 
         # in initial state after all nodes joined cluster should be healthy
         self.wait_until_healthy()
@@ -92,10 +98,23 @@ class ClusterHealthOverviewTest(RedpandaTest):
                 assert [self.redpanda.idx(first_down)] == hov['nodes_down']
                 # next check is "in" instead of "==" because we may also have under_replicated_partitions
                 assert 'nodes_down' in hov['unhealthy_reasons']
-                return True
-            return False
+                return True, hov
+            return False, None
 
-        wait_until(one_node_down, 30, 2)
+        hov = wait_until_result(one_node_down, 30, 2)
+
+        # when one node is down some partitions with replication factor of 1
+        # should be reported as leaderless
+        rf_1_topics = {
+            spec.name
+            for spec in topics if spec.replication_factor == 1
+        }
+
+        assert len(hov['leaderless_partitions']) > 0
+        assert hov['leaderless_count'] > 0
+
+        assert all(ntp.split("/")[1] in rf_1_topics for ntp in hov['leaderless_partitions']),\
+            "Only rf=1 topics should be leaderless after one node is stopped"
 
         # stop another node, cluster should start reporting leaderless
         # partitions with two out of five nodes down
@@ -114,9 +133,13 @@ class ClusterHealthOverviewTest(RedpandaTest):
             if len(hov['leaderless_partitions']) == 0:
                 return False
 
+            contains_rf_3_topics = not all(
+                ntp.split("/")[1] in rf_1_topics
+                for ntp in hov['leaderless_partitions'])
+
             assert 'leaderless_partitions' in hov['unhealthy_reasons']
 
-            return True
+            return contains_rf_3_topics
 
         wait_until(two_nodes_down, 30, 2)
 

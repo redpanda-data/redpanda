@@ -48,6 +48,11 @@ public:
 
     const topics_state& state() const { return state_; }
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::read_everything;
+    }
+
 protected:
     ss::future<> stop() override;
 
@@ -81,6 +86,9 @@ class stm_factory : public cluster::state_machine_factory {
 public:
     stm_factory() = default;
     bool is_applicable_for(const storage::ntp_config&) const final;
-    void create(raft::state_machine_manager_builder&, raft::consensus*) final;
+    void create(
+      raft::state_machine_manager_builder&,
+      raft::consensus*,
+      const cluster::stm_instance_config&) final;
 };
 } // namespace datalake::coordinator

@@ -252,6 +252,10 @@ public:
      */
     ss::future<size_t> disk_usage();
     void clear_cached_disk_usage() { _disk_usage_size.reset(); }
+    void set_step_for_tests(size_t step) { _step = step; }
+    void set_base_offset_for_tests(model::offset o) { _state.base_offset = o; }
+
+    const index_state& get_index_state() const { return _state; }
 
 private:
     ss::future<bool> materialize_index_from_file(ss::file);

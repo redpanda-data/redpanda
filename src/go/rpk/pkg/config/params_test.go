@@ -1419,3 +1419,238 @@ func TestConfig_fixSchemePorts(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessOverrides(t *testing.T) {
+	tests := []struct {
+		name          string
+		envOverrides  map[string]string
+		flagOverrides []string
+		applyCfg      func(*Config)
+		expErr        string
+		verify        func(t *testing.T, y *RpkYaml)
+	}{
+		{
+			name: "Apply flag override to kafka brokers",
+			flagOverrides: []string{
+				"brokers=127.0.0.1:9092,localhost:9092",
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				want := []string{"127.0.0.1:9092", "localhost:9092"}
+				require.Equal(t, want, p.KafkaAPI.Brokers)
+			},
+		},
+		{
+			name: "Apply env override to admin addresses",
+			envOverrides: map[string]string{
+				"RPK_ADMIN_HOSTS": "admin.redpanda.com,admin2.redpanda.com",
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				want := []string{"admin.redpanda.com", "admin2.redpanda.com"}
+				require.Equal(t, want, p.AdminAPI.Addresses)
+			},
+		},
+		{
+			name: "Flag override takes precedence over env and cfg",
+			envOverrides: map[string]string{
+				"RPK_BROKERS": "from.env:9092",
+			},
+			flagOverrides: []string{
+				"brokers=from.flag:9092",
+			},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.KafkaAPI.Brokers = []string{"from.cfg:9092"}
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				want := []string{"from.flag:9092"}
+				require.Equal(t, want, y.Profile(y.CurrentProfile).KafkaAPI.Brokers)
+			},
+		},
+		{
+			name:          "Apply tls enabled to kafka brokers",
+			flagOverrides: []string{"tls.enabled=true"},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.True(t, p.KafkaAPI.TLS != nil)
+			},
+		},
+		{
+			name: "Apply kafka TLS enabled via env",
+			envOverrides: map[string]string{
+				"RPK_TLS_ENABLED": "true",
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.NotNil(t, p.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:          "Apply tls.enabled=false to kafka brokers",
+			flagOverrides: []string{"tls.enabled=false"},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.KafkaAPI.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.KafkaAPI.TLS)
+			},
+		},
+		{
+			name: "Apply kafka TLS disabled via env",
+			envOverrides: map[string]string{
+				"RPK_TLS_ENABLED": "false",
+			},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.KafkaAPI.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:          "Apply tls enabled to admin hosts",
+			flagOverrides: []string{"admin.tls.enabled=true"},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.True(t, p.AdminAPI.TLS != nil)
+			},
+		},
+		{
+			name: "Apply admin TLS enabled via env",
+			envOverrides: map[string]string{
+				"RPK_ADMIN_TLS_ENABLED": "true",
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.NotNil(t, p.AdminAPI.TLS)
+			},
+		},
+		{
+			name:          "Apply tls.enabled=false to admin hosts",
+			flagOverrides: []string{"admin.tls.enabled=false"},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.AdminAPI.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.AdminAPI.TLS)
+			},
+		},
+		{
+			name: "Apply admin TLS disabled via env",
+			envOverrides: map[string]string{
+				"RPK_ADMIN_TLS_ENABLED": "false",
+			},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.AdminAPI.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.AdminAPI.TLS)
+			},
+		},
+		{
+			name:          "Apply tls enabled to SR hosts",
+			flagOverrides: []string{"registry.tls.enabled=true"},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.True(t, p.SR.TLS != nil)
+			},
+		},
+		{
+			name: "Apply schema registry TLS enabled via env",
+			envOverrides: map[string]string{
+				"RPK_REGISTRY_TLS_ENABLED": "true",
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.NotNil(t, p.SR.TLS)
+			},
+		},
+		{
+			name:          "Apply tls.enabled=false to SR hosts",
+			flagOverrides: []string{"registry.tls.enabled=false"},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.SR.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.SR.TLS)
+			},
+		},
+		{
+			name: "Apply schema registry TLS disabled via env",
+			envOverrides: map[string]string{
+				"RPK_REGISTRY_TLS_ENABLED": "false",
+			},
+			applyCfg: func(cfg *Config) {
+				p := cfg.rpkYaml.Profile(cfg.rpkYaml.CurrentProfile)
+				p.SR.TLS = new(TLS)
+			},
+			verify: func(t *testing.T, y *RpkYaml) {
+				p := y.Profile(y.CurrentProfile)
+				require.Nil(t, p.SR.TLS)
+			},
+		},
+		{
+			name: "Error - invalid key format (missing =val)",
+			flagOverrides: []string{
+				"kafka_api.brokers",
+			},
+			expErr: `flag config: "kafka_api.brokers" is not a key=value`,
+		},
+		{
+			name: "Error - unknown key",
+			flagOverrides: []string{
+				"unknown.key=value",
+			},
+			expErr: `flag config: unknown key "unknown.key"`,
+		},
+		{
+			name: "Error - parse failure",
+			flagOverrides: []string{
+				"tls.insecure_skip_verify=notabool",
+			},
+			expErr: `flag config key "tls.insecure_skip_verify": strconv.ParseBool: parsing "notabool": invalid syntax`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Config{
+				rpkYaml: RpkYaml{
+					CurrentProfile: "default",
+					Profiles:       []RpkProfile{{Name: "default"}},
+				},
+			}
+			if tt.applyCfg != nil {
+				tt.applyCfg(c)
+			}
+			p := &Params{
+				FlagOverrides: tt.flagOverrides,
+			}
+			if tt.envOverrides != nil {
+				for k, v := range tt.envOverrides {
+					t.Setenv(k, v)
+				}
+			}
+			err := p.processOverrides(c)
+			if tt.expErr != "" {
+				require.ErrorContains(t, err, tt.expErr, "expected error containing %q, got %v", tt.expErr, err)
+				return
+			}
+			require.NoError(t, err)
+			if tt.verify != nil {
+				tt.verify(t, &c.rpkYaml)
+			}
+		})
+	}
+}

@@ -152,6 +152,10 @@ public:
 
         co_return serde::to_iobuf(std::move(inc_state));
     };
+
+    stm_initial_recovery_policy get_initial_recovery_policy() const override {
+        return stm_initial_recovery_policy::read_everything;
+    }
 };
 using wait_for_each_batch = ss::bool_class<struct wait_for_each_tag>;
 

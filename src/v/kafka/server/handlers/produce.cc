@@ -53,8 +53,9 @@ static constexpr auto despam_interval = std::chrono::minutes(5);
 static void fill_response_with_errors(
   produce_request::topic_cit topics_begin,
   produce_request::topic_cit topics_end,
+  produce_response& response,
   error_code error,
-  produce_response& response) {
+  const std::optional<ss::sstring>& error_msg = std::nullopt) {
     size_t cnt = std::distance(topics_begin, topics_end);
     response.data.responses.reserve(response.data.responses.size() + cnt);
     for (const auto& topic : std::views::counted(topics_begin, cnt)) {
@@ -65,20 +66,28 @@ static void fill_response_with_errors(
         for (const auto& partition : topic.partitions) {
             t.partitions.push_back(produce_response::partition{
               .partition_index = partition.partition_index,
-              .error_code = error});
+              .error_code = error,
+              .error_message = error_msg});
         }
     }
 }
 
-produce_response produce_request::make_error_response(error_code error) const {
+produce_response produce_request::make_error_response(
+  error_code error, const std::optional<ss::sstring>& error_msg) const {
     produce_response response;
     fill_response_with_errors(
-      data.topics.cbegin(), data.topics.cend(), error, response);
+      data.topics.cbegin(), data.topics.cend(), response, error, error_msg);
     return response;
 }
 
-produce_response produce_request::make_full_disk_response() const {
-    auto resp = make_error_response(error_code::broker_not_available);
+produce_response
+produce_request::make_full_disk_response(api_version version) const {
+    // Version 4 is the same as version 3, but the requester must be prepared to
+    // handle a KAFKA_STORAGE_ERROR.
+    auto errc = version >= api_version(4) ? error_code::kafka_storage_error
+                                          : error_code::broker_not_available;
+    auto resp = make_error_response(
+      errc, "no disk space; bytes free less than configurable threshold");
     // TODO set a field in response to signal to quota manager to throttle the
     // client
     return resp;
@@ -215,7 +224,8 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
   error_code ec,
   std::unique_ptr<ss::promise<>> dispatch,
   model::ntp ntp,
-  ss::shard_id source_shard) {
+  ss::shard_id source_shard,
+  std::optional<ss::sstring> err_msg = std::nullopt) {
     // submit back to promise source shard
     ssx::background = ss::smp::submit_to(
       source_shard, [dispatch = std::move(dispatch)]() mutable {
@@ -224,7 +234,9 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
       });
     return ss::make_ready_future<produce_response::partition>(
       produce_response::partition{
-        .partition_index = ntp.tp.partition, .error_code = ec});
+        .partition_index = ntp.tp.partition,
+        .error_code = ec,
+        .error_message = std::move(err_msg)});
 }
 
 /**
@@ -365,6 +377,7 @@ static partition_produce_stages produce_topic_partition(
     auto dispatch = std::make_unique<ss::promise<>>();
     auto dispatch_f = dispatch->get_future();
     auto m = octx.rctx.probe().auto_produce_measurement();
+    octx.rctx.probe().record_batch(batch_size, hdr.attrs.compression());
     auto timeout = octx.request.data.timeout_ms;
     if (timeout < 0ms) {
         static constexpr std::chrono::milliseconds max_timeout{
@@ -399,11 +412,18 @@ static partition_produce_stages produce_topic_partition(
                 }
                 if (unlikely(
                       static_cast<uint32_t>(batch_size) > batch_max_bytes)) {
+                    auto msg = ssx::sformat(
+                      "batch size {} exceeds max {}",
+                      batch_size,
+                      batch_max_bytes);
+                    thread_local static ss::logger::rate_limit rate(1s);
+                    vloglr(klog, ss::log_level::warn, rate, "{}", msg);
                     return finalize_request_with_error_code(
                       error_code::message_too_large,
                       std::move(dispatch),
                       ntp,
-                      source_shard);
+                      source_shard,
+                      std::move(msg));
                 }
                 if (unlikely(!partition->is_leader())) {
                     return finalize_request_with_error_code(
@@ -650,7 +670,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           ctx.connection()->client_port());
 
         return process_result_stages::single_stage(
-          ctx.respond(request.make_full_disk_response()));
+          ctx.respond(request.make_full_disk_response(ctx.header().version)));
     }
 
     // Account for special internal topic bytes for usage
@@ -749,8 +769,8 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     fill_response_with_errors(
       unauthorized_it,
       request.data.topics.cend(),
-      error_code::topic_authorization_failed,
-      resp);
+      resp,
+      error_code::topic_authorization_failed);
     request.data.topics.erase_to_end(unauthorized_it);
 
     // Make sure to not write into migrated-from topics in their critical stages
@@ -764,8 +784,8 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     fill_response_with_errors(
       migrated_it,
       request.data.topics.cend(),
-      error_code::invalid_topic_exception,
-      resp);
+      resp,
+      error_code::invalid_topic_exception);
     request.data.topics.erase_to_end(migrated_it);
 
     ss::promise<> dispatched_promise;

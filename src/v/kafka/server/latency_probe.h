@@ -14,11 +14,14 @@
 #include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "model/compression.h"
 #include "utils/log_hist.h"
 
 #include <seastar/core/metrics.hh>
 
 #include <chrono>
+
+struct prod_consume_fixture;
 
 namespace kafka {
 class latency_probe {
@@ -58,6 +61,34 @@ public:
           },
           {},
           {sm::shard_label});
+
+        for (auto compress_type : model::all_batch_compression_types) {
+            auto compress_type_name = fmt::format("{}", compress_type);
+            auto compression_label = sm::label("compression_type")(
+              compress_type_name);
+
+            _metrics.add_group(
+              "kafka",
+              {
+                sm::make_counter(
+                  "produced_bytes",
+                  sm::description("Total bytes produced, broken down by "
+                                  "compression_type label."),
+                  {compression_label},
+                  [this, compress_type] {
+                      auto idx = (size_t)compress_type;
+                      // next check should "never" fail but just be extra
+                      // careful
+                      if (idx < _bytes_by_compression.size()) {
+                          // NOLINTNEXTLINE:clang-tidy(cppcoreguidelines-pro-bounds-constant-array-index)
+                          return _bytes_by_compression[idx];
+                      }
+                      return 0UL;
+                  }),
+              },
+              {},
+              {sm::shard_label});
+        }
     }
 
     void setup_public_metrics() {
@@ -92,9 +123,25 @@ public:
         _fetch_latency.record(micros.count());
     }
 
+    void record_batch(uint64_t size, model::compression compression) {
+        if (auto idx = (size_t)compression;
+            idx < _bytes_by_compression.size()) {
+            // NOLINTNEXTLINE:clang-tidy(cppcoreguidelines-pro-bounds-constant-array-index)
+            _bytes_by_compression[idx] += size;
+        }
+    }
+
 private:
+    // for testing
+    friend prod_consume_fixture;
+
     hist_t _produce_latency;
     hist_t _fetch_latency;
+
+    // track the number of produced bytes using each compression type
+    std::array<uint64_t, (size_t)model::compression::count>
+      _bytes_by_compression{};
+
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };

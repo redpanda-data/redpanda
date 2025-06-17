@@ -31,6 +31,10 @@ struct compaction_memory_reservation {
     double max_limit_pct{100.0};
 };
 
+namespace testing {
+class system_memory_groups_accessor;
+}
+
 /**
  * Centralized unit for memory management.
  *
@@ -96,9 +100,23 @@ private:
     size_t _total_system_memory;
     bool _wasm_enabled;
     bool _datalake_enabled;
+
+    friend class testing::system_memory_groups_accessor;
 };
 
 /**
  * Grab the shard local, lazily initialized, system memory groups.
  */
 system_memory_groups& memory_groups();
+
+namespace testing {
+
+class system_memory_groups_accessor {
+public:
+    static size_t&
+    compaction_reserved_memory(system_memory_groups& mem_groups) {
+        return mem_groups._compaction_reserved_memory;
+    }
+};
+
+} // namespace testing

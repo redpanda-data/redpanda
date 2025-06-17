@@ -252,11 +252,6 @@ private:
 std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
   const node::local_state& node_state) {
     const auto& state = node_state.log_data_size;
-    vlog(
-      clusterlog.debug,
-      "getting node disk information from node: {}",
-      node_state);
-
     if (likely(state)) {
         // It is okay to account reclaimable space as free space even through
         // the space is not readily available. During the partition move if the
@@ -361,35 +356,48 @@ void partition_balancer_planner::init_per_node_state(
     }
 
     for (const auto& node_report : health_report.node_reports) {
-        const auto [total, free] = get_node_bytes_info(
-          node_report->local_state);
-        ctx.node_disk_reports.emplace(
-          node_report->id,
-          node_disk_space(node_report->id, total, total - free));
-    }
-
-    for (model::node_id id : ctx.all_nodes) {
-        auto disk_it = ctx.node_disk_reports.find(id);
-        if (disk_it == ctx.node_disk_reports.end()) {
-            vlog(clusterlog.info, "node {}: no disk report", id);
+        if (
+          ctx.config().space_management_enabled
+          && !node_report->local_state.log_data_size) {
+            // Since space management is enabled, we expect log_data_size to be
+            // present in the health report. If it is not present, probably the
+            // node was recently restarted and hasn't yet had time to calculate
+            // it for the first time. To avoid possible skew caused by using raw
+            // disk usage numbers for some nodes and not the others, we skip
+            // this disk report.
             continue;
         }
 
-        const auto& disk = disk_it->second;
-        double used_space_ratio = disk.original_used_ratio();
-        vlog(
-          clusterlog.debug,
-          "node {}: bytes used: {}, bytes total: {}, used ratio: {:.4}",
-          id,
-          disk.used,
-          disk.total,
-          used_space_ratio);
+        const auto [total, free] = get_node_bytes_info(
+          node_report->local_state);
+        auto disk_info = node_disk_space{node_report->id, total, total - free};
+        const bool is_full = disk_info.original_used_ratio()
+                             > _config.soft_max_disk_usage_ratio;
+        vlogl(
+          clusterlog,
+          is_full ? ss::log_level::info : ss::log_level::debug,
+          "node {} disk used: {}, total: {} (ratio: {:.4}, is_full: {}), "
+          "node report: {}",
+          node_report->id,
+          human::bytes(disk_info.used),
+          human::bytes(disk_info.total),
+          disk_info.original_used_ratio(),
+          is_full,
+          node_report->local_state);
+        ctx.node_disk_reports.emplace(node_report->id, disk_info);
 
         if (
-          _config.mode == model::partition_autobalancing_mode::continuous
-          && used_space_ratio > _config.soft_max_disk_usage_ratio) {
+          is_full
+          && _config.mode == model::partition_autobalancing_mode::continuous) {
             result.violations.full_nodes.emplace_back(
-              id, uint32_t(used_space_ratio * 100.0));
+              node_report->id,
+              uint32_t(disk_info.original_used_ratio() * 100.0));
+        }
+    }
+
+    for (model::node_id id : ctx.all_nodes) {
+        if (!ctx.node_disk_reports.contains(id)) {
+            vlog(clusterlog.info, "node {}: no disk report", id);
         }
     }
 }
@@ -1825,15 +1833,15 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
 
 ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
   request_context& ctx) {
-    if (!ctx.config().ondemand_rebalance_requested) {
-        if (ctx.state().nodes_to_rebalance().empty()) {
-            co_return;
-        }
+    if (
+      ctx.state().nodes_to_rebalance().empty()
+      && !ctx.config().ondemand_rebalance_requested) {
+        co_return;
+    }
 
-        if (ctx.config().mode < model::partition_autobalancing_mode::node_add) {
-            ctx._counts_rebalancing_finished = true;
-            co_return;
-        }
+    if (ctx.config().mode == model::partition_autobalancing_mode::off) {
+        ctx._counts_rebalancing_finished = true;
+        co_return;
     }
 
     if (!ctx.can_add_reassignment()) {

@@ -7,8 +7,8 @@ This example transform supports defining an environment variable `FILTER` that d
 ## Example Usage
 
 ```
-cargo build --release --target=wasm32-wasi
-rpk transform deploy ../../target/wasm32-wasi/release/jaq.wasm \
+cargo build --release --target=wasm32-wasip1
+rpk transform deploy ../../target/wasm32-wasip1/release/jaq.wasm \
     --name=email-redaction-transform \
     --input-topic=$MY_INPUT_TOPIC \
     --output-topic=$MY_OUTPUT_TOPIC \

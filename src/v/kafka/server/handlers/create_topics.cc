@@ -371,13 +371,14 @@ ss::future<response_ptr> create_topics_handler::handle(
 
     // Record the number of partition mutations in each requested topic,
     // calulcating throttle delay if necessary
+    const auto now = quota_manager::clock::now();
     auto quota_exceeded_it = co_await ssx::partition(
-      begin, valid_range_end, [&ctx, &response](const creatable_topic& t) {
+      begin, valid_range_end, [&ctx, &response, now](const creatable_topic& t) {
           /// Capture before next scheduling point below
           auto& response_ref = response;
           return ctx.quota_mgr()
             .record_partition_mutations(
-              ctx.header().client_id, t.num_partitions)
+              ctx.header().client_id, t.num_partitions, now)
             .then([&response_ref](std::chrono::milliseconds delay) {
                 response_ref.data.throttle_time_ms = std::max(
                   response_ref.data.throttle_time_ms, delay);

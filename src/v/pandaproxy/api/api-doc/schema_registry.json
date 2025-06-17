@@ -652,7 +652,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/subject_schema"
+              "$ref": "#/definitions/stored_schema"
             }
           },
           "404": {
@@ -875,7 +875,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/subject_schema"
+              "$ref": "#/definitions/stored_schema"
             }
           },
           "404": {

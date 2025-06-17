@@ -483,7 +483,7 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
         co_return;
     }
     // do not index not compactible batches
-    if (!internal::is_compactible(b)) {
+    if (!internal::is_compactible(path().get_ntp(), b)) {
         co_return;
     }
 

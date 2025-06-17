@@ -1226,6 +1226,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.start_producer(1)
         self.start_consumer(1)
         self.await_startup()
+        self.wait_until_ready()
 
         with self.NodeStopper(self) as ns:
             to_kill = random.choice(self.redpanda.nodes)

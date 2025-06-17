@@ -1280,16 +1280,17 @@ remote_partition::timequery(storage::timequery_config cfg) {
     auto translating_reader = co_await make_reader(config);
 
     // Read one batch from the reader to learn the offset
-    model::record_batch_reader::storage_t data
-      = co_await model::consume_reader_to_memory(
-        std::move(translating_reader.reader), model::no_timeout);
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(translating_reader.reader), model::no_timeout);
 
-    auto& batches = std::get<model::record_batch_reader::data_t>(data);
     vlog(_ctxlog.debug, "timequery: {} batches", batches.size());
 
     if (batches.size()) {
-        co_return storage::batch_timequery(
-          *(batches.begin()), cfg.min_offset, cfg.time, cfg.max_offset);
+        co_return co_await storage::batch_timequery(
+          std::move(*(batches.begin())),
+          cfg.min_offset,
+          cfg.time,
+          cfg.max_offset);
     } else {
         co_return std::nullopt;
     }

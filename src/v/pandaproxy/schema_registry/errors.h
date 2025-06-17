@@ -145,7 +145,7 @@ inline error_info invalid_subject_schema(const subject& sub) {
       fmt::format("Error while looking up schema under subject {}", sub())};
 }
 
-inline error_info invalid_schema(const canonical_schema& schema) {
+inline error_info invalid_schema(const subject_schema& schema) {
     return {
       error_code::schema_invalid, fmt::format("Invalid schema {}", schema)};
 }
@@ -165,7 +165,7 @@ inline error_info has_references(const subject& sub, schema_version ver) {
 }
 
 error_info no_reference_found_for(
-  const canonical_schema& schema, const subject& sub, schema_version ver);
+  const subject_schema& schema, const subject& sub, schema_version ver);
 
 inline error_info compatibility_not_found(const subject& sub) {
     return error_info{
@@ -199,6 +199,11 @@ inline error_info versions_exhausted(const subject& sub) {
     return error_info{
       error_code::version_exhausted,
       fmt::format("Versions exhausted for subject {}", sub())};
+}
+
+inline bool failed_subject_schema_lookup(std::error_code ec) {
+    return ec == error_code::subject_not_found
+           || ec == error_code::subject_version_not_found;
 }
 
 } // namespace pandaproxy::schema_registry

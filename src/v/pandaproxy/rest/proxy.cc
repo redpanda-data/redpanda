@@ -30,8 +30,6 @@ namespace pandaproxy::rest {
 
 using server = proxy::server;
 
-ss::logger rest_proxy_access("rest_proxy_access");
-
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__pandaproxy"};
 
@@ -126,7 +124,8 @@ proxy::proxy(
       "/definitions",
       _ctx,
       json::serialization_format::application_json,
-      rest_proxy_access)
+      plog,
+      preqs)
   , _ensure_started{[this]() { return do_start(); }}
   , _controller(controller) {
     _inflight_config_binding.watch([this]() {

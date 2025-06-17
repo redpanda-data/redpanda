@@ -476,7 +476,9 @@ bool log_eviction_stm_factory::is_applicable_for(
 }
 
 void log_eviction_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<log_eviction_stm>(raft, clusterlog, _kvstore);
     raft->log()->stm_manager()->add_stm(stm);
 }

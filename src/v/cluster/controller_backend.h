@@ -295,7 +295,9 @@ private:
       raft::group_id,
       model::revision_id log_revision,
       replicas_t initial_replicas,
-      force_reconfiguration is_force_reconfigured);
+      const replicas_revision_map& replica_revision_map,
+      force_reconfiguration is_force_reconfigured,
+      const topic_metadata& topic_md);
 
     ss::future<> add_to_shard_table(
       model::ntp,

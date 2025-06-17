@@ -1104,7 +1104,7 @@ class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
         res = self._create_named_consumer(group_id, "my\nconsumer")
         assert res.status_code == requests.codes.bad_request
         assert res.json(
-        )["message"] == b'Parameter contained invalid control characters: my\xe2\x90\x8aconsumer'.decode(
+        )["message"] == b'Parameter \'name\' contained invalid control characters'.decode(
             'utf-8')
 
     @cluster(num_nodes=3)
@@ -1154,7 +1154,7 @@ class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
         sc_res = c0.subscribe(["test\ntopic"])
         assert sc_res.status_code == requests.codes.bad_request
         assert sc_res.json(
-        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+        )["message"] == b'Parameter \'topic_name\' contained invalid control characters'.decode(
             'utf-8')
 
         group_name = "my\x03group"
@@ -1191,7 +1191,7 @@ class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
         co_res_raw = c0.get_offsets(data=json.dumps(co_req))
         assert co_res_raw.status_code == requests.codes.bad_request
         assert co_res_raw.json(
-        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+        )["message"] == b'Parameter \'topic_name\' contained invalid control characters'.decode(
             'utf-8')
 
         group_name = "my\x03group"
@@ -1229,7 +1229,7 @@ class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
         co_res_raw = c0.set_offsets(data=json.dumps(co_req))
         assert co_res_raw.status_code == requests.codes.bad_request
         assert co_res_raw.json(
-        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+        )["message"] == b'Parameter \'topic_name\' contained invalid control characters'.decode(
             'utf-8')
 
         group_name = "my\x03group"

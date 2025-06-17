@@ -218,7 +218,9 @@ bool stm_factory::is_applicable_for(const storage::ntp_config& config) const {
 }
 
 void stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<coordinator_stm>(
       datalake_log,
       raft,

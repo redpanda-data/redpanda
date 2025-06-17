@@ -20,7 +20,9 @@ bool dl_stm_factory::is_applicable_for(
 }
 
 void dl_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<cloud_topics::dl_stm>(
       cloud_topics::cd_log, raft);
     raft->log()->stm_manager()->add_stm(stm);

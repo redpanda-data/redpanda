@@ -39,3 +39,10 @@ var wasmRustReadme string
 func WasmRustReadme() string {
 	return wasmRustReadme
 }
+
+//go:embed rust/config.toml
+var wasmRustConfig string
+
+func WasmRustConfig() string {
+	return wasmRustConfig
+}

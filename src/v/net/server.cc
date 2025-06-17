@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
+#include "net/connection.h"
 #include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
@@ -148,6 +149,15 @@ void server::print_exceptional_future(
             vlog(
               _log.warn,
               "Authentication Failure[{}] remote address: {} - {}",
+              ctx,
+              address,
+              ex);
+        } else if (is_invalid_character_error(ex)) {
+            /// Invalid character exceptions indicate a misbehaving client and
+            /// should be logged at WARN, not ERROR
+            vlog(
+              _log.warn,
+              "Invalid character encountered[{}] remote address: {} - {}",
               ctx,
               address,
               ex);

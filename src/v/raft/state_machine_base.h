@@ -24,6 +24,28 @@ using snapshot_at_offset_supported
 class consensus;
 
 /**
+ * Class defining the state machine behavior when it is created for the first
+ * time for a given partition.
+ *
+ * There are two possible policies:
+ *
+ *  - read_everything - when there is no other state the state machine will
+ *                      starts its existence with next offset set to the
+ *                      beginning of the local log. Be careful as read
+ *                      everything may lead to a large amount of data being
+ *                      read on startup.
+ *
+ *   - skip_to_end    - when there is no other state the state machine will
+ *                      start reading from the first confirmed committed offset
+ *                      (see state machine manager implementation for the
+ *                      detailed description).
+ */
+enum class stm_initial_recovery_policy : uint8_t {
+    read_everything = 0,
+    skip_to_end = 1,
+};
+
+/**
  * State machine interface. The class provides an interface that must be
  * implemented to build state machine that can be registered in
  * state_machine_manager.
@@ -97,6 +119,11 @@ public:
         return snapshot_at_offset_supported::yes;
     }
 
+    /**
+     * Returns state machine configured initial recovery policy.
+     */
+    virtual stm_initial_recovery_policy get_initial_recovery_policy() const = 0;
+
 protected:
     /**
      * Must always be called under apply mutex scope and apply_units argument
@@ -129,7 +156,7 @@ private:
     mutable offset_monitor _waiters;
     model::offset _next{0};
 };
-
+std::ostream& operator<<(std::ostream&, const stm_initial_recovery_policy&);
 /**
  * This flavor of state machine base allows implementer to opt out from taking
  * snapshot at arbitrary offset. This way a partition that the STM is based on

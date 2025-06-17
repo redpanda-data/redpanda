@@ -175,6 +175,27 @@ class AdminApiAuthEnablementTest(RedpandaTest):
             [self.redpanda.SUPERUSER_CREDENTIALS.username, ALICE.username]
         })
 
+    @cluster(num_nodes=3)
+    def test_superuser_remove_self(self):
+        """
+        Check that a superuser cannot remove themself if auth is enabled.
+        """
+        superuser_admin = Admin(self.redpanda,
+                                auth=(ALICE.username, ALICE.password))
+
+        create_user_and_wait(self.redpanda, superuser_admin, ALICE)
+
+        self.redpanda.set_cluster_config({
+            "admin_api_require_auth":
+            True,
+            "superusers":
+            [self.redpanda.SUPERUSER_CREDENTIALS.username, ALICE.username]
+        })
+
+        with expect_http_error(400):
+            superuser_admin.patch_cluster_config(
+                {"superusers": [self.redpanda.SUPERUSER_CREDENTIALS.username]})
+
 
 class AdminApiListUsersTest(PandaProxyEndpoints):
     def __init__(self, context):

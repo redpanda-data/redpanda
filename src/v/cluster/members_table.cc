@@ -327,7 +327,13 @@ void members_table::apply_snapshot(
     for (const auto& [id, node] : snap.removed_nodes) {
         vlog(clusterlog.trace, "removed node {} from snapshot", node.broker);
         _removed_nodes.emplace(id, node_metadata{node.broker, node.state});
-        notify_member_updated(id, model::membership_state::removed);
+        if (!_nodes.contains(id)) {
+            // If the node id is present in both maps, it means that the id was
+            // removed and later added (reverse order is impossible, as the
+            // removal command removes the id from _nodes). Therefore we don't
+            // need to notify the same id the second time here.
+            notify_member_updated(id, model::membership_state::removed);
+        }
     }
 
     // notify for changes in broker maintenance state

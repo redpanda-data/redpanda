@@ -416,6 +416,18 @@ disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     co_return _start_offset;
 }
 
+ss::future<compaction_result> disk_log_impl::segment_self_compact(
+  compaction_config cfg, ss::lw_shared_ptr<segment> seg) {
+    co_return co_await storage::internal::self_compact_segment(
+      seg,
+      _stm_manager,
+      cfg,
+      *_probe,
+      *_readers_cache,
+      _manager.resources(),
+      _feature_table);
+}
+
 ss::future<> disk_log_impl::adjacent_merge_compact(
   compaction_config cfg, std::optional<model::offset> new_start_offset) {
     vlog(
@@ -614,7 +626,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // compacted.
         auto seg = segs.front();
         co_await internal::mark_segment_as_finished_window_compaction(
-          seg, true);
+          seg, true, *_probe);
         segs.pop_front();
     }
     if (segs.empty()) {
@@ -709,7 +721,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             // entirely comprised of non-data batches. Mark it as compacted so
             // we can progress through compactions.
             co_await internal::mark_segment_as_finished_window_compaction(
-              seg, is_clean_compacted);
+              seg, is_clean_compacted, *_probe);
 
             vlog(
               gclog.debug,
@@ -724,7 +736,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
             // All data records are already compacted away. Skip to avoid a
             // needless rewrite.
             co_await internal::mark_segment_as_finished_window_compaction(
-              seg, is_clean_compacted);
+              seg, is_clean_compacted, *_probe);
 
             vlog(
               gclog.trace,
@@ -824,7 +836,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         // Mark the segment as completed window compaction, and possibly set the
         // clean_compact_timestamp in it's index.
         co_await internal::mark_segment_as_finished_window_compaction(
-          seg, is_clean_compacted);
+          seg, is_clean_compacted, *_probe);
 
         co_await seg->index().flush();
         co_await ss::rename_file(
@@ -862,6 +874,24 @@ disk_log_impl::find_adjacent_compaction_range(const compaction_config& cfg) {
     // sliding window over segments. currently restricted to two segments
     auto range = std::make_pair(_segs.begin(), std::next(_segs.begin(), 2));
 
+    // Ensure that the adjacent segments do not span an offset space greater
+    // than the maximum value that can be represented by a uint32_t. This must
+    // be enforced due to use of roaring::bitmap in the compacted_offset_list,
+    // which is used to deduplicate records during self compaction and sliding
+    // window compaction. Overflows in this area could lead to incorrect
+    // compaction.
+    auto valid_offset_range = [](
+                                ss::lw_shared_ptr<segment>& first,
+                                ss::lw_shared_ptr<segment>& last) -> bool {
+        auto base_offset_first_seg = first->offsets().get_base_offset();
+        auto dirty_offset_last_seg = last->offsets().get_dirty_offset();
+        int64_t offset_delta = dirty_offset_last_seg()
+                               - base_offset_first_seg();
+        static constexpr int64_t u32_max = static_cast<int64_t>(
+          std::numeric_limits<uint32_t>::max());
+        return offset_delta <= u32_max;
+    };
+
     while (true) {
         // the simple compaction process in use right now builds a concatenation
         // of segments so we avoid processing a group that is too large.
@@ -888,7 +918,8 @@ disk_log_impl::find_adjacent_compaction_range(const compaction_config& cfg) {
         // found a good range if all the tests pass
         if (
           same_term
-          && total_size < _manager.config().max_compacted_segment_size()) {
+          && total_size < _manager.config().max_compacted_segment_size()
+          && valid_offset_range(*range.first, *std::prev(range.second))) {
             break;
         }
 
@@ -1038,6 +1069,15 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
         co_await ss::remove_file(compact_index.string());
     }
 
+    // Evict segment readers and prevent new ones from being added to the cache.
+    std::vector<ss::future<readers_cache::range_lock_holder>> holder_futs;
+    holder_futs.reserve(segments.size());
+    for (auto& segment : segments) {
+        holder_futs.push_back(_readers_cache->evict_segment_readers(segment));
+    }
+    auto holders = co_await ss::when_all_succeed(
+      holder_futs.begin(), holder_futs.end());
+
     // lock the range. only metadata (e.g. open/rename/delete) i/o occurs with
     // these locks held so it is a relatively short duration. all of the data
     // copying and compaction i/o occurred above with no locks held. 5 retries
@@ -1082,6 +1122,7 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     // compaction to two segments, and we check that assumption here and use
     // simplified clean-up routine.
     locks.clear();
+    holders.clear();
     staging_to_clean.clear();
     vassert(segments.size() == 2, "Cannot compact more than two segments");
     auto it = std::find(_segs.begin(), _segs.end(), segments.back());
@@ -1090,6 +1131,8 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
         co_await remove_segment_permanently(
           segments.back(), "compact_adjacent_segments");
     }
+
+    _probe->add_adjacent_segments_compacted(segments.size() - 1);
 
     co_return ret;
 }
@@ -1295,7 +1338,9 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
 ss::future<> disk_log_impl::do_compact(
   compaction_config compact_cfg,
   std::optional<model::offset> new_start_offset) {
-    if (!config::shard_local_cfg().log_compaction_use_sliding_window()) {
+    if (
+      !config::shard_local_cfg().log_compaction_use_sliding_window()
+      || (compact_cfg.hash_key_map && compact_cfg.hash_key_map->capacity() == 0)) {
         co_return co_await adjacent_merge_compact(
           compact_cfg, new_start_offset);
     }
@@ -1529,17 +1574,13 @@ offset_stats disk_log_impl::offsets() const {
         }
         return ret;
     }
-    // NOTE: we have to do this because ss::circular_buffer<> does not provide
-    // with reverse iterators, so we manually find the iterator
-    segment_set::type end;
-    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-        auto& seg = _segs[i];
-        if (!seg->empty()) {
-            end = seg;
-            break;
-        }
-    }
-    if (!end) {
+
+    auto it = std::find_if(
+      _segs.rbegin(), _segs.rend(), [](const segment_set::type& s) {
+          return !s->empty();
+      });
+
+    if (it == _segs.rend()) {
         offset_stats ret;
         ret.start_offset = _start_offset;
         if (ret.start_offset > model::offset(0)) {
@@ -1550,7 +1591,7 @@ offset_stats disk_log_impl::offsets() const {
     }
     // we have valid begin and end
     const auto& bof = _segs.front()->offsets();
-    const auto& eof = end->offsets();
+    const auto& eof = (*it)->offsets();
 
     const auto start_offset = _start_offset() >= 0 ? _start_offset
                                                    : bof.get_base_offset();
@@ -1573,8 +1614,8 @@ model::offset disk_log_impl::find_last_term_start_offset() const {
 
     segment_set::type end;
     segment_set::type term_start;
-    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
-        auto& seg = _segs[i];
+    for (auto it = _segs.rbegin(); it != _segs.rend(); ++it) {
+        auto& seg = *it;
         if (!seg->empty()) {
             if (!end) {
                 end = seg;
@@ -1714,8 +1755,8 @@ uint64_t disk_log_impl::size_bytes_after_offset(model::offset o) const {
         return 0;
     }
     uint64_t size = 0;
-    for (size_t i = _segs.size(); i-- > 0;) {
-        auto& seg = _segs[i];
+    for (auto it = _segs.rbegin(); it != _segs.rend(); ++it) {
+        auto& seg = *it;
         if (seg->offsets().get_base_offset() < o) {
             break;
         }
@@ -2531,23 +2572,20 @@ ss::future<std::optional<timequery_result>>
 disk_log_impl::timequery(timequery_config cfg) {
     vassert(!_closed, "timequery on closed log - {}", *this);
     if (_segs.empty()) {
-        return ss::make_ready_future<std::optional<timequery_result>>();
+        co_return std::nullopt;
     }
-    return make_reader(cfg).then([cfg](model::record_batch_reader reader) {
-        return model::consume_reader_to_memory(
-                 std::move(reader), model::no_timeout)
-          .then([cfg](model::record_batch_reader::storage_t st) {
-              using ret_t = std::optional<timequery_result>;
-              auto& batches = std::get<model::record_batch_reader::data_t>(st);
-              if (
-                !batches.empty()
-                && batches.front().header().max_timestamp >= cfg.time) {
-                  return ret_t(batch_timequery(
-                    batches.front(), cfg.min_offset, cfg.time, cfg.max_offset));
-              }
-              return ret_t();
-          });
-    });
+
+    auto reader = co_await make_reader(cfg);
+    auto batches = co_await model::consume_reader_to_memory(
+      std::move(reader), model::no_timeout);
+
+    if (
+      !batches.empty() && batches.front().header().max_timestamp >= cfg.time) {
+        co_return co_await batch_timequery(
+          std::move(batches.front()), cfg.min_offset, cfg.time, cfg.max_offset);
+    }
+
+    co_return std::nullopt;
 }
 
 ss::future<> disk_log_impl::remove_segment_permanently(
@@ -3512,13 +3550,49 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
      * compute the amount of current disk usage as well as the amount available
      * for being reclaimed.
      */
-    auto [usage, reclaim] = co_await disk_usage_and_reclaimable_space(cfg);
+    usage use;
+    reclaim_size_limits reclaim;
+
+    auto usage_and_reclaim_fut = co_await ss::coroutine::as_future(
+      disk_usage_and_reclaimable_space(cfg));
+
+    if (usage_and_reclaim_fut.failed()) {
+        // The disk usage/reclaimable space could not be computed for some
+        // reason. Return the used size, but with 0 bytes indicated as
+        // reclaimable.
+        auto e = usage_and_reclaim_fut.get_exception();
+        ss::semaphore limit(std::max<size_t>(
+          1,
+          config::shard_local_cfg()
+            .space_management_max_segment_concurrency()));
+
+        use = co_await ss::map_reduce(
+          _segs,
+          [&limit](const segment_set::type& seg) {
+              return ss::with_semaphore(
+                limit, 1, [&seg] { return seg->persistent_size(); });
+          },
+          usage{},
+          [](usage acc, usage u) { return acc + u; });
+
+        vlog(
+          gclog.warn,
+          "Unable to collect disk usage for ntp {}: {}, reporting usage of {} "
+          "with no reclaimable bytes",
+          config().ntp(),
+          e,
+          use.total());
+    } else {
+        auto usage_and_reclaim = usage_and_reclaim_fut.get();
+        use = usage_and_reclaim.first;
+        reclaim = usage_and_reclaim.second;
+    }
 
     /*
      * compute target capacities such as minimum required capacity as well as
      * capacities needed to meet goals such as local retention.
      */
-    auto target = co_await disk_usage_target(cfg, usage);
+    auto target = co_await disk_usage_target(cfg, use);
 
     /*
      * the intention here is to establish a needed <= wanted relationship which
@@ -3527,7 +3601,7 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
     target.min_capacity_wanted = std::max(
       target.min_capacity_wanted, target.min_capacity);
 
-    co_return usage_report(usage, reclaim, target);
+    co_return usage_report(use, reclaim, target);
 }
 
 fragmented_vector<ss::lw_shared_ptr<segment>>

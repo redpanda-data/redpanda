@@ -83,6 +83,11 @@ public:
             labels)});
     }
 
+    void reset() {
+        _metrics.clear();
+        _public_metrics.clear();
+    }
+
 private:
     model::offset& _offset;
     metrics::internal_metric_groups _metrics;
@@ -136,6 +141,8 @@ public:
              sm::description("Number of topics in a group"),
              labels)});
     }
+
+    void reset() { _public_metrics.clear(); }
 
 private:
     member_map& _members;

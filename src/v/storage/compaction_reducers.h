@@ -156,19 +156,22 @@ public:
     };
 
     copy_data_segment_reducer(
+      model::ntp ntp,
       filter_t f,
       segment_appender* a,
       bool internal_topic,
       offset_delta_time apply_offset,
+      model::offset index_base_offset,
       model::offset segment_last_offset,
       compacted_index_writer* cidx = nullptr,
       bool inject_failure = false,
       ss::abort_source* as = nullptr)
-      : _should_keep_fn(std::move(f))
+      : _ntp(std::move(ntp))
+      , _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
       , _appender(a)
       , _compacted_idx(cidx)
-      , _idx(index_state::make_empty_index(apply_offset))
+      , _idx(index_state::make_empty_index(index_base_offset, apply_offset))
       , _internal_topic(internal_topic)
       , _inject_failure(inject_failure)
       , _as(as) {}
@@ -191,6 +194,7 @@ private:
     // Creates a placeholder batch with same offset range as the input header.
     model::record_batch make_placeholder_batch(model::record_batch_header&);
 
+    model::ntp _ntp;
     filter_t _should_keep_fn;
 
     // Offset to keep in case the index is empty as of getting to this offset.
@@ -253,10 +257,12 @@ private:
 class tx_reducer : public compaction_reducer {
 public:
     explicit tx_reducer(
+      model::ntp ntp,
       ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
       fragmented_vector<model::tx_range>&& txs,
       compacted_index_writer* w) noexcept
-      : _delegate(index_rebuilder_reducer(w))
+      : _ntp(std::move(ntp))
+      , _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
       , _stm_mgr(stm_mgr)
       , _transactional_stm_type(stm_mgr->transactional_stm_type()) {
@@ -291,7 +297,9 @@ private:
     // transaction (if any) may be added and finished aborted
     // transactions are removed if an abort batch is encountered.
     void refresh_ongoing_aborted_txs(const model::record_batch&);
+    bool has_transactional_data() const;
 
+    model::ntp _ntp;
     index_rebuilder_reducer _delegate;
     // A min heap of aborted transactions based on begin offset.
     using underlying_t = std::priority_queue<

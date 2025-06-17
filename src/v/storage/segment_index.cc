@@ -42,9 +42,8 @@ segment_index::segment_index(
   , _step(step)
   , _feature_table(std::ref(feature_table))
   , _state(index_state::make_empty_index(
-      storage::internal::should_apply_delta_time_offset(_feature_table)))
+      base, storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _sanitizer_config(std::move(sanitizer_config)) {
-    _state.base_offset = base;
     _state.broker_timestamp = broker_timestamp;
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
@@ -60,10 +59,8 @@ segment_index::segment_index(
   , _step(step)
   , _feature_table(std::ref(feature_table))
   , _state(index_state::make_empty_index(
-      storage::internal::should_apply_delta_time_offset(_feature_table)))
-  , _mock_file(mock_file) {
-    _state.base_offset = base;
-}
+      base, storage::internal::should_apply_delta_time_offset(_feature_table)))
+  , _mock_file(mock_file) {}
 
 ss::future<ss::file> segment_index::open() {
     if (_mock_file) {
@@ -86,9 +83,8 @@ void segment_index::reset() {
     auto may_have_tombstone_records = _state.may_have_tombstone_records;
 
     _state = index_state::make_empty_index(
-      storage::internal::should_apply_delta_time_offset(_feature_table));
+      base, storage::internal::should_apply_delta_time_offset(_feature_table));
 
-    _state.base_offset = base;
     _state.clean_compact_timestamp = clean_compact_timestamp;
     _state.may_have_tombstone_records = may_have_tombstone_records;
 
@@ -136,7 +132,8 @@ void segment_index::maybe_track(
           to_optional_model_timestamp(new_broker_ts),
           path().is_internal_topic()
             || hdr.type == model::record_batch_type::raft_data,
-          internal::is_compactible(hdr) ? hdr.record_count : 0)) {
+          internal::is_compactible(_path.get_ntp(), hdr) ? hdr.record_count
+                                                         : 0)) {
         _acc = 0;
     }
     _needs_persistence = true;

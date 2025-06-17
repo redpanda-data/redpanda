@@ -13,9 +13,9 @@ setup(
     package_data={'': ['*.md']},
     include_package_data=True,
     install_requires=[
-        'ducktape@git+https://github.com/redpanda-data/ducktape.git@f51d83f1c035cf77f9389139646f5abdaa6d3648',
+        'ducktape@git+https://github.com/redpanda-data/ducktape.git@805139d3e207e2bad0090bf92e25bbb812ee0232',
         'prometheus-client==0.9.0',
-        'kafka-python==2.0.2',
+        'kafka-python==2.0.6',
         'crc32c==2.2',
         'confluent-kafka==2.2.0',
         'zstandard==0.15.2',

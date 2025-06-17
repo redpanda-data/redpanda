@@ -53,4 +53,8 @@ bool has_abort_or_gate_close_exception(const ss::nested_exception& ex);
 /// return a, a/b, a/b/log.txt
 std::vector<object_key> all_paths_to_file(const object_key& path);
 
+// Helper to URL encode the target field in the request header
+// TODO: This should be replaced after we will represent URIs as structs
+void url_encode_target(http::client::request_header& header);
+
 } // namespace cloud_storage_clients::util

@@ -94,7 +94,7 @@ TEST(request_builder, test_url_percent_encoding) {
     ASSERT_TRUE(req.has_value());
     EXPECT_EQ(
       req->target(),
-      "/?afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%3f%"
-      "40%5b%5dafgz0119=afgz0119%21%23%24%26%27%28%29%2a%2b%2c%2F%3a%3b%3d%"
-      "3f%40%5b%5dafgz0119");
+      "/?afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%"
+      "40%5B%5Dafgz0119=afgz0119%21%23%24%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%"
+      "3F%40%5B%5Dafgz0119");
 }

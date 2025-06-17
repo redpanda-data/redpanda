@@ -17,6 +17,7 @@ go_library(
         "js/tsconfig.json",
         "rust/README.md",
         "rust/main.rustsrc",
+        "rust/config.toml",
     ],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/transform/template",
     visibility = ["//visibility:public"],

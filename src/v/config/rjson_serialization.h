@@ -137,4 +137,6 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, config::datalake_catalog_type);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>&, config::tls_name_format);
 } // namespace json

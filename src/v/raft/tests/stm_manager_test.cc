@@ -578,6 +578,10 @@ public:
     ss::future<iobuf> take_snapshot() final {
         co_return serde::to_iobuf(state);
     }
+
+    stm_initial_recovery_policy get_initial_recovery_policy() const override {
+        return stm_initial_recovery_policy::read_everything;
+    }
 };
 
 TEST_F_CORO(state_machine_fixture, test_opt_out_from_snapshot_at_offset) {

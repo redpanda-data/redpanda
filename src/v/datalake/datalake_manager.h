@@ -65,7 +65,7 @@ public:
     ~datalake_manager();
 
     ss::future<> start();
-    ss::future<> stop();
+    ss::future<> shutdown();
 
 private:
     using translator = std::unique_ptr<translation::partition_translator>;

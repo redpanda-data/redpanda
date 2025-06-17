@@ -104,13 +104,18 @@ public:
 
     struct string_conversion_exception
       : public default_control_character_thrower {
-        using default_control_character_thrower::
-          default_control_character_thrower;
+        explicit string_conversion_exception(std::string_view parameter_name)
+          : default_control_character_thrower()
+          , _parameter_name(parameter_name) {}
+
         [[noreturn]] [[gnu::cold]] void conversion_error() override {
-            throw ss::httpd::bad_request_exception(
-              "Parameter contained invalid control characters: "
-              + get_sanitized_string());
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Parameter '{}' contained invalid control characters",
+              _parameter_name));
         }
+
+    private:
+        std::string _parameter_name;
     };
 
 private:

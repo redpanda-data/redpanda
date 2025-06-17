@@ -35,7 +35,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_cross_shard_def) {
     // Upsert a large(ish) number of schemas to the store, all with different
     // subject names and IDs, so they should hash to different shards.
     for (int i = 1; i <= id_n; ++i) {
-        auto referenced_schema = pps::canonical_schema{
+        auto referenced_schema = pps::subject_schema{
           pps::subject{fmt::format("simple_{}.proto", i)}, simple.share()};
         store
           .upsert(

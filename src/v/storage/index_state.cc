@@ -208,8 +208,10 @@ offset_time_index::offset_time_index(
 
 uint32_t offset_time_index::raw_value() const { return _val; }
 
-index_state index_state::make_empty_index(offset_delta_time with_offset) {
+index_state index_state::make_empty_index(
+  model::offset base_offset, offset_delta_time with_offset) {
     index_state idx{};
+    idx.base_offset = base_offset;
     idx.with_offset = with_offset;
 
     return idx;
@@ -239,8 +241,6 @@ bool index_state::maybe_index(
       base_offset,
       *this);
 
-    bool retval = false;
-
     // The first non-config batch in the segment, use its timestamp
     // to override the timestamps of any config batch that was indexed
     // by virtue of being the first in the segment.
@@ -255,8 +255,9 @@ bool index_state::maybe_index(
           time_col_reset,
           "Relative time index can not be reset, unexpected index size {} "
           "(expected 1). This can only happen if more than one non-data "
-          "timestamp was added to the index.",
-          index.size());
+          "timestamp was added to the index: {}.",
+          index.size(),
+          *this);
 
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
@@ -264,6 +265,8 @@ bool index_state::maybe_index(
     }
 
     // index_state
+    bool is_empty = false;
+    bool should_set_non_data_timestamp = false;
     if (empty()) {
         // Ordinarily, we do not allow configuration batches to contribute to
         // the segment's timestamp bounds (because config batches use walltime
@@ -271,11 +274,11 @@ bool index_state::maybe_index(
         // batch we set the timestamps, and then set a `non_data_timestamps`
         // flag so that the next time we see user data we will overwrite
         // the walltime timestamps with the user data timestamps.
-        non_data_timestamps = !user_data;
+        should_set_non_data_timestamp = !user_data;
 
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
-        retval = true;
+        is_empty = true;
     }
 
     // NOTE: we don't need the 'max()' trick below because we controll the
@@ -299,16 +302,25 @@ bool index_state::maybe_index(
           = num_compactible_records_appended.value_or(0) + compactible_records;
     }
     // always saving the first batch simplifies a lot of book keeping
-    if ((accumulator >= step && user_data) || retval) {
-        add_entry(
-          // We know that a segment cannot be > 4GB
-          batch_base_offset() - base_offset(),
-          offset_time_index{last_timestamp - base_timestamp, with_offset},
-          starting_position_in_file);
-
-        retval = true;
+    if ((accumulator >= step && user_data) || is_empty) {
+        auto offset_delta = batch_base_offset() - base_offset();
+        if (offset_delta <= std::numeric_limits<uint32_t>::max()) {
+            add_entry(
+              // We know that a segment cannot be > 4GB
+              batch_base_offset() - base_offset(),
+              offset_time_index{last_timestamp - base_timestamp, with_offset},
+              starting_position_in_file);
+            if (should_set_non_data_timestamp) {
+                non_data_timestamps = true;
+            }
+            return true;
+        } else {
+            // We can't index anything beyond uint32 space. Presumably no
+            // further entries will be added because of this same condition.
+            return false;
+        }
     }
-    return retval;
+    return false;
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
@@ -674,7 +686,15 @@ std::optional<index_state::entry> index_state::find_nearest(model::offset o) {
     if (o < base_offset || empty()) {
         return std::nullopt;
     }
-    const uint32_t needle = o() - base_offset();
+    int64_t query_offset_delta = o() - base_offset();
+    int64_t seg_offset_delta = max_offset - base_offset;
+    static constexpr int64_t uint32_max = std::numeric_limits<uint32_t>::max();
+    if (query_offset_delta > uint32_max || seg_offset_delta > uint32_max) {
+        // TODO: this is a major hack! Older versions of Redpanda may index
+        // this segment incorrectly. Conservatively return the first entry.
+        return translate_index_entry(get_entry(0));
+    }
+    const auto needle = static_cast<uint32_t>(query_offset_delta);
 
     auto ix = index.offset_lower_bound(needle).value_or(index.size() - 1);
 

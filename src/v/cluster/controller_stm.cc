@@ -208,4 +208,8 @@ ss::future<> controller_stm::apply_snapshot(
     });
 }
 
+ss::future<ssx::semaphore_units> controller_stm::lock_apply() {
+    return _apply_mtx.get_units();
+}
+
 } // namespace cluster

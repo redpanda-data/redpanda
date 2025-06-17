@@ -57,7 +57,7 @@ void group_tx_tracker_stm::maybe_add_tx_begin_offset(
     auto it = _all_txs.find(group);
     if (it == _all_txs.end()) {
         vlog(
-          klog.debug,
+          cg_klog.debug,
           "[{}] group not found, ignoring fence of type: {} at offset: {}",
           group,
           fence_type,
@@ -73,7 +73,7 @@ void group_tx_tracker_stm::maybe_end_tx(
     auto it = _all_txs.find(group);
     if (it == _all_txs.end()) {
         vlog(
-          klog.debug,
+          cg_klog.debug,
           "[{}] group not found, ignoring end transaction for pid: {} at "
           "offset: {}",
           group,
@@ -85,7 +85,7 @@ void group_tx_tracker_stm::maybe_end_tx(
     auto p_it = group_data.producer_states.find(pid);
     if (p_it == group_data.producer_states.end()) {
         vlog(
-          klog.debug,
+          cg_klog.debug,
           "[{}] ignoring end transaction, no in progress transaction for pid: "
           "{} at offset: {}",
           group,
@@ -171,12 +171,12 @@ ss::future<> group_tx_tracker_stm::handle_raft_data(model::record_batch batch) {
 
 void group_tx_tracker_stm::handle_group_metadata(group_metadata_kv md) {
     if (md.value) {
-        vlog(klog.trace, "[group: {}] update", md.key.group_id);
+        vlog(cg_klog.trace, "[group: {}] update", md.key.group_id);
         // A group may checkpoint periodically as the member's state changes,
         // here we retain the group state if the group already exists.
         _all_txs.try_emplace(md.key.group_id, per_group_state{});
     } else {
-        vlog(klog.trace, "[group: {}] tombstone", md.key.group_id);
+        vlog(cg_klog.trace, "[group: {}] tombstone", md.key.group_id);
         // A tombstone indicates all the group state can be purged and
         // any transactions can be ignored. Although care must be taken
         // to ensure there are no open transactions before tombstoning
@@ -267,9 +267,11 @@ group_tx_tracker_stm_factory::group_tx_tracker_stm_factory(
   : _feature_table(feature_table) {}
 
 void group_tx_tracker_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     auto stm = builder.create_stm<kafka::group_tx_tracker_stm>(
-      klog, raft, _feature_table);
+      cg_klog, raft, _feature_table);
     raft->log()->stm_manager()->add_stm(stm);
 }
 
@@ -289,7 +291,7 @@ void group_tx_tracker_stm::per_group_state::maybe_add_tx_begin(
           .timeout = tx_timeout};
         if (p_state.expired_deprecated_fence_tx()) {
             vlog(
-              klog.debug,
+              cg_klog.debug,
               "[{}] Ignoring stale tx_fence batch at offset: {}, considering "
               "it expired",
               group,
@@ -297,7 +299,7 @@ void group_tx_tracker_stm::per_group_state::maybe_add_tx_begin(
             return;
         }
         vlog(
-          klog.debug,
+          cg_klog.debug,
           "[{}] Adding begin tx : {}, pid: {} at offset: {}, ts: {} with "
           "timeout: {}",
           group,
@@ -317,7 +319,7 @@ void group_tx_tracker_stm::per_group_state::gc_expired_tx_fence_transactions() {
     while (it != producer_states.end()) {
         if (it->second.expired_deprecated_fence_tx()) {
             vlog(
-              klog.warn,
+              cg_klog.warn,
               "Expiring stale tx_fence based begin tx at offset: {} for "
               "producer: {}",
               it->second.begin_offset,

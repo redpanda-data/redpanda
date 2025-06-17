@@ -32,7 +32,8 @@ auto group_router::route(Request&& r, FwdFunc func) {
 
     auto m = shard_for(r.data.group_id);
     if (!m) {
-        vlog(klog.trace, "in route() not coordinator for {}", r.data.group_id);
+        vlog(
+          cg_klog.trace, "in route() not coordinator for {}", r.data.group_id);
         return ss::make_ready_future<resp_type>(
           resp_type(r, error_code::not_coordinator));
     }

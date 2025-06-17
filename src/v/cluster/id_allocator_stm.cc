@@ -247,7 +247,9 @@ bool id_allocator_stm_factory::is_applicable_for(
 }
 
 void id_allocator_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config&) {
     builder.create_stm<id_allocator_stm>(clusterlog, raft);
 }
 

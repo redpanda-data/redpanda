@@ -96,4 +96,9 @@ inline bool is_user_topic(const ntp& ntp) {
     return is_user_topic(topic_namespace_view{ntp});
 }
 
+inline bool is_consumer_offsets_topic(const ntp& ntp) {
+    return ntp.ns == kafka_namespace
+           && ntp.tp.topic == kafka_consumer_offsets_topic;
+}
+
 } // namespace model

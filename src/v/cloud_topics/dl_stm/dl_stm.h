@@ -26,6 +26,11 @@ public:
 
     dl_stm(ss::logger&, raft::consensus*);
 
+    raft::stm_initial_recovery_policy
+    get_initial_recovery_policy() const final {
+        return raft::stm_initial_recovery_policy::read_everything;
+    }
+
 private:
     ss::future<> do_apply(const model::record_batch& batch) override;
 

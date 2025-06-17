@@ -130,19 +130,17 @@ func buildRust(ctx context.Context, fs afero.Fs, cfg project.Config, extraArgs [
 		return fmt.Errorf("unable to query cargo metadata: %v", err)
 	}
 	// Cargo does not support named outputs for building, so we have to do the mv ourselves.
-	buildArgs := []string{"build", "--release", "--target=wasm32-wasi"}
+	buildArgs := []string{"build", "--release"}
 	buildArgs = append(buildArgs, extraArgs...)
 	cmd = exec.CommandContext(ctx, cargo, buildArgs...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	// Enable SIMD acceleration
-	cmd.Env = append(os.Environ(), "RUSTFLAGS=-Ctarget-feature=+simd128")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build failed %v", err)
 	}
 	fileName := fmt.Sprintf("%s.wasm", cfg.Name)
-	buildArtifact := path.Join(meta.TargetDir, "wasm32-wasi", "release", fileName)
+	buildArtifact := path.Join(meta.TargetDir, "wasm32-wasip1", "release", fileName)
 	if err = fs.Rename(buildArtifact, fileName); err != nil {
 		return fmt.Errorf("unable to move build artifact: %v", err)
 	}

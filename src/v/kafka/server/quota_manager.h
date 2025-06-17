@@ -101,17 +101,16 @@ public:
     ss::future<clock::duration> record_produce_tp_and_throttle(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
-      clock::time_point now = clock::now());
+      clock::time_point now);
 
     // record a new observation
     ss::future<> record_fetch_tp(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
-      clock::time_point now = clock::now());
+      clock::time_point now);
 
     ss::future<clock::duration> throttle_fetch_tp(
-      std::optional<std::string_view> client_id,
-      clock::time_point now = clock::now());
+      std::optional<std::string_view> client_id, clock::time_point now);
 
     // Used to record new number of partitions mutations
     // Only for use with the quotas introduced by KIP-599, namely to track
@@ -120,7 +119,7 @@ public:
     ss::future<std::chrono::milliseconds> record_partition_mutations(
       std::optional<std::string_view> client_id,
       uint32_t mutations,
-      clock::time_point now = clock::now());
+      clock::time_point now);
 
     const std::optional<global_map_t>& get_global_map_for_testing() const;
 

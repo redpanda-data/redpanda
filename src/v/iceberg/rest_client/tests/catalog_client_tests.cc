@@ -117,7 +117,7 @@ ss::future<http::downloaded_response> validate_token_request(
     std::ranges::sort(received);
 
     ss::sstring expected{
-      "grant_type=client_credentials&scope=PRINCIPAL_ROLE%3aALL&client_secret="
+      "grant_type=client_credentials&scope=PRINCIPAL_ROLE%3AALL&client_secret="
       "secret&client_id=id"};
     std::ranges::sort(expected);
 

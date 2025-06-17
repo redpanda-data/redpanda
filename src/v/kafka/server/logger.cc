@@ -21,4 +21,5 @@ seastar::logger client_quota_log("kafka_quotas");
 static constexpr size_t max_log_line_bytes = 128_KiB;
 truncating_logger kwire(klog, max_log_line_bytes);
 
+seastar::logger cg_klog("kafka-cg");
 } // namespace kafka

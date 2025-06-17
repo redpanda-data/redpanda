@@ -656,7 +656,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .start_kafka_offset = m.get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover),
       .highest_producer_id = m.highest_producer_id(),
-      .applied_offset = m.get_applied_offset(),
+      .applied_offset = insync_offset,
     });
 
     auto snapshot = raft::stm_snapshot::create(
@@ -694,7 +694,8 @@ archival_metadata_stm::archival_metadata_stm(
       raft->ntp(), raft->log_config().get_remote_revision(), _mem_tracker))
   , _cloud_storage_api(remote)
   , _feature_table(ft)
-  , _remote_path_provider(remote_label, remote_topic_namespace_override) {}
+  , _remote_path_provider(
+      std::move(remote_label), std::move(remote_topic_namespace_override)) {}
 
 ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
@@ -1746,12 +1747,10 @@ archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty(
 archival_metadata_stm_factory::archival_metadata_stm_factory(
   bool cloud_storage_enabled,
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
-  ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::topic_table>& topics)
+  ss::sharded<features::feature_table>& feature_table)
   : _cloud_storage_enabled(cloud_storage_enabled)
   , _cloud_storage_api(cloud_storage_api)
-  , _feature_table(feature_table)
-  , _topics(topics) {}
+  , _feature_table(feature_table) {}
 
 bool archival_metadata_stm_factory::is_applicable_for(
   const storage::ntp_config& ntp_cfg) const {
@@ -1760,25 +1759,17 @@ bool archival_metadata_stm_factory::is_applicable_for(
 }
 
 void archival_metadata_stm_factory::create(
-  raft::state_machine_manager_builder& builder, raft::consensus* raft) {
-    auto topic_md = _topics.local().get_topic_metadata_ref(
-      model::topic_namespace_view(raft->ntp()));
-    auto remote_label
-      = topic_md.has_value()
-          ? topic_md->get().get_configuration().properties.remote_label
-          : std::nullopt;
-    auto remote_topic_namespace_override
-      = topic_md.has_value() ? topic_md->get()
-                                 .get_configuration()
-                                 .properties.remote_topic_namespace_override
-                             : std::nullopt;
+  raft::state_machine_manager_builder& builder,
+  raft::consensus* raft,
+  const cluster::stm_instance_config& cfg) {
+    const auto tcfg = cfg.initial_topic_cfg;
     auto stm = builder.create_stm<cluster::archival_metadata_stm>(
       raft,
       _cloud_storage_api.local(),
       _feature_table.local(),
       clusterlog,
-      remote_label,
-      remote_topic_namespace_override);
+      tcfg ? tcfg->properties.remote_label : std::nullopt,
+      tcfg ? tcfg->properties.remote_topic_namespace_override : std::nullopt);
     raft->log()->stm_manager()->add_stm(stm);
 }
 

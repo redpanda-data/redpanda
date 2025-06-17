@@ -60,6 +60,10 @@ struct planner_config {
     // partitions on each node, as opposed to balancing the total number of
     // partitions.
     bool topic_aware = false;
+
+    // If true, expects nodes to report their space management statistics in the
+    // health report.
+    bool space_management_enabled = false;
 };
 
 class partition_balancer_planner {

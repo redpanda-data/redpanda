@@ -7,12 +7,15 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import concurrent.futures
+import threading
 import ducktape.errors
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from requests.exceptions import ConnectionError
+from rptest.clients.rpk import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RpkTool
 from rptest.services.redpanda_installer import (RedpandaInstaller,
                                                 wait_for_num_versions)
 from rptest.util import expect_exception
@@ -104,6 +107,52 @@ class ClusterBootstrapNew(RedpandaTest):
             expected_node_id = node_ids_per_idx[idx]
             node_id = self.redpanda.node_id(n)
             assert expected_node_id == node_id, f"Expected {expected_node_id} but got {node_id}"
+
+
+class ClusterBootstrapFiveNodes(RedpandaTest):
+    """
+    Tests verifying new cluster bootstrap in Seed Driven Cluster Bootstrap mode
+    """
+    def __init__(self, test_context):
+        super(ClusterBootstrapFiveNodes,
+              self).__init__(test_context=test_context, num_brokers=5)
+        self.admin = self.redpanda._admin
+
+    def setUp(self):
+        # Defer startup to test body.
+        pass
+
+    @cluster(num_nodes=5)
+    def test_topic_creation_during_bootstrap(self):
+        """
+        The test validates if the cluster is able to correctly bootstrap while 
+        executing operations during the bootstrap process.
+        """
+        stop_ev = threading.Event()
+        set_seeds_for_cluster(self.redpanda, 5)
+
+        def describe_group():
+            rpk = RpkTool(self.redpanda)
+            while not stop_ev.is_set():
+                try:
+                    topic = TopicSpec(partition_count=1, replication_factor=3)
+                    rpk.create_topic(topic.name, partitions=1, replicas=3)
+                    rpk.group_describe("test_group")
+                except:
+                    pass
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            fut = executor.submit(lambda: describe_group())
+            try:
+                for node in self.redpanda.nodes:
+                    self.redpanda.set_extra_node_conf(
+                        node, {"empty_seed_starts_cluster": False})
+
+                self.redpanda.start(auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
+            finally:
+                stop_ev.set()
+            fut.result(timeout=10)
 
 
 class ClusterBootstrapUpgrade(RedpandaTest):

@@ -316,7 +316,8 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
     auto holder = _gate.hold();
     auto promise = ss::make_lw_shared<expiring_promise<model::node_id>>();
     auto n_id = register_leadership_change_notification(
-      ntp, [promise](model::ntp, model::term_id, model::node_id leader_id) {
+      ntp,
+      [promise](const model::ntp&, model::term_id, model::node_id leader_id) {
           promise->set_value(leader_id);
       });
 

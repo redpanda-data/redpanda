@@ -50,7 +50,6 @@
 namespace pandaproxy::schema_registry {
 
 static constexpr auto audit_svc_name = "Redpanda Schema Registry Service";
-ss::logger schema_registry_access{"schema_registry_access"};
 
 using server = ctx_server<service>;
 const security::acl_principal principal{
@@ -210,7 +209,9 @@ private:
       const request_auth_result auth_result,
       ss::sstring reason) const {
         vlog(
-          plog.trace, "Attempting to audit authz for {}", rq.req->format_url());
+          srlog.trace,
+          "Attempting to audit authz for {}",
+          rq.req->format_url());
         auto success = rq.service().audit_mgr().enqueue_api_activity_event(
           security::audit::event_type::schema_registry,
           *rq.req,
@@ -221,7 +222,7 @@ private:
 
         if (!success) {
             vlog(
-              plog.error,
+              srlog.error,
               "Failed to audit authorization request for endpoint: {}",
               rq.req->format_url());
             throw ss::httpd::base_exception(
@@ -234,12 +235,14 @@ private:
       const server::request_t& rq,
       security::audit::authentication_event_options options) const {
         vlog(
-          plog.trace, "Attempting to audit authn for {}", rq.req->format_url());
+          srlog.trace,
+          "Attempting to audit authn for {}",
+          rq.req->format_url());
         auto success = rq.service().audit_mgr().enqueue_authn_event(
           std::move(options));
         if (!success) {
             vlog(
-              plog.error,
+              srlog.error,
               "Failed to audit authentication request for endpoint: {}",
               rq.req->format_url());
             throw ss::httpd::base_exception(
@@ -250,7 +253,9 @@ private:
 
     void do_audit_authz(const server::request_t& rq) const {
         vlog(
-          plog.trace, "Attempting to audit authz for {}", rq.req->format_url());
+          srlog.trace,
+          "Attempting to audit authz for {}",
+          rq.req->format_url());
         auto success = rq.service().audit_mgr().enqueue_api_activity_event(
           security::audit::event_type::schema_registry,
           *rq.req,
@@ -259,7 +264,7 @@ private:
 
         if (!success) {
             vlog(
-              plog.error,
+              srlog.error,
               "Failed to audit authorization request for endpoint: {}",
               rq.req->format_url());
             throw ss::httpd::base_exception(
@@ -404,17 +409,19 @@ ss::future<> service::do_start() {
     auto guard = _gate.hold();
     try {
         co_await create_internal_topic();
-        vlog(plog.info, "Schema registry successfully initialized");
+        vlog(srlog.info, "Schema registry successfully initialized");
     } catch (...) {
         vlog(
-          plog.error,
+          srlog.error,
           "Schema registry failed to initialize: {}",
           std::current_exception());
         throw;
     }
     co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
         s._is_started = true;
-        return s.fetch_internal_topic();
+        return ss::this_shard_id() == seq_writer::reader_shard
+                 ? s.fetch_internal_topic()
+                 : ss::now();
     });
 }
 
@@ -438,13 +445,13 @@ ss::future<> create_acls(cluster::security_frontend& security_fe) {
 
     if (it != err_vec.end()) {
         vlog(
-          plog.warn,
+          srlog.warn,
           "Failed to create ACLs for {}, err {} - {}",
           principal,
           *it,
           cluster::make_error_code(*it).message());
     } else {
-        vlog(plog.debug, "Successfully created ACLs for {}", principal);
+        vlog(srlog.debug, "Successfully created ACLs for {}", principal);
     }
 }
 
@@ -469,7 +476,7 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
         // Return so that the client doesn't try to mitigate.
         return ss::now();
     }
-    vlog(plog.warn, "mitigate_error: {}", eptr);
+    vlog(srlog.warn, "mitigate_error: {}", eptr);
     return ss::make_exception_future<>(eptr)
       .handle_exception_type(
         [this, eptr](const kafka::client::broker_error& ex) {
@@ -498,7 +505,7 @@ ss::future<> service::mitigate_error(std::exception_ptr eptr) {
 }
 
 ss::future<> service::inform(model::node_id id) {
-    vlog(plog.trace, "inform: {}", id);
+    vlog(srlog.trace, "inform: {}", id);
 
     // Inform a particular node
     if (id != kafka::client::unknown_node_id) {
@@ -514,7 +521,7 @@ ss::future<> service::inform(model::node_id id) {
 ss::future<> service::do_inform(model::node_id id) {
     auto& fe = _controller->get_ephemeral_credential_frontend().local();
     auto ec = co_await fe.inform(id, principal);
-    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
+    vlog(srlog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 ss::future<> service::create_internal_topic() {
@@ -525,7 +532,7 @@ ss::future<> service::create_internal_topic() {
         _controller->internal_topic_replication());
 
     vlog(
-      plog.debug,
+      srlog.debug,
       "Schema registry: attempting to create internal topic (replication={})",
       replication_factor);
 
@@ -565,11 +572,11 @@ ss::future<> service::create_internal_topic() {
 
     const auto& topic = res.data.topics[0];
     if (topic.error_code == kafka::error_code::none) {
-        vlog(plog.debug, "Schema registry: created internal topic");
+        vlog(srlog.debug, "Schema registry: created internal topic");
     } else if (topic.error_code == kafka::error_code::topic_already_exists) {
-        vlog(plog.debug, "Schema registry: found internal topic");
+        vlog(srlog.debug, "Schema registry: found internal topic");
     } else if (topic.error_code == kafka::error_code::not_controller) {
-        vlog(plog.debug, "Schema registry: not controller");
+        vlog(srlog.debug, "Schema registry: not controller");
     } else {
         throw kafka::exception(
           topic.error_code,
@@ -581,7 +588,7 @@ ss::future<> service::create_internal_topic() {
 }
 
 ss::future<> service::fetch_internal_topic() {
-    vlog(plog.debug, "Schema registry: loading internal topic");
+    vlog(srlog.debug, "Schema registry: loading internal topic");
 
     // TODO: should check the replication_factor of the topic is
     // what our config calls for
@@ -589,7 +596,7 @@ ss::future<> service::fetch_internal_topic() {
     auto offset_res = co_await _client.local().list_offsets(
       model::schema_registry_internal_tp);
     auto max_offset = offset_res.data.topics[0].partitions[0].offset;
-    vlog(plog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
+    vlog(srlog.debug, "Schema registry: _schemas max_offset: {}", max_offset);
 
     co_await kafka::client::make_client_fetch_batch_reader(
       _client.local(),
@@ -597,6 +604,11 @@ ss::future<> service::fetch_internal_topic() {
       model::offset{0},
       max_offset)
       .consume(consume_to_store{_store, writer()}, model::no_timeout);
+
+    // If a schema failed to be compiled, it will be marked. We attempt to
+    // reprocess them once now that the whole topic has been read,  in case they
+    // have a reference to a schema declared later in the topic.
+    co_await _store.process_marked_schemas();
 }
 
 service::service(
@@ -625,7 +637,8 @@ service::service(
       "/schema_registry_definitions",
       _ctx,
       json::serialization_format::schema_registry_v1_json,
-      schema_registry_access)
+      srlog,
+      srreqs)
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
@@ -662,7 +675,5 @@ configuration& service::config() { return _config; }
 kafka::client::configuration& service::client_config() {
     return _client.local().config();
 }
-
-ss::logger& service::access_logger() { return schema_registry_access; }
 
 } // namespace pandaproxy::schema_registry

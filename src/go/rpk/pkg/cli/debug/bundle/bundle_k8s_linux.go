@@ -64,7 +64,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		fileRoot: strings.TrimSuffix(filepath.Base(bp.path), ".zip"),
 	}
 	var errs *multierror.Error
-
+	bp.namespace = resolveNamespace(bp.namespace)
 	steps := []step{
 		saveCPUInfo(ps),
 		saveCmdLine(ps),
@@ -100,19 +100,21 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 
 		adminAddresses, err = adminAddressesFromK8S(ctx, bp.namespace)
 		if err != nil {
-			zap.L().Sugar().Debugf("unable to get admin API addresses from the k8s API: %v", err)
+			zap.L().Sugar().Warnf("unable to get admin API addresses from the k8s API: %v", err)
 		}
+	}
+	// It's always safe to use the admin API addresses from the profile, even if
+	// we already have the addresses from the k8s API.
+	if len(bp.p.AdminAPI.Addresses) > 0 {
+		adminAddresses = adminAddressesUnion(bp.p.AdminAPI.Addresses, adminAddresses)
+	} else {
+		zap.L().Sugar().Warnf("no admin API addresses found in the current rpk profile")
 	}
 	if len(adminAddresses) == 0 {
-		if len(bp.p.AdminAPI.Addresses) > 0 {
-			zap.L().Sugar().Debugf("using admin API addresses from profile: %v", bp.p.AdminAPI.Addresses)
-			adminAddresses = bp.p.AdminAPI.Addresses
-		} else {
-			defaultAddress := fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)
-			zap.L().Sugar().Debugf("profile empty, using %v for the Admin API address", defaultAddress)
-			adminAddresses = []string{defaultAddress}
-		}
+		defaultAddress := fmt.Sprintf("127.0.0.1:%v", config.DefaultAdminPort)
+		adminAddresses = []string{defaultAddress}
 	}
+	zap.L().Debug("using admin API addresses", zap.Strings("addresses", adminAddresses))
 	steps = append(steps, []step{
 		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.partitions),
 		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.cpuProfilerWait),
@@ -130,6 +132,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		if err != nil {
 			errs = multierror.Append(errs, err)
 		}
+		errs.ErrorFormat = errorFormat
 		fmt.Println(errs.Error())
 	}
 
@@ -137,11 +140,28 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	return nil
 }
 
+// adminAddressesUnion returns the union of two slices of adminAddresses.
+func adminAddressesUnion(a, b []string) []string {
+	m := make(map[string]struct{}) // track unique addresses.
+	for _, v := range a {
+		m[v] = struct{}{}
+	}
+	for _, v := range b {
+		if _, ok := m[v]; !ok {
+			a = append(a, v)
+		}
+	}
+	return a
+}
+
 func k8sClientset() (*kubernetes.Clientset, error) {
 	k8sCfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes cluster configuration: %v", err)
 	}
+	// We need to increase the burst size to avoid throttling. We do ~6-8 req
+	// per broker.
+	k8sCfg.Burst = 30
 
 	return kubernetes.NewForConfig(k8sCfg)
 }
@@ -262,6 +282,29 @@ func getClusterDomain() string {
 	clusterDomain := strings.TrimPrefix(cname, apiSvc+".")
 
 	return clusterDomain
+}
+
+// resolveNamespace determines the Kubernetes namespace to use based on the
+// following priority order:
+//  1. The `--namespace` flag, if provided.
+//  2. The `NAMESPACE` environment variable, if set.
+//  3. The contents of the file
+//     `/var/run/secrets/kubernetes.io/serviceaccount/namespace`, if it exists.
+//  4. A default fallback value of "redpanda".
+func resolveNamespace(ns string) string {
+	if ns != "" {
+		return ns
+	}
+	zap.L().Sugar().Warn("flag '--namespace' not set; reading from $NAMESPACE")
+	if envNamespace := os.Getenv("NAMESPACE"); envNamespace != "" {
+		return envNamespace
+	}
+	zap.L().Sugar().Warn("$NAMESPACE not set; reading /var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	zap.L().Sugar().Warn("could not identify namespace; using default 'redpanda'")
+	return "redpanda"
 }
 
 // saveClusterAdminAPICalls saves per-cluster Admin API requests in the 'admin/'
@@ -522,7 +565,6 @@ func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, l
 		limitBytes := int64(logsLimitBytes)
 		logOpts := &k8score.PodLogOptions{
 			LimitBytes: &limitBytes,
-			Container:  "redpanda",
 		}
 
 		if len(since) > 0 {
@@ -536,12 +578,22 @@ func saveK8SLogs(ctx context.Context, ps *stepParams, namespace, since string, l
 
 		var grp multierror.Group
 		for _, p := range pods.Items {
-			p := p
-			cb := func(ctx context.Context) ([]byte, error) {
-				return podsInterface.GetLogs(p.Name, logOpts).Do(ctx).Raw()
+			for _, c := range p.Spec.Containers {
+				opts := logOpts.DeepCopy()
+				opts.Container = c.Name
+				cb := func(ctx context.Context) ([]byte, error) {
+					return podsInterface.GetLogs(p.Name, opts).Do(ctx).Raw()
+				}
+				grp.Go(func() error { return requestAndSave(ctx, ps, fmt.Sprintf("logs/%v-%v.txt", p.Name, c.Name), cb) })
 			}
-
-			grp.Go(func() error { return requestAndSave(ctx, ps, fmt.Sprintf("logs/%v.txt", p.Name), cb) })
+			for _, c := range p.Spec.InitContainers {
+				opts := logOpts.DeepCopy()
+				opts.Container = c.Name
+				cb := func(ctx context.Context) ([]byte, error) {
+					return podsInterface.GetLogs(p.Name, opts).Do(ctx).Raw()
+				}
+				grp.Go(func() error { return requestAndSave(ctx, ps, fmt.Sprintf("logs/%v-init-%v.txt", p.Name, c.Name), cb) })
+			}
 		}
 
 		errs := grp.Wait()
