@@ -897,6 +897,118 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation_after_early_stop) {
+    // INC-2167
+
+    // A manifest with tiny segments that all add up to max segment size.
+    // This is result of eager uploads before segment rolling.
+    //
+    // We want to test re-uploading of a single segment once it has been
+    // rolled and it by itself satisfies the upload size constraint.
+    //
+    // We add extra segments at the end to hit the exact code branch we
+    // are interested in.
+    constexpr std::string_view manifest = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 49,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "max_timestamp": 1234567890
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "max_timestamp": 1234567890
+        },
+        "40-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 40,
+            "committed_offset": 49,
+            "max_timestamp": 1234567890
+        }
+    }
+})json";
+
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // For this test we need batches with single records, so that the seek
+    // inside the segments aligns with manifest, because seek adjusts offsets to
+    // batch boundaries.
+    auto spec = log_spec{
+      .segment_starts = {10, 30, 40}, .last_segment_num_records = 10};
+
+    auto first = spec.segment_starts.begin();
+    auto second = std::next(first);
+    for (; second != spec.segment_starts.end(); ++first, ++second) {
+        b | storage::add_segment(*first);
+        for (auto curr_offset = *first; curr_offset < *second; ++curr_offset) {
+            b | storage::add_random_batch(curr_offset, 1);
+        }
+    }
+
+    b | storage::add_segment(*first)
+      | storage::add_random_batch(*first, spec.last_segment_num_records);
+
+    // We want to collect only one segment which is before the manifest end.
+    size_t max_size = b.get_segment(0).size_bytes();
+    archival::segment_collector collector{
+      model::offset{10}, m, b.get_disk_log_impl(), max_size, model::offset{49}};
+
+    collector.collect_segments(segment_collector_mode::non_compacted_reupload);
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+
+    auto upload_with_locks = require_upload_candidate(
+      collector.make_upload_candidate(segment_lock_timeout).get());
+
+    auto upload_candidate = upload_with_locks.candidate;
+    BOOST_REQUIRE(!upload_candidate.sources.empty());
+    BOOST_REQUIRE_EQUAL(upload_candidate.starting_offset, model::offset{10});
+    BOOST_REQUIRE_EQUAL(upload_candidate.final_offset, model::offset{29});
+
+    // Start with all the segments collected
+    auto expected_content_length = collector.collected_size();
+    // Deduct the starting shift
+    expected_content_length -= upload_candidate.file_offset;
+    // Deduct the entire last segment
+    expected_content_length -= upload_candidate.sources.back()->size_bytes();
+    // Add back the portion of the last segment we included
+    expected_content_length += upload_candidate.final_file_offset;
+
+    BOOST_REQUIRE_EQUAL(
+      expected_content_length, upload_candidate.content_length);
+
+    BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 1);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     cloud_storage::partition_manifest m;
     m.update(

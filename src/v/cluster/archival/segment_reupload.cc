@@ -12,12 +12,12 @@
 
 #include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cluster/archival/types.h"
-#include "config/configuration.h"
 #include "logger.h"
-#include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
+#include "storage/log.h"
 #include "storage/offset_to_filepos.h"
+#include "storage/segment.h"
+#include "storage/segment_set.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -186,7 +186,7 @@ segment_collector::segment_seq segment_collector::segments() {
 void segment_collector::do_collect(segment_collector_mode mode) {
     auto projected_end_inclusive = _target_end_inclusive.value_or(
       model::offset{});
-    if (projected_end_inclusive == model::offset{}) {
+    if (projected_end_inclusive == model::offset{} || is_reupload_mode(mode)) {
         projected_end_inclusive = find_replacement_boundary(mode);
     }
     // In case of the new upload:
@@ -331,14 +331,11 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         _can_replace_manifest_segment = true;
     }
 
+    _end_inclusive = std::min(
+      _target_end_inclusive.value_or(last_collected), last_collected);
+
     if (is_reupload_mode(mode)) {
-        align_end_offset_to_manifest(
-          _target_end_inclusive.value_or(last_collected));
-    } else {
-        // In case of new upload we want to end at the end of the segment
-        // or at LSO (which is passed through the _target_end_inclusive).
-        _end_inclusive = std::min(
-          _target_end_inclusive.value_or(last_collected), last_collected);
+        align_end_offset_to_manifest();
     }
 }
 
@@ -407,44 +404,39 @@ model::offset segment_collector::find_replacement_boundary(
     return segment->offsets().get_committed_offset();
 }
 
-void segment_collector::align_end_offset_to_manifest(
-  model::offset segment_end) {
-    if (segment_end == _manifest.get_last_offset()) {
-        _end_inclusive = _manifest.get_last_offset();
-    } else if (segment_end > _manifest.get_last_offset()) {
+void segment_collector::align_end_offset_to_manifest() {
+    if (_end_inclusive == _manifest.get_last_offset()) {
+        // Trivial case, the end offset is already aligned to the
+        // manifest boundary.
+    } else if (_end_inclusive > _manifest.get_last_offset()) {
         vlog(
           archival_log.debug,
           "Segment collect for ntp {} offset {} advanced "
           "ahead of manifest, clamping to {}",
           _manifest.get_ntp(),
-          segment_end,
+          _end_inclusive,
           _manifest.get_last_offset());
         _end_inclusive = _manifest.get_last_offset();
     } else {
         // Align the end offset to the nearest segment ending in manifest.
-        auto it = _manifest.segment_containing(segment_end);
+        auto it = _manifest.segment_containing(_end_inclusive);
         if (it == _manifest.end()) {
-            // segment_end is in a gap in the manifest.
-            if (segment_end >= _manifest.get_start_offset().value()) {
+            // _end_inclusive falls into a gap. Allow it to fill the gap
+            // with the data locally available.
+            if (_end_inclusive >= _manifest.get_start_offset().value()) {
                 vlog(
                   archival_log.debug,
                   "Segment collect for ntp {}: collection ended at "
                   "gap in manifest: {}",
                   _manifest.get_ntp(),
-                  segment_end);
-
-                // try to fill the manifest gap with the data locally
-                // available.
-                _end_inclusive = segment_end;
+                  _end_inclusive);
             }
             return;
         }
 
         // If the segment end is not aligned to manifest segment, then
         // pull back to the end of the previous segment.
-        if (it->committed_offset == segment_end) {
-            _end_inclusive = segment_end;
-        } else {
+        if (it->committed_offset != _end_inclusive) {
             _end_inclusive = it->base_offset - model::offset{1};
         }
     }
