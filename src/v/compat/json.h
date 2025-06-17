@@ -310,6 +310,21 @@ inline void read_value(const json::Value& rd, absl::flat_hash_map<T, V>& obj) {
     }
 }
 
+template<typename T, typename V>
+inline void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const chunked_hash_map<T, V>& m) {
+    w.StartArray();
+    for (const auto& e : m) {
+        w.StartObject();
+        w.Key("key");
+        rjson_serialize(w, e.first);
+        w.Key("value");
+        rjson_serialize(w, e.second);
+        w.EndObject();
+    }
+    w.EndArray();
+}
+
 template<typename V>
 inline void read_value(const json::Value& rd, absl::node_hash_set<V>& obj) {
     for (const auto& e : rd.GetArray()) {
@@ -325,6 +340,17 @@ inline void read_value(const json::Value& rd, absl::btree_set<V>& obj) {
         auto v = V{};
         read_value(e, v);
         obj.insert(std::move(v));
+    }
+}
+
+template<typename T, typename V>
+inline void read_value(const json::Value& rd, chunked_hash_map<T, V>& obj) {
+    for (const auto& e : rd.GetArray()) {
+        T key;
+        read_member(e, "key", key);
+        V value;
+        read_member(e, "value", value);
+        obj.emplace(std::move(key), std::move(value));
     }
 }
 

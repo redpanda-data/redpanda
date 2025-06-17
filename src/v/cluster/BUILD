@@ -357,6 +357,7 @@ redpanda_cc_library(
         "partition_balancer_planner.cc",
         "partition_balancer_rpc_handler.cc",
         "partition_balancer_state.cc",
+        "partition_balancer_types.cc",
         "partition_leaders_table.cc",
         "partition_manager.cc",
         "partition_probe.cc",

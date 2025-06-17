@@ -79,26 +79,18 @@ public:
         waiting_for_reports,
         missing_sizes,
     };
-    /**
-     * class describing a reason underlying partition replica set change
-     */
-    enum class change_reason {
-        rack_constraint_repair,
-        partition_count_rebalancing,
-        node_decommissioning,
-        node_unavailable,
-        disk_full,
-    };
 
     struct plan_data {
         partition_balancer_violations violations;
         std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
-        absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
-          decommission_realloc_failures;
+        chunked_hash_map<model::ntp, reallocation_failure_details>
+          reallocation_failures;
         bool counts_rebalancing_finished = false;
         size_t failed_actions_count = 0;
         status status = status::empty;
+
+        void maybe_add_reallocation_failure();
     };
 
     ss::future<plan_data>
@@ -138,8 +130,6 @@ private:
     planner_config _config;
     partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
-
-    friend std::ostream& operator<<(std::ostream&, change_reason);
 };
 
 } // namespace cluster

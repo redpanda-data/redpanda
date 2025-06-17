@@ -31,6 +31,7 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
       json_write(decommission_realloc_failures);
       json_write(partitions_pending_force_recovery_count);
       json_write(partitions_pending_force_recovery_sample);
+      json_write(reallocation_failures);
   },
   {
       json_read(error);
@@ -40,6 +41,7 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
       json_read(decommission_realloc_failures);
       json_read(partitions_pending_force_recovery_count);
       json_read(partitions_pending_force_recovery_sample);
+      json_read(reallocation_failures);
   })
 
 } // namespace compat

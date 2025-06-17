@@ -57,6 +57,7 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
         "//src/v/random:generators",
         "//src/v/utils:tristate",
