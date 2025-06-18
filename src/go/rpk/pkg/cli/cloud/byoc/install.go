@@ -17,13 +17,15 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
+	byocpluginv1alpha1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/byocplugin/v1alpha1"
+	"connectrpc.com/connect"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/publicapi"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -66,120 +68,152 @@ autocompletion, start a new terminal and tab complete through it!
 }
 
 func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.Config, redpandaID string, isLatest bool) (binPath string, token string, installed bool, rerr error) {
-	// First load our configuration and token.
+	token, err := getTokenOrLogin(ctx, fs, cfg)
+	if err != nil {
+		return "", "", false, err
+	}
+	path, installed, err := ensurePluginVersion(ctx, fs, cfg, redpandaID, isLatest, token)
+	return path, token, installed, err
+}
+
+func ensurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.Config, redpandaID string, isLatest bool, token string) (path string, installed bool, rerr error) {
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
-		return "", "", false, fmt.Errorf("unable to determine managed plugin path: %w", err)
-	}
-	overrides := cfg.DevOverrides()
-	if overrides.CloudToken != "" {
-		token = overrides.CloudToken
-	} else {
-		priorProfile := cfg.ActualProfile()
-		_, authVir, clearedProfile, _, err := oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false)
-		if err != nil {
-			return "", "", false, fmt.Errorf("unable to load the cloud token: %w. You may need to logout with 'rpk cloud logout --clear-credentials' and try again", err)
-		}
-		oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
-		token = authVir.AuthToken
+		return "", false, fmt.Errorf("unable to determine managed plugin path: %w", err)
 	}
 
+	overrides := cfg.DevOverrides()
 	byoc, pluginExists := plugin.ListPlugins(fs, plugin.UserPaths()).Find("byoc")
 	zap.L().Debug("looking for existing byoc plugin", zap.Bool("exists", pluginExists))
-	// If the plugin exists, and we don't want a version check we want to exit
-	// early and avoid calling the Cloud API.
-	if c := overrides.BYOCSkipVersionCheck; pluginExists && (c == "1" || c == "true") {
+
+	if pluginExists && (overrides.BYOCSkipVersionCheck == "1" || overrides.BYOCSkipVersionCheck == "true") {
 		zap.L().Sugar().Warn("overriding byoc plugin version check. RPK_CLOUD_SKIP_VERSION_CHECK is enabled")
-		return byoc.Path, token, false, nil
+		return byoc.Path, false, nil
 	}
 
-	// If not, we query the Cloud API for the plugin.
-	cloudURL := cloudapi.ProdURL
-	if u := overrides.CloudAPIURL; u != "" {
-		cloudURL = u
-	}
-	// Check our current version of the plugin.
-	cl := cloudapi.NewClient(cloudURL, token)
-	var pack cloudapi.InstallPack
-	if isLatest {
-		pack, err = cl.LatestInstallPack(ctx)
-		if err != nil {
-			return "", "", false, fmt.Errorf("unable to get latest installpack: %v", err)
-		}
-	} else {
-		// We can't use the PublicAPI client here as the Public API response
-		// does not include the Cluster's installpack version.
-		cluster, err := cl.Cluster(ctx, redpandaID)
-		if err != nil {
-			return "", "", false, fmt.Errorf("unable to request cluster details for %q: %w", redpandaID, err)
-		}
-		pack, err = cl.InstallPack(ctx, cluster.Spec.InstallPackVersion)
-		if err != nil {
-			return "", "", false, fmt.Errorf("unable to request install pack details for %q: %v", cluster.Spec.InstallPackVersion, err)
-		}
+	artifact, err := fetchBYOCArtifact(ctx, overrides.PublicAPIURL, token, redpandaID, isLatest)
+	if err != nil {
+		return "", false, err
 	}
 
-	name := fmt.Sprintf("byoc-%s-%s", runtime.GOOS, runtime.GOARCH)
-	artifact, found := pack.Artifacts.Find(name)
-	if !found {
-		return "", "", false, fmt.Errorf("unable to find byoc plugin %s", name)
+	expectedSha, err := extractShaFromLocation(artifact.Location)
+	if err != nil {
+		return "", false, err
 	}
 
-	// Unfortunately, the checksum_sha256 returned in the JSON is the
-	// sha256 of the plugin *after* tar + gz. We need the checksum of the
-	// binary itself.
-	//
-	// Our current contract is that half the sha256 will be in the filename
-	// just before the .tar.gz.
-	m := regexp.MustCompile(`\.([a-zA-Z0-9]{16,64})\.tar\.gz$`).FindStringSubmatch(artifact.Location)
-	if len(m) == 0 {
-		return "", "", false, fmt.Errorf("unable to find sha256 in plugin download filename %q", artifact.Location)
-	}
-	expShaPrefix := m[1]
-
-	// Check if the plugin is downloaded and matches the remote version. We
-	// require the FilenameSHA to have at least 20 characters.
 	if pluginExists {
 		if !byoc.Managed {
-			return "", "", false, fmt.Errorf("found external plugin at %s, the old plugin must be removed first", byoc.Path)
+			return "", false, fmt.Errorf("found external plugin at %s, the old plugin must be removed first", byoc.Path)
 		}
 		currentSha, err := plugin.Sha256Path(fs, byoc.Path)
 		if err != nil {
-			return "", "", false, fmt.Errorf("unable to determine the sha256sum of %q: %v", byoc.Path, err)
+			return "", false, fmt.Errorf("unable to determine the sha256sum of %q: %v", byoc.Path, err)
 		}
-
-		if strings.HasPrefix(currentSha, expShaPrefix) {
+		if strings.HasPrefix(currentSha, expectedSha) {
 			zap.L().Sugar().Debug("version check: installed byoc plugin matches expected version")
-			return byoc.Path, token, false, nil // remote version matches, all is good, return token
+			return byoc.Path, false, nil
 		}
 		zap.L().Sugar().Debug("version check: installed byoc plugin does not match expected version")
 	}
 
-	// Remote version is different: download current plugin version and
-	// replace.
-	zap.L().Debug("downloading byoc plugin", zap.String("version", artifact.Version))
-	bin, err := plugin.Download(ctx, artifact.Location, false, expShaPrefix)
-	if err != nil {
-		return "", "", false, fmt.Errorf("unable to replace out of date plugin: %w", err)
+	return downloadAndWritePlugin(ctx, fs, pluginDir, artifact, expectedSha)
+}
+
+// fetchBYOCArtifact retrieves the BYOC plugin artifact using the PublicAPI
+// based on the redpandaID or the latest version if 'isLatest' is true.
+func fetchBYOCArtifact(ctx context.Context, apiURL, token, redpandaID string, isLatest bool) (*byocpluginv1alpha1.Artifact, error) {
+	cl := publicapi.NewCloudClientSet(apiURL, token)
+
+	if isLatest {
+		res, err := cl.BYOCPlugin.ListLatestArtifacts(ctx, connect.NewRequest(&byocpluginv1alpha1.ListLatestArtifactsRequest{
+			Filter: &byocpluginv1alpha1.ListLatestArtifactsRequest_Filter{
+				Os:   publicapi.OSToBYOCPluginOS(runtime.GOOS),
+				Arch: publicapi.ArchToBYOCPluginArch(runtime.GOARCH),
+			},
+		}))
+		if err != nil {
+			return nil, err
+		}
+		artifacts := res.Msg.GetArtifacts()
+		if len(artifacts) == 0 {
+			return nil, fmt.Errorf("no BYOC plugin artifacts found for redpanda ID %q; OS: %v, Arch: %v", redpandaID, runtime.GOOS, runtime.GOARCH)
+		}
+		return artifacts[0], nil
 	}
 
-	// Ensure the dir exists, but if we have to create it, we do not want
-	// sudo.
+	res, err := cl.BYOCPlugin.ListArtifactsByRedpandaID(ctx, connect.NewRequest(&byocpluginv1alpha1.ListArtifactsByRedpandaIDRequest{
+		RedpandaId: redpandaID,
+		Filter: &byocpluginv1alpha1.ListArtifactsByRedpandaIDRequest_Filter{
+			Os:   publicapi.OSToBYOCPluginOS(runtime.GOOS),
+			Arch: publicapi.ArchToBYOCPluginArch(runtime.GOARCH),
+		},
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("unable to request cluster details for %q: %w", redpandaID, err)
+	}
+	artifacts := res.Msg.GetArtifacts()
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("no BYOC plugin artifacts found for redpanda ID %q; OS: %v, Arch: %v", redpandaID, runtime.GOOS, runtime.GOARCH)
+	}
+	return artifacts[0], nil
+}
+
+// downloadAndWritePlugin downloads the BYOC plugin artifact, verifies its
+// SHA256 checksum, and writes it to the specified plugin directory.
+func downloadAndWritePlugin(ctx context.Context, fs afero.Fs, pluginDir string, artifact *byocpluginv1alpha1.Artifact, expectedSha string) (path string, installed bool, rerr error) {
+	zap.L().Debug("downloading byoc plugin", zap.String("version", artifact.Version))
+
+	bin, err := plugin.Download(ctx, artifact.Location, false, expectedSha)
+	if err != nil {
+		return "", false, fmt.Errorf("unable to replace out of date plugin: %w", err)
+	}
+
 	if exists, _ := afero.DirExists(fs, pluginDir); !exists {
 		if rpkos.IsRunningSudo() {
-			return "", "", false, fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", pluginDir)
+			return "", false, fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the plugin as a root owned binary in %s", pluginDir)
 		}
-		err = os.MkdirAll(pluginDir, 0o755)
-		if err != nil {
-			return "", "", false, fmt.Errorf("unable to create the plugin bin directory: %v", err)
+		if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+			return "", false, fmt.Errorf("unable to create the plugin bin directory: %v", err)
 		}
 	}
 
 	zap.L().Sugar().Debugf("writing byoc plugin to %v", pluginDir)
-	path, err := plugin.WriteBinary(fs, "byoc", pluginDir, bin, false, true)
+	path, err = plugin.WriteBinary(fs, "byoc", pluginDir, bin, false, true)
 	if err != nil {
-		return "", "", false, fmt.Errorf("unable to write byoc plugin to disk: %w", err)
+		return "", false, fmt.Errorf("unable to write byoc plugin to disk: %w", err)
 	}
 
-	return path, token, true, nil
+	return path, true, nil
+}
+
+// getTokenOrLogin retrieves the Cloud token from the config or prompts the user
+// to log in if it is not set. It returns the token or an error if the login
+// process fails.
+func getTokenOrLogin(ctx context.Context, fs afero.Fs, cfg *config.Config) (string, error) {
+	overrides := cfg.DevOverrides()
+	if overrides.CloudToken != "" {
+		return overrides.CloudToken, nil
+	}
+
+	priorProfile := cfg.ActualProfile()
+	_, authVir, clearedProfile, _, err := oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg.DevOverrides()), false, false)
+	if err != nil {
+		return "", fmt.Errorf("unable to load the cloud token: %w. You may need to logout with 'rpk cloud logout --clear-credentials' and try again", err)
+	}
+	oauth.MaybePrintSwapMessage(clearedProfile, priorProfile, authVir)
+	return authVir.AuthToken, nil
+}
+
+// extractShaFromLocation extracts the sha256 from the plugin name in the
+// location URL. The sha256 is expected to be in the filename, just before
+// the .tar.gz extension, and it should be at least 16 characters long.
+func extractShaFromLocation(location string) (string, error) {
+	// Unfortunately, the checksum_sha256 returned in the JSON is the
+	// sha256 of the plugin *after* tar + gz. We need the checksum of the
+	// binary itself.
+	m := regexp.MustCompile(`\.([a-zA-Z0-9]{16,64})\.tar\.gz$`).FindStringSubmatch(location)
+	if len(m) == 0 {
+		return "", fmt.Errorf("unable to find sha256 in plugin download filename %q", location)
+	}
+	return m[1], nil
 }

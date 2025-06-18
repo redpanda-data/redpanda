@@ -9,7 +9,6 @@ go_library(
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0",
     visibility = ["//visibility:public"],
     deps = [
-        "//src/go/rpk/pkg/cloudapi",
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/httpapi",
         "//src/go/rpk/pkg/oauth",
