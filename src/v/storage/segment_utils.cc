@@ -221,7 +221,7 @@ natural_index_of_entries_to_keep(compacted_index_reader reader) {
     return reader.consume(compaction_key_reducer(), model::no_timeout);
 }
 
-ss::future<> copy_filtered_entries(
+ss::future<size_t> copy_filtered_entries(
   compacted_index_reader reader,
   roaring::Roaring to_copy_index,
   std::unique_ptr<compacted_index_writer> writer) {
@@ -242,9 +242,11 @@ ss::future<> copy_filtered_entries(
     if (eptr) {
         std::rethrow_exception(eptr);
     }
+
+    co_return writer->size_bytes();
 }
 
-static ss::future<> do_write_clean_compacted_index(
+static ss::future<size_t> do_write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
@@ -255,20 +257,23 @@ static ss::future<> do_write_clean_compacted_index(
       cfg.files_to_cleanup, {tmpname}};
     auto truncating_writer = make_file_backed_compacted_index(
       tmpname.string(), cfg.iopc, true, resources, cfg.sanitizer_config);
-    co_await copy_filtered_entries(
+    auto cmp_idx_size = co_await copy_filtered_entries(
       reader, std::move(bitmap), std::move(truncating_writer));
     co_await ss::rename_file(std::string(tmpname), ss::sstring(reader.path()));
     staging_to_clean.clear();
+    co_return cmp_idx_size;
 };
 
-ss::future<> write_clean_compacted_index(
+ss::future<size_t> write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
+    size_t cmp_idx_size{0};
     std::exception_ptr eptr;
     try {
         // integrity verified in `do_detect_compaction_index_state`
-        co_await do_write_clean_compacted_index(reader, cfg, resources);
+        cmp_idx_size = co_await do_write_clean_compacted_index(
+          reader, cfg, resources);
     } catch (...) {
         eptr = std::current_exception();
     }
@@ -278,6 +283,8 @@ ss::future<> write_clean_compacted_index(
     if (eptr) {
         std::rethrow_exception(eptr);
     }
+
+    co_return cmp_idx_size;
 }
 
 ss::future<compacted_index::recovery_state>
@@ -335,7 +342,7 @@ generate_compacted_list(model::offset o, compacted_index_reader reader) {
       .finally([reader] {});
 }
 
-ss::future<> do_compact_segment_index(
+ss::future<size_t> do_compact_segment_index(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage_resources& resources) {
@@ -569,7 +576,7 @@ ss::future<compaction_result> do_self_compact_segment(
 
     // broker_timestamp is used for retention.ms, but it's only in the index,
     // not it in the segment itself. save it to restore it later
-    co_await do_compact_segment_index(s, cfg, resources);
+    auto cmp_idx_size = co_await do_compact_segment_index(s, cfg, resources);
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock
     auto staging_file = s->reader().path().to_staging();
@@ -618,7 +625,7 @@ ss::future<compaction_result> do_self_compact_segment(
     s->release_batch_cache_index();
     co_await s->index().flush();
     s->advance_generation();
-    co_return compaction_result(size_before, s->size_bytes());
+    co_return compaction_result(size_before, s->size_bytes(), cmp_idx_size);
 }
 
 ss::future<> build_compaction_index(
