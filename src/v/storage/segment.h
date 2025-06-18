@@ -37,6 +37,10 @@ struct segment_closed_exception final : std::exception {
     }
 };
 
+namespace testing_details {
+class segment_accessor;
+}; // namespace testing_details
+
 class segment {
 public:
     using generation_id = named_type<uint64_t, struct segment_gen_tag>;
@@ -361,6 +365,7 @@ private:
     std::optional<ss::lowres_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
+    friend class testing_details::segment_accessor;
 };
 
 /**
