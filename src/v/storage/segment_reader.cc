@@ -132,6 +132,15 @@ ss::future<> segment_reader::put() {
     }
 }
 
+ss::future<size_t> segment_reader::fsize() {
+    ss::gate::holder guard{_gate};
+
+    auto handle = co_await get();
+    auto r = co_await _data_file.size();
+    co_await handle.close();
+    co_return r;
+}
+
 ss::future<struct stat> segment_reader::stat() {
     ss::gate::holder guard{_gate};
 

@@ -132,6 +132,9 @@ public:
     /// close the underlying file handle
     ss::future<> close();
 
+    // Performs a syscall to get the size of _data_file on disk.
+    ss::future<size_t> fsize();
+
     /// perform syscall stat
     ss::future<struct stat> stat();
 
