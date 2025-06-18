@@ -51,8 +51,8 @@ segment_reader::~segment_reader() noexcept {
 ss::future<> segment_reader::load_size() {
     ss::gate::holder guard{_gate};
 
-    auto s = co_await stat();
-    set_file_size(s.st_size);
+    auto s = co_await fsize();
+    set_file_size(s);
 };
 
 ss::future<segment_reader_handle>
