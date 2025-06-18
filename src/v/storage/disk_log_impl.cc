@@ -530,7 +530,6 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
-            segment->clear_cached_disk_usage();
             _compaction_ratio.update(result.compaction_ratio());
             const ssize_t removed_bytes = ssize_t(result.size_before)
                                           - ssize_t(result.size_after);
