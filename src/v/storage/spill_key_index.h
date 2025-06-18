@@ -83,6 +83,7 @@ public:
     ss::future<> close() final;
     void print(std::ostream&) const final;
     void set_flag(compacted_index::footer_flags) final;
+    size_t size_bytes() const final;
 
 private:
     /**

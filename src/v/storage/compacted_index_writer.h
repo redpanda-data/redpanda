@@ -78,6 +78,7 @@ public:
     virtual void set_flag(compacted_index::footer_flags) = 0;
     virtual void print(std::ostream&) const = 0;
     const ss::sstring& filename() const { return _name; }
+    virtual size_t size_bytes() const = 0;
 
 private:
     friend std::ostream&
