@@ -131,7 +131,7 @@ filesystem_catalog_factory::filesystem_catalog_factory(
   , bucket_(bucket) {}
 
 ss::future<std::unique_ptr<iceberg::catalog>>
-filesystem_catalog_factory::create_catalog() {
+filesystem_catalog_factory::create_catalog(ss::abort_source&) {
     vlog(
       datalake_log.info,
       "Creating filesystem catalog with bucket: {} and location: {}",
@@ -180,7 +180,7 @@ rest_catalog_factory::make_credentials_or_token() {
 }
 
 ss::future<std::unique_ptr<iceberg::catalog>>
-rest_catalog_factory::create_catalog() {
+rest_catalog_factory::create_catalog(ss::abort_source& as) {
     // TODO: add config level validation
     throw_if_not_present(config_->iceberg_rest_catalog_endpoint);
 
@@ -203,10 +203,8 @@ rest_catalog_factory::create_catalog() {
             throw;
         }
     }
-    std::unique_ptr<http::abstract_client> http_client
-      = static_cast<std::unique_ptr<http::abstract_client>>(
-        std::make_unique<http::client>(
-          std::move(transport_config), nullptr, client_probe_));
+    auto http_client = std::make_unique<http::client>(
+      std::move(transport_config), &as, client_probe_);
 
     auto creds_and_token = make_credentials_or_token();
 

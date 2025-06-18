@@ -65,6 +65,7 @@ private:
     ss::future<checked<std::nullopt_t, coordinator::errc>>
     remove_tombstone(const model::topic&, model::revision_id);
 
+    ss::abort_source as_;
     ss::gate gate_;
     model::node_id self_;
     storage::api& storage_;

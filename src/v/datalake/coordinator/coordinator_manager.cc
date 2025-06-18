@@ -54,7 +54,7 @@ coordinator_manager::coordinator_manager(
 coordinator_manager::~coordinator_manager() = default;
 
 ss::future<> coordinator_manager::start() {
-    catalog_ = co_await catalog_factory_->create_catalog();
+    catalog_ = co_await catalog_factory_->create_catalog(as_);
     schema_mgr_ = std::make_unique<catalog_schema_manager>(*catalog_);
     file_committer_ = std::make_unique<iceberg_file_committer>(
       storage_,
@@ -91,6 +91,7 @@ ss::future<> coordinator_manager::start() {
 }
 
 ss::future<> coordinator_manager::shutdown() {
+    as_.request_abort();
     if (manage_notifications_) {
         pm_.unregister_manage_notification(*manage_notifications_);
     }

@@ -229,7 +229,7 @@ datalake_manager::get_or_create_probe(const model::ntp& ntp) {
 
 ss::future<> datalake_manager::start() {
     _disk_manager->set_manager_reference(container());
-    _catalog = co_await _catalog_factory->create_catalog();
+    _catalog = co_await _catalog_factory->create_catalog(_as->local());
     _schema_mgr = std::make_unique<catalog_schema_manager>(*_catalog);
     // partition managed notification, this is particularly
     // relevant for cross core movements without a term change.
