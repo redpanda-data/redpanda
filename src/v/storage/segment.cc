@@ -189,6 +189,14 @@ void segment::clear_cached_disk_usage() {
     _compaction_index_size.reset();
 }
 
+void segment::set_cached_disk_usage(
+  size_t new_seg_size, std::optional<size_t> new_compacted_index_size) {
+    _data_disk_usage_size = new_seg_size;
+    if (new_compacted_index_size.has_value()) {
+        _compaction_index_size = new_compacted_index_size.value();
+    }
+}
+
 ss::future<size_t> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
 
