@@ -105,7 +105,8 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
   probe& probe,
-  std::vector<ss::rwlock::holder>);
+  std::vector<ss::rwlock::holder>,
+  std::optional<size_t> new_cmp_idx_size);
 
 /*
  * Acquire write locks on multiple segments. The process will proceed until
@@ -204,7 +205,8 @@ ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
-  probe&);
+  probe&,
+  std::optional<size_t>);
 
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.
