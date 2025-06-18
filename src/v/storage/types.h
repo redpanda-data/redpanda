@@ -580,10 +580,14 @@ struct compaction_result {
       , size_before(sz)
       , size_after(sz) {}
 
-    compaction_result(size_t before, size_t after)
+    compaction_result(
+      size_t before,
+      size_t after,
+      std::optional<size_t> cmp_idx_size_after = std::nullopt)
       : executed_compaction(true)
       , size_before(before)
-      , size_after(after) {}
+      , size_after(after)
+      , cmp_idx_size_after(cmp_idx_size_after) {}
 
     bool did_compact() const { return executed_compaction; }
 
@@ -595,6 +599,8 @@ struct compaction_result {
     bool executed_compaction;
     size_t size_before;
     size_t size_after;
+    // The size of the new compacted index, if one was made.
+    std::optional<size_t> cmp_idx_size_after{std::nullopt};
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
 
