@@ -107,7 +107,7 @@ def _redpanda_cc_test(
       local_defines: list of defines
     """
     common_args = [
-        "--blocked-reactor-notify-ms 2000000",
+        "--blocked-reactor-notify-ms 2000001",
         "--abort-on-seastar-bad-alloc",
         "--overprovisioned",
     ]
