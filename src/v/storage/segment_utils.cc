@@ -545,7 +545,7 @@ ss::future<> do_swap_data_file_handles(
  * Executes segment compaction, returns size of compacted segment or an empty
  * optional if segment wasn't compacted
  */
-ss::future<std::optional<size_t>> do_self_compact_segment(
+ss::future<compaction_result> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
@@ -554,6 +554,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   offset_delta_time apply_offset,
   ss::rwlock::holder read_holder,
   ss::sharded<features::feature_table>& feature_table) {
+    auto size_before = s->size_bytes();
+
     if (cfg.asrc) {
         cfg.asrc->check();
     }
@@ -598,7 +600,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
-        co_return std::nullopt;
+        co_return compaction_result(size_before);
     }
 
     if (s->is_closed()) {
@@ -616,7 +618,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     s->release_batch_cache_index();
     co_await s->index().flush();
     s->advance_generation();
-    co_return s->size_bytes();
+    co_return compaction_result(size_before, s->size_bytes());
 }
 
 ss::future<> build_compaction_index(
@@ -785,9 +787,8 @@ ss::future<compaction_result> self_compact_segment(
         || (state == compacted_index::recovery_state::already_compacted);
     vassert(is_valid_index_state, "Unexpected state {}", state);
 
-    auto sz_before = s->size_bytes();
     auto apply_offset = should_apply_delta_time_offset(feature_table);
-    auto sz_after = co_await do_self_compact_segment(
+    auto res = co_await do_self_compact_segment(
       s,
       cfg,
       pb,
@@ -797,15 +798,14 @@ ss::future<compaction_result> self_compact_segment(
       std::move(read_holder),
       feature_table);
 
-    // compaction wasn't executed, return
-    if (!sz_after) {
-        co_return compaction_result(sz_before);
+    if (res.did_compact()) {
+        pb.segment_compacted();
+        pb.add_compaction_removed_bytes(
+          ssize_t(res.size_before) - ssize_t(res.size_after));
+        s->mark_as_finished_self_compaction();
     }
 
-    pb.segment_compacted();
-    pb.add_compaction_removed_bytes(ssize_t(sz_before) - ssize_t(*sz_after));
-    s->mark_as_finished_self_compaction();
-    co_return compaction_result(sz_before, *sz_after);
+    co_return res;
 }
 
 ss::future<
