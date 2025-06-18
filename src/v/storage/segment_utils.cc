@@ -265,13 +265,21 @@ ss::future<> write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
-    // integrity verified in `do_detect_compaction_index_state`
-    return do_write_clean_compacted_index(reader, cfg, resources)
-      .finally([reader]() mutable {
-          return reader.close().then_wrapped(
-            [reader](ss::future<>) { /*ignore*/ });
-      });
+    std::exception_ptr eptr;
+    try {
+        // integrity verified in `do_detect_compaction_index_state`
+        co_await do_write_clean_compacted_index(reader, cfg, resources);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    co_await reader.close();
+
+    if (eptr) {
+        std::rethrow_exception(eptr);
+    }
 }
+
 ss::future<compacted_index::recovery_state>
 do_detect_compaction_index_state(segment_full_path p, compaction_config cfg) {
     using flags = compacted_index::footer_flags;
