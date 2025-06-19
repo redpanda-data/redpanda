@@ -219,13 +219,8 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being updated",
             ntp);
 
-          auto to_add = subtract(
-            *new_target_replicas, current_assignment->replicas);
-          _partition_allocator.local().add_final_counts(to_add);
-
-          auto to_remove = subtract(
+          update_final_counts(
             current_assignment->replicas, *new_target_replicas);
-          _partition_allocator.local().remove_final_counts(to_remove);
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
@@ -405,12 +400,10 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being cancelled",
             ntp);
 
-          auto to_add = subtract(*target_replicas, *previous_replicas);
-          _partition_allocator.local().add_final_counts(to_add);
+          update_final_counts(*previous_replicas, *target_replicas);
 
           auto to_delete = subtract(*previous_replicas, *target_replicas);
           _partition_allocator.local().remove_allocations(to_delete);
-          _partition_allocator.local().remove_final_counts(to_delete);
 
           _partition_balancer_state.local().handle_ntp_move_begin_or_cancel(
             ntp.ns,
@@ -546,15 +539,22 @@ void topic_updates_dispatcher::add_allocations_for_new_partitions(
     }
 }
 
+void topic_updates_dispatcher::update_final_counts(
+  const std::vector<model::broker_shard>& previous,
+  const std::vector<model::broker_shard>& target) {
+    auto to_add = subtract(target, previous);
+    _partition_allocator.local().add_final_counts(to_add);
+
+    auto to_remove = subtract(previous, target);
+    _partition_allocator.local().remove_final_counts(to_remove);
+}
+
 void topic_updates_dispatcher::update_allocations_for_reconfiguration(
   const std::vector<model::broker_shard>& previous,
   const std::vector<model::broker_shard>& target) {
     auto to_add = subtract(target, previous);
     _partition_allocator.local().add_allocations(to_add);
-    _partition_allocator.local().add_final_counts(to_add);
-
-    auto to_remove = subtract(previous, target);
-    _partition_allocator.local().remove_final_counts(to_remove);
+    update_final_counts(previous, target);
 }
 
 ss::future<>
