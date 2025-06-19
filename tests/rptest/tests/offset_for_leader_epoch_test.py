@@ -11,6 +11,7 @@ from collections import defaultdict
 import random
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
@@ -192,21 +193,18 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         offsets = {}
 
         def get_offsets_for_leader_epoch(epoch):
-            offsets_for_leader_epoch = []
-
             def have_all_offsets():
-                offsets_for_leader_epoch.clear()
                 offsets = kcl.offset_for_leader_epoch(topics=[topic.name],
                                                       leader_epoch=epoch)
-                offsets_for_leader_epoch.extend(offsets)
-                return all([
-                    ofle.epoch_end_offset != -1
-                    for ofle in offsets_for_leader_epoch
-                ])
+                invalid_result = any(
+                    [entry.epoch_end_offset == -1 for entry in offsets])
+                return (False, None) if invalid_result else (True, {
+                    entry.partition:
+                    entry.epoch_end_offset
+                    for entry in offsets
+                })
 
-            wait_until(have_all_offsets, 30, 1)
-
-            return offsets_for_leader_epoch
+            return wait_until_result(have_all_offsets, 30, 1)
 
         rpk = RpkTool(self.redpanda)
 
@@ -253,8 +251,10 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
             for p in offsets:
                 epoch_offsets[p.leader_epoch][p.id] = p.high_watermark
 
-        for epoch, partitions in epoch_offsets.items():
-            offsets_for_leader_epoch = get_offsets_for_leader_epoch(epoch)
-            for p in offsets_for_leader_epoch:
-                assert p.partition in partitions
-                assert partitions[p.partition] == p.epoch_end_offset
+        for epoch, partition_offsets in epoch_offsets.items():
+            fetched_offsets = get_offsets_for_leader_epoch(epoch)
+            self.logger.debug(
+                f"Fetched offsets for epoch {epoch} : {fetched_offsets}, expected: {partition_offsets}"
+            )
+            # Check partition_offsets is a subset of fetched_offsets
+            assert fetched_offsets == fetched_offsets | partition_offsets, f"Mismatched offsets for leader epoch {epoch}"
