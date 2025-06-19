@@ -225,23 +225,23 @@ ss::future<> copy_filtered_entries(
   compacted_index_reader reader,
   roaring::Roaring to_copy_index,
   std::unique_ptr<compacted_index_writer> writer) {
-    return ss::do_with(
-      std::move(writer),
-      [bm = std::move(to_copy_index),
-       reader](std::unique_ptr<compacted_index_writer>& writer) mutable {
-          reader.reset();
-          return reader
-            .consume(
-              index_filtered_copy_reducer(std::move(bm), *writer),
-              model::no_timeout)
-            // must be last
-            .finally([&writer] {
-                writer->set_flag(
-                  compacted_index::footer_flags::self_compaction);
-                // do not handle exception on the close
-                return writer->close();
-            });
-      });
+    std::exception_ptr eptr;
+    try {
+        reader.reset();
+        co_await reader.consume(
+          index_filtered_copy_reducer(std::move(to_copy_index), *writer),
+          model::no_timeout);
+        writer->set_flag(compacted_index::footer_flags::self_compaction);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    // do not handle exception on the close
+    co_await writer->close();
+
+    if (eptr) {
+        std::rethrow_exception(eptr);
+    }
 }
 
 static ss::future<> do_write_clean_compacted_index(
