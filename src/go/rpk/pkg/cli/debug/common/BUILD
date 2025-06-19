@@ -5,7 +5,10 @@ go_library(
     srcs = ["common.go"],
     importpath = "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/common",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_spf13_pflag//:pflag"],
+    deps = [
+        "//src/go/rpk/pkg/httpapi",
+        "@com_github_spf13_pflag//:pflag",
+    ],
 )
 
 go_test(
