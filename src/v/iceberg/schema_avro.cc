@@ -185,6 +185,79 @@ maybe_optional_from_avro(const avro::NodePtr& n, with_field_ids with_ids) {
     return {type_from_avro(child, with_ids), field_required::no};
 }
 
+/// Checks if the given name is a valid Avro name.
+///
+/// From the Avro specification:
+///     The name portion of the fullname of named types, record field names, and
+///     enum symbols must:
+///      - start with [A-Za-z_]
+///      - subsequently contain only [A-Za-z0-9_].
+bool valid_avro_name(const ss::sstring& name) noexcept {
+    if (name.empty()) {
+        return false;
+    }
+
+    if (!std::isalpha(static_cast<unsigned char>(name[0])) && name[0] != '_') {
+        return false;
+    }
+
+    for (const auto& c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::pair<char, char> to_hex_digits(char c) {
+    static constexpr std::string_view hex_digits = "0123456789ABCDEF";
+    auto byte = static_cast<uint8_t>(c);
+    return {hex_digits[byte >> 4], hex_digits[byte & 0xF]};
+}
+
+template<bool isFirst>
+void append_sanitized_avro_name_char(std::vector<char>& dest, char c) {
+    if constexpr (isFirst) {
+        if (std::isdigit(static_cast<unsigned char>(c))) {
+            dest.push_back('_');
+            dest.push_back(c);
+            return;
+        }
+    }
+
+    if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+        dest.push_back(c);
+    } else {
+        auto [high, low] = to_hex_digits(c);
+        dest.push_back('_');
+        dest.push_back('x');
+        dest.push_back(high);
+        dest.push_back(low);
+    }
+}
+
+/// Mimics Iceberg Java implementation of sanitizing Avro names.
+ss::sstring sanitize_avro_name(const ss::sstring& name) {
+    if (name.length() == 0) {
+        throw std::invalid_argument("Avro name cannot be empty");
+    }
+
+    std::vector<char> sanitized_name;
+
+    // It is quite common to encode a nested field separator (partition name) so
+    // we allocate space to replace `.` with `_x2E` without reallocating. If
+    // there is more to replace, `std::vector` will handle it.
+    sanitized_name.reserve(name.length() + 3);
+
+    append_sanitized_avro_name_char<true>(sanitized_name, name[0]);
+    for (size_t i = 1; i < name.length(); ++i) {
+        append_sanitized_avro_name_char<false>(sanitized_name, name[i]);
+    }
+
+    return {sanitized_name.data(), sanitized_name.size()};
+}
+
 } // namespace
 
 avro::Schema field_to_avro(const nested_field& field) {
@@ -200,8 +273,11 @@ struct_type_to_avro(const struct_type& type, std::string_view name) {
     const auto& fields = type.fields;
     for (const auto& field_ptr : fields) {
         const auto child_schema = field_to_avro(*field_ptr);
+
         avro_schema.addField(
-          field_ptr->name,
+          valid_avro_name(field_ptr->name)
+            ? field_ptr->name
+            : sanitize_avro_name(field_ptr->name),
           field_to_avro(*field_ptr),
           field_attrs(field_ptr->id()),
           // Optional fields (unions types with null children) have
