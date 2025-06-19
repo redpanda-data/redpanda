@@ -460,11 +460,9 @@ ss::future<> abs_client::stop() {
     vlog(abs_log.debug, "Stopping ABS client");
 
     co_await _client.stop();
-    co_await _client.wait_input_shutdown();
 
     if (_adls_client) {
         co_await _adls_client->stop();
-        co_await _adls_client->wait_input_shutdown();
     }
 
     vlog(abs_log.debug, "Stopped ABS client");

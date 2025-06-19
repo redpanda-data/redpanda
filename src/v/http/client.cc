@@ -266,6 +266,7 @@ ss::future<> client::stop() {
     _stopped = true;
     co_await _connect_gate.close();
     shutdown();
+    co_await base_transport::wait_input_shutdown();
     // Can safely stop base_transport
     co_return co_await base_transport::stop();
 }

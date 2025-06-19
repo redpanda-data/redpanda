@@ -125,9 +125,6 @@ public:
     /// method instead.
     void shutdown() noexcept;
 
-    /// Wait until the remote client shut down the connection gracefully.
-    using net::base_transport::wait_input_shutdown;
-
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error
     ss::future<reconnect_result_t>
