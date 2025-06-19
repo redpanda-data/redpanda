@@ -39,3 +39,22 @@ SEASTAR_THREAD_TEST_CASE(watchdog_test_trigger) {
     }
     BOOST_REQUIRE(watchdog_triggered == true);
 }
+
+SEASTAR_THREAD_TEST_CASE(watchdog_test_negative_timeout) {
+    bool watchdog_triggered = false;
+    {
+        ssx::watchdog wd(ss::lowres_clock::duration::min(), [&] {
+            watchdog_triggered = true;
+        });
+        ss::sleep(10ms).get();
+    }
+    BOOST_REQUIRE(watchdog_triggered);
+
+    watchdog_triggered = false;
+
+    {
+        ssx::watchdog wd(-1us, [&] { watchdog_triggered = true; });
+        ss::sleep(10ms).get();
+    }
+    BOOST_REQUIRE(watchdog_triggered);
+}
