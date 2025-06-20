@@ -326,7 +326,12 @@ ss::future<> segment_appender::close() {
     _closed = true;
     return hard_flush()
       .then([this] { return do_truncation(_committed_offset); })
-      .then([this] { return _out.close(); });
+      .then([this] {
+          _fallocation_offset = _committed_offset;
+          _flushed_offset = _committed_offset;
+          _stable_offset = _committed_offset;
+          return _out.close();
+      });
 }
 
 ss::future<> segment_appender::do_next_adaptive_fallocation() {
