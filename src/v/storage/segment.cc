@@ -255,13 +255,22 @@ ss::future<> segment::do_release_appender(
         std::optional<std::unique_ptr<compacted_index_writer>>&
           compacted_index) {
           return appender->close()
-            .then([this] { return _idx.flush(); })
-            .then([this, &compacted_index] {
+            .then([this] {
+                clear_cached_disk_usage();
+                return _idx.flush();
+            })
+            .then([&compacted_index] {
                 if (compacted_index) {
                     return compacted_index.value()->close();
                 }
-                clear_cached_disk_usage();
                 return ss::now();
+            })
+            .then([this, &compacted_index, &appender] {
+                std::optional<size_t> cmp_idx_size{std::nullopt};
+                if (compacted_index) {
+                    cmp_idx_size = compacted_index.value()->size_bytes();
+                }
+                set_cached_disk_usage(appender->size_bytes(), cmp_idx_size);
             });
       });
 }

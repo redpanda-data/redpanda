@@ -5982,6 +5982,8 @@ FIXTURE_TEST(
     // Test self-compaction
     {
         auto& s = segs[0];
+        // Freshly rolled segment should have cached sizes set.
+        check_cached_sizes(s);
         disk_log.segment_self_compact(cfg, s).get();
         check_cached_sizes(s);
     }
