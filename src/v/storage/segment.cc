@@ -120,7 +120,9 @@ ss::future<usage> segment::persistent_size() {
      * segment appender will transparently extend the size of the segment file
      * using fallocate, always stat the on disk size for the head partition.
      */
-    if (!_appender && _data_disk_usage_size.has_value()) {
+    if (_appender) {
+        u.data = _appender->size_bytes();
+    } else if (_data_disk_usage_size.has_value()) {
         u.data = _data_disk_usage_size.value();
     } else {
         try {
@@ -139,7 +141,9 @@ ss::future<usage> segment::persistent_size() {
      * however, we pay for that stat() with no guarantee that the information
      * will be used.
      */
-    if (_compaction_index_size.has_value()) {
+    if (_compaction_index) {
+        u.compaction = _compaction_index.value()->size_bytes();
+    } else if (_compaction_index_size.has_value()) {
         u.compaction = _compaction_index_size.value();
     } else {
         auto path = reader().path().to_compacted_index();
