@@ -720,6 +720,7 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> iceberg_rest_catalog_prefix;
 
     property<bool> iceberg_delete;
+    property<bool> consumer_offsets_topic_batch_cache_enabled;
 
     configuration();
 
