@@ -423,7 +423,7 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
 
 size_t spill_key_index::size_bytes() const {
     if (_appender.has_value()) {
-        return _appender->file_byte_offset();
+        return _appender->size_bytes();
     }
     return 0;
 }
