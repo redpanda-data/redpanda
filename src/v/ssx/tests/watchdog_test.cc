@@ -39,3 +39,31 @@ SEASTAR_THREAD_TEST_CASE(watchdog_test_trigger) {
     }
     BOOST_REQUIRE(watchdog_triggered == true);
 }
+
+SEASTAR_THREAD_TEST_CASE(watchdog_test_backoff) {
+    size_t watchdog_triggered = 0;
+    {
+        ssx::watchdog wd(100ms, 10ms, [&] { ++watchdog_triggered; });
+        ss::sleep(200ms).get();
+    }
+    // Wait some additional time so that we can check that no more triggers
+    // happened after the watchdog is destroyed.
+    ss::sleep(50ms).get();
+
+    BOOST_TEST_REQUIRE(watchdog_triggered >= 9);
+    BOOST_TEST_REQUIRE(watchdog_triggered <= 11);
+}
+
+SEASTAR_THREAD_TEST_CASE(watchdog_test_backoff_defuse) {
+    size_t watchdog_triggered = 0;
+    {
+        ssx::watchdog wd(10ms, 1ms, [&] { ++watchdog_triggered; });
+        // Allow some async code to run.
+        ss::sleep(1ms).get();
+    }
+
+    // Watchdog timeout and backoffs passed.
+    ss::sleep(50ms).get();
+
+    BOOST_TEST_REQUIRE(watchdog_triggered == 0);
+}

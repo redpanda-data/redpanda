@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "base/vassert.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -55,8 +54,8 @@ public:
     ///
     /// \param timeout defines time interval after which the watchdog will be
     ///                triggered
-    /// \param deadline_reached is a callback that will be called when
-    ///                         the watchdog is triggered
+    /// \param callback is a callback that will be called when
+    ///                 the watchdog is triggered
     /// \note The callback may outlive the watchdog
     /// instance. To prevent lifetime issues one could use external
     /// synchronization (hold a gate in the callback and close the gate outside
@@ -64,9 +63,42 @@ public:
     /// be very simple, for instance, it should just log an error message.
     watchdog(
       seastar::lowres_clock::duration timeout,
-      seastar::noncopyable_function<void()> deadline_reached) {
-        start_waiting(timeout, std::move(deadline_reached));
+      seastar::noncopyable_function<void()> callback) {
+        start_waiting(timeout, std::move(callback));
     }
+
+    /// Create watchdog instance
+    ///
+    /// \param timeout defines time interval after which the watchdog will be
+    ///                triggered for the first time
+    /// \param repeat_interval defines the time interval after which the
+    ///                        watchdog will be trigger subsequently
+    /// \param callback is a callback that will be called when
+    ///                 the watchdog is triggered
+    /// \note The callback may outlive the watchdog instance. See the full note
+    /// on the previous constructor.
+    watchdog(
+      seastar::lowres_clock::duration timeout,
+      seastar::lowres_clock::duration repeat_interval,
+      seastar::noncopyable_function<void()> callback) {
+        ssx::background = ssx::ignore_shutdown_exceptions(seastar::do_with(
+          std::move(callback),
+          [this, timeout, repeat_interval](
+            seastar::noncopyable_function<void()>& cb) {
+              return seastar::sleep_abortable(timeout, _as)
+                .then([&cb] { cb(); })
+                .then([this, repeat_interval, &cb] {
+                    return seastar::repeat([this, repeat_interval, &cb] {
+                        return seastar::sleep_abortable(repeat_interval, _as)
+                          .then([&cb] {
+                              cb();
+                              return seastar::stop_iteration::no;
+                          });
+                    });
+                });
+          }));
+    }
+
     // D-tor defuses the watchdog. The callback won't be called after this.
     ~watchdog() {
         // Cancellation happens asynchronously but its guaranteed that
