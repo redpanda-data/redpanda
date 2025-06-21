@@ -72,6 +72,7 @@
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
 #include "ssx/thread_worker.h"
+#include "ssx/when_all.h"
 #include "strings/string_switch.h"
 #include "strings/utf8.h"
 
@@ -1918,7 +1919,7 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
     describe_groups_response response;
 
     if (likely(!request.data.groups.empty())) {
-        std::vector<ss::future<described_group>> described;
+        chunked_vector<ss::future<described_group>> described;
         described.reserve(request.data.groups.size());
         for (auto& group_id : request.data.groups) {
             described.push_back(ctx.groups().describe_group(group_id).then(
@@ -1930,12 +1931,11 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
                   return res;
               }));
         }
-        auto group_v = co_await ss::when_all_succeed(
-          described.begin(), described.end());
+        auto group_v
+          = co_await ssx::when_all_succeed<chunked_vector<described_group>>(
+            std::move(described));
 
-        response.data.groups = {
-          std::make_move_iterator(group_v.begin()),
-          std::make_move_iterator(group_v.end())};
+        response.data.groups = std::move(group_v);
     }
 
     for (auto& group : unauthorized) {
