@@ -102,6 +102,8 @@ void client_probe::register_utilization(unsigned clients_in_use) {
     _pool_utilization = clients_in_use;
 }
 
+void client_probe::register_timeout() { _total_timeouts += 1; }
+
 void client_probe::setup_internal_metrics(
   net::metrics_disabled disable, std::span<raw_label> raw_labels) {
     namespace sm = ss::metrics;
@@ -203,6 +205,13 @@ void client_probe::setup_internal_metrics(
           sm::description("Utilization of the cloud storage pool(0 - unused, "
                           "100 - fully utilized)"),
           labels),
+        sm::make_counter(
+          "lease_timeouts_total",
+          [this] { return _total_timeouts; },
+          sm::description(
+            "Number of cloud storage client lease timeouts, usually indicating "
+            "something stuck in the transport layer."),
+          labels),
       });
 }
 
@@ -281,6 +290,13 @@ void client_probe::setup_public_metrics(
           [this] { return _pool_utilization; },
           sm::description("Utilization of the cloud storage pool(0 - unused, "
                           "100 - fully utilized)"),
+          labels),
+        sm::make_counter(
+          "lease_timeouts_total",
+          [this] { return _total_timeouts; },
+          sm::description(
+            "Number of cloud storage client lease timeouts, usually indicating "
+            "something stuck in the netransport layer."),
           labels),
       });
 }
