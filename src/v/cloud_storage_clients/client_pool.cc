@@ -443,7 +443,11 @@ auto client_pool::acquire_with_timeout(
         // client_pool teardown
         auto to = deadline - ss::lowres_clock::now();
         lease._wd = std::make_unique<ssx::watchdog>(
-          to, [client = lease.client, to, ctx = std::move(ctx)]() mutable {
+          to,
+          [probe = _probe,
+           client = lease.client,
+           to,
+           ctx = std::move(ctx)]() mutable {
               if (ctx.has_value()) {
                   vlog(
                     pool_log.debug,
@@ -456,6 +460,7 @@ auto client_pool::acquire_with_timeout(
                     "Lease expired after {}. Shutting down client...",
                     to);
               }
+              probe->register_timeout();
               client->shutdown();
           });
     }
