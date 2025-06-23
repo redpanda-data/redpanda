@@ -345,7 +345,11 @@ segment_upload::compute_upload_parameters(
           .size_bytes = sz->on_disk_size,
           .is_compacted = _part->log()->is_compacted(
             range_base, sz->last_offset),
+          .compaction_complete = _part->log()->compaction_complete(
+            range_base, sz->last_offset),
           .offsets = inclusive_offset_range(range_base, sz->last_offset),
+          .base_timestamp = sz->first_timestamp,
+          .max_timestamp = sz->last_timestamp,
         };
         co_return result;
     } catch (const std::invalid_argument&) {
