@@ -119,7 +119,7 @@ TEST_F(AsyncDataUploaderFixture, test_async_segment_upload_full_compacted) {
     compact_segments(range.last);
 
     std::optional<iobuf> actual;
-    read_offset_range(range, actual);
+    read_offset_range(range, actual, true);
     auto expected = load_log_segment(
       get_partition_log()->segments().front(), range);
 
@@ -404,7 +404,7 @@ TEST_F(AsyncDataUploaderFixture, test_async_segment_upload_random_compacted) {
 
         auto range = inclusive_offset_range(tc.base, tc.last);
         std::optional<iobuf> actual;
-        read_offset_range(range, actual);
+        read_offset_range(range, actual, true);
         auto expected = load_log_segment_concat(range);
 
         ASSERT_TRUE(actual.has_value());
