@@ -118,8 +118,6 @@ std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
         return os << "size of candidate unchanged";
     case candidate_creation_error::cannot_replace_manifest_entry:
         return os << "candidate cannot replace manifest entry";
-    case candidate_creation_error::no_segment_for_begin_offset:
-        return os << "no segment for begin offset";
     case candidate_creation_error::missing_ntp_config:
         return os << "missing config for NTP";
     case candidate_creation_error::failed_to_get_file_range:
@@ -134,10 +132,8 @@ std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
 ss::log_level log_level_for_error(const candidate_creation_error& error) {
     switch (error) {
     case candidate_creation_error::no_segments_collected:
-
     case candidate_creation_error::upload_size_unchanged:
     case candidate_creation_error::cannot_replace_manifest_entry:
-    case candidate_creation_error::no_segment_for_begin_offset:
     case candidate_creation_error::failed_to_get_file_range:
     case candidate_creation_error::zero_content_length:
     case candidate_creation_error::concurrency_error:

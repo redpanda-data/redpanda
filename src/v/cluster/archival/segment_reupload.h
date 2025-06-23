@@ -44,7 +44,6 @@ enum class candidate_creation_error {
     offset_inside_batch,
     upload_size_unchanged,
     cannot_replace_manifest_entry,
-    no_segment_for_begin_offset,
     missing_ntp_config,
     failed_to_get_file_range,
     zero_content_length,
