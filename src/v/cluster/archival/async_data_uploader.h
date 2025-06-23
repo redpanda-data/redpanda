@@ -95,8 +95,11 @@ struct upload_reconciliation_result {
     size_t size_bytes;
     /// True if at least one segment is compacted
     bool is_compacted;
+    bool compaction_complete;
     /// Offset range of the segment
     inclusive_offset_range offsets;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
 };
 
 /// Individual segment upload
@@ -138,7 +141,10 @@ public:
         upload_reconciliation_result p{
           .size_bytes = _params.value().size_bytes,
           .is_compacted = _params.value().is_compacted,
+          .compaction_complete = _params.value().compaction_complete,
           .offsets = _params.value().offsets,
+          .base_timestamp = _params.value().base_timestamp,
+          .max_timestamp = _params.value().max_timestamp,
         };
         return p;
     }
