@@ -158,6 +158,26 @@ public:
             _last_cmd_revision = rev;
         }
 
+        void force_set_state(
+          const replicas_t& new_replicas,
+          model::revision_id rev,
+          reconfiguration_policy policy) {
+            /**
+             * a move from (A (prev) -> B (target)) -> C (force, new_replicas)
+             * is redefined to
+             * A -> C irrespective of whether the current move is a
+             * cancellation.
+             *
+             * This is logically equivalent to this in progress move never
+             * happening, and this makes it easy to account for allocation
+             * changes.
+             */
+            _target_replicas = new_replicas;
+            _last_cmd_revision = _update_revision = rev;
+            _policy = policy;
+            _state = reconfiguration_state::force_update;
+        }
+
         const replicas_t& get_previous_replicas() const {
             return _previous_replicas;
         }
