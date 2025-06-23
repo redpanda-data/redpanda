@@ -11,6 +11,7 @@ import json
 from rptest.services.cluster import cluster
 
 from rptest.services.redpanda import SISettings
+from rptest.services.redpanda_installer import RedpandaVersionTriple
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.datalake.datalake_services import DatalakeServices
@@ -34,8 +35,8 @@ class DatalakeUpgradeTest(RedpandaTest):
         self.topic_name = "upgrade_topic"
 
         # Initial version that supported Iceberg.
-        self.initial_version = (24, 3)
-        self.min_version_with_lag_support = (25, 1)
+        self.initial_version: RedpandaVersionTriple = (24, 3, 1)
+        self.min_version_with_lag_support: RedpandaVersionTriple = (25, 1, 1)
 
     def setUp(self):
         self.redpanda._installer.install(self.redpanda.nodes,
@@ -51,8 +52,10 @@ class DatalakeUpgradeTest(RedpandaTest):
         of Redpanda (e.g. ensuring that data format changes or additional
         Iceberg fields don't block progress).
         """
+        versions = self.load_version_range(self.initial_version)
+        lag_set = self.initial_version >= self.min_version_with_lag_support
+
         total_count = 0
-        versions = self.load_version_range(self.initial_version)[1:]
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
                               catalog_type=filesystem_catalog_type(),
@@ -68,8 +71,6 @@ class DatalakeUpgradeTest(RedpandaTest):
                 total_count += count
                 dl.wait_for_translation(self.topic_name, msg_count=total_count)
 
-            lag_set = self.initial_version >= self.min_version_with_lag_support  # type: ignore
-            versions = self.load_version_range(self.initial_version)
             for v in self.upgrade_through_versions(versions_in=versions,
                                                    already_running=True):
                 self.logger.info(f"Updated to {v}")
