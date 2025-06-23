@@ -45,7 +45,6 @@ enum class candidate_creation_error {
     upload_size_unchanged,
     cannot_replace_manifest_entry,
     missing_ntp_config,
-    zero_content_length,
     concurrency_error,
 };
 
