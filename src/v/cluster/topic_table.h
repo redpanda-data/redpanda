@@ -140,10 +140,10 @@ public:
             }
         }
 
-        in_progress_update(const in_progress_update&) = delete;
+        in_progress_update(const in_progress_update&) = default;
         in_progress_update(in_progress_update&&) = default;
-        in_progress_update& operator=(const in_progress_update&) = delete;
-        in_progress_update& operator=(in_progress_update&&) = delete;
+        in_progress_update& operator=(const in_progress_update&) = default;
+        in_progress_update& operator=(in_progress_update&&) = default;
 
         const reconfiguration_state& get_state() const { return _state; }
 
@@ -551,6 +551,12 @@ public:
     chunked_vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
 
     chunked_vector<model::ntp> all_updates_in_progress() const;
+
+    /**
+     * Returns the in-progress update for the given ntp, if it exists.
+     */
+    std::optional<in_progress_update>
+    update_in_progress(const model::ntp&) const;
 
     model::revision_id last_applied_revision() const {
         return _last_applied_revision_id;

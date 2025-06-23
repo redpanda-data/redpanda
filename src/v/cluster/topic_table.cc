@@ -1958,6 +1958,15 @@ chunked_vector<model::ntp> topic_table::all_updates_in_progress() const {
     return ret;
 }
 
+std::optional<topic_table::in_progress_update>
+topic_table::update_in_progress(const model::ntp& ntp) const {
+    auto it = _updates_in_progress.find(ntp);
+    if (it == _updates_in_progress.end()) {
+        return std::nullopt;
+    }
+    return std::make_optional<in_progress_update>(it->second);
+}
+
 void topic_table::change_partition_replicas(
   model::ntp ntp,
   const replicas_t& new_assignment,
