@@ -133,7 +133,6 @@ ss::log_level log_level_for_error(const candidate_creation_error& error) {
     switch (error) {
     case candidate_creation_error::no_segments_collected:
     case candidate_creation_error::upload_size_unchanged:
-    case candidate_creation_error::cannot_replace_manifest_entry:
     case candidate_creation_error::failed_to_get_file_range:
     case candidate_creation_error::zero_content_length:
     case candidate_creation_error::concurrency_error:
@@ -142,6 +141,7 @@ ss::log_level log_level_for_error(const candidate_creation_error& error) {
     case candidate_creation_error::end_offset_seek_error:
     case candidate_creation_error::offset_inside_batch:
     case candidate_creation_error::missing_ntp_config:
+    case candidate_creation_error::cannot_replace_manifest_entry:
         return ss::log_level::warn;
     }
 }
