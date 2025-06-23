@@ -232,19 +232,27 @@ ss::future<> segment_index::truncate(
     if (new_max_offset < _state.base_offset) {
         co_return;
     }
-    const uint32_t i = new_max_offset() - _state.base_offset();
-    auto it = std::lower_bound(
-      std::begin(_state.relative_offset_index),
-      std::end(_state.relative_offset_index),
-      i,
-      std::less<uint32_t>{});
+    static constexpr int64_t u32_max = std::numeric_limits<uint32_t>::max();
+    int64_t delta = new_max_offset() - base_offset();
+    // NOTE: we expect that deltas above u32_max would have not been
+    // added to the index, unless by an older buggy version of Redpanda.
+    // With this in mind, either there are no entries above u32_max, or
+    // offset_lower_bound() isn't going to work correctly anyway, so we just
+    // skip removal and rely on queries to detect the overflow.
+    if (delta <= u32_max) {
+        auto it = std::lower_bound(
+          std::begin(_state.relative_offset_index),
+          std::end(_state.relative_offset_index),
+          delta,
+          std::less<uint32_t>{});
 
-    if (it != _state.relative_offset_index.end()) {
-        _needs_persistence = true;
-        int remove_back_elems = std::distance(
-          it, _state.relative_offset_index.end());
-        while (remove_back_elems-- > 0) {
-            _state.pop_back();
+        if (it != _state.relative_offset_index.end()) {
+            _needs_persistence = true;
+            int remove_back_elems = std::distance(
+              it, _state.relative_offset_index.end());
+            while (remove_back_elems-- > 0) {
+                _state.pop_back();
+            }
         }
     }
 
