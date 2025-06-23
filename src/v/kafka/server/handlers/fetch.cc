@@ -1415,15 +1415,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
                   return;
               }
 
-              auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(tp);
               auto max_bytes = std::min(
                 bytes_left_in_plan, size_t(fp.max_bytes));
-              /**
-               * If offset is greater, assume that fetch will read max_bytes
-               */
-              if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
-                  bytes_left_in_plan -= max_bytes;
-              }
 
               fetch_config config{
                 .start_offset = fp.fetch_offset,
@@ -1433,7 +1426,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                 .current_leader_epoch = fp.current_leader_epoch,
                 .isolation_level = octx.request.data.isolation_level,
                 .strict_max_bytes = octx.response_size > 0,
-                .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
+                .skip_read = max_bytes == 0,
                 .read_from_follower = octx.request.has_rack_id(),
                 .consumer_rack_id = octx.request.has_rack_id()
                                       ? std::make_optional(
