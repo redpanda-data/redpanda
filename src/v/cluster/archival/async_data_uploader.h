@@ -149,9 +149,11 @@ public:
         return p;
     }
 
-    const upload_reconciliation_result get_meta() && noexcept {
+    ss::future<upload_reconciliation_result> get_meta() && noexcept {
         throw_if_not_initialized("get_meta&&");
-        return std::exchange(_params, std::nullopt).value();
+        auto p = std::exchange(_params, std::nullopt).value();
+        co_await close();
+        co_return p;
     }
 
     /// \brief Make new segment upload
