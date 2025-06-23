@@ -197,10 +197,6 @@ public:
         return _conn->server().fetch_sessions_cache();
     }
 
-    fetch_metadata_cache& get_fetch_metadata_cache() {
-        return _conn->server().get_fetch_metadata_cache();
-    }
-
     template<typename ResponseType>
     requires requires(
       ResponseType r, protocol::encoder& writer, api_version version) {

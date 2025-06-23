@@ -480,14 +480,6 @@ static void fill_fetch_responses(
         }
 
         /**
-         * Cache fetch metadata
-         */
-        octx.rctx.get_fetch_metadata_cache().insert_or_assign(
-          {resp_it->topic(), resp_it->partition_id()},
-          res.start_offset,
-          res.high_watermark,
-          res.last_stable_offset);
-        /**
          * Over response budget, we will just waste this read, it will cause
          * data to be stored in the cache so next read is fast
          */

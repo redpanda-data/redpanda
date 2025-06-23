@@ -16,7 +16,6 @@
 #include "features/feature_table.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
-#include "kafka/server/fetch_metadata_cache.h"
 #include "kafka/server/fetch_pid_controller.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
@@ -179,10 +178,6 @@ public:
         return _controller_api.local();
     }
 
-    kafka::fetch_metadata_cache& get_fetch_metadata_cache() {
-        return _fetch_metadata_cache;
-    }
-
     security::gssapi_principal_mapper& gssapi_principal_mapper() {
         return _gssapi_principal_mapper;
     }
@@ -279,7 +274,6 @@ private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     ss::sharded<kafka::datalake_throttle_manager>& _datalake_throttle_manager;
     std::optional<qdc_monitor> _qdc_mon;
-    kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;

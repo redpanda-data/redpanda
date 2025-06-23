@@ -140,7 +140,6 @@ redpanda_cc_library(
         "coordinator_ntp_mapper.h",
         "data_migration_group_proxy_impl.h",
         "errors.h",
-        "fetch_metadata_cache.h",
         "fetch_pid_controller.h",
         "fetch_session.h",
         "fetch_session_cache.h",

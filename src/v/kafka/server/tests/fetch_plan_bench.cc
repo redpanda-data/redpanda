@@ -154,18 +154,6 @@ PERF_TEST_F(fetch_plan_fixture, test_fetch_plan) {
     auto rctx = make_request_context(std::move(fetch_req), header);
     BOOST_REQUIRE_EQUAL(rctx.fetch_sessions().size(), 1);
 
-    // add all partitions to fetch metadata
-    auto& mdc = rctx.get_fetch_metadata_cache();
-    for (size_t i = 0; i < total_partition_count; i++) {
-        mdc.insert_or_assign(
-          {t, static_cast<int32_t>(i)},
-          model::offset(0),
-          model::offset(100),
-          model::offset(100));
-    }
-
-    vassert(mdc.size() == total_partition_count, "mdc.size(): {}", mdc.size());
-
     auto octx = kafka::op_context(
       std::move(rctx), ss::default_smp_service_group());
 
@@ -182,11 +170,6 @@ PERF_TEST_F(fetch_plan_fixture, test_fetch_plan) {
         perf_tests::do_not_optimize(plan);
     }
     perf_tests::stop_measuring_time();
-
-    vassert(
-      mdc.size() == total_partition_count,
-      "mdc.size(): {}",
-      mdc.size()); // check that nothing was evicted
 
     // double micros_per_iter = timer._total_duration / 1ns / 1000.
     //                          / timer._total_timings;
