@@ -6,6 +6,8 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+
+import json
 from rptest.services.cluster import cluster
 
 from rptest.services.redpanda import SISettings
@@ -79,3 +81,60 @@ class DatalakeUpgradeTest(RedpandaTest):
                         {"iceberg_target_lag_ms": 10000})
                     lag_set = True
                 run_workload()
+
+            # Run some spot checks to ensure that the data is readable.
+            result = dl.spark().run_query_fetch_one(f"""
+                                                    SELECT count(*)
+                                                    FROM redpanda.{self.topic_name}
+                                                    WHERE redpanda.offset < 10
+                                                      AND redpanda.partition = 0
+                                                    """)
+            assert result[0] == 10, f"Expected 10 rows, got {result[0]}"
+
+            result = dl.spark().run_query_fetch_one(f"""
+                                                    SELECT count(*)
+                                                    FROM redpanda.{self.topic_name}
+                                                    WHERE redpanda.timestamp >= '2025-01-01 00:00:00'
+                                                    """)
+            assert result[
+                0] == total_count, f"Expected {total_count} rows, got {result[0]}"
+
+            # Check that all fields are queryable and the structure of the row
+            # matches the expected structure.
+            with dl.spark().run_query(f"""
+                                      SELECT *
+                                      FROM redpanda.{self.topic_name}
+                                      """) as cursor:
+                assert cursor.description == [
+                    ('redpanda', 'STRUCT_TYPE', None, None, None, None, True),
+                    ('value', 'BINARY_TYPE', None, None, None, None, True)
+                ], f"Unexpected cursor description: {cursor.description}"
+
+                rows = cursor.fetchall()
+                assert rows
+
+                # We're not checking internal redpanda fields as it is close to
+                # impossible with our current client PyHive which returns a string
+                # representation of the struct. It also loses some type information
+                # and binary data which looks like numbers is represented as numbers.
+                # If assert below begin to fail maybe we have changed the client and
+                # now it is possible to check the types.
+                assert isinstance(rows[0][0],
+                                  str), f"Unexpected type {type(rows[0][0])}"
+                assert isinstance(rows[0][1],
+                                  bytes), f"Unexpected type {type(rows[0][1])}"
+
+            # Check nested fields of redpanda struct. Fetch all rows
+            with dl.spark().run_query(f"""
+                                    SELECT to_json(redpanda)
+                                    FROM redpanda.{self.topic_name}
+                                    """) as cursor:
+                rows = cursor.fetchall()
+                assert rows
+
+                # Fetch all rows to make sure the underlying query engine does
+                # not fail internally but it should be enough to check a single
+                # row from the result set.
+                assert json.loads(rows[0][0]).keys() == {
+                    "partition", "offset", "timestamp", "headers", "key"
+                }, f"Unexpected JSON keys: {json.loads(rows[0][0]).keys()}"
