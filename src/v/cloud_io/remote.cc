@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "ssx/future-util.h"
 #include "ssx/semaphore.h"
+#include "ssx/watchdog.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -81,6 +82,17 @@ cloud_io::provider infer_provider(
           .account_name = abs.storage_account_name(),
         };
     }
+    }
+}
+
+template<typename ErrT>
+ErrT throw_if_not_timeout(const std::exception_ptr& e, ErrT on_timeout) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const ss::timed_out_error&) {
+        return on_timeout;
+    } catch (...) {
+        throw;
     }
 }
 
@@ -241,7 +253,14 @@ ss::future<upload_result> remote::upload_stream(
         if (max_retries.has_value()) {
             max_retries = max_retries.value() - 1;
         }
-        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+        auto fut = co_await ss::coroutine::as_future(
+          _pool.local().acquire_with_timeout(
+            fib.root_abort_source(), fib.get_deadline(), fib()));
+        if (fut.failed()) {
+            co_return throw_if_not_timeout(
+              fut.get_exception(), upload_result::timedout);
+        }
+        auto lease = std::move(fut).get();
         transfer_details.on_request(fib.retry_count());
 
         // Client acquisition can take some time. Do a check before starting
@@ -346,10 +365,16 @@ ss::future<download_result> remote::download_stream(
         hu = co_await _resources->get_hydration_units(1);
     }
 
-    auto lease = co_await [this, &fib, &transfer_details] {
+    auto fut = co_await [this, &fib, &transfer_details] {
         transfer_details.on_client_acquire();
-        return _pool.local().acquire(fib.root_abort_source());
+        return ss::coroutine::as_future(_pool.local().acquire_with_timeout(
+          fib.root_abort_source(), fib.get_deadline(), fib()));
     }();
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), download_result::timedout);
+    }
+    auto lease = std::move(fut).get();
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download {} {}", stream_label, path);
@@ -447,7 +472,14 @@ remote::download_object(download_request download_request) {
     const auto bucket = transfer_details.bucket;
     const auto object_type = download_request.display_str;
 
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire_with_timeout(
+        fib.root_abort_source(), fib.get_deadline(), fib()));
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), download_result::timedout);
+    }
+    auto lease = std::move(fut).get();
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Downloading {} from {}", object_type, path);
@@ -531,7 +563,14 @@ ss::future<download_result> remote::object_exists(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire_with_timeout(
+        fib.root_abort_source(), fib.get_deadline(), fib()));
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), download_result::timedout);
+    }
+    auto lease = std::move(fut).get();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check {} {}", object_type, path);
     std::optional<download_result> result;
@@ -601,7 +640,14 @@ remote::delete_object(transfer_details transfer_details) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire_with_timeout(
+        fib.root_abort_source(), fib.get_deadline(), fib()));
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), upload_result::timedout);
+    }
+    auto lease = std::move(fut).get();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
@@ -754,7 +800,14 @@ ss::future<upload_result> remote::delete_object_batch(
 
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire_with_timeout(
+        fib.root_abort_source(), fib.get_deadline(), fib()));
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), upload_result::timedout);
+    }
+    auto lease = std::move(fut).get();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Deleting a batch of size {}", keys.size());
     std::optional<upload_result> result;
@@ -938,7 +991,14 @@ ss::future<list_result> remote::list_objects(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(log, fib);
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+    auto fut = co_await ss::coroutine::as_future(
+      _pool.local().acquire_with_timeout(
+        fib.root_abort_source(), fib.get_deadline(), fib()));
+    if (fut.failed()) {
+        co_return throw_if_not_timeout(
+          fut.get_exception(), cloud_storage_clients::error_outcome::retry);
+    }
+    auto lease = std::move(fut).get();
     auto permit = fib.retry();
     vlog(ctxlog.debug, "List objects {}", bucket);
     std::optional<list_result> result;
@@ -1061,7 +1121,14 @@ ss::future<upload_result> remote::upload_object(upload_request upload_request) {
 
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+        auto fut = co_await ss::coroutine::as_future(
+          _pool.local().acquire_with_timeout(
+            fib.root_abort_source(), fib.get_deadline(), fib()));
+        if (fut.failed()) {
+            co_return throw_if_not_timeout(
+              fut.get_exception(), upload_result::timedout);
+        }
+        auto lease = std::move(fut).get();
 
         vlog(
           ctxlog.debug,

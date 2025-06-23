@@ -88,6 +88,7 @@ redpanda_cc_library(
         "//src/v/resource_mgmt:io_priority",
         "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
+        "//src/v/ssx:watchdog",
         "@boost//:beast",
         "@boost//:lexical_cast",
         "@boost//:range",

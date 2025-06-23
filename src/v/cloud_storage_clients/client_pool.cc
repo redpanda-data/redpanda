@@ -249,12 +249,17 @@ std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
 ///       the lifetime of the pointer ends).
 /// \return client pointer (via future that can wait if all clients
 ///         are in use)
-ss::future<client_pool::client_lease>
-client_pool::acquire(ss::abort_source& as) {
+ss::future<client_pool::client_lease> client_pool::acquire(
+  ss::abort_source& as, std::optional<ss::lowres_clock::time_point> deadline) {
     auto guard = _gate.hold();
 
     std::optional<unsigned int> source_sid;
     std::optional<http_client_ptr> client;
+
+    auto deadline_reached = [&deadline] {
+        return deadline.has_value()
+               && ss::lowres_clock::now() >= deadline.value();
+    };
 
     try {
         // If credentials have not yet been acquired, wait for them. It is
@@ -281,7 +286,7 @@ client_pool::acquire(ss::abort_source& as) {
             }
         }
 
-        while (!client.has_value() && !_gate.is_closed()
+        while (!client.has_value() && !deadline_reached() && !_gate.is_closed()
                && !_as.abort_requested()) {
             if (likely(!_pool.empty())) {
                 client = _pool.back();
@@ -294,7 +299,7 @@ client_pool::acquire(ss::abort_source& as) {
                 // client connections then wait util one of the clients is
                 // freed.
                 co_await ssx::with_timeout_abortable(
-                  _cvar.wait(), model::no_timeout, as);
+                  _cvar.wait(), deadline.value_or(model::no_timeout), as);
 
                 vlog(
                   pool_log.debug,
@@ -358,6 +363,8 @@ client_pool::acquire(ss::abort_source& as) {
     }
     if (_gate.is_closed() || _as.abort_requested()) {
         throw ss::gate_closed_exception();
+    } else if (!client.has_value() && deadline_reached()) {
+        throw ss::timed_out_error();
     }
     vassert(client.has_value(), "'acquire' invariant is broken");
 
@@ -423,6 +430,40 @@ client_pool::acquire(ss::abort_source& as) {
       std::move(measurement));
     _leased.push_back(lease);
 
+    co_return lease;
+}
+
+auto client_pool::acquire_with_timeout(
+  ss::abort_source& as,
+  ss::lowres_clock::time_point deadline,
+  std::optional<ss::sstring> ctx) -> ss::future<client_lease> {
+    auto lease = co_await acquire(as, deadline);
+    if (deadline < ss::lowres_clock::time_point::max()) {
+        // take a copy of the shared_ptr held by the lease to avoid racing with
+        // client_pool teardown
+        auto to = deadline - ss::lowres_clock::now();
+        lease._wd = std::make_unique<ssx::watchdog>(
+          to,
+          [probe = _probe,
+           client = lease.client,
+           to,
+           ctx = std::move(ctx)]() mutable {
+              if (ctx.has_value()) {
+                  vlog(
+                    pool_log.debug,
+                    "{} - Lease expired after {}. Shutting down client...",
+                    ctx.value(),
+                    to);
+              } else {
+                  vlog(
+                    pool_log.debug,
+                    "Lease expired after {}. Shutting down client...",
+                    to);
+              }
+              probe->register_timeout();
+              client->shutdown();
+          });
+    }
     co_return lease;
 }
 

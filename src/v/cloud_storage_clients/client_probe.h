@@ -86,6 +86,8 @@ public:
     std::unique_ptr<hist_t::measurement> register_lease_duration();
     /// Utilization metric which is used to decide if borrowing is possible
     void register_utilization(unsigned clients_in_use);
+    /// Register client timeout
+    void register_timeout();
 
 private:
     struct raw_label {
@@ -114,6 +116,8 @@ private:
     hist_t _lease_duration;
     /// Current utilization of the client pool
     uint64_t _pool_utilization;
+    /// Total client timeouts;
+    uint64_t _total_timeouts{0};
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };

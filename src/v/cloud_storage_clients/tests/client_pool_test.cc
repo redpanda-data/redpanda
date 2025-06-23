@@ -9,6 +9,7 @@
  */
 
 #include "base/seastarx.h"
+#include "cloud_io/tests/s3_imposter.h"
 #include "cloud_storage_clients/client_pool.h"
 
 #include <seastar/core/abort_source.hh>
@@ -16,6 +17,9 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/when_all.hh>
+#include <seastar/core/with_timeout.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
@@ -89,4 +93,161 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
     as.request_abort();
 
     BOOST_REQUIRE_THROW(f.get(), ss::abort_requested_exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
+    auto sconf = ss::sharded_parameter([] {
+        auto conf = transport_configuration();
+        return conf;
+    });
+    auto conf = transport_configuration();
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    size_t num_connections_per_shard = 1;
+    pool
+      .start(
+        num_connections_per_shard,
+        sconf,
+        cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty)
+      .get();
+
+    pool
+      .invoke_on_all([&conf](cloud_storage_clients::client_pool& p) {
+          auto cred = cloud_roles::aws_credentials{
+            conf.access_key.value(),
+            conf.secret_key.value(),
+            std::nullopt,
+            conf.region};
+          p.load_credentials(cred);
+      })
+      .get();
+    auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
+
+    ss::abort_source as;
+    using namespace std::chrono_literals;
+
+    {
+        auto lease = pool.local()
+                       .acquire_with_timeout(
+                         as, ss::lowres_clock::now() + 100ms)
+                       .get();
+
+        // The request should fail w/in 500ms due to lease expiry
+        // Note that the default timeout for the request itself is 5s
+        auto res = ss::with_timeout(
+                     ss::lowres_clock::now() + 500ms,
+                     lease.client->list_objects(random_test_bucket_name()))
+                     .get();
+
+        BOOST_REQUIRE(res.has_error());
+        BOOST_REQUIRE_EQUAL(
+          res.error(), cloud_storage_clients::error_outcome::retry);
+
+        // return the lease to the pool
+    }
+
+    {
+        auto lease = pool.local().acquire(as).get();
+
+        auto f = ss::with_timeout(
+          ss::lowres_clock::now() + 500ms,
+          lease.client->list_objects(random_test_bucket_name()));
+
+        // This time the lease never expires, so internally we should keep
+        // trying to connect for at least 500ms.
+        BOOST_REQUIRE_THROW(f.get(), ss::timed_out_error);
+    }
+
+    {
+        // check that passing time_point::max for timeout will skip watchdog
+        // creation to avoid overflow in sleep_abortable
+
+        auto lease = pool.local()
+                       .acquire_with_timeout(
+                         as, ss::lowres_clock::time_point::max())
+                       .get();
+
+        BOOST_REQUIRE_EQUAL(lease._wd, nullptr);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
+    auto sconf = ss::sharded_parameter([] {
+        auto conf = transport_configuration();
+        return conf;
+    });
+    auto conf = transport_configuration();
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    size_t num_connections_per_shard = 0;
+    pool
+      .start(
+        num_connections_per_shard,
+        sconf,
+        cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
+      .get();
+
+    pool
+      .invoke_on_all([&conf](cloud_storage_clients::client_pool& p) {
+          auto cred = cloud_roles::aws_credentials{
+            conf.access_key.value(),
+            conf.secret_key.value(),
+            std::nullopt,
+            conf.region};
+          p.load_credentials(cred);
+      })
+      .get();
+    auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
+
+    {
+        // acquire should time out. no abort required.
+        ss::abort_source as;
+
+        auto f = pool.local().acquire(as, ss::lowres_clock::now() + 100ms);
+        while (!pool.local().has_waiters()) {
+            ss::yield().get();
+        }
+
+        BOOST_TEST_REQUIRE(
+          !f.available(), "acquire should be blocked as pool is empty");
+
+        BOOST_REQUIRE_THROW(f.get(), ss::timed_out_error);
+    }
+
+    {
+        // time_point::max should be fine here. we just won't time out anytime
+        // soon.
+        ss::abort_source as;
+
+        auto f = pool.local().acquire(as, ss::lowres_clock::time_point::max());
+        while (!pool.local().has_waiters()) {
+            ss::yield().get();
+        }
+
+        BOOST_TEST_REQUIRE(
+          !f.available(), "acquire should be blocked as pool is empty");
+
+        as.request_abort();
+
+        BOOST_REQUIRE_THROW(f.get(), ss::abort_requested_exception);
+    }
+
+    {
+        // call through acquire_with_timeout
+
+        ss::abort_source as;
+        BOOST_REQUIRE_THROW(
+          pool.local()
+            .acquire_with_timeout(as, ss::lowres_clock::now() + 100ms)
+            .get(),
+          ss::timed_out_error);
+    }
+
+    {
+        // passing a deadline in the past should behave sanely
+        ss::abort_source as;
+        BOOST_REQUIRE_THROW(
+          pool.local().acquire(as, ss::lowres_clock::time_point::min()).get(),
+          ss::timed_out_error);
+    }
 }
