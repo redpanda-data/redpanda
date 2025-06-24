@@ -10,7 +10,7 @@ rp_test(
     exception_test.cc
     util_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::http v::cloud_storage_clients v::cloud_roles
+  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::http v::cloud_storage_clients v::cloud_roles v::s3_imposter
   ARGS "-- -c 1"
   LABELS s3
 )
