@@ -239,6 +239,16 @@ ss::future<result<void>> segment_upload::initialize(
   inclusive_offset_range range,
   model::timeout_clock::time_point deadline,
   bool allow_unstable_reads) {
+    if (!allow_unstable_reads && range.last >= _part->last_stable_offset()) {
+        vlog(
+          _ctxlog.debug,
+          "{}: range.last {} unexpectedly exceeds LSO {}",
+          _part->ntp(),
+          range.last,
+          _part->last_stable_offset());
+        co_return make_error_code(error_outcome::not_enough_data);
+    }
+
     auto deadline_sc = mtc_to_sem_tp(deadline);
     auto holder = _gate.hold();
     auto params = co_await compute_upload_parameters(range, deadline_sc);
