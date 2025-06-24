@@ -33,7 +33,8 @@ ss::future<> state_machine::start() {
     vlog(_log.debug, "Starting state machine for ntp={}", _raft->ntp());
     ssx::spawn_with_gate(_gate, [this] {
         return ss::do_until(
-          [this] { return _gate.is_closed(); }, [this] { return apply(); });
+          [this] { return _as.abort_requested() || _gate.is_closed(); },
+          [this] { return apply(); });
     });
     return ss::now();
 }
@@ -54,7 +55,9 @@ ss::future<> state_machine::handle_raft_snapshot() {
 ss::future<> state_machine::stop() {
     vlog(_log.debug, "Asked to stop state_machine {}", _raft->ntp());
     _waiters.stop();
-    _as.request_abort();
+    if (!_as.abort_requested()) {
+        _as.request_abort();
+    }
     return _gate.close().then([this] {
         vlog(_log.debug, "state_machine is stopped {}", _raft->ntp());
     });
@@ -176,14 +179,10 @@ ss::future<> state_machine::apply() {
             _raft->ntp());
       })
       .handle_exception([this](const std::exception_ptr& e) {
-          // do not log shutdown exceptions not to pollute logs with irrelevant
-          // errors
-          if (ssx::is_shutdown_exception(e)) {
-              return;
-          }
-
-          vlog(
-            _log.error,
+          vlogl(
+            _log,
+            ssx::is_shutdown_exception(e) ? ss::log_level::trace
+                                          : ss::log_level::error,
             "State machine for ntp={} caught exception {}",
             _raft->ntp(),
             e);
