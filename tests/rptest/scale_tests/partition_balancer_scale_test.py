@@ -109,28 +109,28 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
     @parametrize(type=BIG_PARTITIONS)
     def test_partition_balancer_with_many_partitions(self, type):
         replication_factor = 3
+        message_size = 16384
         if not self.redpanda.dedicated_nodes:
             # Mini mode, for developers working on the test on their workstation.
             # (not for use in CI)
-            message_size = 16384
-            message_cnt = 64000
+            total_produced = 2**30
             consumers = 1
             partitions_count = 16
             timeout = 120
         elif type == self.MANY_PARTITIONS:
-
-            message_size = 128 * (2**10)
-            message_cnt = 819200
+            total_produced = 100 * 2**30
             consumers = 8
             partitions_count = self._max_partition_count(
                 len(self.redpanda.nodes) - 1)
             timeout = 500
         else:
-            message_size = 128 * (2**10)
-            message_cnt = 819200
+            total_produced = 100 * 2**30
             consumers = 8
             partitions_count = 200
             timeout = 500
+
+        max_total_produced = int(self.redpanda.get_node_disk_free() / 3)
+        message_cnt = min(total_produced, max_total_produced) // message_size
 
         topic = TopicSpec(partition_count=partitions_count,
                           replication_factor=replication_factor)
@@ -139,8 +139,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         self._start_producer(topic.name, message_cnt, message_size)
         self._start_consumer(topic.name, message_size, consumers=consumers)
         self.logger.info(
-            f"waiting for {(message_size*message_cnt/2) / (2^20)} MB to be produced to "
-            f"{partitions_count} partitions ({((message_size*message_cnt/2) / (2^20)) / partitions_count} MB per partition"
+            f"waiting for {(message_size*message_cnt/2) / (2**20)} MB to be produced to "
+            f"{partitions_count} partitions ({((message_size*message_cnt/2) / (2**20)) / partitions_count} MB per partition"
         )
         # wait for the partitions to be filled with data
         self.producer.wait_for_acks(message_cnt // 2,
@@ -179,18 +179,17 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
     @parametrize(type=BIG_PARTITIONS)
     def test_node_operations_at_scale(self, type):
         replication_factor = 3
+        message_size = 16384
         if not self.redpanda.dedicated_nodes:
             # Mini mode, for developers working on the test on their workstation.
             # (not for use in CI)
-            message_size = 16384
-            message_cnt = 64000
+            total_produced = 2**30
             consumers = 1
             partitions_count = 40
             max_concurrent_moves = 5
             timeout = 80
         elif type == self.MANY_PARTITIONS:
-            message_size = 256 * (2**10)
-            message_cnt = 819200
+            total_produced = 256 * 2**30
             consumers = 8
             # Subtract 1 from node count because will decommission one node & the partitions
             # must fit in the shrunk cluster
@@ -199,12 +198,14 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             max_concurrent_moves = 400
             timeout = 500
         else:
-            message_size = 256 * (2**10)
-            message_cnt = 819200
+            total_produced = 256 * 2**30
             consumers = 8
             partitions_count = 200
             max_concurrent_moves = 200
             timeout = 500
+
+        max_total_produced = int(self.redpanda.get_node_disk_free() / 3)
+        message_cnt = min(total_produced, max_total_produced) // message_size
 
         self.logger.info(f"Running with {partitions_count} partitions")
 
