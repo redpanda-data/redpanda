@@ -480,17 +480,11 @@ admin_server::force_set_partition_replicas_handler(
     const auto& in_progress = topics.updates_in_progress();
     const auto in_progress_it = in_progress.find(ntp);
 
-    if (in_progress_it != in_progress.end()) {
-        throw ss::httpd::bad_request_exception(
-          fmt::format("A partition operation is in progress. Check "
-                      "reconfigurations and "
-                      "cancel in flight update before issuing force "
-                      "replica set update."));
-    }
     const auto current_assignment = topics.get_partition_assignment(ntp);
     if (current_assignment) {
         const auto& current_replicas = current_assignment->replicas;
-        if (current_replicas == replicas) {
+        if (
+          current_replicas == replicas && in_progress_it == in_progress.end()) {
             vlog(
               adminlog.info,
               "Request to change ntp {} replica set to {}, no change",

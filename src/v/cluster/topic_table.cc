@@ -854,9 +854,6 @@ std::error_code topic_table::validate_force_reconfigurable_partition(
     if (!topic_md || topic_md->get().get_revision() != entry.topic_revision) {
         return errc::topic_not_exists;
     }
-    if (is_update_in_progress(ntp)) {
-        return errc::update_in_progress;
-    }
     const auto& current_assignment = get_partition_assignment(ntp);
     if (!current_assignment) {
         return errc::no_partition_assignments;
