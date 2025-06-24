@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.services.cluster import cluster
+from ducktape.mark import ignore
 from ducktape.utils.util import wait_until
 
 import time
@@ -111,6 +112,7 @@ class ConnectionRateLimitTest(PreallocNodesTest):
 
         return sum(deltas) / len(deltas)
 
+    @ignore  # https://redpandadata.atlassian.net/browse/CORE-12249
     @cluster(num_nodes=8)
     def connection_rate_test(self):
         self._producer.start(clean=False)
