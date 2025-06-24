@@ -106,3 +106,16 @@ SEASTAR_THREAD_TEST_CASE(extra_bytes_iterator) {
     BOOST_TEST(it.has_next());
     BOOST_REQUIRE_THROW(it.next(), std::out_of_range);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_corrupted_record_bytes) {
+    auto b = model::test::make_random_batch(model::offset(0), 10, false);
+    // use the trick to get mutable access to the records
+    auto fields = b.serde_fields();
+    auto& records = std::get<1>(fields);
+    for (auto& f : records) {
+        std::fill_n(f.get_write(), f.size(), 0xFF);
+    }
+    auto f = model::for_each_record(
+      b, [](model::record& r) { BOOST_CHECK(r.offset_delta() >= 0); });
+    BOOST_REQUIRE_THROW(f.get(), std::out_of_range);
+}
