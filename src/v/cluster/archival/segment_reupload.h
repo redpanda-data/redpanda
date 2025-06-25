@@ -81,7 +81,7 @@ struct upload_candidate_with_locks {
 /// Wraps an error with an offset range, so that no
 /// further upload candidates are created from this offset range.
 struct skip_offset_range {
-    model::offset begin_offset;
+    model::offset start_offset;
     model::offset end_offset;
     candidate_creation_error reason;
 
