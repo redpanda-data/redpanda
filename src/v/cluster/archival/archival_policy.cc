@@ -90,8 +90,7 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
       end_exclusive,
       flush_offset};
 
-    segment_collector.collect_segments();
-    if (!segment_collector.segment_ready_for_upload()) {
+    if (!segment_collector.collect_segments()) {
         co_return candidate_creation_error::no_segments_collected;
     }
 
@@ -124,8 +123,7 @@ archival_policy::get_next_compacted_segment(
       config::shard_local_cfg().compacted_log_segment_size
         * compacted_segment_size_multiplier};
 
-    compacted_segment_collector.collect_segments();
-    if (!compacted_segment_collector.should_replace_manifest_segment()) {
+    if (!compacted_segment_collector.collect_segments()) {
         co_return candidate_creation_error::cannot_replace_manifest_entry;
     }
 
