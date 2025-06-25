@@ -57,6 +57,12 @@ std::ostream& operator<<(std::ostream& os, segment_collector_mode m) {
         return os << "segment_collector_mode::non_compacted_reupload";
     case segment_collector_mode::new_upload:
         return os << "segment_collector_mode::new_upload";
+    case segment_collector_mode::compacted_reupload_v2:
+        return os << "segment_collector_mode::compacted_reupload_v2";
+    case segment_collector_mode::non_compacted_reupload_v2:
+        return os << "segment_collector_mode::non_compacted_reupload_v2";
+    case segment_collector_mode::new_upload_v2:
+        return os << "segment_collector_mode::new_upload_v2";
     }
 }
 
@@ -211,9 +217,41 @@ segment_collector::segment_collector(
 
 namespace {
 static bool is_reupload_mode(segment_collector_mode mode) {
-    return mode == segment_collector_mode::compacted_reupload
-           || mode == segment_collector_mode::non_compacted_reupload;
+    switch (mode) {
+    case segment_collector_mode::compacted_reupload:
+    case segment_collector_mode::non_compacted_reupload:
+    case segment_collector_mode::compacted_reupload_v2:
+    case segment_collector_mode::non_compacted_reupload_v2:
+        return true;
+    case segment_collector_mode::new_upload:
+    case segment_collector_mode::new_upload_v2:
+        return false;
+    }
 }
+[[maybe_unused]] static bool
+is_compacted_reupload_mode(segment_collector_mode mode) {
+    return mode == segment_collector_mode::compacted_reupload
+           || mode == segment_collector_mode::compacted_reupload_v2;
+}
+
+[[maybe_unused]] static bool
+is_non_compacted_reupload_mode(segment_collector_mode mode) {
+    return mode == segment_collector_mode::non_compacted_reupload
+           || mode == segment_collector_mode::non_compacted_reupload_v2;
+}
+bool is_v2_mode(segment_collector_mode mode) {
+    switch (mode) {
+    case segment_collector_mode::compacted_reupload:
+    case segment_collector_mode::non_compacted_reupload:
+    case segment_collector_mode::new_upload:
+        return false;
+    case segment_collector_mode::compacted_reupload_v2:
+    case segment_collector_mode::non_compacted_reupload_v2:
+    case segment_collector_mode::new_upload_v2:
+        return true;
+    }
+}
+bool is_v1_mode(segment_collector_mode mode) { return !is_v2_mode(mode); }
 } // namespace
 
 void segment_collector::collect_segments() {
@@ -230,7 +268,9 @@ void segment_collector::collect_segments() {
     if (_begin_inclusive < _log.offsets().start_offset) {
         switch (_mode) {
         case segment_collector_mode::new_upload:
+        case segment_collector_mode::new_upload_v2:
         case segment_collector_mode::compacted_reupload:
+        case segment_collector_mode::compacted_reupload_v2:
             vlog(
               archival_log.debug,
               "Provided start offset is below the start offset of the local "
@@ -243,6 +283,7 @@ void segment_collector::collect_segments() {
             _begin_inclusive = _log.offsets().start_offset;
             break;
         case segment_collector_mode::non_compacted_reupload:
+        case segment_collector_mode::non_compacted_reupload_v2:
             vlog(
               archival_log.debug,
               "Provided start offset is below the start offset of the local "
@@ -259,9 +300,11 @@ void segment_collector::collect_segments() {
     // required).
     switch (_mode) {
     case segment_collector_mode::compacted_reupload:
+    case segment_collector_mode::compacted_reupload_v2:
         align_begin_offset_to_manifest();
         break;
     case segment_collector_mode::non_compacted_reupload:
+    case segment_collector_mode::non_compacted_reupload_v2:
         if (_manifest.find(_begin_inclusive) == _manifest.end()) {
             vlog(
               archival_log.debug,
@@ -273,6 +316,7 @@ void segment_collector::collect_segments() {
         }
         break;
     case segment_collector_mode::new_upload:
+    case segment_collector_mode::new_upload_v2:
         if (_manifest.get_last_offset() > _begin_inclusive) {
             vlog(
               archival_log.debug,
@@ -374,6 +418,13 @@ void segment_collector::do_collect() {
             return last_collected <= _manifest.get_last_offset();
         case segment_collector_mode::new_upload:
             return last_collected < projected_end_inclusive;
+        case segment_collector_mode::compacted_reupload_v2:
+        case segment_collector_mode::non_compacted_reupload_v2:
+        case segment_collector_mode::new_upload_v2:
+            vassert(
+              false,
+              "Incorrect use of v2 collector mode with v1 collect: {}",
+              _mode);
         }
     };
     while (!done && can_continue()) {
