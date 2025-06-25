@@ -16,11 +16,8 @@
 #include "bytes/scattered_message.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/api_versions.h"
-#include "kafka/protocol/delete_records.h"
-#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
-#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/wire.h"
 #include "net/transport.h"
 
@@ -164,61 +161,6 @@ public:
     ss::future<typename T::api_type::response_type>
     dispatch(T r, api_version ver) {
         return dispatch(std::move(r), ver, ver);
-    }
-
-    /*
-     * Invokes dispatch with the given request type at the max supported level
-     * of the redpanda kafka server.
-     *
-     * TODO: this will go away once the kafka client implements version
-     * negotiation and can track on a per-broker basis the supported version
-     * range.
-     */
-    template<typename T>
-    requires(KafkaApi<typename T::api_type>)
-    ss::future<typename T::api_type::response_type> dispatch(T r) {
-        using type = std::remove_reference_t<std::decay_t<T>>;
-        if constexpr (std::is_same_v<type, offset_fetch_request>) {
-            return dispatch(std::move(r), api_version(4));
-        } else if constexpr (std::is_same_v<type, fetch_request>) {
-            return dispatch(std::move(r), api_version(10));
-        } else if constexpr (std::is_same_v<type, list_offsets_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, produce_request>) {
-            return dispatch(std::move(r), api_version(7));
-        } else if constexpr (std::is_same_v<type, offset_commit_request>) {
-            return dispatch(std::move(r), api_version(7));
-        } else if constexpr (std::is_same_v<type, describe_groups_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, heartbeat_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, join_group_request>) {
-            return dispatch(std::move(r), api_version(4));
-        } else if constexpr (std::is_same_v<type, sync_group_request>) {
-            return dispatch(std::move(r), api_version(3));
-        } else if constexpr (std::is_same_v<type, leave_group_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, metadata_request>) {
-            return dispatch(std::move(r), api_version(8));
-        } else if constexpr (std::is_same_v<type, find_coordinator_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, list_groups_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, create_topics_request>) {
-            return dispatch(std::move(r), api_version(6));
-        } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
-            return dispatch(std::move(r), api_version(1));
-        } else if constexpr (std::is_same_v<type, delete_records_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<
-                               type,
-                               offset_for_leader_epoch_request>) {
-            return dispatch(std::move(r), api_version(2));
-        } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
-            return dispatch(std::move(r), api_version(1));
-        } else if constexpr (std::is_same_v<type, describe_configs_request>) {
-            return dispatch(std::move(r), api_version(4));
-        }
     }
 
     const std::optional<ss::sstring>& client_id() const { return _client_id; }

@@ -123,7 +123,8 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
         auto req = offset_commit_request{
           .data{.group_id = kafka::group_id{"foo-topics"}, .topics = {}}};
         req.data.group_instance_id = gr;
-        auto resp = client.dispatch(std::move(req)).get();
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(7)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
     {
@@ -135,7 +136,8 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
               .name = model::topic{"foo"}, .partitions = {}})};
 
         req.data.group_instance_id = gr;
-        auto resp = client.dispatch(std::move(req)).get();
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(7)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
 }
@@ -173,7 +175,8 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
     for (int i = 0; i < 10; i++) {
         auto req = rand_offset_commit();
         req.data.group_instance_id = gr;
-        auto resp = client.dispatch(std::move(req)).get();
+        auto resp
+          = client.dispatch(std::move(req), kafka::api_version(7)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
     auto part = app.partition_manager.local().get(model::ntp{

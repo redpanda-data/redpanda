@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "container/fragmented_vector.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
@@ -51,7 +52,8 @@ kafka_produce_transport::produce(
     req.data.timeout_ms = std::chrono::seconds(10);
     req.has_idempotent = false;
     req.has_transactional = false;
-    auto resp = co_await _transport.dispatch(std::move(req));
+    auto resp = co_await _transport.dispatch(
+      std::move(req), kafka::api_version(7));
 
     pid_to_offset_map_t ret;
     for (auto& data_resp : resp.data.responses) {

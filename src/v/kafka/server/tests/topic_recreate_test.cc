@@ -114,7 +114,7 @@ public:
               .data
               = {.topics = std::make_optional(std::move(topics)), .allow_auto_topic_creation = false},
               .list_all_topics = false};
-            return client.dispatch(std::move(md_req));
+            return client.dispatch(std::move(md_req), kafka::api_version(8));
         });
     }
 

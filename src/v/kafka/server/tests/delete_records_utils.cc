@@ -36,7 +36,8 @@ kafka_delete_records_transport::delete_records(
         tp.partitions.emplace_back(std::move(p));
     }
     req.data.topics.emplace_back(std::move(tp));
-    auto resp = co_await _transport.dispatch(std::move(req));
+    auto resp = co_await _transport.dispatch(
+      std::move(req), kafka::api_version{2});
     if (resp.data.topics.size() != 1) {
         throw std::runtime_error(
           fmt::format("Expected 1 topic, got {}", resp.data.topics.size()));

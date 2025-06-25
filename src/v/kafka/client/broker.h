@@ -15,7 +15,12 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
-#include "model/metadata.h"
+#include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/delete_records.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/flex_versions.h"
+#include "kafka/protocol/fwd.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "net/connection.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
@@ -57,12 +62,67 @@ public:
       , _client(std::move(client))
       , _gated_mutex{} {}
 
+    /*
+     * Invokes dispatch with the given request type at the max supported level
+     * of the redpanda kafka server.
+     *
+     * TODO: this will go away once the kafka client implements version
+     * negotiation and can track on a per-broker basis the supported version
+     * range.
+     */
+    template<typename T>
+    requires(KafkaApi<typename T::api_type>)
+    ss::future<typename T::api_type::response_type> dispatch(T r) {
+        using type = std::remove_reference_t<std::decay_t<T>>;
+        if constexpr (std::is_same_v<type, offset_fetch_request>) {
+            return dispatch(std::move(r), api_version(4));
+        } else if constexpr (std::is_same_v<type, fetch_request>) {
+            return dispatch(std::move(r), api_version(10));
+        } else if constexpr (std::is_same_v<type, list_offsets_request>) {
+            return dispatch(std::move(r), api_version(3));
+        } else if constexpr (std::is_same_v<type, produce_request>) {
+            return dispatch(std::move(r), api_version(7));
+        } else if constexpr (std::is_same_v<type, offset_commit_request>) {
+            return dispatch(std::move(r), api_version(7));
+        } else if constexpr (std::is_same_v<type, describe_groups_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, heartbeat_request>) {
+            return dispatch(std::move(r), api_version(3));
+        } else if constexpr (std::is_same_v<type, join_group_request>) {
+            return dispatch(std::move(r), api_version(4));
+        } else if constexpr (std::is_same_v<type, sync_group_request>) {
+            return dispatch(std::move(r), api_version(3));
+        } else if constexpr (std::is_same_v<type, leave_group_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, metadata_request>) {
+            return dispatch(std::move(r), api_version(8));
+        } else if constexpr (std::is_same_v<type, find_coordinator_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, list_groups_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, create_topics_request>) {
+            return dispatch(std::move(r), api_version(6));
+        } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
+            return dispatch(std::move(r), api_version(1));
+        } else if constexpr (std::is_same_v<type, delete_records_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<
+                               type,
+                               offset_for_leader_epoch_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
+            return dispatch(std::move(r), api_version(1));
+        } else if constexpr (std::is_same_v<type, describe_configs_request>) {
+            return dispatch(std::move(r), api_version(4));
+        }
+    }
+
     template<typename T, typename Ret = typename T::api_type::response_type>
     requires(KafkaApi<typename T::api_type>)
-    ss::future<Ret> dispatch(T r) {
+    ss::future<Ret> dispatch(T r, api_version version) {
         using api_t = typename T::api_type;
         return _gated_mutex
-          .with([this, r{std::move(r)}]() mutable {
+          .with([this, r{std::move(r)}, version]() mutable {
               vlog(
                 kcwire.debug,
                 "{}Dispatch to node {}: {} req: {}",
@@ -70,16 +130,17 @@ public:
                 _node_id,
                 api_t::name,
                 r);
-              return _client.dispatch(std::move(r)).then([this](Ret res) {
-                  vlog(
-                    kcwire.debug,
-                    "{}Dispatch from node {}: {} res: {}",
-                    *this,
-                    _node_id,
-                    api_t::name,
-                    res);
-                  return res;
-              });
+              return _client.dispatch(std::move(r), version)
+                .then([this](Ret res) {
+                    vlog(
+                      kcwire.debug,
+                      "{}Dispatch from node {}: {} res: {}",
+                      *this,
+                      _node_id,
+                      api_t::name,
+                      res);
+                    return res;
+                });
           })
           .handle_exception_type(
             [this](const kafka_request_disconnected_exception&) {

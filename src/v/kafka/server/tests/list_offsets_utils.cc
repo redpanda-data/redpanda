@@ -29,7 +29,8 @@ kafka_list_offsets_transport::list_offsets(
         req.data.topics[0].partitions.emplace_back(kafka::list_offset_partition{
           .partition_index = pid, .timestamp = ts});
     }
-    auto resp = co_await _transport.dispatch(std::move(req));
+    auto resp = co_await _transport.dispatch(
+      std::move(req), kafka::api_version(3));
     if (resp.data.topics.size() != 1) {
         throw std::runtime_error(
           fmt::format("Expected 1 topic, got {}", resp.data.topics.size()));

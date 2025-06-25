@@ -11,6 +11,7 @@
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/snc_quota_manager.h"
@@ -107,7 +108,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
-        return producer.dispatch(std::move(req));
+        return producer.dispatch(std::move(req), kafka::api_version(7));
     }
 
     ss::future<kafka::produce_response> produce_raw(

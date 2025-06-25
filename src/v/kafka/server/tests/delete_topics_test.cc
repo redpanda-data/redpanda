@@ -84,7 +84,7 @@ public:
           .data
           = {.topics = std::move(topics), .allow_auto_topic_creation = false},
           .list_all_topics = false};
-        return client.dispatch(std::move(md_req)).get();
+        return client.dispatch(std::move(md_req), kafka::api_version(7)).get();
     }
 
     ss::future<kafka::metadata_response> get_all_metadata() {
