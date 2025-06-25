@@ -460,8 +460,12 @@ auto client_pool::acquire_with_timeout(
                     "Lease expired after {}. Shutting down client...",
                     to);
               }
-              probe->register_timeout();
-              client->shutdown();
+              if (probe) {
+                  probe->register_timeout();
+              }
+              if (client) {
+                  client->shutdown();
+              }
           });
     }
     co_return lease;
