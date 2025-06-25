@@ -239,6 +239,7 @@ is_non_compacted_reupload_mode(segment_collector_mode mode) {
     return mode == segment_collector_mode::non_compacted_reupload
            || mode == segment_collector_mode::non_compacted_reupload_v2;
 }
+
 bool is_v2_mode(segment_collector_mode mode) {
     switch (mode) {
     case segment_collector_mode::compacted_reupload:
@@ -251,16 +252,19 @@ bool is_v2_mode(segment_collector_mode mode) {
         return true;
     }
 }
-bool is_v1_mode(segment_collector_mode mode) { return !is_v2_mode(mode); }
+
+[[maybe_unused]] bool is_v1_mode(segment_collector_mode mode) {
+    return !is_v2_mode(mode);
+}
 } // namespace
 
-void segment_collector::collect_segments() {
+bool segment_collector::collect_segments() {
     if (_manifest.size() == 0 && is_reupload_mode(_mode)) {
         vlog(
           archival_log.debug,
           "No segments to collect for ntp {}, manifest empty",
           _manifest.get_ntp());
-        return;
+        return false;
     }
 
     // start_offset < log start due to eviction of segments before
@@ -292,7 +296,7 @@ void segment_collector::collect_segments() {
               _begin_inclusive,
               _log.offsets().start_offset,
               _manifest.get_ntp());
-            return;
+            return false;
         }
     }
 
@@ -312,7 +316,7 @@ void segment_collector::collect_segments() {
               "manifest: for ntp {}. Exiting early.",
               _begin_inclusive,
               _manifest.get_ntp());
-            return;
+            return false;
         }
         break;
     case segment_collector_mode::new_upload:
@@ -325,7 +329,7 @@ void segment_collector::collect_segments() {
               _begin_inclusive,
               _manifest.get_last_offset(),
               _manifest.get_ntp());
-            return;
+            return false;
         }
         break;
     }
@@ -340,7 +344,7 @@ void segment_collector::collect_segments() {
           _begin_inclusive,
           _manifest.get_last_offset(),
           _manifest.get_ntp());
-        return;
+        return false;
     }
 
     if (_target_end_inclusive.has_value()) {
@@ -353,7 +357,7 @@ void segment_collector::collect_segments() {
               _target_end_inclusive.value(),
               _log.offsets().start_offset,
               _manifest.get_ntp());
-            return;
+            return false;
         }
         if (
           is_reupload_mode(_mode)
@@ -365,11 +369,16 @@ void segment_collector::collect_segments() {
               _target_end_inclusive.value(),
               _manifest.get_last_offset(),
               _manifest.get_ntp());
-            return;
+            return false;
         }
     }
 
     do_collect();
+    if (is_reupload_mode(_mode)) {
+        return should_replace_manifest_segment();
+    } else {
+        return segment_ready_for_upload();
+    }
 }
 
 segment_collector::segment_seq segment_collector::segments() {

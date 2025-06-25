@@ -427,7 +427,7 @@ TEST_F(SegmentReuploadFixture, test_make_segment_upload_stream) {
       *get_partition_log(),
       max_upload_size};
 
-    collector.collect_segments();
+    ASSERT_TRUE(collector.collect_segments());
 
     ASSERT_TRUE(collector.should_replace_manifest_segment());
     ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
@@ -459,7 +459,7 @@ TEST_F(SegmentReuploadFixture, test_make_segment_upload_skip_offsets) {
       *get_partition_log(),
       max_upload_size};
 
-    collector.collect_segments();
+    ASSERT_TRUE(collector.collect_segments());
 
     // Both upload boundaries, aligned to the manifest, will fall inside a
     // batch, so upload creation will return skip_offsets
@@ -610,7 +610,7 @@ TEST_F(SegmentReuploadFixture, test_new_segment_upload_fuzz) {
           std::nullopt, /* flush_offset */
         };
 
-        closed_range_collector.collect_segments();
+        ASSERT_TRUE(closed_range_collector.collect_segments());
 
         check_stream(
           closed_range_collector,
@@ -678,7 +678,7 @@ TEST_F(SegmentReuploadFixture, test_new_segment_upload_fuzz) {
           std::nullopt,
         };
 
-        open_range_collector.collect_segments();
+        ASSERT_TRUE(open_range_collector.collect_segments());
         check_stream(
           open_range_collector,
           stream_descriptor{

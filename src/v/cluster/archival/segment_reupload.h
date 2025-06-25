@@ -182,7 +182,7 @@ public:
     ///
     /// \param mode defines what segments should be collected
     ///        compacted or normal.
-    void collect_segments();
+    bool collect_segments();
 
     segment_seq segments();
 
