@@ -544,7 +544,8 @@ class SISettings:
                  before_call_headers: Optional[Callable[[], dict[str,
                                                                  str]]] = None,
                  skip_end_of_test_scrubbing: bool = False,
-                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH):
+                 addressing_style: S3AddressingStyle = S3AddressingStyle.PATH,
+                 cloud_storage_segment_size_target: int = None):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -632,6 +633,7 @@ class SISettings:
         self.cloud_storage_signature_version = cloud_storage_signature_version
         self.before_call_headers = before_call_headers
         self.addressing_style = addressing_style
+        self.cloud_storage_segment_size_target = cloud_storage_segment_size_target
 
         # Allow disabling end of test scrubbing.
         # It takes a long time with lots of segments i.e. as created in scale
@@ -878,6 +880,10 @@ class SISettings:
         # Enable scrubbing in testing unless it was explicitly disabled.
         if 'cloud_storage_enable_scrubbing' not in conf:
             conf['cloud_storage_enable_scrubbing'] = True
+
+        if self.cloud_storage_segment_size_target is not None:
+            conf[
+                'cloud_storage_segment_size_target'] = self.cloud_storage_segment_size_target
 
         return conf
 
