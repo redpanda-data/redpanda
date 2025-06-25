@@ -173,7 +173,7 @@ operator<<(std::ostream& os, const skip_offset_range& skip_range) {
     fmt::print(
       os,
       "skip_offset_range{{begin: {}, end: {}, error: {}}}",
-      skip_range.begin_offset,
+      skip_range.start_offset,
       skip_range.end_offset,
       skip_range.reason);
     return os;
@@ -1021,7 +1021,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
           tail_seek.offset);
         if (is_reupload_mode(_mode)) {
             co_return skip_offset_range{
-              .begin_offset = _begin_inclusive,
+              .start_offset = _begin_inclusive,
               .end_offset = _end_inclusive,
               .reason = candidate_creation_error::offset_inside_batch};
         } else {
@@ -1092,7 +1092,7 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
               _segments.front());
 
             co_return skip_offset_range{
-              .begin_offset = _begin_inclusive,
+              .start_offset = _begin_inclusive,
               .end_offset = _end_inclusive,
               .reason = candidate_creation_error::upload_size_unchanged};
         }
@@ -1138,7 +1138,7 @@ segment_collector::make_upload_candidate_stream(
         vlog(
           archival_log.debug,
           "Skipping offset range: {}-{}, reason: {}",
-          skip.begin_offset,
+          skip.start_offset,
           skip.end_offset,
           skip.reason);
         co_return skip;
@@ -1192,7 +1192,7 @@ segment_collector::make_segment_upload_stream(
         vlog(
           archival_log.debug,
           "Skipping offset range: {}-{}, reason: {}",
-          skip.begin_offset,
+          skip.start_offset,
           skip.end_offset,
           skip.reason);
         co_return skip;
@@ -1283,7 +1283,7 @@ segment_collector::make_segment_upload_stream(
               "decreased as a result of self - compaction ");
             co_await seg_upload->close();
             co_return skip_offset_range{
-              .begin_offset = meta.offsets.base,
+              .start_offset = meta.offsets.base,
               .end_offset = meta.offsets.last,
               .reason = candidate_creation_error::upload_size_unchanged};
         }
