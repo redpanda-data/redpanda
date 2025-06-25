@@ -102,6 +102,10 @@ enum class segment_collector_mode {
     // collect segments for the first time upload
     // may be compacted or non-compacted
     new_upload,
+    compacted_reupload_v2,
+    non_compacted_reupload_v2,
+    // first time upload based backed by async_data_uploader
+    new_upload_v2,
 };
 
 std::ostream& operator<<(std::ostream&, segment_collector_mode);
