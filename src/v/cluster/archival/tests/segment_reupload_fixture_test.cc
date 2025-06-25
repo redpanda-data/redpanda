@@ -303,7 +303,7 @@ public:
     void check_skip(segment_collector& collector, skip_offset_range expected) {
         auto result = try_make_candidate(collector);
         auto skip = get<Skip>(result);
-        ASSERT_EQ(skip.begin_offset, expected.begin_offset);
+        ASSERT_EQ(skip.start_offset, expected.start_offset);
         ASSERT_EQ(skip.end_offset, expected.end_offset);
         ASSERT_EQ(skip.reason, expected.reason);
     }
@@ -466,7 +466,7 @@ TEST_F(SegmentReuploadFixture, test_make_segment_upload_skip_offsets) {
     check_skip(
       collector,
       skip_offset_range{
-        .begin_offset = model::offset{20},
+        .start_offset = model::offset{20},
         .end_offset = model::offset{39},
         .reason = candidate_creation_error::offset_inside_batch,
       });
