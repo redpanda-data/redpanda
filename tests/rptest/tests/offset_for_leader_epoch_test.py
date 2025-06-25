@@ -258,3 +258,53 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
             )
             # Check partition_offsets is a subset of fetched_offsets
             assert fetched_offsets == fetched_offsets | partition_offsets, f"Mismatched offsets for leader epoch {epoch}"
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_leader_epoch_for_offset(self):
+
+        topic = TopicSpec(partition_count=1, replication_factor=3)
+
+        # create test topics
+        self.client().create_topic(topic)
+
+        def produce(msg_count):
+            self.logger.debug(f"Producing {msg_count} messages")
+
+            msg_size = 512
+
+            producer = KgoVerifierProducer(self.test_context, self.redpanda,
+                                           topic.name, msg_size, msg_count,
+                                           self.preallocated_nodes)
+            producer.start()
+            producer.wait()
+
+        admin = Admin(self.redpanda)
+
+        def transfer_leadership():
+            self.logger.debug("Transfering leadership")
+            admin.partition_transfer_leadership("kafka",
+                                                topic=topic.name,
+                                                partition=0)
+
+        n_epochs = 2
+        n_records_per_epoch = 10
+        n_records = n_epochs * n_records_per_epoch
+
+        for _ in range(n_epochs):
+            produce(n_records_per_epoch)
+            transfer_leadership()
+
+        kcl = KCL(self.redpanda)
+
+        def req_list_offests():
+            kcl_res = kcl.list_offsets([topic.name], with_epochs=True)
+            return (bool(kcl_res), kcl_res)
+
+        offsets = wait_until_result(
+            req_list_offests,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Timeout while waiting for list offsets request")[0]
+
+        assert offsets.start_epoch == 1, f"Mismatched epochs for offset 0. Expected '1', got '{offsets.start_epoch}'"
+        assert offsets.end_epoch == n_epochs, f"Mismatched epochs for offset {n_records-1}. Expected '{n_epochs}', got '{offsets.end_epoch}'"

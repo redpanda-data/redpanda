@@ -121,14 +121,14 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           maybe_start_ofs.value(),
-          kafka_partition->leader_epoch());
+          kafka_partition->get_leader_epoch(maybe_start_ofs.value()));
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           offset,
-          kafka_partition->leader_epoch());
+          kafka_partition->get_leader_epoch(offset));
     }
     auto min_offset = kafka_partition->start_offset();
     auto max_offset = model::prev_offset(offset);
@@ -139,7 +139,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           ktp.get_partition(),
           model::timestamp(-1),
           model::offset(-1),
-          kafka_partition->leader_epoch());
+          leader_epoch{-1});
     }
 
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
@@ -151,7 +151,10 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto id = ktp.get_partition();
     if (res) {
         co_return list_offsets_response::make_partition(
-          id, res->time, res->offset, kafka_partition->leader_epoch());
+          id,
+          res->time,
+          res->offset,
+          kafka_partition->get_leader_epoch(res->offset));
     }
     co_return list_offsets_response::make_partition(id, error_code::none);
 }
