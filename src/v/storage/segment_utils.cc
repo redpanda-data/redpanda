@@ -268,23 +268,25 @@ ss::future<size_t> write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
-    size_t cmp_idx_size{0};
-    std::exception_ptr eptr;
+    // integrity verified in `do_detect_compaction_index_state`
+    auto fut = co_await ss::coroutine::as_future(
+      do_write_clean_compacted_index(reader, cfg, resources));
+
     try {
-        // integrity verified in `do_detect_compaction_index_state`
-        cmp_idx_size = co_await do_write_clean_compacted_index(
-          reader, cfg, resources);
+        co_await reader.close();
     } catch (...) {
-        eptr = std::current_exception();
+        auto e = std::current_exception();
+        vlog(
+          gclog.debug,
+          "Caught exception {} while closing compacted_index_reader",
+          e);
     }
 
-    co_await reader.close();
-
-    if (eptr) {
-        std::rethrow_exception(eptr);
+    if (fut.failed()) {
+        std::rethrow_exception(fut.get_exception());
     }
 
-    co_return cmp_idx_size;
+    co_return fut.get();
 }
 
 ss::future<compacted_index::recovery_state>
