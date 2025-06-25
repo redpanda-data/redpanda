@@ -89,6 +89,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/kafka/protocol",
         "//src/v/model",
     ],
 )

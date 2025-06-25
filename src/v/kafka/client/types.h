@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "kafka/protocol/types.h"
 #include "model/record.h"
 
 #include <optional>
@@ -30,4 +31,13 @@ inline constexpr model::node_id consumer_replica_id{-1};
 /// \brief during connection, the node_id isn't known.
 inline constexpr model::node_id unknown_node_id{-1};
 
+/**
+ * Represents a range of supported API versions for a given API key.
+ */
+struct supported_api_versions {
+    api_version min;
+    api_version max;
+
+    bool is_supported(api_version v) const { return v >= min && v <= max; }
+};
 } // namespace kafka::client

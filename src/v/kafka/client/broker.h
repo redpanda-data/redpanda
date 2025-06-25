@@ -15,6 +15,7 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/delete_records.h"
 #include "kafka/protocol/fetch.h"
@@ -166,6 +167,7 @@ public:
     }
 
 private:
+    friend struct broker_factory;
     /// \brief Log the client ID if it exists, otherwise don't log
     friend std::ostream& operator<<(std::ostream& os, const broker& b) {
         if (b._client.client_id().has_value()) {
@@ -173,7 +175,10 @@ private:
         }
         return os;
     }
-
+    void update_supported_versions(api_versions_response);
+    // flat hash map is fine here as the number of supported API versions is
+    // limitted, we do not need to worry about the memory fragmentation
+    absl::flat_hash_map<api_key, supported_api_versions> _supported_versions;
     model::node_id _node_id;
     transport _client;
     // TODO(Ben): allow overlapped requests

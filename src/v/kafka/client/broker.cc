@@ -114,7 +114,48 @@ ss::future<shared_broker_t> broker_factory::create_broker(
       node_id,
       addr.host(),
       addr.port());
+
+    auto reply_f = co_await ss::coroutine::as_future(
+      connected_broker->dispatch(api_versions_request{}, api_version{2}));
+    if (reply_f.failed()) {
+        auto ex = reply_f.get_exception();
+        vlog(
+          _logger->warn,
+          "broker {} - {}:{}, error during requesting api versions: {}",
+          node_id,
+          addr.host(),
+          addr.port(),
+          ex);
+        co_await connected_broker->stop();
+        std::rethrow_exception(ex);
+    }
+
+    connected_broker->update_supported_versions(std::move(reply_f.get()));
+
     co_return connected_broker;
+}
+
+void broker::update_supported_versions(api_versions_response resp) {
+    _supported_versions.clear();
+    _supported_versions.reserve(resp.data.api_keys.size());
+    for (const auto& api : resp.data.api_keys) {
+        vlog(
+          kclog.trace,
+          "broker {}:{} - {} supports API: {}, min_version: {}, max_version: "
+          "{}",
+          this->_client.server_address().host(),
+          this->_client.server_address().port(),
+          this->_node_id,
+          api.api_key,
+          api.min_version,
+          api.max_version);
+        _supported_versions.emplace(
+          api.api_key,
+          supported_api_versions{
+            .min = api_version(api.min_version),
+            .max = api_version(api.max_version),
+          });
+    }
 }
 
 } // namespace kafka::client
