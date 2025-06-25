@@ -84,7 +84,8 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                                     use_transactions=False,
                                     msgs_per_transaction=10,
                                     debug_logs=True,
-                                    trace_logs=True)
+                                    trace_logs=True,
+                                    rate_limit_bps=1 * 1024 * 512)
 
         # Configurable defaults for the consumer
         self.consumer_config = dict(context=self.test_context,
