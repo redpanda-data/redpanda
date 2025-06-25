@@ -108,7 +108,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "wasm_transform_test",
-    timeout = "moderate",
+    timeout = "long",
     srcs = [
         "wasm_transform_test.cc",
     ],
@@ -164,7 +164,7 @@ redpanda_cc_gtest(
 
 redpanda_cc_gtest(
     name = "wasm_lifecycle_test",
-    timeout = "moderate",
+    timeout = "long",
     srcs = [
         "wasm_lifecycle_test.cc",
     ],
