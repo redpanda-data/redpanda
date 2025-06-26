@@ -20,9 +20,10 @@ from functools import cache
 from ducktape.utils.util import wait_until
 from rptest.utils.functional import flat_map
 
-KclPartitionOffset = namedtuple(
-    'KclPartitionOffset',
-    ['broker', 'topic', 'partition', 'start_offset', 'end_offset', 'error'])
+KclPartitionOffset = namedtuple('KclPartitionOffset', [
+    'broker', 'topic', 'partition', 'start_offset', 'start_epoch',
+    'end_offset', 'end_epoch', 'error'
+])
 
 KclPartitionEpochEndOffset = namedtuple('KclPartitionEpochEndOffset', [
     'broker', 'topic', 'partition', 'leader_epoch', 'epoch_end_offset', 'error'
@@ -94,8 +95,19 @@ class KCL:
                         if m['end_offset'] is not None else -1, m['error']))
         return ret
 
-    def list_offsets(self, topics):
+    def list_offsets(self, topics, with_epochs=False):
+        def offset_and_epoch(entry):
+            parts = entry.split('/')
+            if len(parts) == 2:
+                return (int(parts[0]), int(parts[1]))
+            if len(parts) == 1:
+                return (int(parts[0]), -1)
+            raise RuntimeError("Invalid entry in kcl reply: '{entry}'")
+
         cmd = ['misc', 'list-offsets']
+        if with_epochs:
+            cmd += ["--with-epochs"]
+
         if isinstance(topics, list):
             cmd += topics
         else:
@@ -105,14 +117,17 @@ class KCL:
         ret = []
         for l in lines:
             m = re.match(
-                r" *(?P<broker>\d+) +(?P<topic>.+?) +(?P<partition>\d+) +(?P<start>-?\d*?) +(?P<end>-?\d*?) +(?P<error>.*) *",
+                r" *(?P<broker>\d+) +(?P<topic>.+?) +(?P<partition>\d+) +(?P<start>-?\d+(?:/\d+)?) +(?P<end>-?\d+(?:/\d+)?) +(?P<error>.*)",
                 l)
             if m:
+                start_offset, start_epoch = offset_and_epoch(
+                    m['start']) if m['start'] else (-1, -1)
+                end_offset, end_epoch = offset_and_epoch(
+                    m['end']) if m['end'] else (-1, -1)
                 ret.append(
                     KclPartitionOffset(m['broker'], m['topic'],
-                                       int(m['partition']),
-                                       int(m['start']) if m['start'] else -1,
-                                       int(m['end']) if m['end'] else -1,
+                                       int(m['partition']), start_offset,
+                                       start_epoch, end_offset, end_epoch,
                                        m['error']))
         return ret
 
