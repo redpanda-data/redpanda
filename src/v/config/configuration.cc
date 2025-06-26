@@ -4096,7 +4096,9 @@ configuration::configuration()
       "iceberg_default_partition_spec",
       "Default value for the redpanda.iceberg.partition.spec topic property "
       "that determines the partition spec for the Iceberg table corresponding "
-      "to the topic.",
+      "to the topic. If this property is not set and AWS Glue is being used as "
+      "the Iceberg REST catalog, the default value will be overridden by an "
+      "empty partition spec, for compatibility with AWS Glue.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       "(hour(redpanda.timestamp))",
       &validate_iceberg_partition_spec)

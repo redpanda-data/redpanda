@@ -442,9 +442,8 @@ struct coordinator::main_table_schema_provider
 
     ss::sstring
     get_partition_spec(const cluster::topic_metadata& topic_md) const final {
-        return topic_md.get_configuration()
-          .properties.iceberg_partition_spec.value_or(
-            parent.default_partition_spec_());
+        return parent.get_effective_default_partition_spec(
+          topic_md.get_configuration().properties.iceberg_partition_spec);
     }
 
     const coordinator& parent;
@@ -496,7 +495,7 @@ struct coordinator::dlq_table_schema_provider
     }
 
     ss::sstring get_partition_spec(const cluster::topic_metadata&) const final {
-        return parent.default_partition_spec_();
+        return parent.get_effective_default_partition_spec(std::nullopt);
     }
 
     const coordinator& parent;
@@ -827,4 +826,28 @@ coordinator::update_lifecycle_state(
     co_return ss::stop_iteration::no;
 }
 
+ss::sstring coordinator::get_effective_default_partition_spec(
+  const std::optional<ss::sstring>& partition_spec) const {
+    const auto& cfg = config::shard_local_cfg();
+    auto current_spec = partition_spec.value_or(default_partition_spec_());
+
+    bool is_glue = cfg.iceberg_catalog_type()
+                     == config::datalake_catalog_type::rest
+                   && cfg.iceberg_rest_catalog_authentication_mode()
+                        == config::datalake_catalog_auth_mode::aws_sigv4
+                   && cfg.iceberg_rest_catalog_aws_service_name().value_or("")
+                        == "glue";
+    if (
+      is_glue
+      && current_spec == cfg.iceberg_default_partition_spec.default_value()) {
+        // Glue can't partition on nested fields like redpanda.timestamp.
+        vlog(
+          datalake_log.warn,
+          "Overriding default partition spec to '()' for AWS Glue "
+          "compatibility");
+        return "()";
+    }
+
+    return current_spec;
+}
 } // namespace datalake::coordinator

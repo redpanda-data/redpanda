@@ -142,6 +142,11 @@ private:
       std::string_view method_name,
       const table_schema_provider&);
 
+    // Get the effective default partition spec.
+    // This is an AWS Glue compatibility kludge.
+    ss::sstring get_effective_default_partition_spec(
+      const std::optional<ss::sstring>& partition_spec) const;
+
     ss::shared_ptr<coordinator_stm> stm_;
     cluster::topic_table& topic_table_;
     type_resolver& type_resolver_;
