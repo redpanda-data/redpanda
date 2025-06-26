@@ -212,6 +212,43 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
     def _reconfiguration(self, replicas):
         self.reconfigure(new_replicas=replicas, force=False)
 
+    def _cancel_reconfiguration(self):
+        def do_cancel():
+            try:
+                self.redpanda._admin.cancel_partition_move(
+                    topic=self.topic,
+                    partition=0,
+                    node=random.choice(self.redpanda.started_nodes()))
+                return True
+            except requests.exceptions.RetryError:
+                return False
+            except requests.exceptions.ConnectionError:
+                return False
+            except requests.exceptions.HTTPError:
+                return False
+
+        self.redpanda.wait_until(
+            do_cancel,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Unable to cancel reconfiguration for {self.topic}/0")
+
+    def _wait_for_reconfigurations(self):
+        def has_reconfigurations():
+            try:
+                return len(
+                    self.redpanda._admin.list_reconfigurations(
+                        node=random.choice(self.redpanda.started_nodes()))) > 0
+            except:
+                return False
+
+        self.redpanda.wait_until(
+            has_reconfigurations,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Timed out waiting for reconfigurations for {self.topic}/0"
+        )
+
     def _start_consumer(self):
         self.start_consumer()
         # Wait for all consumer offsets partitions to have a stable leadership.
@@ -309,6 +346,74 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         # New group should include the killed node.
         self.redpanda._admin.await_stable_leader(topic=self.topic,
                                                  replication=len(alive) + 1,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
+    @cluster(num_nodes=5)
+    # If cancellation is True, cancels the in progress stuck move and then force reconfigures
+    @matrix(cancellation=[True, False])
+    def test_reconfiguring_in_progress_move(self, cancellation):
+        """
+        Tests that a partition move stuck in progress can be reconfigured. Additionally also checks that a stuck cancellation can be reconfigured."""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        assert alive, "At least one replica should be alive"
+
+        # Issue a regular partition move while the partition is leaderless.
+        # this should be stuck
+        self._reconfiguration(alive)
+        self._wait_for_reconfigurations()
+        if cancellation:
+            # Cancel the stuck move
+            self._cancel_reconfiguration()
+
+        # Randomness here may choose existing replicas or a totally new set of replicas.
+        # Both are interesting cases to test.
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica), core=0))
+            for replica in random.sample(self.redpanda.started_nodes(), 3)
+        ]
+
+        self._force_reconfiguration(new_replicas)
+
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=3,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
+    @cluster(num_nodes=5)
+    def test_reconfiguring_force_reconfiguration(self):
+        """
+        Test ensures that a stuck force reconfiguration can be force reconfigured"""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        # This would never finish
+        self._force_reconfiguration([killed[0]])
+        self._wait_for_reconfigurations()
+
+        new_replica_count = random.choice([1, 3])
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica),
+                         core=0)) for replica in random.sample(
+                             self.redpanda.started_nodes(), new_replica_count)
+        ]
+        self._force_reconfiguration(new_replicas)
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=new_replica_count,
                                                  hosts=self._alive_nodes(),
                                                  timeout_s=self.WAIT_TIMEOUT_S)
 
