@@ -552,6 +552,107 @@ void segment_collector::do_collect() {
     }
 }
 
+bool segment_collector::do_collect_v2() {
+    vassert(
+      !is_reupload_mode(_mode), "do_collect_v2 for new segment mode only");
+    vassert(_end_exclusive.has_value(), "Expected LSO for new segment mode");
+    if (auto maybe_adjusted_start = _log.base_offset_lower_bound(
+          _begin_inclusive);
+        maybe_adjusted_start.has_value()) {
+        _begin_inclusive = std::max(
+          _begin_inclusive, maybe_adjusted_start.value());
+    }
+    if (_begin_inclusive >= _end_exclusive.value()) {
+        vlog(
+          archival_log.debug,
+          "{}: Start offset {} is above committed offset {}, nothing to "
+          "upload",
+          _manifest.get_ntp(),
+          _begin_inclusive,
+          model::prev_offset(_end_exclusive.value()));
+        return false;
+    }
+
+    _end_inclusive = std::min(
+      _target_end_inclusive.value_or(model::offset::max()),
+      model::prev_offset(_end_exclusive.value()));
+
+    auto need_flush = _begin_inclusive
+                      <= _flush_offset.value_or(model::offset::min());
+
+    if (!need_flush) {
+        // If timeboxed uploads are enabled and there is no producer
+        // activity, we can get into a nasty loop where we upload a
+        // segment, add an archival metadata batch, upload a segment
+        // containing that batch, add another archival metadata batch,
+        // etc. This leads to lots of small segments that don't contain
+        // data being uploaded. To avoid it, we check that kafka
+        // (translated) offset increases.
+        auto kafka_start_offset = _log.from_log_offset(_begin_inclusive);
+        auto kafka_lso = _log.from_log_offset(
+          model::next_offset(_end_inclusive));
+        if (kafka_start_offset >= kafka_lso) {
+            vlog(
+              archival_log.debug,
+              "do_collect_v2 for {}: can't find candidate, only "
+              "non-data "
+              "batches to upload (kafka start_offset: {}, kafka "
+              "last_stable_offset: {}) reupload?: {}",
+              _manifest.get_ntp(),
+              kafka_start_offset,
+              kafka_lso,
+              is_reupload_mode(_mode));
+            return false;
+        }
+    }
+
+    vlog(
+      archival_log.debug,
+      "do_collect_v2 for {}: begin_inclusive: {} end_inclusive: {}",
+      _manifest.get_ntp(),
+      _begin_inclusive,
+      _end_inclusive);
+
+    return _begin_inclusive <= _end_inclusive;
+}
+
+bool segment_collector::do_reupload_collect_v2() {
+    vassert(
+      is_reupload_mode(_mode),
+      "do_reupload_collect_v2 is for reupload modes only");
+
+    // NOTE(oren): Consider
+    //   - non-compacted reupload will _always_ have set a target_end_inclusive
+    //   - compacted reupload will _never_ have one
+    //   - maybe a builder interface would be a bit more clear here...
+
+    auto projected_end_inclusive = _target_end_inclusive.value_or(
+      find_replacement_boundary(_mode));
+
+    std::optional<model::offset> last_compacted_offset{};
+    if (is_compacted_reupload_mode(_mode)) {
+        last_compacted_offset = _log.max_compacted_offset(_begin_inclusive);
+
+        if (!last_compacted_offset.has_value()) {
+            vlog(
+              archival_log.debug,
+              "{} No compacted offsets found beyond {}",
+              _manifest.get_ntp(),
+              _begin_inclusive);
+            // TODO(oren): mega jank
+            _end_inclusive = model::prev_offset(_begin_inclusive);
+            return false;
+        }
+    }
+
+    auto end_offset = last_compacted_offset.value_or(projected_end_inclusive);
+
+    _end_inclusive
+      = align_end_offset_to_manifest(end_offset).value_or(_end_inclusive);
+
+    return _end_inclusive >= projected_end_inclusive;
+}
+
 model::offset segment_collector::find_replacement_boundary(
   segment_collector_mode mode) const {
     if (is_reupload_mode(mode)) {
