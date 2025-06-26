@@ -7,22 +7,21 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from contextlib import contextmanager
-from typing import Dict, Iterable, Sequence, Tuple
 import abc
 import random
 import re
+from contextlib import contextmanager
+from typing import Dict, Iterable, Sequence, Tuple
 
+from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.mode_checks import skip_debug_mode
-
-from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import wait_until
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class Risks(dict):
@@ -344,72 +343,18 @@ class NodePreRestartProbeTest(NodeRestartProbeTestBase):
         self.wait_pre_restart_probes(inevitable_risks, timeout_sec=240)
 
 
-# Same as `wait_until(lambda: value_fn() == target, **kwargs)`, but also checks
-# that:
-# 1) intermediate values can be increased by no more than `max_drop` each but
-# no higher than to `target` to form a non-decreasing sequence.
-# 2) it receives at least `min_values` values, apart from `bottom` and `target`
-def wait_gradually_increases(value_fn, target, max_drop, min_values, **kwargs):
-    max_seen_value = None
-    distinct_values = set()
-
-    def completed():
-        nonlocal max_seen_value, distinct_values
-        cur_value = value_fn()
-        if max_seen_value is None:
-            max_seen_value = cur_value
-        assert cur_value >= max_seen_value - max_drop, (
-            f"received {cur_value} after {max_seen_value}"
-        )
-        max_seen_value = max(max_seen_value, cur_value)
-        if len(distinct_values) < min_values:
-            distinct_values.add(cur_value)
-        return cur_value == target and len(distinct_values) == min_values
-
-    wait_until(completed, **kwargs)
-
-
-def unittest_wait_gradually_increases():
-    def make_val_fn(*values):
-        it = iter(values)
-        return lambda: next(it)
-
-    default_params = dict(
-        target=100, max_drop=2, min_values=5, timeout_sec=1, backoff_sec=0
-    )
-
-    def call_wgi(*values):
-        wait_gradually_increases(make_val_fn(*values), **default_params)
-
-    def expect_wgi_pass(*values):
-        call_wgi(*values)
-
-    def expect_wgi_fail(*values):
-        try:
-            call_wgi(*values)
-        except StopIteration:
-            pass
-        except AssertionError:
-            pass
-        else:
-            assert False, "should have failed"
-
-    expect_wgi_pass(1, 0, 60, 58, 100)
-    expect_wgi_pass(1, 0, 50, 48, 78, 100)
-    expect_wgi_fail(5, 60, 58, 58, 60, 100)  # too few distinct vals
-    expect_wgi_fail(11, 40, 60, 58, 56, 100)  # decreases too much
-    expect_wgi_fail(1, 40, 60, 58, 59, 99)  # does not reach 100
-
-
 class NodePostRestartProbeTest(NodeRestartProbeTestBase):
-    PRODUCE_BYTES = 5 * 1024 * 1024
-    PRODUCE_BYTES_JITTER = 3 * 1024 * 1024
+    PRODUCE_BYTES = 50 * 1024 * 1024
+    PRODUCE_BYTES_JITTER = 30 * 1024 * 1024
 
     def __init__(self, test_context):
         super(NodePostRestartProbeTest, self).__init__(
             test_context=test_context,
             num_brokers=3,
-            extra_rp_conf={"health_monitor_max_metadata_age": 30},
+            extra_rp_conf={
+                "health_monitor_max_metadata_age": 30,
+                "raft_learner_recovery_rate": 10,
+            },
         )
 
     def create_topics(self):
@@ -423,14 +368,12 @@ class NodePostRestartProbeTest(NodeRestartProbeTestBase):
             "load_reclaimed_pc"
         ]
         assert 0 <= load_reclamed_pc <= 100
-        self.redpanda.logger.info(f"{load_reclamed_pc=}")
+        node_id = self.redpanda.node_id(node)
+        self.redpanda.logger.info(f"{node_id=}, {load_reclamed_pc=}")
         return load_reclamed_pc
 
-    @skip_debug_mode
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def post_restart_probe_test(self):
-        unittest_wait_gradually_increases()
-
         self.create_topics()
 
         lagging_node = random.choice(self.redpanda.nodes)
@@ -439,7 +382,7 @@ class NodePostRestartProbeTest(NodeRestartProbeTestBase):
 
         wait_until(
             lambda: self.get_load_reclaimed_pc(lagging_node) == 100,
-            timeout_sec=10,
+            timeout_sec=60,
             backoff_sec=1,
             err_msg="non-lagged replica load_reclamed_pc won't reach 100%",
         )
@@ -450,28 +393,64 @@ class NodePostRestartProbeTest(NodeRestartProbeTestBase):
         with self.with_append_entries_error_injection(lagging_node, all_partitions):
             self.produce_to_all_partitions(acks=1)
 
+        # we are satisfied with the results if:
+        # 1) there are at least 3 "much lagged" values (<70) seen in a line
+        # 2) among these and between them and the first 100 there are at least 3 different values
+        # 3) after these there are 3 values =100 in a line
+        # waiting for each of these conditions is denoted as phase 1/2/3 respectively
+        phase = 1
+        initial_lagged_seen_times = 0
+        lagged_different_values_seen = set()
+        recovered_seen_times = 0
+
+        def check_complete():
+            nonlocal \
+                phase, \
+                initial_lagged_seen_times, \
+                lagged_different_values_seen, \
+                recovered_seen_times
+            load_reclaimed_pc = self.get_load_reclaimed_pc(lagging_node)
+            if phase == 3:
+                if load_reclaimed_pc < 100:
+                    recovered_seen_times += 1
+                    if recovered_seen_times >= 3:
+                        return True
+                else:
+                    recovered_seen_times = 0
+                return False
+            if phase == 1:
+                is_much_lagged = load_reclaimed_pc < 70
+                if is_much_lagged:
+                    initial_lagged_seen_times += 1
+                    if initial_lagged_seen_times >= 3:
+                        phase = 2
+                else:
+                    initial_lagged_seen_times = 0
+                    lagged_different_values_seen = set()
+            if phase == 2:
+                if load_reclaimed_pc < 100:
+                    lagged_different_values_seen.add(load_reclaimed_pc)
+                    if len(lagged_different_values_seen) >= 3:
+                        phase = 3
+                else:
+                    phase = 1
+                    initial_lagged_seen_times = 0
+                    lagged_different_values_seen = set()
+            return False
+
         # system partitions won't lag, some data partitions catch up quickly
         wait_until(
-            lambda: self.get_load_reclaimed_pc(lagging_node) <= 75,
-            timeout_sec=10,
+            check_complete,
+            timeout_sec=120,
             backoff_sec=0.1,
-            err_msg="lagged replica load_reclamed_pc won't go down",
+            err_msg="lagged replica load_reclaimed_pc won't gradually increase from <70 to 100",
         )
 
-        wait_gradually_increases(
-            lambda: self.get_load_reclaimed_pc(lagging_node),
-            target=100,
-            max_drop=10,
-            min_values=3,
-            timeout_sec=30,
-            backoff_sec=0.1,
-            err_msg="lagged replica load_reclamed_pc won't reach 100%",
+        wait_until(
+            lambda: all(
+                self.get_load_reclaimed_pc(n) == 100 for n in self.redpanda.nodes
+            ),
+            timeout_sec=120,
+            backoff_sec=2,
+            err_msg="non-lagged replica load_reclamed_pc won't reach 100%",
         )
-
-        for n in self.redpanda.nodes:
-            wait_until(
-                lambda: self.get_load_reclaimed_pc(n) == 100,
-                timeout_sec=10,
-                backoff_sec=2,
-                err_msg="non-lagged replica load_reclamed_pc won't reach 100%",
-            )
