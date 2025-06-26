@@ -156,6 +156,14 @@ cloud_storage::segment_meta convert_segment_meta(
   const cluster::partition& parent,
   model::initial_revision_id rev,
   model::term_id archiver_term) {
+    auto delta = strm.start_offset
+                 - model::offset_cast(
+                   parent.log()->from_log_offset(strm.start_offset));
+
+    auto other = parent.log()->offset_delta(strm.start_offset);
+
+    vassert(
+      delta == other, "Deltas don't match: old: {} new: {}", delta, other);
     return cloud_storage::segment_meta{
       .is_compacted = strm.is_compacted,
       .size_bytes = strm.size,
@@ -163,10 +171,7 @@ cloud_storage::segment_meta convert_segment_meta(
       .committed_offset = strm.end_offset,
       .base_timestamp = strm.min_timestamp,
       .max_timestamp = strm.max_timestamp,
-      // NOTE(oren): old code uses base - from_log_offset(base)
-      // which is equivalent to base - (base - delta) = delta
-      // so here we just use delta. Seems fine?
-      .delta_offset = parent.log()->offset_delta(strm.start_offset),
+      .delta_offset = delta,
       .ntp_revision = rev,
       .archiver_term = archiver_term,
       .segment_term = strm.term,
