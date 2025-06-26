@@ -546,8 +546,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
 
         fi = None
         if enable_failures:
-            fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
-                                                 lock)
+            fi = FailureInjectorBackgroundThread(
+                self.redpanda,
+                self.logger,
+                max_suspend_duration_seconds=4,
+                lock=lock)
             fi.start()
 
         # main workload loop
