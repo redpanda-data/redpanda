@@ -418,16 +418,33 @@ ss::future<download_result> remote::download_stream(
 
         switch (resp.error()) {
         case cloud_storage_clients::error_outcome::retry:
-            vlog(
-              ctxlog.debug,
-              "Downloading {} from {}, {} backoff required",
-              stream_label,
-              bucket,
-              std::chrono::duration_cast<std::chrono::milliseconds>(
-                permit.delay));
-            transfer_details.on_backoff();
-            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
-            permit = fib.retry();
+            if (_as.abort_requested()) {
+                // When the remote is stopped we may still get the 'timeout'
+                // error from the http client. This error is interpreted
+                // as a retriable error by the cloud_storage_client.
+                // In order to distinguish between the two cases (shutdown vs
+                // timeout) the state of the abort_source is checked.
+                vlog(
+                  ctxlog.debug,
+                  "Downloading {} from {}, skipping backoff because of the "
+                  "shutdown",
+                  stream_label,
+                  bucket);
+                result = download_result::timedout;
+                break;
+            } else {
+                vlog(
+                  ctxlog.debug,
+                  "Downloading {} from {}, {} backoff required",
+                  stream_label,
+                  bucket,
+                  std::chrono::duration_cast<std::chrono::milliseconds>(
+                    permit.delay));
+                transfer_details.on_backoff();
+                co_await ss::sleep_abortable(
+                  permit.delay, fib.root_abort_source());
+                permit = fib.retry();
+            }
             break;
         case cloud_storage_clients::error_outcome::operation_not_supported:
             [[fallthrough]];
