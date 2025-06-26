@@ -3075,6 +3075,16 @@ configuration::configuration()
       "when this limit is reached new files are written to disk.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       64_MiB)
+  , cloud_storage_segment_upload_mode(
+      *this,
+      "cloud_storage_segment_upload_mode",
+      "TODO",
+      {.needs_restart = needs_restart::no,
+       .example = "v1",
+       .visibility = visibility::tunable},
+      model::cloud_storage_segment_upload_mode::v1,
+      {model::cloud_storage_segment_upload_mode::v1,
+       model::cloud_storage_segment_upload_mode::v2})
   , superusers(
       *this,
       "superusers",

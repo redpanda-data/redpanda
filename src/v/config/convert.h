@@ -449,6 +449,30 @@ struct convert<model::cloud_storage_chunk_eviction_strategy> {
 };
 
 template<>
+struct convert<model::cloud_storage_segment_upload_mode> {
+    using type = model::cloud_storage_segment_upload_mode;
+
+    static constexpr auto acceptable_values = std::to_array({"v1", "v2"});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::ranges::find(acceptable_values, value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match("v1", model::cloud_storage_segment_upload_mode::v1)
+                .match("v2", model::cloud_storage_segment_upload_mode::v2);
+        return true;
+    }
+};
+
+template<>
 struct convert<pandaproxy::schema_registry::schema_id_validation_mode> {
     using type = pandaproxy::schema_registry::schema_id_validation_mode;
 
