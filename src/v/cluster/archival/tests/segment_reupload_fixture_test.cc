@@ -9,40 +9,31 @@
  */
 
 #include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/remote_path_provider.h"
-#include "cloud_storage/types.h"
-#include "cluster/archival/adjacent_segment_merger.h"
-#include "cluster/archival/archival_policy.h"
 #include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/tests/async_data_uploader_fixture.h"
+#include "cluster/partition.h"
 #include "kafka/data/record_batcher.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/offset_interval.h"
-#include "model/record.h"
-#include "model/timeout_clock.h"
-#include "random/generators.h"
-#include "storage/log_manager.h"
-#include "storage/record_batch_utils.h"
-#include "storage/tests/utils/disk_log_builder.h"
+#include "storage/types.h"
 #include "test_utils/archival.h"
+#include "test_utils/async.h"
 #include "test_utils/scoped_config.h"
-#include "test_utils/tmp_dir.h"
 
-#include <seastar/core/loop.hh>
-#include <seastar/core/semaphore.hh>
-#include <seastar/util/defer.hh>
+#include <seastar/core/shared_ptr.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <gtest/gtest.h>
 
-using namespace archival;
+#include <vector>
 
-inline ss::logger test_log("segment-reupload-fixture");
+using namespace archival;
 
 namespace {
 
-static constexpr size_t max_upload_size{4096_KiB};
-static constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
+constexpr size_t max_upload_size{4096_KiB};
+constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
 
 const auto manifest_namespace = model::ns("test-ns");    // NOLINT
 const auto manifest_topic = model::topic("test-topic");  // NOLINT
@@ -51,6 +42,13 @@ const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_namespace,
   manifest_topic,
   manifest_partition);
+const auto manifest_revision = model::initial_revision_id(1); // NOLINT
+const ss::sstring manifest_url = ssx::sformat(                // NOLINT
+  "/10000000/meta/{}_{}/manifest.bin",
+  manifest_ntp.path(),
+  manifest_revision());
+
+ss::logger test_log("segment-reupload-fixture");
 
 constexpr std::string_view manifest = R"json({
     "version": 1,
@@ -83,6 +81,118 @@ constexpr std::string_view manifest = R"json({
     }
 })json";
 
+static constexpr std::string_view manifest_with_gaps = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 59,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "max_timestamp": 1234567890
+        },
+        "50-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 50,
+            "committed_offset": 59,
+            "max_timestamp": 1234567890
+        }
+    }
+})json";
+
+static constexpr std::string_view test_manifest = R"json({
+  "version": 2,
+  "namespace": "test-ns",
+  "topic": "test-topic",
+  "partition": 1,
+  "revision": 21,
+  "last_offset": 211,
+  "segments": {
+    "0-1-v1.log": {
+      "base_offset": 0,
+      "committed_offset": 1,
+      "is_compacted": false,
+      "size_bytes": 200,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389191244,
+      "max_timestamp": 1686389191244,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "2-2-v1.log": {
+      "base_offset": 2,
+      "committed_offset": 103,
+      "is_compacted": false,
+      "size_bytes": 98014783,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389202577,
+      "max_timestamp": 1686389230060,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "104-2-v1.log": {
+      "base_offset": 104,
+      "committed_offset": 113,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "113-2-v1.log": {
+      "base_offset": 113,
+      "committed_offset": 115,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "116-2-v1.log": {
+      "base_offset": 116,
+      "committed_offset": 211,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    }
+  }
+})json";
+
 cloud_storage::partition_manifest
 get_partition_manifest(std::string_view json = manifest) {
     cloud_storage::partition_manifest m;
@@ -91,9 +201,25 @@ get_partition_manifest(std::string_view json = manifest) {
     return m;
 }
 
+struct single_key_record_generator {
+    std::vector<tests::kv_t> operator()() {
+        std::vector<tests::kv_t> batch;
+        for (size_t i = 0; i < records_per_batch; i++) {
+            vlog(test_log.info, "Used key {}", key);
+            auto record = random_generators::gen_alphanum_string(record_size);
+            batch.emplace_back(key, std::move(record));
+        }
+        return batch;
+    }
+    ss::sstring key{"abcd"};
+    size_t record_size{1000};
+    size_t records_per_batch{10};
+    std::optional<int> key_space_size;
+};
+
 class SegmentReuploadFixture
   : public async_data_uploader_fixture
-  , public ::testing::Test {
+  , public ::testing::TestWithParam<model::cloud_storage_segment_upload_mode> {
 public:
     struct log_spec {
         model::offset start_offset{0};
@@ -107,15 +233,28 @@ public:
 
     static constexpr log_spec default_spec() { return log_spec{}; }
 
+    bool is_v2() const {
+        return GetParam() == model::cloud_storage_segment_upload_mode::v2;
+    }
+
     segment_collector_mode new_upload() const {
+        if (is_v2()) {
+            return segment_collector_mode::new_upload_v2;
+        }
         return segment_collector_mode::new_upload;
     }
 
     segment_collector_mode compacted_reupload() const {
+        if (is_v2()) {
+            return segment_collector_mode::compacted_reupload_v2;
+        }
         return segment_collector_mode::compacted_reupload;
     }
 
     segment_collector_mode non_compacted_reupload() const {
+        if (is_v2()) {
+            return segment_collector_mode::non_compacted_reupload_v2;
+        }
         return segment_collector_mode::non_compacted_reupload;
     }
 
@@ -318,21 +457,25 @@ public:
     void check_stream(
       segment_collector& collector,
       stream_descriptor expected,
-      bool compare_versions = true) {
+      bool compare = true) {
         auto result = try_make_candidate(collector);
         auto stream = get<Stream>(result);
+        auto close = ss::defer([&stream]() mutable { stream.close().get(); });
         ASSERT_EQ(stream.start_offset, expected.start_offset);
         ASSERT_EQ(stream.end_offset, expected.end_offset);
         ASSERT_EQ(stream.is_compacted, expected.is_compacted);
         expected.check_size(stream.size);
-
-        if (compare_versions) {
+        if (!is_v2() && compare) {
             result = collector
                        .make_upload_candidate_stream(segment_lock_timeout)
                        .get();
             auto old_stream = get<Stream>(result);
             compare_streams(stream, old_stream);
+        } else {
+            auto d = read_stream(stream);
+            ASSERT_EQ(d.size_bytes(), stream.size);
         }
+        close.cancel();
     }
 
     void
@@ -345,6 +488,9 @@ public:
         auto range_size
           = get_partition_log()->offset_range_size(start, end).get();
         vassert(range_size.has_value(), "offset_range_size failed");
+        vassert(
+          !range_size.value().boundary_in_batch,
+          "Range boundary unexpectedly inside batch");
         return range_size.value().on_disk_size;
     }
 
@@ -382,20 +528,25 @@ public:
 
         std::vector<iobuf> data;
         for (auto s : std::array{&s1, &s2}) {
-            iobuf d;
-            auto is = s->create_input_stream();
-            while (!is.eof()) {
-                auto buf = is.read().get();
-                if (buf.empty()) {
-                    break;
-                }
-                d.append(std::move(buf));
-            }
-            is.close().get();
+            auto d = read_stream(*s);
             ASSERT_EQ(d.size_bytes(), s->size);
             data.push_back(std::move(d));
         }
         ASSERT_EQ(data[0], data[1]);
+    }
+
+    iobuf read_stream(segment_collector_stream& s) {
+        iobuf d;
+        auto is = s.create_input_stream();
+        while (!is.eof()) {
+            auto buf = is.read().get();
+            if (buf.empty()) {
+                break;
+            }
+            d.append(std::move(buf));
+        }
+        is.close().get();
+        return d;
     }
 
     ss::gate& gate() { return _gate; }
@@ -411,7 +562,7 @@ private:
 };
 } // namespace
 
-TEST_F(SegmentReuploadFixture, test_make_segment_upload_stream) {
+TEST_P(SegmentReuploadFixture, test_make_segment_upload_stream) {
     populate_log(log_spec{
       .start_offset = model::offset{10},
       .num_segments = 4,
@@ -443,7 +594,7 @@ TEST_F(SegmentReuploadFixture, test_make_segment_upload_stream) {
       });
 }
 
-TEST_F(SegmentReuploadFixture, test_make_segment_upload_skip_offsets) {
+TEST_P(SegmentReuploadFixture, test_make_segment_upload_skip_offsets) {
     populate_log(log_spec{
       .start_offset = model::offset{15},
       .num_segments = 3,
@@ -472,6 +623,7 @@ TEST_F(SegmentReuploadFixture, test_make_segment_upload_skip_offsets) {
       });
 }
 
+/// Collect all batch boundaries
 struct consumer {
     ss::future<ss::stop_iteration> operator()(model::record_batch b) noexcept {
         auto interval = model::bounded_offset_interval::checked(
@@ -490,7 +642,7 @@ struct consumer {
     std::vector<size_t>* running_sum;
 };
 
-TEST_F(SegmentReuploadFixture, test_new_segment_upload_fuzz) {
+TEST_P(SegmentReuploadFixture, test_new_segment_upload_fuzz) {
     cloud_storage::partition_manifest m(
       manifest_ntp, model::initial_revision_id{0});
 
@@ -690,3 +842,1129 @@ TEST_F(SegmentReuploadFixture, test_new_segment_upload_fuzz) {
           true);
     }
 }
+
+TEST_P(SegmentReuploadFixture, test_segment_collection) {
+    populate_log(log_spec{
+      .start_offset = model::offset{5},
+      .num_segments = 4,
+      .num_batches = 15,
+      .target_max_collectable = model::offset{45},
+    });
+
+    auto m = get_partition_manifest();
+
+    auto part = get_test_partition();
+
+    archival::segment_collector collector{
+      compacted_reupload(), model::offset{4}, m, *part->log(), max_upload_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    // We should collect some compacted data, with begin and end offsets aligned
+    // to the partition manifest
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{39});
+    ASSERT_EQ(collector.segments().size(), 0);
+}
+
+TEST_P(SegmentReuploadFixture, test_start_ahead_of_manifest) {
+    populate_log(log_spec{
+      .start_offset = model::offset{0},
+      .num_segments = 1,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{0},
+      .records_per_batch = 10,
+    });
+
+    auto m = get_partition_manifest();
+
+    {
+        // start ahead of manifest end, no collection happens.
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{400},
+          m,
+          *get_partition_log(),
+          max_upload_size};
+
+        ASSERT_TRUE(!collector.collect_segments());
+
+        ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    }
+
+    {
+        // start at manifest end. the collector will advance it first to prevent
+        // overlap. no collection happens.
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{39},
+          m,
+          *get_partition_log(),
+          max_upload_size};
+
+        ASSERT_TRUE(!collector.collect_segments());
+
+        ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    }
+}
+
+TEST_P(SegmentReuploadFixture, test_empty_manifest) {
+    cloud_storage::partition_manifest m{};
+
+    populate_log();
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{2},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(!collector.collect_segments());
+
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+}
+
+TEST_P(
+  SegmentReuploadFixture,
+  test_short_compacted_segment_inside_manifest_segment) {
+    auto m = get_partition_manifest();
+    // segment [12-14] lies inside manifest segment [10-19]. start offset 1 is
+    // adjusted to start of the local log 12. Since this offset is in the middle
+    // of a manifest segment, advance it again to the beginning of the next
+    // manifest segment: 20. There's no local segment containing that
+    // offset,so no segments are collected.
+    populate_log(log_spec{
+      .start_offset = model::offset{12},
+      .num_segments = 1,
+      .num_batches = 2,
+      .target_max_collectable = model::offset{14},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{1},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(!collector.collect_segments());
+
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    check_err(collector, candidate_creation_error::no_segments_collected);
+}
+
+TEST_P(
+  SegmentReuploadFixture,
+  test_compacted_segment_aligned_with_manifest_segment) {
+    auto m = get_partition_manifest();
+    populate_log(log_spec{
+      .start_offset = model::offset{10},
+      .num_segments = 4,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{20},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{1},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    // we never actually ran compaction, just marked the segments as such, so
+    // the result is a skip_range
+    check_skip(
+      collector,
+      skip_offset_range{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{19},
+        .reason = candidate_creation_error::upload_size_unchanged});
+}
+
+TEST_P(
+  SegmentReuploadFixture,
+  test_short_compacted_segment_aligned_with_manifest_segment) {
+    auto m = get_partition_manifest();
+    // compacted segment start aligned with manifest segment start, but segment
+    // is too short.
+    populate_log(log_spec{
+      .start_offset = model::offset{10},
+      .num_segments = 1,
+      .num_batches = 5,
+      .target_max_collectable = model::offset{15},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(!collector.collect_segments());
+
+    ASSERT_EQ(false, collector.should_replace_manifest_segment());
+    check_err(collector, candidate_creation_error::no_segments_collected);
+}
+
+TEST_P(
+  SegmentReuploadFixture,
+  test_many_compacted_segments_make_up_to_manifest_segment) {
+    auto m = get_partition_manifest();
+    populate_log(log_spec{
+      .start_offset = model::offset{10},
+      .num_segments = 5,
+      .num_batches = 3,
+      .target_max_collectable = model::offset{20},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{19});
+
+    check_skip(
+      collector,
+      skip_offset_range{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{19},
+        .reason = candidate_creation_error::upload_size_unchanged,
+      });
+}
+
+TEST_P(
+  SegmentReuploadFixture, test_compacted_segment_larger_than_manifest_segment) {
+    auto m = get_partition_manifest();
+    populate_log(log_spec{
+      .start_offset = model::offset{8},
+      .num_segments = 1,
+      .num_batches = 20,
+      .target_max_collectable = model::offset{28},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{2},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    // Begin and end markers are aligned to manifest segment.
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+    ASSERT_EQ(collector.end_inclusive(), model::offset{19});
+
+    check_skip(
+      collector,
+      skip_offset_range{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{19},
+        .reason = candidate_creation_error::upload_size_unchanged,
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_collect_capped_by_size) {
+    auto m = get_partition_manifest();
+
+    populate_log(log_spec{
+      .start_offset = model::offset{5},
+      .num_segments = 6,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{45},
+    });
+
+    // get size on disk from beginning of manifest to end of the third segment
+    // note that this is not the last compacted offset in the log
+    auto range_size = get_partition_log()
+                        ->offset_range_size(
+                          model::offset{10}, model::offset{34})
+                        .get();
+
+    ASSERT_TRUE(range_size.has_value());
+    ASSERT_TRUE(!range_size.value().boundary_in_batch);
+
+    auto max_size = range_size.value().on_disk_size;
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    // we should  clamp to the end of the second segment in the
+    // manifest based on our configured max size
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{29},
+        .is_compacted = true,
+        .check_size = [max_size](size_t s) { ASSERT_LT(s, max_size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_no_compacted_segments) {
+    auto m = get_partition_manifest();
+
+    populate_log(log_spec{
+      .start_offset = model::offset{5},
+      .num_segments = 6,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{0},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{5},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(!collector.collect_segments());
+    ASSERT_TRUE(!collector.should_replace_manifest_segment());
+
+    check_err(collector, candidate_creation_error::no_segments_collected);
+}
+
+TEST_P(SegmentReuploadFixture, test_collected_segments_completely_cover_gap_1) {
+    auto m = get_partition_manifest(manifest_with_gaps);
+
+    // The manifest has gap from 20-29. It will be replaced by re-uploaded
+    // data. The re-upload will end at the gap boundary due to adjustment of
+    // end offset.
+    populate_log(log_spec{
+      .start_offset = model::offset{5},
+      .num_segments = 6,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{45},
+    });
+
+    // get size on disk from beginning of manifest to end of the third
+    // segment
+    auto max_size = get_range_size(model::offset{10}, model::offset{34});
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    // Collection start aligned to manifest start at 10
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{29},
+        .is_compacted = true,
+        .check_size = [max_size](size_t s) { ASSERT_LE(s, max_size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_collected_segments_completely_cover_gap_2) {
+    auto m = get_partition_manifest(manifest_with_gaps);
+
+    // Re-uploaded segments completely cover gap.
+    populate_log(log_spec{
+      .start_offset = model::offset{10},
+      .num_segments = 6,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{50},
+    });
+
+    // get size on disk from beginning of manifest to end of the third
+    // segment
+
+    auto max_size = get_range_size(model::offset{10}, model::offset{39});
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    // Collection start aligned to manifest start at 10
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{10});
+
+    // And the size requirement winds us back to the end of the third segment,
+    // as expected
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{39},
+        .is_compacted = true,
+        .check_size = [max_size](size_t s) { ASSERT_EQ(s, max_size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_compacted_segment_after_manifest_start) {
+    auto m = get_partition_manifest();
+
+    // manifest start: 10, compacted segment start: 15, search start: 0
+    // begin offset will be realigned to end of segment 10-19 to avoid overlap.
+    populate_log(log_spec{
+      .start_offset = model::offset{15},
+      .num_segments = 3,
+      .num_batches = 30,
+      .target_max_collectable = model::offset{45},
+    });
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      max_upload_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{20});
+
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{20},
+        .end_offset = model::offset{39},
+        .is_compacted = true,
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_upload_candidate_generation) {
+    auto m = get_partition_manifest();
+
+    populate_log(log_spec{
+      .start_offset = model::offset{5},
+      .num_segments = 6,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{45},
+    });
+
+    // size of first three segments on disk, aligned to start of first manifest
+    // segment
+    auto max_size = get_range_size(model::offset{10}, model::offset{34});
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{5},
+      m,
+      *get_partition_log(),
+      max_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{29},
+        .is_compacted = true,
+        .check_size = [max_size](size_t s) { ASSERT_LE(s, max_size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_upload_aligned_to_non_existent_offset) {
+    auto m = get_partition_manifest();
+
+    populate_log(
+      log_spec{
+        .start_offset = model::offset{0},
+        .num_segments = 6,
+        .num_batches = 15,
+        .target_max_collectable = model::offset{0},
+        .roll_last_segment = false,
+      },
+      single_key_record_generator{},
+      model::cleanup_policy_bitflags::compaction);
+
+    auto size_before = get_range_size(model::offset{10}, model::offset{39});
+
+    // compact up to the end of the fourth segment
+    // leaving the last two untouched
+    run_disk_log_housekeeping(model::offset{60});
+
+    auto max_size = get_range_size(model::offset{10}, model::offset{39});
+
+    ASSERT_EQ(get_partition_log()->segments().size(), 3);
+    ASSERT_LT(max_size, size_before);
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{5},
+      m,
+      *get_partition_log(),
+      max_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{10},
+        .end_offset = model::offset{39},
+        .is_compacted = true,
+        .check_size = [max_size](size_t s) { ASSERT_EQ(s, max_size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_same_size_reupload_skipped) {
+    // 'segment_collector' should not propose the re-upload
+    // of a segment if the compacted size is equal to
+    // the size of the segment in the manifest. In that case,
+    // the resulting addresable name in cloud storage would be the
+    // same for the segment before and after compaction. This would
+    // result in the deletion of the segment.
+    //
+    // This test checks the invariant above.
+
+    populate_log(log_spec{
+      .start_offset = model::offset{2},
+      .num_segments = 1,
+      .num_batches = 1,
+      .target_max_collectable = model::offset{4},
+      .records_per_batch = 2,
+    });
+
+    auto total_size = get_range_size(model::offset{2}, model::offset{3});
+
+    cloud_storage::partition_manifest m{
+      manifest_ntp, model::initial_revision_id{1}};
+    m.add(
+      segment_name("2-1-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = total_size,
+        .base_offset = model::offset(2),
+        .committed_offset = model::offset(3),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    {
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          total_size};
+
+        ASSERT_TRUE(collector.collect_segments());
+        ASSERT_EQ(collector.begin_inclusive(), model::offset{2});
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+        check_skip(
+          collector,
+          skip_offset_range{
+            .start_offset = model::offset{2},
+            .end_offset = model::offset{3},
+            .reason = candidate_creation_error::upload_size_unchanged,
+          });
+    }
+
+    produce_data(1, 1, random_records_generator{}, true /* roll segment */);
+
+    ASSERT_EQ(get_partition_log()->segment_count(), 3);
+
+    // Mark the new segment as having completed self compaction
+    // and collect for re-upload again. Again, the upload candidate
+    // should be a no-op since the reupload of the two local segments
+    // results in a segment of the same size as the one that should be replaced.
+    get_segment(1)->mark_as_compacted_segment();
+    get_segment(1)->index().maybe_set_self_compact_timestamp(
+      model::timestamp::now());
+    get_segment(1)->index().maybe_set_clean_compact_timestamp(
+      model::timestamp::now());
+
+    total_size = get_range_size(model::offset{2}, model::offset{5});
+
+    m = cloud_storage::partition_manifest(
+      manifest_ntp, model::initial_revision_id{1});
+    m.add(
+      segment_name("2-1-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = total_size,
+        .base_offset = model::offset(2),
+        .committed_offset = model::offset(5),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    archival::segment_collector collector{
+      compacted_reupload(),
+      model::offset{0},
+      m,
+      *get_partition_log(),
+      total_size};
+
+    ASSERT_TRUE(collector.collect_segments());
+    ASSERT_EQ(collector.begin_inclusive(), model::offset{2});
+    ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+    check_skip(
+      collector,
+      skip_offset_range{
+        .start_offset = model::offset{2},
+        .end_offset = model::offset{5},
+        .reason = candidate_creation_error::upload_size_unchanged,
+      });
+}
+
+// TODO(oren): what is this actually testing?
+TEST_P(SegmentReuploadFixture, test_do_not_reupload_self_concatenated) {
+    populate_log(log_spec{
+      .start_offset = model::offset{1000},
+      .num_segments = 3,
+      .num_batches = 1000,
+      .target_max_collectable = model::offset{2000},
+    });
+
+    auto seg_size = get_range_size(model::offset{1000}, model::offset{1999});
+    cloud_storage::partition_manifest m(
+      manifest_ntp, model::initial_revision_id{1});
+    m.add(
+      segment_name("1000-1999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(1000),
+        .committed_offset = model::offset(1999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("2000-2999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(2000),
+        .committed_offset = model::offset(2999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("3000-3999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(3000),
+        .committed_offset = model::offset(3999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    truncate_log(model::offset(3000));
+
+    {
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          seg_size * 10};
+
+        ASSERT_TRUE(!collector.collect_segments());
+        ASSERT_TRUE(!collector.should_replace_manifest_segment());
+    }
+}
+
+TEST_P(SegmentReuploadFixture, test_do_not_reupload_prefix_truncated) {
+    populate_log(log_spec{
+      .start_offset = model::offset{0},
+      .num_segments = 3,
+      .num_batches = 2,
+      .target_max_collectable = model::offset{3000},
+      .records_per_batch = 500,
+    });
+
+    // Set up our manifest to look as if our local data is a compacted version
+    // of what's in the cloud.
+    auto seg_size = get_segment(0)->size_bytes();
+    cloud_storage::partition_manifest m(
+      manifest_ntp, model::initial_revision_id{1});
+    m.add(
+      segment_name("0-499-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(499),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("500-999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(500),
+        .committed_offset = model::offset(999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("1000-1999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(1000),
+        .committed_offset = model::offset(1999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("2000-2999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(2000),
+        .committed_offset = model::offset(2999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    // Prefix truncate without aligning to a segment boundary, a la
+    // delete-records.
+    truncate_log(model::offset{100});
+
+    {
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          seg_size * 10};
+
+        // Since we can't replace offsets starting at 0, the first remote
+        // segment isn't eligible for reupload and we should start from the next
+        // segment.
+        ASSERT_TRUE(collector.collect_segments());
+        ASSERT_EQ(collector.begin_inclusive(), model::offset{500});
+
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{500},
+            .end_offset = model::offset{2999},
+            .is_compacted = true,
+          });
+    }
+
+    {
+        // Try collecting from the middle of a local segment that happens to
+        // align with our manifest. The start offset of the upload candidate
+        // should be aligned with our manifest. Same idea as above.
+        archival::segment_collector collector{
+          compacted_reupload(),
+          model::offset{500},
+          m,
+          *get_partition_log(),
+          seg_size * 10};
+
+        // Since we can't replace offsets starting at 0, the first remote
+        // segment isn't eligible for reupload and we should start from the next
+        // segment.
+        ASSERT_TRUE(collector.collect_segments());
+        ASSERT_EQ(collector.begin_inclusive(), model::offset{500});
+
+        ASSERT_TRUE(collector.should_replace_manifest_segment());
+
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{500},
+            .end_offset = model::offset{2999},
+            .is_compacted = true,
+          });
+    }
+}
+
+TEST_P(SegmentReuploadFixture, test_adjacent_segment_collection) {
+    /*
+         +-----------------------------------++------------------------------+
+ Local   |2                               115||116                        211|
+         +-----------------------------------++------------------------------+
+         +----------++----------++-----------++------------------------------+
+ Cloud   |2      103||104    113||113     115||116                        211|
+         +----------++----------++-----------++------------------------------+
+    */
+
+    populate_log(log_spec{
+      .start_offset = model::offset{0},
+      .num_segments = 1,
+      .num_batches = 2,
+      .target_max_collectable = model::offset{0},
+      .records_per_batch = 1,
+    });
+
+    // TODO(oren): there's a difference in behavior here between old and new if
+    // the batch boundaries don't align. i.e. if _begin_inclusive lies in a
+    // batch the old version gives us a start offset of 3 or something, the
+    // start of the batch. dunno what's going on here.
+    random_records_generator gen{};
+    produce_data(1, 102, gen, false /* roll segment */);
+    produce_data(1, 12, gen, true /* roll segment */);
+    produce_data(1, 96, gen, true /* roll segment */);
+
+    auto m = get_partition_manifest(test_manifest);
+
+    auto size = get_range_size(model::offset{104}, model::offset{115});
+
+    archival::segment_collector collector{
+      non_compacted_reupload(),
+      model::offset{104},
+      m,
+      *get_partition_log(),
+      size,
+      model::offset{115}};
+    ASSERT_TRUE(collector.collect_segments());
+    check_stream(
+      collector,
+      stream_descriptor{
+        .start_offset = model::offset{104},
+        .end_offset = model::offset{115},
+        .is_compacted = false,
+        .check_size = [&size](size_t s) { ASSERT_EQ(s, size); },
+      });
+}
+
+TEST_P(SegmentReuploadFixture, test_new_segment_upload) {
+    cloud_storage::partition_manifest m(
+      manifest_ntp, model::initial_revision_id{0});
+
+    populate_log(log_spec{
+      .start_offset = model::offset{0},
+      .num_segments = 5,
+      .num_batches = 10,
+      .target_max_collectable = model::offset{0},
+      .roll_last_segment = false,
+    });
+
+    // append one more batch directly to the tail of the log, without flushing,
+    // to advance the dirty offset
+    append_batch(model::offset{50}, 6, random_records_generator{});
+
+    {
+        // Upload the sealed portion of the log. This replicates the normal
+        // upload flow in the ntp_archiver. The archiver uploads segments
+        // when they are sealed.
+        auto expect = get_range_size(model::offset{0}, model::offset{39});
+
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          expect,
+          std::nullopt, /* end_inclusive */
+          lso(),        /* end_exclusive  */
+          std::nullopt, /* flush_offset */
+        };
+
+        // LSO is 50, but we read up to 39 because the tail segment has
+        // uncommitted data
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{39},
+            .is_compacted = false,
+            .check_size = [expect](size_t s) { ASSERT_EQ(s, expect); },
+          });
+    }
+
+    {
+        // try to upload the last segment all the way to the end. this will
+        // fail because the segment has unstable records.
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{40},
+          m,
+          *get_partition_log(),
+          max_upload_size,
+          std::nullopt, /* end_inclusive */
+          model::next_offset(model::offset{55}) /* end_exclusive */,
+          std::nullopt, /* flush_offset */
+        };
+
+        ASSERT_TRUE(collector.collect_segments());
+        check_err(collector, candidate_creation_error::no_segments_collected);
+    }
+
+    {
+        // time based uploads can force through a segment with uncommitted data
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          max_upload_size,
+          model::prev_offset(lso()),
+          lso(),
+          std::nullopt,
+        };
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{model::prev_offset(lso())},
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // similar to the previous case but the operation starts and end in the
+        // middle of the first and last segment, respectively
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{8},
+          m,
+          *get_partition_log(),
+          max_upload_size,
+          model::offset{42},
+          lso(),
+          std::nullopt,
+        };
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{8},
+            .end_offset = model::offset{42},
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // Upload that starts and ends in the unsealed segment
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{42},
+          m,
+          *get_partition_log(),
+          max_upload_size,
+          model::offset{48}, /* end_inclusive */
+          lso(),             /* end_exclusive */
+          std::nullopt,      /* flush_offset */
+        };
+        ASSERT_TRUE(collector.collect_segments());
+
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{42},
+            .end_offset = model::offset{48},
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // size limited upload
+
+        auto size = get_range_size(model::offset{0}, model::offset{29});
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          size,
+          std::nullopt,
+          lso(),
+          std::nullopt,
+        };
+
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{29},
+            .is_compacted = false,
+            .check_size = [&size](size_t s) { ASSERT_EQ(s, size); },
+          });
+    }
+
+    roll_segment();
+    advance_term();
+    produce_data(1, 10, random_records_generator{}, true /* roll segment */);
+
+    {
+        // upload stops at term boundary
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          max_upload_size,
+          std::nullopt,
+          lso(),
+          std::nullopt,
+        };
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{55},
+            .is_compacted = false,
+          });
+    }
+}
+
+TEST_P(SegmentReuploadFixture, test_new_segment_upload_off_by_one) {
+    // Upload segments that contain only one record so begin_inclusive
+    // is equal to end_inclusive.
+    cloud_storage::partition_manifest m(
+      manifest_ntp, model::initial_revision_id{0});
+
+    // create three segments w/ one record each
+    populate_log(log_spec{
+      .start_offset = model::offset{0},
+      .num_segments = 4,
+      .num_batches = 1,
+      .target_max_collectable = model::offset{0},
+      .roll_last_segment = false,
+    });
+
+    append_batch(model::offset{4}, 1, random_records_generator{});
+
+    auto max_size = get_range_size(model::offset{0}, model::offset{3});
+
+    {
+        // Upload first segment which contains only one record [0-0 offset
+        // range]
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          max_size,
+          model::offset{0},
+          lso(),
+          std::nullopt};
+
+        // This is an artifact of the test setup - the first segment contains a
+        // single raft config batch, so technically we should skip it.
+        // collect_segments reports this. However, this doesn't stop us from
+        // constructing an upload stream for the sake of argument.
+        ASSERT_TRUE(!collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{0},
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // Upload second segment which contains only one record [1-1 offset
+        // range]
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{1},
+          m,
+          *get_partition_log(),
+          max_size,
+          model::offset{1},
+          lso(),
+          std::nullopt};
+
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{1},
+            .end_offset = model::offset{1},
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // upload a series of segments. it doesn't matter that the last segment
+        // is not sealed, but note that we will not read past the stable offset
+        // of the partition
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          max_size,
+          std::nullopt,
+          model::next_offset(get_segment(3)->offsets().get_committed_offset()),
+          std::nullopt};
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::prev_offset(
+              get_test_partition()->last_stable_offset()),
+            .is_compacted = false,
+          });
+    }
+
+    {
+        // TODO(oren): this is basically the same as the prev case
+        // Upload series of segments but include last segment which is not
+        // sealed.
+        // This should work because target_end_inclusive is set to 3.
+        // The 'target_end_inclusive' is supposed to be used to pass LSO value
+        // to the collector. This means that the collector now knows that it's
+        // safe to read from unsealed segment below this offset.
+        archival::segment_collector collector{
+          new_upload(),
+          model::offset{0},
+          m,
+          *get_partition_log(),
+          max_size,
+          model::offset{3},
+          lso(),
+          std::nullopt};
+        ASSERT_TRUE(collector.collect_segments());
+        check_stream(
+          collector,
+          stream_descriptor{
+            .start_offset = model::offset{0},
+            .end_offset = model::offset{3},
+            .is_compacted = false,
+          });
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  SegmentReuploadFixtureTest,
+  SegmentReuploadFixture,
+  ::testing::Values(
+    // model::cloud_storage_segment_upload_mode::v1,
+    model::cloud_storage_segment_upload_mode::v2));

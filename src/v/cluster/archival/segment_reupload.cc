@@ -397,12 +397,18 @@ bool segment_collector::collect_segments() {
         }
     }
 
-    do_collect();
-    if (is_reupload_mode(_mode)) {
-        return should_replace_manifest_segment();
-    } else {
-        return segment_ready_for_upload();
+    if (is_v1_mode(_mode)) {
+        do_collect();
+        return is_reupload_mode(_mode) ? should_replace_manifest_segment()
+                                       : segment_ready_for_upload();
     }
+
+    if (is_reupload_mode(_mode)) {
+        // TODO(oren): jank
+        _can_replace_manifest_segment = do_reupload_collect_v2();
+        return should_replace_manifest_segment();
+    }
+    return do_collect_v2();
 }
 
 segment_collector::segment_seq segment_collector::segments() {
@@ -1577,7 +1583,13 @@ segment_collector::make_segment_upload_stream(
   cluster::partition& parent,
   ss::lowres_clock::duration segment_lock_duration,
   ss::gate& gate) {
-    auto candidate_res = co_await make_upload_candidate(segment_lock_duration);
+    auto candidate_res = co_await [this, &parent, &segment_lock_duration]() {
+        if (is_v2_mode(_mode)) {
+            return make_segment_upload_candidate(parent, segment_lock_duration);
+        } else {
+            return make_upload_candidate(segment_lock_duration);
+        }
+    }();
 
     vassert(
       !std::holds_alternative<std::monostate>(candidate_res),
