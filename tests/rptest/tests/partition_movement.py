@@ -259,6 +259,29 @@ class PartitionMovementMixin():
                                                  assignment["node_id"],
                                                  assignment["core"])
 
+    def _force_set_partition_assignments(self,
+                                         topic,
+                                         partition,
+                                         assignments,
+                                         admin=None):
+        self.logger.info(
+            f"setting assignments for {topic}/{partition}: {assignments}")
+
+        if admin is None:
+            admin = Admin(self.redpanda)
+
+        admin.force_set_partition_replicas(topic, partition,
+                                           [{
+                                               "node_id": a["node_id"],
+                                               "core": self.INVALID_CORE,
+                                           } for a in assignments])
+
+        for assignment in assignments:
+            if "core" in assignment:
+                admin.set_partition_replica_core(topic, partition,
+                                                 assignment["node_id"],
+                                                 assignment["core"])
+
     def _dispatch_random_partition_move(self,
                                         topic,
                                         partition,
@@ -309,6 +332,7 @@ class PartitionMovementMixin():
                              partition,
                              previous_assignment,
                              unclean_abort,
+                             force_back=False,
                              new_assignment=None,
                              timeout=90):
         """
@@ -319,6 +343,9 @@ class PartitionMovementMixin():
         result can be equal to initial movement assignment. (PR 8393)
         When request cancellation without throttling recovery rate
         or partition is empty, initial movement assignment must be provided
+
+        :param force_back: when true, the partition will be force moved back to the original assignment
+        immediately after cancellation/abort.
         """
         self._wait_for_move_in_progress(topic, partition)
         admin = Admin(self.redpanda)
@@ -330,6 +357,15 @@ class PartitionMovementMixin():
         except requests.exceptions.HTTPError as e:
             # we do not throttle cross core moves, it may already be finished
             assert e.response.status_code == 400
+            return
+
+        if force_back:
+            self._force_set_partition_assignments(topic,
+                                                  partition,
+                                                  previous_assignment,
+                                                  admin=admin)
+            self._wait_post_move(topic, partition, previous_assignment,
+                                 timeout)
             return
 
         # wait for previous assignment or new assigment if movement cannot be cancelled
