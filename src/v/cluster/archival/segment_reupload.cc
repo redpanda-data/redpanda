@@ -547,7 +547,8 @@ void segment_collector::do_collect() {
           !_segments.empty()
           && _segments.back()->offsets().get_term()
                != result.segment->offsets().get_term()) {
-            archival_log.debug(
+            vlog(
+              archival_log.debug,
               "Segment collect for ntp {} stopping collection, last "
               "segment "
               "term {} is different from current segment term: {}",
