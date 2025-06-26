@@ -258,7 +258,7 @@ public:
     void for_each_broker(Func&& f) const;
 
     template<typename Func>
-    void for_each_broker_id(Func&& f) const;
+    void for_each_replica(Func&& f) const;
 
     template<typename Func>
     void for_each_voter(Func&& f) const;
@@ -266,7 +266,7 @@ public:
     template<typename Func>
     void for_each_learner(Func&& f) const;
 
-    std::vector<vnode> all_nodes() const;
+    const std::vector<vnode>& all_nodes() const;
 
     std::optional<vnode> find_by_node_id(model::node_id) const;
 
@@ -400,12 +400,14 @@ private:
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
     std::unique_ptr<configuration_change_strategy> make_change_strategy();
+    void update_all_replicas();
 
     version_t _version = current_version;
     std::vector<model::broker> _brokers;
     group_nodes _current;
     std::optional<configuration_update> _configuration_update;
     std::optional<group_nodes> _old;
+    std::vector<vnode> _all_replicas;
     model::revision_id _revision;
 };
 
@@ -459,12 +461,8 @@ void group_configuration::for_each_broker(Func&& f) const {
 }
 
 template<typename Func>
-void group_configuration::for_each_broker_id(Func&& f) const {
-    auto voters = unique_voter_ids();
-    auto learners = unique_learner_ids();
-    auto joined = boost::join(voters, learners);
-    std::for_each(
-      std::cbegin(joined), std::cend(joined), std::forward<Func>(f));
+void group_configuration::for_each_replica(Func&& f) const {
+    std::ranges::for_each(_all_replicas, std::forward<Func>(f));
 }
 
 template<typename Func, typename Ret>

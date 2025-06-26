@@ -15,7 +15,7 @@
 
 namespace raft {
 void follower_stats::update_with_configuration(const group_configuration& cfg) {
-    cfg.for_each_broker_id([this](const vnode& rni) {
+    cfg.for_each_replica([this](const vnode& rni) {
         if (rni == _self || _followers.contains(rni)) {
             return;
         }

@@ -184,8 +184,7 @@ struct raft_node {
           recovery_throttle.local(),
           recovery_mem_quota,
           recovery_scheduler.local(),
-          feature_table.local(),
-          std::nullopt);
+          feature_table.local());
     }
 
     raft_node(const raft_node&) = delete;

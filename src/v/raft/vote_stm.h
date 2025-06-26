@@ -146,6 +146,9 @@ private:
     absl::flat_hash_map<vnode, vmeta> _replies;
     ctx_log _ctxlog;
     clock_type::time_point _requests_dispatched_ts;
+    // flag to indicate if the priority was set to blocked when the vote_stm
+    // started
+    bool _blocked_when_started = false;
 };
 
 } // namespace raft
