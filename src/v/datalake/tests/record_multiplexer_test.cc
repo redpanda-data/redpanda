@@ -519,8 +519,9 @@ TEST_F(RecordMultiplexerTest, TestMultiplexingFromMiddleOfBatch) {
                        .records = 100,
                      })
                      .get();
-    auto start_offset = model::offset(random_generators::get_int(0, 100));
     auto last_offset = batches.back().last_offset();
+    auto start_offset = model::offset(
+      random_generators::get_int<model::offset::type>(0, last_offset));
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
     mux
       .multiplex(
