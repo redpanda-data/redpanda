@@ -19,7 +19,6 @@
 #include "cluster/archival/archival_policy.h"
 #include "cluster/archival/probe.h"
 #include "cluster/archival/scrubber.h"
-#include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/types.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
@@ -334,13 +333,10 @@ public:
         model::offset local_start_offset,
         const cloud_storage::partition_manifest& manifest)>;
 
-    // TODO(oren): maybe stick metadata in here...
-    // need it to get a segment name for the call site (logging). not sure how
-    // important that actually is
     struct find_reupload_candidate_result {
         std::optional<ssx::checkpoint_mutex_units> units;
-        std::optional<segment_collector_stream> upload_stream{};
-        archival_stm_fence read_write_fence{};
+        std::optional<upload_candidate_with_locks> locks;
+        archival_stm_fence read_write_fence;
     };
 
     /// Find upload candidate
@@ -424,10 +420,6 @@ public:
 
     ss::future<std::error_code> reset_scrubbing_metadata();
 
-    cloud_storage::segment_name segment_name_for_stream(
-      const segment_collector_stream& strm,
-      std::optional<model::term_id> archiver_term = std::nullopt);
-
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
@@ -454,7 +446,7 @@ private:
 
     ss::future<bool> do_upload_local(
       archival_stm_fence fence,
-      segment_collector_stream strm,
+      upload_candidate_with_locks candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
     ss::future<bool> do_upload_remote(
       upload_candidate_with_locks candidate,
@@ -466,7 +458,7 @@ private:
         /// NOTE: scheduled future may hold segment read locks.
         std::optional<ss::future<ntp_archiver_upload_result>> result;
         /// Last offset of the uploaded segment or part
-        model::offset inclusive_last_offset{};
+        model::offset inclusive_last_offset;
         /// Segment metadata
         std::optional<cloud_storage::partition_manifest::segment_meta> meta;
         /// Name of the uploaded segment
@@ -501,8 +493,8 @@ private:
         model::term_id archiver_term;
     };
 
-    ss::future<scheduled_upload> do_schedule_single_upload_streaming(
-      segment_collector_stream, model::term_id, segment_upload_kind);
+    ss::future<scheduled_upload> do_schedule_single_upload(
+      upload_candidate_with_locks, model::term_id, segment_upload_kind);
 
     /// Start upload without waiting for it to complete
     ss::future<scheduled_upload>
@@ -558,32 +550,50 @@ private:
       archival_stm_fence fence,
       std::vector<wait_uploads_complete_result> finished_uploads);
 
+    /// Upload individual segment to S3.
+    ///
+    /// \param archiver_term is a current term of the archiver
+    /// \param candidate is an upload candidate
+    /// \param segment_read_locks protects the underlying segment(s) from being
+    ///        deleted while the upload is in flight.
+    /// \param stream is a stream to the segment used for the initial upload. If
+    /// the upload is retried, the segment will be read again.
+    /// \param source_rtc
+    /// is a retry_chain_node of the caller, if it's set
+    ///        to nullopt own retry chain of the ntp_archiver is used
+    /// \return error code
     ss::future<ntp_archiver_upload_result> upload_segment(
-      segment_collector_stream strm,
-      const cloud_storage::segment_meta& meta,
-      std::optional<fragmented_vector<model::tx_range>> tx_ranges
+      model::term_id archiver_term,
+      upload_candidate candidate,
+      std::vector<ss::rwlock::holder> segment_read_locks,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
-    /// Upload tx-manifest
-    /// Return error-code if the manifest was uploaded or upload was attempted
-    /// and failed. Return nullopt if there are no aborted transactions in the
-    /// provided offset range.
-    ss::future<std::optional<cloud_storage::upload_result>>
-    maybe_upload_aborted_tx(
-      cloud_storage::remote_segment_path path,
-      std::optional<fragmented_vector<model::tx_range>> tx,
-      retry_chain_node& parent_rtc);
+    /// Isolates segment upload and accepts a stream reference, so that if the
+    /// upload fails the exception can be handled in the caller and the stream
+    /// can be closed.
+    ss::future<cloud_storage::upload_result> do_upload_segment(
+      const remote_segment_path& path,
+      upload_candidate candidate,
+      ss::input_stream<char> stream,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
 
     /// Get aborted transactions for upload
     ///
     /// \return list of aborted transactions
-    ss::future<fragmented_vector<model::tx_range>> get_aborted_transactions(
-      model::offset start_offset, model::offset end_offset);
+    ss::future<fragmented_vector<model::tx_range>>
+    get_aborted_transactions(upload_candidate candidate);
 
-    ss::future<
-      std::pair<std::optional<fragmented_vector<model::tx_range>>, size_t>>
-    get_aborted_transactions(
-      const segment_collector_stream& meta, const cloud_storage::segment_name&);
+    /// Upload segment's transactions metadata to S3.
+    ///
+    /// \return error code
+    ss::future<ntp_archiver_upload_result> upload_tx(
+      model::term_id archiver_term,
+      upload_candidate candidate,
+      fragmented_vector<model::tx_range> tx,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
 
     struct make_segment_index_result {
         cloud_storage::offset_index index;
@@ -677,6 +687,10 @@ private:
     /// region of the log and false if it should work on archive
     /// part.
     bool stm_retention_needed() const;
+
+    /// Helper to generate a segment path from candidate
+    remote_segment_path segment_path_for_candidate(
+      model::term_id archiver_term, const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
     std::optional<ss::sstring> upload_should_abort() const;

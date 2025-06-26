@@ -214,21 +214,27 @@ adjacent_segment_merger::run(run_quota_t quota) {
             return scan_manifest(local_start_offset, manifest);
         };
         auto find_res = co_await _archiver.find_reupload_candidate(scanner);
-        if (!find_res.upload_stream.has_value()) {
+        if (!find_res.locks.has_value()) {
             vlog(_ctxlog.debug, "No more upload candidates");
             co_return result;
         }
         vassert(find_res.units.has_value(), "Must take archiver units");
-        auto next = model::next_offset(
-          find_res.upload_stream.value().end_offset);
+        auto next = model::next_offset(find_res.locks->candidate.final_offset);
         vlog(
           _ctxlog.debug,
-          "Going to upload segment {}, upload size in bytes: {}, "
-          "last offset: {}, read-write-fence value: {}",
-          _archiver.segment_name_for_stream(find_res.upload_stream.value()),
-          find_res.upload_stream.value().size,
-          find_res.upload_stream.value().end_offset,
+          "Going to upload segment {}, num source segments {}, last offset {}, "
+          "read-write-fence value: {}",
+          find_res.locks->candidate.exposed_name,
+          find_res.locks->candidate.sources.size(),
+          find_res.locks->candidate.final_offset,
           find_res.read_write_fence.read_write_fence);
+        for (const auto& src : find_res.locks->candidate.sources) {
+            vlog(
+              _ctxlog.debug,
+              "Local log segment {} found, size {}",
+              src->filename(),
+              src->size_bytes());
+        }
 
         auto uploaded = co_await _archiver.upload(
           std::move(find_res), std::ref(_root_rtc));

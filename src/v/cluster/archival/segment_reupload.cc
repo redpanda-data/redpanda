@@ -12,154 +12,22 @@
 
 #include "base/vlog.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cluster/archival/logger.h"
-#include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/types.h"
 #include "config/configuration.h"
 #include "logger.h"
-#include "model/fundamental.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
-#include "storage/segment.h"
-#include "storage/segment_set.h"
-#include "storage/version.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/io_priority_class.hh>
-#include <seastar/core/iostream.hh>
-#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
-#include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
 
 #include <ranges>
-#include <utility>
 
 namespace archival {
-
-bool eligible_for_compacted_reupload(const storage::segment& s) {
-    if (config::shard_local_cfg().log_compaction_use_sliding_window) {
-        return s.finished_windowed_compaction();
-    }
-    return s.finished_self_compaction();
-}
-
-std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
-    vassert(
-      c.sources.empty() || c.remote_sources.empty(),
-      "The upload candidate could have only local or only remote source");
-    if (c.sources.empty() && c.remote_sources.empty()) {
-        s << "{empty}";
-        return s;
-    }
-
-    std::vector<ss::sstring> source_names;
-    source_names.reserve(std::max(c.sources.size(), c.remote_sources.size()));
-    if (c.remote_sources.empty()) {
-        std::transform(
-          c.sources.begin(),
-          c.sources.end(),
-          std::back_inserter(source_names),
-          [](const auto& src) { return src->filename(); });
-    } else if (c.sources.empty()) {
-        std::transform(
-          c.remote_sources.begin(),
-          c.remote_sources.end(),
-          std::back_inserter(source_names),
-          [](const auto& src) { return src().native(); });
-    }
-
-    fmt::print(
-      s,
-      "{{source segment offsets: {}, exposed_name: {}, starting_offset: {}, "
-      "file_offset: {}, content_length: {}, final_offset: {}, "
-      "final_file_offset: {}, term: {}, source names: {}}}",
-      c.sources.front()->offsets(),
-      c.exposed_name,
-      c.starting_offset,
-      c.file_offset,
-      c.content_length,
-      c.final_offset,
-      c.final_file_offset,
-      c.term,
-      source_names);
-    return s;
-}
-
-std::ostream& operator<<(std::ostream& s, const segment_collector_stream& c) {
-    if (c.size == 0) {
-        return s << "{empty}";
-    }
-    fmt::print(
-      s,
-      "{{starting_offset: {}, content_length: {}, final_offset: {}, term: {}}}",
-      c.start_offset,
-      c.size,
-      c.end_offset,
-      c.term);
-    return s;
-}
-
-std::ostream& operator<<(std::ostream& os, candidate_creation_error err) {
-    os << "candidate creation error: ";
-    switch (err) {
-    case candidate_creation_error::no_segments_collected:
-        return os << "no segments collected";
-    case candidate_creation_error::begin_offset_seek_error:
-        return os << "failed to seek begin offset";
-    case candidate_creation_error::end_offset_seek_error:
-        return os << "failed to seek end offset";
-    case candidate_creation_error::offset_inside_batch:
-        return os << "offset inside batch";
-    case candidate_creation_error::upload_size_unchanged:
-        return os << "size of candidate unchanged";
-    case candidate_creation_error::cannot_replace_manifest_entry:
-        return os << "candidate cannot replace manifest entry";
-    case candidate_creation_error::no_segment_for_begin_offset:
-        return os << "no segment for begin offset";
-    case candidate_creation_error::missing_ntp_config:
-        return os << "missing config for NTP";
-    case candidate_creation_error::failed_to_get_file_range:
-        return os << "failed to get file range for candidate";
-    case candidate_creation_error::zero_content_length:
-        return os << "candidate has no content";
-    case candidate_creation_error::concurrency_error:
-        return os << "collected segments are modified concurrently";
-    }
-}
-
-ss::log_level log_level_for_error(const candidate_creation_error& error) {
-    switch (error) {
-    case candidate_creation_error::no_segments_collected:
-    case candidate_creation_error::begin_offset_seek_error:
-    case candidate_creation_error::end_offset_seek_error:
-    case candidate_creation_error::upload_size_unchanged:
-    case candidate_creation_error::cannot_replace_manifest_entry:
-    case candidate_creation_error::no_segment_for_begin_offset:
-    case candidate_creation_error::failed_to_get_file_range:
-    case candidate_creation_error::zero_content_length:
-    case candidate_creation_error::concurrency_error:
-        return ss::log_level::debug;
-    case candidate_creation_error::offset_inside_batch:
-    case candidate_creation_error::missing_ntp_config:
-        return ss::log_level::warn;
-    }
-}
-
-std::ostream&
-operator<<(std::ostream& os, const skip_offset_range& skip_range) {
-    fmt::print(
-      os,
-      "skip_offset_range{{begin: {}, end: {}, error: {}}}",
-      skip_range.begin_offset,
-      skip_range.end_offset,
-      skip_range.reason);
-    return os;
-}
-
 segment_collector::segment_collector(
   model::offset begin_inclusive,
   const cloud_storage::partition_manifest& manifest,
@@ -701,7 +569,8 @@ segment_collector::lookup_result segment_collector::find_next_segment(
         return {};
     }
 
-    auto segment_is_compacted = eligible_for_compacted_reupload(*segment);
+    auto segment_is_compacted
+      = archival_policy::eligible_for_compacted_reupload(*segment);
     auto compacted_segment_expected
       = mode == segment_collector_mode::compacted_reupload;
     auto compacted_segment_allowed
@@ -1027,45 +896,47 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
       },
       std::move(locks_resolved)};
 }
-ss::future<segment_collector_stream_result>
+ss::future<result<segment_collector_stream>>
 segment_collector::make_upload_candidate_stream(
   ss::lowres_clock::duration segment_lock_duration) {
     auto candidate_res = co_await make_upload_candidate(segment_lock_duration);
 
-    vassert(
-      !std::holds_alternative<std::monostate>(candidate_res),
-      "Unexpected default upload candidate creation result");
-
     if (std::holds_alternative<candidate_creation_error>(candidate_res)) {
-        auto err = std::get<candidate_creation_error>(candidate_res);
-        vlog(archival_log.warn, "Candidate creation error: {}", err);
-        co_return err;
+        vlog(
+          archival_log.warn,
+          "Candidate creation error: {}",
+          std::get<candidate_creation_error>(candidate_res));
+        co_return error_outcome::offset_not_found;
     } else if (std::holds_alternative<skip_offset_range>(candidate_res)) {
-        auto skip = std::get<skip_offset_range>(candidate_res);
+        const auto& skip = std::get<skip_offset_range>(candidate_res);
         vlog(
           archival_log.debug,
           "Skipping offset range: {}-{}, reason: {}",
           skip.begin_offset,
           skip.end_offset,
           skip.reason);
-        co_return skip;
+        co_return segment_collector_stream{
+          .start_offset = skip.begin_offset,
+          .end_offset = skip.end_offset,
+          .size = 0,
+          .min_timestamp = {},
+          .max_timestamp = {},
+          .skip_offset_range = true,
+          .create_input_stream = []() -> ss::input_stream<char> {
+              throw std::runtime_error("The upload should be skipped");
+          },
+        };
     }
 
     auto& cand_with_locks = std::get<upload_candidate_with_locks>(
       candidate_res);
 
     auto& cand = cand_with_locks.candidate;
-    auto front = cand.sources.front();
 
     segment_collector_stream stream;
     stream.start_offset = cand.starting_offset;
     stream.end_offset = cand.final_offset;
-    stream.min_timestamp = cand.base_timestamp;
-    stream.max_timestamp = cand.max_timestamp;
     stream.size = cand.content_length;
-    stream.is_compacted = front->is_compacted_segment()
-                          && eligible_for_compacted_reupload(*front);
-    stream.term = cand.term;
     stream.create_input_stream =
       [segments = cand.sources,
        locks = std::move(cand_with_locks.read_locks),

@@ -26,7 +26,6 @@
 #include "cluster/archival/adjacent_segment_merger.h"
 #include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/archival_policy.h"
-#include "cluster/archival/async_data_uploader.h"
 #include "cluster/archival/logger.h"
 #include "cluster/archival/replica_state_validator.h"
 #include "cluster/archival/retention_calculator.h"
@@ -65,7 +64,6 @@
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/coroutine/all.hh>
-#include <seastar/coroutine/as_future.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -85,16 +83,13 @@ constexpr auto housekeeping_jit = 5ms;
 
 namespace archival {
 
-namespace {
-
 /// Return true if the exception is a shutdown error or a network error (e.g.
 /// Broken pipe)
-bool is_shutdown_or_disconnect(const std::exception_ptr& e) {
+static bool is_shutdown_or_disconnect(const std::exception_ptr& e) {
     return ssx::is_shutdown_exception(e) || net::is_disconnect_exception(e);
 }
 
-[[maybe_unused]] bool
-is_nested_shutdown_exception(const ss::nested_exception& ex) {
+static bool is_nested_shutdown_exception(const ss::nested_exception& ex) {
     // During shutdown we could potentially get a 'shutdown' exception. If the
     // 'finally' continuation is used it will be invoked and if it touches the
     // gate or abort source it will also trigger a 'shutdown' exception. The
@@ -109,7 +104,7 @@ is_nested_shutdown_exception(const ss::nested_exception& ex) {
            && (ssx::is_shutdown_exception(ex.inner) || ssx::is_shutdown_exception(ex.outer));
 }
 
-bool segment_meta_matches_stats(
+static bool segment_meta_matches_stats(
   const cloud_storage::segment_meta& meta,
   const cloud_storage::segment_record_stats& stats,
   retry_chain_logger& ctxlog) {
@@ -143,69 +138,13 @@ bool segment_meta_matches_stats(
     return true;
 }
 
-bool emit_read_write_fence(
+static bool emit_read_write_fence(
   const ss::sharded<features::feature_table>& feature_table) {
     return !config::shard_local_cfg()
               .cloud_storage_disable_archival_stm_rw_fence.value()
            && feature_table.local().is_active(
              features::feature::cloud_storage_metadata_rw_fence);
 }
-
-cloud_storage::segment_meta convert_segment_meta(
-  const segment_collector_stream& strm,
-  const cluster::partition& parent,
-  model::initial_revision_id rev,
-  model::term_id archiver_term) {
-    return cloud_storage::segment_meta{
-      .is_compacted = strm.is_compacted,
-      .size_bytes = strm.size,
-      .base_offset = strm.start_offset,
-      .committed_offset = strm.end_offset,
-      .base_timestamp = strm.min_timestamp,
-      .max_timestamp = strm.max_timestamp,
-      // NOTE(oren): old code uses base - from_log_offset(base)
-      // which is equivalent to base - (base - delta) = delta
-      // so here we just use delta. Seems fine?
-      .delta_offset = parent.log()->offset_delta(strm.start_offset),
-      .ntp_revision = rev,
-      .archiver_term = archiver_term,
-      .segment_term = strm.term,
-      .delta_offset_end = parent.log()->offset_delta(
-        model::next_offset(strm.end_offset)),
-      .sname_format = cloud_storage::segment_name_format::v3,
-      /// Size of the tx-range (in v3 format)
-      .metadata_size_hint = 0,
-    };
-}
-
-struct one_time_stream_wrapper final : public stream_provider {
-    std::optional<ss::input_stream<char>> stream;
-
-    one_time_stream_wrapper(const one_time_stream_wrapper&) = delete;
-    one_time_stream_wrapper(one_time_stream_wrapper&&) = default;
-    one_time_stream_wrapper& operator=(const one_time_stream_wrapper&) = delete;
-    one_time_stream_wrapper& operator=(one_time_stream_wrapper&&) = default;
-
-    ~one_time_stream_wrapper() override = default;
-
-    explicit one_time_stream_wrapper(ss::input_stream<char> s)
-      : stream(std::move(s)) {}
-
-    ss::input_stream<char> take_stream() override {
-        vassert(stream.has_value(), "no stream to take");
-        ss::input_stream<char> s = std::move(stream.value());
-        stream = std::nullopt;
-        return s;
-    }
-
-    ss::future<> close() override {
-        if (stream.has_value()) {
-            co_await stream.value().close();
-        }
-        co_return;
-    }
-};
-} // namespace
 
 ntp_archiver_upload_result::ntp_archiver_upload_result(
   cloud_storage::upload_result r)
@@ -259,8 +198,8 @@ ntp_archiver_upload_result::operator()(cloud_storage::upload_result) const {
     return _result;
 }
 
-namespace {
-std::unique_ptr<adjacent_segment_merger> maybe_make_adjacent_segment_merger(
+static std::unique_ptr<adjacent_segment_merger>
+maybe_make_adjacent_segment_merger(
   ntp_archiver& self, const storage::ntp_config& cfg) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
     if (
@@ -275,7 +214,7 @@ std::unique_ptr<adjacent_segment_merger> maybe_make_adjacent_segment_merger(
     return result;
 }
 
-std::unique_ptr<scrubber> maybe_make_scrubber(
+static std::unique_ptr<scrubber> maybe_make_scrubber(
   ntp_archiver& self,
   cloud_storage::remote& remote,
   features::feature_table& feature_table,
@@ -295,32 +234,6 @@ std::unique_ptr<scrubber> maybe_make_scrubber(
     }
     return result;
 }
-
-std::vector<std::exception_ptr> flatten_exception(const std::exception_ptr& e) {
-    std::vector<std::exception_ptr> result;
-    chunked_vector<std::exception_ptr> stk;
-    stk.push_back(e);
-    while (!stk.empty()) {
-        auto curr = stk.back();
-        stk.pop_back();
-        try {
-            std::rethrow_exception(curr);
-        } catch (const ss::nested_exception& e) {
-            // outermost exception to front of list
-            stk.push_back(e.inner);
-            stk.push_back(e.outer);
-        } catch (...) {
-            result.push_back(std::current_exception());
-        }
-    }
-    return result;
-}
-
-ss::sstring make_index_path(const remote_segment_path& segment_path) {
-    return fmt::format("{}.index", segment_path().native());
-}
-
-} // namespace
 
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
@@ -1372,6 +1285,243 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     co_return result;
 }
 
+remote_segment_path ntp_archiver::segment_path_for_candidate(
+  model::term_id archiver_term, const upload_candidate& candidate) {
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
+    auto front = candidate.sources.front();
+    cloud_storage::partition_manifest::value val{
+      .is_compacted = front->is_compacted_segment()
+                      && archival_policy::eligible_for_compacted_reupload(
+                        *front),
+      .size_bytes = candidate.content_length,
+      .base_offset = candidate.starting_offset,
+      .committed_offset = candidate.final_offset,
+      .ntp_revision = _rev,
+      .archiver_term = archiver_term,
+      .segment_term = candidate.term,
+      .sname_format = cloud_storage::segment_name_format::v3,
+    };
+
+    return manifest().generate_segment_path(val, remote_path_provider());
+}
+
+static std::pair<ss::input_stream<char>, ss::input_stream<char>>
+split_segment_stream(upload_candidate candidate) {
+    auto res = input_stream_fanout<2>(
+      storage::concat_segment_reader_view{
+        candidate.sources, candidate.file_offset, candidate.final_file_offset}
+        .take_stream(),
+      config::shard_local_cfg().storage_read_readahead_count());
+    return std::make_pair(
+      std::move(std::get<0>(res)), std::move(std::get<1>(res)));
+}
+
+ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
+  const remote_segment_path& path,
+  upload_candidate candidate,
+  ss::input_stream<char> stream,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    auto rtc = source_rtc.value_or(std::ref(_rtcnode));
+    retry_chain_node fib(
+      _conf->segment_upload_timeout(),
+      _conf->cloud_storage_initial_backoff(),
+      &rtc.get());
+    retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
+
+    vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
+
+    auto lazy_abort = lazy_abort_source{
+      [this]() { return upload_should_abort(); },
+    };
+
+    // This struct wraps a stream object and exposes the stream_provider
+    // interface for compatibility with the remote object API.
+    struct stream_wrapper final : public stream_provider {
+        std::optional<ss::input_stream<char>> stream;
+
+        stream_wrapper(const stream_wrapper&) = delete;
+        stream_wrapper(stream_wrapper&&) = default;
+        stream_wrapper& operator=(const stream_wrapper&) = delete;
+        stream_wrapper& operator=(stream_wrapper&&) = default;
+
+        ~stream_wrapper() override = default;
+
+        explicit stream_wrapper(ss::input_stream<char> s)
+          : stream(std::move(s)) {}
+
+        ss::input_stream<char> take_stream() override {
+            vassert(stream.has_value(), "no stream to take");
+            ss::input_stream<char> s = std::move(stream.value());
+            stream = std::nullopt;
+            return s;
+        }
+
+        ss::future<> close() override {
+            if (stream.has_value()) {
+                co_await stream.value().close();
+            }
+            co_return;
+        }
+    };
+
+    std::optional<ss::input_stream<char>> stream_state = std::move(stream);
+    auto reset_func = [candidate, &stream_state] {
+        using provider_t = std::unique_ptr<stream_provider>;
+        // On first attempt to upload, the stream-ref passed in is used.
+        if (stream_state.has_value()) {
+            auto f = ss::make_ready_future<provider_t>(
+              std::make_unique<stream_wrapper>(
+                std::move(stream_state.value())));
+            stream_state = std::nullopt;
+            return f;
+        } else {
+            // On subsequent uploads, the segment is read again from disk
+            return ss::make_ready_future<provider_t>(
+              std::make_unique<storage::concat_segment_reader_view>(
+                candidate.sources,
+                candidate.file_offset,
+                candidate.final_file_offset));
+        }
+    };
+
+    auto response = cloud_storage::upload_result::success;
+    try {
+        response = co_await _remote.upload_segment(
+          get_bucket_name(),
+          path,
+          candidate.content_length,
+          std::move(reset_func),
+          fib,
+          lazy_abort);
+    } catch (const ss::gate_closed_exception&) {
+        response = cloud_storage::upload_result::cancelled;
+    } catch (const ss::abort_requested_exception&) {
+        response = cloud_storage::upload_result::cancelled;
+    } catch (const ss::nested_exception& e) {
+        // Nested exception can be thrown by the cache
+        // which uses 'finally' to close the stream.
+        if (is_nested_shutdown_exception(e)) {
+            response = cloud_storage::upload_result::cancelled;
+        } else {
+            vlog(
+              _rtclog.error,
+              "failed to upload segment {}: {} % {}",
+              path,
+              e.inner,
+              e.outer);
+            response = cloud_storage::upload_result::failed;
+        }
+    } catch (const std::exception& e) {
+        vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
+        response = cloud_storage::upload_result::failed;
+    }
+    // Cleanup the stream state if upload_segment didn't use it.
+    if (stream_state.has_value()) {
+        co_await stream_state->close();
+    }
+    co_return response;
+}
+
+static ss::sstring make_index_path(const remote_segment_path& segment_path) {
+    return fmt::format("{}.index", segment_path().native());
+}
+
+// from offset to offset (by record batch boundary)
+ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
+  model::term_id archiver_term,
+  upload_candidate candidate,
+  std::vector<ss::rwlock::holder> segment_read_locks,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    auto holder = std::move(segment_read_locks);
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
+
+    auto [stream_upload, stream_index] = split_segment_stream(candidate);
+
+    auto path = segment_path_for_candidate(archiver_term, candidate);
+
+    auto upload_fut = do_upload_segment(
+      path, candidate, std::move(stream_upload), source_rtc);
+
+    auto index_path = make_index_path(path);
+    auto make_idx_fut = make_segment_index(
+      candidate.starting_offset,
+      candidate.base_timestamp,
+      _rtclog,
+      index_path,
+      std::move(stream_index));
+
+    auto [upload_res, idx_res] = co_await ss::when_all_succeed(
+      std::move(upload_fut), std::move(make_idx_fut));
+
+    if (
+      upload_res == cloud_storage::upload_result::success
+      && idx_res.has_value()) {
+        auto rtc = source_rtc.value_or(std::ref(_rtcnode));
+        retry_chain_node fib(
+          _conf->segment_upload_timeout(),
+          _conf->cloud_storage_initial_backoff(),
+          &rtc.get());
+
+        // If we fail to upload the index but successfully upload the segment,
+        // the read path will create the index on the fly while downloading the
+        // segment, so it is okay to ignore the index upload failure, we still
+        // want to advance the offsets because the segment did get uploaded.
+        std::ignore = co_await _remote.upload_index(
+          _conf->bucket_name,
+          cloud_storage_clients::object_key{index_path},
+          idx_res->index,
+          fib);
+
+        co_return ntp_archiver_upload_result(idx_res->stats);
+    } else {
+        if (upload_res != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "skipping segment index upload to {} because segment upload was "
+              "unsuccessful: {}",
+              index_path,
+              path);
+        }
+
+        if (!idx_res.has_value()) {
+            vlog(
+              _rtclog.warn,
+              "skipping segment index upload to {} index could not be "
+              "generated",
+              index_path);
+        }
+    }
+    co_return upload_res;
+
+    // Note on segment locks:
+    //
+    // We've successfully uploaded the segment. Before we replicate an update
+    // with the archival STM, drop any segment locks that may be held. It's
+    // possible these locks are blocking other fibers from taking write locks,
+    // which in turn, may prevent further read locks from being held.
+    // Replicating and waiting on archival batches to be applied may require
+    // taking read locks on these segments.
+    //
+    // Specifically, we want to avoid a series of events like:
+    // 1. This fiber holds the uploaded segment's read lock
+    // 2. Another fiber attempts to write lock the segment (e.g. during a
+    //    segment roll), but can't. Instead, it prevents other read locks from
+    //    being taken as it waits.
+    // 3. This fiber attempts to replicate an archival batch, which
+    //    subsequently waits for all prior ops to be applied, which may require
+    //    consuming from this segment. In doing so, we attempt to read lock a
+    //    locked segment.
+    //
+    // To avoid this, simply drop the locks here, now that we're done with
+    // them. There's no concern that the underlying offsets will disappear
+    // since the archival STM pins offsets until they are recorded in the
+    // manifest.
+}
+
 std::optional<ss::sstring> ntp_archiver::upload_should_abort() const {
     if (unlikely(lost_leadership())) {
         return fmt::format(
@@ -1388,43 +1538,44 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() const {
 }
 
 ss::future<fragmented_vector<model::tx_range>>
-ntp_archiver::get_aborted_transactions(
-  model::offset start_offset, model::offset end_offset) {
+ntp_archiver::get_aborted_transactions(upload_candidate candidate) {
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
     auto guard = _gate.hold();
-    co_return co_await _parent.aborted_transactions(start_offset, end_offset);
+    co_return co_await _parent.aborted_transactions(
+      candidate.starting_offset, candidate.final_offset);
 }
 
-ss::future<std::pair<std::optional<fragmented_vector<model::tx_range>>, size_t>>
-ntp_archiver::get_aborted_transactions(
-  const segment_collector_stream& meta,
-  const cloud_storage::segment_name& sname) {
-    ss::log_level level{};
-    std::exception_ptr ep{};
-    std::optional<fragmented_vector<model::tx_range>> tx_ranges{};
-    size_t tx_size{0};
-    if (!meta.is_compacted) {
-        try {
-            tx_ranges = co_await get_aborted_transactions(
-              meta.start_offset, meta.end_offset);
-            tx_size = tx_ranges.value().size();
-        } catch (...) {
-            ep = std::current_exception();
-            level = ssx::is_shutdown_exception(ep) ? ss::log_level::debug
-                                                   : ss::log_level::warn;
-        }
+ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
+  model::term_id archiver_term,
+  upload_candidate candidate,
+  fragmented_vector<model::tx_range> tx_range,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    auto guard = _gate.hold();
+    auto rtc = source_rtc.value_or(std::ref(_rtcnode));
+    retry_chain_node fib(
+      _conf->segment_upload_timeout(),
+      _conf->cloud_storage_initial_backoff(),
+      &rtc.get());
+    retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
+
+    vlog(
+      ctxlog.debug, "Uploading segment's tx range {}", candidate.exposed_name);
+
+    if (tx_range.empty()) {
+        // The actual upload only happens if tx_range is not empty.
+        // The remote_segment should act as if the tx_range is empty if the
+        // request returned NoSuchKey error.
+        co_return cloud_storage::upload_result::success;
     }
 
-    if (ep) {
-        vlogl(
-          _rtclog,
-          level,
-          "Failed to get aborted transactions for {}: {}",
-          sname,
-          ep);
-        std::rethrow_exception(ep);
-    }
+    auto path = segment_path_for_candidate(archiver_term, candidate);
 
-    co_return std::make_pair(std::move(tx_ranges), tx_size);
+    cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
+
+    co_return co_await _remote.upload_manifest(
+      get_bucket_name(), manifest, manifest.get_manifest_path(), fib);
 }
 
 ss::future<std::optional<ntp_archiver::make_segment_index_result>>
@@ -1470,245 +1621,107 @@ ntp_archiver::make_segment_index(
     co_return make_segment_index_result{.index = std::move(ix), .stats = stats};
 }
 
-ss::future<std::optional<cloud_storage::upload_result>>
-ntp_archiver::maybe_upload_aborted_tx(
-  cloud_storage::remote_segment_path path,
-  std::optional<fragmented_vector<model::tx_range>> tx,
-  retry_chain_node& parent_rtc) {
-    // We're not doing any retries here so initial backoff could be any
-    retry_chain_node fib(&parent_rtc);
-    if (tx.has_value() && !tx.value().empty()) {
-        cloud_storage::tx_range_manifest manifest(path, std::move(tx).value());
-        auto result = co_await _remote.upload_manifest(
-          get_bucket_name(), manifest, manifest.get_manifest_path(), fib);
-        co_return result;
-    }
-    co_return std::nullopt;
-}
-
-ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
-  segment_collector_stream strm,
-  const cloud_storage::segment_meta& meta,
-  std::optional<fragmented_vector<model::tx_range>> tx_ranges) {
-    // We're not doing any retries here so initial backoff could be any
-    retry_chain_node rtc(
-      _conf->segment_upload_timeout(),
-      100ms,
-      retry_strategy::disallow,
-      &_rtcnode);
-    retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
-    auto h = _gate.hold();
-    auto path = manifest().generate_segment_path(meta, remote_path_provider());
-    auto index_path = make_index_path(path);
-    auto lazy_abort = lazy_abort_source{
-      [this]() { return upload_should_abort(); }};
-    auto stream = strm.create_input_stream();
-    auto [upload_stream, indexing_stream] = input_stream_fanout<2>(
-      std::move(stream),
-      config::shard_local_cfg().storage_read_readahead_count());
-
-    auto tx_upload_started = maybe_upload_aborted_tx(
-      path, std::move(tx_ranges), rtc);
-
-    auto make_index_started = make_segment_index(
-      meta.base_offset,
-      meta.base_timestamp,
-      ctxlog,
-      index_path,
-      std::move(indexing_stream));
-
-    // NOTE: input_stream_fanout returns non-optional input_streams. we move
-    // the upload stream into an optional in order to detect whether
-    // cloud_io::remote::upload_stream called the `get_stream` callback (below).
-    // If not, we manually close the stream on the other side of the call to
-    // upload_segment (also below).
-
-    std::optional<ss::input_stream<char>> stream_state = std::move(
-      upload_stream);
-
-    auto get_stream = [&stream_state] {
-        // On first attempt to upload, the stream-ref passed in is used.
-        using provider_t = std::unique_ptr<stream_provider>;
-        // Note that stream_state is known to be non-nullopt here.
-        auto prov = std::make_unique<one_time_stream_wrapper>(
-          std::move(stream_state.value()));
-        stream_state = std::nullopt;
-        return ss::make_ready_future<provider_t>(std::move(prov));
-    };
-
-    // Upload segment in foreground and upload tx-manifest and build an
-    // index in the background.
-    auto upload_segment_ready = co_await ss::coroutine::as_future(
-      _remote.upload_segment(
-        get_bucket_name(),
-        path,
-        meta.size_bytes,
-        get_stream,
-        rtc,
-        lazy_abort,
-        1));
-
-    // As noted above, check whether 'get_stream' was called. If not, close the
-    // upload stream.
-    if (stream_state.has_value()) {
-        co_await stream_state->close();
-    }
-
-    // This future should be ready at the moment or will
-    // be ready very soon. The index building is tied to
-    // the segment upload through the fanout stream.
-    auto make_index_ready = co_await ss::coroutine::as_future(
-      std::move(make_index_started));
-    auto tx_upload_ready = co_await ss::coroutine::as_future(
-      std::move(tx_upload_started));
-
-    struct error_state {
-        ss::sstring source;
-        std::exception_ptr e_ptr;
-    };
-    std::vector<error_state> e_ptr;
-    auto log_exception =
-      [&e_ptr](std::string_view source, const std::exception_ptr& e) {
-          auto flat = flatten_exception(e);
-          e_ptr.reserve(e_ptr.size() + flat.size());
-          absl::c_transform(
-            flat,
-            std::back_inserter(e_ptr),
-            [source](const std::exception_ptr& e) -> error_state {
-                return {
-                  .source = ss::sstring{source.data(), source.size()},
-                  .e_ptr = e};
-            });
-      };
-    if (upload_segment_ready.failed()) {
-        log_exception("Segment upload", upload_segment_ready.get_exception());
-    }
-    if (make_index_ready.failed()) {
-        log_exception("Index construction", make_index_ready.get_exception());
-    }
-    if (tx_upload_ready.failed()) {
-        log_exception("Tx-manifest upload", tx_upload_ready.get_exception());
-    }
-
-    size_t shutdown_error = 0;
-    size_t other_failure = 0;
-    if (!e_ptr.empty()) {
-        for (auto [src, e] : e_ptr) {
-            if (ssx::is_shutdown_exception(e)) {
-                vlog(
-                  ctxlog.debug,
-                  "{} ({}) failed due to shutdown error",
-                  src,
-                  path);
-                shutdown_error++;
-            } else {
-                vlog(ctxlog.warn, "{} ({}) upload failed: {}", src, path, e);
-                other_failure++;
+// The function turns an array of futures that return an error code into a
+// single future that returns error result of the last failed future or success
+// otherwise.
+static ss::future<ntp_archiver_upload_result> aggregate_upload_results(
+  std::vector<ss::future<ntp_archiver_upload_result>> upl_vec) {
+    return ss::when_all(upl_vec.begin(), upl_vec.end()).then([](auto vec) {
+        std::vector<ntp_archiver_upload_result> results;
+        for (auto& v : vec) {
+            try {
+                results.push_back(v.get());
+            } catch (const ss::gate_closed_exception&) {
+                results.emplace_back(cloud_storage::upload_result::cancelled);
+            } catch (...) {
+                results.emplace_back(cloud_storage::upload_result::failed);
             }
         }
-    }
-    if (other_failure) {
-        co_return ntp_archiver_upload_result(
-          cloud_storage::upload_result::failed);
-    }
-    if (shutdown_error) {
-        co_return ntp_archiver_upload_result(
-          cloud_storage::upload_result::cancelled);
-    }
-    auto upload_result = upload_segment_ready.get();
-    switch (upload_result) {
-    case cloud_storage::upload_result::failed:
-    case cloud_storage::upload_result::timedout:
-        vlog(
-          ctxlog.info,
-          "Segment upload failed: {}, error: {}",
-          path,
-          upload_result);
-        [[fallthrough]];
-    case cloud_storage::upload_result::cancelled:
-        co_return ntp_archiver_upload_result(upload_result);
-    case cloud_storage::upload_result::success:
-        break;
-    }
-    auto index_res = make_index_ready.get();
-    if (!index_res.has_value()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format, "Failed to construct segment for {}", path));
-    }
-
-    auto [index, index_stats] = std::move(index_res.value());
-
-    // If we fail to upload the index but successfully upload the segment,
-    // the read path will create the index on the fly while downloading the
-    // segment, so it is okay to ignore the index upload failure, we still
-    // want to advance the offsets because the segment did get uploaded.
-
-    // Note: this operation can be started in the background.
-    // In order to do this the context should be associated with the
-    // background operation. We can't background it as is because the
-    // 'upload_index' call is taking 'rtc' as a reference. So there should be
-    // some wrapper for this call.
-    std::ignore = co_await _remote.upload_index(
-      _conf->bucket_name,
-      cloud_storage_clients::object_key{index_path},
-      index,
-      rtc);
-
-    co_return ntp_archiver_upload_result(index_stats);
-
-    // Note on segment locks, which were captured by
-    // segment_collector_stream::create_input_stream:
-    //
-    // We've successfully uploaded the segment. Before we replicate an update
-    // with the archival STM, drop any segment locks that may be held. It's
-    // possible these locks are blocking other fibers from taking write locks,
-    // which in turn, may prevent further read locks from being held.
-    // Replicating and waiting on archival batches to be applied may require
-    // taking read locks on these segments.
-    //
-    // Specifically, we want to avoid a series of events like:
-    // 1. This fiber holds the uploaded segment's read lock
-    // 2. Another fiber attempts to write lock the segment (e.g. during a
-    //    segment roll), but can't. Instead, it prevents other read locks from
-    //    being taken as it waits.
-    // 3. This fiber attempts to replicate an archival batch, which
-    //    subsequently waits for all prior ops to be applied, which may require
-    //    consuming from this segment. In doing so, we attempt to read lock a
-    //    locked segment.
-    //
-    // To avoid this, simply drop the locks here, now that we're done with
-    // them. There's no concern that the underlying offsets will disappear
-    // since the archival STM pins offsets until they are recorded in the
-    // manifest.
+        return ntp_archiver_upload_result::merge(results);
+    });
 }
 
-auto ntp_archiver::do_schedule_single_upload_streaming(
-  segment_collector_stream strm,
-  model::term_id start_term,
-  segment_upload_kind upload_kind) -> ss::future<scheduled_upload> {
-    auto sname = segment_name_for_stream(strm, start_term);
-    auto meta = convert_segment_meta(strm, _parent, _rev, start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
-    meta.metadata_size_hint = tx_size;
+ss::future<ntp_archiver::scheduled_upload>
+ntp_archiver::do_schedule_single_upload(
+  upload_candidate_with_locks upload_candidate,
+  model::term_id archiver_term,
+  segment_upload_kind upload_kind) {
+    auto upload = std::move(upload_candidate.candidate);
+    auto locks = std::move(upload_candidate.read_locks);
 
-    vlog(
-      _rtclog.debug,
-      "Starting segment upload in the background, name: {}, meta: {}",
-      sname,
-      meta);
+    auto first_source = upload.sources.front();
+    auto offset = upload.final_offset;
+    auto base = upload.starting_offset;
+    auto log = _parent.log();
+    auto delta = base - model::offset_cast(log->from_log_offset(base));
+    auto delta_offset_next = log->offset_delta(
+      model::next_offset(upload.final_offset));
 
-    auto background_upload = upload_segment(
-      std::move(strm), meta, std::move(tx_ranges));
+    // The upload is successful only if the segment, and tx_range are
+    // uploaded.
+    std::vector<ss::future<ntp_archiver_upload_result>> all_uploads;
 
-    // Happy path, we have found upload candidate and started uploading.
-    // The upload is running in the background at the moment or will be
-    // running soon.
+    all_uploads.emplace_back(
+      upload_segment(archiver_term, upload, std::move(locks)));
+
+    ss::log_level level{};
+    std::exception_ptr ep;
+    size_t tx_size = 0;
+    // Compacted segments never have tx-manifests because all batches
+    // generated by aborted transactions are removed during compaction.
+    if (upload_kind == segment_upload_kind::non_compacted) {
+        try {
+            auto tx = co_await get_aborted_transactions(upload);
+            tx_size = tx.size();
+            if (!tx.empty()) {
+                all_uploads.emplace_back(
+                  upload_tx(archiver_term, upload, std::move(tx)));
+            }
+        } catch (const ss::gate_closed_exception&) {
+            level = ss::log_level::debug;
+            ep = std::current_exception();
+        } catch (...) {
+            level = ss::log_level::warn;
+            ep = std::current_exception();
+        }
+    }
+
+    if (ep) {
+        vlogl(_rtclog, level, "Failed to get aborted transactions: {}", ep);
+        auto futs = co_await ss::when_all(
+          all_uploads.begin(), all_uploads.end());
+        for (auto& fut : futs) {
+            if (fut.failed()) {
+                vlogl(_rtclog, level, "Upload failed: {}", fut.get_exception());
+            }
+        }
+        std::rethrow_exception(ep);
+    }
+
+    auto upl_fut = aggregate_upload_results(std::move(all_uploads));
+
+    auto is_compacted = first_source->is_compacted_segment()
+                        && archival_policy::eligible_for_compacted_reupload(
+                          *first_source);
     co_return scheduled_upload{
-      .result = std::move(background_upload),
-      .inclusive_last_offset = meta.committed_offset,
-      .meta = meta,
-      .name = sname, // TODO: check correctness
-      .delta = meta.committed_offset - meta.base_offset,
+      .result = std::move(upl_fut),
+      .inclusive_last_offset = offset,
+      .meta = cloud_storage::partition_manifest::segment_meta{
+        .is_compacted = is_compacted,
+        .size_bytes = upload.content_length,
+        .base_offset = upload.starting_offset,
+        .committed_offset = offset,
+        .base_timestamp = upload.base_timestamp,
+        .max_timestamp = upload.max_timestamp,
+        .delta_offset = delta,
+        .ntp_revision = _rev,
+        .archiver_term = archiver_term,
+        .segment_term = upload.term,
+        .delta_offset_end = delta_offset_next,
+        .sname_format = cloud_storage::segment_name_format::v3,
+        .metadata_size_hint = tx_size,
+      },
+      .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
       .upload_kind = upload_kind,
     };
@@ -1721,7 +1734,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 
     auto log = _parent.log();
 
-    segment_collector_stream_result candidate_result{};
+    candidate_creation_result candidate_result;
 
     switch (upload_ctx.upload_kind) {
     case segment_upload_kind::non_compacted:
@@ -1745,11 +1758,13 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     co_return co_await ss::visit(
       candidate_result,
       [](std::monostate) -> ss::future<scheduled_upload> {
-          vassert(false, "Unexpected monostate in candidate stream result");
+          vassert(false, "Unexpected default upload candidate creation result");
       },
-      [this, &upload_ctx](segment_collector_stream& strm) {
-          return do_schedule_single_upload_streaming(
-            std::move(strm), upload_ctx.archiver_term, upload_ctx.upload_kind);
+      [this, &upload_ctx](upload_candidate_with_locks& candidate_with_locks) {
+          return do_schedule_single_upload(
+            std::move(candidate_with_locks),
+            upload_ctx.archiver_term,
+            upload_ctx.upload_kind);
       },
       [this, &upload_ctx, start_upload_offset, last_stable_offset](
         skip_offset_range& skip_offsets) {
@@ -2982,7 +2997,8 @@ flush_result ntp_archiver::flush() {
       "Accepted flush, flush offset is {}",
       _flush_uploads_offset.value());
     return flush_result{
-      .response = flush_response::accepted, .offset = _flush_uploads_offset};
+      .response = flush_response::accepted,
+      .offset = _flush_uploads_offset.value()};
 }
 
 ss::future<wait_result> ntp_archiver::wait(model::offset o) {
@@ -3289,12 +3305,14 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
       .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
     };
     if (!may_begin_uploads()) {
-        co_return find_reupload_candidate_result{};
+        co_return find_reupload_candidate_result{
+          std::nullopt, std::nullopt, {}};
     }
     auto run = scanner(_parent.raft_start_offset(), manifest());
     if (!run.has_value()) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
-        co_return find_reupload_candidate_result{};
+        co_return find_reupload_candidate_result{
+          std::nullopt, std::nullopt, {}};
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
@@ -3310,7 +3328,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           run->meta.committed_offset);
         collector.collect_segments(
           segment_collector_mode::non_compacted_reupload);
-        auto candidate = co_await collector.make_upload_candidate_stream(
+        auto candidate = co_await collector.make_upload_candidate(
           _conf->segment_upload_timeout());
 
         co_return ss::visit(
@@ -3321,24 +3339,26 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 "unexpected default re-upload candidate creation result");
           },
           [this, &run, &rw_fence, units = std::move(units)](
-            segment_collector_stream& collector_stream) mutable
+            upload_candidate_with_locks& upload_candidate) mutable
             -> find_reupload_candidate_result {
               if (
-                collector_stream.size != run->meta.size_bytes
-                || collector_stream.start_offset != run->meta.base_offset
-                || collector_stream.end_offset != run->meta.committed_offset) {
+                upload_candidate.candidate.content_length
+                  != run->meta.size_bytes
+                || upload_candidate.candidate.starting_offset
+                     != run->meta.base_offset
+                || upload_candidate.candidate.final_offset
+                     != run->meta.committed_offset) {
                   vlog(
                     _rtclog.error,
                     "Failed to make reupload candidate to match the run, "
-                    "candidate: {} run: {}",
-                    collector_stream,
+                    "candidate: "
+                    "{}, run: {}",
+                    upload_candidate.candidate,
                     run->meta);
-                  return {};
+                  return {std::nullopt, std::nullopt, {}};
               }
-              return {
-                .units = std::move(units),
-                .upload_stream = std::move(collector_stream),
-                .read_write_fence = rw_fence};
+
+              return {std::move(units), std::move(upload_candidate), rw_fence};
           },
           [this](
             skip_offset_range& skip_offsets) -> find_reupload_candidate_result {
@@ -3348,7 +3368,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 log_level,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
-              return {};
+              return {std::nullopt, std::nullopt, {}};
           },
           [this](
             candidate_creation_error& error) -> find_reupload_candidate_result {
@@ -3358,38 +3378,43 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 log_level,
                 "Failed to make reupload candidate: {}",
                 error);
-              return {};
+              return {std::nullopt, std::nullopt, {}};
           });
     }
-    // OTHERWISE WE'RE REUPLOADING REMOTE SEGMENTS
-    // This is not currently supported, and is tricky to wire up to the
-    // stream-based interface, so just elide all this code for now and return an
-    // empty result
-    co_return find_reupload_candidate_result{};
-}
-
-cloud_storage::segment_name ntp_archiver::segment_name_for_stream(
-  const segment_collector_stream& strm,
-  std::optional<model::term_id> archiver_term) {
-    auto term = archiver_term.value_or(_start_term);
-    auto meta = convert_segment_meta(strm, _parent, _rev, term);
-    return cloud_storage::partition_manifest::generate_remote_segment_name(
-      meta);
+    // segment_name exposed_name;
+    upload_candidate candidate = {};
+    candidate.starting_offset = run->meta.base_offset;
+    candidate.content_length = run->meta.size_bytes;
+    candidate.final_offset = run->meta.committed_offset;
+    candidate.base_timestamp = run->meta.base_timestamp;
+    candidate.max_timestamp = run->meta.max_timestamp;
+    candidate.term = run->meta.segment_term;
+    candidate.remote_sources = run->segments;
+    // Reuploaded segment can only use new name format
+    run->meta.sname_format = cloud_storage::segment_name_format::v3;
+    candidate.exposed_name
+      = cloud_storage::partition_manifest::generate_remote_segment_name(
+        run->meta);
+    // Create a remote upload candidate
+    co_return find_reupload_candidate_result{
+      std::move(units),
+      upload_candidate_with_locks{std::move(candidate)},
+      rw_fence};
 }
 
 ss::future<bool> ntp_archiver::upload(
   find_reupload_candidate_result find_res,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     ss::gate::holder holder(_gate);
-    if (!find_res.upload_stream.has_value() || !find_res.units.has_value()) {
+    if (!find_res.locks.has_value() || !find_res.units.has_value()) {
         // The method shouldn't be called if this is the case
         co_return false;
     }
     auto units = std::move(find_res.units);
-    if (find_res.upload_stream.value().size > 0) {
+    if (find_res.locks->candidate.sources.size() > 0) {
         co_return co_await do_upload_local(
           find_res.read_write_fence,
-          std::move(find_res.upload_stream).value(),
+          std::move(find_res.locks.value()),
           source_rtc);
     }
     // Currently, the uploading of remote segments is disabled and
@@ -3402,53 +3427,97 @@ ss::future<bool> ntp_archiver::upload(
 
 ss::future<bool> ntp_archiver::do_upload_local(
   archival_stm_fence fence,
-  segment_collector_stream strm,
+  upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     if (!may_begin_uploads()) {
         co_return false;
     }
+
     if (!config::shard_local_cfg().cloud_storage_enable_segment_uploads()) {
         co_return false;
     }
 
-    auto sname = segment_name_for_stream(strm);
+    auto [upload, locks] = std::move(upload_locks);
 
-    if (strm.is_compacted) {
+    for (const auto& s : upload.sources) {
+        if (archival_policy::eligible_for_compacted_reupload(*s)) {
+            vlog(
+              _rtclog.warn,
+              "Upload {} requested contains compacted segments.",
+              upload.exposed_name);
+            co_return false;
+        }
+    }
+
+    if (upload.sources.empty()) {
         vlog(
           _rtclog.warn,
           "Upload of the {} requested but sources are empty",
-          sname);
+          upload.exposed_name);
         co_return false;
     }
 
-    if (strm.size == 0) {
-        vlog(
-          _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
-          sname);
+    auto offset = upload.final_offset;
+    auto base = upload.starting_offset;
+    auto log = _parent.log();
+    auto delta = base - model::offset_cast(log->from_log_offset(base));
+    auto delta_offset_next = log->offset_delta(
+      model::next_offset(upload.final_offset));
+    auto archiver_term = _start_term;
+
+    // Upload segments and tx-manifest in parallel
+    std::vector<ss::future<ntp_archiver_upload_result>> futures;
+    futures.emplace_back(
+      upload_segment(archiver_term, upload, std::move(locks), source_rtc));
+
+    size_t tx_size = 0;
+    std::exception_ptr tx_ep;
+    try {
+        auto tx_range = co_await get_aborted_transactions(upload);
+        if (!tx_range.empty()) {
+            tx_size = tx_range.size();
+            futures.emplace_back(upload_tx(
+              archiver_term, upload, std::move(tx_range), source_rtc));
+        }
+    } catch (...) {
+        tx_ep = std::current_exception();
+    }
+    auto upl_res = co_await aggregate_upload_results(std::move(futures));
+
+    if (tx_ep || upl_res.result() != cloud_storage::upload_result::success) {
+        if (upl_res.result() != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "Failed to upload segment: {}, error: {}",
+              upload.exposed_name,
+              upl_res.result());
+        }
+        if (tx_ep) {
+            vlog(
+              _rtclog.warn,
+              "Failed to get aborted transactions segment: {}, error: {}",
+              upload.exposed_name,
+              tx_ep);
+            std::rethrow_exception(tx_ep);
+        }
         co_return false;
     }
 
-    auto meta = convert_segment_meta(strm, _parent, _rev, _start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
-    meta.metadata_size_hint = tx_size;
-    vlog(
-      _rtclog.debug,
-      "Starting segment upload in the background, name: {}, meta: {}",
-      sname,
-      meta);
-
-    auto upl_res = co_await upload_segment(
-      std::move(strm), meta, std::move(tx_ranges));
-
-    if (upl_res.result() != cloud_storage::upload_result::success) {
-        vlog(
-          _rtclog.warn,
-          "Failed to upload segment: {}, error: {}",
-          sname,
-          upl_res.result());
-        co_return false;
-    }
+    auto meta = cloud_storage::partition_manifest::segment_meta{
+      .is_compacted = false,
+      .size_bytes = upload.content_length,
+      .base_offset = upload.starting_offset,
+      .committed_offset = offset,
+      .base_timestamp = upload.base_timestamp,
+      .max_timestamp = upload.max_timestamp,
+      .delta_offset = delta,
+      .ntp_revision = _rev,
+      .archiver_term = archiver_term,
+      .segment_term = upload.term,
+      .delta_offset_end = delta_offset_next,
+      .sname_format = cloud_storage::segment_name_format::v3,
+      .metadata_size_hint = tx_size,
+    };
 
     const bool checks_disabled
       = config::shard_local_cfg()
@@ -3491,7 +3560,6 @@ ss::future<bool> ntp_archiver::do_upload_local(
           _parent.archival_meta_stm()->get_insync_offset());
         rw_fence = fence.read_write_fence;
     }
-
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta},
       std::nullopt,
@@ -3508,7 +3576,6 @@ ss::future<bool> ntp_archiver::do_upload_local(
           error.message());
         co_return false;
     }
-
     if (
       co_await upload_manifest(segment_merger_ctx_label, source_rtc)
       != cloud_storage::upload_result::success) {

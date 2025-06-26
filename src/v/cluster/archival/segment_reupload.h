@@ -10,19 +10,11 @@
 
 #pragma once
 
-#include "base/seastarx.h"
-#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
-#include "cluster/archival/types.h"
+#include "cluster/archival/archival_policy.h"
 #include "model/fundamental.h"
-#include "storage/fwd.h"
-#include "storage/log.h"
-#include "storage/ntp_config.h"
-#include "storage/segment.h"
 
 #include <seastar/core/iostream.hh>
-#include <seastar/core/rwlock.hh>
-#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 namespace cloud_storage {
@@ -36,61 +28,6 @@ class segment;
 } // namespace storage
 
 namespace archival {
-
-enum class candidate_creation_error {
-    no_segments_collected,
-    begin_offset_seek_error,
-    end_offset_seek_error,
-    offset_inside_batch,
-    upload_size_unchanged,
-    cannot_replace_manifest_entry,
-    no_segment_for_begin_offset,
-    missing_ntp_config,
-    failed_to_get_file_range,
-    zero_content_length,
-    concurrency_error,
-};
-
-std::ostream& operator<<(std::ostream&, candidate_creation_error);
-
-ss::log_level log_level_for_error(const candidate_creation_error& error);
-
-struct upload_candidate {
-    segment_name exposed_name;
-    model::offset starting_offset;
-    size_t file_offset;
-    size_t content_length;
-    model::offset final_offset;
-    size_t final_file_offset;
-    model::timestamp base_timestamp;
-    model::timestamp max_timestamp;
-    model::term_id term;
-    std::vector<ss::lw_shared_ptr<storage::segment>> sources;
-    std::vector<cloud_storage::remote_segment_path> remote_sources;
-
-    friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
-};
-
-struct upload_candidate_with_locks {
-    upload_candidate candidate;
-    std::vector<ss::rwlock::holder> read_locks;
-};
-
-/// Wraps an error with an offset range, so that no
-/// further upload candidates are created from this offset range.
-struct skip_offset_range {
-    model::offset begin_offset;
-    model::offset end_offset;
-    candidate_creation_error reason;
-
-    friend std::ostream& operator<<(std::ostream&, const skip_offset_range&);
-};
-
-using candidate_creation_result = std::variant<
-  std::monostate,
-  upload_candidate_with_locks,
-  skip_offset_range,
-  candidate_creation_error>;
 
 enum class segment_collector_mode {
     // collect segments for reupload
@@ -108,28 +45,16 @@ struct segment_collector_stream {
     size_t size;
     // The time range of the segments that are being uploaded.
     model::timestamp min_timestamp, max_timestamp;
-
-    bool is_compacted{false};
+    // If this is set to true, the offset range should be skipped.
+    // The 'create_input_stream' method shouldn't be invoked.
+    bool skip_offset_range{false};
 
     // Create the input_stream for the segment upload.
     // The generator function here is stateful and holds the segments and the
     // locks. The function can only be called once.
     // The object should be kept alive until the stream is alive.
     ss::noncopyable_function<ss::input_stream<char>()> create_input_stream;
-
-    model::term_id term;
-
-    friend std::ostream&
-    operator<<(std::ostream& s, const segment_collector_stream&);
 };
-
-using segment_collector_stream_result = std::variant<
-  std::monostate,
-  segment_collector_stream,
-  skip_offset_range,
-  candidate_creation_error>;
-
-bool eligible_for_compacted_reupload(const storage::segment&);
 
 class segment_collector {
 public:
@@ -203,7 +128,7 @@ public:
     size_t collected_size() const;
 
     // Create a stream for the upload candidate.
-    ss::future<segment_collector_stream_result> make_upload_candidate_stream(
+    ss::future<result<segment_collector_stream>> make_upload_candidate_stream(
       ss::lowres_clock::duration segment_lock_duration);
 
 private:

@@ -11,14 +11,71 @@
 #pragma once
 
 #include "cloud_storage/partition_manifest.h"
-#include "cluster/archival/segment_reupload.h"
+#include "cloud_storage/types.h"
+#include "cluster/archival/probe.h"
 #include "cluster/archival/types.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
+#include "storage/ntp_config.h"
 
 #include <seastar/core/rwlock.hh>
 
 namespace archival {
+
+enum class candidate_creation_error {
+    no_segments_collected,
+    begin_offset_seek_error,
+    end_offset_seek_error,
+    offset_inside_batch,
+    upload_size_unchanged,
+    cannot_replace_manifest_entry,
+    no_segment_for_begin_offset,
+    missing_ntp_config,
+    failed_to_get_file_range,
+    zero_content_length,
+    concurrency_error,
+};
+
+std::ostream& operator<<(std::ostream&, candidate_creation_error);
+
+ss::log_level log_level_for_error(const candidate_creation_error& error);
+
+struct upload_candidate {
+    segment_name exposed_name;
+    model::offset starting_offset;
+    size_t file_offset;
+    size_t content_length;
+    model::offset final_offset;
+    size_t final_file_offset;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
+    model::term_id term;
+    std::vector<ss::lw_shared_ptr<storage::segment>> sources;
+    std::vector<cloud_storage::remote_segment_path> remote_sources;
+
+    friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
+};
+
+struct upload_candidate_with_locks {
+    upload_candidate candidate;
+    std::vector<ss::rwlock::holder> read_locks;
+};
+
+/// Wraps an error with an offset range, so that no
+/// further upload candidates are created from this offset range.
+struct skip_offset_range {
+    model::offset begin_offset;
+    model::offset end_offset;
+    candidate_creation_error reason;
+
+    friend std::ostream& operator<<(std::ostream&, const skip_offset_range&);
+};
+
+using candidate_creation_result = std::variant<
+  std::monostate,
+  upload_candidate_with_locks,
+  skip_offset_range,
+  candidate_creation_error>;
 
 /// Archival policy is responsible for extracting segments from
 /// log_manager in right order.
@@ -30,13 +87,13 @@ public:
     explicit archival_policy(
       model::ntp ntp, std::optional<segment_time_limit> limit = std::nullopt);
 
-    ss::future<segment_collector_stream_result> get_next_compacted_segment(
+    ss::future<candidate_creation_result> get_next_compacted_segment(
       model::offset begin_inclusive,
       ss::shared_ptr<storage::log> log,
       const cloud_storage::partition_manifest& manifest,
       ss::lowres_clock::duration segment_lock_duration);
 
-    ss::future<segment_collector_stream_result> get_next_segment(
+    ss::future<candidate_creation_result> get_next_segment(
       model::offset begin_inclusive,
       model::offset end_exclusive,
       std::optional<model::offset> flush_offset,

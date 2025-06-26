@@ -166,7 +166,9 @@ ss::input_stream<char> make_reader_input_stream(
 }
 
 segment_upload::segment_upload(
-  cluster::partition* part, size_t read_buffer_size, ss::scheduling_group sg)
+  ss::lw_shared_ptr<cluster::partition> part,
+  size_t read_buffer_size,
+  ss::scheduling_group sg)
   : _ntp(part->get_ntp_config().ntp())
   , _part(part)
   , _rd_buffer_size(read_buffer_size)
@@ -186,7 +188,7 @@ void segment_upload::throw_if_not_initialized(std::string_view caller) const {
 
 ss::future<result<std::unique_ptr<segment_upload>>>
 segment_upload::make_segment_upload(
-  cluster::partition* part,
+  ss::lw_shared_ptr<cluster::partition> part,
   inclusive_offset_range range,
   size_t read_buffer_size,
   ss::scheduling_group sg,
@@ -203,7 +205,7 @@ segment_upload::make_segment_upload(
 
 ss::future<result<std::unique_ptr<segment_upload>>>
 segment_upload::make_segment_upload(
-  cluster::partition* part,
+  ss::lw_shared_ptr<cluster::partition> part,
   size_limited_offset_range range,
   size_t read_buffer_size,
   ss::scheduling_group sg,

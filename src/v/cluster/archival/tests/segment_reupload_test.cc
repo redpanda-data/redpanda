@@ -40,16 +40,6 @@ using namespace archival;
 namespace {
 static const cloud_storage::remote_path_provider
   path_provider(std::nullopt, std::nullopt);
-
-bool has_failure(const segment_collector_stream_result& res) {
-    return std::holds_alternative<candidate_creation_error>(res);
-}
-
-segment_collector_stream& value(segment_collector_stream_result& res) {
-    vassert(
-      std::holds_alternative<segment_collector_stream>(res), "Expected value");
-    return std::get<segment_collector_stream>(res);
-}
 } // anonymous namespace
 
 inline ss::logger test_log("test");
@@ -266,10 +256,10 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_stream) {
 
     auto result
       = collector.make_upload_candidate_stream(segment_lock_timeout).get();
-    BOOST_REQUIRE(!has_failure(result));
-    BOOST_REQUIRE(!std::holds_alternative<skip_offset_range>(result));
+    BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == false);
 
-    auto cstream = std::move(value(result));
+    auto cstream = std::move(result.value());
     BOOST_REQUIRE_GE(cstream.size, size_t{1});
 
     // Read from candidate stream
@@ -314,10 +304,9 @@ SEASTAR_THREAD_TEST_CASE(test_make_upload_candidate_skip_offsets) {
     collector.collect_segments();
     auto result
       = collector.make_upload_candidate_stream(segment_lock_timeout).get();
-    BOOST_REQUIRE(!has_failure(result));
-    BOOST_REQUIRE(std::holds_alternative<skip_offset_range>(result));
-    BOOST_REQUIRE_EQUAL(
-      std::get<skip_offset_range>(result).end_offset, model::offset{39});
+    BOOST_REQUIRE(!result.has_failure());
+    BOOST_REQUIRE(result.value().skip_offset_range == true);
+    BOOST_REQUIRE_EQUAL(result.value().end_offset, model::offset{39});
 }
 
 SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
