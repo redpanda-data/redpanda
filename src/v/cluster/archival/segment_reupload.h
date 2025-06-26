@@ -211,6 +211,10 @@ public:
     ss::future<candidate_creation_result>
     make_upload_candidate(ss::lowres_clock::duration segment_lock_duration);
 
+    ss::future<candidate_creation_result> make_segment_upload_candidate(
+      cluster::partition& parent,
+      ss::lowres_clock::duration segment_lock_duration);
+
     size_t collected_size() const;
 
     // Create a stream for the upload candidate.
