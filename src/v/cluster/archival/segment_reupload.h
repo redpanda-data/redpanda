@@ -235,7 +235,8 @@ private:
     /// segment, we decrement the offset enough to the end of the previous
     /// manifest segment, so that when we re-upload segments there is no
     /// overlap.
-    void align_end_offset_to_manifest(model::offset compacted_segment_end);
+    std::optional<model::offset>
+    align_end_offset_to_manifest(model::offset compacted_segment_end);
 
     /// Finds the offset which the collection needs to progress upto in order to
     /// replace at least one manifest segment. The collection is valid if it
