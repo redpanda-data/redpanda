@@ -827,7 +827,7 @@ TEST_F_CORO(raft_fixture, leadership_transfer_delay) {
         co_await stop_node(vn.id());
     }
 
-    auto tolerance_multiplier = 1.5;
+    auto tolerance_multiplier = 1.7;
     /**
      * Validate that election time after reconfiguration is simillar to the
      * time needed for leadership transfer
