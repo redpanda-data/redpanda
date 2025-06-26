@@ -1318,6 +1318,271 @@ segment_collector::make_upload_candidate_stream(
     co_return stream;
 }
 
+ss::future<candidate_creation_result>
+segment_collector::make_segment_upload_candidate(
+  cluster::partition& parent,
+  ss::lowres_clock::duration segment_lock_duration) {
+    vassert(is_v2_mode(_mode), "Unsupported mode: {}", _mode);
+
+    // TODO(oren): Perhaps for compacted reuploads (or reuploads generally), we
+    // should have a totally distinct candidate creation function. For compacted
+    // reuploads, e.g., we can't possibly know the end offset ahead of time
+    // since we always scroll to the last compacted offset. Does it make more
+    // sense to do the size capped upload _first_, then align to a manifest
+    // segment end and return that? This way in the best case (i.e. when we can
+    // fit _everything_), we only do one segment creation. This would be much
+    // much better I think.
+
+    auto [min_size, max_size] = upload_size_jitter(
+      _mode, _max_uploaded_segment_size);
+
+    vlog(
+      archival_log.debug,
+      "start collecting segments, start offset {}, min size {}, target "
+      "size {}, max_size {}, mode: {}",
+      _begin_inclusive,
+      min_size,
+      _max_uploaded_segment_size,
+      max_size,
+      _mode);
+
+    auto base_offset = _begin_inclusive;
+    auto committed_offset = _end_inclusive;
+    auto base_term = parent.get_term(base_offset);
+    auto committed_term = parent.get_term(committed_offset);
+
+    if (base_offset > committed_offset) {
+        vlog(
+          archival_log.debug,
+          "{} Base offset {} exceeds committed offset {}, nothing to do",
+          _manifest.get_ntp(),
+          base_offset,
+          committed_offset);
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    if (base_term == model::term_id{}) {
+        vlog(
+          archival_log.debug,
+          "{} Base offsfet {} not found in local log",
+          _manifest.get_ntp(),
+          base_offset);
+        co_return candidate_creation_error::no_segment_for_begin_offset;
+    }
+
+    bool force_upload = _target_end_inclusive.has_value();
+    vlog(
+      archival_log.debug,
+      "base offset: {}, base term: {}, committed offset: {}, committed term:"
+      "{} - force upload {}",
+      base_offset,
+      base_term,
+      committed_offset,
+      committed_term,
+      force_upload);
+
+    if (base_term != committed_term) {
+        // there's a term change in the range we want, so we should upload even
+        // if the result is not as large as we like. we'll never construct a
+        // larger upload than that, and we might be able to merge w/ the
+        // previous segment at some point.
+        force_upload = true;
+        auto term_last_offset = parent.get_term_last_offset(base_term);
+        if (!term_last_offset.has_value()) {
+            co_return candidate_creation_error::end_offset_seek_error;
+        }
+        committed_offset = model::prev_offset(term_last_offset.value());
+        committed_term = parent.get_term(committed_offset);
+        vlog(
+          archival_log.debug,
+          "base offset: {}, base term: {}, adjusted committed offset: {}, "
+          "adjusted committed term: {}, force upload? {}",
+          base_offset,
+          base_term,
+          committed_offset,
+          committed_term,
+          force_upload);
+    }
+    // sanity check
+    if (parent.get_term(base_offset) != parent.get_term(committed_offset)) {
+        throw std::runtime_error("base and committed offset mismatch");
+    }
+
+    constexpr auto check_compaction =
+      [](const segment_upload& upl, segment_collector_mode m) -> bool {
+        auto upload_is_compacted = upl.get_meta().is_compacted
+                                   && upl.get_meta().compaction_complete;
+        auto expect_compacted = is_compacted_reupload_mode(m);
+        auto allow_compacted = !is_non_compacted_reupload_mode(m);
+        return upload_is_compacted == expect_compacted
+               || (upload_is_compacted && allow_compacted);
+    };
+
+    auto create_candidate =
+      [&parent](const upload_reconciliation_result& meta) -> upload_candidate {
+        return upload_candidate{
+          // .exposed_name = generated from segment metadata later on
+          .starting_offset = meta.offsets.base,
+          // .file_offset = don't care
+          .content_length = meta.size_bytes,
+          .final_offset = meta.offsets.last,
+          // .final_file_offset = don't care
+          .base_timestamp = meta.base_timestamp,
+          .max_timestamp = meta.max_timestamp,
+          .term = parent.get_term(meta.offsets.base),
+          // .sources = don't care
+        };
+    };
+
+    auto read_buffer_size
+      = config::shard_local_cfg().storage_read_buffer_size();
+
+    auto deadline = ss::lowres_clock::now() + segment_lock_duration;
+    inclusive_offset_range range{base_offset, committed_offset};
+
+    // TODO(oren): we don't actually need a stream here. just the metadata. so
+    // maybe it's better or easier to have a mode where we don't actually
+    // construct the stream. or maybe should just return the fully initialized
+    // upload object through the candidate struct.
+    auto upl_res = co_await segment_upload::make_segment_upload(
+      &parent,
+      range,
+      read_buffer_size,
+      ss::default_scheduling_group(),
+      deadline,
+      force_upload);
+
+    if (upl_res.has_error()) {
+        if (upl_res.error() == archival::error_outcome::offset_in_batch) {
+            // TODO(oren): would be nice to transmit which offset did
+            vlog(
+              archival_log.warn,
+              "The upload candidate boundaries lie inside batch, skipping "
+              "upload. begin inclusive: {}, end inclusive: {}",
+              _begin_inclusive,
+              _end_inclusive);
+            co_return skip_offset_range{
+              .start_offset = _begin_inclusive,
+              .end_offset = _end_inclusive,
+              .reason = candidate_creation_error::offset_inside_batch,
+            };
+        }
+        // NOTE(oren): timeout may or may not be benign, but under load (many
+        // partitions) it's fairly common for read lock acquisition to time out.
+        // Needs more investigation, but for now we can let it pass and move on.
+        if (
+          upl_res.error() != archival::error_outcome::not_enough_data
+          && upl_res.error() != archival::error_outcome::timed_out) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate for {}: {}",
+              range,
+              upl_res.error().message());
+        }
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    auto upl = std::move(upl_res).value();
+    // TODO(oren): would be neat to push this down into segment_upload
+    if (!check_compaction(*upl, _mode)) {
+        vlog(
+          archival_log.debug,
+          "{}: No data after offset {} in {}",
+          _manifest.get_ntp(),
+          base_offset,
+          _mode);
+        co_await upl->close();
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    if (upl->get_meta().offsets != range) {
+        vlog(
+          archival_log.debug,
+          "{}: offset range was adjusted from {} to {} avoid dirty tail "
+          "segment, force upload",
+          _manifest.get_ntp(),
+          range,
+          upl->get_meta().offsets);
+        // this means the segment containing range.last was dirty so we bounced
+        // back to the previous end. force the upload in this case i guess? or
+        // maybe we should
+        // just adjust the size-based offset, but then what's the point? maybe
+        // we should just say nothing collected in this case? but then we get in
+        // a vicious cycle.
+        //  - upload size > max --> go to size-based which will by definition
+        //    fall below this point
+        //  - upload size < min --> go ahead and upload to avoid chasing the
+        //    dirty offset. again sort of by definition this should be at
+        //    minimum one segment worth of data if it's not empty
+        //    - basically need to make sure we don't fall back to size-based in
+        //      this case, since that will probably push us back into the dirty
+        //      segment
+        //  - min <= upload size <= max - GUCCI (don't care)
+        force_upload = true;
+    }
+
+    auto upload_size = upl->get_size_bytes();
+
+    if (upload_size <= max_size && (force_upload || upload_size >= min_size)) {
+        auto meta = co_await std::move(*upl).get_meta();
+        // TODO(oren): log to explain why we need to set end_inclusive here
+        _end_inclusive = meta.offsets.last;
+        co_return upload_candidate_with_locks{
+          .candidate = create_candidate(meta),
+        };
+    } else {
+        vlog(
+          archival_log.debug,
+          "Upload {} size {} out of range [{}..{}]",
+          upl->get_meta().offsets,
+          upload_size,
+          min_size,
+          max_size);
+        co_await upl->close();
+    }
+
+    if (upload_size < min_size) {
+        vlog(
+          archival_log.debug,
+          "Not enough data for upload {} < {}",
+          upload_size,
+          min_size);
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    // TODO: tweak min_size for timeboxed uploads
+    // NOTE(oren): or maybe that's covered by the force_upload check up above?
+    size_limited_offset_range sz_range(base_offset, max_size, min_size);
+
+    auto sz_upl_res = co_await segment_upload::make_segment_upload(
+      &parent,
+      sz_range,
+      read_buffer_size,
+      ss::default_scheduling_group(),
+      deadline);
+
+    if (sz_upl_res.has_error()) {
+        if (
+          sz_upl_res.error() != archival::error_outcome::not_enough_data
+          && sz_upl_res.error() != archival::error_outcome::timed_out) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate for {}: {}",
+              range,
+              sz_upl_res.error().message());
+        }
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    auto sz_upl = std::move(sz_upl_res).value();
+
+    auto meta = co_await std::move(*sz_upl).get_meta();
+    _end_inclusive = meta.offsets.last;
+    co_return upload_candidate_with_locks{
+      .candidate = create_candidate(meta),
+    };
+}
+
 ss::future<segment_collector_stream_result>
 segment_collector::make_segment_upload_stream(
   cluster::partition& parent,
