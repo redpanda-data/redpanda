@@ -59,6 +59,7 @@ public:
         virtual kafka::leader_epoch leader_epoch() const = 0;
         virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
+        virtual kafka::leader_epoch get_leader_epoch(model::offset) const = 0;
 
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
@@ -154,6 +155,10 @@ public:
     ss::future<std::optional<model::offset>>
     get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {
         return _impl->get_leader_epoch_last_offset(epoch);
+    }
+
+    kafka::leader_epoch get_leader_epoch(model::offset o) const {
+        return _impl->get_leader_epoch(o);
     }
 
     ss::future<error_code> validate_fetch_offset(

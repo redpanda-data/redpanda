@@ -86,6 +86,8 @@ public:
     ss::future<std::optional<model::offset>>
       get_leader_epoch_last_offset(kafka::leader_epoch) const final;
 
+    kafka::leader_epoch get_leader_epoch(model::offset o) const final;
+
     /**
      * A leader epoch is used by Kafka clients to determine if a replica is up
      * to date with the leader and to detect truncation.

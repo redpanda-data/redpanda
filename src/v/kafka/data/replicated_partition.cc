@@ -431,6 +431,11 @@ replicated_partition::get_leader_epoch_last_offset(
     co_return std::max(offset_unbounded.value(), start_offset());
 }
 
+kafka::leader_epoch
+replicated_partition::get_leader_epoch(model::offset o) const {
+    return leader_epoch_from_term(_partition->get_term(o));
+}
+
 ss::future<std::optional<model::offset>>
 replicated_partition::get_leader_epoch_last_offset_unbounded(
   kafka::leader_epoch epoch) const {

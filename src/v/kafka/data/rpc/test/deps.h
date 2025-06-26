@@ -103,6 +103,9 @@ public:
     get_leader_epoch_last_offset(kafka::leader_epoch) const final {
         throw std::runtime_error("unimplemented");
     }
+    kafka::leader_epoch get_leader_epoch(model::offset) const final {
+        throw std::runtime_error("unimplemented");
+    }
     bool is_leader() const final { return true; }
     ss::future<std::error_code> linearizable_barrier() final {
         throw std::runtime_error("unimplemented");
