@@ -176,10 +176,15 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self._wait_until_no_leader()
         return (killed, alive)
 
-    def _do_force_reconfiguration(self, replicas):
+    def _do_reconfigure(self, replicas, force: bool):
         try:
-            self.redpanda._admin.force_set_partition_replicas(
-                topic=self.topic, partition=0, replicas=replicas)
+            if force:
+                self.redpanda._admin.force_set_partition_replicas(
+                    topic=self.topic, partition=0, replicas=replicas)
+            else:
+                self.redpanda._admin.set_partition_replicas(topic=self.topic,
+                                                            partition=0,
+                                                            replicas=replicas)
             return True
         except requests.exceptions.RetryError:
             return False
@@ -188,18 +193,24 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         except requests.exceptions.HTTPError:
             return False
 
-    def _force_reconfiguration(self, new_replicas):
+    def reconfigure(self, new_replicas, force: bool):
         replicas = [
             dict(node_id=replica.node_id, core=replica.core)
             for replica in new_replicas
         ]
         self.redpanda.logger.info(f"Force reconfiguring to: {replicas}")
         self.redpanda.wait_until(
-            lambda: self._do_force_reconfiguration(replicas=replicas),
+            lambda: self._do_reconfigure(replicas=replicas, force=force),
             timeout_sec=60,
             backoff_sec=2,
             err_msg=f"Unable to force reconfigure {self.topic}/0 to {replicas}"
         )
+
+    def _force_reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=True)
+
+    def _reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=False)
 
     def _start_consumer(self):
         self.start_consumer()
@@ -354,7 +365,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             Replica(dict(node_id=self.redpanda.node_id(replica), core=0)) for
             replica in self.redpanda.started_nodes()[:target_replica_set_size]
         ]
-        self._force_reconfiguration(new_replicas=new_replicas)
+        self._force_reconfiguration(new_replicas)
 
         self.redpanda._admin.await_stable_leader(
             topic=self.topic,
