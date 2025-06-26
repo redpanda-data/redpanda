@@ -235,6 +235,9 @@ private:
     /// end of compacted segments in log.
     void do_collect();
 
+    bool do_collect_v2();
+    bool do_reupload_collect_v2();
+
     lookup_result
     find_next_segment(model::offset start_offset, segment_collector_mode mode);
 
