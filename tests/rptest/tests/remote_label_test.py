@@ -57,7 +57,8 @@ class RemoteLabelsTest(RedpandaTest):
             log_segment_size=1024,
             fast_uploads=True,
             cloud_storage_housekeeping_interval_ms=1000,
-            cloud_storage_spillover_manifest_max_segments=10)
+            cloud_storage_spillover_manifest_max_segments=10,
+            cloud_storage_segment_size_target=16 * 1024)
         self.new_cluster_si_settings.bypass_bucket_creation = True
         self.new_cluster_si_settings.reset_cloud_storage_bucket(
             self.si_settings.cloud_storage_bucket)
