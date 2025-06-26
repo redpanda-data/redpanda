@@ -468,8 +468,9 @@ void segment_collector::do_collect() {
     }
 
     if (is_reupload_mode(_mode)) {
-        align_end_offset_to_manifest(
-          _target_end_inclusive.value_or(last_collected));
+        _end_inclusive = align_end_offset_to_manifest(
+                           _target_end_inclusive.value_or(last_collected))
+                           .value_or(_end_inclusive);
     } else {
         // In case of new upload we want to end at the end of the segment
         // or at LSO (which is passed through the _target_end_inclusive).
@@ -543,47 +544,48 @@ model::offset segment_collector::find_replacement_boundary(
     return segment->offsets().get_committed_offset();
 }
 
-void segment_collector::align_end_offset_to_manifest(
-  model::offset segment_end) {
-    if (segment_end == _manifest.get_last_offset()) {
-        _end_inclusive = _manifest.get_last_offset();
-    } else if (segment_end > _manifest.get_last_offset()) {
+std::optional<model::offset>
+segment_collector::align_end_offset_to_manifest(model::offset end_offset) {
+    if (end_offset == _manifest.get_last_offset()) {
+        return _manifest.get_last_offset();
+    }
+    if (end_offset > _manifest.get_last_offset()) {
         vlog(
           archival_log.debug,
           "Segment collect for ntp {} offset {} advanced "
           "ahead of manifest, clamping to {}",
           _manifest.get_ntp(),
-          segment_end,
+          end_offset,
           _manifest.get_last_offset());
-        _end_inclusive = _manifest.get_last_offset();
-    } else {
-        // Align the end offset to the nearest segment ending in manifest.
-        auto it = _manifest.segment_containing(segment_end);
-        if (it == _manifest.end()) {
-            // segment_end is in a gap in the manifest.
-            if (segment_end >= _manifest.get_start_offset().value()) {
-                vlog(
-                  archival_log.debug,
-                  "Segment collect for ntp {}: collection ended at "
-                  "gap in manifest: {}",
-                  _manifest.get_ntp(),
-                  segment_end);
-
-                // try to fill the manifest gap with the data locally
-                // available.
-                _end_inclusive = segment_end;
-            }
-            return;
-        }
-
-        // If the segment end is not aligned to manifest segment, then
-        // pull back to the end of the previous segment.
-        if (it->committed_offset == segment_end) {
-            _end_inclusive = segment_end;
-        } else {
-            _end_inclusive = it->base_offset - model::offset{1};
-        }
+        return _manifest.get_last_offset();
     }
+    // Align the end offset to the nearest segment ending in manifest.
+    auto it = _manifest.segment_containing(end_offset);
+    if (it != _manifest.end()) {
+        // If the end offset is aligned to the manifest segment:
+        //   - return end offset
+        //   - otherwise, pull back to the end of the previous manifest segment
+        return it->committed_offset == end_offset
+                 ? end_offset
+                 : model::prev_offset(it->base_offset);
+    }
+
+    // end_offset is in a gap in the manifest.
+    if (end_offset >= _manifest.get_start_offset().value()) {
+        vlog(
+          archival_log.debug,
+          "Segment collect for ntp {}: collection ended at "
+          "gap in manifest: {}",
+          _manifest.get_ntp(),
+          end_offset);
+
+        // try to fill the manifest gap with the data locally
+        // available.
+        return end_offset;
+    }
+    // TODO(oren): what is the meaning of this? should we just return the input
+    // value?
+    return std::nullopt;
 }
 
 ss::lw_shared_ptr<storage::segment> segment_collector::lower_bound(
