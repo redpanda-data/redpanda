@@ -256,6 +256,41 @@ bool is_v2_mode(segment_collector_mode mode) {
 [[maybe_unused]] bool is_v1_mode(segment_collector_mode mode) {
     return !is_v2_mode(mode);
 }
+
+std::tuple<size_t, size_t>
+upload_size_jitter(segment_collector_mode mode, size_t sz) {
+    // for non-compacted reupload, we know the exact size. any deviation from
+    // that is an error, so don't apply any jitter here.
+    if (is_non_compacted_reupload_mode(mode)) {
+        return std::make_tuple(sz, sz);
+    }
+    if (is_compacted_reupload_mode(mode)) {
+        return std::make_tuple(0, sz);
+    }
+    // primarily for testing purposes, where we may not be able to predict
+    // precise upload size but also want some control over the range
+    if (sz < 1_MiB) {
+        return std::make_tuple(sz / 2, sz);
+    }
+    // We want to guarantee that there is always some spread and
+    // that its width is limited to some reasonable value. This
+    // implementation will try to keep it in 2-4KiB range for
+    // small segments (<20MiB) and 2-4MiB range for large segments.
+    fast_prng rng;
+    size_t min_size = 0, max_size = 0;
+    if (sz < 20_MiB) {
+        min_size = sz - 1_KiB - (rng() & (1_KiB - 1));
+        max_size = sz - 1_KiB - (rng() & (1_KiB - 1));
+    } else {
+        min_size = sz - 1_MiB - (rng() & (1_MiB - 1));
+        max_size = sz - 1_MiB - (rng() & (1_MiB - 1));
+    }
+    if (min_size > max_size) {
+        std::swap(min_size, max_size);
+    }
+    return std::make_tuple(min_size, max_size);
+}
+
 } // namespace
 
 bool segment_collector::collect_segments() {
