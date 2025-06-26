@@ -108,6 +108,10 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
+  const model::cloud_storage_segment_upload_mode& v);
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
   const pandaproxy::schema_registry::schema_id_validation_mode& v);
 
 void rjson_serialize(
