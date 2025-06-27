@@ -1216,6 +1216,28 @@ segment_collector::make_segment_upload_stream(
     auto seg_upload = std::move(upl).value();
     auto meta = seg_upload->get_meta();
 
+    // Now that we know the final size of the reupload, perform
+    // a final sanity check to ensure that the size of the new segment
+    // is smaller than that of the replaced one. Skip the upload if that's
+    // not the case.
+    // TODO(oren): I guess if we combined segments then we're totally happy with
+    // this
+    if (auto to_replace = _manifest.find(meta.offsets.base);
+        to_replace != _manifest.end()
+        && to_replace->committed_offset == meta.offsets.last) {
+        if (to_replace->size_bytes <= meta.size_bytes) {
+            vlog(
+              archival_log.debug,
+              "Skipping compacted reupload as its size has not "
+              "decreased as a result of self - compaction ");
+            co_await seg_upload->close();
+            co_return skip_offset_range{
+              .begin_offset = meta.offsets.base,
+              .end_offset = meta.offsets.last,
+              .reason = candidate_creation_error::upload_size_unchanged};
+        }
+    }
+
     vlog(
       archival_log.debug,
       "{}: {{b: {} e: {}}} Got upload:  offsets: {} sz: {} compact?: {}",
