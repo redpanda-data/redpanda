@@ -14,6 +14,11 @@ ss::future<ss::connected_socket> connect_with_timeout(
   const seastar::socket_address& address,
   net::clock_type::time_point timeout,
   seastar::logger* log) {
+    vlog(
+      log->trace,
+      "connecting with timeout: {}",
+      timeout - net::clock_type::now());
+
     auto socket = ss::make_lw_shared<ss::socket>(ss::engine().net().socket());
     auto f = socket->connect(address).finally([socket] {});
     return ss::with_timeout(timeout, std::move(f))
@@ -36,6 +41,7 @@ base_transport::base_transport(configuration c, seastar::logger* log)
   , _log(log) {}
 
 ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
+    vlog(_log->trace, "inside base_transport::do_connect");
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
     if (is_valid() || _dispatch_gate.is_closed()) {
@@ -46,6 +52,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
     try {
         base_transport::reset_state();
         reset_state();
+        vlog(_log->trace, "about to resolve DNS address");
         auto resolved_address = co_await net::resolve_dns(server_address());
         ss::connected_socket fd = co_await connect_with_timeout(
           resolved_address, timeout, _log);
@@ -101,18 +108,26 @@ base_transport::connect(clock_type::time_point connection_timeout) {
     // 2. the _dispatch_gate() is open
     // 3. the connection is valid
     //
+    vlog(
+      _log->trace,
+      "about to start connecting with time left: {}",
+      connection_timeout - clock_type::now());
     return stop().then([this, connection_timeout] {
         _dispatch_gate = {};
         return do_connect(connection_timeout);
     });
 }
 ss::future<> base_transport::stop() {
+    vlog(_log->trace, "inside base_transport::stop()");
     fail_outstanding_futures();
+
+    vlog(_log->trace, "about to call _dispatch_gate.close()");
 
     return _dispatch_gate.close().then([this]() {
         // We must call stop() on our output stream, because
         // seastar::output_stream may not be safely destroyed without a call to
         // close(), and this class may be destroyed after stop() is called.
+        vlog(_log->trace, "about to call _out.stop()");
         return _out.stop().then_wrapped([this](ss::future<> f) {
             // Invalidate _out here, so that do_connect can assert that
             // it isn't dropping an un-stopped output stream when it
@@ -128,11 +143,13 @@ ss::future<> base_transport::stop() {
                   std::current_exception());
             }
             _out = {};
+            vlog(_log->trace, "exiting base_transport::stop()");
         });
     });
 }
 
 void base_transport::shutdown() noexcept {
+    vlog(_log->trace, "entered base_transport::shutdown()");
     try {
         if (_fd && !std::exchange(_shutdown, true)) {
             _fd->shutdown_input();
@@ -144,6 +161,7 @@ void base_transport::shutdown() noexcept {
           "Failed to shutdown transport: {}",
           std::current_exception());
     }
+    vlog(_log->trace, "exiting base_transport::shutdown()");
 }
 
 ss::future<> base_transport::wait_input_shutdown() {
