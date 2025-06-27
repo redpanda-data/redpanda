@@ -152,7 +152,7 @@ class RedpandaTest(RedpandaTestBase):
 
     def upgrade_through_versions(
         self,
-        versions_in: list[RedpandaVersion],
+        versions_in: Sequence[RedpandaVersion],
         already_running: bool = False,
         auto_assign_node_id: bool = False,
         mid_upgrade_check: Callable[[Mapping[Any, RedpandaVersion]],
