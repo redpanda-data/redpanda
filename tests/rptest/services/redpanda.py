@@ -2659,7 +2659,7 @@ class RedpandaService(RedpandaServiceBase):
                     'exception': 'debug',
                     'io': 'debug',
                     'seastar_memory': 'debug',
-                    'dns_resolver': 'info'
+                    'dns_resolver': 'trace'
                 })
 
         self._started: Set[ClusterNode] = set()
