@@ -169,7 +169,8 @@ class ShardPlacementScaleTest(RedpandaTest):
 
         admin = Admin(self.redpanda)
 
-        assert len(admin.list_reconfigurations()) == 0
+        self.redpanda.wait_node_add_rebalance_finished(joiner_nodes,
+                                                       admin=admin)
 
         omb_topic = self.omb_topics()[0]
         for node in joiner_nodes:
