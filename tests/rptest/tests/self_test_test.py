@@ -345,5 +345,18 @@ class SelfTestTest(EndToEndTest):
                 if result['test_type'] in unknown_checks_map[node]:
                     assert 'error' in result
                 else:
-                    assert 'error' not in result
+                    if 'error' in result:
+                        if (result['error'] ==
+                                'Uploaded key/payload could not be found in cloud storage item list.'
+                                and result.get('test_type', '') == 'cloud'
+                                and result.get('info', '') == 'List'):
+                            # On Azure we had flakiness for these versions where a later List Blob
+                            # request would not see the upload result of a Put Blob because of a
+                            # bug in the redpanda's self check logic. To avoid this flakiness,
+                            # explicitly ignore these errors in this case.
+                            pass
+                        else:
+                            # Any other error is not allowed
+                            assert False, f"Unexpected error in result: {result}"
+
                     assert 'warning' not in result
