@@ -173,6 +173,21 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
           });
 
         if (payload_item_it == object_list_contents.end()) {
+            auto& res = object_list.value();
+            vlog(
+              clusterlog.info,
+              "Self test 'List' returned: size={}, truncated={}, "
+              "next_continuation_token={}",
+              res.contents.size(),
+              res.is_truncated,
+              res.next_continuation_token);
+            for (auto& elem : res.contents) {
+                vlog(
+                  clusterlog.info,
+                  "Self test 'List' item: key={}, size={}",
+                  elem.key,
+                  elem.size_bytes);
+            }
             list_test_result.error = "Uploaded key/payload could not be found "
                                      "in cloud storage item list.";
         }
