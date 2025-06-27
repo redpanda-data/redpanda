@@ -30,7 +30,16 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
-from rptest.services.redpanda import SISettings, CloudStorageTypeAndUrlStyle, get_cloud_storage_type, get_cloud_storage_type_and_url_style, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.redpanda import (
+    SISettings,
+    CloudStorageTypeAndUrlStyle,
+    get_cloud_storage_type,
+    get_cloud_storage_type_and_url_style,
+    make_redpanda_service,
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+    get_segment_upload_mode,
+)
 from rptest.utils.mode_checks import skip_fips_mode
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
 from rptest.tests.tiered_storage_model import TestCase, TieredStorageEndToEndTest, get_tiered_storage_test_cases, TestRunStage, CONFIDENCE_THRESHOLD, get_test_case_from_name
@@ -554,9 +563,15 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
     @matrix(
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
         ),
-        test_case=get_tiered_storage_test_cases(fast_run=True))
-    def test_tiered_storage(self, cloud_storage_type_and_url_style: List[
-        CloudStorageTypeAndUrlStyle], test_case: TestCase):
+        test_case=get_tiered_storage_test_cases(fast_run=True),
+        segment_upload_mode=get_segment_upload_mode(),
+    )
+    def test_tiered_storage(
+        self,
+        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle],
+        test_case: TestCase,
+        segment_upload_mode,
+    ):
         """This is a main entry point of the test.
            The test runs if 5 phases:
             - Configuration phase

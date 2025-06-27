@@ -5,7 +5,10 @@ from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import CloudStorageType, SISettings, make_redpanda_service, LoggingConfig, get_cloud_storage_type, MetricsEndpoint
+from rptest.services.redpanda import (CloudStorageType, SISettings,
+                                      make_redpanda_service, LoggingConfig,
+                                      get_cloud_storage_type, MetricsEndpoint,
+                                      get_segment_upload_mode)
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import BucketView
@@ -65,8 +68,9 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
         return description
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_upload(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_upload(self, cloud_storage_type, segment_upload_mode):
         # Set compaction to happen infrequently initially, so we have several log segments.
         self._rpk_client.cluster_config_set("log_compaction_interval_ms",
                                             f'{1000 * 60 * 60}')
@@ -219,7 +223,8 @@ class TSWithAlreadyCompactedTopic(EndToEndTest):
         return description
 
     @cluster(num_nodes=4)
-    def test_initial_upload(self):
+    @matrix(segment_upload_mode=get_segment_upload_mode())
+    def test_initial_upload(self, segment_upload_mode):
         """Test initial upload of the compacted segments. The ntp_archiver
         could start from already compacted data with gaps. We should be able
         to upload such data without triggering validation errors."""

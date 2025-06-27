@@ -25,7 +25,12 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, MetricsEndpoint
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+    MetricsEndpoint,
+    get_segment_upload_mode,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.allow_logs_on_predicate import AllowLogsOnPredicate
@@ -624,8 +629,9 @@ class CloudStorageScrubberTest(RedpandaTest):
     @cluster(num_nodes=4,
              log_allow_list=SCRUBBER_LOG_ALLOW_LIST +
              [AllowLogsOnPredicate(method="match_missing_segment")])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_scrubber(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_scrubber(self, cloud_storage_type, segment_upload_mode):
         """
         Test the internal cloud storage scrubber. Various anomalies are introduced
         by removing files from cloud storage and erroneously force updating the partition

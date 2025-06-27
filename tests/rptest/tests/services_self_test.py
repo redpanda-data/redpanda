@@ -22,7 +22,16 @@ from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, make_redpanda_mixed_service
+from rptest.services.redpanda import (
+    RedpandaService,
+    RedpandaServiceCloud,
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+    make_redpanda_service,
+    make_redpanda_mixed_service,
+    get_segment_upload_mode,
+)
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -229,8 +238,9 @@ class BucketScrubSelfTest(RedpandaTest):
     @cluster(num_nodes=4)
     #@matrix(cloud_storage_type=get_cloud_storage_type())
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
-    def test_missing_segment(self, cloud_storage_type):
+        applies_only_on=[CloudStorageType.S3]),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_missing_segment(self, cloud_storage_type, segment_upload_mode):
         topic = 'test'
 
         partition_count = 16

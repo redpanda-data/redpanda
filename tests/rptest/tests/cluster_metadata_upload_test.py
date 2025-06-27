@@ -11,7 +11,7 @@ from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import SISettings, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, get_segment_upload_mode
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.si_utils import BucketView, ClusterMetadata, parse_controller_snapshot_path
@@ -83,8 +83,10 @@ class ClusterMetadataUploadTest(RedpandaTest):
             return False
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_uploads_after_restart(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_uploads_after_restart(self, cloud_storage_type,
+                                   segment_upload_mode):
         """
         Ensure that metadata uploads proceed after restarting, upholding the
         invariant that manifest IDs are monotonically increasing.
@@ -141,8 +143,9 @@ class ClusterMetadataUploadTest(RedpandaTest):
             {"ntr_no_topic_manifest"})
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_uploads_after_wipe(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_uploads_after_wipe(self, cloud_storage_type, segment_upload_mode):
         """
         Ensure that metadata uploads proceed after a cluster wipe, upholding
         the invariant that manifest IDs are monotonically increasing, even for

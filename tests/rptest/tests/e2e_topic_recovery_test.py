@@ -11,7 +11,13 @@ from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.util import Scale, segments_count, wait_for_local_storage_truncate
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
@@ -128,9 +134,12 @@ class EndToEndTopicRecovery(RedpandaTest):
         return last_offset is not None and last_offset + 1 >= num_messages
 
     @cluster(num_nodes=4)
-    @matrix(num_messages=[2], cloud_storage_type=get_cloud_storage_type())
+    @matrix(num_messages=[2],
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     def test_restore_with_config_batches(self, num_messages,
-                                         cloud_storage_type):
+                                         cloud_storage_type,
+                                         segment_upload_mode):
         """related to issue 6413: force the creation of remote segments containing only configuration batches,
         check that older data can be nonetheless recovered even if the total download size
          would exceed the property retention.local.target.bytes.
@@ -177,9 +186,10 @@ class EndToEndTopicRecovery(RedpandaTest):
             recovery_overrides=[{}, {
                 'retention.local.target.bytes': 1024
             }],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     def test_restore(self, message_size, num_messages, recovery_overrides,
-                     cloud_storage_type):
+                     cloud_storage_type, segment_upload_mode):
         """Write some data. Remove local data then restore
         the cluster."""
 
@@ -223,10 +233,11 @@ class EndToEndTopicRecovery(RedpandaTest):
         'redpanda.remote.write': True,
         'redpanda.remote.read': True,
     }],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode
     def test_restore_with_aborted_tx(self, recovery_overrides,
-                                     cloud_storage_type):
+                                     cloud_storage_type, segment_upload_mode):
         """Produce data using transactions including some percentage of aborted
         transactions. Run recovery and make sure that record batches generated
         by aborted transactions are not visible.

@@ -256,6 +256,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     @cluster(num_nodes=4)
     # TODO(vlad): Allow this test on ABS once we have at least two versions
     # of Redpanda that support Azure Hierarchical Namespaces.
+    # TODO(oren): Add segment_upload_mode when we have a second release that includes them
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.S3]))
     def test_workloads_through_releases(self, cloud_storage_type):

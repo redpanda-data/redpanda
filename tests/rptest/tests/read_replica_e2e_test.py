@@ -20,7 +20,17 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, CloudStorageTypeAndUrlStyle, MetricsEndpoint, RedpandaService, get_cloud_storage_type, get_cloud_storage_url_style, get_cloud_storage_type_and_url_style, make_redpanda_service
+from rptest.services.redpanda import (
+    CloudStorageType,
+    CloudStorageTypeAndUrlStyle,
+    MetricsEndpoint,
+    RedpandaService,
+    get_cloud_storage_type,
+    get_cloud_storage_url_style,
+    get_cloud_storage_type_and_url_style,
+    make_redpanda_service,
+    get_segment_upload_mode,
+)
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -286,10 +296,11 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[5],
-        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        segment_upload_mode=get_segment_upload_mode())
     def test_identical_lwms_after_delete_records(
-            self, partition_count: int,
-            cloud_storage_type: CloudStorageType) -> None:
+            self, partition_count: int, cloud_storage_type: CloudStorageType,
+            segment_upload_mode) -> None:
         self._setup_read_replica(partition_count=partition_count,
                                  num_messages=1000)
         rpk = RpkTool(self.redpanda)
@@ -347,9 +358,11 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=8, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(
         partition_count=[5],
-        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        segment_upload_mode=get_segment_upload_mode())
     def test_identical_hwms(self, partition_count: int,
-                            cloud_storage_type: CloudStorageType) -> None:
+                            cloud_storage_type: CloudStorageType,
+                            segment_upload_mode) -> None:
         self._setup_read_replica(partition_count=partition_count,
                                  num_messages=1000)
         self.start_consumer()
@@ -376,9 +389,12 @@ class TestReadReplicaService(EndToEndTest):
                    backoff_sec=1)
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
+    @matrix(partition_count=[10],
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     def test_writes_forbidden(self, partition_count: int,
-                              cloud_storage_type: CloudStorageType) -> None:
+                              cloud_storage_type: CloudStorageType,
+                              segment_upload_mode) -> None:
         """
         Verify that the read replica cluster does not permit writes,
         and does not perform other data-modifying actions such as
@@ -417,10 +433,13 @@ class TestReadReplicaService(EndToEndTest):
     @matrix(
         partition_count=[10],
         cloud_storage_type_and_url_style=get_cloud_storage_type_and_url_style(
-        ))
+        ),
+        segment_upload_mode=get_segment_upload_mode())
     def test_simple_end_to_end(
-        self, partition_count: int,
-        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle]
+        self,
+        partition_count: int,
+        cloud_storage_type_and_url_style: List[CloudStorageTypeAndUrlStyle],
+        segment_upload_mode,
     ) -> None:
         data_timeout = 300
         self._setup_read_replica(num_messages=100000,
@@ -569,8 +588,9 @@ class ReadReplicasUpgradeTest(EndToEndTest):
     @skip_fips_mode
     @cluster(num_nodes=8)
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
-    def test_upgrades(self, cloud_storage_type):
+        applies_only_on=[CloudStorageType.S3]),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_upgrades(self, cloud_storage_type, segment_upload_mode):
         partition_count = 1
         install_opts = InstallOptions(install_previous_version=True)
         self.start_redpanda(3,

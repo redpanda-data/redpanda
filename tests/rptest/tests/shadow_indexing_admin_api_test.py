@@ -17,7 +17,12 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     expect_http_error,
@@ -73,8 +78,9 @@ class SIAdminApiTest(RedpandaTest):
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_bucket_validation(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_bucket_validation(self, cloud_storage_type, segment_upload_mode):
         """
         The test produces to the partition and waits untils the
         data is uploaded to S3 and the oldest segments are picked

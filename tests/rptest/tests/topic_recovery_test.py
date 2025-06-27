@@ -36,8 +36,13 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.services.redpanda import (FileToChecksumSize, RedpandaService,
-                                      SISettings, get_cloud_storage_type)
+from rptest.services.redpanda import (
+    FileToChecksumSize,
+    RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
@@ -1611,8 +1616,9 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_no_data(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_no_data(self, cloud_storage_type, segment_upload_mode):
         """If we're trying to recover a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
@@ -1623,8 +1629,9 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_empty_segments(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_empty_segments(self, cloud_storage_type, segment_upload_mode):
         """Test case in which the segments are uploaded but they doesn't
         have any data batches but they do have configuration batches."""
         test_case = EmptySegmentsCase(self.cloud_storage_client,
@@ -1635,8 +1642,10 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_missing_topic_manifest(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_missing_topic_manifest(self, cloud_storage_type,
+                                    segment_upload_mode):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
@@ -1649,8 +1658,9 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_missing_partition(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_missing_partition(self, cloud_storage_type, segment_upload_mode):
         """Test situation when one of the partition manifests are missing.
         The partition manifest is missing if it doesn't exist in the bucket
         in the expected place (defined by revision id) or in the alternative
@@ -1666,8 +1676,9 @@ class TopicRecoveryTest(RedpandaTest):
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS +
              ALLOWED_REPLICA_VALIDATOR_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_missing_segment(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_missing_segment(self, cloud_storage_type, segment_upload_mode):
         """Test the handling of the missing segment. The segment is
         missing if it's present in the manifest but deleted from the
         bucket."""
@@ -1679,8 +1690,9 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_fast1(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_fast1(self, cloud_storage_type, segment_upload_mode):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
         topics = [
@@ -1694,8 +1706,9 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_fast2(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_fast2(self, cloud_storage_type, segment_upload_mode):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
         topics = [
@@ -1712,8 +1725,9 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_fast3(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_fast3(self, cloud_storage_type, segment_upload_mode):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
         topics = [
@@ -1733,8 +1747,10 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_size_based_retention(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_size_based_retention(self, cloud_storage_type,
+                                  segment_upload_mode):
         """Test topic recovery with size based retention policy.
         It's tests handling of the situation when only subset of the data needs to
         be recovered due to retention."""
@@ -1751,8 +1767,10 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_time_based_retention(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_time_based_retention(self, cloud_storage_type,
+                                  segment_upload_mode):
         """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
         be recovered due to retention. This test uses manifests with max_timestamp
@@ -1776,8 +1794,9 @@ class TopicRecoveryTest(RedpandaTest):
         log_allow_list=TRANSIENT_ERRORS + [
             r'unexpected REST API error "" detected, code: AccessDenied, .* resource: /recovery_state/kafka/.*'
         ])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_admin_api_recovery(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_admin_api_recovery(self, cloud_storage_type, segment_upload_mode):
         topics = [
             TopicSpec(name='panda-topic',
                       partition_count=1,
@@ -1792,8 +1811,9 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_vcluster_id(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_vcluster_id(self, cloud_storage_type, segment_upload_mode):
 
         test_case = VirtualClusterIdPropertyCase(self.redpanda,
                                                  self.cloud_storage_client,
@@ -1804,11 +1824,13 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode(),
             check_mode=[
                 'check_manifest_existence',
                 'check_manifest_and_segment_metadata', 'no_check'
             ])
-    def test_many_partitions(self, cloud_storage_type, check_mode):
+    def test_many_partitions(self, cloud_storage_type, segment_upload_mode,
+                             check_mode):
         """
         Stress the recovery checks system with a non trivial number of partitions to check
         """
@@ -1827,8 +1849,9 @@ class TopicRecoveryTest(RedpandaTest):
     @cluster(num_nodes=4,
              log_allow_list=TRANSIENT_ERRORS +
              ["recovery validation", "Stopping recovery of"])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_prevent_recovery(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_prevent_recovery(self, cloud_storage_type, segment_upload_mode):
         """
         Check that failing a check prevents recovery of the topic.
         """

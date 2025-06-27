@@ -14,7 +14,13 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin, NamespacedTopic, InboundTopic
-from rptest.services.redpanda import RedpandaService, SISettings, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import (
+    RedpandaService,
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
+    get_segment_upload_mode,
+)
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.read_replica_e2e_test import hwms_are_identical, create_read_replica_topic
@@ -111,8 +117,10 @@ class RemoteLabelsTest(RedpandaTest):
         producer.free()
 
     @cluster(num_nodes=3)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_share_bucket_delete_topic(self, cloud_storage_type) -> None:
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_share_bucket_delete_topic(self, cloud_storage_type,
+                                       segment_upload_mode) -> None:
         """
         cluster 1 creates topic_a
         cluster 2 creates topic_a
@@ -173,8 +181,10 @@ class RemoteLabelsTest(RedpandaTest):
              log_allow_list=[
                  re.compile("No such file or directory.*cloud_storage_cache")
              ])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_share_bucket_concurrent_consume(self, cloud_storage_type) -> None:
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_share_bucket_concurrent_consume(self, cloud_storage_type,
+                                             segment_upload_mode) -> None:
         """
         - cluster 1 creates topic_a
         - cluster 2 creates topic_a

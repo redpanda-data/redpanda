@@ -32,7 +32,12 @@ from rptest.util import (
 from rptest.utils.mode_checks import skip_debug_mode, skip_fips_mode
 from rptest.utils.si_utils import BucketView
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
+from rptest.services.redpanda import (
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.services.kgo_verifier_services import (
     KgoVerifierProducer,
     KgoVerifierSeqConsumer,
@@ -429,8 +434,9 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
     @skip_fips_mode
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
-    def test_rolling_upgrade(self, cloud_storage_type):
+        applies_only_on=[CloudStorageType.S3]),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_rolling_upgrade(self, cloud_storage_type, segment_upload_mode):
         """
         Verify that when tiered storage writes happen during a rolling upgrade,
         we continue to write remote content that old versions can read, until

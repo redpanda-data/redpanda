@@ -25,7 +25,12 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
@@ -530,8 +535,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def drop_lifecycle_marker_test(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def drop_lifecycle_marker_test(self, cloud_storage_type,
+                                   segment_upload_mode):
         self._populate_topic(self.topic)
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.delete_topic(self.topic)
@@ -602,8 +609,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             'exception while executing partition operation: {type: deletion',
             'Failed to fetch manifest during finalize()'
         ])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def topic_delete_unavailable_test(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def topic_delete_unavailable_test(self, cloud_storage_type,
+                                      segment_upload_mode):
         """
         Test deleting while the S3 backend is unavailable: we should see
         that local deletion proceeds, and remote deletion eventually
@@ -779,9 +788,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=5)
     @matrix(disable_delete=[False, True],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     def topic_delete_cloud_storage_test(self, disable_delete,
-                                        cloud_storage_type):
+                                        cloud_storage_type,
+                                        segment_upload_mode):
         if disable_delete:
             # Set remote.delete=False before deleting: objects in
             # S3 should not be removed.
@@ -829,8 +840,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def partition_movement_test(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def partition_movement_test(self, cloud_storage_type, segment_upload_mode):
         """
         The unwary programmer might do S3 deletion from the
         remove_persistent_state function in Redpanda, but
