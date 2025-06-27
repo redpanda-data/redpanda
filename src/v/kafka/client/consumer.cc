@@ -482,10 +482,18 @@ consumer::reset_coordinator_and_retry_request(request_factory req) {
              [this](std::exception_ptr ex) { return _external_mitigate(ex); })
       .then(
         [this, req{std::move(req)}](shared_broker_t new_coordinator) mutable {
-            _coordinator = new_coordinator;
+            auto old_coordinator = std::move(_coordinator);
+            _coordinator = std::move(new_coordinator);
+            auto f = ss::now();
+            if (old_coordinator) {
+                f = old_coordinator->stop().finally([old_coordinator] {});
+            }
+
             // Calling req_res here will re-issue the request on the
             // new coordinator
-            return req_res(std::move(req));
+            return f.then([this, req = std::move(req)]() mutable {
+                return req_res(std::move(req));
+            });
         });
 }
 
