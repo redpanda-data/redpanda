@@ -60,7 +60,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.installpack import InstallPackClient
 from rptest.clients.rp_storage_tool import RpStorageTool
-from rptest.context.cloud_storage import CloudStorageType  # noqa: F401 # Re-exported for backwards compatibility.
+from rptest.context.cloud_storage import CloudStorageType, SegmentUploadMode  # noqa: F401 # Re-exported for backwards compatibility.
 from rptest.services import redpanda_types, tls
 from rptest.services.redpanda_types import KafkaClientSecurity, LogAllowList, LogAllowListElem
 from rptest.services.admin import Admin
@@ -342,6 +342,10 @@ def get_cloud_storage_type(applies_only_on: list[CloudStorageType]
         cloud_storage_type = list(
             set(applies_only_on).intersection(cloud_storage_type))
     return cloud_storage_type
+
+
+def get_segment_upload_mode() -> list[SegmentUploadMode]:
+    return [SegmentUploadMode.V1, SegmentUploadMode.V2]
 
 
 def get_cloud_storage_url_style(
@@ -649,6 +653,14 @@ class SISettings:
 
         self._gcp_token_cache = ExpiringValue[str]()
 
+        self.cloud_storage_segment_upload_mode = get_segment_upload_mode()[0]
+        if hasattr(test_context, 'injected_args') \
+           and test_context.injected_args is not None:
+            if 'segment_upload_mode' in test_context.injected_args:
+                self.cloud_storage_segment_upload_mode = cast(
+                    SegmentUploadMode,
+                    test_context.injected_args['segment_upload_mode'])
+
     def get_use_fips_s3_endpoint(self) -> bool:
         use_fips_option = self._context.globals.get(
             self.GLOBAL_USE_FIPS_S3_ENDPOINT,
@@ -884,6 +896,10 @@ class SISettings:
         if self.cloud_storage_segment_size_target is not None:
             conf[
                 'cloud_storage_segment_size_target'] = self.cloud_storage_segment_size_target
+
+        if self.cloud_storage_segment_upload_mode is not None:
+            conf[
+                'cloud_storage_segment_upload_mode'] = self.cloud_storage_segment_upload_mode
 
         return conf
 
