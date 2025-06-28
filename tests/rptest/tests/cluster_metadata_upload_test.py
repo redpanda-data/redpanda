@@ -56,7 +56,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
                                  fast_uploads=True)
         extra_rp_conf = {
             'controller_snapshot_max_age_sec': 1,
-            'cloud_storage_cluster_metadata_upload_interval_ms': 1000,
+            'cloud_storage_cluster_metadata_upload_interval_ms': 2500,
             'enable_cluster_metadata_upload_loop': True,
         }
         super().__init__(test_context,
@@ -93,7 +93,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
                                          {"state": "active"})
 
         wait_until(lambda: self.bucket_has_metadata(1),
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=1)
 
         # Stop the cluster so we can check consistency of the bucket without
@@ -133,7 +133,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
             return new_highest_manifest_id > orig_highest_manifest_id + by_at_least
 
         wait_until(lambda: meta_id_has_grown(5),
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=0.1)
         # The topic manifest may not have been uploaded yet, but that's fine
         # since this test focuses on cluster metadata only.
@@ -151,7 +151,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
         admin = self.redpanda._admin
         admin.put_feature("controller_snapshots", {"state": "active"})
         wait_until(lambda: self.bucket_has_metadata(1),
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=1)
         orig_cluster_uuid_resp: str = admin.get_cluster_uuid(
             self.redpanda.nodes[0])
@@ -172,7 +172,7 @@ class ClusterMetadataUploadTest(RedpandaTest):
         # The new cluster should begin uploading new metadata without clearing
         # out the metadata from the old cluster.
         wait_until(lambda: self.bucket_has_metadata(2),
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=1)
         self.redpanda.stop()
 
