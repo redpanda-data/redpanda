@@ -4000,9 +4000,7 @@ configuration::configuration()
       "AWS access key for Iceberg REST catalog SigV4 authentication. If not "
       "set, falls back to cloud_storage_access_key when using aws_sigv4 "
       "authentication mode.",
-      {.needs_restart = needs_restart::yes,
-       .visibility = visibility::user,
-       .gets_restored = gets_restored::no},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_aws_secret_key(
@@ -4013,8 +4011,7 @@ configuration::configuration()
       "authentication mode.",
       {.needs_restart = needs_restart::yes,
        .visibility = visibility::user,
-       .secret = is_secret::yes,
-       .gets_restored = gets_restored::no},
+       .secret = is_secret::yes},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_aws_region(
@@ -4023,9 +4020,7 @@ configuration::configuration()
       "AWS region for Iceberg REST catalog SigV4 authentication. If not set, "
       "falls back to cloud_storage_region when using aws_sigv4 authentication "
       "mode.",
-      {.needs_restart = needs_restart::yes,
-       .visibility = visibility::user,
-       .gets_restored = gets_restored::no},
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_aws_credentials_source(
@@ -4039,8 +4034,7 @@ configuration::configuration()
       "azure_vm_instance_metadata, azure_aks_oidc_federation.",
       {.needs_restart = needs_restart::yes,
        .example = "config_file",
-       .visibility = visibility::user,
-       .gets_restored = gets_restored::no},
+       .visibility = visibility::user},
       std::nullopt,
       {
         model::cloud_credentials_source::config_file,
