@@ -2314,3 +2314,53 @@ class AuditLogTestReproducer(AuditLogTestBase):
         )
         assert len(records) > 0, \
             f'Did not receive any audit records for topic {created_topic}'
+
+
+class AuditLogTestEscapeHatch(RedpandaTest):
+    def __init__(self, test_context, **kwargs):
+
+        super(AuditLogTestEscapeHatch,
+              self).__init__(test_context,
+                             extra_rp_conf={"audit_enabled": False},
+                             log_config=LoggingConfig('info',
+                                                      logger_levels={
+                                                          'auditing': 'trace',
+                                                      }),
+                             **kwargs)
+
+    @skip_fips_mode
+    @cluster(
+        num_nodes=3,
+        log_allow_list=AUDIT_LOG_ALLOW_LIST + [
+            r".*Request authenticate user to modify or view cluster configuration was not audited due to audit queues being full",
+            r".*Request to authorize user to modify or view cluster configuration was not audited due to audit queues being full"
+        ])
+    def test_escape_hatch(self):
+        rpk = RpkTool(self.redpanda)
+        admin = Admin(self.redpanda, default_node=self.redpanda.nodes[0])
+
+        test_topic = "test-topic"
+
+        rpk.create_topic(test_topic)
+
+        # Enable audit logging without a valid authentication set up.
+        admin.patch_cluster_config(upsert={"audit_enabled": True})
+        time.sleep(5)
+
+        audit_enabled = admin.get_cluster_config(key="audit_enabled")
+        assert audit_enabled, "Expected audit_enabled to be True"
+
+        with expect_exception(
+                RpkException, lambda e:
+                "Broker not available - audit system failure" in str(e)):
+            rpk.add_partitions(test_topic, 1)
+
+        # Verify that we can disable the audit logging
+        admin.patch_cluster_config(upsert={"audit_enabled": False})
+        time.sleep(5)
+
+        audit_enabled = admin.get_cluster_config(key="audit_enabled")
+        assert audit_enabled, "Expected audit_enabled to be False"
+
+        # Ensure that this doesn't throw
+        rpk.add_partitions(test_topic, 1)
