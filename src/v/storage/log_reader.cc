@@ -210,26 +210,30 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
      * fetch batches from the cache covering the range [_base, end] where
      * end is either the configured max offset or the end of the segment.
      */
-    auto cache_read = _seg.cache_get(
-      _config.start_offset,
-      _config.max_offset,
-      _config.type_filter,
-      _config.first_timestamp,
-      std::min(max_buffer_size, _config.max_bytes),
-      _config.skip_batch_cache);
+    std::optional<model::offset> next_cached{};
+    if (!_config.force_ignore_batch_cache) {
+        auto cache_read = _seg.cache_get(
+          _config.start_offset,
+          _config.max_offset,
+          _config.type_filter,
+          _config.first_timestamp,
+          std::min(max_buffer_size, _config.max_bytes),
+          _config.skip_batch_cache);
 
-    // handles cases where the type filter skipped batches. see
-    // batch_cache_index::read for more details.
-    _config.start_offset = cache_read.next_batch;
+        // handles cases where the type filter skipped batches. see
+        // batch_cache_index::read for more details.
+        _config.start_offset = cache_read.next_batch;
 
-    if (
-      !cache_read.batches.empty()
-      || _config.start_offset > _config.max_offset) {
-        _config.bytes_consumed += cache_read.memory_usage;
-        _probe.add_bytes_read(cache_read.memory_usage);
-        _probe.add_cached_bytes_read(cache_read.memory_usage);
-        _probe.add_cached_batches_read(cache_read.batches.size());
-        co_return result<records_t>(std::move(cache_read.batches));
+        if (
+          !cache_read.batches.empty()
+          || _config.start_offset > _config.max_offset) {
+            _config.bytes_consumed += cache_read.memory_usage;
+            _probe.add_bytes_read(cache_read.memory_usage);
+            _probe.add_cached_bytes_read(cache_read.memory_usage);
+            _probe.add_cached_batches_read(cache_read.batches.size());
+            co_return result<records_t>(std::move(cache_read.batches));
+        }
+        next_cached = cache_read.next_cached_batch;
     }
 
     /*
@@ -243,7 +247,7 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
     }
 
     if (!_iterator) {
-        _iterator = co_await initialize(timeout, cache_read.next_cached_batch);
+        _iterator = co_await initialize(timeout, next_cached);
     }
     auto ptr = _iterator.get();
     co_return co_await ptr->consume()
