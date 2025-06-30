@@ -381,10 +381,10 @@ void admin_server::register_security_routes() {
     register_route<user, true>(
       ss::httpd::security_json::list_user_roles,
       [this](
-        std::unique_ptr<ss::http::request> req, request_auth_result auth_result)
+        std::unique_ptr<ss::http::request> req,
+        const request_auth_result& auth_result)
         -> ss::future<ss::json::json_return_type> {
-          return list_user_roles_handler(
-            std::move(req), std::move(auth_result));
+          return list_user_roles_handler(std::move(req), auth_result);
       });
 
     register_route<superuser>(
@@ -621,7 +621,8 @@ admin_server::oidc_revoke_handler(std::unique_ptr<ss::http::request>) {
 }
 
 ss::future<ss::json::json_return_type> admin_server::list_user_roles_handler(
-  std::unique_ptr<ss::http::request> req, request_auth_result auth_result) {
+  std::unique_ptr<ss::http::request> req,
+  const request_auth_result& auth_result) {
     ss::sstring filter = req->get_query_param("filter");
 
     security::role_member member{

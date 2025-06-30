@@ -216,6 +216,17 @@ void request_auth_result::require_authenticated() {
 
 void request_auth_result::pass() { _checked = true; }
 
+request_auth_result::request_auth_result(request_auth_result&& other) noexcept
+  : _username{std::move(other._username)}
+  , _password{std::move(other._password)}
+  , _sasl_mechanism{std::move(other._sasl_mechanism)}
+  , _authenticated{other._authenticated}
+  , _superuser{other._superuser}
+  , _auth_required{other._auth_required}
+  , _checked{other._checked} {
+    other.pass();
+}
+
 /**
  * It is important to protect against someone calling authenticate()
  * but then not calling any of the authorization helpers: this indicates

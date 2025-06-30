@@ -205,7 +205,7 @@ private:
     template<typename R>
     auto exception_intercepter(
       const ss::sstring& url, const request_auth_result& auth_state) {
-        return [this, url, auth_state](std::exception_ptr eptr) mutable {
+        return [this, url, &auth_state](std::exception_ptr eptr) mutable {
             log_exception(url, auth_state, eptr);
             return ss::make_exception_future<R>(eptr);
         };
@@ -465,7 +465,7 @@ private:
     ss::future<ss::json::json_return_type>
     oidc_revoke_handler(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type> list_user_roles_handler(
-      std::unique_ptr<ss::http::request>, request_auth_result);
+      std::unique_ptr<ss::http::request>, const request_auth_result&);
 
     ss::future<std::unique_ptr<ss::http::reply>> create_role_handler(
       std::unique_ptr<ss::http::request> req,
