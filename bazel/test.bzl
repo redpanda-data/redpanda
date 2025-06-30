@@ -178,7 +178,7 @@ def _redpanda_cc_fuzz_test(
         srcs = srcs,
         defines = defines,
         deps = deps,
-        copts = redpanda_copts(),
+        copts = redpanda_copts() + ["-fsanitize=fuzzer"],
         args = custom_args,
         features = [
             "layering_check",

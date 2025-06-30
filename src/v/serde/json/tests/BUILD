@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_gtest", "redpanda_test_cc_library")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_fuzz_test", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
     name = "parser_test",
@@ -260,6 +260,22 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_fuzz_test(
+    name = "parse_fuzz",
+    timeout = "short",
+    srcs = ["parse_fuzz.cc"],
+    args = [
+        "-max_total_time=60",
+        "-rss_limit_mb=1024",
+    ],
+    data = glob(["testdata/fuzz/corpus/*"]) + ["testdata/fuzz/dict/json_fuzzer.dict"],
+    deps = [
+        ":dom_serde",
+        "//src/v/bytes:iobuf",
         "@seastar",
     ],
 )
