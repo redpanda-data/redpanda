@@ -2411,6 +2411,7 @@ auto disk_log_impl::get_file_offset(
 
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.force_ignore_batch_cache = true;
 
     auto lock = co_await s->try_read_lock();
 
