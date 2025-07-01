@@ -94,4 +94,19 @@ void handle_authz(
     handle_authz_result(authz_result);
 }
 
+void handle_deferred_authz(
+  const server::request_t& rq,
+  const auth& auth,
+  request_auth_result& auth_result,
+  const chunked_vector<subject>& resource_names) {
+    auth_result.pass();
+
+    detail::auth_params params{rq, auth};
+
+    auto authz_result = rq.service().authorizor().any_authorized(
+      resource_names, params.op, params.principal, params.host);
+
+    handle_authz_result(authz_result);
+}
+
 } // namespace pandaproxy::schema_registry::enterprise

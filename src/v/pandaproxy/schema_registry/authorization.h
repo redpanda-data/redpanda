@@ -24,4 +24,10 @@ void handle_authz(
   const auth& auth,
   request_auth_result& auth_result);
 
+void handle_deferred_authz(
+  const server::request_t& rq,
+  const auth& auth,
+  request_auth_result& auth_result,
+  const chunked_vector<subject>& resource_names);
+
 } // namespace pandaproxy::schema_registry::enterprise

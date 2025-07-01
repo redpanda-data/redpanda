@@ -214,7 +214,7 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::get_schemas_ids_id,
       wrap(
         auth::level::user,
-        std::nullopt,
+        acl_operation::read,
         auth::deferred{},
         get_schemas_ids_id)});
 
