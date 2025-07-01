@@ -587,8 +587,21 @@ void state_machine_manager::maybe_start_background_apply(
         return entry->background_apply_mutex.get_units().then(
           [this, entry](auto u) {
               return ss::with_scheduling_group(
-                _apply_sg, [this, entry, u = std::move(u)]() mutable {
-                    return background_apply_fiber(entry, std::move(u));
+                       _apply_sg,
+                       [this, entry, u = std::move(u)]() mutable {
+                           return background_apply_fiber(entry, std::move(u));
+                       })
+                .handle_exception([this](const std::exception_ptr& e) {
+                    if (ssx::is_shutdown_exception(e)) {
+                        vlog(
+                          _log.debug,
+                          "background_apply_fiber exited due to shutdown "
+                          "exception {}",
+                          e);
+                    } else {
+                        vlog(
+                          _log.warn, "unexpected error in the bg fiber: {}", e);
+                    }
                 });
           });
     });
