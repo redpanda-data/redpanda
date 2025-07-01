@@ -128,7 +128,8 @@ public:
         auto crud = op_to_crud(auth_result.operation);
         auto actor = result_to_actor(auth_result);
         new_ars.emplace_back(resource_detail{
-          .name = auth_result.resource_name,
+          .name = auth_result.resource_name.value_or(
+            ss::sstring{"[no-resource]"}),
           .type = fmt::format("{}", auth_result.resource_type)});
 
         return {

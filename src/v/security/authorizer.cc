@@ -17,6 +17,7 @@
 #include "metrics/metrics.h"
 #include "metrics/prometheus_sanitize.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "security/acl.h"
 #include "security/role.h"
 #include "security/role_store.h"
 
@@ -75,8 +76,12 @@ public:
         }
     }
 
-    constexpr void record_authz_result(authz_result r) {
-        ++_authz_results[static_cast<size_t>(r)];
+    constexpr void record_authz_result(const auth_result& r) {
+        authz_result r_val = r.is_authorized() ? authz_result::allow
+                             : r.empty_matches ? authz_result::empty
+                                               : authz_result::deny;
+
+        ++_authz_results[static_cast<size_t>(r_val)];
     }
 
 private:
@@ -166,11 +171,41 @@ auth_result authorizer::authorized(
   acl_operation operation,
   const acl_principal& principal,
   const acl_host& host) const {
-    auth_result r = do_authorized(resource_name, operation, principal, host);
-    _probe->record_authz_result(
-      r.is_authorized() ? authz_result::allow
-      : r.empty_matches ? authz_result::empty
-                        : authz_result::deny);
+    auth_result r = [&]() {
+        if (_superusers.contains(principal)) {
+            return auth_result::superuser_authorized(
+              principal, host, operation, resource_name);
+        }
+        return do_authorized(resource_name, operation, principal, host);
+    }();
+
+    _probe->record_authz_result(r);
+    return r;
+}
+
+template<typename T>
+auth_result authorizer::any_authorized(
+  const chunked_vector<T>& resource_names,
+  acl_operation operation,
+  const acl_principal& principal,
+  const acl_host& host) const {
+    auth_result r = [&]() {
+        constexpr auto resoure_type = get_resource_type<T>();
+        for (const auto& resource_name : resource_names) {
+            auto res = do_authorized(resource_name, operation, principal, host);
+            if (res.is_authorized()) {
+                return res;
+            }
+        }
+        if (_superusers.contains(principal)) {
+            return auth_result::superuser_authorized_without_resource(
+              principal, host, operation, resoure_type);
+        }
+        return auth_result::no_acl_match_without_resource(
+          principal, host, operation, resoure_type);
+    }();
+
+    _probe->record_authz_result(r);
     return r;
 }
 
@@ -322,6 +357,12 @@ template auth_result authorizer::authorized(
 
 template auth_result authorizer::authorized(
   const pandaproxy::schema_registry::registry_resource&,
+  acl_operation,
+  const acl_principal&,
+  const acl_host&) const;
+
+template auth_result authorizer::any_authorized(
+  const chunked_vector<pandaproxy::schema_registry::subject>&,
   acl_operation,
   const acl_principal&,
   const acl_host&) const;

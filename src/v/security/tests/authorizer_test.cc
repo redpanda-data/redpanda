@@ -22,6 +22,8 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
+#include <algorithm>
+
 namespace security {
 
 static const acl_entry allow_read_acl(
@@ -1677,6 +1679,86 @@ BOOST_AUTO_TEST_CASE(authz_filter_out_non_kafka_resources) {
     result = auth.authorized(
       ppsr::registry_resource(), acl_operation::read, user, host);
     BOOST_REQUIRE(!result.is_authorized());
+}
+
+BOOST_AUTO_TEST_CASE(any_authorized_first_resource_authorized) {
+    namespace sr = pandaproxy::schema_registry;
+    acl_principal user(principal_type::user, "alice");
+    acl_host host("192.168.2.1");
+    auto auth = make_test_instance();
+
+    // Set up ACL that allows read on subject-1 but not subject-2
+    const acl_entry allow_read(
+      user, acl_wildcard_host, acl_operation::read, acl_permission::allow);
+
+    std::vector<acl_binding> bindings;
+    resource_pattern sub1_resource(
+      resource_type::sr_subject,
+      sr::subject{"subject-1"},
+      pattern_type::literal);
+    bindings.emplace_back(sub1_resource, allow_read);
+    auth.add_bindings(bindings);
+
+    chunked_vector<sr::subject> topics;
+    topics.emplace_back("subject-1");
+    topics.emplace_back("subject-2");
+
+    // Test with first resource authorized
+    auto result = auth.any_authorized(topics, acl_operation::read, user, host);
+    BOOST_REQUIRE(result.authorized);
+    BOOST_CHECK_EQUAL(result.acl, allow_read);
+    BOOST_CHECK_EQUAL(result.principal, user);
+    BOOST_CHECK_EQUAL(result.resource_name, "subject-1");
+
+    // Test with second resource authorized
+    std::ranges::reverse(topics);
+    result = auth.any_authorized(topics, acl_operation::read, user, host);
+    BOOST_REQUIRE(result.authorized);
+    BOOST_CHECK_EQUAL(result.acl, allow_read);
+    BOOST_CHECK_EQUAL(result.principal, user);
+    BOOST_CHECK_EQUAL(result.resource_name, "subject-1");
+
+    // Test with no resource given (and not superuser)
+    result = auth.any_authorized(
+      chunked_vector<sr::subject>{}, acl_operation::read, user, host);
+    BOOST_REQUIRE(!result.authorized);
+    BOOST_CHECK_EQUAL(result.principal, user);
+    BOOST_CHECK_EQUAL(result.resource_type, resource_type::sr_subject);
+    BOOST_CHECK_EQUAL(result.resource_name, std::optional<ss::sstring>{});
+}
+
+BOOST_AUTO_TEST_CASE(any_authorized_superuser_authorized) {
+    namespace sr = pandaproxy::schema_registry;
+
+    config::mock_property<std::vector<ss::sstring>> superuser_config_prop(
+      std::vector<ss::sstring>{});
+    role_store roles;
+    authorizer auth(superuser_config_prop.bind(), &roles);
+
+    acl_principal superuser(principal_type::user, "superuser1");
+    acl_host host("192.168.2.1");
+
+    superuser_config_prop.update({superuser.name()});
+
+    chunked_vector<sr::subject> topics;
+    topics.emplace_back("subject-1");
+    topics.emplace_back("subject-2");
+
+    auto result = auth.any_authorized(
+      topics, acl_operation::read, superuser, host);
+    BOOST_CHECK(result.authorized);
+    BOOST_CHECK(!result.acl.has_value());
+    BOOST_CHECK_EQUAL(result.resource_type, resource_type::sr_subject);
+    BOOST_CHECK_EQUAL(result.principal, superuser);
+    BOOST_CHECK_EQUAL(result.resource_name, "subject-1");
+
+    result = auth.any_authorized(
+      chunked_vector<sr::subject>{}, acl_operation::read, superuser, host);
+    BOOST_CHECK(result.authorized);
+    BOOST_CHECK(!result.acl.has_value());
+    BOOST_CHECK_EQUAL(result.principal, superuser);
+    BOOST_CHECK_EQUAL(result.resource_type, resource_type::sr_subject);
+    BOOST_CHECK_EQUAL(result.resource_name, std::optional<ss::sstring>{});
 }
 
 } // namespace security

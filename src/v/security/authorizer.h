@@ -51,8 +51,9 @@ struct auth_result {
     security::acl_host host;
     // The type of resource
     security::resource_type resource_type;
-    // The name of the resource
-    ss::sstring resource_name;
+    // The name of the resource (may be missing on endpoints that dynamically
+    // select which resources apply to the endpoint)
+    std::optional<ss::sstring> resource_name;
     // The operation request
     security::acl_operation operation;
 
@@ -95,6 +96,21 @@ struct auth_result {
           .host = host,
           .resource_type = get_resource_type<T>(),
           .resource_name = resource(),
+          .operation = operation};
+    }
+
+    static auth_result superuser_authorized_without_resource(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      security::resource_type resource_type) {
+        return {
+          .authorized = true,
+          .is_superuser = true,
+          .principal = principal,
+          .host = host,
+          .resource_type = resource_type,
+          .resource_name = std::optional<ss::sstring>{},
           .operation = operation};
     }
 
@@ -176,6 +192,23 @@ struct auth_result {
           .resource_name = resource(),
           .operation = operation};
     }
+
+    static auth_result no_acl_match_without_resource(
+      const security::acl_principal& principal,
+      security::acl_host host,
+      security::acl_operation operation,
+      security::resource_type resource_type) {
+        return {
+          .authorized = false,
+          .empty_matches = true,
+          .resource_pattern = std::nullopt,
+          .acl = std::nullopt,
+          .principal = principal,
+          .host = host,
+          .resource_type = resource_type,
+          .resource_name = std::optional<ss::sstring>{},
+          .operation = operation};
+    }
 };
 
 /*
@@ -229,6 +262,17 @@ public:
     template<typename T>
     auth_result authorized(
       const T& resource_name,
+      acl_operation operation,
+      const acl_principal& principal,
+      const acl_host& host) const;
+
+    /*
+     * Authorize an operation on any resource. The type of the resource is
+     * deduced by the type `T` of the name of the resouce (e.g. `model::topic`).
+     */
+    template<typename T>
+    auth_result any_authorized(
+      const chunked_vector<T>& resource_names,
       acl_operation operation,
       const acl_principal& principal,
       const acl_host& host) const;
