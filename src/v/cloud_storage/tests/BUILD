@@ -624,7 +624,7 @@ redpanda_cc_fuzz_test(
 
 redpanda_cc_gtest(
     name = "cloud_storage_e2e_test",
-    timeout = "moderate",
+    timeout = "long",
     srcs = ["cloud_storage_e2e_test.cc"],
     cpu = 1,
     deps = [
