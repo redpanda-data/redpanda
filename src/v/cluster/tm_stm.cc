@@ -576,6 +576,13 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     co_return tm_stm::op_status::success;
 }
 void tm_stm::upsert_transaction(tx_metadata tx) {
+    vlog(
+      _ctx_log.trace,
+      "[tx_id={}] upserting transaction: {}, transactions: {} pid_map: {}",
+      tx.id,
+      tx,
+      _transactions.size(),
+      _pid_tx_id.size());
     auto [tx_it, inserted] = _transactions.try_emplace(tx.id, tx);
     // erase any existing mappings
     _pid_tx_id.erase(tx.last_pid);
