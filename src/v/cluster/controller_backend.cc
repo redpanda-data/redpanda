@@ -1419,6 +1419,34 @@ ss::future<std::error_code> controller_backend::create_partition(
           log_revision,
           topic_rev,
           remote_rev);
+
+        if (
+          model::topic_namespace_view(ntp_config.ntp())
+          == model::kafka_consumer_offsets_nt) [[unlikely]] {
+            vassert(
+              ntp_config.has_overrides(),
+              "there must be an override for "
+              "__consumer_offsets topic");
+            auto cache_enabled
+              = config::shard_local_cfg()
+                  .consumer_offsets_topic_batch_cache_enabled();
+            ntp_config.get_overrides().cache_enabled = storage::with_cache(
+              config::shard_local_cfg()
+                .consumer_offsets_topic_batch_cache_enabled());
+            /**
+             * Log with an info level as this is not a common case, but
+             * rather an exception. The __consumer_offsets topic is
+             * created without batch cache enabled by default.
+             */
+            if (cache_enabled) {
+                vlog(
+                  clusterlog.info,
+                  "[{}] enabling batch cache for __consumer_offsets topic "
+                  "partition",
+                  ntp_config.ntp());
+            }
+        }
+
         auto rtp = cfg.properties.remote_topic_properties;
         const bool is_cloud_topic = ntp_config.is_archival_enabled()
                                     || ntp_config.is_remote_fetch_enabled();

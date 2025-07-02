@@ -3878,6 +3878,15 @@ configuration::configuration()
       "the topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       true)
+  , consumer_offsets_topic_batch_cache_enabled(
+      *this,
+      "consumer_offsets_topic_batch_cache_enabled",
+      "This property lets you enable the batch cache for the consumer offsets "
+      "topic. By default, the cache for consumer offsets topic is disabled. "
+      "Changing this property is not recommended in production systems, as it "
+      "may affect performance. The change is applied only after the restart.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      false)
   , development_enable_cloud_topics(
       *this,
       "development_enable_cloud_topics",
