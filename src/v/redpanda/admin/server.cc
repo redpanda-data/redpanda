@@ -204,6 +204,14 @@ security::audit::authentication_event_options make_authn_event_options(
       .error_reason = reason};
 }
 
+std::string_view strip_query_param(const ss::sstring& url) {
+    auto pos = url.find('?');
+    if (pos == ss::sstring::npos) {
+        return {url};
+    }
+    return {url.begin(), pos};
+};
+
 bool escape_hatch_request(ss::httpd::const_req req) {
     /// The following "break glass" mechanism allows the cluster config
     /// API to be hit in the case the user desires to disable auditing
@@ -212,14 +220,14 @@ bool escape_hatch_request(ss::httpd::const_req req) {
     static const auto allowed_requests = std::to_array(
       {ss::httpd::cluster_config_json::get_cluster_config_status,
        ss::httpd::cluster_config_json::get_cluster_config_schema,
-       ss::httpd::cluster_config_json::patch_cluster_config});
+       ss::httpd::cluster_config_json::patch_cluster_config,
+       ss::httpd::cluster_config_json::get_cluster_config});
 
-    return std::any_of(
-      allowed_requests.cbegin(),
-      allowed_requests.cend(),
+    return std::ranges::any_of(
+      allowed_requests,
       [method = req._method,
-       url = req.get_url()](const ss::httpd::path_description& d) {
-          return d.path == url
+       url = req._url](const ss::httpd::path_description& d) {
+          return d.path == strip_query_param(url)
                  && d.operations.method == ss::httpd::str2type(method);
       });
 }
