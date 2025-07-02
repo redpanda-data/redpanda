@@ -729,7 +729,7 @@ tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     // now this is fine as there was no validation on apply in the first place
     // before the refactoring happened. We will add validation after we will
     // make sure the transaction FSM transitions are all valid
-    upsert_transaction(tx);
+    upsert_transaction(std::move(tx));
 
     return ss::now();
 }
