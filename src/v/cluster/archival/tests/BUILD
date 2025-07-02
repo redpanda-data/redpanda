@@ -222,6 +222,7 @@ redpanda_cc_btest(
         "//src/v/cloud_storage_clients",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/model",
         "//src/v/storage",
         "//src/v/test_utils:fixture",
         "//src/v/test_utils:scoped_config",

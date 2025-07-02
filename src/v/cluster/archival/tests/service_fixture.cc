@@ -382,6 +382,7 @@ void segment_matcher<Fixture>::verify_segment(
   const archival::segment_name& name,
   const ss::sstring& expected) {
     auto segment = get_segment(ntp, name);
+    vassert(segment != nullptr, "Segment {} not found", name);
     auto pos = segment->offsets().get_base_offset();
     auto size = segment->size_bytes();
     auto reader_handle = segment->offset_data_stream(pos).get();
@@ -452,7 +453,11 @@ void segment_matcher<Fixture>::verify_segments(
       names.begin(),
       names.end(),
       std::back_inserter(segments),
-      [this, &ntp](auto n) { return get_segment(ntp, n); });
+      [this, &ntp](auto n) {
+          auto p = get_segment(ntp, n);
+          vassert(p != nullptr, "Segment {} unexpectedly not found", n);
+          return p;
+      });
 
     storage::concat_segment_reader_view v{
       segments, 0, segments.back()->size_bytes()};
@@ -482,21 +487,38 @@ template<class Fixture>
 void segment_matcher<Fixture>::verify_manifest(
   const cloud_storage::partition_manifest& man) {
     auto all_segments = list_segments(man.get_ntp());
-    BOOST_REQUIRE_EQUAL(all_segments.size(), man.size());
+    BOOST_REQUIRE_EQUAL(all_segments.empty(), man.empty());
+    if (all_segments.empty()) {
+        return;
+    }
+    BOOST_REQUIRE_GE(all_segments.size(), man.size());
+
+    auto manifest_it = man.begin();
+
+    size_t target_size = 0;
     for (const auto& s : all_segments) {
+        BOOST_REQUIRE(manifest_it != man.end());
         auto sname = archival::segment_name(
           std::filesystem::path(s->reader().filename()).filename().string());
-        auto base = s->offsets().get_base_offset();
-        auto comm = s->offsets().get_committed_offset();
-        auto size = s->size_bytes();
         auto comp = s->has_self_compact_timestamp();
-        auto m = man.get(sname);
-        BOOST_REQUIRE(m.has_value());
-        BOOST_REQUIRE_EQUAL(base, m->base_offset);
-        BOOST_REQUIRE_EQUAL(comm, m->committed_offset);
-        BOOST_REQUIRE_EQUAL(size, m->size_bytes);
-        BOOST_REQUIRE_EQUAL(comp, m->is_compacted);
+        BOOST_REQUIRE_EQUAL(comp, manifest_it->is_compacted);
+        if (target_size == 0) {
+            auto base = s->offsets().get_base_offset();
+            auto m = man.get(sname);
+            BOOST_REQUIRE(m.has_value());
+            BOOST_REQUIRE_EQUAL(m, *manifest_it);
+            BOOST_REQUIRE_EQUAL(base, manifest_it->base_offset);
+        }
+        target_size += s->size_bytes();
+        if (target_size == manifest_it->size_bytes) {
+            auto comm = s->offsets().get_committed_offset();
+            BOOST_REQUIRE_EQUAL(comm, manifest_it->committed_offset);
+            ++manifest_it;
+            target_size = 0;
+        }
     }
+
+    BOOST_REQUIRE(manifest_it == man.end());
 }
 
 template<class Fixture>
