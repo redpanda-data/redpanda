@@ -295,21 +295,6 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
               ? config.iceberg_rest_catalog_aws_credentials_source().value()
               : config.cloud_storage_credentials_source();
 
-        if (
-          effective_creds_source != model::cloud_credentials_source::config_file
-          && effective_creds_source
-               != model::cloud_credentials_source::aws_instance_metadata) {
-            // SigV4 only makes sense for config or instance metadata.
-            return fmt::format(
-              "SigV4 authentication (iceberg_rest_catalog_authentication_mode "
-              "= {}) "
-              "is only supported with credentials sources 'config_file' or "
-              "'aws_instance_metadata'. Current effective credentials source "
-              "is '{}'.",
-              auth_mode,
-              effective_creds_source);
-        }
-
         // When using aws_instance_metadata, AWS credentials are not required
         if (
           effective_creds_source
