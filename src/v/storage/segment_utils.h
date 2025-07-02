@@ -105,7 +105,8 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
   probe& probe,
-  std::vector<ss::rwlock::holder>);
+  std::vector<ss::rwlock::holder>,
+  std::optional<size_t> new_cmp_idx_size);
 
 /*
  * Acquire write locks on multiple segments. The process will proceed until
@@ -158,14 +159,17 @@ uint64_t segment_size_from_config(const storage::ntp_config&);
 ss::future<roaring::Roaring>
   natural_index_of_entries_to_keep(compacted_index_reader);
 
-ss::future<> copy_filtered_entries(
+// Returns the size of the built compacted index in bytes.
+ss::future<size_t> copy_filtered_entries(
   storage::compacted_index_reader input,
   roaring::Roaring to_copy_index_filter,
   storage::compacted_index_writer output);
 
 /// \brief writes a new `*.compacted_index` file and *closes* the
 /// input compacted_index_reader file
-ss::future<> write_clean_compacted_index(
+///
+/// Returns the size of the built compacted index in bytes.
+ss::future<size_t> write_clean_compacted_index(
   storage::compacted_index_reader,
   storage::compaction_config,
   storage_resources& resources);
@@ -201,7 +205,8 @@ ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
-  probe&);
+  probe&,
+  std::optional<size_t>);
 
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.

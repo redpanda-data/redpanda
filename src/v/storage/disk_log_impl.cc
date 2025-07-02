@@ -530,7 +530,6 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
-            segment->clear_cached_disk_usage();
             _compaction_ratio.update(result.compaction_ratio());
             const ssize_t removed_bytes = ssize_t(result.size_before)
                                           - ssize_t(result.size_after);
@@ -1064,7 +1063,12 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     }
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
-      target, replacement, cfg, *_probe, std::move(locks));
+      target,
+      replacement,
+      cfg,
+      *_probe,
+      std::move(locks),
+      ret.cmp_idx_size_after);
 
     auto segment_to_remove = segments.back();
     // We are going to remove one of the segments, but its bytes have not
@@ -1576,7 +1580,8 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
     co_await seg->index().drop_all_data();
 
     // Rename the data file.
-    co_await internal::do_swap_data_file_handles(tmpname, seg, cfg, *_probe);
+    co_await internal::do_swap_data_file_handles(
+      tmpname, seg, cfg, *_probe, compacted_idx_writer->size_bytes());
 
     // Persist the state of our indexes in their new names.
     seg->index().swap_index_state(std::move(new_idx));

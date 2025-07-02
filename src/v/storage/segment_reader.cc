@@ -51,8 +51,8 @@ segment_reader::~segment_reader() noexcept {
 ss::future<> segment_reader::load_size() {
     ss::gate::holder guard{_gate};
 
-    auto s = co_await stat();
-    set_file_size(s.st_size);
+    auto s = co_await fsize();
+    set_file_size(s);
 };
 
 ss::future<segment_reader_handle>
@@ -130,6 +130,15 @@ ss::future<> segment_reader::put() {
         auto data_file = std::exchange(_data_file, ss::file{});
         co_await data_file.close();
     }
+}
+
+ss::future<size_t> segment_reader::fsize() {
+    ss::gate::holder guard{_gate};
+
+    auto handle = co_await get();
+    auto r = co_await _data_file.size();
+    co_await handle.close();
+    co_return r;
 }
 
 ss::future<struct stat> segment_reader::stat() {

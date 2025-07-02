@@ -181,6 +181,7 @@ ss::future<bool> segment_index::materialize_index() {
 ss::future<bool> segment_index::materialize_index_from_file(ss::file f) {
     auto size = co_await f.size();
     auto buf = co_await f.dma_read_bulk<char>(0, size);
+    _disk_usage_size = size;
     if (buf.empty()) {
         co_return false;
     }
@@ -229,6 +230,9 @@ ss::future<> segment_index::flush_to_file(ss::file backing_file) {
     for (const auto& f : b) {
         co_await out.write(f.get(), f.size());
     }
+
+    _disk_usage_size = b.size_bytes();
+
     co_await out.flush();
 }
 

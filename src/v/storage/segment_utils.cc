@@ -221,30 +221,32 @@ natural_index_of_entries_to_keep(compacted_index_reader reader) {
     return reader.consume(compaction_key_reducer(), model::no_timeout);
 }
 
-ss::future<> copy_filtered_entries(
+ss::future<size_t> copy_filtered_entries(
   compacted_index_reader reader,
   roaring::Roaring to_copy_index,
   std::unique_ptr<compacted_index_writer> writer) {
-    return ss::do_with(
-      std::move(writer),
-      [bm = std::move(to_copy_index),
-       reader](std::unique_ptr<compacted_index_writer>& writer) mutable {
-          reader.reset();
-          return reader
-            .consume(
-              index_filtered_copy_reducer(std::move(bm), *writer),
-              model::no_timeout)
-            // must be last
-            .finally([&writer] {
-                writer->set_flag(
-                  compacted_index::footer_flags::self_compaction);
-                // do not handle exception on the close
-                return writer->close();
-            });
-      });
+    std::exception_ptr eptr;
+    try {
+        reader.reset();
+        co_await reader.consume(
+          index_filtered_copy_reducer(std::move(to_copy_index), *writer),
+          model::no_timeout);
+        writer->set_flag(compacted_index::footer_flags::self_compaction);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    // do not handle exception on the close
+    co_await writer->close();
+
+    if (eptr) {
+        std::rethrow_exception(eptr);
+    }
+
+    co_return writer->size_bytes();
 }
 
-static ss::future<> do_write_clean_compacted_index(
+static ss::future<size_t> do_write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
@@ -255,23 +257,38 @@ static ss::future<> do_write_clean_compacted_index(
       cfg.files_to_cleanup, {tmpname}};
     auto truncating_writer = make_file_backed_compacted_index(
       tmpname.string(), cfg.iopc, true, resources, cfg.sanitizer_config);
-    co_await copy_filtered_entries(
+    auto cmp_idx_size = co_await copy_filtered_entries(
       reader, std::move(bitmap), std::move(truncating_writer));
     co_await ss::rename_file(std::string(tmpname), ss::sstring(reader.path()));
     staging_to_clean.clear();
+    co_return cmp_idx_size;
 };
 
-ss::future<> write_clean_compacted_index(
+ss::future<size_t> write_clean_compacted_index(
   compacted_index_reader reader,
   compaction_config cfg,
   storage_resources& resources) {
     // integrity verified in `do_detect_compaction_index_state`
-    return do_write_clean_compacted_index(reader, cfg, resources)
-      .finally([reader]() mutable {
-          return reader.close().then_wrapped(
-            [reader](ss::future<>) { /*ignore*/ });
-      });
+    auto fut = co_await ss::coroutine::as_future(
+      do_write_clean_compacted_index(reader, cfg, resources));
+
+    try {
+        co_await reader.close();
+    } catch (...) {
+        auto e = std::current_exception();
+        vlog(
+          gclog.debug,
+          "Caught exception {} while closing compacted_index_reader",
+          e);
+    }
+
+    if (fut.failed()) {
+        std::rethrow_exception(fut.get_exception());
+    }
+
+    co_return fut.get();
 }
+
 ss::future<compacted_index::recovery_state>
 do_detect_compaction_index_state(segment_full_path p, compaction_config cfg) {
     using flags = compacted_index::footer_flags;
@@ -327,7 +344,7 @@ generate_compacted_list(model::offset o, compacted_index_reader reader) {
       .finally([reader] {});
 }
 
-ss::future<> do_compact_segment_index(
+ss::future<size_t> do_compact_segment_index(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage_resources& resources) {
@@ -507,7 +524,8 @@ ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
-  probe& pb) {
+  probe& pb,
+  std::optional<size_t> new_cmp_idx_size) {
     co_await s->reader().close();
 
     ss::sstring old_name = compacted.string();
@@ -527,6 +545,11 @@ ss::future<> do_swap_data_file_handles(
       cfg.sanitizer_config);
     co_await r->load_size();
 
+    // We know the size of the segment and compacted index files. To save on
+    // future file_stat() calls due to these values being unset, set the cached
+    // disk usage here.
+    s->set_cached_disk_usage(r->file_size(), new_cmp_idx_size);
+
     // update partition size probe
     pb.delete_segment(*s.get());
     s->swap_reader(std::move(r));
@@ -537,7 +560,7 @@ ss::future<> do_swap_data_file_handles(
  * Executes segment compaction, returns size of compacted segment or an empty
  * optional if segment wasn't compacted
  */
-ss::future<std::optional<size_t>> do_self_compact_segment(
+ss::future<compaction_result> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   storage::probe& pb,
@@ -546,6 +569,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   offset_delta_time apply_offset,
   ss::rwlock::holder read_holder,
   ss::sharded<features::feature_table>& feature_table) {
+    auto size_before = s->size_bytes();
+
     if (cfg.asrc) {
         cfg.asrc->check();
     }
@@ -559,7 +584,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
     // broker_timestamp is used for retention.ms, but it's only in the index,
     // not it in the segment itself. save it to restore it later
-    co_await do_compact_segment_index(s, cfg, resources);
+    auto cmp_idx_size = co_await do_compact_segment_index(s, cfg, resources);
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock
     auto staging_file = s->reader().path().to_staging();
@@ -590,7 +615,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
           "generation: {}, skipping compaction",
           s->get_generation_id(),
           segment_generation);
-        co_return std::nullopt;
+        co_return compaction_result(size_before);
     }
 
     if (s->is_closed()) {
@@ -600,7 +625,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     co_await s->index().drop_all_data();
 
     auto compacted_file = s->reader().path().to_staging();
-    co_await do_swap_data_file_handles(compacted_file, s, cfg, pb);
+    co_await do_swap_data_file_handles(
+      compacted_file, s, cfg, pb, cmp_idx_size);
     staging_to_clean.clear();
 
     s->index().swap_index_state(std::move(idx));
@@ -608,7 +634,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     s->release_batch_cache_index();
     co_await s->index().flush();
     s->advance_generation();
-    co_return s->size_bytes();
+    co_return compaction_result(size_before, s->size_bytes(), cmp_idx_size);
 }
 
 ss::future<> build_compaction_index(
@@ -777,9 +803,8 @@ ss::future<compaction_result> self_compact_segment(
         || (state == compacted_index::recovery_state::already_compacted);
     vassert(is_valid_index_state, "Unexpected state {}", state);
 
-    auto sz_before = s->size_bytes();
     auto apply_offset = should_apply_delta_time_offset(feature_table);
-    auto sz_after = co_await do_self_compact_segment(
+    auto res = co_await do_self_compact_segment(
       s,
       cfg,
       pb,
@@ -789,15 +814,14 @@ ss::future<compaction_result> self_compact_segment(
       std::move(read_holder),
       feature_table);
 
-    // compaction wasn't executed, return
-    if (!sz_after) {
-        co_return compaction_result(sz_before);
+    if (res.did_compact()) {
+        pb.segment_compacted();
+        pb.add_compaction_removed_bytes(
+          ssize_t(res.size_before) - ssize_t(res.size_after));
+        s->mark_as_finished_self_compaction();
     }
 
-    pb.segment_compacted();
-    pb.add_compaction_removed_bytes(ssize_t(sz_before) - ssize_t(*sz_after));
-    s->mark_as_finished_self_compaction();
-    co_return compaction_result(sz_before, *sz_after);
+    co_return res;
 }
 
 ss::future<
@@ -1079,14 +1103,16 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
   probe& probe,
-  std::vector<ss::rwlock::holder> locks) {
+  std::vector<ss::rwlock::holder> locks,
+  std::optional<size_t> new_cmp_idx_size) {
     co_await from->close();
 
     co_await to->index().drop_all_data();
 
     // segment data file
     auto from_path = from->reader().path();
-    co_await do_swap_data_file_handles(from_path, to, cfg, probe);
+    co_await do_swap_data_file_handles(
+      from_path, to, cfg, probe, new_cmp_idx_size);
 
     // offset index
     to->index().swap_index_state(

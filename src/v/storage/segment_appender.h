@@ -89,6 +89,10 @@ public:
         return _committed_offset + _bytes_flush_pending;
     }
 
+    // The size of the underlying file on disk, which is the
+    // _fallocation_offset.
+    size_t size_bytes() const { return _fallocation_offset; }
+
     /**
      * @brief Appends a batch.
      *

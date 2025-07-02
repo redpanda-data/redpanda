@@ -37,6 +37,10 @@ struct segment_closed_exception final : std::exception {
     }
 };
 
+namespace testing_details {
+class segment_accessor;
+}; // namespace testing_details
+
 class segment {
 public:
     using generation_id = named_type<uint64_t, struct segment_gen_tag>;
@@ -271,6 +275,17 @@ public:
     }
 
     void clear_cached_disk_usage();
+    // Sets the cached disk usage for the `segment` and optionally the
+    // `compacted_index`. These are usually the values from the underlying
+    // `segment_{appender/reader}` for either of these objects. The base
+    // `segment_index` sets its disk usage in `flush_to_file()`.
+    //
+    // This function is widely used within the compaction subsystem to cut down
+    // on future calls to `stat()`, since the cached disk usage is cleared
+    // during every round of compaction, and we know from in-memory state how
+    // large these objects are going to be on disk.
+    void set_cached_disk_usage(
+      size_t new_seg_size, std::optional<size_t> new_compacted_index_size);
 
     /// Fallback timestamp method, for use if the timestamps in the index
     /// appear to be invalid (e.g. too far in the future)
@@ -350,6 +365,7 @@ private:
     std::optional<ss::lowres_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
+    friend class testing_details::segment_accessor;
 };
 
 /**

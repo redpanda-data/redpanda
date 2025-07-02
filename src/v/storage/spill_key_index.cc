@@ -421,6 +421,13 @@ std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
     return o;
 }
 
+size_t spill_key_index::size_bytes() const {
+    if (_appender.has_value()) {
+        return _appender->size_bytes();
+    }
+    return 0;
+}
+
 } // namespace storage::internal
 
 namespace storage {

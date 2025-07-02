@@ -29,4 +29,16 @@ public:
         return m._logs_list;
     }
 };
+
+class segment_accessor {
+public:
+    static std::optional<size_t> data_disk_usage_size(storage::segment& s) {
+        return s._data_disk_usage_size;
+    }
+
+    static std::optional<size_t> compaction_index_size(storage::segment& s) {
+        return s._compaction_index_size;
+    }
+};
+
 } // namespace storage::testing_details
