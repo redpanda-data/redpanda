@@ -103,6 +103,7 @@ v_cc_library(
     v::bytes
     v::cloud_io
     v::container
+    v::datalake_credential_manager
     v::iceberg_unresolved_partition_spec
     v::json
     v::strings
