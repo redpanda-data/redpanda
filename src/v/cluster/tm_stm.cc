@@ -577,8 +577,11 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
 }
 void tm_stm::upsert_transaction(tx_metadata tx) {
     auto [tx_it, inserted] = _transactions.try_emplace(tx.id, tx);
-    _pid_tx_id[tx.pid] = tx.id;
+    // erase any existing mappings
     _pid_tx_id.erase(tx.last_pid);
+    _pid_tx_id.erase(tx_it->second.tx.pid);
+    // Update the latest tx_id to pid mapping
+    _pid_tx_id[tx.pid] = tx.id;
     if (!inserted) {
         tx_it->second.tx = std::move(tx);
     }
