@@ -1054,7 +1054,6 @@ tx_gateway_frontend::increase_producer_epoch(
     const bool expected_epoch_matches = expected_pid
                                           ? expected_pid->epoch == tx_pid.epoch
                                           : true;
-    auto dropped_pid = model::no_pid;
     // exhausted epoch, allocate new producer id
     if (tx_pid.has_exhausted_epoch() && expected_epoch_matches) {
         allocate_id_reply pid_reply
@@ -1068,7 +1067,6 @@ tx_gateway_frontend::increase_producer_epoch(
               pid_reply.ec);
             co_return init_tm_tx_reply{tx::errc::not_coordinator};
         }
-        dropped_pid = tx_pid;
         tx_pid = model::producer_identity(
           pid_reply.id, model::no_producer_epoch);
     }
@@ -1080,7 +1078,6 @@ tx_gateway_frontend::increase_producer_epoch(
     }
     // expected producer id wasn't provided,
     if (!expected_pid) {
-        dropped_pid = tx_pid;
         tx_pid = model::producer_identity::with_next_epoch(tx_pid);
         last_tx_pid = model::no_pid;
     } else if (
@@ -1091,7 +1088,6 @@ tx_gateway_frontend::increase_producer_epoch(
         // initialized. Bump the current and last epochs. The no current epoch
         // case means this is a new producer; producerEpoch will be -1 and
         // bumpedEpoch will be 0
-        dropped_pid = tx_pid;
         last_tx_pid = tx_pid;
         tx_pid = model::producer_identity::with_next_epoch(tx_pid);
     } else if (last_tx_pid == expected_pid) {
@@ -1118,7 +1114,7 @@ tx_gateway_frontend::increase_producer_epoch(
     reply.pid = tx_pid;
 
     auto op_status = co_await stm->update_tx_producer(
-      term, tx_id, transaction_timeout_ms, tx_pid, last_tx_pid, dropped_pid);
+      term, tx_id, transaction_timeout_ms, tx_pid, last_tx_pid);
     if (op_status == tm_stm::op_status::success) {
         reply.ec = tx::errc::none;
     } else if (op_status == tm_stm::op_status::conflict) {

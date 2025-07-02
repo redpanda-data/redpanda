@@ -371,16 +371,14 @@ ss::future<tm_stm::op_status> tm_stm::update_tx_producer(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::producer_identity pid,
-  model::producer_identity last_pid,
-  model::producer_identity rolled_pid) {
+  model::producer_identity last_pid) {
     vlog(
       _ctx_log.trace,
       "[tx_id={}] Registering existing transaction with new pid: {}, previous "
-      "pid: {}, rolled_pid: {}",
+      "pid: {}",
       tx_id,
       pid,
-      last_pid,
-      rolled_pid);
+      last_pid);
 
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
@@ -398,11 +396,9 @@ ss::future<tm_stm::op_status> tm_stm::update_tx_producer(
     tx.last_update_ts = clock_type::now();
 
     auto r = co_await update_tx(std::move(tx), expected_term);
-
     if (!r.has_value()) {
         co_return tm_stm::op_status::unknown;
     }
-    _pid_tx_id.erase(rolled_pid);
     co_return tm_stm::op_status::success;
 }
 
