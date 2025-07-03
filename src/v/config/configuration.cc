@@ -4038,6 +4038,7 @@ configuration::configuration()
       "aws_instance_metadata, sts, gcp_instance_metadata, "
       "azure_vm_instance_metadata, azure_aks_oidc_federation.",
       {.needs_restart = needs_restart::yes,
+       .example = "config_file",
        .visibility = visibility::user,
        .gets_restored = gets_restored::no},
       std::nullopt,
