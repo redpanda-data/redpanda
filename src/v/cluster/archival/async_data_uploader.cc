@@ -259,6 +259,7 @@ ss::future<result<void>> segment_upload::initialize(
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
     reader_cfg.read_lock_deadline = deadline_sc;
+    reader_cfg.force_ignore_batch_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
     auto reader = co_await [this, &reader_cfg, allow_unstable_reads]() {
         if (allow_unstable_reads) {
@@ -291,6 +292,7 @@ ss::future<result<void>> segment_upload::initialize(
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
     reader_cfg.read_lock_deadline = deadline_sc;
+    reader_cfg.force_ignore_batch_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
     auto reader = co_await _part->log()->make_reader(reader_cfg);
     _stream = make_reader_input_stream(
