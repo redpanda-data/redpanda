@@ -134,11 +134,23 @@ static model::record do_parse_one_record_from_buffer(
     auto [key_length, kv] = parser.read_varlong();
     iobuf key;
     if (key_length > 0) {
+        if (key_length > record_size) [[unlikely]] {
+            throw std::out_of_range(fmt::format(
+              "Expected key length {} but record has only {} bytes in total",
+              key_length,
+              record_size));
+        }
         key = parser_data(parser, key_length);
     }
     auto [value_length, vv] = parser.read_varlong();
     iobuf value;
     if (value_length > 0) {
+        if (value_length > record_size) [[unlikely]] {
+            throw std::out_of_range(fmt::format(
+              "Expected value length {} but record has only {} bytes in total",
+              value_length,
+              record_size));
+        }
         value = parser_data(parser, value_length);
     }
     auto headers = parse_record_headers(parser, parser_data);
@@ -165,6 +177,12 @@ parse_record_meta_from_buffer(iobuf_parser_base& parser) {
       sizeof(model::record_attributes::type) == 1,
       "model attributes expected to be one byte");
     auto [record_size, rv] = parser.read_varlong();
+    if (static_cast<size_t>(record_size) > parser.bytes_left()) [[unlikely]] {
+        throw std::out_of_range(fmt::format(
+          "Expected record size {} but only {} bytes left",
+          record_size,
+          parser.bytes_left()));
+    }
     auto attr = parser.consume_type<model::record_attributes::type>();
     return std::make_pair(record_size, attr);
 }
