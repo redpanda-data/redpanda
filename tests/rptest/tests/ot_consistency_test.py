@@ -23,7 +23,14 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, SISettings, CloudStorageTypeAndUrlStyle, get_cloud_storage_type, get_cloud_storage_type_and_url_style
+from rptest.services.redpanda import (
+    RedpandaService,
+    SISettings,
+    CloudStorageTypeAndUrlStyle,
+    get_cloud_storage_type,
+    get_cloud_storage_type_and_url_style,
+    get_segment_upload_mode,
+)
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.node_operations import verify_offset_translator_state_consistent
 
@@ -41,7 +48,8 @@ class OffsetTranslatorConsistencyTest(RedpandaTest):
         )
 
     @cluster(num_nodes=3)
-    def test_offset_translator_state_consistent(self):
+    @matrix(segment_upload_mode=get_segment_upload_mode())
+    def test_offset_translator_state_consistent(self, segment_upload_mode):
         cli = KafkaCliTools(self.redpanda)
         topic = TopicSpec(partition_count=3, replication_factor=3)
 

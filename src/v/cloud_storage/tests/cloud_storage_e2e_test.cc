@@ -183,12 +183,14 @@ TEST_F(ManualFixture, TestSizeEstimationWithCloud) {
     }
 }
 
+using test_case = std::tuple<bool, model::cloud_storage_segment_upload_mode>;
+
 class EndToEndFixture
   : public s3_imposter_fixture
   , public manual_metadata_upload_mixin
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture
-  , public ::testing::TestWithParam<bool> {
+  , public ::testing::TestWithParam<test_case> {
 public:
     EndToEndFixture()
       : redpanda_thread_fixture(
@@ -197,6 +199,13 @@ public:
         // No expectations: tests will PUT and GET organically.
         set_expectations_and_listen({});
         wait_for_controller_leadership().get();
+        test_local_cfg.get("cloud_storage_segment_upload_mode")
+          .set_value(upload_mode());
+    }
+
+    bool override_namespace() const { return std::get<0>(GetParam()); }
+    model::cloud_storage_segment_upload_mode upload_mode() const {
+        return std::get<1>(GetParam());
     }
 
     scoped_config test_local_cfg;
@@ -209,7 +218,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloud) {
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
     cluster::topic_properties props;
     props.shadow_indexing = model::shadow_indexing_mode::full;
-    if (GetParam()) {
+    if (override_namespace()) {
         // Override topic_namespace.
         props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
@@ -281,7 +290,7 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
     cluster::topic_properties props;
     ASSERT_TRUE(props.is_compacted() == false);
     props.shadow_indexing = model::shadow_indexing_mode::full;
-    if (GetParam()) {
+    if (override_namespace()) {
         // Override topic_namespace.
         props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
@@ -324,6 +333,8 @@ TEST_P(EndToEndFixture, TestProduceConsumeFromCloudWithSpillover) {
         log->force_roll().get();
 
         ASSERT_TRUE(archiver.sync_for_tests().get());
+        ASSERT_EQ(
+          archiver.flush().response, archival::flush_response::accepted);
         archiver
           .upload_next_candidates(
             archival::archival_stm_fence{.emit_rw_fence_cmd = false})
@@ -506,7 +517,7 @@ class CloudStorageEndToEndManualTest
   : public s3_imposter_fixture
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture
-  , public ::testing::TestWithParam<bool> {
+  , public ::testing::TestWithParam<test_case> {
 public:
     static constexpr auto segs_per_spill = 10;
     CloudStorageEndToEndManualTest()
@@ -532,6 +543,8 @@ public:
           .set_value(std::make_optional<size_t>(segs_per_spill));
         test_local_cfg.get("cloud_storage_spillover_manifest_size")
           .set_value(std::optional<size_t>{});
+        test_local_cfg.get("cloud_storage_segment_upload_mode")
+          .set_value(upload_mode());
 
         topic_name = model::topic("tapioca");
         ntp = model::ntp(model::kafka_namespace, topic_name, 0);
@@ -539,7 +552,7 @@ public:
         // Create a tiered storage topic with very little local retention.
         cluster::topic_properties props;
         props.shadow_indexing = model::shadow_indexing_mode::full;
-        if (GetParam()) {
+        if (override_namespace()) {
             // Override topic_namespace.
             props.remote_topic_namespace_override = model::topic_namespace(
               model::kafka_namespace, model::topic("cassava"));
@@ -552,6 +565,11 @@ public:
         partition = app.partition_manager.local().get(ntp).get();
         log = partition->log();
         archiver = &partition->archiver()->get();
+    }
+
+    bool override_namespace() const { return std::get<0>(GetParam()); }
+    model::cloud_storage_segment_upload_mode upload_mode() const {
+        return std::get<1>(GetParam());
     }
 
     scoped_config test_local_cfg;
@@ -825,6 +843,7 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
         // drive the uploading
         auto& archiver = prt_l->archiver()->get();
         archiver.sync_for_tests().get();
+        archiver.flush();
         archiver
           .upload_next_candidates(
             archival::archival_stm_fence{.emit_rw_fence_cmd = false})
@@ -850,7 +869,12 @@ TEST_F(CloudStorageManualMultiNodeTestBase, ReclaimableReportedInHealthReport) {
     ASSERT_TRUE(false);
 }
 
-TEST_F(EndToEndFixture, TestLocalTimequery) {
+TEST_P(EndToEndFixture, TestLocalTimequery) {
+    if (override_namespace()) {
+        // redundant parameterization
+        ASSERT_TRUE(true);
+        return;
+    }
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, model::partition_id{0});
 
@@ -928,7 +952,7 @@ TEST_P(EndToEndFixture, TestCloudStorageTimequery) {
     // Allow cloud storage timequeries with full shadow indexing mode.
     cluster::topic_properties props;
     props.shadow_indexing = model::shadow_indexing_mode::full;
-    if (GetParam()) {
+    if (override_namespace()) {
         // Override topic_namespace.
         props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
@@ -1118,7 +1142,7 @@ TEST_P(EndToEndFixture, TestMixedTimequery) {
     // Enable full shadow indexing for now.
     cluster::topic_properties props;
     props.shadow_indexing = model::shadow_indexing_mode::full;
-    if (GetParam()) {
+    if (override_namespace()) {
         // Override topic_namespace.
         props.remote_topic_namespace_override = model::topic_namespace(
           model::kafka_namespace, model::topic("cassava"));
@@ -1234,7 +1258,20 @@ TEST_P(EndToEndFixture, TestMixedTimequery) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(
+  WithOverride,
+  EndToEndFixture,
+  ::testing::Combine(
+    ::testing::Bool(),
+    ::testing::Values(
+      model::cloud_storage_segment_upload_mode::v1,
+      model::cloud_storage_segment_upload_mode::v2)));
 
 INSTANTIATE_TEST_SUITE_P(
-  ManualWithOverride, CloudStorageEndToEndManualTest, ::testing::Bool());
+  ManualWithOverride,
+  CloudStorageEndToEndManualTest,
+  ::testing::Combine(
+    ::testing::Bool(),
+    ::testing::Values(
+      model::cloud_storage_segment_upload_mode::v1,
+      model::cloud_storage_segment_upload_mode::v2)));

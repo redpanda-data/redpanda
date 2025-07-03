@@ -147,6 +147,9 @@ public:
     virtual std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const = 0;
 
+    virtual std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const = 0;
+
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
@@ -167,6 +170,9 @@ public:
     struct offset_range_size_result_t {
         size_t on_disk_size;
         model::offset last_offset;
+        model::timestamp first_timestamp;
+        model::timestamp last_timestamp;
+        bool boundary_in_batch{false};
     };
 
     struct offset_range_size_requirements_t {
@@ -179,7 +185,11 @@ public:
     /// The 'first' offset should be the first offset of the batch. The 'last'
     /// should be the last offset of the batch. The offset range is inclusive.
     virtual ss::future<std::optional<offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) = 0;
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max())
+      = 0;
 
     /// Find the offset range based on size requirements
     ///
@@ -193,6 +203,13 @@ public:
 
     virtual bool is_compacted(model::offset first, model::offset last) const
       = 0;
+
+    virtual bool
+    compaction_complete(model::offset first, model::offset last) const
+      = 0;
+
+    virtual std::optional<model::offset>
+    max_compacted_offset(model::offset first = model::offset{0}) const = 0;
 
     /// Mutates the ntp_config stored in the log with the new
     /// topic/partition-level overrides

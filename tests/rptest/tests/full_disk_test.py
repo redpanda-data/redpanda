@@ -599,9 +599,11 @@ class LogStorageMaxSizeSI(RedpandaTest):
         target size.
         """
         # start redpanda with specific config like segment size
-        si_settings = SISettings(test_context=self.test_context,
-                                 log_segment_size=log_segment_size,
-                                 fast_uploads=True)
+        si_settings = SISettings(
+            test_context=self.test_context,
+            log_segment_size=log_segment_size,
+            cloud_storage_segment_size_target=log_segment_size,
+            fast_uploads=True)
         extra_rp_conf = {
             'compacted_log_segment_size': log_segment_size,
             'disk_reservation_percent': 0,

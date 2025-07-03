@@ -30,8 +30,14 @@ from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, \
     KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, \
-    MetricsEndpoint
+from rptest.services.redpanda import (
+    SISettings,
+    get_cloud_storage_type,
+    make_redpanda_service,
+    CHAOS_LOG_ALLOW_LIST,
+    MetricsEndpoint,
+    get_segment_upload_mode,
+)
 from rptest.services.utils import LogSearchLocal
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -171,8 +177,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                                 self.logger)
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type()[0:1])
-    def test_reset(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_reset(self, cloud_storage_type, segment_upload_mode):
         brokers = self.redpanda.started_nodes()
 
         msg_count_before_reset = 50 * (self.segment_size // 2056)
@@ -259,8 +266,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         assert consumer.consumer_status.validator.valid_reads >= msg_count_before_reset + msg_count_after_reset
 
     @cluster(num_nodes=4, log_allow_list=REST_LOG_ALLOW_LIST)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_reset_spillover(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_reset_spillover(self, cloud_storage_type, segment_upload_mode):
         """
         Test the unsafe_reset_metadata endpoint for situations when
         then partition manifest includes spillover entries. The test
@@ -441,8 +449,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(
         num_nodes=4,
         log_allow_list=["Applying the cloud manifest would cause data loss"])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_reset_from_cloud(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_reset_from_cloud(self, cloud_storage_type, segment_upload_mode):
         """
         Test the unsafe_reset_metadata_from_cloud endpoint by repeatedly
         calling it to re-set the manifest from the uploaded one while
@@ -524,8 +533,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         consumer.wait(timeout_sec=120)
 
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_write(self, cloud_storage_type, segment_upload_mode):
         """Write at least 10 segments, set retention policy to leave only 5
         segments, wait for segments removal, consume data and run validation,
         that everything that is acked is consumed."""
@@ -801,8 +811,9 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_write(self, cloud_storage_type, segment_upload_mode):
         original_snapshot = self._prime_compacted_topic(10)
 
         self.kafka_tools.alter_topic_config(
@@ -829,8 +840,10 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_compacting_during_leadership_transfer(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_compacting_during_leadership_transfer(self, cloud_storage_type,
+                                                   segment_upload_mode):
         original_snapshot = self._prime_compacted_topic(10)
 
         self.kafka_tools.alter_topic_config(
@@ -869,8 +882,10 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                          })
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_write_with_node_failures(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_write_with_node_failures(self, cloud_storage_type,
+                                      segment_upload_mode):
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -941,8 +956,10 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
             })
 
     @cluster(num_nodes=2)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_segments_not_deleted(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_segments_not_deleted(self, cloud_storage_type,
+                                  segment_upload_mode):
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -987,6 +1004,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
             log_segment_size=self.small_segment_size,
             cloud_storage_cache_size=20 * 2**30,
             cloud_storage_segment_max_upload_interval_sec=1,
+            cloud_storage_segment_size_target=self.small_segment_size,
         )
         super().__init__(
             test_context,
@@ -1034,7 +1052,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         producer.start()
         try:
             wait_until(
-                lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
+                lambda: nodes_report_cloud_segments(self.redpanda, 100 * 200),
                 timeout_sec=300,
                 backoff_sec=5)
         finally:
@@ -1140,10 +1158,12 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
                  r"failed to hydrate chunk.*NotFound"
              ])
     @matrix(short_retention=[False, True],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode
     def test_create_or_delete_topics_while_busy(self, short_retention,
-                                                cloud_storage_type):
+                                                cloud_storage_type,
+                                                segment_upload_mode):
         """
         :param short_retention: whether to run with a very short retention globally, or just
                a short target for local retention (see issue #7092)
@@ -1273,8 +1293,9 @@ class EndToEndSpilloverTest(RedpandaTest):
         consumer.free()
 
     @cluster(num_nodes=4, log_allow_list=[r"cluster.*Can't add segment"])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_spillover(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_spillover(self, cloud_storage_type, segment_upload_mode):
 
         self.logger.info("Start producer")
         self.produce()
@@ -1406,9 +1427,10 @@ class EndToEndThrottlingTest(RedpandaTest):
     # hard to assert the bandwidth or test duration so we skip the test.
     @cluster(num_nodes=4)
     # @skip_debug_mode
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        docker_use_arbitrary=True))
-    def test_throttling(self, cloud_storage_type):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        segment_upload_mode=get_segment_upload_mode())
+    def test_throttling(self, cloud_storage_type, segment_upload_mode):
 
         self.logger.info("Start producer")
         self.produce()

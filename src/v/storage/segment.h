@@ -242,6 +242,8 @@ public:
     void cache_put(
       const model::record_batch& batch, batch_cache::is_dirty_entry dirty);
 
+    ss::future<std::optional<ss::rwlock::holder>> try_read_lock();
+
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
@@ -534,6 +536,15 @@ inline void segment::cache_put(
         _cache->put(batch, dirty);
     }
 }
+
+inline ss::future<std::optional<ss::rwlock::holder>> segment::try_read_lock() {
+    if (!_destructive_ops.try_read_lock()) {
+        co_return std::nullopt;
+    }
+    _destructive_ops.read_unlock();
+    co_return co_await _destructive_ops.hold_read_lock();
+}
+
 inline ss::future<ss::rwlock::holder>
 segment::read_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_read_lock(timeout);

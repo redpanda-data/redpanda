@@ -20,6 +20,7 @@
 #include "kafka/server/tests/offset_for_leader_epoch_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
@@ -27,7 +28,7 @@
 #include "test_utils/scoped_config.h"
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/test/tools/old/interface.hpp>
+#include <gtest/gtest.h>
 
 #include <iterator>
 
@@ -43,28 +44,35 @@ void check_consume_out_of_range(
   const model::topic& topic_name,
   const model::partition_id pid,
   model::offset kafka_offset) {
-    BOOST_REQUIRE_EXCEPTION(
-      consumer.consume_from_partition(topic_name, pid, kafka_offset).get(),
-      std::runtime_error,
-      [](std::runtime_error e) {
-          return std::string(e.what()).find("out_of_range")
-                 != std::string::npos;
-      });
+    // TODO(oren): add check for exception contents
+    std::string msg{};
+    ASSERT_NO_THROW([&]() mutable {
+        try {
+            consumer.consume_from_partition(topic_name, pid, kafka_offset)
+              .get();
+        } catch (std::runtime_error& e) {
+            msg = std::string(e.what());
+        }
+    }());
+
+    ASSERT_NE(msg.find("out_of_range"), std::string::npos);
 };
 
 // Returns the number of bytes in whole segments above the given Kafka offset
 // in the manifest. Expects that the given offset exists in a segment.
-size_t segment_bytes_above_offset(
-  const cloud_storage::partition_manifest& stm_manifest, kafka::offset o) {
+void segment_bytes_above_offset(
+  const cloud_storage::partition_manifest& stm_manifest,
+  kafka::offset o,
+  size_t& result) {
     auto it = stm_manifest.segment_containing(o);
-    BOOST_REQUIRE(it != stm_manifest.end());
-    BOOST_REQUIRE(++it != stm_manifest.end());
+    ASSERT_TRUE(it != stm_manifest.end());
+    ASSERT_TRUE(++it != stm_manifest.end());
     size_t segment_bytes_past_override = 0;
     while (it != stm_manifest.end()) {
         segment_bytes_past_override += it->size_bytes;
         ++it;
     }
-    return segment_bytes_past_override;
+    result = segment_bytes_past_override;
 }
 
 } // namespace
@@ -72,7 +80,8 @@ size_t segment_bytes_above_offset(
 class delete_records_e2e_fixture
   : public s3_imposter_fixture
   , public redpanda_thread_fixture
-  , public enable_cloud_storage_fixture {
+  , public enable_cloud_storage_fixture
+  , public ::testing::TestWithParam<model::cloud_storage_segment_upload_mode> {
 public:
     static constexpr auto segs_per_spill = 10;
     delete_records_e2e_fixture()
@@ -100,6 +109,11 @@ public:
           .set_value(std::optional<size_t>{});
         test_local_cfg.get("retention_local_strict").set_value(true);
 
+        test_local_cfg.get("cloud_storage_segment_upload_mode")
+          .set_value(GetParam());
+        test_local_cfg.get("cloud_storage_segment_size_target")
+          .set_value(std::make_optional<size_t>(1024));
+
         topic_name = model::topic("tapioca");
         ntp = model::ntp(model::kafka_namespace, topic_name, 0);
 
@@ -113,8 +127,11 @@ public:
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
         log = partition->log();
+    }
+
+    void SetUp() override {
         auto archiver_ref = partition->archiver();
-        BOOST_REQUIRE(archiver_ref.has_value());
+        ASSERT_TRUE(archiver_ref.has_value());
         archiver = &archiver_ref.value().get();
     }
 
@@ -125,10 +142,11 @@ public:
         partition->update_configuration(std::move(props)).get();
         auto& new_archiver = partition->archiver()->get();
         new_archiver.housekeeping().get();
-        BOOST_REQUIRE_EQUAL(
+        ASSERT_EQ(
           new_archiver.manifest().get_start_kafka_offset_override(),
           kafka::offset{});
     }
+
     scoped_config test_local_cfg;
 
     model::topic topic_name;
@@ -138,11 +156,11 @@ public:
     archival::ntp_archiver* archiver;
 };
 
-FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_timequery_below_deleted_offset) {
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     // Use a starting timestamp and make sure each batch gets a different
     // timestamp.
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(
       12,
       gen.num_segments(3)
         .batches_per_segment(3)
@@ -163,8 +181,7 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                     .list_offset_for_partition(
                       topic_name, model::partition_id(0), first_seg_max_ts)
                     .get();
-    BOOST_REQUIRE_EQUAL(
-      first_seg->last_kafka_offset(), model::offset_cast(offset));
+    ASSERT_EQ(first_seg->last_kafka_offset(), model::offset_cast(offset));
     auto second_seg = stm_manifest.segment_containing(
       first_seg->next_kafka_offset());
 
@@ -178,7 +195,7 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
           .delete_records_from_partition(
             topic_name, model::partition_id(0), second_seg_end_offset, 5s)
           .get();
-    BOOST_REQUIRE_EQUAL(second_seg_end_offset, lwm);
+    ASSERT_EQ(second_seg_end_offset, lwm);
 
     // Timequeries into the first cloud segment should be bumped up.
     auto post_delete_offset = lister
@@ -187,7 +204,7 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                                   model::partition_id(0),
                                   first_seg_max_ts)
                                 .get();
-    BOOST_REQUIRE_EQUAL(second_seg_end_offset, post_delete_offset);
+    ASSERT_EQ(second_seg_end_offset, post_delete_offset);
 
     // Now trim again, but this time, trim the entire cloud range.
     auto first_local_offset = stm_manifest.last_segment()->next_kafka_offset();
@@ -198,7 +215,7 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
               kafka::offset_cast(first_local_offset),
               5s)
             .get();
-    BOOST_REQUIRE_EQUAL(first_local_offset, model::offset_cast(lwm));
+    ASSERT_EQ(first_local_offset, model::offset_cast(lwm));
 
     // Timequeries into the cloud region should be bumped up.
     post_delete_offset = lister
@@ -207,12 +224,10 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                              model::partition_id(0),
                              first_seg_max_ts)
                            .get();
-    BOOST_REQUIRE_EQUAL(
-      first_local_offset, model::offset_cast(post_delete_offset));
+    ASSERT_EQ(first_local_offset, model::offset_cast(post_delete_offset));
 }
 
-FIXTURE_TEST(
-  test_leader_epoch_below_deleted_offset, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_leader_epoch_below_deleted_offset) {
     // Step down some to have more than one term in the log.
     // In each term, we'll write three segments.
     for (int i = 0; i < 3; i++) {
@@ -220,7 +235,7 @@ FIXTURE_TEST(
         wait_for_leader(ntp, 10s).get();
         tests::remote_segment_generator gen(
           make_kafka_client().get(), *partition);
-        BOOST_REQUIRE_EQUAL(
+        ASSERT_EQ(
           9,
           // 3 segments each with 3 batches, + 1 segment for the leadership
           // change.
@@ -234,14 +249,14 @@ FIXTURE_TEST(
                               model::partition_id(0),
                               model::term_id(2))
                             .get();
-    BOOST_REQUIRE_EQUAL(model::offset(9), last_in_term_2);
+    ASSERT_EQ(model::offset(9), last_in_term_2);
     kafka_delete_records_transport deleter(make_kafka_client().get());
     deleter.start().get();
     auto lwm = deleter
                  .delete_records_from_partition(
                    topic_name, model::partition_id(0), model::offset(13), 5s)
                  .get();
-    BOOST_CHECK_EQUAL(model::offset(13), lwm);
+    EXPECT_EQ(model::offset(13), lwm);
 
     // After deleting the last offset in the term, the same query gets bumped
     // to the new start offset.
@@ -249,16 +264,15 @@ FIXTURE_TEST(
                        .offset_for_leader_partition(
                          topic_name, model::partition_id(0), model::term_id(2))
                        .get();
-    BOOST_REQUIRE_EQUAL(model::offset(13), last_in_term_2);
+    ASSERT_EQ(model::offset(13), last_in_term_2);
 }
 
 // Test consuming after truncating the STM manifest.
-FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_delete_from_stm_consume) {
     // Create a segment with three distinct batches.
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
-    BOOST_REQUIRE_EQUAL(
-      9, gen.num_segments(3).batches_per_segment(3).produce().get());
-    BOOST_REQUIRE_EQUAL(3, archiver->manifest().size());
+    ASSERT_EQ(9, gen.num_segments(3).batches_per_segment(3).produce().get());
+    ASSERT_EQ(3, archiver->manifest().size());
 
     // Delete in the middle of a segment.
     kafka_delete_records_transport deleter(make_kafka_client("deleter").get());
@@ -267,7 +281,7 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                  .delete_records_from_partition(
                    topic_name, model::partition_id(0), model::offset(1), 5s)
                  .get();
-    BOOST_CHECK_EQUAL(model::offset(1), lwm);
+    EXPECT_EQ(model::offset(1), lwm);
     RPTEST_REQUIRE_EVENTUALLY(
       10s, [this] { return log->segment_count() == 1; });
 
@@ -279,15 +293,15 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                                 model::partition_id(0),
                                 model::offset(1))
                               .get();
-    BOOST_CHECK_GE(consumed_records.size(), 1);
-    BOOST_CHECK_EQUAL("key1", consumed_records[0].key);
-    BOOST_CHECK_EQUAL("val1", consumed_records[0].val);
+    EXPECT_GE(consumed_records.size(), 1);
+    EXPECT_EQ("key1", consumed_records[0].key);
+    EXPECT_EQ("val1", consumed_records[0].val);
     check_consume_out_of_range(
       consumer, topic_name, model::partition_id(0), model::offset(0));
 }
 
 // Test consuming after truncating the archive manifests.
-FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_delete_from_archive_consume) {
     auto partition = app.partition_manager.local().get(ntp);
     auto& archiver = partition->archiver()->get();
     archiver.sync_for_tests().get();
@@ -299,17 +313,16 @@ FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
                            .batches_per_segment(records_per_seg)
                            .produce()
                            .get();
-    BOOST_REQUIRE_GE(total_records, 200);
+    ASSERT_GE(total_records, 200);
     archiver.apply_spillover().get();
     auto& stm_manifest = archiver.manifest();
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset(0));
-    BOOST_REQUIRE_GT(
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset(0));
+    ASSERT_GT(
       stm_manifest.get_start_offset(), stm_manifest.get_archive_start_offset());
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(
       stm_manifest.get_spillover_map().size(), num_segs / segs_per_spill - 1);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(
       archiver.upload_manifest("test").get(),
       cloud_storage::upload_result::success);
     archiver.flush_manifest_clean_offset().get();
@@ -324,7 +337,7 @@ FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
                      .delete_records_from_partition(
                        topic_name, model::partition_id(0), model::offset(i), 5s)
                      .get();
-        BOOST_REQUIRE_EQUAL(model::offset(i), lwm);
+        ASSERT_EQ(model::offset(i), lwm);
         check_consume_out_of_range(
           consumer, topic_name, model::partition_id(0), model::offset(i - 1));
         auto consumed_records = consumer
@@ -333,36 +346,35 @@ FIXTURE_TEST(test_delete_from_archive_consume, delete_records_e2e_fixture) {
                                     model::partition_id(0),
                                     model::offset(i))
                                   .get();
-        BOOST_REQUIRE(!consumed_records.empty());
+        ASSERT_TRUE(!consumed_records.empty());
         auto key = consumed_records[0].key;
-        BOOST_REQUIRE_EQUAL(key, ssx::sformat("key{}", i));
+        ASSERT_EQ(key, ssx::sformat("key{}", i));
     }
 }
 
 // Test that truncation is applied to cloud storage as expected when a
 // DeleteRecords request lands in local storage.
-FIXTURE_TEST(
-  test_delete_from_local_storage_truncation, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_delete_from_local_storage_truncation) {
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     size_t records_per_seg = 5;
-    BOOST_REQUIRE_GE(
+    ASSERT_GE(
       250,
       gen.batches_per_segment(records_per_seg)
         .num_segments(40)
         .additional_local_segments(10)
         .produce()
         .get());
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->apply_spillover().get();
     auto& stm_manifest = archiver->manifest();
-    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(stm_manifest.get_spillover_map().size(), 3);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
 
     // DeleteRecords to just before the end of the local log.
     kafka_delete_records_transport deleter(make_kafka_client().get());
     deleter.start().get();
     auto new_start_offset = kafka::offset(245);
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(
       new_start_offset,
       model::offset_cast(deleter
                            .delete_records_from_partition(
@@ -375,31 +387,25 @@ FIXTURE_TEST(
     // The first housekeeping should remove all spillover segments.
     auto archive_start = stm_manifest.get_archive_start_offset();
     auto stm_start_before = stm_manifest.get_start_offset();
-    BOOST_REQUIRE_EQUAL(archive_start, model::offset(0));
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_EQ(archive_start, model::offset(0));
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_clean_offset(), model::offset{});
-    BOOST_REQUIRE(stm_manifest.get_spillover_map().empty());
-    BOOST_REQUIRE_EQUAL(10, archiver->manifest().size());
-    BOOST_REQUIRE_EQUAL(stm_start_before, stm_manifest.get_start_offset());
-    BOOST_REQUIRE_NE(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset{});
+    ASSERT_EQ(stm_manifest.get_archive_clean_offset(), model::offset{});
+    ASSERT_TRUE(stm_manifest.get_spillover_map().empty());
+    ASSERT_EQ(10, archiver->manifest().size());
+    ASSERT_EQ(stm_start_before, stm_manifest.get_start_offset());
+    ASSERT_NE(stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
 
     // The next should remove all STM segments.
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE(!archiver->manifest().get_start_offset().has_value());
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_clean_offset(), model::offset{});
+    ASSERT_TRUE(!archiver->manifest().get_start_offset().has_value());
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset{});
+    ASSERT_EQ(stm_manifest.get_archive_clean_offset(), model::offset{});
 
     // The start offset override still exists because we haven't truncated it.
-    BOOST_REQUIRE_NE(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    ASSERT_NE(stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
 
     // Produce more data and upload to cloud.
     auto produced_kafka_base_offset = model::offset_cast(
@@ -411,10 +417,10 @@ FIXTURE_TEST(
         .get());
     log->flush().get();
     log->force_roll().get();
-    BOOST_REQUIRE_GT(produced_kafka_base_offset, new_start_offset);
+    ASSERT_GT(produced_kafka_base_offset, new_start_offset);
     while (produced_kafka_base_offset > stm_manifest.get_next_kafka_offset()) {
-        BOOST_REQUIRE(archiver->sync_for_tests().get());
-        BOOST_REQUIRE_EQUAL(
+        ASSERT_TRUE(archiver->sync_for_tests().get());
+        ASSERT_EQ(
           archiver
             ->upload_next_candidates(
               archival::archival_stm_fence{.emit_rw_fence_cmd = false})
@@ -422,44 +428,49 @@ FIXTURE_TEST(
             .non_compacted_upload_result.num_failed,
           0);
     }
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_TRUE(archiver->sync_for_tests().get());
+    ASSERT_EQ(
       cloud_storage::upload_result::success,
       archiver->upload_manifest("test").get());
-    BOOST_REQUIRE(stm_manifest.get_start_kafka_offset().has_value());
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_TRUE(stm_manifest.get_start_kafka_offset().has_value());
+    ASSERT_EQ(
       stm_manifest.get_start_kafka_offset().value(), kafka::offset(200));
 
-    // When truncating the STM, we should still honor the requested start.
-    archiver->housekeeping().get();
-    BOOST_REQUIRE(stm_manifest.get_start_kafka_offset().has_value());
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset().value(), new_start_offset);
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset(245));
+    // Segment boundaries are less predictable here in mode::v2, but
+    // that's not really under test
+    if (GetParam() == model::cloud_storage_segment_upload_mode::v1) {
+        // When truncating the STM, we should still honor the requested start.
+        archiver->housekeeping().get();
+        ASSERT_TRUE(stm_manifest.get_start_kafka_offset().has_value());
+        ASSERT_EQ(
+          stm_manifest.get_start_kafka_offset().value(), new_start_offset);
+        ASSERT_EQ(
+          stm_manifest.get_start_kafka_offset_override(), kafka::offset(245));
 
-    auto size_above_override = segment_bytes_above_offset(
-      stm_manifest, kafka::offset(245));
-    check_truncate_removes_override(size_above_override);
+        size_t size_above_override;
+        segment_bytes_above_offset(
+          stm_manifest, kafka::offset(245), std::ref(size_above_override));
+        check_truncate_removes_override(size_above_override);
+    }
 }
 
 // Test that truncation is applied to cloud storage as expected when a
 // DeleteRecords request lands in the STM manifest.
-FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_delete_from_stm_truncation) {
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     size_t records_per_seg = 5;
-    BOOST_REQUIRE_GE(
+    ASSERT_GE(
       250,
       gen.batches_per_segment(records_per_seg)
         .num_segments(40)
         .additional_local_segments(10)
         .produce()
         .get());
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->apply_spillover().get();
     auto& stm_manifest = archiver->manifest();
-    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(stm_manifest.get_spillover_map().size(), 3);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
     kafka_delete_records_transport deleter(make_kafka_client().get());
     deleter.start().get();
 
@@ -474,60 +485,58 @@ FIXTURE_TEST(test_delete_from_stm_truncation, delete_records_e2e_fixture) {
         5s)
       .get();
     // The first housekeeping will cleanup the archive.
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(10, archiver->manifest().size());
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_clean_offset(), model::offset{});
-    BOOST_REQUIRE(stm_manifest.get_spillover_map().empty());
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(10, archiver->manifest().size());
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset{});
+    ASSERT_EQ(stm_manifest.get_archive_clean_offset(), model::offset{});
+    ASSERT_TRUE(stm_manifest.get_spillover_map().empty());
+    ASSERT_EQ(
       stm_manifest.get_start_kafka_offset_override(), stm_truncate_offset);
 
     // The next will clear the STM manifest.
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(1, archiver->manifest().size());
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_EQ(1, archiver->manifest().size());
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset{});
+    ASSERT_EQ(
       stm_manifest.get_start_kafka_offset_override(), stm_truncate_offset);
 
     // Upload more and truncate the manifest past the override.
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_TRUE(archiver->sync_for_tests().get());
+    ASSERT_EQ(
       archiver
         ->upload_next_candidates(
           archival::archival_stm_fence{.emit_rw_fence_cmd = false})
         .get()
         .non_compacted_upload_result.num_failed,
       0);
-    BOOST_REQUIRE_GT(archiver->manifest().size(), 1);
-    BOOST_REQUIRE_EQUAL(
+    ASSERT_GT(archiver->manifest().size(), 1);
+    ASSERT_EQ(
       stm_manifest.get_start_kafka_offset_override(), stm_truncate_offset);
-    auto size_above_override = segment_bytes_above_offset(
-      stm_manifest, stm_truncate_offset);
+    size_t size_above_override{};
+    segment_bytes_above_offset(
+      stm_manifest, stm_truncate_offset, std::ref(size_above_override));
     check_truncate_removes_override(size_above_override);
 }
 
 // Test that truncation is applied to cloud storage as expected when a
 // DeleteRecords request lands in the archive.
-FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
+TEST_P(delete_records_e2e_fixture, test_delete_from_archive_truncation) {
     tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
     size_t records_per_seg = 5;
-    BOOST_REQUIRE_GE(
+    ASSERT_GE(
       250,
       gen.batches_per_segment(records_per_seg)
         .num_segments(40)
         .additional_local_segments(10)
         .produce()
         .get());
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->apply_spillover().get();
     auto& stm_manifest = archiver->manifest();
-    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(stm_manifest.get_spillover_map().size(), 3);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
     kafka_delete_records_transport deleter(make_kafka_client().get());
     deleter.start().get();
 
@@ -547,12 +556,11 @@ FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
         model::offset(first_seg_last_kafka_offset),
         5s)
       .get();
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(
-      model::offset(0), stm_manifest.get_archive_start_offset());
-    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(model::offset(0), stm_manifest.get_archive_start_offset());
+    ASSERT_EQ(stm_manifest.get_spillover_map().size(), 3);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
 
     // Now truncate just past the bounds of the first archive segment. It
     // should actually be removed.
@@ -563,14 +571,13 @@ FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
         model::offset(first_seg_last_kafka_offset + 1),
         5s)
       .get();
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
     auto new_archive_start = stm_manifest.get_archive_start_offset();
-    BOOST_REQUIRE_GT(new_archive_start, model::offset(0));
-    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 3);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
-    BOOST_REQUIRE_NE(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    ASSERT_GT(new_archive_start, model::offset(0));
+    ASSERT_EQ(stm_manifest.get_spillover_map().size(), 3);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
+    ASSERT_NE(stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
 
     // Truncate right at the end of the archive. The archive should retain a
     // single segment.
@@ -582,13 +589,11 @@ FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
         model::offset(stm_kafka_start() - 1),
         5s)
       .get();
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_GT(
-      stm_manifest.get_archive_start_offset(), new_archive_start);
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
-    BOOST_REQUIRE_NE(
-      stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
+    ASSERT_GT(stm_manifest.get_archive_start_offset(), new_archive_start);
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
+    ASSERT_NE(stm_manifest.get_start_kafka_offset_override(), kafka::offset{});
 
     // Truncate to the beginning of the STM manifest. This should remove the
     // archive entirely.
@@ -599,19 +604,24 @@ FIXTURE_TEST(test_delete_from_archive_truncation, delete_records_e2e_fixture) {
         model::offset(stm_kafka_start()),
         5s)
       .get();
-    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    ASSERT_TRUE(archiver->sync_for_tests().get());
     archiver->housekeeping().get();
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_start_offset(), model::offset{});
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_archive_clean_offset(), model::offset{});
-    BOOST_REQUIRE(stm_manifest.get_spillover_map().empty());
-    BOOST_REQUIRE_EQUAL(stm_manifest.size(), segs_per_spill);
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_start_kafka_offset_override(), stm_kafka_start);
+    ASSERT_EQ(stm_manifest.get_archive_start_offset(), model::offset{});
+    ASSERT_EQ(stm_manifest.get_archive_clean_offset(), model::offset{});
+    ASSERT_TRUE(stm_manifest.get_spillover_map().empty());
+    ASSERT_EQ(stm_manifest.size(), segs_per_spill);
+    ASSERT_EQ(stm_manifest.get_start_kafka_offset_override(), stm_kafka_start);
 
     // Truncate the manifest past the override.
-    auto size_above_override = segment_bytes_above_offset(
-      stm_manifest, stm_kafka_start);
+    size_t size_above_override{};
+    segment_bytes_above_offset(
+      stm_manifest, stm_kafka_start, std::ref(size_above_override));
     check_truncate_removes_override(size_above_override);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+  DeleteRecordsE2E,
+  delete_records_e2e_fixture,
+  ::testing::Values(
+    model::cloud_storage_segment_upload_mode::v1,
+    model::cloud_storage_segment_upload_mode::v2));

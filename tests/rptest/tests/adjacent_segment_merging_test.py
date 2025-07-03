@@ -8,7 +8,12 @@
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -64,8 +69,11 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         super().setUp()  # topic is created here
 
     @cluster(num_nodes=3)
-    @matrix(acks=[-1, 1], cloud_storage_type=get_cloud_storage_type())
-    def test_reupload_of_local_segments(self, acks, cloud_storage_type):
+    @matrix(acks=[-1, 1],
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_reupload_of_local_segments(self, acks, cloud_storage_type,
+                                        segment_upload_mode):
         """Test adjacent segment merging using using local data.
         The test starts by uploading large number of very small segments.
         The total amount of data produced is smaller than the target segment

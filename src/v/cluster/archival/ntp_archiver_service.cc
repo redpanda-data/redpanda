@@ -334,8 +334,8 @@ ntp_archiver::ntp_archiver(
   , _remote(remote)
   , _cache(c)
   , _parent(parent)
-  , _policy(_ntp, conf->time_limit)
   , _gate()
+  , _policy(_ntp, parent, _gate, conf->time_limit)
   , _rtcnode(_as)
   , _rtclog(archival_log, _rtcnode, _ntp.path())
   , _conf(conf)
@@ -752,6 +752,7 @@ ss::future<bool> ntp_archiver::sync_for_tests() {
         if (!can_update_archival_metadata()) {
             co_return false;
         }
+        co_await maybe_complete_flush();
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         if (co_await _parent.archival_meta_stm()->sync(sync_timeout)) {
@@ -1688,7 +1689,13 @@ auto ntp_archiver::do_schedule_single_upload_streaming(
   segment_upload_kind upload_kind) -> ss::future<scheduled_upload> {
     auto sname = segment_name_for_stream(strm, start_term);
     auto meta = convert_segment_meta(strm, _parent, _rev, start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
+    auto aborted_fut = co_await ss::coroutine::as_future(
+      get_aborted_transactions(strm, sname));
+    if (aborted_fut.failed()) {
+        co_await strm.close();
+        co_await ss::make_exception_future(aborted_fut.get_exception());
+    }
+    auto [tx_ranges, tx_size] = aborted_fut.get();
     meta.metadata_size_hint = tx_size;
 
     vlog(
@@ -3302,27 +3309,30 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = *log_generic;
+        auto mode = use_v2_segment_collector()
+                      ? segment_collector_mode::non_compacted_reupload_v2
+                      : segment_collector_mode::non_compacted_reupload;
         segment_collector collector(
-          segment_collector_mode::non_compacted_reupload,
+          mode,
           run->meta.base_offset,
           manifest(),
           log,
           run->meta.size_bytes,
           run->meta.committed_offset);
         collector.collect_segments();
-        auto candidate = co_await collector.make_upload_candidate_stream(
-          _conf->segment_upload_timeout());
+        auto candidate = co_await collector.make_segment_upload_stream(
+          _parent, _conf->segment_upload_timeout(), _gate);
 
-        co_return ss::visit(
+        co_return co_await ss::visit(
           candidate,
-          [](std::monostate) -> find_reupload_candidate_result {
+          [](std::monostate) -> ss::future<find_reupload_candidate_result> {
               vassert(
                 false,
                 "unexpected default re-upload candidate creation result");
           },
           [this, &run, &rw_fence, units = std::move(units)](
             segment_collector_stream& collector_stream) mutable
-            -> find_reupload_candidate_result {
+            -> ss::future<find_reupload_candidate_result> {
               if (
                 collector_stream.size != run->meta.size_bytes
                 || collector_stream.start_offset != run->meta.base_offset
@@ -3333,32 +3343,36 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                     "candidate: {} run: {}",
                     collector_stream,
                     run->meta);
-                  return {};
+                  return collector_stream.close().then([]() {
+                      return ss::make_ready_future<
+                        find_reupload_candidate_result>();
+                  });
               }
-              return {
-                .units = std::move(units),
-                .upload_stream = std::move(collector_stream),
-                .read_write_fence = rw_fence};
+              return ss::make_ready_future<find_reupload_candidate_result>(
+                find_reupload_candidate_result{
+                  .units = std::move(units),
+                  .upload_stream = std::move(collector_stream),
+                  .read_write_fence = rw_fence});
           },
-          [this](
-            skip_offset_range& skip_offsets) -> find_reupload_candidate_result {
+          [this](skip_offset_range& skip_offsets)
+            -> ss::future<find_reupload_candidate_result> {
               const auto log_level = log_level_for_error(skip_offsets.reason);
               vlogl(
                 _rtclog,
                 log_level,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
-              return {};
+              return ss::make_ready_future<find_reupload_candidate_result>();
           },
-          [this](
-            candidate_creation_error& error) -> find_reupload_candidate_result {
+          [this](candidate_creation_error& error)
+            -> ss::future<find_reupload_candidate_result> {
               const auto log_level = log_level_for_error(error);
               vlogl(
                 _rtclog,
                 log_level,
                 "Failed to make reupload candidate: {}",
                 error);
-              return {};
+              return ss::make_ready_future<find_reupload_candidate_result>();
           });
     }
     // OTHERWISE WE'RE REUPLOADING REMOTE SEGMENTS
@@ -3392,6 +3406,7 @@ ss::future<bool> ntp_archiver::upload(
           std::move(find_res.upload_stream).value(),
           source_rtc);
     }
+    co_await find_res.upload_stream.value().close();
     // Currently, the uploading of remote segments is disabled and
     // the only reason why the list of locks is empty is truncation.
     // The log could be truncated right after we scanned the manifest to
@@ -3405,32 +3420,36 @@ ss::future<bool> ntp_archiver::do_upload_local(
   segment_collector_stream strm,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     if (!may_begin_uploads()) {
+        co_await strm.close();
         co_return false;
     }
     if (!config::shard_local_cfg().cloud_storage_enable_segment_uploads()) {
+        co_await strm.close();
         co_return false;
     }
 
     auto sname = segment_name_for_stream(strm);
 
     if (strm.is_compacted) {
-        vlog(
-          _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
-          sname);
+        vlog(_rtclog.warn, "Unexpected compacted upload for {}", sname);
+        co_await strm.close();
         co_return false;
     }
 
     if (strm.size == 0) {
-        vlog(
-          _rtclog.warn,
-          "Upload of the {} requested but sources are empty",
-          sname);
+        vlog(_rtclog.warn, "Unexpected empty stream for {}", sname);
+        co_await strm.close();
         co_return false;
     }
 
     auto meta = convert_segment_meta(strm, _parent, _rev, _start_term);
-    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
+    auto aborted_fut = co_await ss::coroutine::as_future(
+      get_aborted_transactions(strm, sname));
+    if (aborted_fut.failed()) {
+        co_await strm.close();
+        co_await ss::make_exception_future(aborted_fut.get_exception());
+    }
+    auto [tx_ranges, tx_size] = aborted_fut.get();
     meta.metadata_size_hint = tx_size;
     vlog(
       _rtclog.debug,
@@ -3622,6 +3641,27 @@ bool ntp_archiver::uploaded_and_clean_past_offset(model::offset o) const {
 bool ntp_archiver::uploaded_data_past_flush_offset() const {
     return flush_in_progress()
            && manifest().get_last_offset() >= _flush_uploads_offset.value();
+}
+
+std::ostream&
+operator<<(std::ostream& os, const ntp_archiver::upload_group_result& gr) {
+    fmt::print(
+      os,
+      "{{n_succeeded: {}, n_failed: {}, n_cancelled: {}}}",
+      gr.num_succeeded,
+      gr.num_failed,
+      gr.num_cancelled);
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const ntp_archiver::batch_result& br) {
+    fmt::print(
+      os,
+      "[non_compact: {} ; compact: {}]",
+      br.non_compacted_upload_result,
+      br.compacted_upload_result);
+    return os;
 }
 
 } // namespace archival

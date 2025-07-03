@@ -513,6 +513,21 @@ operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
     }
 }
 
+enum class cloud_storage_segment_upload_mode {
+    v1 = 0,
+    v2 = 1,
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, cloud_storage_segment_upload_mode um) {
+    switch (um) {
+    case model::cloud_storage_segment_upload_mode::v1:
+        return os << "v1";
+    case model::cloud_storage_segment_upload_mode::v2:
+        return os << "v2";
+    }
+}
+
 enum class fetch_read_strategy : uint8_t {
     polling = 0,
     non_polling = 1,

@@ -30,7 +30,14 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    RESTART_LOG_ALLOW_LIST,
+    PREV_VERSION_LOG_ALLOW_LIST,
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -1003,9 +1010,12 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     # before v24.2, dns query to s3 endpoint do not include the bucketname, which is required for AWS S3 fips endpoints
     @skip_fips_mode
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
-    def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type):
+    def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type,
+                             segment_upload_mode):
         """
         Test interaction between the shadow indexing and the partition movement.
         Partition movement generate partitions with different revision-ids and the
@@ -1052,9 +1062,12 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     # Redpandas before v23.1 did not have support for ABS.
-    @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
-    def test_cross_shard(self, num_to_upgrade, cloud_storage_type):
+    def test_cross_shard(self, num_to_upgrade, cloud_storage_type,
+                         segment_upload_mode):
         """
         Test interaction between the shadow indexing and the partition movement.
         Move partitions with SI enabled between shards.

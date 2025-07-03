@@ -22,7 +22,16 @@ from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import RedpandaService, RedpandaServiceCloud, SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, make_redpanda_mixed_service
+from rptest.services.redpanda import (
+    RedpandaService,
+    RedpandaServiceCloud,
+    SISettings,
+    CloudStorageType,
+    get_cloud_storage_type,
+    make_redpanda_service,
+    make_redpanda_mixed_service,
+    get_segment_upload_mode,
+)
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -213,32 +222,37 @@ class BucketScrubSelfTest(RedpandaTest):
     Verify that if we erase an object from tiered storage,
     the bucket validation will fail.
     """
+    segment_size = 1024 * 1024
+
     def __init__(self, test_context, *args, **kwargs):
-        super().__init__(test_context,
-                         *args,
-                         num_brokers=3,
-                         si_settings=SISettings(test_context),
-                         **kwargs)
+        super().__init__(
+            test_context,
+            *args,
+            num_brokers=3,
+            si_settings=SISettings(
+                test_context,
+                cloud_storage_segment_size_target=self.segment_size),
+            **kwargs)
 
     @skip_debug_mode  # We wait for a decent amount of traffic
     @cluster(num_nodes=4)
     #@matrix(cloud_storage_type=get_cloud_storage_type())
     @matrix(cloud_storage_type=get_cloud_storage_type(
-        applies_only_on=[CloudStorageType.S3]))
-    def test_missing_segment(self, cloud_storage_type):
+        applies_only_on=[CloudStorageType.S3]),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_missing_segment(self, cloud_storage_type, segment_upload_mode):
         topic = 'test'
 
         partition_count = 16
-        segment_size = 1024 * 1024
         msg_size = 16384
 
         self.client().create_topic(
             TopicSpec(name=topic,
                       partition_count=partition_count,
-                      retention_bytes=16 * segment_size,
-                      segment_bytes=segment_size))
+                      retention_bytes=16 * self.segment_size,
+                      segment_bytes=self.segment_size))
 
-        total_write_bytes = segment_size * partition_count * 4
+        total_write_bytes = self.segment_size * partition_count * 4
 
         with repeater_traffic(context=self.test_context,
                               redpanda=self.redpanda,

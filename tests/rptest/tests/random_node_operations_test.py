@@ -25,7 +25,17 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, LoggingConfig, PandaproxyConfig, SISettings, SchemaRegistryConfig, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CHAOS_LOG_ALLOW_LIST,
+    PREV_VERSION_LOG_ALLOW_LIST,
+    CloudStorageType,
+    LoggingConfig,
+    PandaproxyConfig,
+    SISettings,
+    SchemaRegistryConfig,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode, skip_fips_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload, verify_offset_translator_state_consistent
@@ -357,10 +367,11 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 CompactionMode.CHUNKED_SLIDING_WINDOW,
                 CompactionMode.ADJACENT_MERGE
             ],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     def test_node_operations(self, enable_failures, mixed_versions,
-                             with_iceberg, compaction_mode,
-                             cloud_storage_type):
+                             with_iceberg, compaction_mode, cloud_storage_type,
+                             segment_upload_mode):
         # In order to reduce the number of parameters and at the same time cover
         # as many use cases as possible this test uses 3 topics which 3 separate
         # producer/consumer pairs:

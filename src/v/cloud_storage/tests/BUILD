@@ -624,7 +624,7 @@ redpanda_cc_fuzz_test(
 
 redpanda_cc_gtest(
     name = "cloud_storage_e2e_test",
-    timeout = "moderate",
+    timeout = "long",
     srcs = ["cloud_storage_e2e_test.cc"],
     cpu = 1,
     deps = [
@@ -647,9 +647,9 @@ redpanda_cc_gtest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "delete_records_e2e_test",
-    timeout = "short",
+    timeout = "moderate",
     srcs = [
         "delete_records_e2e_test.cc",
     ],
@@ -664,11 +664,11 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage",
+        "//src/v/test_utils:gtest",
         "//src/v/test_utils:scoped_config",
-        "//src/v/test_utils:seastar_boost",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@boost//:algorithm",
-        "@boost//:test",
+        "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
     ],

@@ -18,7 +18,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, get_cloud_storage_type, get_segment_upload_mode
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import quiesce_uploads
@@ -147,10 +147,11 @@ class TieredStorageIoStressTest(PreallocNodesTest):
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        segment_upload_mode=get_segment_upload_mode(),
         segment_size=[1024 * 1024, 128 * 1024 * 1024],
         interval_uploads=[True, False])
-    def test_io_stress(self, cloud_storage_type, segment_size,
-                       interval_uploads):
+    def test_io_stress(self, cloud_storage_type, segment_upload_mode,
+                       segment_size, interval_uploads):
         # We expect to produce & consume at least this fast
         expected_throughput = 100 * 1024 * 1024
 

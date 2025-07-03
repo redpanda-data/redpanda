@@ -205,6 +205,9 @@ public:
         size_t num_cancelled;
 
         auto operator<=>(const upload_group_result&) const = default;
+
+        friend std::ostream&
+        operator<<(std::ostream&, const upload_group_result&);
     };
 
     // The result of a group of parallel uploads
@@ -213,6 +216,8 @@ public:
         upload_group_result compacted_upload_result;
 
         auto operator<=>(const batch_result&) const = default;
+
+        friend std::ostream& operator<<(std::ostream&, const batch_result&);
     };
 
     /// Compute the maximum offset that is safe to be uploaded to the cloud.
@@ -691,9 +696,9 @@ private:
     cloud_storage::cache& _cache;
     cluster::partition& _parent;
     model::term_id _start_term;
+    ss::gate _gate;
     archival_policy _policy;
     std::optional<cloud_storage_clients::bucket_name> _bucket_override;
-    ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;

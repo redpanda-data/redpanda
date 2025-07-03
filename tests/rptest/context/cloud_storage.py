@@ -26,6 +26,14 @@ class CloudStorageType(IntEnum):
     S3 = 1
     # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
+    # Use (AWS, GCP) S3 compatible API on dedicated nodes, or minio in docker
+
+
+class SegmentUploadMode(IntEnum):
+    # Legacy version, segment oriented
+    V1 = 1
+    # New version, log_reader oriented
+    V2 = 2
 
 
 class Credentials(abc.ABC):

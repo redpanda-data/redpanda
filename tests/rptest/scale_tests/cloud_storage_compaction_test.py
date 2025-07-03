@@ -13,7 +13,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, make_redpanda_service, MetricsEndpoint, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, make_redpanda_service, MetricsEndpoint, SISettings, get_cloud_storage_type, get_segment_upload_mode
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
 from ducktape.mark import matrix
@@ -179,9 +179,10 @@ class CloudStorageCompactionTest(EndToEndTest):
                    backoff_sec=5)
 
     @cluster(num_nodes=9, log_allow_list=ALLOWED_LOG_LINES)
-    @matrix(cloud_storage_type=get_cloud_storage_type(
-        docker_use_arbitrary=True))
-    def test_read_from_replica(self, cloud_storage_type):
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True),
+        segment_upload_mode=get_segment_upload_mode())
+    def test_read_from_replica(self, cloud_storage_type, segment_upload_mode):
         self.start_workload()
         self.start_consumer(num_nodes=2,
                             redpanda_cluster=self.rr_cluster,

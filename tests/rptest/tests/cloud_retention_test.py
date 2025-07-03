@@ -18,7 +18,15 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    MetricsEndpoint,
+    CloudStorageType,
+    CHAOS_LOG_ALLOW_LIST,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
@@ -43,9 +51,11 @@ class CloudRetentionTest(PreallocNodesTest):
     @cluster(num_nodes=4,
              log_allow_list=[r"failed to hydrate chunk.*NotFound"])
     @matrix(max_consume_rate_mb=[20, None],
-            cloud_storage_type=get_cloud_storage_type())
+            cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode
-    def test_cloud_retention(self, max_consume_rate_mb, cloud_storage_type):
+    def test_cloud_retention(self, max_consume_rate_mb, cloud_storage_type,
+                             segment_upload_mode):
         """
         Test cloud retention with an ongoing workload. The consume load comes
         in two flavours:
@@ -196,8 +206,9 @@ class CloudRetentionTest(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_gc_entire_manifest(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_gc_entire_manifest(self, cloud_storage_type, segment_upload_mode):
         """
         Regression test for #8945, where GCing all cloud segments could prevent
         further uploads from taking place.
@@ -326,8 +337,10 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_retention_with_node_failures(self, cloud_storage_type):
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
+    def test_retention_with_node_failures(self, cloud_storage_type,
+                                          segment_upload_mode):
         max_overshoot_percentage = 100
 
         # This runtime must be long enough to accomodate the total write bytes

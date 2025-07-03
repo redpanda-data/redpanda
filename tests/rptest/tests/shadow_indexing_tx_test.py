@@ -9,7 +9,12 @@
 
 from ducktape.mark import matrix
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import (
+    CloudStorageType,
+    SISettings,
+    get_cloud_storage_type,
+    get_segment_upload_mode,
+)
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -51,9 +56,11 @@ class ShadowIndexingTxTest(RedpandaTest):
             rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode
-    def test_shadow_indexing_aborted_txs(self, cloud_storage_type):
+    def test_shadow_indexing_aborted_txs(self, cloud_storage_type,
+                                         segment_upload_mode):
         """Check that messages belonging to aborted transaction are not seen by clients
         when fetching from remote segments."""
         msg_size = 16384
@@ -105,9 +112,10 @@ class ShadowIndexingTxTest(RedpandaTest):
         assert status.validator.out_of_scope_invalid_reads == 0
 
     @cluster(num_nodes=4)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(cloud_storage_type=get_cloud_storage_type(),
+            segment_upload_mode=get_segment_upload_mode())
     @skip_debug_mode
-    def test_txless_segments(self, cloud_storage_type):
+    def test_txless_segments(self, cloud_storage_type, segment_upload_mode):
         """
         Check that for segments _without_ aborted transactions, we don't
         waste resources issuing object storage GETs or writing empty
