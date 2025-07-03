@@ -21,6 +21,7 @@ public:
 
     aws_sts_refresh_impl(
       net::unresolved_address address,
+      aws_service_name service,
       aws_region_name region,
       ss::abort_source& as,
       retry_params retry_params = default_retry_params);
@@ -34,6 +35,7 @@ protected:
 private:
     ss::sstring _role;
     ss::sstring _token_file_path;
+    aws_service_name _service;
 };
 
 } // namespace cloud_roles

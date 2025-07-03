@@ -37,6 +37,20 @@ v_cc_library(
 )
 
 v_cc_library(
+  NAME datalake_credential_manager
+  SRCS
+    credential_manager.cc
+  DEPS
+    v::cloud_io
+    v::cloud_roles
+    v::cloud_storage_clients
+    v::config
+    v::hashing
+    v::net
+    Seastar::seastar
+)
+
+v_cc_library(
   NAME datalake_writer
   SRCS
     catalog_schema_manager.cc

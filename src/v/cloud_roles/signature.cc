@@ -148,7 +148,7 @@ ss::sstring time_source::format(auto fmt) const {
 struct target_parts {
     /// \brief URI Encoded canonical URI
     /// Canonical URI is everything that follows domain name starting with '/'
-    /// without parameters (everythng after '?' including '?'). The uri is URI
+    /// without parameters (everything after '?' including '?'). The uri is URI
     /// encoded. e.g. https://foo.bar/canonical-url?param=value
     ss::sstring canonical_uri;
     /// \brief Query parameters extracted from target
@@ -384,10 +384,10 @@ ss::sstring redact_headers_from_string(const std::string_view original) {
 std::error_code signature_v4::sign_header(
   http::client::request_header& header, std::string_view sha256) const {
     ss::sstring date_str = _sig_time.format_date();
-    ss::sstring service = "s3";
-    auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
+    auto sign_key = gen_sig_key(
+      _private_key(), date_str, _region(), _service());
     auto cred_scope = ssx::sformat(
-      "{}/{}/{}/aws4_request", date_str, _region(), service);
+      "{}/{}/{}/aws4_request", date_str, _region(), _service());
     vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
@@ -425,11 +425,13 @@ std::error_code signature_v4::sign_header(
 }
 
 signature_v4::signature_v4(
+  aws_service_name service,
   aws_region_name region,
   public_key_str access_key,
   private_key_str private_key,
   time_source&& ts)
   : _sig_time(std::move(ts))
+  , _service(service)
   , _region(std::move(region))
   , _access_key(std::move(access_key))
   , _private_key(std::move(private_key)) {}

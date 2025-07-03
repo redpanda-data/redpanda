@@ -132,6 +132,11 @@ public:
      */
     void update(std::string_view data) { _ctx.update(data); }
     void update(bytes_view data) { _ctx.update(data); }
+    void update(const iobuf& data) {
+        for (const auto& frag : data) {
+            _ctx.update({frag.get(), frag.size()});
+        }
+    }
 
     /**
      * Return the digest of the data and resets the context so it can be used

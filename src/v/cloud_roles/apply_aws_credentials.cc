@@ -60,7 +60,7 @@ static std::string_view sha_for_verb(boost::beast::http::verb verb) {
 }
 
 apply_aws_credentials::apply_aws_credentials(aws_credentials credentials)
-  : _signature{credentials.region, credentials.access_key_id, credentials.secret_access_key}
+  : _signature{credentials.service, credentials.region, credentials.access_key_id, credentials.secret_access_key}
   , _session_token{credentials.session_token} {}
 
 std::error_code
@@ -77,9 +77,16 @@ apply_aws_credentials::add_auth(http::client::request_header& header) const {
         }
     }
 
-    auto sha256 = sha_for_verb(header.method());
-    header.insert(
-      aws_header_names::x_amz_content_sha256, {sha256.data(), sha256.size()});
+    auto existing_hash = header[aws_header_names::x_amz_content_sha256];
+    std::string_view sha256;
+    if (existing_hash.empty()) {
+        sha256 = sha_for_verb(header.method());
+        header.insert(
+          aws_header_names::x_amz_content_sha256,
+          {sha256.data(), sha256.size()});
+    } else {
+        sha256 = existing_hash;
+    }
     return _signature.sign_header(header, sha256);
 }
 
@@ -92,7 +99,10 @@ void apply_aws_credentials::reset_creds(credentials creds) {
     }
     auto aws_creds = std::get<aws_credentials>(creds);
     _signature = signature_v4(
-      aws_creds.region, aws_creds.access_key_id, aws_creds.secret_access_key);
+      aws_creds.service,
+      aws_creds.region,
+      aws_creds.access_key_id,
+      aws_creds.secret_access_key);
     _session_token = aws_creds.session_token;
 }
 

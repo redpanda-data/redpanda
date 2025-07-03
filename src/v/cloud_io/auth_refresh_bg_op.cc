@@ -60,23 +60,25 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         // Create an implementation of refresh_credentials based on the setting
         // cloud_credentials_source.
         try {
-            auto region_name = ss::visit(
+            auto [service_name, region_name] = ss::visit(
               _client_conf,
               [](const cloud_storage_clients::s3_configuration& cfg) {
-                  // S3 needs a region name to compose requests, this extracts
-                  // it from s3_configuration
-                  return cloud_roles::aws_region_name{cfg.region};
+                  // S3 needs both service and region names to compose requests
+                  return std::make_pair(cfg.service, cfg.region);
               },
               [](const cloud_storage_clients::abs_configuration&) {
-                  // Azure Blob Storage does not need a region name to compose
-                  // the requests, so this value is defaulted since it's ignored
+                  // Azure Blob Storage does not need service or region names,
+                  // so these values are defaulted since they're ignored
                   // downstream
-                  return cloud_roles::aws_region_name{};
+                  return std::make_pair(
+                    cloud_roles::aws_service_name{},
+                    cloud_roles::aws_region_name{});
               });
             _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
               _cloud_credentials_source,
               _as,
               std::move(credentials_update_cb),
+              service_name,
               region_name));
 
             vlog(
@@ -109,7 +111,8 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
             cfg.access_key.value(),
             cfg.secret_key.value(),
             std::nullopt,
-            cfg.region};
+            cfg.region,
+            cfg.service};
       },
       [](const cloud_storage_clients::abs_configuration& cfg)
         -> cloud_roles::credentials {

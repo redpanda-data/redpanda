@@ -33,6 +33,7 @@ redpanda_cc_library(
         #       "//src/v/datalake:manager",
         "//src/v/datalake:types",
         "//src/v/datalake:cloud_data_io",
+        "//src/v/datalake:credential_manager",
         "//src/v/datalake:manager",
         "//src/v/datalake/coordinator:coordinator_manager",
         "//src/v/datalake/coordinator:frontend",

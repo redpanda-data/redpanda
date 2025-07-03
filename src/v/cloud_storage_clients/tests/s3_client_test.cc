@@ -346,9 +346,10 @@ static cloud_storage_clients::s3_configuration transport_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number);
     cloud_storage_clients::s3_configuration conf;
     conf.uri = cloud_storage_clients::access_point_uri(httpd_host_name);
-    conf.access_key = cloud_roles::public_key_str("acess-key");
+    conf.access_key = cloud_roles::public_key_str("access-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
+    conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
@@ -366,7 +367,8 @@ make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
         cfg.access_key.value(),
         cfg.secret_key.value(),
         std::nullopt,
-        cfg.region}));
+        cfg.region,
+        cloud_roles::aws_service_name{"s3"}}));
 }
 
 /// Create server and client, server is initialized with default

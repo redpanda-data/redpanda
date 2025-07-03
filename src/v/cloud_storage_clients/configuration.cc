@@ -138,6 +138,7 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
     client_cfg.access_key = pkey;
     client_cfg.secret_key = skey;
     client_cfg.region = region;
+    client_cfg.service = cloud_roles::aws_service_name{"s3"};
     // defer host creation to client, after it has performed self_configure to
     // discover if the backend is in `virtual_host` or `path mode`
     client_cfg.uri = access_point_uri(base_endpoint_uri);
@@ -171,7 +172,8 @@ ss::future<s3_configuration> s3_configuration::make_configuration(
 std::ostream& operator<<(std::ostream& o, const s3_configuration& c) {
     o << "{access_key:"
       << c.access_key.value_or(cloud_roles::public_key_str{""})
-      << ",region:" << c.region() << ",secret_key:****"
+      << ",region:" << c.region() << ",service:" << c.service()
+      << ",secret_key:****"
       << ",url_style:" << c.url_style << ",access_point_uri:" << c.uri()
       << ",server_addr:" << c.server_addr << ",max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)

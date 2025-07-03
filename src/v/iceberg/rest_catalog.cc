@@ -76,10 +76,25 @@ table_update::update copy(const table_update::update& update) {
 
 rest_catalog::rest_catalog(
   std::unique_ptr<rest_client::catalog_client> client,
-  config::binding<std::chrono::milliseconds> request_timeout)
+  config::binding<std::chrono::milliseconds> request_timeout,
+  datalake::credential_manager& credential_mgr,
+  std::optional<ss::sstring> base_location)
   : client_(std::move(client))
   , request_timeout_(std::move(request_timeout))
-  , lock_("iceberg/rest-catalog") {}
+  , base_location_(std::move(base_location))
+  , lock_("iceberg/rest-catalog")
+  , credential_manager_(credential_mgr) {}
+
+void rest_catalog::set_table_location_if_needed(
+  create_table_request& request, const table_identifier& t_id) const {
+    if (base_location_.has_value()) {
+        request.location = fmt::format(
+          "{}/{}/{}",
+          base_location_.value(),
+          fmt::join(t_id.ns, "/"),
+          t_id.table);
+    }
+}
 
 ss::future<checked<table_metadata, catalog::errc>>
 rest_catalog::load_table(const table_identifier& t_id) {
@@ -105,6 +120,9 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
       .name = t_id.table,
       .schema = schema.copy(),
       .partition_spec = spec.copy()};
+
+    set_table_location_if_needed(request, t_id);
+
     auto h = co_await lock_.get_units();
 
     auto res = co_await client_->create_table(
@@ -138,6 +156,9 @@ ss::future<checked<table_metadata, catalog::errc>> rest_catalog::create_table(
       .name = t_id.table,
       .schema = schema.copy(),
       .partition_spec = spec.copy()};
+
+    set_table_location_if_needed(retry_request, t_id);
+
     auto table_retry_rtc = retry_chain_node(&parent_rtc);
     co_return (co_await client_->create_table(
                  t_id.ns, std::move(retry_request), table_retry_rtc))

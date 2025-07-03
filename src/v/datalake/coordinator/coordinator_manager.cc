@@ -18,6 +18,7 @@
 #include "datalake/coordinator/iceberg_file_committer.h"
 #include "datalake/coordinator/iceberg_snapshot_remover.h"
 #include "datalake/coordinator/state_machine.h"
+#include "datalake/credential_manager.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
 #include "iceberg/manifest_io.h"
@@ -38,7 +39,8 @@ coordinator_manager::coordinator_manager(
   pandaproxy::schema_registry::api* sr_api,
   std::unique_ptr<catalog_factory> catalog_factory,
   ss::sharded<cloud_io::remote>& io,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  datalake::credential_manager& credential_mgr)
   : self_(self)
   , storage_(storage.local())
   , gm_(gm.local())
@@ -48,8 +50,8 @@ coordinator_manager::coordinator_manager(
   , schema_registry_(schema::registry::make_default(sr_api))
   , manifest_io_(io.local(), bucket)
   , catalog_factory_(std::move(catalog_factory))
-  , type_resolver_(
-      std::make_unique<record_schema_resolver>(*schema_registry_)) {}
+  , type_resolver_(std::make_unique<record_schema_resolver>(*schema_registry_))
+  , credential_mgr_(credential_mgr) {}
 
 coordinator_manager::~coordinator_manager() = default;
 
@@ -101,6 +103,7 @@ ss::future<> coordinator_manager::shutdown() {
     if (leadership_notifications_) {
         gm_.unregister_leadership_notification(*leadership_notifications_);
     }
+
     auto gate_close = gate_.close();
     ss::future catalog_stop = ss::now();
     if (catalog_) {
@@ -109,6 +112,7 @@ ss::future<> coordinator_manager::shutdown() {
     for (auto& [_, crd] : coordinators_) {
         co_await crd->stop_and_wait();
     }
+
     co_await std::move(catalog_stop);
     co_await std::move(gate_close);
 }

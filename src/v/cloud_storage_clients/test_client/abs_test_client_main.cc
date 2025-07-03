@@ -289,6 +289,7 @@ int main(int args, char** argv, char** env) {
                       creds = std::move(c);
                       return ss::now();
                   },
+                  {},
                   {});
                 refresher.start();
 

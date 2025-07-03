@@ -41,7 +41,9 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
       cloud_roles::aws_credentials{
         .access_key_id = cloud_roles::public_key_str{"pub"},
         .secret_access_key = cloud_roles::private_key_str{"priv"},
-        .session_token = cloud_roles::s3_session_token{"tok"},
+        .session_token = cloud_roles::session_token{"tok"},
+        .region = cloud_roles::aws_region_name{"us-east-1"},
+        .service = cloud_roles::aws_service_name{"s3"},
       });
 
     {
@@ -57,7 +59,9 @@ BOOST_AUTO_TEST_CASE(test_aws_headers) {
     applier.reset_creds(cloud_roles::aws_credentials{
       .access_key_id = cloud_roles::public_key_str{"pub2"},
       .secret_access_key = cloud_roles::private_key_str{"priv2"},
-      .session_token = cloud_roles::s3_session_token{"tok2"},
+      .session_token = cloud_roles::session_token{"tok2"},
+      .region = cloud_roles::aws_region_name{"us-east-1"},
+      .service = cloud_roles::aws_service_name{"s3"},
     });
 
     {

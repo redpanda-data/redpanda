@@ -49,6 +49,7 @@ namespace cloud_roles {
 
 azure_aks_refresh_impl::azure_aks_refresh_impl(
   net::unresolved_address address,
+  aws_service_name, // Ignored for Azure AKS
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)

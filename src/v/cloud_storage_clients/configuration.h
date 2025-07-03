@@ -45,6 +45,8 @@ struct common_configuration : net::base_transport::configuration {
 struct s3_configuration : common_configuration {
     /// AWS region
     cloud_roles::aws_region_name region;
+    /// AWS service (e.g., "s3")
+    cloud_roles::aws_service_name service;
     /// AWS access key, optional if configuration uses temporary credentials
     std::optional<cloud_roles::public_key_str> access_key;
     /// AWS secret key, optional if configuration uses temporary credentials

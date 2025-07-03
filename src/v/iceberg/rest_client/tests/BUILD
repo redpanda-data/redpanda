@@ -23,6 +23,7 @@ redpanda_cc_gtest(
     cpu = 1,
     deps = [
         "//src/v/bytes:iobuf_parser",
+        "//src/v/datalake:credential_manager",
         "//src/v/iceberg/rest_client:client",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",

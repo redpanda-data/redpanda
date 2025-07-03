@@ -3822,10 +3822,19 @@ configuration::configuration()
   , iceberg_catalog_base_location(
       *this,
       "iceberg_catalog_base_location",
-      "Base path for the cloud object storage-backed Iceberg catalog. After "
-      "Iceberg is enabled, do not change this value.",
+      "Base path for the cloud-storage-object-backed Iceberg filesystem "
+      "catalog. "
+      "After Iceberg is enabled, do not change this value.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
       "redpanda-iceberg-catalog")
+  , iceberg_rest_catalog_base_location(
+      *this,
+      "iceberg_rest_catalog_base_location",
+      "Base URI for the Iceberg REST catalog. If unset, the REST catalog "
+      "server "
+      "determines the location. Some REST catalogs, like AWS Glue, require the "
+      "client to set this. After Iceberg is enabled, do not change this value.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user})
   , datalake_coordinator_snapshot_max_delay_secs(
       *this,
       "datalake_coordinator_snapshot_max_delay_secs",
@@ -3957,20 +3966,90 @@ configuration::configuration()
       *this,
       "iceberg_rest_catalog_authentication_mode",
       "The authentication mode for client requests made to the Iceberg "
-      "catalog. Choose from: `none`, `bearer`, and `oauth2`. In `bearer` mode, "
-      "the token specified in `iceberg_rest_catalog_token` is used "
-      "unconditonally, and no attempts are made to refresh the token. In "
+      "catalog. Choose from: `none`, `bearer`, `oauth2`, and `aws_sigv4`. In "
+      "`bearer` mode, the token specified in `iceberg_rest_catalog_token` is "
+      "used unconditonally, and no attempts are made to refresh the token. In "
       "`oauth2` mode, the credentials specified in "
       "`iceberg_rest_catalog_client_id` and "
       "`iceberg_rest_catalog_client_secret` are used to obtain a bearer token "
-      "from the URI defined by `iceberg_rest_catalog_oauth2_server_uri.`",
+      "from the URI defined by `iceberg_rest_catalog_oauth2_server_uri`. In "
+      "`aws_sigv4` mode, the same AWS credentials used for cloud storage "
+      "(see `cloud_storage_region`, `cloud_storage_access_key`, "
+      "`cloud_storage_secret_key`, and `cloud_storage_credentials_source`) "
+      "are used to sign requests to AWS Glue catalog with SigV4.",
       {.needs_restart = needs_restart::yes,
        .example = "none",
        .visibility = visibility::user},
       datalake_catalog_auth_mode::none,
       {datalake_catalog_auth_mode::none,
        datalake_catalog_auth_mode::bearer,
-       datalake_catalog_auth_mode::oauth2})
+       datalake_catalog_auth_mode::oauth2,
+       datalake_catalog_auth_mode::aws_sigv4})
+  , iceberg_rest_catalog_aws_service_name(
+      *this,
+      "iceberg_rest_catalog_aws_service_name",
+      "AWS service name for SigV4 signing when using aws_sigv4 authentication "
+      "mode. Defaults to 'glue' for AWS Glue Data Catalog. Can be changed to "
+      "support other AWS services that provide Iceberg REST catalog APIs.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      "glue",
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_aws_access_key(
+      *this,
+      "iceberg_rest_catalog_aws_access_key",
+      "AWS access key for Iceberg REST catalog SigV4 authentication. If not "
+      "set, falls back to cloud_storage_access_key when using aws_sigv4 "
+      "authentication mode.",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .gets_restored = gets_restored::no},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_aws_secret_key(
+      *this,
+      "iceberg_rest_catalog_aws_secret_key",
+      "AWS secret key for Iceberg REST catalog SigV4 authentication. If not "
+      "set, falls back to cloud_storage_secret_key when using aws_sigv4 "
+      "authentication mode.",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .secret = is_secret::yes,
+       .gets_restored = gets_restored::no},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_aws_region(
+      *this,
+      "iceberg_rest_catalog_aws_region",
+      "AWS region for Iceberg REST catalog SigV4 authentication. If not set, "
+      "falls back to cloud_storage_region when using aws_sigv4 authentication "
+      "mode.",
+      {.needs_restart = needs_restart::yes,
+       .visibility = visibility::user,
+       .gets_restored = gets_restored::no},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_aws_credentials_source(
+      *this,
+      "iceberg_rest_catalog_aws_credentials_source",
+      "Source of AWS credentials for Iceberg REST catalog SigV4 "
+      "authentication. "
+      "If not set, falls back to cloud_storage_credentials_source when using "
+      "aws_sigv4 authentication mode. Accepted values: config_file, "
+      "aws_instance_metadata, sts, gcp_instance_metadata, "
+      "azure_vm_instance_metadata, azure_aks_oidc_federation.",
+      {.needs_restart = needs_restart::yes,
+       .example = "config_file",
+       .visibility = visibility::user,
+       .gets_restored = gets_restored::no},
+      std::nullopt,
+      {
+        model::cloud_credentials_source::config_file,
+        model::cloud_credentials_source::aws_instance_metadata,
+        model::cloud_credentials_source::sts,
+        model::cloud_credentials_source::gcp_instance_metadata,
+        model::cloud_credentials_source::azure_aks_oidc_federation,
+        model::cloud_credentials_source::azure_vm_instance_metadata,
+      })
   , iceberg_backlog_controller_p_coeff(
       *this,
       "iceberg_backlog_controller_p_coeff",

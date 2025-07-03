@@ -42,6 +42,7 @@ static cloud_storage_clients::s3_configuration transport_configuration() {
     conf.access_key = cloud_roles::public_key_str("access-key");
     conf.secret_key = cloud_roles::private_key_str("secret-key");
     conf.region = cloud_roles::aws_region_name("us-east-1");
+    conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
     conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
@@ -74,7 +75,8 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
             conf.access_key.value(),
             conf.secret_key.value(),
             std::nullopt,
-            conf.region};
+            conf.region,
+            cloud_roles::aws_service_name{"s3"}};
           p.load_credentials(cred);
       })
       .get();

@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "config/types.h"
+#include "datalake/credential_manager.h"
 #include "datalake/logger.h"
 #include "iceberg/catalog.h"
 #include "iceberg/filesystem_catalog.h"
@@ -144,11 +145,14 @@ filesystem_catalog_factory::create_catalog(ss::abort_source&) {
 rest_catalog_factory::~rest_catalog_factory() {}
 
 rest_catalog_factory::rest_catalog_factory(
-  config::configuration& config, ss::metrics::label_instance label)
+  config::configuration& config,
+  ss::metrics::label_instance label,
+  datalake::credential_manager& cred_mgr)
   : config_(&config)
   , client_probe_(ss::make_shared<iceberg::rest_client::client_probe>(
       net::public_metrics_disabled(config.disable_public_metrics()),
-      std::move(label))) {}
+      std::move(label)))
+  , credential_manager_(cred_mgr) {}
 
 rest_catalog_factory::credentials_and_token
 rest_catalog_factory::make_credentials_or_token() {
@@ -173,6 +177,11 @@ rest_catalog_factory::make_credentials_or_token() {
             config_->iceberg_rest_catalog_client_secret().value(),
             config_->iceberg_rest_catalog_oauth2_server_uri(),
             config_->iceberg_rest_catalog_oauth2_scope());
+        break;
+    }
+    case config::datalake_catalog_auth_mode::aws_sigv4: {
+        // SigV4 credentials are handled by the applier and
+        // background refresh op.
         break;
     }
     }
@@ -219,10 +228,10 @@ rest_catalog_factory::create_catalog(ss::abort_source& as) {
       endpoint_information.address,
       endpoint_information.base_path,
       warehouse);
-    // TODO: support OAuth token here
     auto client = std::make_unique<iceberg::rest_client::catalog_client>(
       std::move(http_client),
       config_->iceberg_rest_catalog_endpoint().value(),
+      credential_manager_,
       std::move(creds_and_token.credentials),
       std::move(endpoint_information.base_path),           // base_path
       std::move(warehouse),                                // warehouse
@@ -230,25 +239,30 @@ rest_catalog_factory::create_catalog(ss::abort_source& as) {
       std::move(creds_and_token.token),                    // token
       nullptr,                                             // retry_policy
       config_->iceberg_rest_catalog_authentication_mode(), // auth_mode
-      client_probe_);
+      client_probe_);                                      // probe
 
     co_return std::make_unique<iceberg::rest_catalog>(
       std::move(client),
-      config_->iceberg_rest_catalog_request_timeout_ms.bind());
+      config_->iceberg_rest_catalog_request_timeout_ms.bind(),
+      credential_manager_,
+      config_->iceberg_rest_catalog_base_location());
 }
 
 std::unique_ptr<catalog_factory> get_catalog_factory(
   config::configuration& config,
   cloud_io::remote& remote,
   const cloud_storage_clients::bucket_name& bucket,
-  ss::metrics::label_instance label) {
+  ss::metrics::label_instance label,
+  datalake::credential_manager& cred_mgr) {
     if (
       config.iceberg_catalog_type()
       == config::datalake_catalog_type::object_storage) {
         return std::make_unique<filesystem_catalog_factory>(
           config, remote, bucket);
     } else {
-        return std::make_unique<rest_catalog_factory>(config, std::move(label));
+        return std::make_unique<rest_catalog_factory>(
+          config, std::move(label), cred_mgr);
     }
 }
+
 } // namespace datalake::coordinator

@@ -21,6 +21,7 @@ public:
 
     gcp_refresh_impl(
       net::unresolved_address address,
+      aws_service_name service,
       aws_region_name region,
       ss::abort_source& as,
       retry_params retry_params = default_retry_params);

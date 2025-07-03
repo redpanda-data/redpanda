@@ -166,6 +166,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "credential_manager",
+    srcs = [
+        "credential_manager.cc",
+    ],
+    hdrs = [
+        "credential_manager.h",
+    ],
+    include_prefix = "datalake",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":logger",
+        "//src/v/base",
+        "//src/v/cloud_io:auth_refresh_bg_op",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_roles",
+        "//src/v/cloud_roles:types",
+        "//src/v/cloud_storage_clients",
+        "//src/v/config",
+        "//src/v/hashing:secure",
+        "//src/v/net",
+        "@boost//:beast",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "manager",
     srcs = [
         "datalake_manager.cc",

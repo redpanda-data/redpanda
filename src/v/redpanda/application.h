@@ -29,6 +29,7 @@
 #include "config/node_config.h"
 #include "crash_tracker/service.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/credential_manager.h"
 #include "datalake/fwd.h"
 #include "debug_bundle/fwd.h"
 #include "features/fwd.h"
@@ -346,6 +347,7 @@ private:
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 
+    ss::sharded<datalake::credential_manager> _datalake_credential_mgr;
     ss::sharded<datalake::coordinator::coordinator_manager>
       _datalake_coordinator_mgr;
     ss::sharded<datalake::coordinator::frontend> _datalake_coordinator_fe;

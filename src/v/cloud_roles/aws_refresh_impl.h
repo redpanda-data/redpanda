@@ -21,6 +21,7 @@ public:
 
     aws_refresh_impl(
       net::unresolved_address address,
+      aws_service_name service,
       aws_region_name region,
       ss::abort_source& as,
       retry_params retry_params = default_retry_params);
@@ -56,6 +57,7 @@ private:
     using fallback_engaged = ss::bool_class<struct fallback_engaged_t>;
     // Indicates if we have switched to IMDSv1 mode.
     fallback_engaged _fallback_engaged{fallback_engaged::no};
+    aws_service_name _service;
 };
 
 } // namespace cloud_roles

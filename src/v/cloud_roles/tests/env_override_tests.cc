@@ -18,6 +18,7 @@
 
 SEASTAR_THREAD_TEST_CASE(test_override_address) {
     ss::abort_source as;
+    cloud_roles::aws_service_name service{"s3"};
     cloud_roles::aws_region_name region{"atlantis"};
 
     setenv("RP_SI_CREDS_API_ADDRESS", "localhost:1234", 1);
@@ -33,7 +34,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address) {
              "gcp_refresh_impl"},
          }) {
         auto rc = cloud_roles::make_refresh_credentials(
-          kind, as, [](auto) { return ss::now(); }, region);
+          kind, as, [](auto) { return ss::now(); }, service, region);
         BOOST_REQUIRE_EQUAL(
           ss::sstring(name) + "{address:{host: localhost, port: 1234}}",
           ssx::sformat("{}", rc));
@@ -42,6 +43,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address) {
 
 SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
     ss::abort_source as;
+    cloud_roles::aws_service_name service{"s3"};
     cloud_roles::aws_region_name region{"atlantis"};
 
     {
@@ -52,6 +54,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
             model::cloud_credentials_source::aws_instance_metadata,
             as,
             [](auto) { return ss::now(); },
+            service,
             region),
           std::invalid_argument,
           [](const auto& ex) {
@@ -68,6 +71,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
             model::cloud_credentials_source::aws_instance_metadata,
             as,
             [](auto) { return ss::now(); },
+            service,
             region),
           std::invalid_argument,
           [](const auto& ex) {
@@ -84,6 +88,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
             model::cloud_credentials_source::aws_instance_metadata,
             as,
             [](auto) { return ss::now(); },
+            service,
             region),
           std::invalid_argument,
           [](const auto& ex) {
@@ -100,6 +105,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
             model::cloud_credentials_source::aws_instance_metadata,
             as,
             [](auto) { return ss::now(); },
+            service,
             region),
           std::invalid_argument,
           [](const auto& ex) {
@@ -116,6 +122,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
             model::cloud_credentials_source::aws_instance_metadata,
             as,
             [](auto) { return ss::now(); },
+            service,
             region),
           std::invalid_argument,
           [](const auto& ex) {

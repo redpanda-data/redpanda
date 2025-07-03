@@ -52,10 +52,12 @@ std::ostream& operator<<(std::ostream& os, const aws_credentials& ac) {
     fmt::print(
       os,
       "aws_credentials{{access_key_id: **{}**, secret_access_key: **{}**, "
-      "session_token: **{}**}}",
+      "session_token: **{}**, region: {}, service: {}}}",
       ac.access_key_id().size(),
       ac.secret_access_key().size(),
-      ac.session_token.value_or(s3_session_token{})().size());
+      ac.session_token.value_or(session_token{})().size(),
+      ac.region(),
+      ac.service());
     return os;
 }
 

@@ -83,18 +83,20 @@ struct gcp_credentials {
 
 std::ostream& operator<<(std::ostream& os, const gcp_credentials& gc);
 
-using aws_region_name = named_type<ss::sstring, struct s3_aws_region_name>;
-using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
-using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
+using aws_service_name = named_type<ss::sstring, struct aws_service_name_>;
+using aws_region_name = named_type<ss::sstring, struct aws_region_name_>;
+using public_key_str = named_type<ss::sstring, struct public_key_str_>;
+using private_key_str = named_type<ss::sstring, struct private_key_str_>;
 using timestamp = std::chrono::time_point<std::chrono::system_clock>;
-using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
+using session_token = named_type<ss::sstring, struct session_token_str_>;
 using storage_account = named_type<ss::sstring, struct storage_account_tag>;
 
 struct aws_credentials {
     public_key_str access_key_id;
     private_key_str secret_access_key;
-    std::optional<s3_session_token> session_token;
+    std::optional<session_token> session_token;
     aws_region_name region;
+    aws_service_name service;
 };
 
 struct abs_credentials {

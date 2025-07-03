@@ -1309,6 +1309,7 @@ redpanda_cc_library(
         ":json_writer",
         ":table_requests",
         ":table_requirement_json",
+        "//src/v/datalake:credential_manager",
         "//src/v/iceberg/rest_client:client",
         "//src/v/iceberg/rest_client:error",
         "//src/v/json",
