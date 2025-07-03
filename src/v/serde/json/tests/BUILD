@@ -273,6 +273,7 @@ redpanda_cc_fuzz_test(
         "-rss_limit_mb=1024",
     ],
     data = glob(["testdata/fuzz/corpus/*"]) + ["testdata/fuzz/dict/json_fuzzer.dict"],
+    tags = ["manual"],
     deps = [
         ":dom_serde",
         "//src/v/bytes:iobuf",

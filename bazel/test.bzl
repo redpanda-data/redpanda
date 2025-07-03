@@ -158,7 +158,8 @@ def _redpanda_cc_fuzz_test(
         deps = [],
         custom_args = [],
         env = {},
-        data = []):
+        data = [],
+        tags = []):
     """
     Helper to define a Redpanda C++ fuzzing test.
 
@@ -171,6 +172,7 @@ def _redpanda_cc_fuzz_test(
       custom_args: arguments from cc_test users
       env: environment variables
       data: data file dependencies
+      tags: test tags (same as native cc_test)
     """
     cc_test(
         name = name,
@@ -185,7 +187,7 @@ def _redpanda_cc_fuzz_test(
         ],
         tags = [
             "fuzz",
-        ],
+        ] + tags,
         env = env,
         data = data,
         linkopts = [
@@ -281,7 +283,8 @@ def redpanda_cc_fuzz_test(
         deps = [],
         args = [],
         env = {},
-        data = []):
+        data = [],
+        tags = []):
     _redpanda_cc_fuzz_test(
         data = data,
         env = env,
@@ -291,6 +294,7 @@ def redpanda_cc_fuzz_test(
         defines = defines,
         deps = deps,
         custom_args = args,
+        tags = tags,
     )
 
 def redpanda_cc_btest_no_seastar(
