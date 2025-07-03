@@ -219,12 +219,29 @@ segment_upload::make_segment_upload(
     co_return std::move(upl);
 }
 
+namespace {
+ss::semaphore::clock::time_point
+mtc_to_sem_tp(model::timeout_clock::time_point orig) {
+    auto to = model::time_until(orig);
+    using sem_clock = ss::semaphore::clock;
+
+    auto now = sem_clock::now();
+    if (
+      orig == model::timeout_clock::time_point::max()
+      || to >= sem_clock::time_point::max() - now) {
+        return sem_clock::time_point::max();
+    }
+    return now + to;
+}
+} // namespace
+
 ss::future<result<void>> segment_upload::initialize(
   inclusive_offset_range range,
   model::timeout_clock::time_point deadline,
   bool allow_unstable_reads) {
+    auto deadline_sc = mtc_to_sem_tp(deadline);
     auto holder = _gate.hold();
-    auto params = co_await compute_upload_parameters(range);
+    auto params = co_await compute_upload_parameters(range, deadline_sc);
     if (params.has_failure()) {
         co_return params.as_failure();
     }
@@ -241,6 +258,7 @@ ss::future<result<void>> segment_upload::initialize(
     storage::log_reader_config reader_cfg(range.base, range.last);
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.read_lock_deadline = deadline_sc;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
     auto reader = co_await [this, &reader_cfg, allow_unstable_reads]() {
         if (allow_unstable_reads) {
@@ -259,8 +277,9 @@ ss::future<result<void>> segment_upload::initialize(
 
 ss::future<result<void>> segment_upload::initialize(
   size_limited_offset_range range, model::timeout_clock::time_point deadline) {
+    auto deadline_sc = mtc_to_sem_tp(deadline);
     auto holder = _gate.hold();
-    auto params = co_await compute_upload_parameters(range);
+    auto params = co_await compute_upload_parameters(range, deadline_sc);
     if (params.has_failure()) {
         co_return params.as_failure();
     }
@@ -271,6 +290,7 @@ ss::future<result<void>> segment_upload::initialize(
       params.value().offsets.base, params.value().offsets.last);
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.read_lock_deadline = deadline_sc;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
     auto reader = co_await _part->log()->make_reader(reader_cfg);
     _stream = make_reader_input_stream(
@@ -294,7 +314,8 @@ ss::future<> segment_upload::close() {
 
 ss::future<result<upload_reconciliation_result>>
 segment_upload::compute_upload_parameters(
-  std::variant<inclusive_offset_range, size_limited_offset_range> input) {
+  std::variant<inclusive_offset_range, size_limited_offset_range> input,
+  ss::semaphore::clock::time_point deadline) {
     auto holder = _gate.hold();
     try {
         auto range_base = std::visit(
@@ -303,7 +324,7 @@ segment_upload::compute_upload_parameters(
         if (std::holds_alternative<inclusive_offset_range>(input)) {
             auto range = std::get<inclusive_offset_range>(input);
             sz = co_await _part->log()->offset_range_size(
-              range.base, range.last);
+              range.base, range.last, deadline);
         } else {
             auto range = std::get<size_limited_offset_range>(input);
             sz = co_await _part->log()->offset_range_size(

@@ -220,7 +220,8 @@ private:
 
     /// Calculate upload size using segment indexes
     ss::future<result<upload_reconciliation_result>> compute_upload_parameters(
-      std::variant<inclusive_offset_range, size_limited_offset_range> range);
+      std::variant<inclusive_offset_range, size_limited_offset_range> range,
+      ss::semaphore::clock::time_point deadline);
 
     model::ntp _ntp;
     cluster::partition* _part;
