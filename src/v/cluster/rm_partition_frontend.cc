@@ -230,6 +230,51 @@ ss::future<begin_tx_reply> rm_partition_frontend::do_begin_tx(
             std::move(ntp), pid, tx_seq, transaction_timeout_ms, tm, mgr);
       });
 }
+namespace {
+ss::future<result<ssx::rwlock_unit, tx::errc>>
+hold_writes_enabled(ss::lw_shared_ptr<partition> partition) {
+    auto units_result = co_await partition->hold_writes_enabled();
+    if (units_result.has_value()) {
+        co_return result<ssx::rwlock_unit, tx::errc>{
+          std::move(units_result.value())};
+    }
+
+    auto err = units_result.error();
+    if (err.category() == cluster::error_category()) {
+        /**
+         * Handle different types of errors that can occur when trying to
+         * grab a write enable lock.
+         */
+        switch (cluster::errc(err.value())) {
+        case cluster::errc::not_leader:
+            co_return tx::errc::leader_not_found;
+        case cluster::errc::resource_is_being_migrated:
+            vlog(
+              txlog.warn,
+              "partition {} is not writable, errc: {}",
+              partition->ntp(),
+              units_result.error());
+            co_return tx::errc::partition_writes_locked;
+        case cluster::errc::timeout:
+            co_return tx::errc::timeout;
+        case cluster::errc::partition_disabled:
+            co_return tx::errc::partition_disabled;
+        default:
+            break;
+        }
+    } else if (err == raft::errc::not_leader) {
+        co_return tx::errc::leader_not_found;
+    } else if (err == raft::errc::timeout) {
+        co_return tx::errc::timeout;
+    }
+    vlog(
+      txlog.error,
+      "error holding a write enable lock for {}, errc: {}",
+      partition->ntp(),
+      err);
+    co_return tx::errc::unknown_server_error;
+}
+} // namespace
 
 ss::future<begin_tx_reply>
 rm_partition_frontend::do_begin_tx_on_partition_shard(
@@ -244,15 +289,9 @@ rm_partition_frontend::do_begin_tx_on_partition_shard(
         co_return begin_tx_reply{std::move(ntp), tx::errc::partition_not_found};
     }
 
-    auto maybe_partition_units = co_await partition->hold_writes_enabled();
+    auto maybe_partition_units = co_await hold_writes_enabled(partition);
     if (!maybe_partition_units.has_value()) {
-        vlog(
-          txlog.warn,
-          "partition {} is not writable, errc: {}",
-          ntp,
-          maybe_partition_units.error());
-        co_return begin_tx_reply{
-          std::move(ntp), tx::errc::partition_writes_locked};
+        co_return begin_tx_reply{std::move(ntp), maybe_partition_units.error()};
     }
 
     auto stm = partition->rm_stm();
