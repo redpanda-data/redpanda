@@ -59,6 +59,7 @@ different redpanda version that does not recognize certain properties.`,
 		newLintCommand(fs, p),
 		newSetCommand(fs, p),
 		newGetCommand(fs, p),
+		newListCommand(fs, p),
 	)
 
 	return cmd
