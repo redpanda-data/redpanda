@@ -106,8 +106,7 @@ private:
     // Verify that listing (List: read operation) from cloud storage works.
     ss::future<verify_list_result> verify_list(
       cloud_storage_clients::bucket_name bucket,
-      std::optional<cloud_storage_clients::object_key> prefix,
-      size_t max_keys = num_default_objects);
+      std::optional<cloud_storage_clients::object_key> prefix);
 
     struct verify_head_result {
         self_test_result test_result;

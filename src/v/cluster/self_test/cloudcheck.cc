@@ -160,7 +160,7 @@ ss::future<std::vector<self_test_result>> cloudcheck::run_benchmarks() {
       = (is_uploaded) ? self_test_prefix
                       : std::optional<cloud_storage_clients::object_key>{};
     auto list_test_result_pair = co_await do_run_test(
-      &cloudcheck::verify_list, bucket, list_prefix, 1);
+      &cloudcheck::verify_list, bucket, list_prefix);
     auto& [object_list, list_test_result] = list_test_result_pair;
     if (is_uploaded && object_list) {
         // Check that uploaded object exists in object_list contents.
@@ -311,8 +311,7 @@ ss::future<cloudcheck::verify_upload_result> cloudcheck::verify_upload(
 
 ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
   cloud_storage_clients::bucket_name bucket,
-  std::optional<cloud_storage_clients::object_key> prefix,
-  size_t max_keys) {
+  std::optional<cloud_storage_clients::object_key> prefix) {
     auto result = self_test_result{
       .name = _opts.name, .info = "List", .test_type = "cloud"};
 
@@ -326,7 +325,7 @@ ss::future<cloudcheck::verify_list_result> cloudcheck::verify_list(
         auto rtc = retry_chain_node(_opts.timeout, _opts.backoff, &_rtc);
         const cloud_storage::remote::list_result object_list
           = co_await _cloud_storage_api.local().list_objects(
-            bucket, rtc, prefix, std::nullopt, std::nullopt, max_keys);
+            bucket, rtc, prefix, std::nullopt, std::nullopt, std::nullopt);
 
         if (!object_list) {
             result.error = "Failed to list objects in cloud storage.";
