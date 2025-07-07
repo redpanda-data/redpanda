@@ -508,19 +508,20 @@ public:
     ss::future<> stop() final {
         // Set shutdown flag to prevent new host functions from being registered
         _shutting_down = true;
-        
+
         ss::future<> main = std::exchange(_main_task, ss::now());
-        _transform_module.stop(std::make_exception_ptr(
-          wasm_exception("vm was shutdown", errc::engine_shutdown)));
+        _transform_module.stop(
+          std::make_exception_ptr(
+            wasm_exception("vm was shutdown", errc::engine_shutdown)));
         co_await std::move(main);
-        
+
         // Wait for any pending host function that might have been registered
         // during the shutdown window
         if (_pending_host_function) {
             co_await std::move(*_pending_host_function);
             _pending_host_function.reset();
         }
-        
+
         // Deleting the store invalidates the instance and actually frees the
         // memory for the underlying instance.
         _store = nullptr;
@@ -1393,20 +1394,22 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     size_t aligned_pool_size = ss::align_down(
       c.heap_memory.per_core_pool_size_bytes, page_size);
     if (aligned_pool_size == 0) {
-        throw std::runtime_error(ss::format(
-          "aligned per core wasm memory pool size must be >0 "
-          "(page_size={}, pool_size={})",
-          page_size,
-          c.heap_memory.per_core_pool_size_bytes));
+        throw std::runtime_error(
+          ss::format(
+            "aligned per core wasm memory pool size must be >0 "
+            "(page_size={}, pool_size={})",
+            page_size,
+            c.heap_memory.per_core_pool_size_bytes));
     }
     size_t aligned_instance_limit = ss::align_down(
       c.heap_memory.per_engine_memory_limit, page_size);
     if (aligned_instance_limit == 0) {
-        throw std::runtime_error(ss::format(
-          "aligned per wasm engine memory limit must be >0 (page_size={}, "
-          "limit={})",
-          page_size,
-          c.heap_memory.per_engine_memory_limit));
+        throw std::runtime_error(
+          ss::format(
+            "aligned per wasm engine memory limit must be >0 (page_size={}, "
+            "limit={})",
+            page_size,
+            c.heap_memory.per_engine_memory_limit));
     }
     size_t num_heaps = aligned_pool_size / aligned_instance_limit;
     if (num_heaps == 0) {
@@ -1419,14 +1422,16 @@ ss::future<> wasmtime_runtime::start(runtime::config c) {
     // chunk, otherwise we yield control.
     constexpr static size_t memset_chunk_size = 10_MiB;
 
-    co_await _heap_allocator.start(heap_allocator::config{
-      .heap_memory_size = aligned_instance_limit,
-      .num_heaps = num_heaps,
-      .memset_chunk_size = memset_chunk_size,
-    });
-    co_await _stack_allocator.start(stack_allocator::config{
-      .tracking_enabled = c.stack_memory.debug_host_stack_usage,
-    });
+    co_await _heap_allocator.start(
+      heap_allocator::config{
+        .heap_memory_size = aligned_instance_limit,
+        .num_heaps = num_heaps,
+        .memset_chunk_size = memset_chunk_size,
+      });
+    co_await _stack_allocator.start(
+      stack_allocator::config{
+        .tracking_enabled = c.stack_memory.debug_host_stack_usage,
+      });
     co_await _alien_thread.start({.name = "wasm"});
     co_await ss::smp::invoke_on_all([] {
         // wasmtime needs some signals for it's handling, make sure we
@@ -1449,8 +1454,9 @@ void wasmtime_runtime::register_metrics() {
         sm::make_gauge(
           "executable_memory_usage",
           [this] { return _total_executable_memory; },
-          sm::description("The amount of executable memory used for "
-                          "WebAssembly binaries"))
+          sm::description(
+            "The amount of executable memory used for "
+            "WebAssembly binaries"))
           .aggregate({ss::metrics::shard_label}),
       });
 }
