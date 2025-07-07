@@ -66,6 +66,7 @@ public:
      *
      * @param job_id The job ID
      * @param params the parameters
+     * @param env optional list of enviromental variables as KEY=VALUE
      * @return Result with possible error codes:
      * * error_code::debug_bundle_process_running
      * * error_code::invalid_parameters
@@ -73,7 +74,9 @@ public:
      * * error_code::internal_error
      */
     ss::future<result<void>> initiate_rpk_debug_bundle_collection(
-      job_id_t job_id, debug_bundle_parameters params);
+      job_id_t job_id,
+      debug_bundle_parameters params,
+      std::vector<ss::sstring> env = {});
 
     /**
      * @brief Attempts to cancel a running "rpk debug bundle" process
