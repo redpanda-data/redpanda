@@ -278,24 +278,26 @@ public:
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
-        model::record_batch batch() { 
+        model::record_batch batch() {
             auto ptr = _range.get();
             if (unlikely(!ptr)) {
-                throw std::runtime_error("batch_cache::entry: weak pointer expired");
+                throw std::runtime_error(
+                  "batch_cache::entry: weak pointer expired");
             }
-            return ptr->batch(_range_offset); 
+            return ptr->batch(_range_offset);
         }
         model::record_batch_header header() const {
             auto ptr = _range.get();
             if (unlikely(!ptr)) {
-                throw std::runtime_error("batch_cache::entry: weak pointer expired");
+                throw std::runtime_error(
+                  "batch_cache::entry: weak pointer expired");
             }
             return ptr->header(_range_offset);
         }
 
         range_ptr& range() { return _range; }
         const range_ptr& range() const { return _range; }
-        bool valid() const { 
+        bool valid() const {
             auto ptr = _range.get();
             return ptr && ptr->valid();
         }

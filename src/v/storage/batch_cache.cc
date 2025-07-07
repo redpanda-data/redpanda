@@ -178,7 +178,9 @@ batch_cache::entry batch_cache::put(
 
     // Check if we need to create a new range or use existing one
     auto small_range_ptr = index._small_batches_range.get();
-    if (!small_range_ptr || !small_range_ptr->valid() || !small_range_ptr->fits(input)) {
+    if (
+      !small_range_ptr || !small_range_ptr->valid()
+      || !small_range_ptr->fits(input)) {
         auto r = new range(index);
         _lru.push_back(*r);
         _size_bytes += r->memory_size();
