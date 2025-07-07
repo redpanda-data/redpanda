@@ -55,6 +55,9 @@ class OfflineLogViewer:
     def read_consumer_offsets(self, node):
         return self._json_cmd(node, "--type consumer_offsets")
 
+    def consumer_offsets_summary(self, node):
+        return self._json_cmd(node, "--type consumer_offsets_summary")
+
     def read_bin_topic_manifest(self, bin_data, return_legacy_format=True):
         """
         copy bin_data to a local file, invoke the tool with it and 

@@ -3379,11 +3379,11 @@ std::ostream& operator<<(std::ostream& o, const group::offset_metadata& md) {
 }
 
 bool group::subscribed(const model::topic& topic) const {
-    if (_subscriptions.has_value()) {
-        return _subscriptions.value().contains(topic);
+    if (!_subscriptions.has_value()) {
+        return is_consumer_group();
     }
-    // answer conservatively
-    return true;
+
+    return _subscriptions.value().contains(topic);
 }
 
 /*
