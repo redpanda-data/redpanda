@@ -28,6 +28,7 @@
 #include <seastar/core/weak_ptr.hh>
 
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 
 class batch_cache_test_fixture;
@@ -277,14 +278,27 @@ public:
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
-        model::record_batch batch() { return _range->batch(_range_offset); }
+        model::record_batch batch() { 
+            auto ptr = _range.get();
+            if (unlikely(!ptr)) {
+                throw std::runtime_error("batch_cache::entry: weak pointer expired");
+            }
+            return ptr->batch(_range_offset); 
+        }
         model::record_batch_header header() const {
-            return _range->header(_range_offset);
+            auto ptr = _range.get();
+            if (unlikely(!ptr)) {
+                throw std::runtime_error("batch_cache::entry: weak pointer expired");
+            }
+            return ptr->header(_range_offset);
         }
 
         range_ptr& range() { return _range; }
         const range_ptr& range() const { return _range; }
-        bool valid() const { return _range->valid(); }
+        bool valid() const { 
+            auto ptr = _range.get();
+            return ptr && ptr->valid();
+        }
 
     private:
         uint32_t _range_offset;

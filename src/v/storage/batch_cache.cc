@@ -176,22 +176,22 @@ batch_cache::entry batch_cache::put(
         return entry(0, r->weak_from_this());
     }
 
-    if (
-      !index._small_batches_range || !index._small_batches_range->valid()
-      || !index._small_batches_range->fits(input)) {
+    // Check if we need to create a new range or use existing one
+    auto small_range_ptr = index._small_batches_range.get();
+    if (!small_range_ptr || !small_range_ptr->valid() || !small_range_ptr->fits(input)) {
         auto r = new range(index);
         _lru.push_back(*r);
         _size_bytes += r->memory_size();
         index._small_batches_range = r->weak_from_this();
+        small_range_ptr = r;
     }
 
-    auto initial_sz = index._small_batches_range->memory_size();
-    auto offset = index._small_batches_range->add(input, dirty);
+    auto initial_sz = small_range_ptr->memory_size();
+    auto offset = small_range_ptr->add(input, dirty);
     // calculate size difference to update batch cache size
-    int64_t diff = (int64_t)index._small_batches_range->memory_size()
-                   - initial_sz;
+    int64_t diff = (int64_t)small_range_ptr->memory_size() - initial_sz;
     _size_bytes += diff;
-    return entry(offset, index._small_batches_range->weak_from_this());
+    return entry(offset, small_range_ptr->weak_from_this());
 }
 
 batch_cache::~batch_cache() noexcept {
@@ -467,7 +467,9 @@ void batch_cache_index::mark_clean(model::offset up_to_inclusive) {
     auto last = std::next(find_first(up_to_inclusive));
 
     std::for_each(first, last, [up_to_inclusive](index_type::value_type& e) {
-        e.second.range()->mark_clean(up_to_inclusive);
+        if (auto ptr = e.second.range().get()) {
+            ptr->mark_clean(up_to_inclusive);
+        }
     });
 
     _dirty_tracker.mark_clean(up_to_inclusive);
