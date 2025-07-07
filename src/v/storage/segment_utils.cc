@@ -423,10 +423,8 @@ ss::future<storage::index_state> do_copy_segment_data(
         return ss::make_ready_future<bool>(keep);
     };
 
-    const auto& ntp = seg->path().get_ntp();
     auto record_filter = [f = std::move(offset_in_compacted_list),
                           &feature_table,
-                          &ntp,
                           segment_last_offset,
                           past_tombstone_delete_horizon,
                           &may_have_tombstone_records,
@@ -438,7 +436,6 @@ ss::future<storage::index_state> do_copy_segment_data(
         return internal::should_keep(
           b,
           r,
-          ntp,
           is_last_record_in_batch,
           f,
           pb,
@@ -450,7 +447,6 @@ ss::future<storage::index_state> do_copy_segment_data(
     };
 
     auto copy_reducer = copy_data_segment_reducer(
-      ntp,
       std::move(record_filter),
       appender.get(),
       seg->path().is_internal_topic(),
@@ -656,8 +652,7 @@ ss::future<> build_compaction_index(
   storage_resources& resources) {
     auto w = storage::make_file_backed_compacted_index(
       p, false, resources, cfg.sanitizer_config);
-    auto reducer = tx_reducer(
-      p.get_ntp(), stm_manager, std::move(aborted_txs), w.get());
+    auto reducer = tx_reducer(stm_manager, std::move(aborted_txs), w.get());
     auto index_builder = co_await ss::coroutine::as_future<tx_reducer::stats>(
       std::move(rdr)
         .consume(std::move(reducer), model::no_timeout)

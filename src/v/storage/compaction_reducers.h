@@ -158,7 +158,6 @@ public:
     };
 
     copy_data_segment_reducer(
-      model::ntp ntp,
       filter_t f,
       segment_appender* a,
       bool internal_topic,
@@ -169,8 +168,7 @@ public:
       compacted_index_writer* cidx = nullptr,
       bool inject_failure = false,
       ss::abort_source* as = nullptr)
-      : _ntp(std::move(ntp))
-      , _should_keep_fn(std::move(f))
+      : _should_keep_fn(std::move(f))
       , _segment_last_offset(segment_last_offset)
       , _compaction_placeholder_enabled(compaction_placeholder_enabled)
       , _appender(a)
@@ -198,7 +196,6 @@ private:
     // Creates a placeholder batch with same offset range as the input header.
     model::record_batch make_placeholder_batch(model::record_batch_header&);
 
-    model::ntp _ntp;
     filter_t _should_keep_fn;
 
     // Offset to keep in case the index is empty as of getting to this offset.
@@ -266,12 +263,10 @@ private:
 class tx_reducer : public compaction_reducer {
 public:
     explicit tx_reducer(
-      model::ntp ntp,
       ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
       fragmented_vector<model::tx_range>&& txs,
       compacted_index_writer* w) noexcept
-      : _ntp(std::move(ntp))
-      , _delegate(index_rebuilder_reducer(w))
+      : _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
       , _stm_mgr(stm_mgr)
       , _transactional_stm_type(stm_mgr->transactional_stm_type()) {
@@ -308,7 +303,6 @@ private:
     void refresh_ongoing_aborted_txs(const model::record_batch&);
     bool has_transactional_data() const;
 
-    model::ntp _ntp;
     index_rebuilder_reducer _delegate;
     // A min heap of aborted transactions based on begin offset.
     using underlying_t = std::priority_queue<
@@ -339,9 +333,8 @@ private:
 class map_building_reducer : public compaction_reducer {
 public:
     explicit map_building_reducer(
-      model::ntp ntp, key_offset_map* map, model::offset start_offset_inclusive)
-      : _ntp(std::move(ntp))
-      , _map(map)
+      key_offset_map* map, model::offset start_offset_inclusive)
+      : _map(map)
       , _start_offset(start_offset_inclusive) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);
@@ -355,7 +348,6 @@ private:
       bool is_control,
       bool& fully_indexed_batch);
 
-    model::ntp _ntp;
     key_offset_map* _map;
     model::offset _start_offset;
     bool _fully_indexed_segment = true;

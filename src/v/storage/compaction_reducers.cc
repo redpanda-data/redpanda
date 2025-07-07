@@ -292,7 +292,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
     const auto records_to_remove = record_count_before
                                    - to_copy->record_count();
     _stats.records_discarded += records_to_remove;
-    bool compactible_batch = is_compactible(_ntp, to_copy.value().header());
+    bool compactible_batch = is_compactible(to_copy.value().header());
     if (!compactible_batch) {
         ++_stats.non_compactible_batches;
     }
@@ -428,7 +428,7 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
     // committed data has already been rewritten as separate raft_data
     // batches, so no need to retain originally written group_prepare_tx
     // batches while the transaction is in progress.
-    return is_compactible_control_batch(_ntp, b.header().type);
+    return is_compactible_control_batch(b.header().type);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
@@ -474,7 +474,7 @@ ss::future<ss::stop_iteration>
 map_building_reducer::operator()(model::record_batch batch) {
     bool fully_indexed_batch = true;
     auto& header = batch.header();
-    if (!is_compactible(_ntp, header)) {
+    if (!is_compactible(header)) {
         // There is no point to indexing records in uncompactible batches, since
         // their inclusion in the segment post compaction is irrespective of the
         // map state (see copy_data_segment_reducer::filter()).

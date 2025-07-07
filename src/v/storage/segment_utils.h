@@ -249,17 +249,15 @@ struct clean_segment_value
     auto serde_fields() { return std::tie(segment_name); }
 };
 
-inline bool is_compactible_control_batch(
-  const model::ntp& ntp, const model::record_batch_type batch_type) {
+inline bool
+is_compactible_control_batch(const model::record_batch_type batch_type) {
     // Control batches in consumer offsets are special compared to
     // the ones in data partitions can be safely compacted away.
     //
     // tx_fence batches  in consumer offsets are special and should be
-    // compacted. They were used historically to mark the begin of a transaction
-    // but later switched to group_fence_tx.
-    return unlikely(
-             batch_type == model::record_batch_type::tx_fence
-             && model::is_consumer_offsets_topic(ntp))
+    // removed during compaction. They were used historically to mark the begin
+    // of a transaction but later switched to group_fence_tx.
+    return batch_type == model::record_batch_type::tx_fence
            || batch_type == model::record_batch_type::group_fence_tx
            || batch_type == model::record_batch_type::group_prepare_tx
            || batch_type == model::record_batch_type::group_abort_tx
@@ -291,9 +289,8 @@ inline bool is_filterable(model::record_batch_type t) {
 // whether records from a batch should be indexed in a .compaction_index file,
 // and whether only the latest record for a given key should be kept in
 // `should_keep()`.
-inline bool
-is_compactible(const model::ntp& ntp, const model::record_batch_header& h) {
-    if (h.attrs.is_control() && !is_compactible_control_batch(ntp, h.type)) {
+inline bool is_compactible(const model::record_batch_header& h) {
+    if (h.attrs.is_control()) {
         return false;
     }
     return is_filterable(h.type);
@@ -363,10 +360,9 @@ auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
 inline bool can_discard(
   const model::record_batch& b,
   const model::record& r,
-  const model::ntp& ntp,
   bool past_tombstone_delete_horizon) {
     // Compactible control batches are always removable
-    if (is_compactible_control_batch(ntp, b.header().type)) {
+    if (is_compactible_control_batch(b.header().type)) {
         return true;
     }
 
@@ -382,7 +378,6 @@ template<typename Func>
 ss::future<bool> should_keep(
   const model::record_batch& b,
   const model::record& r,
-  const model::ntp& ntp,
   bool is_last_record_in_batch,
   Func&& is_latest_key,
   probe& pb,
@@ -417,7 +412,7 @@ ss::future<bool> should_keep(
     }
 
     auto& header = b.header();
-    if (!is_compactible(ntp, header)) {
+    if (!is_compactible(header)) {
         if (header.attrs.is_control()) {
             has_tx_batches = true;
         }
@@ -426,7 +421,7 @@ ss::future<bool> should_keep(
 
     // Before considering `is_latest_key()`, unconditionally remove
     // records/batches which are always considered removable.
-    if (can_discard(b, r, ntp, past_tombstone_delete_horizon)) {
+    if (can_discard(b, r, past_tombstone_delete_horizon)) {
         if (r.is_tombstone()) {
             pb.add_removed_tombstone();
         }
