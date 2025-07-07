@@ -250,7 +250,7 @@ struct clean_segment_value
 };
 
 inline bool
-is_compactible_control_batch(const model::record_batch_type batch_type) {
+is_removable_control_batch(const model::record_batch_type batch_type) {
     // Control batches in consumer offsets are special compared to
     // the ones in data partitions can be safely compacted away.
     //
@@ -362,7 +362,7 @@ inline bool can_discard(
   const model::record& r,
   bool past_tombstone_delete_horizon) {
     // Compactible control batches are always removable
-    if (is_compactible_control_batch(b.header().type)) {
+    if (is_removable_control_batch(b.header().type)) {
         return true;
     }
 

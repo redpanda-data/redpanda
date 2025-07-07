@@ -428,7 +428,7 @@ bool tx_reducer::can_discard_consumer_offsets_batch(
     // committed data has already been rewritten as separate raft_data
     // batches, so no need to retain originally written group_prepare_tx
     // batches while the transaction is in progress.
-    return is_compactible_control_batch(b.header().type);
+    return is_removable_control_batch(b.header().type);
 }
 
 ss::future<ss::stop_iteration> tx_reducer::operator()(model::record_batch&& b) {
