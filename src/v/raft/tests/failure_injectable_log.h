@@ -89,6 +89,9 @@ public:
     std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const final;
 
+    std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const final;
+
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
 
     size_t size_bytes() const final;
@@ -96,12 +99,21 @@ public:
     uint64_t size_bytes_after_offset(model::offset o) const final;
 
     ss::future<std::optional<storage::log::offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) final;
+    offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout) final;
 
     ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
       model::offset first, offset_range_size_requirements_t target) final;
 
     bool is_compacted(model::offset first, model::offset last) const final;
+
+    bool
+    compaction_complete(model::offset first, model::offset last) const final;
+
+    std::optional<model::offset>
+    max_compacted_offset(model::offset first = model::offset{0}) const final;
 
     void set_overrides(storage::ntp_config::default_overrides) final;
 

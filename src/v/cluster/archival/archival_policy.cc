@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 
@@ -30,9 +31,14 @@ namespace archival {
 using namespace std::chrono_literals;
 
 archival_policy::archival_policy(
-  model::ntp ntp, std::optional<segment_time_limit> limit)
+  model::ntp ntp,
+  cluster::partition& parent,
+  ss::gate& gate,
+  std::optional<segment_time_limit> limit)
   : _ntp(std::move(ntp))
-  , _upload_limit(limit) {}
+  , _upload_limit(limit)
+  , _parent(&parent)
+  , _gate(&gate) {}
 
 bool archival_policy::upload_deadline_reached() {
     if (!_upload_limit.has_value()) {
@@ -84,16 +90,20 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
       end_exclusive,
       flush_offset};
 
-    segment_collector.collect_segments();
-    if (!segment_collector.segment_ready_for_upload()) {
+    if (!segment_collector.collect_segments()) {
         co_return candidate_creation_error::no_segments_collected;
     }
 
-    if (_upload_limit) {
+    auto strm = co_await segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
+
+    if (
+      _upload_limit
+      && !std::holds_alternative<candidate_creation_error>(strm)) {
         _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
     }
-    co_return co_await segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+
+    co_return strm;
 }
 
 ss::future<segment_collector_stream_result>
@@ -117,13 +127,12 @@ archival_policy::get_next_compacted_segment(
       config::shard_local_cfg().compacted_log_segment_size
         * compacted_segment_size_multiplier};
 
-    compacted_segment_collector.collect_segments();
-    if (!compacted_segment_collector.should_replace_manifest_segment()) {
+    if (!compacted_segment_collector.collect_segments()) {
         co_return candidate_creation_error::cannot_replace_manifest_entry;
     }
 
-    co_return co_await compacted_segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+    co_return co_await compacted_segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
 }
 
 } // namespace archival

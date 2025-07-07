@@ -66,6 +66,7 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 
@@ -2329,12 +2330,21 @@ disk_log_impl::make_cached_reader(log_reader_config config) {
 }
 
 namespace details {
+
+bool is_offset_in_batch(
+  const model::record_batch_header& header, model::offset o) {
+    // Note: header.contains also matches if offset is on the boundary. This
+    // function checks if the offset lies strictly inside the batch.
+    return header.base_offset < o && header.last_offset() > o;
+}
+
 // This accumulator is used to compute size of the on-disk representation of the
 // record batches
 struct batch_size_accumulator {
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         vassert(
-          result_size_bytes != nullptr,
+          result_size_bytes != nullptr && base_timestamp != nullptr
+            && max_timestamp != nullptr && target_offset_in_batch != nullptr,
           "batch_size_accumulator is not initialized properly");
         // Target is exclusive:
         // 'target' offset corresponds to the base offset of the
@@ -2350,12 +2360,22 @@ struct batch_size_accumulator {
         //                  target---v
         //     |++++++++++++++[+++++++]X          |
         //
+        // omits cases where target is perfectly aligned to batch boundary
+        *target_offset_in_batch = *target_offset_in_batch
+                                  || is_offset_in_batch(b.header(), target);
+
+        *base_timestamp = b.header().first_timestamp;
         if (boundary == boundary_type::inclusive) {
             if (b.last_offset() > target) {
+                *max_timestamp = std::min(
+                  *max_timestamp, b.header().max_timestamp);
                 co_return ss::stop_iteration::yes;
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
+            if (b.header().last_offset() == target) {
+                *max_timestamp = b.header().max_timestamp;
+            }
             co_return ss::stop_iteration::no;
         } else {
             if (b.base_offset() >= target) {
@@ -2363,6 +2383,7 @@ struct batch_size_accumulator {
             }
             *result_size_bytes += model::packed_record_batch_header_size
                                   + b.data().size_bytes();
+            *max_timestamp = b.header().max_timestamp;
             co_return ss::stop_iteration::no;
         }
     }
@@ -2371,23 +2392,33 @@ struct batch_size_accumulator {
     size_t* result_size_bytes{nullptr};
     model::offset target;
     boundary_type boundary;
+    model::timestamp* base_timestamp{nullptr};
+    model::timestamp* max_timestamp{nullptr};
+    bool* target_offset_in_batch{nullptr};
 };
 } // namespace details
 
-ss::future<size_t> disk_log_impl::get_file_offset(
+auto disk_log_impl::get_file_offset(
   ss::lw_shared_ptr<segment> s,
   std::optional<segment_index::entry> maybe_index_entry,
   model::offset target,
-  boundary_type boundary) {
+  boundary_type boundary) -> ss::future<file_offset_t> {
     auto index_entry = maybe_index_entry.value_or(segment_index::entry{
       .offset = s->offsets().get_base_offset(),
+      .timestamp = s->index().base_timestamp(),
       .filepos = 0,
     });
     size_t size_bytes{index_entry.filepos};
+    model::timestamp base_timestamp = index_entry.timestamp;
+    model::timestamp max_timestamp = model::timestamp::max();
+    bool offset_in_batch = false;
     details::batch_size_accumulator acc{
       .result_size_bytes = &size_bytes,
       .target = target,
       .boundary = boundary,
+      .base_timestamp = &base_timestamp,
+      .max_timestamp = &max_timestamp,
+      .target_offset_in_batch = &offset_in_batch,
     };
 
     auto reader_start_offset = index_entry.offset;
@@ -2396,9 +2427,21 @@ ss::future<size_t> disk_log_impl::get_file_offset(
 
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.force_ignore_batch_cache = true;
+
+    auto lock = s->try_hold_read_lock();
+
+    if (!lock.has_value()) {
+        vlog(
+          stlog.info,
+          "{}: Something prevented access to the segment's read lock. "
+          "aborting...",
+          config().ntp());
+        throw ss::semaphore_timed_out();
+    }
 
     auto reader = model::make_record_batch_reader<single_segment_reader>(
-      s, co_await s->read_lock(), reader_cfg, *_probe);
+      s, std::move(lock).value(), reader_cfg, *_probe);
 
     try {
         co_await std::move(reader).consume(acc, model::no_timeout);
@@ -2409,7 +2452,13 @@ ss::future<size_t> disk_log_impl::get_file_offset(
           std::current_exception());
         throw;
     }
-    co_return size_bytes;
+
+    co_return file_offset_t{
+      .position = size_bytes,
+      .base_timestamp = base_timestamp,
+      .last_timestamp = max_timestamp,
+      .offset_in_batch = offset_in_batch,
+    };
 }
 
 bool disk_log_impl::log_contains_offset(model::offset o) const noexcept {
@@ -2440,7 +2489,8 @@ bool disk_log_impl::log_contains_offset_range(
 }
 
 ss::future<std::optional<log::offset_range_size_result_t>>
-disk_log_impl::offset_range_size(model::offset first, model::offset last) {
+disk_log_impl::offset_range_size(
+  model::offset first, model::offset last, ss::semaphore::time_point timeout) {
     vlog(
       stlog.debug,
       "Offset range size, first: {}, last: {}, lstat: {}",
@@ -2502,7 +2552,7 @@ disk_log_impl::offset_range_size(model::offset first, model::offset last) {
     std::vector<ss::future<ss::rwlock::holder>> f_locks;
     f_locks.reserve(segments.size());
     for (auto& s : segments) {
-        f_locks.emplace_back(s->read_lock());
+        f_locks.emplace_back(s->read_lock(timeout));
     }
 
     auto holders = co_await ss::when_all_succeed(
@@ -2528,40 +2578,50 @@ disk_log_impl::offset_range_size(model::offset first, model::offset last) {
         // We have found an index entry.
         vlog(
           stlog.debug,
-          "Scanning (left) log segment {} from the file offset {} (RP offset "
-          "{})",
+          "{}: Scanning (left) log segment {} from the file offset {} (RP "
+          "offset "
+          "{} ; timestamp {})",
+          config().ntp(),
           segments.front()->offsets(),
           ix_left->filepos,
-          ix_left->offset);
+          ix_left->offset,
+          ix_left->timestamp);
     } else {
         // Scan from the beginning of the segment.
         vlog(
           stlog.debug,
-          "Scanning (left) log segment {} from the start",
+          "{}: Scanning (left) log segment {} from the start",
+          config().ntp(),
           segments.front()->offsets());
     }
-    auto left_scan_bytes = co_await get_file_offset(
+    auto left_scan_offset = co_await get_file_offset(
       segments.front(), ix_left, first, boundary_type::exclusive);
+    auto left_scan_bytes = left_scan_offset.position;
 
     // Right subscan
     auto ix_right = segments.back()->index().find_nearest(last);
     if (ix_right.has_value()) {
         vlog(
           stlog.debug,
-          "Scanning (right) log segment {} from the file offset {} (RP offset "
-          "{})",
+          "{}: Scanning (right) log segment {} from the file offset {} (RP "
+          "offset "
+          "{} ; timestamp {})",
+          config().ntp(),
           segments.back()->offsets(),
           ix_right->filepos,
-          ix_right->offset);
+          ix_right->offset,
+          ix_right->timestamp);
     } else {
         // Scan from the beginning of the segment.
         vlog(
           stlog.debug,
-          "Scanning (right) log segment {} from the start",
+          "{}: Scanning (right) log segment {} from the start",
+          config().ntp(),
           segments.back()->offsets());
     }
-    auto right_scan_bytes = co_await get_file_offset(
+    auto right_scan_offset = co_await get_file_offset(
       segments.back(), ix_right, last, boundary_type::inclusive);
+    auto right_scan_bytes = right_scan_offset.position;
 
     // compute size
     size_t total_size = 0;
@@ -2605,6 +2665,10 @@ disk_log_impl::offset_range_size(model::offset first, model::offset last) {
     co_return offset_range_size_result_t{
       .on_disk_size = total_size,
       .last_offset = last,
+      .first_timestamp = left_scan_offset.base_timestamp,
+      .last_timestamp = right_scan_offset.last_timestamp,
+      .boundary_in_batch = left_scan_offset.offset_in_batch
+                           || right_scan_offset.offset_in_batch,
     };
 }
 
@@ -2650,7 +2714,7 @@ disk_log_impl::offset_range_size(
         }
     }
 
-    size_t first_segment_file_pos = 0;
+    file_offset_t first_segment_file_offsets{};
     auto first_segment = *base_it;
     size_t first_segment_size = first_segment->file_size();
     auto first_segment_offsets = first_segment->offsets();
@@ -2704,7 +2768,7 @@ disk_log_impl::offset_range_size(
         // offset.
         auto ix_res = first_segment->index().find_nearest(first);
 
-        first_segment_file_pos = co_await get_file_offset(
+        first_segment_file_offsets = co_await get_file_offset(
           first_segment, ix_res, first, boundary_type::exclusive);
     } else {
         // We expect to find first offset inside the first segment.
@@ -2717,6 +2781,8 @@ disk_log_impl::offset_range_size(
         co_return std::nullopt;
     }
 
+    size_t first_segment_file_pos = first_segment_file_offsets.position;
+
     // No scheduling points below this point, some invariants has to be
     // validated
 
@@ -2727,7 +2793,7 @@ disk_log_impl::offset_range_size(
     model::offset last_included_offset = {};
     size_t num_segments = 0;
     auto it = _segs.lower_bound(first);
-    for (; it < _segs.end(); it++) {
+    for (; it < _segs.end() && current_size < target.target_size; it++) {
         if (it->get()->is_closed()) {
             co_return std::nullopt;
         }
@@ -2876,9 +2942,19 @@ disk_log_impl::offset_range_size(
         co_return std::nullopt;
     }
 
+    while (it == _segs.end()
+           || it->get()->offsets().get_base_offset() > last_included_offset) {
+        it = std::prev(it);
+    }
+    auto ix_right = it->get()->index().find_nearest(last_included_offset);
+    auto last_segment_file_offsets = co_await get_file_offset(
+      *it, ix_right, last_included_offset, boundary_type::inclusive);
+
     co_return offset_range_size_result_t{
       .on_disk_size = current_size,
       .last_offset = last_included_offset,
+      .first_timestamp = first_segment_file_offsets.base_timestamp,
+      .last_timestamp = last_segment_file_offsets.last_timestamp,
     };
 }
 
@@ -2894,6 +2970,52 @@ bool disk_log_impl::is_compacted(
         }
     }
     return false;
+}
+
+bool disk_log_impl::compaction_complete(
+  model::offset first, model::offset last) const {
+    if (auto mco = max_compacted_offset(first); mco.has_value()) {
+        return last <= mco.value();
+    }
+    return false;
+}
+
+std::optional<model::offset>
+disk_log_impl::max_compacted_offset(model::offset first) const {
+    auto it = _segs.lower_bound(first);
+    if (it == _segs.end()) {
+        return std::nullopt;
+    }
+    auto compaction_complete = [](const segment& seg) {
+        if (!seg.is_compacted_segment()) {
+            return false;
+        }
+        if (config::shard_local_cfg().log_compaction_use_sliding_window) {
+            return seg.has_clean_compact_timestamp();
+        }
+        return seg.has_self_compact_timestamp();
+    };
+
+    if (!compaction_complete(*(it->get()))) {
+        return std::nullopt;
+    }
+    auto first_uncompacted = std::lower_bound(
+      it,
+      _segs.end(),
+      true,
+      [&compaction_complete](
+        const ss::lw_shared_ptr<segment>& seg, bool value) {
+          auto cc = compaction_complete(*seg);
+          return value && cc;
+      });
+
+    if (first_uncompacted == _segs.end()) {
+        // in this case everything is compacted
+        return _segs.back()->offsets().get_committed_offset();
+    }
+
+    return model::prev_offset(
+      first_uncompacted->get()->offsets().get_base_offset());
 }
 
 ss::future<model::record_batch_reader>
@@ -3042,6 +3164,25 @@ disk_log_impl::index_batch_base_offset_lower_bound(model::offset o) const {
         return entry->offset;
     }
     return std::nullopt;
+}
+
+std::optional<model::offset>
+disk_log_impl::base_offset_lower_bound(model::offset o) const {
+    const auto& segment_set = segments();
+    auto it = segment_set.lower_bound(o);
+    if (it != segment_set.end()) {
+        return it->get()->offsets().get_base_offset();
+    }
+
+    it = std::ranges::find_if(
+      segment_set, [o](const ss::lw_shared_ptr<storage::segment>& s) {
+          return s->offsets().get_base_offset() >= o;
+      });
+
+    if (it == segment_set.end()) {
+        return std::nullopt;
+    }
+    return it->get()->offsets().get_base_offset();
 }
 
 ss::future<std::optional<timequery_result>>

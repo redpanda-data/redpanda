@@ -564,6 +564,10 @@ struct configuration final : public config_store {
       cloud_storage_inventory_report_check_interval_ms;
     property<uint64_t> cloud_storage_inventory_max_hash_size_during_parse;
 
+    // Enable v2 segment collection
+    enum_property<model::cloud_storage_segment_upload_mode>
+      cloud_storage_segment_upload_mode;
+
     one_or_many_property<ss::sstring> superusers;
 
     // kakfa queue depth control: latency ewma

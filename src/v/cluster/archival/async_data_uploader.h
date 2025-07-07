@@ -95,8 +95,11 @@ struct upload_reconciliation_result {
     size_t size_bytes;
     /// True if at least one segment is compacted
     bool is_compacted;
+    bool compaction_complete;
     /// Offset range of the segment
     inclusive_offset_range offsets;
+    model::timestamp base_timestamp;
+    model::timestamp max_timestamp;
 };
 
 /// Individual segment upload
@@ -138,9 +141,19 @@ public:
         upload_reconciliation_result p{
           .size_bytes = _params.value().size_bytes,
           .is_compacted = _params.value().is_compacted,
+          .compaction_complete = _params.value().compaction_complete,
           .offsets = _params.value().offsets,
+          .base_timestamp = _params.value().base_timestamp,
+          .max_timestamp = _params.value().max_timestamp,
         };
         return p;
+    }
+
+    ss::future<upload_reconciliation_result> get_meta() && noexcept {
+        throw_if_not_initialized("get_meta&&");
+        auto p = std::exchange(_params, std::nullopt).value();
+        co_await close();
+        co_return p;
     }
 
     /// \brief Make new segment upload
@@ -152,6 +165,9 @@ public:
     /// \param sg is a scheduling group used to upload the data
     /// \param deadline is a deadline for the upload object to be created (not
     ///                 for the actual upload to happen)
+    /// \param allow_unstable_reads If set, initialize the enclosed log_reader
+    ///                             directly from the disk log, circumventing
+    ///                             visible offset checks in the raft layer.
     /// \return initialized segment_upload object
     static ss::future<result<std::unique_ptr<segment_upload>>>
     make_segment_upload(
@@ -159,7 +175,8 @@ public:
       inclusive_offset_range range,
       size_t read_buffer_size,
       ss::scheduling_group sg,
-      model::timeout_clock::time_point deadline);
+      model::timeout_clock::time_point deadline,
+      bool allow_unstable_reads = false);
 
     /// \brief Make new segment upload
     ///
@@ -204,7 +221,8 @@ private:
     /// Initialize segment upload using offset range
     ss::future<result<void>> initialize(
       inclusive_offset_range offsets,
-      model::timeout_clock::time_point deadline);
+      model::timeout_clock::time_point deadline,
+      bool allow_unstable_reads);
 
     /// Initialize segment upload using offset range
     ss::future<result<void>> initialize(
@@ -215,7 +233,8 @@ private:
 
     /// Calculate upload size using segment indexes
     ss::future<result<upload_reconciliation_result>> compute_upload_parameters(
-      std::variant<inclusive_offset_range, size_limited_offset_range> range);
+      std::variant<inclusive_offset_range, size_limited_offset_range> range,
+      ss::semaphore::clock::time_point deadline);
 
     model::ntp _ntp;
     cluster::partition* _part;

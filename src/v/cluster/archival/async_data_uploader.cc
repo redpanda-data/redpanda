@@ -88,7 +88,7 @@ class reader_ds : public ss::data_source_impl {
 
 public:
     explicit reader_ds(
-      model::ntp ntp,
+      const model::ntp& ntp,
       model::record_batch_reader r,
       size_t max_bytes,
       inclusive_offset_range range,
@@ -153,7 +153,7 @@ private:
 };
 
 ss::input_stream<char> make_reader_input_stream(
-  model::ntp ntp,
+  const model::ntp& ntp,
   model::record_batch_reader r,
   size_t read_buffer_size,
   inclusive_offset_range range,
@@ -190,11 +190,12 @@ segment_upload::make_segment_upload(
   inclusive_offset_range range,
   size_t read_buffer_size,
   ss::scheduling_group sg,
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline,
+  bool allow_unstable_reads) {
     std::unique_ptr<segment_upload> upl(
       new segment_upload(part, read_buffer_size, sg));
 
-    auto res = co_await upl->initialize(range, deadline);
+    auto res = co_await upl->initialize(range, deadline, allow_unstable_reads);
     if (res.has_failure()) {
         co_return res.as_failure();
     }
@@ -218,10 +219,39 @@ segment_upload::make_segment_upload(
     co_return std::move(upl);
 }
 
+namespace {
+ss::semaphore::clock::time_point
+mtc_to_sem_tp(model::timeout_clock::time_point orig) {
+    auto to = model::time_until(orig);
+    using sem_clock = ss::semaphore::clock;
+
+    auto now = sem_clock::now();
+    if (
+      orig == model::timeout_clock::time_point::max()
+      || to >= sem_clock::time_point::max() - now) {
+        return sem_clock::time_point::max();
+    }
+    return now + to;
+}
+} // namespace
+
 ss::future<result<void>> segment_upload::initialize(
-  inclusive_offset_range range, model::timeout_clock::time_point deadline) {
+  inclusive_offset_range range,
+  model::timeout_clock::time_point deadline,
+  bool allow_unstable_reads) {
+    if (!allow_unstable_reads && range.last >= _part->last_stable_offset()) {
+        vlog(
+          _ctxlog.debug,
+          "{}: range.last {} unexpectedly exceeds LSO {}",
+          _part->ntp(),
+          range.last,
+          _part->last_stable_offset());
+        co_return make_error_code(error_outcome::not_enough_data);
+    }
+
+    auto deadline_sc = mtc_to_sem_tp(deadline);
     auto holder = _gate.hold();
-    auto params = co_await compute_upload_parameters(range);
+    auto params = co_await compute_upload_parameters(range, deadline_sc);
     if (params.has_failure()) {
         co_return params.as_failure();
     }
@@ -238,8 +268,15 @@ ss::future<result<void>> segment_upload::initialize(
     storage::log_reader_config reader_cfg(range.base, range.last);
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.read_lock_deadline = deadline_sc;
+    reader_cfg.force_ignore_batch_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
-    auto reader = co_await _part->make_reader(reader_cfg);
+    auto reader = co_await [this, &reader_cfg, allow_unstable_reads]() {
+        if (allow_unstable_reads) {
+            return _part->log()->make_reader(reader_cfg);
+        }
+        return _part->make_reader(reader_cfg);
+    }();
     _stream = make_reader_input_stream(
       _ntp,
       std::move(reader),
@@ -251,8 +288,9 @@ ss::future<result<void>> segment_upload::initialize(
 
 ss::future<result<void>> segment_upload::initialize(
   size_limited_offset_range range, model::timeout_clock::time_point deadline) {
+    auto deadline_sc = mtc_to_sem_tp(deadline);
     auto holder = _gate.hold();
-    auto params = co_await compute_upload_parameters(range);
+    auto params = co_await compute_upload_parameters(range, deadline_sc);
     if (params.has_failure()) {
         co_return params.as_failure();
     }
@@ -260,16 +298,18 @@ ss::future<result<void>> segment_upload::initialize(
     // Create a log reader config to scan the uploaded offset
     // range. We should skip the batch cache.
     storage::log_reader_config reader_cfg(
-      params.value().offsets.base, params.value().offsets.last);
+      _params.value().offsets.base, _params.value().offsets.last);
     reader_cfg.skip_batch_cache = true;
     reader_cfg.skip_readers_cache = true;
+    reader_cfg.read_lock_deadline = deadline_sc;
+    reader_cfg.force_ignore_batch_cache = true;
     vlog(_ctxlog.debug, "Creating log reader, config: {}", reader_cfg);
-    auto reader = co_await _part->make_reader(reader_cfg);
+    auto reader = co_await _part->log()->make_reader(reader_cfg);
     _stream = make_reader_input_stream(
       _ntp,
       std::move(reader),
       _rd_buffer_size,
-      params.value().offsets,
+      _params.value().offsets,
       model::time_until(deadline));
     co_return outcome::success();
 }
@@ -286,7 +326,8 @@ ss::future<> segment_upload::close() {
 
 ss::future<result<upload_reconciliation_result>>
 segment_upload::compute_upload_parameters(
-  std::variant<inclusive_offset_range, size_limited_offset_range> input) {
+  std::variant<inclusive_offset_range, size_limited_offset_range> input,
+  ss::semaphore::clock::time_point deadline) {
     auto holder = _gate.hold();
     try {
         auto range_base = std::visit(
@@ -295,7 +336,7 @@ segment_upload::compute_upload_parameters(
         if (std::holds_alternative<inclusive_offset_range>(input)) {
             auto range = std::get<inclusive_offset_range>(input);
             sz = co_await _part->log()->offset_range_size(
-              range.base, range.last);
+              range.base, range.last, deadline);
         } else {
             auto range = std::get<size_limited_offset_range>(input);
             sz = co_await _part->log()->offset_range_size(
@@ -310,11 +351,18 @@ segment_upload::compute_upload_parameters(
             // to satisfy the request.
             co_return make_error_code(error_outcome::not_enough_data);
         }
+        if (sz.value().boundary_in_batch) {
+            co_return make_error_code(error_outcome::offset_in_batch);
+        }
         upload_reconciliation_result result{
           .size_bytes = sz->on_disk_size,
           .is_compacted = _part->log()->is_compacted(
             range_base, sz->last_offset),
+          .compaction_complete = _part->log()->compaction_complete(
+            range_base, sz->last_offset),
           .offsets = inclusive_offset_range(range_base, sz->last_offset),
+          .base_timestamp = sz->first_timestamp,
+          .max_timestamp = sz->last_timestamp,
         };
         co_return result;
     } catch (const std::invalid_argument&) {
@@ -322,7 +370,11 @@ segment_upload::compute_upload_parameters(
         // due to truncation).
         vlog(_ctxlog.warn, "Index out of range: {}", std::current_exception());
         co_return make_error_code(error_outcome::out_of_range);
-
+    } catch (const ss::semaphore_timed_out&) {
+        // This means we weren't able to acquire read locks for the offset
+        // range in time, not exactly sure why that happens!
+        vlog(_ctxlog.warn, "Semaphore timed out: {}", std::current_exception());
+        co_return make_error_code(error_outcome::timed_out);
     } catch (...) {
         if (ssx::is_shutdown_exception(std::current_exception())) {
             vlog(

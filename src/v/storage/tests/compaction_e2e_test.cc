@@ -2036,3 +2036,93 @@ TEST_F(
     ASSERT_EQ(num_data_records(on_disk_batches_after), cardinality);
     ASSERT_NE(on_disk_batches_before, on_disk_batches_after);
 }
+
+// NOTE: The test case below can be considered a reproducer for CORE-12756,
+// which describes the behavior in some detail. When that ticket resolves, we
+// can be reworked slightly and reused as a regular test case.
+TEST_F(CompactionFixtureTest, TestIgnoreBatchCache) {
+    // This test case reproduces a specific set of circumstances under which
+    // batches removed by adjacent merge compaction may remain in the batch
+    // cache on the merge range's base segment after compaction has finished.
+    // It then demonstrates how a log reader can be configured to skip the batch
+    // cache and go straight to disk, avoiding these phantom records.
+    auto num_segments = 10;
+    auto cardinality = 10;
+    auto batches_per_segment = 10;
+    auto records_per_batch = 1;
+    map_t latest_kv_map;
+    generate_data(
+      num_segments,
+      cardinality,
+      batches_per_segment,
+      records_per_batch,
+      0,
+      false,
+      &latest_kv_map)
+      .get();
+
+    auto& disk_log = dynamic_cast<storage::disk_log_impl&>(*log);
+
+    auto target_segs_v = disk_log.segments() | std::views::take(num_segments);
+
+    ASSERT_TRUE(std::ranges::all_of(
+      target_segs_v, [](const auto& s) { return !s->has_appender(); }));
+
+    storage::segment_set segs{storage::segment_set::underlying_t{
+      target_segs_v.begin(), target_segs_v.end()}};
+
+    ss::abort_source never_abort;
+    storage::compaction_config cfg(
+      model::offset::max(), std::nullopt, never_abort);
+
+    // self compact everything up front so that it doesn't happen inline with
+    // adjacent merge compaction. this would cause batch caches to be reset
+    // immediately
+    for (auto& s : segs) {
+        disk_log.segment_self_compact(cfg, s).get();
+    }
+
+    auto consume = [&disk_log](storage::log_reader_config cfg) {
+        return disk_log.make_reader(cfg)
+          .then([](model::record_batch_reader reader) {
+              return model::consume_reader_to_memory(
+                std::move(reader), model::no_timeout);
+          })
+          .get();
+    };
+
+    // read some batches in segments[0]. merge compaction will remove these.
+    auto& first_seg = *target_segs_v.front();
+    auto base = model::next_offset(first_seg.offsets().get_base_offset());
+    auto end = first_seg.offsets().get_committed_offset();
+
+    storage::log_reader_config reader_cfg(base, end);
+    reader_cfg.skip_readers_cache = true;
+
+    auto before_merge = consume(reader_cfg);
+    ASSERT_EQ(before_merge.size(), cardinality);
+
+    disk_log.adjacent_merge_compact(segs, cfg).get();
+
+    ASSERT_EQ(disk_log.segment_count(), 2);
+
+    // at this point, all the batches in segment[0] will have been compacted
+    // away, with those offsets no longer appearing on disk. they may still
+    // appear in the batch cache.
+
+    reader_cfg.start_offset = before_merge.front().base_offset();
+    reader_cfg.max_offset = before_merge.back().last_offset();
+    reader_cfg.force_ignore_batch_cache = false;
+
+    auto after_merge = consume(reader_cfg);
+    ASSERT_EQ(before_merge.size(), after_merge.size());
+
+    // read from the same offset range, but this time configure the reader
+    // to skip past the batch cache, creating a data source directly from disk.
+    reader_cfg.force_ignore_batch_cache = true;
+
+    auto ignore_cache = consume(reader_cfg);
+
+    ASSERT_GT(after_merge.size(), ignore_cache.size());
+    ASSERT_TRUE(ignore_cache.empty());
+}

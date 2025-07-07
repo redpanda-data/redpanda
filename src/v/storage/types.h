@@ -416,6 +416,13 @@ struct log_reader_config {
     // separately.
     translate_offsets translate_offsets{false};
 
+    std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
+
+    // If set to true, the resulting batch reader will completely ignore the
+    // contents of the batch cache, reading the specified offset range directly
+    // from disk.
+    bool force_ignore_batch_cache{false};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,

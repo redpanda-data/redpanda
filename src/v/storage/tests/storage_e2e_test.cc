@@ -50,6 +50,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/timed_out_error.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -3376,6 +3377,7 @@ TEST_F(storage_test_fixture, test_max_compact_offset) {
     // specified.
     ASSERT_LE(post_compact_gaps.first_gap_start, max_compact_offset);
     ASSERT_LE(post_compact_gaps.last_gap_end, max_compact_offset);
+    ASSERT_LE(log->max_compacted_offset(model::offset{0}), max_compact_offset);
 };
 
 TEST_F(storage_test_fixture, test_self_compaction_while_reader_is_open) {
@@ -3593,6 +3595,8 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
     //  Instead, we use weaker assert for now:
 
     ASSERT_LE(final_gaps.last_gap_end, args.max_compact_offs);
+    ASSERT_LE(
+      log->max_compacted_offset(model::offset{0}), args.max_compact_offs);
 }
 
 TEST_F(storage_test_fixture, test_max_compact_offset_mid_segment) {
@@ -3984,6 +3988,8 @@ struct batch_summary {
     model::offset base;
     model::offset last;
     size_t batch_size;
+    model::timestamp base_ts;
+    model::timestamp max_ts;
 };
 
 struct batch_summary_accumulator {
@@ -3994,6 +4000,8 @@ struct batch_summary_accumulator {
           .last = b.last_offset(),
           .batch_size = b.data().size_bytes()
                         + model::packed_record_batch_header_size,
+          .base_ts = b.header().first_timestamp,
+          .max_ts = b.header().max_timestamp,
         };
         summaries.push_back(summary);
         acc_size.push_back(sz + summary.batch_size);
@@ -4249,6 +4257,8 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
         auto ix_last = model::test::get_int(ix_base, summaries.size() - 1);
         auto base = summaries[ix_base].base;
         auto last = summaries[ix_last].last;
+        auto base_ts = summaries[ix_base].base_ts;
+        auto max_ts = summaries[ix_last].max_ts;
 
         auto expected_size = acc.acc_size[ix_last] - acc.prev_size[ix_base];
         auto result = log->offset_range_size(base, last).get();
@@ -4257,14 +4267,19 @@ TEST_F(storage_test_fixture, test_offset_range_size) {
 
         vlog(
           e2e_test_log.debug,
-          "base: {}, last: {}, expected size: {}, actual size: {}",
+          "base: {}, last: {}, base_ts: {}, max_ts: {}, expected size: {}, "
+          "actual size: {}",
           base,
           last,
+          base_ts,
+          max_ts,
           expected_size,
           result->on_disk_size);
 
         ASSERT_EQ(expected_size, result->on_disk_size);
         ASSERT_EQ(last, result->last_offset);
+        ASSERT_EQ(base_ts, result->first_timestamp);
+        ASSERT_EQ(max_ts, result->last_timestamp);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
@@ -4357,6 +4372,7 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
         // - compare it to on_disk_size field of the result
         auto base_ix = model::test::get_int((size_t)0, summaries.size() - 1);
         auto base = summaries[base_ix].base;
+        auto base_ts = summaries[base_ix].base_ts;
         auto max_size = acc.acc_size.back() - acc.prev_size[base_ix];
         auto min_size = storage::segment_index::default_data_buffer_step;
         auto target_size = model::test::get_int(min_size, max_size);
@@ -4380,6 +4396,8 @@ TEST_F(storage_test_fixture, test_offset_range_size2) {
         }
         auto expected_size = acc.acc_size[result_ix] - acc.prev_size[base_ix];
         ASSERT_EQ(expected_size, result->on_disk_size);
+        ASSERT_EQ(base_ts, result->first_timestamp);
+        ASSERT_EQ(summaries[result_ix].max_ts, result->last_timestamp);
 
         // Validate using the segment reader
         size_t consumed_size = 0;
@@ -6344,5 +6362,218 @@ TEST_F(storage_test_fixture, segment_cached_disk_usage_set_after_compaction) {
                 check_cached_sizes(s);
             }
         }
+    }
+}
+
+TEST_F(storage_test_fixture, test_get_file_offset_lock_precheck) {
+    // - Generate a few segments
+    // - Acquire read locks from each (simulating internals of
+    //   offset_range_size)
+    // - Queue up a write lock behind one of them, in the background
+    // - Then call get_file_offset on that segment
+    // - get_file_offset  should throw ss::semaphore_timed_out
+
+    constexpr size_t num_segments = 5;
+    ss::gate gate{};
+
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+
+    {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        f_locks.reserve(segments.size());
+        for (auto& s : segments) {
+            f_locks.emplace_back(s->read_lock());
+        }
+
+        auto seg = *std::next(segments.begin(), num_segments / 2);
+
+        ssx::spawn_with_gate(gate, [seg] {
+            return seg->write_lock().then([](auto) { return ss::now(); });
+        });
+
+        EXPECT_THROW(
+          dynamic_cast<storage::disk_log_impl*>(log.get())
+            ->get_file_offset(
+              seg,
+              std::nullopt,
+              seg->offsets().get_committed_offset(),
+              storage::boundary_type::exclusive)
+            .get(),
+          ss::timed_out_error);
+    }
+}
+
+TEST_F(storage_test_fixture, test_offset_range_size_lock_timeout) {
+    // similar to above, offset_range_size should time out in this scenario if
+    // we provide a sensible deadline
+
+    constexpr size_t num_segments = 5;
+    ss::gate gate{};
+
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("redpanda", "test-topic", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log,
+          10,
+          model::term_id(0),
+          custom_ts_batch_generator(model::timestamp::now()));
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+
+    {
+        std::vector<ss::future<ss::rwlock::holder>> f_locks;
+        f_locks.reserve(segments.size());
+        for (auto& s : segments) {
+            f_locks.emplace_back(s->read_lock());
+        }
+
+        auto seg = *std::next(segments.begin(), num_segments / 2);
+
+        ssx::spawn_with_gate(gate, [seg] {
+            return seg->write_lock().then([](auto) { return ss::now(); });
+        });
+
+        EXPECT_THROW(
+          log
+            ->offset_range_size(
+              seg->offsets().get_base_offset(),
+              seg->offsets().get_committed_offset(),
+              ss::semaphore::clock::now() + 1s)
+            .get(),
+          ss::timed_out_error);
+    }
+}
+
+TEST_F(storage_test_fixture, test_max_compacted_offset) {
+    constexpr size_t num_segments = 2;
+    auto cfg = default_log_config(test_dir);
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    SUCCEED() << fmt::format("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get(); });
+    auto ntp = model::ntp("kafka", "test-topic", 0);
+
+    storage::ntp_config::default_overrides overrides{
+      .cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction,
+    };
+    storage::ntp_config ntp_cfg(
+      ntp,
+      mgr.config().base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(overrides));
+
+    auto log = mgr.manage(std::move(ntp_cfg)).get();
+
+    model::offset first_segment_last_offset;
+    for (size_t i = 0; i < num_segments; i++) {
+        append_random_batches(
+          log, 10, model::term_id(i), key_limited_random_batch_generator());
+        if (first_segment_last_offset == model::offset{}) {
+            first_segment_last_offset = log->offsets().dirty_offset;
+        }
+        log->force_roll().get();
+    }
+
+    auto& segments = log->segments();
+    auto first = *std::next(segments.begin(), 0);
+    auto second = *std::next(segments.begin(), 1);
+
+    auto mco = [&log](model::offset from) {
+        return log->max_compacted_offset(from);
+    };
+
+    EXPECT_FALSE(mco(first->offsets().get_base_offset()).has_value());
+    EXPECT_FALSE(mco(second->offsets().get_base_offset()).has_value());
+    EXPECT_FALSE(mco(first->offsets().get_committed_offset()).has_value());
+    EXPECT_FALSE(mco(model::offset::max()).has_value());
+    EXPECT_FALSE(mco(model::offset::min()).has_value());
+
+    {
+        // Compact the first segment only
+        vlog(e2e_test_log.info, "Starting compaction");
+        storage::housekeeping_config h_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          first->offsets().get_committed_offset(),
+          std::nullopt,
+          0ms,
+          as);
+        log->housekeeping(h_cfg).get();
+
+        EXPECT_TRUE(mco(first->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_base_offset()),
+          first->offsets().get_committed_offset());
+        EXPECT_FALSE(mco(second->offsets().get_base_offset()).has_value());
+        EXPECT_TRUE(mco(first->offsets().get_committed_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_committed_offset()),
+          first->offsets().get_committed_offset());
+    }
+
+    {
+        // Now the rest of the topic
+        vlog(e2e_test_log.info, "Starting compaction");
+        storage::housekeeping_config h_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          log->offsets().committed_offset,
+          std::nullopt,
+          0ms,
+          as);
+        log->housekeeping(h_cfg).get();
+
+        EXPECT_TRUE(mco(first->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_base_offset()),
+          second->offsets().get_committed_offset());
+        EXPECT_TRUE(mco(second->offsets().get_base_offset()).has_value());
+        EXPECT_EQ(
+          mco(second->offsets().get_base_offset()),
+          second->offsets().get_committed_offset());
+
+        EXPECT_TRUE(mco(first->offsets().get_committed_offset()).has_value());
+        EXPECT_EQ(
+          mco(first->offsets().get_committed_offset()),
+          second->offsets().get_committed_offset());
     }
 }

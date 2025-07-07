@@ -13,7 +13,9 @@
 #include "base/seastarx.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival/async_data_uploader.h"
 #include "cluster/archival/types.h"
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
@@ -79,7 +81,7 @@ struct upload_candidate_with_locks {
 /// Wraps an error with an offset range, so that no
 /// further upload candidates are created from this offset range.
 struct skip_offset_range {
-    model::offset begin_offset;
+    model::offset start_offset;
     model::offset end_offset;
     candidate_creation_error reason;
 
@@ -100,7 +102,13 @@ enum class segment_collector_mode {
     // collect segments for the first time upload
     // may be compacted or non-compacted
     new_upload,
+    compacted_reupload_v2,
+    non_compacted_reupload_v2,
+    // first time upload based backed by async_data_uploader
+    new_upload_v2,
 };
+
+std::ostream& operator<<(std::ostream&, segment_collector_mode);
 
 struct segment_collector_stream {
     // The offset range for the segments that are being uploaded.
@@ -118,6 +126,8 @@ struct segment_collector_stream {
     ss::noncopyable_function<ss::input_stream<char>()> create_input_stream;
 
     model::term_id term;
+
+    ss::future<> close() { co_await create_input_stream().close(); }
 
     friend std::ostream&
     operator<<(std::ostream& s, const segment_collector_stream&);
@@ -172,7 +182,7 @@ public:
     ///
     /// \param mode defines what segments should be collected
     ///        compacted or normal.
-    void collect_segments();
+    bool collect_segments();
 
     segment_seq segments();
 
@@ -201,11 +211,20 @@ public:
     ss::future<candidate_creation_result>
     make_upload_candidate(ss::lowres_clock::duration segment_lock_duration);
 
+    ss::future<candidate_creation_result> make_segment_upload_candidate(
+      cluster::partition& parent,
+      ss::lowres_clock::duration segment_lock_duration);
+
     size_t collected_size() const;
 
     // Create a stream for the upload candidate.
     ss::future<segment_collector_stream_result> make_upload_candidate_stream(
       ss::lowres_clock::duration segment_lock_duration);
+
+    ss::future<segment_collector_stream_result> make_segment_upload_stream(
+      cluster::partition& parent,
+      ss::lowres_clock::duration segment_lock_duration,
+      ss::gate& gate);
 
 private:
     struct lookup_result {
@@ -219,6 +238,9 @@ private:
     /// Collects segments until the end of the manifest, or until the
     /// end of compacted segments in log.
     void do_collect();
+
+    bool do_collect_v2();
+    bool do_reupload_collect_v2();
 
     lookup_result
     find_next_segment(model::offset start_offset, segment_collector_mode mode);
@@ -235,15 +257,18 @@ private:
     /// segment, we decrement the offset enough to the end of the previous
     /// manifest segment, so that when we re-upload segments there is no
     /// overlap.
-    void align_end_offset_to_manifest(model::offset compacted_segment_end);
+    std::optional<model::offset>
+    align_end_offset_to_manifest(model::offset compacted_segment_end);
 
     /// Finds the offset which the collection needs to progress upto in order to
     /// replace at least one manifest segment. The collection is valid if it
     /// reaches the replacement boundary.
     model::offset find_replacement_boundary(segment_collector_mode mode) const;
 
+    // TODO(oren): maybe consolidate into some kind of struct that can be wired
+    // through the APIs to make the collector less stateful
     model::offset _begin_inclusive;
-    model::offset _end_inclusive;
+    model::offset _end_inclusive{};
 
     const cloud_storage::partition_manifest& _manifest;
     const storage::log& _log;

@@ -93,8 +93,11 @@ public:
     ///
     /// The 'first' offset should be the first offset of the batch. The 'last'
     /// should be the last offset of the batch. The offset range is inclusive.
-    ss::future<std::optional<offset_range_size_result_t>>
-    offset_range_size(model::offset first, model::offset last) override;
+    ss::future<std::optional<offset_range_size_result_t>> offset_range_size(
+      model::offset first,
+      model::offset last,
+      ss::semaphore::time_point timeout
+      = ss::semaphore::time_point::max()) override;
 
     /// Find the offset range based on size requirements
     ///
@@ -106,6 +109,12 @@ public:
 
     /// Return true if the offset range contains compacted data
     bool is_compacted(model::offset first, model::offset last) const override;
+
+    bool
+    compaction_complete(model::offset first, model::offset last) const final;
+
+    std::optional<model::offset>
+    max_compacted_offset(model::offset first = model::offset{0}) const final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -135,6 +144,8 @@ public:
     std::optional<model::offset> index_lower_bound(model::offset o) const final;
     std::optional<model::offset>
     index_batch_base_offset_lower_bound(model::offset o) const final;
+    std::optional<model::offset>
+    base_offset_lower_bound(model::offset o) const final;
 
     std::ostream& print(std::ostream&) const final;
 
@@ -292,19 +303,26 @@ public:
       storage::compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
 
+    struct file_offset_t {
+        size_t position{};
+        model::timestamp base_timestamp{model::timestamp::missing()};
+        model::timestamp last_timestamp{model::timestamp::missing()};
+        bool offset_in_batch{false};
+    };
+
+    /// Compute file offset of the batch inside the segment
+    ss::future<file_offset_t> get_file_offset(
+      ss::lw_shared_ptr<segment> s,
+      std::optional<segment_index::entry> index_entry,
+      model::offset target,
+      boundary_type boundary);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
     friend ::storage_e2e_fixture;
     friend ::reupload_fixture; // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
-
-    /// Compute file offset of the batch inside the segment
-    ss::future<size_t> get_file_offset(
-      ss::lw_shared_ptr<segment> s,
-      std::optional<segment_index::entry> index_entry,
-      model::offset target,
-      boundary_type boundary);
 
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
