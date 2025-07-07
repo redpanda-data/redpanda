@@ -506,10 +506,21 @@ public:
     }
 
     ss::future<> stop() final {
+        // Set shutdown flag to prevent new host functions from being registered
+        _shutting_down = true;
+        
         ss::future<> main = std::exchange(_main_task, ss::now());
         _transform_module.stop(std::make_exception_ptr(
           wasm_exception("vm was shutdown", errc::engine_shutdown)));
         co_await std::move(main);
+        
+        // Wait for any pending host function that might have been registered
+        // during the shutdown window
+        if (_pending_host_function) {
+            co_await std::move(*_pending_host_function);
+            _pending_host_function.reset();
+        }
+        
         // Deleting the store invalidates the instance and actually frees the
         // memory for the underlying instance.
         _store = nullptr;
@@ -559,6 +570,10 @@ public:
     // Register that a pending async host function is happening, this future
     // must never fail.
     void register_pending_host_function(ss::future<> fut) noexcept {
+        // During shutdown, don't register new host functions to prevent races
+        if (_shutting_down) {
+            return;
+        }
         _pending_host_function.emplace(std::move(fut));
     }
 
@@ -857,6 +872,7 @@ private:
     wasmtime_instance_t _instance{};
     std::optional<ss::future<>> _pending_host_function;
     ss::future<> _main_task = ss::now();
+    bool _shutting_down = false;
 };
 
 // If strict stack checking is configured
