@@ -167,6 +167,16 @@ private:
       const protocol_metadata& leader_protocol_metadata,
       model::offset leader_flushed_offset) const;
 
+    /// \brief hb_m is allowed to lw heartbeat if
+    /// 1. enabled
+    /// 2. a full heartbeat isn't needed
+    /// 3. prior heartbeats are healthy enough that a reconnect isn't needed
+    bool should_lw_heartbeat(
+      const seastar::lw_shared_ptr<raft::consensus>& raft,
+      const follower_index_metadata& follower_metadata,
+      const protocol_metadata& leader_protocol_metadata,
+      model::offset leader_flushed_offset);
+
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
     /// \param groups raft groups managed by \param n
