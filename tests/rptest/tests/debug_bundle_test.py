@@ -51,6 +51,11 @@ log_config = LoggingConfig('info',
                                'debug-bundle-service': 'trace'
                            })
 
+KUBERNETES_VARIABLES = {
+    "KUBERNETES_SERVICE_HOST": "INVALID_HOST",
+    "KUBERNETES_SERVICE_PORT": "INVALID_PORT",
+}
+
 
 class DebugBundleTestBase(RedpandaTest):
     debug_bundle_dir_config = "debug_bundle_storage_dir"
@@ -482,12 +487,18 @@ class DebugBundleTest(DebugBundleTestBase):
             node=node)
 
     @cluster(num_nodes=1)
-    def test_debug_bundle_parameters(self):
+    @matrix(env_variables=[{}, KUBERNETES_VARIABLES])
+    def test_debug_bundle_parameters(self, env_variables):
         """
         This test will verify that the debug bundle parameters are
         correctly parsed and passed to rpk
         """
         topic_name = "test_topic"
+
+        if env_variables:
+            self.redpanda.set_environment(env_variables)
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                use_maintenance_mode=False)
 
         controller_logs_size_limit_bytes = 300 * 1024 * 1024
         cpu_profiler_wait_seconds = 15
@@ -524,7 +535,10 @@ class DebugBundleTest(DebugBundleTestBase):
 
         self._run_debug_bundle(job_id=job_id, node=node, config=params)
 
-        search_str = f'Starting RPK debug bundle: {self.redpanda.find_path_to_rpk()} debug bundle'
+        search_str = f'Starting RPK debug bundle:'
+        for k, v in env_variables.items():
+            search_str += f' {k}={v}'
+        search_str += f' {self.redpanda.find_path_to_rpk()} debug bundle'
         search_str += f' --output /var/lib/redpanda/data/debug-bundle/{str(job_id)}.zip'
         search_str += f' --verbose'
         search_str += f' --controller-logs-size-limit {controller_logs_size_limit_bytes}B'

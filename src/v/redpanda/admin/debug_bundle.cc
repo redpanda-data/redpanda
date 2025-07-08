@@ -32,6 +32,7 @@
 #include <fmt/core.h>
 #include <rapidjson/error/en.h>
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <sstream>
@@ -105,6 +106,27 @@ std::unique_ptr<ss::http::reply> make_error_body(
 std::unique_ptr<ss::http::reply> make_error_body(
   const debug_bundle::error_info& err, std::unique_ptr<ss::http::reply> rep) {
     return make_error_body(err.code(), err.message(), std::move(rep));
+}
+
+std::vector<ss::sstring> get_enviromental_vars() {
+    constexpr auto env_vars = std::to_array(
+      {"KUBERNETES_SERVICE_HOST", "KUBERNETES_SERVICE_PORT"});
+
+    const auto env_with_value = [](const char* var) {
+        auto value = std::getenv(var);
+        auto sv = (value == nullptr) ? ss::sstring{} : ss::sstring{value};
+        return std::make_pair(var, sv);
+    };
+
+    const auto has_value = [](const auto& p) { return !p.second.empty(); };
+
+    const auto format_var = [](const auto& p) {
+        return ss::format("{}={}", p.first, p.second);
+    };
+
+    return env_vars | std::views::transform(env_with_value)
+           | std::views::filter(has_value) | std::views::transform(format_var)
+           | std::ranges::to<std::vector>();
 }
 
 } // namespace
@@ -199,11 +221,13 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::post_debug_bundle(
           std::move(params).assume_error(), std::move(rep));
     }
 
+    std::vector<ss::sstring> env_vars = ::get_enviromental_vars();
     auto res = co_await _debug_bundle_service.local()
                  .initiate_rpk_debug_bundle_collection(
                    job_id.assume_value(),
                    std::move(params).assume_value().value_or(
-                     debug_bundle::debug_bundle_parameters{}));
+                     debug_bundle::debug_bundle_parameters{}),
+                   std::move(env_vars));
     if (res.has_error()) {
         co_return make_error_body(res.assume_error(), std::move(rep));
     }
