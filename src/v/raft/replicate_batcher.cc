@@ -161,17 +161,26 @@ replicate_batcher::cache_and_wait_for_result(
 }
 
 ss::future<> replicate_batcher::stop() {
-    return _bg.close().then([this] {
-        // we keep a lock here to make sure that all inflight requests have
-        // finished already
-        return _lock.with([this] {
-            for (auto& i : _item_cache) {
-                i->set_exception(
-                  std::make_exception_ptr(ss::gate_closed_exception()));
-            }
-            _item_cache.clear();
-        });
-    });
+    vlog(_ptr->_ctxlog.trace, "Stopping replicate batcher - begin");
+    return _bg.close()
+      .then([this] {
+          // we keep a lock here to make sure that all inflight requests have
+          // finished already
+          vlog(_ptr->_ctxlog.trace, "Stopping replicate batcher - gate closed");
+          return _lock.with([this] {
+              vlog(
+                _ptr->_ctxlog.trace,
+                "Stopping replicate batcher - grabbed units");
+              for (auto& i : _item_cache) {
+                  i->set_exception(
+                    std::make_exception_ptr(ss::gate_closed_exception()));
+              }
+              _item_cache.clear();
+          });
+      })
+      .finally([this] {
+          vlog(_ptr->_ctxlog.trace, "Stopping replicate batcher - end");
+      });
 }
 
 ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
