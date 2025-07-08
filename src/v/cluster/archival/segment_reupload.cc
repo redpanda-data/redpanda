@@ -15,6 +15,7 @@
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
 #include "cluster/archival/types.h"
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "logger.h"
 #include "model/fundamental.h"
@@ -29,6 +30,7 @@
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
 #include <seastar/util/log.hh>
@@ -42,7 +44,7 @@ namespace archival {
 
 bool eligible_for_compacted_reupload(const storage::segment& s) {
     if (config::shard_local_cfg().log_compaction_use_sliding_window) {
-        return s.finished_windowed_compaction();
+        return s.has_clean_compact_timestamp();
     }
     return s.has_self_compact_timestamp();
 }
@@ -468,8 +470,9 @@ void segment_collector::do_collect() {
     }
 
     if (is_reupload_mode(_mode)) {
-        align_end_offset_to_manifest(
-          _target_end_inclusive.value_or(last_collected));
+        _end_inclusive = align_end_offset_to_manifest(
+                           _target_end_inclusive.value_or(last_collected))
+                           .value_or(_end_inclusive);
     } else {
         // In case of new upload we want to end at the end of the segment
         // or at LSO (which is passed through the _target_end_inclusive).
@@ -543,47 +546,48 @@ model::offset segment_collector::find_replacement_boundary(
     return segment->offsets().get_committed_offset();
 }
 
-void segment_collector::align_end_offset_to_manifest(
-  model::offset segment_end) {
-    if (segment_end == _manifest.get_last_offset()) {
-        _end_inclusive = _manifest.get_last_offset();
-    } else if (segment_end > _manifest.get_last_offset()) {
+std::optional<model::offset>
+segment_collector::align_end_offset_to_manifest(model::offset end_offset) {
+    if (end_offset == _manifest.get_last_offset()) {
+        return _manifest.get_last_offset();
+    }
+    if (end_offset > _manifest.get_last_offset()) {
         vlog(
           archival_log.debug,
           "Segment collect for ntp {} offset {} advanced "
           "ahead of manifest, clamping to {}",
           _manifest.get_ntp(),
-          segment_end,
+          end_offset,
           _manifest.get_last_offset());
-        _end_inclusive = _manifest.get_last_offset();
-    } else {
-        // Align the end offset to the nearest segment ending in manifest.
-        auto it = _manifest.segment_containing(segment_end);
-        if (it == _manifest.end()) {
-            // segment_end is in a gap in the manifest.
-            if (segment_end >= _manifest.get_start_offset().value()) {
-                vlog(
-                  archival_log.debug,
-                  "Segment collect for ntp {}: collection ended at "
-                  "gap in manifest: {}",
-                  _manifest.get_ntp(),
-                  segment_end);
-
-                // try to fill the manifest gap with the data locally
-                // available.
-                _end_inclusive = segment_end;
-            }
-            return;
-        }
-
-        // If the segment end is not aligned to manifest segment, then
-        // pull back to the end of the previous segment.
-        if (it->committed_offset == segment_end) {
-            _end_inclusive = segment_end;
-        } else {
-            _end_inclusive = it->base_offset - model::offset{1};
-        }
+        return _manifest.get_last_offset();
     }
+    // Align the end offset to the nearest segment ending in manifest.
+    auto it = _manifest.segment_containing(end_offset);
+    if (it != _manifest.end()) {
+        // If the end offset is aligned to the manifest segment:
+        //   - return end offset
+        //   - otherwise, pull back to the end of the previous manifest segment
+        return it->committed_offset == end_offset
+                 ? end_offset
+                 : model::prev_offset(it->base_offset);
+    }
+
+    // end_offset is in a gap in the manifest.
+    if (end_offset >= _manifest.get_start_offset().value()) {
+        vlog(
+          archival_log.debug,
+          "Segment collect for ntp {}: collection ended at "
+          "gap in manifest: {}",
+          _manifest.get_ntp(),
+          end_offset);
+
+        // try to fill the manifest gap with the data locally
+        // available.
+        return end_offset;
+    }
+    // TODO(oren): what is the meaning of this? should we just return the input
+    // value?
+    return std::nullopt;
 }
 
 ss::lw_shared_ptr<storage::segment> segment_collector::lower_bound(
@@ -981,7 +985,16 @@ ss::future<candidate_creation_result> segment_collector::make_upload_candidate(
     content_length += tail_seek.bytes;
 
     auto starting_offset = head_seek.offset;
-    if (starting_offset != _begin_inclusive) {
+
+    // This adjustment is only ever relevant during compacted reupload, where
+    // the boundary offset of the target range may have been compacted away.
+    // For new segment uploads, this condition means there's a gap in the actual
+    // log. We need to pass a valid offset range to 'async_data_uploader', so we
+    // shouldn't perform the start_offset adjustment in this case.
+    // See 4253766df74ca8ee53e17702655976c30298ebea for more detail
+    auto is_compacted = first->is_compacted_segment()
+                        && eligible_for_compacted_reupload(*first);
+    if (starting_offset != _begin_inclusive && is_compacted) {
         vlog(
           archival_log.debug,
           "adjusting begin offset of upload candidate from {} to {}",
@@ -1096,6 +1109,132 @@ segment_collector::make_upload_candidate_stream(
     };
     co_return stream;
 }
+
+ss::future<segment_collector_stream_result>
+segment_collector::make_segment_upload_stream(
+  cluster::partition& parent,
+  ss::lowres_clock::duration segment_lock_duration,
+  ss::gate& gate) {
+    auto candidate_res = co_await make_upload_candidate(segment_lock_duration);
+
+    vassert(
+      !std::holds_alternative<std::monostate>(candidate_res),
+      "Unexpected default upload candidate creation result");
+
+    if (std::holds_alternative<candidate_creation_error>(candidate_res)) {
+        auto err = std::get<candidate_creation_error>(candidate_res);
+        vlog(archival_log.warn, "Candidate creation error: {}", err);
+        co_return err;
+    } else if (std::holds_alternative<skip_offset_range>(candidate_res)) {
+        auto skip = std::get<skip_offset_range>(candidate_res);
+        vlog(
+          archival_log.debug,
+          "Skipping offset range: {}-{}, reason: {}",
+          skip.begin_offset,
+          skip.end_offset,
+          skip.reason);
+        co_return skip;
+    }
+
+    auto& cand_with_locks = std::get<upload_candidate_with_locks>(
+      candidate_res);
+
+    auto& cand = cand_with_locks.candidate;
+
+    vlog(
+      archival_log.debug,
+      "{}: Upload candidate: {}",
+      _manifest.get_ntp(),
+      cand);
+
+    auto read_buffer_size
+      = config::shard_local_cfg().storage_read_buffer_size();
+    auto deadline = ss::lowres_clock::now() + segment_lock_duration;
+
+    auto start_offset = cand.starting_offset;
+    auto final_offset = [this, &cand]() -> model::offset {
+        if (is_reupload_mode(_mode)) {
+            return align_end_offset_to_manifest(cand.final_offset)
+              .value_or(cand.final_offset);
+        }
+        return cand.final_offset;
+    }();
+
+    if (start_offset > final_offset) {
+        vlog(
+          archival_log.warn,
+          "{}: Invalid offset range for upload: start {} > final {}",
+          _manifest.get_ntp(),
+          start_offset,
+          final_offset);
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    inclusive_offset_range range(start_offset, final_offset);
+
+    ss::gate::holder holder = gate.hold();
+
+    // NOTE: We always allow unstable reads here and accept the result
+    // regardless of size because the precise upload bounds have been determined
+    // in a previous call to collect_segments. In a future diff, we will be
+    // using async_data_uploader as the sole view into the state of the log, so
+    // unstable reads will not always be appropriate.
+    auto upl = co_await segment_upload::make_segment_upload(
+      &parent,
+      range,
+      read_buffer_size,
+      ss::default_scheduling_group(),
+      deadline,
+      true /* allow_unstable_reads */);
+
+    if (upl.has_error()) {
+        // NOTE: under load, it's not uncommon for read lock acquisition to
+        // time out, e.g. due to a race with prefix truncation.
+        if (
+          upl.error() != archival::error_outcome::not_enough_data
+          && upl.error() != archival::error_outcome::timed_out) {
+            vlog(
+              archival_log.error,
+              "Can't find upload candidate for {}: {}",
+              range,
+              upl.error().message());
+        }
+        co_return candidate_creation_error::no_segments_collected;
+    }
+
+    auto seg_upload = std::move(upl).value();
+    auto meta = seg_upload->get_meta();
+
+    vlog(
+      archival_log.debug,
+      "{}: {{b: {} e: {}}} Got upload:  offsets: {} sz: {} compact?: {}",
+      _manifest.get_ntp(),
+      start_offset,
+      final_offset,
+      meta.offsets,
+      seg_upload->get_size_bytes(),
+      seg_upload->get_meta().is_compacted
+        && seg_upload->get_meta().compaction_complete);
+
+    segment_collector_stream stream;
+    stream.start_offset = meta.offsets.base;
+    stream.end_offset = meta.offsets.last;
+    stream.min_timestamp = meta.base_timestamp;
+    stream.max_timestamp = meta.max_timestamp;
+    stream.size = meta.size_bytes;
+    stream.is_compacted = meta.is_compacted && meta.compaction_complete;
+    stream.term = parent.get_term(meta.offsets.base);
+    auto strm = co_await std::move(*seg_upload).detach_stream();
+    stream.create_input_stream =
+      [strm = std::move(strm),
+       holder = std::move(holder)]() mutable -> ss::input_stream<char> {
+        // NOTE: should only be called w/ a gate held
+        holder.release();
+        return std::move(strm);
+    };
+    co_return stream;
+}
+
 size_t segment_collector::collected_size() const { return _collected_size; }
 
 } // namespace archival

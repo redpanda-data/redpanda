@@ -177,8 +177,8 @@ failure_injectable_log::size_bytes_after_offset(model::offset o) const {
 
 ss::future<std::optional<storage::log::offset_range_size_result_t>>
 failure_injectable_log::offset_range_size(
-  model::offset first, model::offset last) {
-    return _underlying_log->offset_range_size(first, last);
+  model::offset first, model::offset last, ss::semaphore::time_point timeout) {
+    return _underlying_log->offset_range_size(first, last, timeout);
 }
 
 ss::future<std::optional<failure_injectable_log::offset_range_size_result_t>>
@@ -190,6 +190,16 @@ failure_injectable_log::offset_range_size(
 bool failure_injectable_log::is_compacted(
   model::offset first, model::offset last) const {
     return _underlying_log->is_compacted(first, last);
+}
+
+bool failure_injectable_log::compaction_complete(
+  model::offset first, model::offset last) const {
+    return _underlying_log->compaction_complete(first, last);
+}
+
+std::optional<model::offset>
+failure_injectable_log::max_compacted_offset(model::offset first) const {
+    return _underlying_log->max_compacted_offset(first);
 }
 
 void failure_injectable_log::set_overrides(

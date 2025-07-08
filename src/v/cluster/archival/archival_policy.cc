@@ -13,6 +13,7 @@
 #include "base/vlog.h"
 #include "cluster/archival/logger.h"
 #include "cluster/archival/segment_reupload.h"
+#include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 
@@ -30,9 +31,14 @@ namespace archival {
 using namespace std::chrono_literals;
 
 archival_policy::archival_policy(
-  model::ntp ntp, std::optional<segment_time_limit> limit)
+  model::ntp ntp,
+  cluster::partition& parent,
+  ss::gate& gate,
+  std::optional<segment_time_limit> limit)
   : _ntp(std::move(ntp))
-  , _upload_limit(limit) {}
+  , _upload_limit(limit)
+  , _parent(&parent)
+  , _gate(&gate) {}
 
 bool archival_policy::upload_deadline_reached() {
     if (!_upload_limit.has_value()) {
@@ -92,8 +98,9 @@ ss::future<segment_collector_stream_result> archival_policy::get_next_segment(
     if (_upload_limit) {
         _upload_deadline = ss::lowres_clock::now() + _upload_limit.value()();
     }
-    co_return co_await segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+
+    co_return co_await segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
 }
 
 ss::future<segment_collector_stream_result>
@@ -122,8 +129,8 @@ archival_policy::get_next_compacted_segment(
         co_return candidate_creation_error::cannot_replace_manifest_entry;
     }
 
-    co_return co_await compacted_segment_collector.make_upload_candidate_stream(
-      segment_lock_duration);
+    co_return co_await compacted_segment_collector.make_segment_upload_stream(
+      *_parent, segment_lock_duration, *_gate);
 }
 
 } // namespace archival

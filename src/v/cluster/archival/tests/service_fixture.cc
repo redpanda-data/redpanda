@@ -535,24 +535,6 @@ archival::remote_segment_path get_segment_index_path(
       fmt::format("{}.index", get_segment_path(manifest, name)().native())};
 }
 
-void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
-    auto first = spec.segment_starts.begin();
-    auto second = std::next(first);
-    for (; second != spec.segment_starts.end(); ++first, ++second) {
-        auto num_records = *second - *first;
-        b | storage::add_segment(*first)
-          | storage::add_random_batch(*first, num_records);
-    }
-    b | storage::add_segment(*first)
-      | storage::add_random_batch(*first, spec.last_segment_num_records);
-
-    for (auto i : spec.compacted_segment_indices) {
-        b.get_segment(i).index().maybe_set_self_compact_timestamp(
-          model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
-    }
-}
-
 ss::future<archival::ntp_archiver::batch_result>
 archiver_fixture::do_upload_next(
   archival::ntp_archiver& archiver,
