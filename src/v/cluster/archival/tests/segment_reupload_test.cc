@@ -947,7 +947,8 @@ TEST(SegmentReuploadUnit, test_upload_candidate_generation) {
     for (auto i : spec.compacted_segment_indices) {
         b.get_segment(i).index().maybe_set_self_compact_timestamp(
           model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.get_segment(i).index().maybe_set_clean_compact_timestamp(
+          model::timestamp::now());
     }
 
     size_t max_size = b.get_segment(0).size_bytes()
@@ -1114,7 +1115,8 @@ TEST(SegmentReuploadUnit, test_same_size_reupload_skipped) {
     // since the selected reupload has the same size as the existing segment.
     b.get_segment(0).index().maybe_set_self_compact_timestamp(
       model::timestamp::now());
-    b.get_segment(0).mark_as_finished_windowed_compaction();
+    b.get_segment(0).index().maybe_set_clean_compact_timestamp(
+      model::timestamp::now());
 
     {
         archival::segment_collector collector{
@@ -1157,7 +1159,8 @@ TEST(SegmentReuploadUnit, test_same_size_reupload_skipped) {
     // results in a segment of the same size as the one that should be replaced.
     b.get_segment(1).index().maybe_set_self_compact_timestamp(
       model::timestamp::now());
-    b.get_segment(1).mark_as_finished_windowed_compaction();
+    b.get_segment(1).index().maybe_set_clean_compact_timestamp(
+      model::timestamp::now());
 
     {
         archival::segment_collector collector{
@@ -1228,7 +1231,8 @@ TEST(SegmentReuploadUnit, test_do_not_reupload_self_concatenated) {
     b.update_start_offset(model::offset{3000}).get();
     b.get_segment(0).index().maybe_set_self_compact_timestamp(
       model::timestamp::now());
-    b.get_segment(0).mark_as_finished_windowed_compaction();
+    b.get_segment(0).index().maybe_set_clean_compact_timestamp(
+      model::timestamp::now());
 
     {
         archival::segment_collector collector{
@@ -1307,7 +1311,8 @@ TEST(SegmentReuploadUnit, test_do_not_reupload_prefix_truncated) {
         b.get_segment(i).mark_as_compacted_segment();
         b.get_segment(i).index().maybe_set_self_compact_timestamp(
           model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.get_segment(i).index().maybe_set_clean_compact_timestamp(
+          model::timestamp::now());
     }
 
     // Prefix truncate without aligning to a segment boundary, a la
@@ -1394,7 +1399,8 @@ TEST(SegmentReuploadUnit, test_bump_start_when_not_aligned) {
         b.get_segment(i).mark_as_compacted_segment();
         b.get_segment(i).index().maybe_set_self_compact_timestamp(
           model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.get_segment(i).index().maybe_set_clean_compact_timestamp(
+          model::timestamp::now());
     }
 
     // Try collecting from the middle of a local segment that hapens to align

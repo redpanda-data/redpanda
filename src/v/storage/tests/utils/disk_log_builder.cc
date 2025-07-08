@@ -261,7 +261,8 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
     for (auto i : spec.compacted_segment_indices) {
         b.get_segment(i).index().maybe_set_self_compact_timestamp(
           model::timestamp::now());
-        b.get_segment(i).mark_as_finished_windowed_compaction();
+        b.get_segment(i).index().maybe_set_clean_compact_timestamp(
+          model::timestamp::now());
     }
 }
 
