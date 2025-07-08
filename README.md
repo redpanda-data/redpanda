@@ -1,6 +1,7 @@
 # Redpanda
 
 [![Documentation](https://img.shields.io/badge/documentation-black)](https://redpanda.com/documentation)
+asdfasdf
 [![Slack](https://img.shields.io/badge/slack-purple)](https://redpanda.com/slack)
 [![Twitter](https://img.shields.io/twitter/follow/redpandadata.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=redpandadata)
 [![Redpanda University](https://img.shields.io/badge/Redpanda%20University-black)](https://university.redpanda.com/)
