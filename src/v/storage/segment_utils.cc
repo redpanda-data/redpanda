@@ -1098,6 +1098,10 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
     // clean up replacement segment
     co_await from->remove_persistent_state();
 
+    // Clear the target segment's batch cache to ensure no stale data is present
+    // in the cache after the transfer.
+    to->release_batch_cache_index();
+
     co_return std::move(locks);
 }
 
