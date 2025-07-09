@@ -71,11 +71,17 @@ bool contains_sensitive_info(const ss::sstring& arg) {
     }
     return false;
 }
-void print_arguments(const std::vector<ss::sstring>& args) {
+void print_arguments(
+  const std::vector<ss::sstring>& args, const std::vector<ss::sstring>& env) {
     auto msg = boost::algorithm::join_if(args, " ", [](const ss::sstring& arg) {
         return !contains_sensitive_info(arg);
     });
-    vlog(lg.debug, "Starting RPK debug bundle: {}", msg);
+    ss::sstring cmd{};
+    if (!env.empty()) {
+        cmd += ss::format("{} ", fmt::join(env, " "));
+    }
+    cmd += ss::format("{}", msg);
+    vlog(lg.debug, "Starting RPK debug bundle: {}", cmd);
 }
 
 std::string form_debug_bundle_file_name(job_id_t job_id) {
@@ -348,14 +354,17 @@ ss::future<> service::stop() {
 }
 
 ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
-  job_id_t job_id, debug_bundle_parameters params) {
+  job_id_t job_id,
+  debug_bundle_parameters params,
+  std::vector<ss::sstring> env) {
     auto hold = _gate.hold();
     if (ss::this_shard_id() != service_shard) {
         co_return co_await container().invoke_on(
           service_shard,
-          [job_id, params = std::move(params)](service& s) mutable {
+          [job_id, params = std::move(params), env = std::move(env)](
+            service& s) mutable {
               return s.initiate_rpk_debug_bundle_collection(
-                job_id, std::move(params));
+                job_id, std::move(params), std::move(env));
           });
     }
     auto units = co_await _process_control_mutex.get_units();
@@ -413,14 +422,14 @@ ss::future<result<void>> service::initiate_rpk_debug_bundle_collection(
     }
     auto args = std::move(args_res.assume_value());
     if (lg.is_enabled(ss::log_level::debug)) {
-        print_arguments(args);
+        print_arguments(args, env);
     }
 
     try {
         _rpk_process = std::make_unique<debug_bundle_process>(
           job_id,
           co_await external_process::external_process::create_external_process(
-            std::move(args)),
+            std::move(args), std::move(env)),
           std::move(debug_bundle_file_path),
           std::move(process_output_path));
     } catch (const std::exception& e) {
