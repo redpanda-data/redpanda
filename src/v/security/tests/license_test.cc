@@ -18,6 +18,24 @@
 
 using namespace std::chrono_literals;
 
+namespace {
+
+std::optional<security::license> make_license(const char* env_var) {
+    const char* sample_valid_license = std::getenv(env_var);
+    if (sample_valid_license == nullptr) {
+        const char* is_on_ci = std::getenv("CI");
+        if (is_on_ci) {
+            throw std::runtime_error{fmt::format(
+              "Expecting the {} env var in the CI enviornment", env_var)};
+        }
+        return std::nullopt;
+    }
+    const ss::sstring license_str{sample_valid_license};
+    return security::make_license(license_str);
+}
+
+} // namespace
+
 namespace security {
 
 BOOST_AUTO_TEST_CASE(test_license_invalid_signature) {
@@ -67,17 +85,11 @@ BOOST_AUTO_TEST_CASE(test_license_invalid_content) {
 }
 
 BOOST_AUTO_TEST_CASE(test_license_valid_content) {
-    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
-    if (sample_valid_license == nullptr) {
-        const char* is_on_ci = std::getenv("CI");
-        BOOST_TEST_REQUIRE(
-          !is_on_ci,
-          "Expecting the REDPANDA_SAMPLE_LICENSE env var in the CI "
-          "enviornment");
+    auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE");
+    if (!opt_license.has_value()) {
         return;
     }
-    const ss::sstring license_str{sample_valid_license};
-    const auto license = make_license(license_str);
+    const license license = std::move(opt_license.value());
     BOOST_CHECK_EQUAL(license.format_version, 0);
     BOOST_CHECK_EQUAL(license.type, license_type::enterprise);
     BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
