@@ -1186,6 +1186,16 @@ class RpkTool:
         ]
         return self._execute(cmd).strip()
 
+    def cluster_config_list(self,
+                            output_format: str = "json",
+                            output_filter=".*"):
+        cmd = [
+            self._rpk_binary(), "--api-urls",
+            self._admin_host(), "cluster", "config", "list", "--format",
+            output_format, "--filter", output_filter
+        ]
+        return self._execute(cmd).strip()
+
     def cluster_config_set(self, key: str, value):
         """
         Note: This method returns without waiting for the configuration to be
