@@ -159,8 +159,8 @@ consensus::consensus(
         dispatch_vote(false);
     });
     _deferred_flusher.set_callback([this]() {
-        ssx::spawn_with_gate(
-          _bg, [this]() { return do_flush().discard_result(); });
+        ssx::background = spawn_with_gate_and_monitor(
+          [this] { return do_flush().discard_result(); }, "deferred_flusher");
     });
 }
 
@@ -225,25 +225,28 @@ void consensus::maybe_step_down() {
         return;
     }
 
-    ssx::spawn_with_gate(_bg, [this] {
-        return _op_lock.with([this] {
-            // check again while holding a lock
-            if (_vstate == vote_state::leader) {
-                auto majority_hbeat = majority_heartbeat();
-                if (majority_hbeat < _became_leader_at) {
-                    majority_hbeat = _became_leader_at;
-                }
+    ssx::background = spawn_with_gate_and_monitor(
+      [this] {
+          return _op_lock.with([this] {
+              // check again while holding a lock
+              if (_vstate == vote_state::leader) {
+                  auto majority_hbeat = majority_heartbeat();
+                  if (majority_hbeat < _became_leader_at) {
+                      majority_hbeat = _became_leader_at;
+                  }
 
-                if (majority_hbeat + _jit.base_duration() < clock_type::now()) {
-                    do_step_down("heartbeats_majority");
-                    if (_leader_id) {
-                        _leader_id = std::nullopt;
-                        trigger_leadership_notification();
-                    }
-                }
-            }
-        });
-    });
+                  if (
+                    majority_hbeat + _jit.base_duration() < clock_type::now()) {
+                      do_step_down("heartbeats_majority");
+                      if (_leader_id) {
+                          _leader_id = std::nullopt;
+                          trigger_leadership_notification();
+                      }
+                  }
+              }
+          });
+      },
+      "maybe_step_down");
 }
 
 clock_type::time_point consensus::majority_heartbeat() const {
@@ -448,11 +451,13 @@ consensus::success_reply consensus::update_follower_index(
     // If RPC request or response contains term T > currentTerm:
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _term) {
-        ssx::spawn_with_gate(_bg, [this, term = reply.term] {
-            return step_down(
-              model::term_id(term),
-              "append entries response with greater term");
-        });
+        ssx::background = spawn_with_gate_and_monitor(
+          [this, term = reply.term] {
+              return step_down(
+                model::term_id(term),
+                "append entries response with greater term");
+          },
+          "step_down_on_greater_term");
         return success_reply::no;
     }
 
@@ -514,59 +519,62 @@ consensus::success_reply consensus::update_follower_index(
 }
 
 void consensus::maybe_promote_to_voter(vnode id) {
-    ssx::spawn_with_gate(_bg, [this, id] {
-        const auto& latest_cfg = _configuration_manager.get_latest();
+    ssx::background = spawn_with_gate_and_monitor(
+      [this, id] {
+          const auto& latest_cfg = _configuration_manager.get_latest();
 
-        // node is no longer part of current configuration, skip promotion
-        if (!latest_cfg.current_config().contains(id)) {
-            return ss::now();
-        }
+          // node is no longer part of current configuration, skip promotion
+          if (!latest_cfg.current_config().contains(id)) {
+              return ss::now();
+          }
 
-        // is voter already
-        if (latest_cfg.is_voter(id)) {
-            return ss::now();
-        }
-        auto it = _fstats.find(id);
+          // is voter already
+          if (latest_cfg.is_voter(id)) {
+              return ss::now();
+          }
+          auto it = _fstats.find(id);
 
-        // already removed
-        if (it == _fstats.end()) {
-            return ss::now();
-        }
+          // already removed
+          if (it == _fstats.end()) {
+              return ss::now();
+          }
 
-        // do not promote to voter, learner is not up to date
-        if (it->second.match_index < _flushed_offset) {
-            return ss::now();
-        }
+          // do not promote to voter, learner is not up to date
+          if (it->second.match_index < _flushed_offset) {
+              return ss::now();
+          }
 
-        // do not promote if the previous configuration is still uncommitted,
-        // otherwise we may add several new voters in quick succession, that the
-        // old voters will not know of, resulting in a possibility of
-        // non-intersecting quorums.
-        if (_configuration_manager.get_latest_offset() > _commit_index) {
-            return ss::now();
-        }
+          // do not promote if the previous configuration is still uncommitted,
+          // otherwise we may add several new voters in quick succession, that
+          // the old voters will not know of, resulting in a possibility of
+          // non-intersecting quorums.
+          if (_configuration_manager.get_latest_offset() > _commit_index) {
+              return ss::now();
+          }
 
-        return _op_lock.get_units().then([this,
-                                          id](ssx::semaphore_units u) mutable {
-            // check once more under _op_lock to protect against races with
-            // concurrent voter promotions.
-            if (_configuration_manager.get_latest_offset() > _commit_index) {
-                return ss::now();
-            }
+          return _op_lock.get_units().then([this, id](
+                                             ssx::semaphore_units u) mutable {
+              // check once more under _op_lock to protect against races with
+              // concurrent voter promotions.
+              if (_configuration_manager.get_latest_offset() > _commit_index) {
+                  return ss::now();
+              }
 
-            vlog(_ctxlog.trace, "promoting node {} to voter", id);
-            auto latest_cfg = _configuration_manager.get_latest();
-            latest_cfg.promote_to_voter(id);
-            return replicate_configuration(std::move(u), std::move(latest_cfg))
-              .then([this, id](std::error_code ec) {
-                  vlog(
-                    _ctxlog.trace,
-                    "node {} promotion result {}",
-                    id,
-                    ec.message());
-              });
-        });
-    });
+              vlog(_ctxlog.trace, "promoting node {} to voter", id);
+              auto latest_cfg = _configuration_manager.get_latest();
+              latest_cfg.promote_to_voter(id);
+              return replicate_configuration(
+                       std::move(u), std::move(latest_cfg))
+                .then([this, id](std::error_code ec) {
+                    vlog(
+                      _ctxlog.trace,
+                      "node {} promotion result {}",
+                      id,
+                      ec.message());
+                });
+          });
+      },
+      "maybe_promote_to_voter");
 }
 
 void consensus::process_append_entries_reply(
@@ -638,29 +646,32 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     idx.is_recovering = true;
     // background
     ssx::background
-      = ssx::spawn_with_gate_then(_bg, [this, node_id = idx.node_id] {
-            auto recovery = std::make_unique<recovery_stm>(
-              this, node_id, _scheduling, _recovery_mem_quota);
-            auto ptr = recovery.get();
-            return ptr->apply()
-              .handle_exception_type(
-                [this, node_id](const std::system_error& syserr) {
-                    // Likely to contain an rpc::errc such as
-                    // client_request_timeout
+      = spawn_with_gate_and_monitor(
+          [this, node_id = idx.node_id] {
+              auto recovery = std::make_unique<recovery_stm>(
+                this, node_id, _scheduling, _recovery_mem_quota);
+              auto ptr = recovery.get();
+              return ptr->apply()
+                .handle_exception_type(
+                  [this, node_id](const std::system_error& syserr) {
+                      // Likely to contain an rpc::errc such as
+                      // client_request_timeout
+                      vlog(
+                        _ctxlog.info,
+                        "Node {} recovery cancelled ({})",
+                        node_id,
+                        syserr.code().message());
+                  })
+                .handle_exception([this, node_id](const std::exception_ptr& e) {
                     vlog(
-                      _ctxlog.info,
-                      "Node {} recovery cancelled ({})",
-                      node_id,
-                      syserr.code().message());
+                      _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
                 })
-              .handle_exception([this, node_id](const std::exception_ptr& e) {
-                  vlog(
-                    _ctxlog.warn, "Node {} recovery failed - {}", node_id, e);
-              })
-              .finally([r = std::move(recovery)] {});
-        }).handle_exception([this](const std::exception_ptr& e) {
-            vlog(_ctxlog.warn, "Recovery error - {}", e);
-        });
+                .finally([r = std::move(recovery)] {});
+          },
+          "recovery_stm")
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Recovery error - {}", e);
+          });
 }
 
 ss::future<result<model::offset>>
@@ -741,9 +752,11 @@ consensus::linearizable_barrier(model::timeout_clock::time_point deadline) {
     u.return_all();
 
     // wait for responses in background
-    ssx::spawn_with_gate(_bg, [futures = std::move(send_futures)]() mutable {
-        return ss::when_all_succeed(futures.begin(), futures.end());
-    });
+    ssx::background = spawn_with_gate_and_monitor(
+      [futures = std::move(send_futures)]() mutable {
+          return ss::when_all_succeed(futures.begin(), futures.end());
+      },
+      "linearizable_barrier_response_wait");
 
     auto majority_sequences_updated = [&cfg, &sequences, this] {
         return cfg.majority([this, &sequences](vnode id) {
@@ -981,10 +994,12 @@ consensus::dispatch_prevote(bool leadership_transfer) {
     }
     // background
 
-    ssx::spawn_with_gate(_bg, [pv_stm = std::move(pv_stm)]() mutable {
-        auto stm = pv_stm.get();
-        return stm->wait().finally([pv_stm = std::move(pv_stm)] {});
-    });
+    ssx::background = spawn_with_gate_and_monitor(
+      [pv_stm = std::move(pv_stm)]() mutable {
+          auto stm = pv_stm.get();
+          return stm->wait().finally([pv_stm = std::move(pv_stm)] {});
+      },
+      "dispatch_prevote_wait");
 
     co_return success;
 }
@@ -1036,68 +1051,74 @@ void consensus::dispatch_vote(bool leadership_transfer) {
           self_priority,
           cur_target_priority);
     }
-    // background, acquire lock, transition state
-    ssx::background
-      = ssx::spawn_with_gate_then(_bg, [this, leadership_transfer] {
-            return ss::with_scheduling_group(
-              _scheduling.send_sg, [this, leadership_transfer] {
-                  return dispatch_prevote(leadership_transfer)
-                    .then([this, leadership_transfer](
-                            election_success prevote_success) mutable {
-                        vlog(
-                          _ctxlog.debug,
-                          "pre-vote phase success: {}, current term: {}, "
-                          "leadership transfer: {}",
-                          prevote_success,
-                          _term,
-                          leadership_transfer);
-                        // if a current node is not longer candidate we should
-                        // skip proceeding to actual vote phase
-                        if (
-                          !prevote_success
-                          || _vstate != vote_state::candidate) {
-                            return ss::make_ready_future<>();
-                        }
-                        auto vstm = std::make_unique<vote_stm>(this);
-                        auto p = vstm.get();
 
-                        // CRITICAL: vote performs locking on behalf of
-                        // consensus
-                        return p->vote(leadership_transfer)
-                          .then_wrapped(
-                            [this, p, vstm = std::move(vstm)](
-                              ss::future<election_success> vote_f) mutable {
-                                try {
-                                    vote_f.get();
-                                } catch (const ss::gate_closed_exception&) {
-                                    // Shutting down, don't log.
-                                } catch (...) {
-                                    vlog(
-                                      _ctxlog.warn,
-                                      "Error returned from voting process {}",
-                                      std::current_exception());
-                                }
-                                auto f = p->wait().finally(
-                                  [vstm = std::move(vstm)] {});
-                                // make sure we wait for all futures when gate
-                                // is closed
-                                if (_bg.is_closed()) {
-                                    return f;
-                                }
-                                // background
-                                ssx::spawn_with_gate(
-                                  _bg, [f = std::move(f)]() mutable {
-                                      return std::move(f);
-                                  });
+    ssx::background = spawn_with_gate_and_monitor(
+      [this, leadership_transfer] {
+          return ss::with_scheduling_group(
+                   _scheduling.send_sg,
+                   [this, leadership_transfer] {
+                       return dispatch_prevote(leadership_transfer)
+                         .then([this, leadership_transfer](
+                                 election_success prevote_success) mutable {
+                             vlog(
+                               _ctxlog.debug,
+                               "pre-vote phase success: {}, current term: {}, "
+                               "leadership transfer: {}",
+                               prevote_success,
+                               _term,
+                               leadership_transfer);
+                             // if a current node is not longer candidate we
+                             // should skip proceeding to actual vote phase
+                             if (
+                               !prevote_success
+                               || _vstate != vote_state::candidate) {
+                                 return ss::make_ready_future<>();
+                             }
+                             auto vstm = std::make_unique<vote_stm>(this);
+                             auto p = vstm.get();
 
-                                return ss::make_ready_future<>();
-                            });
-                    })
-                    .finally([this] { arm_vote_timeout(); });
-              });
-        }).handle_exception([this](const std::exception_ptr& e) {
-            vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
-        });
+                             // CRITICAL: vote performs locking on behalf of
+                             // consensus
+                             return p->vote(leadership_transfer)
+                               .then_wrapped([this, p, vstm = std::move(vstm)](
+                                               ss::future<election_success>
+                                                 vote_f) mutable {
+                                   try {
+                                       vote_f.get();
+                                   } catch (const ss::gate_closed_exception&) {
+                                       // Shutting down, don't log.
+                                   } catch (...) {
+                                       vlog(
+                                         _ctxlog.warn,
+                                         "Error returned from voting process "
+                                         "{}",
+                                         std::current_exception());
+                                   }
+                                   auto f = p->wait().finally(
+                                     [vstm = std::move(vstm)] {});
+                                   // make sure we wait for all futures when
+                                   // gate is closed
+                                   if (_bg.is_closed()) {
+                                       return f;
+                                   }
+                                   // background
+                                   ssx::background
+                                     = spawn_with_gate_and_monitor(
+                                       [f = std::move(f)]() mutable {
+                                           return std::move(f);
+                                       },
+                                       "vote_wait");
+
+                                   return ss::make_ready_future<>();
+                               });
+                         })
+                         .finally([this] { arm_vote_timeout(); });
+                   })
+            .handle_exception([this](const std::exception_ptr& e) {
+                vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
+            });
+      },
+      "dispatch_prevote_main");
 }
 
 void consensus::arm_vote_timeout() {
@@ -2845,12 +2866,13 @@ ss::future<result<replicate_result>> consensus::dispatch_replicate(
           }
           // background
           ssx::background
-            = ssx::spawn_with_gate_then(_bg, [f = std::move(f)]() mutable {
-                  return std::move(f);
-              }).handle_exception([this, stm](const std::exception_ptr& e) {
-                  _ctxlog.debug(
-                    "Error waiting for background acks to finish - {}", e);
-              });
+            = spawn_with_gate_and_monitor(
+                [f = std::move(f)]() mutable { return std::move(f); },
+                "wait_for_shutdown_dispatch_replicate")
+                .handle_exception([this, stm](const std::exception_ptr& e) {
+                    _ctxlog.debug(
+                      "Error waiting for background acks to finish - {}", e);
+                });
           return ss::now();
       });
 }
@@ -2926,7 +2948,8 @@ void consensus::background_flush_log() {
     // scheduled flush anymore as this guarantees that everything
     // up until this point is flushed.
     _deferred_flusher.cancel();
-    ssx::spawn_with_gate(_bg, [this]() { return do_flush().discard_result(); });
+    ssx::background = spawn_with_gate_and_monitor(
+      [this]() { return do_flush().discard_result(); }, "background_flush_log");
 }
 
 void consensus::maybe_schedule_flush() {
@@ -3125,21 +3148,24 @@ ss::future<> consensus::refresh_commit_index() {
 }
 
 void consensus::maybe_update_leader_commit_idx() {
-    ssx::background = ssx::spawn_with_gate_then(_bg, [this] {
-                          return _op_lock.get_units().then(
-                            [this](ssx::semaphore_units u) mutable {
-                                // do not update committed index if not the
-                                // leader, this check has to be done under the
-                                // semaphore
-                                if (!is_elected_leader()) {
-                                    return ss::now();
-                                }
-                                return do_maybe_update_leader_commit_idx(
-                                  std::move(u));
-                            });
-                      }).handle_exception([this](const std::exception_ptr& e) {
-        vlog(_ctxlog.warn, "Error updating leader commit index", e);
-    });
+    ssx::background
+      = spawn_with_gate_and_monitor(
+          [this] {
+              return _op_lock.get_units().then(
+                [this](ssx::semaphore_units u) mutable {
+                    // do not update committed index if not the
+                    // leader, this check has to be done under the
+                    // semaphore
+                    if (!is_elected_leader()) {
+                        return ss::now();
+                    }
+                    return do_maybe_update_leader_commit_idx(std::move(u));
+                });
+          },
+          "maybe_update_leader_commit_idx")
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(_ctxlog.warn, "Error updating leader commit index", e);
+          });
 }
 /**
  * The `maybe_commit_configuration` method is the place where configuration
