@@ -11,7 +11,13 @@
 #pragma once
 #include "utils/unresolved_address.h"
 
+#include <chrono>
+
 namespace net {
+
+using namespace std::chrono_literals;
+
+constexpr std::chrono::milliseconds default_dns_timeout = 4s;
 
 /**
  * Resolves addresses using seastar DNS resolver. It uses mutex to workaround

@@ -17,6 +17,7 @@
 #include "config/base_property.h"
 #include "http/logger.h"
 #include "http/utils.h"
+#include "net/dns.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/abort_source.hh>
@@ -48,6 +49,11 @@ namespace http {
 constexpr std::chrono::seconds tcp_keepalive_idle = 360s;
 constexpr std::chrono::seconds tcp_keepalive_interval = 120s;
 constexpr unsigned int tcp_keepalive_probes = 10;
+
+static_assert(
+  default_connect_timeout >= net::default_dns_timeout + 1s,
+  "The http connection timeout should be more than the DNS timeout to ensure "
+  "that it may succeed even with slower DNS lookups.");
 
 std::string_view content_type_string(content_type type) {
     switch (type) {

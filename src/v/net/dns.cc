@@ -19,7 +19,9 @@
 namespace net {
 
 ss::future<ss::socket_address> resolve_dns(unresolved_address address) {
-    static thread_local ss::net::dns_resolver resolver;
+    constexpr auto ops = ss::net::dns_resolver::options{
+      .timeout = default_dns_timeout};
+    static thread_local ss::net::dns_resolver resolver{ops};
     static thread_local mutex m{"resolve_dns"};
     // lock
     fmt::print("*** About to take mutex\n");
