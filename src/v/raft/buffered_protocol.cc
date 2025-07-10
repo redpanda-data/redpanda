@@ -315,7 +315,8 @@ bool append_entries_queue::can_buffer_next_request(size_t size) const {
 }
 bool append_entries_queue::is_idle() const {
     static constexpr auto queue_idle_timeout = 30s;
-    return _requests.empty() && inflight_requests() == 0
+    return _gate.get_count() == 0 && _requests.empty()
+           && inflight_requests() == 0
            && _last_sent_timestamp < clock_type::now() - queue_idle_timeout;
 }
 
