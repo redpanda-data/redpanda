@@ -17,6 +17,7 @@
 #include "cluster/node_status_rpc_service.h"
 #include "cluster/node_status_table.h"
 #include "config/node_config.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
@@ -26,9 +27,17 @@
 
 #include <bits/types/clock_t.h>
 
+#include <chrono>
 #include <exception>
 
 namespace cluster {
+
+namespace {
+// after this many consecutive timeouts, reset the connection
+constexpr uint8_t consecutive_request_timeouts = 20u;
+// logging rate limit for potentially noisy logs
+constexpr auto rate_limit = std::chrono::seconds(1);
+} // namespace
 
 node_status_backend::node_status_backend(
   model::node_id self,
@@ -107,7 +116,8 @@ ss::future<> node_status_backend::handle_members_updated_notification(
               clusterlog.info,
               "Node {} has been discovered via members table",
               node_id);
-            _discovered_peers.insert(node_id);
+            // intialize local peer data with initial state
+            _discovered_peers.emplace(node_id, peer_data{});
             // update node status table with initial state
             co_await _node_status_table.invoke_on_all(
               [node_id](node_status_table& table) {
@@ -130,6 +140,9 @@ ss::future<> node_status_backend::handle_members_updated_notification(
               [node_id](node_status_table& table) {
                   table.remove_peer(node_id);
               });
+
+            // clean up connection to removed node
+            co_await _node_connection_set.remove(node_id);
         }
         break;
     }
@@ -191,8 +204,8 @@ node_status_backend::collect_updates_from_peers() {
     auto results = co_await ssx::parallel_transform(
       _discovered_peers.begin(),
       _discovered_peers.end(),
-      [this, request = std::move(request)](auto peer_id) {
-          return send_node_status_request(peer_id, request);
+      [this, request = std::move(request)](auto node_and_data) {
+          return send_node_status_request(node_and_data.first, request);
       });
 
     std::vector<node_status> updates;
@@ -216,7 +229,7 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
         co_return make_error_code(errc::node_does_not_exists);
     }
 
-    co_await maybe_create_client(target, nm->get().broker.rpc_address());
+    co_await maybe_update_client(target, nm->get().broker.rpc_address());
 
     // auto send_by = rpc::clock_type::now() + _period();
     auto opts = rpc::client_opts(_period());
@@ -234,8 +247,40 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
     co_return process_reply(target, reply);
 }
 
-ss::future<> node_status_backend::maybe_create_client(
+ss::future<> node_status_backend::maybe_update_client(
   model::node_id target, net::unresolved_address address) {
+    // removal might happen concurrently, bail out early and let the rpc fail
+    auto peer_iterator = _discovered_peers.find(target);
+    if (peer_iterator == _discovered_peers.end()) {
+        co_return;
+    }
+
+    // removes a connection if there are a sufficient number of consecutive
+    // timed out requests
+    auto& data = peer_iterator->second;
+    if (data.consecutive_timeouts > consecutive_request_timeouts) {
+        static constexpr auto reconnection_log_rate_limit
+          = std::chrono::seconds(20);
+        static ss::logger::rate_limit rate(reconnection_log_rate_limit);
+        clusterlog.log(
+          ss::log_level::info,
+          rate,
+          "Forcing reconnection of peer: {}, with consecutive "
+          "timeouts: "
+          "{}",
+          target,
+          data.consecutive_timeouts);
+        data.consecutive_timeouts = 0;
+        co_await _node_connection_set.remove(target);
+    }
+
+    // we have crossed a suspension boundary, recheck to make sure we don't
+    // recreate a connection to a removed peer
+    peer_iterator = _discovered_peers.find(target);
+    if (peer_iterator == _discovered_peers.end()) {
+        co_return;
+    }
+
     co_await _node_connection_set.try_add_or_update(
       target, address, _rpc_tls_config, create_backoff_policy());
 }
@@ -243,14 +288,29 @@ ss::future<> node_status_backend::maybe_create_client(
 result<node_status> node_status_backend::process_reply(
   model::node_id target_node_id, result<node_status_reply> reply) {
     vassert(ss::this_shard_id() == shard, "invoked on a wrong shard");
-    static constexpr auto rate_limit = std::chrono::seconds(1);
+
+    auto reset_timeout_counter = ss::defer([this, target_node_id]() {
+        auto iter = _discovered_peers.find(target_node_id);
+        if (iter != _discovered_peers.end()) {
+            iter->second.consecutive_timeouts = 0;
+        }
+    });
+
     if (reply.has_error()) {
+        reset_timeout_counter.cancel();
         auto err = reply.error();
         if (
           err.category() == rpc::error_category()
           && static_cast<rpc::errc>(err.value())
                == rpc::errc::client_request_timeout) {
             _stats.rpcs_timed_out += 1;
+
+            // register consecutive timeouts
+            auto iter = _discovered_peers.find(target_node_id);
+            if (iter != _discovered_peers.end()) {
+                auto& data = iter->second;
+                data.consecutive_timeouts++;
+            }
         }
         static ss::logger::rate_limit rate(rate_limit);
         clusterlog.log(
