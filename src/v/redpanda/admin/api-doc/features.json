@@ -166,7 +166,7 @@
                 },
                 "type": {
                     "type": "string",
-                    "description": "type of license, currently only free_trial or enterprise"
+                    "description": "type of license"
                 },
                 "expires": {
                     "type": "long",
