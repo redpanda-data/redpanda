@@ -2454,6 +2454,7 @@ void admin_server::register_features_routes() {
               lc.type = license->get_type();
               lc.expires = license->expiry.count();
               lc.sha256 = license->checksum;
+              lc.products = license->products;
               res.license = lc;
           }
           return ss::make_ready_future<ss::json::json_return_type>(

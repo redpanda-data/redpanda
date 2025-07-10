@@ -168,6 +168,13 @@
                     "type": "string",
                     "description": "type of license"
                 },
+                "products": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Products covered by this license"
+                },
                 "expires": {
                     "type": "long",
                     "description": "Expiration date of the license in Unix epoch seconds"
