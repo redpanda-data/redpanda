@@ -200,7 +200,7 @@ struct cloudcheck_opts
     ss::sstring name{"Cloud credentials check"};
 
     // Timeout duration for cloud storage requests.
-    ss::lowres_clock::duration timeout{std::chrono::milliseconds(5000)};
+    ss::lowres_clock::duration timeout{std::chrono::milliseconds(10000)};
 
     // Backoff duration for cloud storage requests.
     ss::lowres_clock::duration backoff{std::chrono::milliseconds(10)};
