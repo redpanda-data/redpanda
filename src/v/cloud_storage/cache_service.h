@@ -41,7 +41,6 @@ namespace cloud_storage {
 
 // These timeout/backoff settings are for S3 requests
 using namespace std::chrono_literals;
-inline const ss::lowres_clock::duration cache_hydration_timeout = 60s;
 inline const ss::lowres_clock::duration cache_hydration_backoff = 250ms;
 
 // This backoff is for failure of the local cache to retain recently

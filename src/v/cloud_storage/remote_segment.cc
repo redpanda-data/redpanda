@@ -471,7 +471,9 @@ ss::future<> remote_segment::put_chunk_in_cache(
 
 ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
 
     // RAII reservation object represents the disk space this put will consume
     auto reservation = co_await _cache.reserve_space(
@@ -503,7 +505,9 @@ ss::future<> remote_segment::do_hydrate_segment() {
 
 ss::future<> remote_segment::do_hydrate_index() {
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
 
     offset_index ix(
       _base_rp_offset,
@@ -535,7 +539,9 @@ ss::future<> remote_segment::do_hydrate_index() {
 ss::future<> remote_segment::do_hydrate_txrange() {
     ss::gate::holder guard(_gate);
     retry_chain_node local_rtc(
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc);
     if (_sname_format == segment_name_format::v3 && _metadata_size_hint == 0) {
         // The tx-manifest is empty, no need to download it, and
         // avoid putting this empty manifest into the cache.
@@ -1076,7 +1082,9 @@ ss::future<> remote_segment::hydrate_chunk(chunk_start_offset_t start_offset) {
     }
 
     retry_chain_node rtc{
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
+      config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms(),
+      cache_hydration_backoff,
+      &_rtc};
 
     auto byte_range = _chunks_api->get_byte_range_for_chunk(
       start_offset, _size - 1);
