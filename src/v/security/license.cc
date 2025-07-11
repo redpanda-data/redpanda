@@ -75,7 +75,7 @@ license_type integer_to_license_type(int type) {
         return license_type::enterprise;
     default:
         throw license_invalid_exception(
-          fmt::format("Unknown license_type: {}", type));
+          ss::format("Unknown license_type: {}", type));
     }
 }
 
@@ -99,7 +99,7 @@ license_components parse_license(std::string_view license) {
         license.substr(itr + strlen(signature_delimiter)))};
 }
 
-const std::string license_data_validator_schema = R"(
+const char* const license_data_validator_schema_v0 = R"(
 {
     "type": "object",
     "properties": {
@@ -126,26 +126,58 @@ const std::string license_data_validator_schema = R"(
 }
 )";
 
-void parse_data_section(license& lc, const json::Document& doc) {
-    json::validator license_data_validator(license_data_validator_schema);
-    if (!doc.Accept(license_data_validator.schema_validator)) {
-        throw license_malformed_exception(
-          "License data section failed to match schema");
-    }
+struct license_data_parser {
+    using data_parser = void (*)(license& lc, const json::Document& doc);
+
+    const char* schema;
+    data_parser parser;
+};
+
+// parse_data_section_v* functions are responsible for parsing all values of the
+// license relevant to each version, apart from 'format_version' and 'checksum'
+void parse_data_section_v0(license& lc, const json::Document& doc) {
     lc.expiry = std::chrono::seconds(
       doc.FindMember("expiry")->value.GetInt64());
     if (lc.is_expired()) {
         throw license_invalid_exception("Expiry date behind todays date");
-    }
-    lc.format_version = doc.FindMember("version")->value.GetInt();
-    if (lc.format_version < 0) {
-        throw license_invalid_exception("Invalid format_version, is < 0");
     }
     lc.organization = doc.FindMember("org")->value.GetString();
     if (lc.organization == "") {
         throw license_invalid_exception("Cannot have empty string for org");
     }
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+}
+
+license_data_parser get_parser(const uint8_t version) {
+    switch (version) {
+    case 0:
+        return license_data_parser{
+          .schema = license_data_validator_schema_v0,
+          .parser = parse_data_section_v0};
+    default:
+        throw license_invalid_exception(
+          ss::format("Unsupported version {}", version));
+    }
+}
+
+void parse_data_section(license& lc, const json::Document& doc) {
+    const auto it_version = doc.FindMember("version");
+    if (it_version == doc.MemberEnd()) {
+        throw license_invalid_exception("Missing required parameter 'version'");
+    }
+    lc.format_version = it_version->value.GetInt();
+    const auto ldf = get_parser(lc.format_version);
+
+    json::validator license_data_validator(ldf.schema);
+    if (!doc.Accept(license_data_validator.schema_validator)) {
+        json::StringBuffer sb;
+        json::Writer<json::StringBuffer> writer(sb);
+        license_data_validator.schema_validator.GetError().Accept(writer);
+        throw license_malformed_exception(ss::format(
+          "License data section failed to match schema with error: {}",
+          sb.GetString()));
+    }
+    ldf.parser(lc, doc);
 }
 
 ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
@@ -167,7 +199,7 @@ std::ostream& operator<<(std::ostream& os, const license& lic) {
 
 license make_license(std::string_view raw_license) {
     try {
-        license lc;
+        license lc{};
         auto components = parse_license(raw_license);
         if (!crypto::verify_license(components.data, components.signature)) {
             throw license_verifcation_exception("RSA signature invalid");
