@@ -106,7 +106,7 @@ To view the test status, poll 'rpk cluster self-test status'. Once the tests end
 		"The duration in milliseconds of individual disk test runs")
 	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 30000,
 		"The duration in milliseconds of individual network test runs")
-	cmd.Flags().UintVar(&cloudTimeoutMs, "cloud-timeout-ms", 5000,
+	cmd.Flags().UintVar(&cloudTimeoutMs, "cloud-timeout-ms", 10000,
 		"The timeout in milliseconds for a cloud storage request")
 	cmd.Flags().UintVar(&cloudBackoffMs, "cloud-backoff-ms", 100,
 		"The backoff in milliseconds for a cloud storage request")

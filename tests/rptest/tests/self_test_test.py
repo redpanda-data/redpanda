@@ -291,7 +291,7 @@ class SelfTestTest(EndToEndTest):
             'tests': [{
                 'type': 'cloud',
                 'backoff_ms': 100,
-                'timeout_ms': 5000
+                'timeout_ms': 10000
             }]
         }
 
