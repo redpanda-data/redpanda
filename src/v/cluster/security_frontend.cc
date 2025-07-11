@@ -173,9 +173,8 @@ ss::future<std::vector<errc>> security_frontend::create_acls(
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     if (!leader) {
-        std::vector<errc> res;
-        res.assign(bindings.size(), errc::no_leader_controller);
-        co_return res;
+        co_return std::vector<errc>(
+          bindings.size(), errc::no_leader_controller);
     }
 
     if (leader == _self) {
@@ -207,9 +206,7 @@ ss::future<std::vector<errc>> security_frontend::dispatch_create_acls_to_leader(
       .then(&rpc::get_ctx_data<create_acls_reply>)
       .then([num_bindings](result<create_acls_reply> r) {
           if (r.has_error()) {
-              std::vector<errc> res;
-              res.assign(num_bindings, map_errc(r.error()));
-              return res;
+              return std::vector<errc>(num_bindings, map_errc(r.error()));
           }
           return std::move(r.value().results);
       });
@@ -322,13 +319,11 @@ ss::future<std::vector<delete_acls_result>> security_frontend::delete_acls(
     auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     if (!leader) {
-        std::vector<delete_acls_result> res;
-        res.assign(
+        co_return std::vector<delete_acls_result>(
           filters.size(),
           delete_acls_result{
             .error = errc::no_leader_controller,
           });
-        co_return res;
     }
 
     if (leader == _self) {
@@ -361,8 +356,7 @@ security_frontend::dispatch_delete_acls_to_leader(
       .then(&rpc::get_ctx_data<delete_acls_reply>)
       .then([num_filters](result<delete_acls_reply> r) {
           if (r.has_error()) {
-              std::vector<delete_acls_result> res;
-              res.assign(
+              return std::vector<delete_acls_result>(
                 num_filters,
                 delete_acls_result{
                   .error = map_errc(r.error()),
