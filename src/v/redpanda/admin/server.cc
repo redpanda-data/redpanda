@@ -2451,7 +2451,7 @@ void admin_server::register_features_routes() {
                   lc.format_version = license->format_version;
                   lc.org = license->organization;
               }
-              lc.type = security::license_type_to_string(license->type);
+              lc.type = license->get_type();
               lc.expires = license->expiry.count();
               lc.sha256 = license->checksum;
               res.license = lc;

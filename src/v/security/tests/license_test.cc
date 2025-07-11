@@ -91,7 +91,7 @@ BOOST_AUTO_TEST_CASE(test_license_valid_content) {
     }
     const license license = std::move(opt_license.value());
     BOOST_CHECK_EQUAL(license.format_version, 0);
-    BOOST_CHECK_EQUAL(license.type, license_type::enterprise);
+    BOOST_CHECK_EQUAL(license.get_type(), "enterprise");
     BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
     BOOST_CHECK(!license.is_expired());
     BOOST_CHECK_EQUAL(license.expiry.count(), 4813252273);
@@ -100,5 +100,23 @@ BOOST_AUTO_TEST_CASE(test_license_valid_content) {
     BOOST_CHECK_EQUAL(
       license.checksum,
       "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf");
+}
+
+BOOST_AUTO_TEST_CASE(test_license_valid_content_v1) {
+    auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE_V1");
+    if (!opt_license.has_value()) {
+        return;
+    }
+    const license license = std::move(opt_license.value());
+    BOOST_CHECK_EQUAL(license.format_version, 1);
+    BOOST_CHECK_EQUAL(license.get_type(), "testing_license");
+    BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
+    BOOST_CHECK(!license.is_expired());
+    BOOST_CHECK_EQUAL(license.expiry.count(), 4344165449);
+    BOOST_CHECK(
+      license.expiration() == license::clock::time_point{4344165449s});
+    BOOST_CHECK_EQUAL(
+      license.checksum,
+      "baba05c0557197d210966555bda6abf3fb54435959dbb5c8e7fd7c5805b29069");
 }
 } // namespace security

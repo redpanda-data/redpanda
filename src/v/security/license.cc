@@ -56,6 +56,7 @@ bool verify_license(const ss::sstring& data, const ss::sstring& signature) {
 
 } // namespace crypto
 
+namespace {
 ss::sstring license_type_to_string(license_type type) {
     switch (type) {
     case license_type::free_trial:
@@ -66,7 +67,6 @@ ss::sstring license_type_to_string(license_type type) {
     __builtin_unreachable();
 }
 
-namespace {
 license_type integer_to_license_type(int type) {
     switch (type) {
     case 0:
@@ -137,7 +137,7 @@ const char* const license_data_validator_schema_v1 = R"(
             "type": "string"
         },
         "type": {
-            "type": "number"
+            "type": "string"
         },
         "expiry": {
             "type": "number"
@@ -172,7 +172,7 @@ void parse_data_section_v0(license& lc, const json::Document& doc) {
     if (lc.organization == "") {
         throw license_invalid_exception("Cannot have empty string for org");
     }
-    lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+    lc._type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
 void parse_data_section_v1(license& lc, const json::Document& doc) {
@@ -185,7 +185,7 @@ void parse_data_section_v1(license& lc, const json::Document& doc) {
     if (lc.organization == "") {
         throw license_invalid_exception("Cannot have empty string for org");
     }
-    lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+    lc._type_str = doc.FindMember("type")->value.GetString();
 }
 
 license_data_parser get_parser(const uint8_t version) {
@@ -262,6 +262,15 @@ license make_license(std::string_view raw_license) {
     }
 }
 
+ss::sstring license::get_type() const {
+    switch (format_version) {
+    case 0:
+        return license_type_to_string(_type);
+    default:
+        return _type_str;
+    }
+}
+
 bool license::is_expired() const noexcept {
     return clock::now() > expiration();
 }
@@ -281,10 +290,10 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return fmt::format_to(
       ctx.out(),
-      "[Version: {0}, Organization: {1}, Type: {2} Expiry(epoch): {3}]",
+      "[Version: {0}, Organization: {1}, Type: {2}, Expiry(epoch): {3}]",
       r.format_version,
       r.organization,
-      license_type_to_string(r.type),
+      r.get_type(),
       r.expiry.count());
 }
 
