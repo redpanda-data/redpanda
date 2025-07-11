@@ -126,6 +126,33 @@ const char* const license_data_validator_schema_v0 = R"(
 }
 )";
 
+const char* const license_data_validator_schema_v1 = R"(
+{
+    "type": "object",
+    "properties": {
+        "version": {
+            "type": "number"
+        },
+        "org": {
+            "type": "string"
+        },
+        "type": {
+            "type": "number"
+        },
+        "expiry": {
+            "type": "number"
+        }
+    },
+    "required": [
+        "version",
+        "org",
+        "type",
+        "expiry"
+    ],
+    "additionalProperties": false
+}
+)";
+
 struct license_data_parser {
     using data_parser = void (*)(license& lc, const json::Document& doc);
 
@@ -148,12 +175,29 @@ void parse_data_section_v0(license& lc, const json::Document& doc) {
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
+void parse_data_section_v1(license& lc, const json::Document& doc) {
+    lc.expiry = std::chrono::seconds(
+      doc.FindMember("expiry")->value.GetInt64());
+    if (lc.is_expired()) {
+        throw license_invalid_exception("Expiry date behind todays date");
+    }
+    lc.organization = doc.FindMember("org")->value.GetString();
+    if (lc.organization == "") {
+        throw license_invalid_exception("Cannot have empty string for org");
+    }
+    lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+}
+
 license_data_parser get_parser(const uint8_t version) {
     switch (version) {
     case 0:
         return license_data_parser{
           .schema = license_data_validator_schema_v0,
           .parser = parse_data_section_v0};
+    case 1:
+        return license_data_parser{
+          .schema = license_data_validator_schema_v1,
+          .parser = parse_data_section_v1};
     default:
         throw license_invalid_exception(
           ss::format("Unsupported version {}", version));
