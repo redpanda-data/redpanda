@@ -27,7 +27,8 @@ namespace security {
 
 namespace crypto {
 
-static const ::crypto::key public_key = []() {
+namespace {
+const ::crypto::key public_key = []() {
     static const ss::sstring public_key_material
       = "-----BEGIN PUBLIC KEY-----\n"
         "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
@@ -47,11 +48,11 @@ static const ::crypto::key public_key = []() {
 /// The redpanda license is comprised of 2 sections seperated by a delimiter.
 /// The first section is the data section (base64 encoded), the second being the
 /// signature, which is a PCKS1.5 sigature of the contents of the data section.
-static bool
-verify_license(const ss::sstring& data, const ss::sstring& signature) {
+bool verify_license(const ss::sstring& data, const ss::sstring& signature) {
     return ::crypto::verify_signature(
       ::crypto::digest_type::SHA256, public_key, data, signature);
 }
+} // namespace
 
 } // namespace crypto
 
@@ -65,7 +66,8 @@ ss::sstring license_type_to_string(license_type type) {
     __builtin_unreachable();
 }
 
-static license_type integer_to_license_type(int type) {
+namespace {
+license_type integer_to_license_type(int type) {
     switch (type) {
     case 0:
         return license_type::free_trial;
@@ -77,17 +79,12 @@ static license_type integer_to_license_type(int type) {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const license& lic) {
-    fmt::print(os, "{}", lic);
-    return os;
-}
-
 struct license_components {
     ss::sstring data;
     ss::sstring signature;
 };
 
-static license_components parse_license(std::string_view license) {
+license_components parse_license(std::string_view license) {
     static constexpr auto signature_delimiter = ".";
     const auto itr = license.find(signature_delimiter);
     if (itr == ss::sstring::npos) {
@@ -102,7 +99,7 @@ static license_components parse_license(std::string_view license) {
         license.substr(itr + strlen(signature_delimiter)))};
 }
 
-static const std::string license_data_validator_schema = R"(
+const std::string license_data_validator_schema = R"(
 {
     "type": "object",
     "properties": {
@@ -129,7 +126,7 @@ static const std::string license_data_validator_schema = R"(
 }
 )";
 
-static void parse_data_section(license& lc, const json::Document& doc) {
+void parse_data_section(license& lc, const json::Document& doc) {
     json::validator license_data_validator(license_data_validator_schema);
     if (!doc.Accept(license_data_validator.schema_validator)) {
         throw license_malformed_exception(
@@ -151,7 +148,7 @@ static void parse_data_section(license& lc, const json::Document& doc) {
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
-static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
+ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
     bytes checksum;
     hash_sha256 h;
     h.update(raw_license);
@@ -159,6 +156,13 @@ static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
     checksum.resize(digest.size());
     std::copy_n(digest.begin(), digest.size(), checksum.begin());
     return to_hex(checksum);
+}
+
+} // namespace
+
+std::ostream& operator<<(std::ostream& os, const license& lic) {
+    fmt::print(os, "{}", lic);
+    return os;
 }
 
 license make_license(std::string_view raw_license) {
