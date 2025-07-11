@@ -174,12 +174,20 @@ ss::future<error_outcome> uploader::upload_next_metadata(
             auto reply = co_await _offsets_uploader->request_upload(req, 30s);
             if (reply.ec != cluster::errc::success) {
                 vlog(
-                  clusterlog.debug,
-                  "Error while requesting offsets upload of {}",
-                  req.offsets_ntp);
-                continue;
+                  clusterlog.warn,
+                  "Failed to upload group offsets for {} ({}), falling "
+                  "back to existing cluster metadata manifest data",
+                  req.offsets_ntp,
+                  reply.ec);
+                if (
+                  static_cast<size_t>(i)
+                  < manifest.offsets_snapshots_by_partition.size()) {
+                    uploaded_offset_paths[i] = std::move(
+                      manifest.offsets_snapshots_by_partition[i]);
+                }
+            } else {
+                uploaded_offset_paths[i] = std::move(reply.uploaded_paths);
             }
-            uploaded_offset_paths[i] = std::move(reply.uploaded_paths);
         }
         manifest.offsets_snapshots_by_partition = std::move(
           uploaded_offset_paths);
