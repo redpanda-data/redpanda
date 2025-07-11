@@ -118,6 +118,9 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
                   _max_inflight_requests,
                   _max_buffered_bytes));
           }
+          // do not introduce a scheduling point here, the gate has to be held
+          // in the same scheduling point so this group is not considered a
+          // candidate for GC.
           return it->second->append_entries(std::move(req), std::move(opts));
       });
 };
@@ -314,7 +317,8 @@ bool append_entries_queue::can_buffer_next_request(size_t size) const {
 }
 bool append_entries_queue::is_idle() const {
     static constexpr auto queue_idle_timeout = 30s;
-    return _requests.empty() && inflight_requests() == 0
+    return _gate.get_count() == 0 && _requests.empty()
+           && inflight_requests() == 0
            && _last_sent_timestamp < clock_type::now() - queue_idle_timeout;
 }
 
