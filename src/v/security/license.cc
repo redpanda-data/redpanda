@@ -155,7 +155,7 @@ const char* const license_data_validator_schema_v1 = R"(
         "type",
         "expiry"
     ],
-    "additionalProperties": false
+    "additionalProperties": true
 }
 )";
 
