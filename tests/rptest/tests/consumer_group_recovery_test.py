@@ -12,6 +12,7 @@ from collections import defaultdict
 from dataclasses import astuple, dataclass
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -39,6 +40,8 @@ class TopicPartitionOffset:
 
 
 class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
+    UPLOAD_INTERVAL_SEC = 1
+
     def __init__(self, test_ctx, *args):
         self._ctx = test_ctx
         self.initial_partition_count = 3
@@ -48,10 +51,14 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
             *args,
             extra_rp_conf={
                 "kafka_nodelete_topics": [],
-                "group_topic_partitions": self.initial_partition_count,
-                'controller_snapshot_max_age_sec': 1,
-                "enable_cluster_metadata_upload_loop": True,
-                "cloud_storage_cluster_metadata_upload_interval_ms": 1000,
+                "group_topic_partitions":
+                self.initial_partition_count,
+                'controller_snapshot_max_age_sec':
+                1,
+                "enable_cluster_metadata_upload_loop":
+                True,
+                "cloud_storage_cluster_metadata_upload_interval_ms":
+                ConsumerOffsetsRecoveryTest.UPLOAD_INTERVAL_SEC * 1000,
             },
             node_prealloc_count=1,
             si_settings=SISettings(
@@ -113,7 +120,9 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
         return True
 
     @cluster(num_nodes=4)
-    def test_consumer_offsets_partition_recovery(self):
+    @matrix(force_offset_upload_failures=[False, True])
+    def test_consumer_offsets_partition_recovery(
+            self, force_offset_upload_failures: bool):
         partition_count = 16
         topic = TopicSpec(partition_count=partition_count,
                           replication_factor=3)
@@ -155,7 +164,16 @@ class ConsumerOffsetsRecoveryTest(PreallocNodesTest):
         groups_pre_restore = self.describe_all_groups()
         self.logger.debug(f"Groups pre-restore {groups_pre_restore}")
 
-        self.redpanda.stop()
+        if force_offset_upload_failures:
+            # Force a scenario where the controller leader initiates an offset
+            # upload request that fails because the consumer group partition
+            # leader is unavailable
+            for n in reversed(self.redpanda.nodes):
+                self.redpanda.stop_node(n)
+                time.sleep(1 + ConsumerOffsetsRecoveryTest.UPLOAD_INTERVAL_SEC)
+        else:
+            self.redpanda.stop()
+
         for n in self.redpanda.nodes:
             self.redpanda.remove_local_data(n)
 
