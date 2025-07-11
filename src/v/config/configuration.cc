@@ -2084,13 +2084,13 @@ configuration::configuration()
       "cloud_storage_segment_upload_timeout_ms",
       "Log segment upload timeout (ms)",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      30s)
+      90s)
   , cloud_storage_manifest_upload_timeout_ms(
       *this,
       "cloud_storage_manifest_upload_timeout_ms",
       "Manifest upload timeout (ms).",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10s)
+      30s)
   , cloud_storage_garbage_collect_timeout_ms(
       *this,
       "cloud_storage_garbage_collect_timeout_ms",

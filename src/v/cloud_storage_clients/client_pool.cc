@@ -451,14 +451,14 @@ auto client_pool::acquire_with_timeout(
               if (ctx.has_value()) {
                   vlog(
                     pool_log.debug,
-                    "{} - Lease expired after {}. Shutting down client...",
+                    "{} - Lease expired after {}ms. Shutting down client...",
                     ctx.value(),
-                    to);
+                    to / 1ms);
               } else {
                   vlog(
                     pool_log.debug,
-                    "Lease expired after {}. Shutting down client...",
-                    to);
+                    "Lease expired after {}ms. Shutting down client...",
+                    to / 1ms);
               }
               if (probe) {
                   probe->register_timeout();
