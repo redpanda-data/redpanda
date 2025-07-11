@@ -141,6 +141,12 @@ const char* const license_data_validator_schema_v1 = R"(
         },
         "expiry": {
             "type": "number"
+        },
+        "products": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
         }
     },
     "required": [
@@ -186,6 +192,13 @@ void parse_data_section_v1(license& lc, const json::Document& doc) {
         throw license_invalid_exception("Cannot have empty string for org");
     }
     lc._type_str = doc.FindMember("type")->value.GetString();
+
+    const auto it_products = doc.FindMember("products");
+    if (it_products != doc.MemberEnd()) {
+        lc.products = it_products->value.GetArray()
+                      | std::views::transform(&json::Value::GetString)
+                      | std::ranges::to<decltype(lc.products)>();
+    }
 }
 
 license_data_parser get_parser(const uint8_t version) {
@@ -290,11 +303,14 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return fmt::format_to(
       ctx.out(),
-      "[Version: {0}, Organization: {1}, Type: {2}, Expiry(epoch): {3}]",
+      "[Version: {0}, Organization: {1}, Type: {2}, Expiry(epoch): {3}{4}]",
       r.format_version,
       r.organization,
       r.get_type(),
-      r.expiry.count());
+      r.expiry.count(),
+      r.products.empty()
+        ? ""
+        : fmt::format(", Products: {}", fmt::join(r.products, ",")));
 }
 
 } // namespace fmt

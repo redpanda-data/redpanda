@@ -71,12 +71,19 @@ struct license
     ss::sstring checksum;
     // This variable should not be used directly. Use get_type accessor, instead
     ss::sstring _type_str;
+    std::vector<ss::sstring> products;
 
     ss::sstring get_type() const;
 
     auto serde_fields() {
         return std::tie(
-          format_version, _type, organization, expiry, checksum, _type_str);
+          format_version,
+          _type,
+          organization,
+          expiry,
+          checksum,
+          _type_str,
+          products);
     }
 
     /// true if todays date is greater then \ref expiry
