@@ -115,10 +115,8 @@ heartbeat_manager::requests_for_range() {
                 .group = r->group(),
               };
               const auto raft_metadata = r->meta();
-              if (
-                _enable_lw_heartbeat()
-                && !needs_full_heartbeat(
-                  follower_metadata, raft_metadata, r->flushed_offset())) {
+              if (should_lw_heartbeat(
+                    r, follower_metadata, raft_metadata, r->flushed_offset())) {
                   r->_probe->lw_heartbeat();
                   // we do not fill the dirty offset and follower request
                   // sequence here as those fields are not used to process
@@ -210,6 +208,17 @@ bool heartbeat_manager::needs_full_heartbeat(
     return f_meta.last_sent_seq != f_meta.last_successful_received_seq
            || f_meta.last_sent_protocol_meta != p_meta
            || leader_flushed_offset != f_meta.last_flushed_log_index;
+}
+
+bool heartbeat_manager::should_lw_heartbeat(
+  const seastar::lw_shared_ptr<raft::consensus>& raft,
+  const follower_index_metadata& follower_metadata,
+  const protocol_metadata& leader_protocol_metadata,
+  model::offset leader_flushed_offset) {
+    return _enable_lw_heartbeat()
+           && !needs_full_heartbeat(
+             follower_metadata, leader_protocol_metadata, leader_flushed_offset)
+           && !raft->should_reconnect_follower(follower_metadata);
 }
 
 heartbeat_manager::heartbeat_manager(
