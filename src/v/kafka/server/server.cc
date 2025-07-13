@@ -253,39 +253,6 @@ coordinator_ntp_mapper& server::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }
 
-config::broker_authn_method get_authn_method(const net::connection& conn) {
-    // If authn_method is set on the endpoint
-    //    Use it
-    // Else if kafka_enable_authorization is not set
-    //    Use sasl if enable_sasl
-    // Else if has mtls mapping rules
-    //    Use mtls_identity
-    // Else
-    //    Disable AuthN
-
-    std::optional<config::broker_authn_method> authn_method;
-    auto n = conn.name();
-    const auto& kafka_api = config::node().kafka_api.value();
-    auto ep_it = std::find_if(
-      kafka_api.begin(),
-      kafka_api.end(),
-      [&n](const config::broker_authn_endpoint& ep) { return ep.name == n; });
-    if (ep_it != kafka_api.end()) {
-        authn_method = ep_it->authn_method;
-    }
-    if (authn_method.has_value()) {
-        return *authn_method;
-    }
-    const auto& config = config::shard_local_cfg();
-    // if kafka_enable_authorization is not set, use sasl iff enable_sasl
-    if (
-      !config.kafka_enable_authorization().has_value()
-      && config.enable_sasl()) {
-        return config::broker_authn_method::sasl;
-    }
-    return config::broker_authn_method::none;
-}
-
 ss::future<security::tls::mtls_state> get_mtls_principal_state(
   const security::tls::principal_mapper& pm, net::connection& conn) {
     using namespace std::chrono_literals;
@@ -345,7 +312,7 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     const bool authz_enabled
       = config::shard_local_cfg().kafka_enable_authorization().value_or(
         config::shard_local_cfg().enable_sasl());
-    const auto authn_method = get_authn_method(*conn);
+    const auto authn_method = config::get_authn_method(conn->name());
 
     const auto sasl_max_reauth
       = config::shard_local_cfg().kafka_sasl_max_reauth_ms();
