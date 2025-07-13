@@ -11,6 +11,9 @@
 #include "absl/container/flat_hash_set.h"
 #include "cluster/controller.h"
 #include "cluster/security_frontend.h"
+#include "config/broker_authn_endpoint.h"
+#include "config/configuration.h"
+#include "config/utils.h"
 #include "features/enterprise_feature_messages.h"
 #include "json/document.h"
 #include "json/json.h"
@@ -525,6 +528,13 @@ void admin_server::register_security_routes() {
           check_license(features::enterprise_error_message::acl_with_rbac());
           return update_role_members_handler(std::move(req));
       });
+
+    register_route<superuser>(
+      ss::httpd::security_json::get_security_report,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_security_report(std::move(req));
+      });
 }
 
 ss::future<ss::json::json_return_type>
@@ -977,4 +987,217 @@ ss::future<std::unique_ptr<ss::http::reply>> admin_server::delete_role_handler(
       std::move(rep),
       ss::http::reply::status_type::no_content,
       seastar::json::json_void{});
+}
+
+namespace {
+
+ss::httpd::security_json::kafka_interface_security_report::
+  kafka_interface_security_report_authentication_method
+  to_report_type(config::broker_authn_method m) {
+    switch (m) {
+    case config::broker_authn_method::none:
+        return ss::httpd::security_json::kafka_interface_security_report::
+          kafka_interface_security_report_authentication_method::None;
+    case config::broker_authn_method::sasl:
+        return ss::httpd::security_json::kafka_interface_security_report::
+          kafka_interface_security_report_authentication_method::SASL;
+    case config::broker_authn_method::mtls_identity:
+        return ss::httpd::security_json::kafka_interface_security_report::
+          kafka_interface_security_report_authentication_method::mTLS;
+    }
+
+    __builtin_unreachable();
+}
+
+std::string_view get_interface_name(const ss::sstring& name) {
+    static constexpr std::string_view unnamed_interface = "{{unnamed}}";
+    if (name.empty()) {
+        return unnamed_interface;
+    }
+    return name;
+}
+
+std::vector<ss::httpd::security_json::kafka_interface_security_report>
+generate_kafka_interface_report(std::vector<ss::sstring>& alerts) {
+    std::vector<ss::httpd::security_json::kafka_interface_security_report>
+      reports;
+    const auto& kafka_interfaces = config::node().kafka_api();
+    const auto& kafka_advertised_interfaces
+      = config::node().advertised_kafka_api_property()();
+    const auto& kafka_tls_interfaces = config::node().kafka_api_tls();
+
+    reports.reserve(kafka_interfaces.size());
+
+    for (const auto& kface : kafka_interfaces) {
+        ss::httpd::security_json::kafka_interface_security_report report;
+        report.name = kface.name;
+        report.host = kface.address.host();
+        report.port = kface.address.port();
+
+        report.advertised_host = report.host;
+        report.advertised_port = report.port;
+
+        auto advertised_it = std::ranges::find(
+          kafka_advertised_interfaces,
+          kface.name,
+          &model::broker_endpoint::name);
+        if (advertised_it != kafka_advertised_interfaces.end()) {
+            report.advertised_host = advertised_it->address.host();
+            report.advertised_port = advertised_it->address.port();
+        } else {
+            report.advertised_host = report.host;
+            report.advertised_port = report.port;
+        }
+
+        auto tls_it = std::ranges::find(
+          kafka_tls_interfaces, kface.name, &config::endpoint_tls_config::name);
+        if (tls_it != kafka_tls_interfaces.end()) {
+            report.tls_enabled = tls_it->config.is_enabled();
+            report.mutual_tls_enabled
+              = tls_it->config.get_require_client_auth();
+        } else {
+            report.tls_enabled = false;
+            report.mutual_tls_enabled = false;
+        }
+
+        auto authn_method = config::get_authn_method(kface.name);
+        report.authentication_method = to_report_type(authn_method);
+        report.authorization_enabled
+          = config::shard_local_cfg().kafka_enable_authorization().value_or(
+            config::shard_local_cfg().enable_sasl());
+
+        if (!report.tls_enabled()) {
+            alerts.emplace_back(ssx::sformat(
+              "Kafka interface {} is not using TLS, which is "
+              "insecure and not recommended.",
+              get_interface_name(kface.name)));
+        }
+
+        if (authn_method == config::broker_authn_method::none) {
+            alerts.emplace_back(ssx::sformat(
+              "Kafka interface {} is not using authentication, which is "
+              "insecure and not recommended.",
+              get_interface_name(kface.name)));
+        }
+
+        if (!report.authorization_enabled()) {
+            alerts.emplace_back(ssx::sformat(
+              "Kafka interface {} is not using authorization, which is "
+              "insecure and not recommended.",
+              get_interface_name(kface.name)));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+ss::httpd::security_json::rpc_interface_security_report
+generate_rpc_interface_report(std::vector<ss::sstring>& alerts) {
+    ss::httpd::security_json::rpc_interface_security_report report;
+    report.tls_enabled = config::node().rpc_server_tls().is_enabled();
+    report.mutual_tls_enabled
+      = config::node().rpc_server_tls().get_require_client_auth();
+
+    if (!report.tls_enabled()) {
+        alerts.emplace_back("RPC server is not using TLS, which is insecure "
+                            "and not recommended.");
+    }
+
+    return report;
+}
+
+std::vector<ss::httpd::security_json::admin_interface_security_report>
+generate_admin_interface_report(std::vector<ss::sstring>& alerts) {
+    std::vector<ss::httpd::security_json::admin_interface_security_report>
+      reports;
+    const auto& admin_interfaces = config::node().admin();
+
+    reports.reserve(admin_interfaces.size());
+
+    for (const auto& iface : admin_interfaces) {
+        ss::httpd::security_json::admin_interface_security_report report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        auto tls_it = std::ranges::find(
+          config::node().admin_api_tls(),
+          iface.name,
+          &config::endpoint_tls_config::name);
+
+        if (tls_it != config::node().admin_api_tls().end()) {
+            report.tls_enabled = tls_it->config.is_enabled();
+            report.mutual_tls_enabled
+              = tls_it->config.get_require_client_auth();
+        } else {
+            report.tls_enabled = false;
+            report.mutual_tls_enabled = false;
+        }
+
+        report.authorization_enabled
+          = config::shard_local_cfg().admin_api_require_auth();
+
+        for (auto& meth : config::shard_local_cfg().http_authentication()) {
+            report.authentication_methods.push(meth);
+        }
+
+        if (!report.tls_enabled()) {
+            alerts.emplace_back(ssx::sformat(
+              "Admin interface {} is not using TLS, which is "
+              "insecure and not recommended.",
+              get_interface_name(iface.name)));
+        }
+
+        if (!report.authorization_enabled()) {
+            alerts.emplace_back(ssx::sformat(
+              "Admin interface {} is not using authorization, which is "
+              "insecure and not recommended.",
+              get_interface_name(iface.name)));
+        }
+
+        if (config::shard_local_cfg().http_authentication().empty()) {
+            alerts.emplace_back(ssx::sformat(
+              "Admin interface {} is not using authentication, which is "
+              "insecure and not recommended.",
+              get_interface_name(iface.name)));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
+    ss::httpd::security_json::security_report report;
+    ss::httpd::security_json::interfaces_report interfaces_report;
+
+    std::vector<ss::sstring> alerts;
+
+    interfaces_report.kafka = generate_kafka_interface_report(alerts);
+    interfaces_report.rpc = generate_rpc_interface_report(alerts);
+    interfaces_report.admin = generate_admin_interface_report(alerts);
+    report.interfaces = std::move(interfaces_report);
+
+    if (config::shard_local_cfg().tls_min_version < config::tls_version::v1_2) {
+        alerts.emplace_back(ssx::sformat(
+          "TLS minimum version is set to {} which is less than "
+          "{}, which is insecure and not recommended.",
+          config::shard_local_cfg().tls_min_version,
+          config::tls_version::v1_2));
+    }
+
+    if (config::shard_local_cfg().tls_enable_renegotiation()) {
+        alerts.emplace_back("TLS renegotiation is enabled, which is insecure "
+                            "and not recommended.");
+    }
+
+    report.alerts = std::move(alerts);
+
+    return ss::make_ready_future<ss::json::json_return_type>(std::move(report));
 }

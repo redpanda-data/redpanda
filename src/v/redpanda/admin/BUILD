@@ -187,6 +187,7 @@ redpanda_cc_library(
         "@fmt",
     ],
     implementation_deps = [
+        "//src/v/config:utils",
         "//src/v/features:enterprise_feature_messages",
     ],
     include_prefix = "redpanda/admin",
