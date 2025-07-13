@@ -190,6 +190,7 @@ redpanda_cc_library(
         "usage_manager.h",
     ],
     implementation_deps = [
+        "//src/v/config:utils",
         "//src/v/features:enterprise_feature_messages",
     ],
     include_prefix = "kafka/server",

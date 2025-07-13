@@ -79,3 +79,18 @@ redpanda_cc_library(
         "@yaml-cpp",
     ],
 )
+
+redpanda_cc_library(
+    name = "utils",
+    srcs = [
+        "utils.cc",
+    ],
+    hdrs = [
+        "utils.h",
+    ],
+    include_prefix = "config",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+    ],
+)
