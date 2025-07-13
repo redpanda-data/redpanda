@@ -122,4 +122,158 @@
             "type": "int"
         }
     }
+},
+"kafka_interface_security_report": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_method": {
+            "type": "string",
+            "enum": [
+                "SASL",
+                "mTLS",
+                "None"
+            ]
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"rpc_interface_security_report": {
+    "type": "object",
+    "properties": {
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"admin_interface_security_report": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"schema_registry_interface_security_report": {
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"pandaproxy_interface_security_report": {
+    "description": "Security report for Redpanda",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
 }

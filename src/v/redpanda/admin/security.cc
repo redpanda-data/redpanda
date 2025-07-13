@@ -37,6 +37,92 @@
 #include <optional>
 #include <sstream>
 
+namespace seastar::httpd::security_json {
+struct interfaces_report : public json::json_base {
+    json::json_list<kafka_interface_security_report> kafka;
+    json::json_element<rpc_interface_security_report> rpc;
+    json::json_list<admin_interface_security_report> admin;
+    json::json_list<schema_registry_interface_security_report> schema_registry;
+    json::json_list<pandaproxy_interface_security_report> pandaproxy;
+
+    void register_params() {
+        add(&kafka, "kafka");
+        add(&rpc, "rpc");
+        add(&admin, "admin");
+        add(&schema_registry, "schema_registry");
+        add(&pandaproxy, "pandaproxy");
+    }
+    interfaces_report() { register_params(); }
+
+    interfaces_report(const interfaces_report& e) {
+        register_params();
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        pandaproxy = e.pandaproxy;
+    }
+    template<class T>
+    interfaces_report& operator=(const T& e) {
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        pandaproxy = e.pandaproxy;
+        return *this;
+    }
+    interfaces_report& operator=(const interfaces_report& e) {
+        kafka = e.kafka;
+        rpc = e.rpc;
+        admin = e.admin;
+        schema_registry = e.schema_registry;
+        pandaproxy = e.pandaproxy;
+        return *this;
+    }
+    template<class T>
+    interfaces_report& update(T& e) {
+        e.kafka = kafka;
+        e.rpc = rpc;
+        e.admin = admin;
+        e.schema_registry = schema_registry;
+        e.pandaproxy = pandaproxy;
+        return *this;
+    }
+};
+struct security_report : public json::json_base {
+    json::json_element<interfaces_report> interfaces;
+    json::json_list<sstring> alerts;
+
+    void register_params() {
+        add(&interfaces, "interfaces");
+        add(&alerts, "alerts");
+    }
+    security_report() { register_params(); }
+    security_report(const security_report& e) {
+        register_params();
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+    }
+    template<class T>
+    security_report& operator=(const T& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    security_report& operator=(const security_report& e) {
+        interfaces = e.interfaces;
+        alerts = e.alerts;
+        return *this;
+    }
+    template<class T>
+    security_report& update(T& e) {
+        e.interfaces = interfaces;
+        e.alerts = alerts;
+        return *this;
+    }
+};
+} // namespace seastar::httpd::security_json
+
 namespace {
 
 // TODO: factor out generic serialization from seastar http exceptions
