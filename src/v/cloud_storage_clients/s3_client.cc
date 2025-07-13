@@ -409,6 +409,8 @@ status_to_error_code(boost::beast::http::status s) {
       || s == boost::beast::http::status::internal_server_error) {
         return cloud_storage_clients::s3_error_code::slow_down;
     }
+    vlog(
+      s3_log.debug, "Returning s3_error_code::_unknown for http::status {}", s);
     return cloud_storage_clients::s3_error_code::_unknown;
 }
 
