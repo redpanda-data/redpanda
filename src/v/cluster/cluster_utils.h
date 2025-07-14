@@ -30,13 +30,16 @@
 
 namespace detail {
 
-template<std::ranges::range Rng, typename Fn>
+template<
+  template<typename...> class Container = std::vector,
+  std::ranges::sized_range Rng,
+  typename Fn>
 requires std::same_as<
   std::invoke_result_t<Fn, std::ranges::range_value_t<Rng>>,
   cluster::topic_result>
-std::vector<cluster::topic_result>
+Container<cluster::topic_result>
 make_error_topic_results(const Rng& topics, Fn fn) {
-    std::vector<cluster::topic_result> results;
+    Container<cluster::topic_result> results;
     results.reserve(topics.size());
     std::transform(
       topics.cbegin(), topics.cend(), std::back_inserter(results), fn);
@@ -77,9 +80,10 @@ class metadata_cache;
 class partition;
 
 /// Creates the same topic_result for all requests
-std::vector<topic_result> make_error_topic_results(
-  const std::ranges::range auto& topics, errc error_code) {
-    return detail::make_error_topic_results(
+template<template<typename...> class Container = std::vector>
+Container<topic_result> make_error_topic_results(
+  const std::ranges::sized_range auto& topics, errc error_code) {
+    return detail::make_error_topic_results<Container>(
       topics, [error_code](const auto& t) {
           return topic_result(detail::extract_tp_ns(t), error_code);
       });
