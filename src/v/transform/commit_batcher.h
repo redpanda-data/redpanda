@@ -18,6 +18,8 @@
 #include "model/transform.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/gate.hh>
 
 #include <chrono>
 

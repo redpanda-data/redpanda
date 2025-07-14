@@ -13,6 +13,8 @@
 #include "random/generators.h"
 #include "test_utils/test.h"
 
+#include <seastar/core/sleep.hh>
+
 static ss::logger test_logger("buffered_protocol_test");
 
 using namespace raft;

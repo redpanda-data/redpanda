@@ -13,12 +13,12 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
-#include "absl/strings/escaping.h"
 #include "base/vassert.h"
 #include "event.h"
 #include "logger.h"
 #include "probes.h"
 #include "random/simple_time_jitter.h"
+#include "ssx/future-util.h"
 #include "strings/utf8.h"
 #include "transform/logging/errc.h"
 

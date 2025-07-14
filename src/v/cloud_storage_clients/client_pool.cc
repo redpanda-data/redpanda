@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/s3_client.h"
 #include "model/timeout_clock.h"
 #include "ssx/future-util.h"
+#include "utils/functional.h"
 
 #include <seastar/core/smp.hh>
 #include <seastar/core/timed_out_error.hh>

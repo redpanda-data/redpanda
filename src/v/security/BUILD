@@ -50,6 +50,7 @@ redpanda_cc_library(
         "//src/v/serde",
         "//src/v/serde:chrono",
         "//src/v/serde:enum",
+        "//src/v/serde:named_type",
         "//src/v/serde:sstring",
         "//src/v/utils:base64",
         "@fmt",

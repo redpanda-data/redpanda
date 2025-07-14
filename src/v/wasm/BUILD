@@ -263,6 +263,7 @@ redpanda_cc_library(
         ":wasi_logger",
         "//src/v/base",
         "//src/v/model",
+        "//src/v/ssx:future_util",
         "//src/v/utils:mutex",
         "@abseil-cpp//absl/container:btree",
         "@seastar",

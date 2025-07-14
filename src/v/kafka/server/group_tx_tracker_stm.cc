@@ -11,6 +11,8 @@
 
 #include "kafka/server/group_tx_tracker_stm.h"
 
+#include "ssx/future-util.h"
+
 namespace kafka {
 
 group_tx_tracker_stm::group_tx_tracker_stm(

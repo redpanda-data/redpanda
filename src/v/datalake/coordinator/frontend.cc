@@ -15,10 +15,9 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "datalake/coordinator/coordinator_manager.h"
-#include "datalake/coordinator/state_machine.h"
-#include "datalake/coordinator/translated_offset_range.h"
 #include "datalake/coordinator/types.h"
 #include "datalake/logger.h"
+#include "hashing/murmur.h"
 #include "raft/group_manager.h"
 #include "rpc/connection_cache.h"
 

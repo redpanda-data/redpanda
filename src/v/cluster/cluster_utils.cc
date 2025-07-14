@@ -12,16 +12,12 @@
 #include "base/vlog.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/metadata_cache.h"
 #include "cluster/partition.h"
-#include "cluster/simple_batch_builder.h"
+#include "cluster/snapshot.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "model/fips_config.h"
-#include "partition_properties_stm.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
-#include "rpc/types.h"
 #include "storage/disk_log_impl.h"
 
 #include <seastar/core/future.hh>

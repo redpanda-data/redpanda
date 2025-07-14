@@ -22,6 +22,7 @@
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/io_queue.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/util/log.hh>

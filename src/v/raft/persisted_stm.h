@@ -21,6 +21,8 @@
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace raft {

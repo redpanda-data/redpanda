@@ -15,6 +15,7 @@
 #include "raft/fundamental.h"
 #include "raft/logger.h"
 #include "rpc/types.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/core/timed_out_error.hh>

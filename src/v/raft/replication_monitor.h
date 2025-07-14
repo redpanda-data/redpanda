@@ -16,7 +16,9 @@
 #include "model/fundamental.h"
 #include "storage/types.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 
 namespace raft {
 

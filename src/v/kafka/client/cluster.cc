@@ -13,6 +13,7 @@
 
 #include "kafka/client/types.h"
 #include "random/generators.h"
+#include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
 namespace kafka::client {

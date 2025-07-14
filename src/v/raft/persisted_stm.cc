@@ -12,6 +12,7 @@
 #include "bytes/iostream.h"
 #include "raft/consensus.h"
 #include "raft/state_machine_base.h"
+#include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"

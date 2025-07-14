@@ -14,6 +14,7 @@
 #include "serde/rw/chrono.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
+#include "serde/rw/named_type.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/sstring.h"
 
@@ -23,8 +24,6 @@
 
 #include <chrono>
 #include <exception>
-#include <fstream>
-#include <vector>
 
 namespace security {
 

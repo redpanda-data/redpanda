@@ -10,7 +10,6 @@
 #include "kafka/client/broker.h"
 
 #include "base/seastarx.h"
-#include "kafka/protocol/messages.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "net/connection.h"
@@ -23,6 +22,7 @@
 #include "version/version.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/net/dns.hh>
 using namespace std::chrono_literals;

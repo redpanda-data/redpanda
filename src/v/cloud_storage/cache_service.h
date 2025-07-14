@@ -11,7 +11,6 @@
 #pragma once
 
 #include "base/seastarx.h"
-#include "base/units.h"
 #include "cloud_io/basic_cache_service_api.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
@@ -21,6 +20,7 @@
 #include "ssx/semaphore.h"
 #include "storage/types.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -29,7 +29,6 @@
 #include <seastar/core/thread.hh>
 
 #include <filesystem>
-#include <iterator>
 #include <optional>
 #include <set>
 #include <string_view>

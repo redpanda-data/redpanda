@@ -424,6 +424,7 @@ redpanda_cc_library(
         "//src/v/utils:directory_walker",
         "//src/v/utils:file_io",
         "//src/v/utils:filtered_lower_bound",
+        "//src/v/utils:functional",
         "//src/v/utils:human",
         "//src/v/utils:moving_average",
         "//src/v/utils:mutex",

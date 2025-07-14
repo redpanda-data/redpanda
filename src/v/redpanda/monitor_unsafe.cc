@@ -13,7 +13,10 @@
 
 #include "cluster/logger.h"
 #include "config/configuration.h"
+#include "ssx/future-util.h"
 #include "strings/utf8.h"
+
+#include <seastar/core/sleep.hh>
 
 using cluster::clusterlog;
 

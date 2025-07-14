@@ -14,7 +14,7 @@
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
-#include "random/generators.h"
+#include "ssx/future-util.h"
 #include "test_utils/random_bytes.h"
 #include "wasm/cache.h"
 #include "wasm/engine.h"
@@ -31,9 +31,7 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace wasm {
 

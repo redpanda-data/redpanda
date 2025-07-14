@@ -10,6 +10,7 @@
 #include "cluster/tm_stm.h"
 
 #include "absl/container/btree_set.h"
+#include "cluster/snapshot.h"
 #include "cluster/tm_stm_types.h"
 #include "cluster/types.h"
 #include "container/fragmented_vector.h"
