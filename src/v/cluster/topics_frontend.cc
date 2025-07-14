@@ -321,13 +321,18 @@ topics_frontend::topics_frontend(
     }
 }
 
-static bool
-needs_linearizable_barrier(const std::vector<topic_result>& results) {
+namespace {
+
+template<std::ranges::input_range R>
+requires std::same_as<std::ranges::range_value_t<R>, topic_result>
+bool needs_linearizable_barrier(const R& results) {
     return std::any_of(
       results.cbegin(), results.cend(), [](const topic_result& r) {
           return r.ec == errc::success;
       });
 }
+
+} // namespace
 
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
   custom_assignable_topic_configuration_vector topics,
@@ -423,14 +428,16 @@ cluster::errc map_errc(std::error_code ec) {
     return errc::replication_error;
 }
 
-ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
+ss::future<chunked_vector<topic_result>>
+topics_frontend::update_topic_properties(
   topic_properties_update_vector updates,
   model::timeout_clock::time_point timeout) {
     auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
     if (!cluster_leader) {
-        co_return make_error_topic_results(updates, errc::no_leader_controller);
+        co_return make_error_topic_results<chunked_vector>(
+          updates, errc::no_leader_controller);
     }
 
     if (!_features.local().is_active(features::feature::cloud_retention)) {
@@ -442,7 +449,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
           clusterlog.info,
           "Refusing to update topics as not all cluster nodes are running "
           "v22.3");
-        co_return make_error_topic_results(updates, errc::feature_disabled);
+        co_return make_error_topic_results<chunked_vector>(
+          updates, errc::feature_disabled);
     }
 
     // current node is a leader, just replicate
@@ -450,11 +458,11 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
         // replicate empty batch to make sure leader local state is up to date.
         auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {
-            co_return make_error_topic_results(
+            co_return make_error_topic_results<chunked_vector>(
               updates, map_errc(result.error()));
         }
 
-        auto results = co_await ssx::parallel_transform(
+        auto results = co_await ssx::parallel_transform<chunked_vector>(
           std::move(updates), [this, timeout](topic_properties_update update) {
               if (
                 _features.local().should_sanction()
@@ -502,7 +510,8 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
       .then([updates{std::move(updates2)}](
               result<update_topic_properties_reply> r) {
           if (r.has_error()) {
-              return make_error_topic_results(updates, map_errc(r.error()));
+              return make_error_topic_results<chunked_vector>(
+                updates, map_errc(r.error()));
           }
           return std::move(r.value().results);
       });

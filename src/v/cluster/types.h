@@ -25,6 +25,7 @@
 #include "cluster/version.h"
 #include "cluster_link/model/types.h"
 #include "container/contiguous_range_map.h"
+#include "container/fragmented_vector.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1191,7 +1192,7 @@ struct update_topic_properties_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    std::vector<topic_result> results;
+    chunked_vector<topic_result> results;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_topic_properties_reply&);
@@ -1203,6 +1204,10 @@ struct update_topic_properties_reply
       = default;
 
     auto serde_fields() { return std::tie(results); }
+
+    update_topic_properties_reply copy() const {
+        return {.results = results.copy()};
+    }
 };
 
 struct configuration_invariants {
