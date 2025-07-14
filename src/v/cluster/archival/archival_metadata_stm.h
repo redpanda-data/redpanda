@@ -275,6 +275,16 @@ public:
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
 
+    /// Returns the maximum offset which is guaranteed to be recoverable from
+    /// cloud storage.
+    ///
+    /// This is the lesser of the last offset uploaded to cloud storage and the
+    /// last offset we uploaded a manifest for.
+    ///
+    /// If the manifest is empty or the last uploaded offset is 0, returns
+    /// offset::min(), indicating that nothing is recoverable from cloud.
+    model::offset cloud_recoverable_offset();
+
     model::offset max_collectible_offset() override;
 
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
