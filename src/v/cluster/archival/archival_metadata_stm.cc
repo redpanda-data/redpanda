@@ -1310,6 +1310,21 @@ archival_metadata_stm::take_local_snapshot(ssx::semaphore_units apply_units) {
       0, snapshot_offset, std::move(snap_data));
 }
 
+model::offset archival_metadata_stm::cloud_recoverable_offset() {
+    auto lo = get_last_offset();
+    if (_manifest->size() == 0 && lo == model::offset{0}) {
+        lo = model::offset::min();
+    }
+
+    // Do not collect past the offset we last uploaded manifest for: this is
+    // needed for correctness because the remote manifest is used in
+    // handle_eviction() - it is what a remote node doing snapshot-driven
+    // raft recovery will use to start from.
+    lo = std::min(lo, _last_clean_at);
+
+    return lo;
+}
+
 model::offset archival_metadata_stm::max_removable_local_log_offset() {
     // From Redpanda 22.3 up, the ntp_config's impression of whether
     // archival is enabled is authoritative.
@@ -1336,18 +1351,7 @@ model::offset archival_metadata_stm::max_removable_local_log_offset() {
         // need to interact with local retention.
         return model::offset::max();
     }
-    auto lo = get_last_offset();
-    if (_manifest->size() == 0 && lo == model::offset{0}) {
-        lo = model::offset::min();
-    }
-
-    // Do not collect past the offset we last uploaded manifest for: this is
-    // needed for correctness because the remote manifest is used in
-    // handle_eviction() - it is what a remote node doing snapshot-driven
-    // raft recovery will use to start from.
-    lo = std::min(lo, _last_clean_at);
-
-    return lo;
+    return cloud_recoverable_offset();
 }
 
 void archival_metadata_stm::maybe_notify_waiter(cluster::errc err) noexcept {
