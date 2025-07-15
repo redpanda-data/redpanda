@@ -652,6 +652,20 @@ redpanda_cc_gtest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "buffered_protocol_test",
+    timeout = "short",
+    srcs = [
+        "buffered_protocol_test.cc",
+    ],
+    deps = [
+        "//src/v/raft",
+        "//src/v/random:generators",
+        "//src/v/test_utils:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_bench(
     name = "heartbeat_bench_rpbench",
     srcs = ["heartbeat_bench.cc"],

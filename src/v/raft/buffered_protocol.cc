@@ -74,15 +74,14 @@ buffered_protocol::buffered_protocol(
   ss::scheduling_group sg,
   consensus_client_protocol base,
   config::binding<size_t> max_inflight_requests,
-  config::binding<size_t> max_buffered_bytes)
+  config::binding<size_t> max_buffered_bytes,
+  std::chrono::milliseconds gc_interval)
   : _sg(sg)
   , _base_protocol(std::move(base))
   , _max_inflight_requests(std::move(max_inflight_requests))
   , _max_buffered_bytes(std::move(max_buffered_bytes))
   , _gc_timer([this] { garbage_collect_unused_queues(); }) {
-    // the timer interval doesn't have to be configurable, it would be
-    // additional configuration parameter, the queues doesn't change too often
-    _gc_timer.arm_periodic(10s);
+    _gc_timer.arm_periodic(gc_interval);
 }
 
 ss::future<result<vote_reply>> buffered_protocol::vote(
@@ -119,6 +118,9 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
                   _max_inflight_requests,
                   _max_buffered_bytes));
           }
+          // do not introduce a scheduling point here, the gate has to be held
+          // in the same scheduling point so this group is not considered a
+          // candidate for GC.
           return it->second->append_entries(std::move(req), std::move(opts));
       });
 };
@@ -315,7 +317,8 @@ bool append_entries_queue::can_buffer_next_request(size_t size) const {
 }
 bool append_entries_queue::is_idle() const {
     static constexpr auto queue_idle_timeout = 30s;
-    return _requests.empty() && inflight_requests() == 0
+    return _gate.get_count() == 0 && _requests.empty()
+           && inflight_requests() == 0
            && _last_sent_timestamp < clock_type::now() - queue_idle_timeout;
 }
 
