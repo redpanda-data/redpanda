@@ -11,10 +11,10 @@
 
 #include "base/vlog.h"
 #include "bytes/bytes.h"
-#include "kafka/protocol/wire.h"
 #include "security/acl.h"
 #include "security/errc.h"
 #include "security/gssapi.h"
+#include "security/gssapi_principal_mapper.h"
 #include "security/krb5.h"
 #include "security/logger.h"
 #include "ssx/thread_worker.h"
@@ -27,7 +27,6 @@
 #include <boost/outcome/success_failure.hpp>
 #include <fmt/ranges.h>
 
-#include <array>
 #include <sstream>
 #include <string_view>
 #include <utility>

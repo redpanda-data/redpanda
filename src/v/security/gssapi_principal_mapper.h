@@ -12,7 +12,6 @@
 
 #include "base/seastarx.h"
 #include "config/property.h"
-#include "security/config.h"
 #include "security/gssapi_rule.h"
 
 #include <seastar/core/sstring.hh>

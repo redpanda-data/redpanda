@@ -130,6 +130,7 @@ redpanda_cc_btest(
     deps = [
         "//src/v/config",
         "//src/v/security",
+        "//src/v/security:config",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
     ],
