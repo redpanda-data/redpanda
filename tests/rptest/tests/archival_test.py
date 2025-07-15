@@ -218,6 +218,10 @@ class ArchivalTest(RedpandaTest):
             extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
+        if test_context.function_name == "test_all_partitions_leadership_transfer":
+            extra_rp_conf.update(
+                cloud_storage_manifest_max_upload_interval_sec=30)
+
         super().__init__(test_context=test_context,
                          extra_rp_conf=extra_rp_conf,
                          si_settings=si_settings)
