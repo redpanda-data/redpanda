@@ -51,11 +51,22 @@ lock_manager::range_lock(const timequery_config& cfg) {
     // Copy segments that have timestamps >= cfg.time and overlap with the
     // offset range [min_offset, max_offset].
     std::copy_if(
-      _set.lower_bound(cfg.time),
+      _set.begin(),
       _set.end(),
       std::back_inserter(tmp),
-      [&query_interval](ss::lw_shared_ptr<segment>& s) {
+      [&query_interval, &cfg](ss::lw_shared_ptr<segment>& s) {
           if (s->empty()) {
+              return false;
+          }
+
+          // We exclude the segments that only contain configuration batches
+          // from our search, as their timestamps may be wildly different from
+          // the user provided timestamps.
+          if (s->index().non_data_timestamps()) {
+              return false;
+          }
+
+          if (s->index().max_timestamp() < cfg.time) {
               return false;
           }
 
