@@ -491,12 +491,39 @@ controller_backend::calculate_learner_initial_offset(
      * Initial learner start offset only makes sense for partitions with cloud
      * storage data
      */
+    if (auto tp_cfg = p->get_topic_config();
+        tp_cfg.has_value() && tp_cfg->get().is_internal()) {
+        vlog(clusterlog.trace, "{} is part of an internal topic", p->ntp());
+        return std::nullopt;
+    }
+
     if (!p->cloud_data_available()) {
         vlog(clusterlog.trace, "no cloud data available for: {}", p->ntp());
         return std::nullopt;
     }
 
+    if (p->get_cloud_storage_mode() != cluster::cloud_storage_mode::full) {
+        vlog(
+          clusterlog.trace,
+          "cloud storage not fully enabled for: {}",
+          p->ntp());
+        return std::nullopt;
+    }
+
+    if (
+      config::shard_local_cfg().cloud_storage_enable_segment_uploads()
+      == false) {
+        vlog(clusterlog.trace, "segment uploads are paused");
+        return std::nullopt;
+    }
+
+    if (p->archival_meta_stm() == nullptr) {
+        vlog(clusterlog.trace, "no archival_meta_stm for {}", p->ntp());
+        return std::nullopt;
+    }
+
     auto log = p->log();
+
     /**
      * Calculate retention targets based on cluster and topic configuration
      */
@@ -576,20 +603,38 @@ controller_backend::calculate_learner_initial_offset(
         return std::nullopt;
     }
 
-    const auto max_removable_local_log_offset
-      = p->max_removable_local_log_offset();
+    auto max_removable_local_log_offset = p->max_removable_local_log_offset();
+    auto archival_safe_removable
+      = p->archival_meta_stm()->cloud_recoverable_offset();
+
     /**
      * Last offset uploaded to the cloud is target learner retention upper
      * bound. We can not start retention recover from the point which is not yet
      * uploaded to Cloud Storage.
+     *
+     * In general max_removable_local_log_offset should not exceed
+     * last_uploaded, but can if, for example, archival is disabled or paused.
      */
+
+    if (max_removable_local_log_offset > archival_safe_removable) {
+        vlog(
+          clusterlog.info,
+          "[{}] max_removable_local_log_offset {} exceeds last uploaded to "
+          "cloud {}, clamping to {}",
+          p->ntp(),
+          max_removable_local_log_offset,
+          archival_safe_removable,
+          archival_safe_removable);
+        max_removable_local_log_offset = archival_safe_removable;
+    }
+
     vlog(
       clusterlog.info,
       "[{}] calculated retention offset: {}, last uploaded to cloud: {}, "
       "manifest clean offset: {}, max_removable_local_log_offset: {}",
       p->ntp(),
       *retention_offset,
-      p->archival_meta_stm()->manifest().get_last_offset(),
+      archival_safe_removable,
       p->archival_meta_stm()->get_last_clean_at(),
       max_removable_local_log_offset);
 
