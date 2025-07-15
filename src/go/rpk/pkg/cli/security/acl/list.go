@@ -13,9 +13,13 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -23,8 +27,11 @@ import (
 )
 
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var a acls
-	var printAllFilters bool
+	var (
+		a               acls
+		printAllFilters bool
+		subsystem       []string
+	)
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls", "describe"},
@@ -47,9 +54,29 @@ resource names:
   * "match" returns wildcard matches, prefix patterns that match your input, and literal matches
   * "prefix" returns prefix patterns that match your input (prefix "fo" matches "foo")
   * "literal" returns exact name matches
+
+The list command lists ACLs for both Kafka and Schema Registry. To limit the 
+results to a specific subsystem, use the --subsystem flag with either "kafka" or 
+"registry".
 `,
-		Args: cobra.ExactArgs(0),
-		Run: func(_ *cobra.Command, _ []string) {
+		Example: `
+List all ACLs:
+  rpk security acl list
+
+List all Schema Registry ACLs:
+  rpk security acl list --subsytem registry
+
+List all ACLs for topic "foo":
+  rpk security acl list --topic foo
+
+List all ACLs for user "bar" on topic "foo":
+  rpk security acl list --allow-principal bar --topic foo
+
+List all ACLs for role "admin" on schema registry subject "foo-value":
+  rpk security acl list --allow-role admin --registry-subject foo-value
+`,
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help(&aclListOutput{}); ok {
 				out.Exit(h)
@@ -61,14 +88,21 @@ resource names:
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			b, err := a.createDeletionsAndDescribes(true)
+			srClient, err := schemaregistry.NewClient(fs, p)
+			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
+
+			isKafka, isSR, err := kafkaOrSRFilters(cmd, true)
+			out.MaybeDie(err, "invalid request: %v", err)
+
+			kBuilder, srACLs, err := a.createDeletionsAndDescribes(true, isKafka, isSR)
 			out.MaybeDieErr(err)
-			describeReqResp(adm, printAllFilters, false, b, f)
+			describeReqResp(cmd.Context(), adm, srClient, printAllFilters, false, kBuilder, srACLs, f)
 		},
 	}
 	p.InstallFormatFlag(cmd)
 	p.InstallKafkaFlags(cmd)
 	a.addListFlags(cmd)
+	cmd.Flags().StringSliceVar(&subsystem, subsystemFlag, []string{"kafka", "registry"}, "The subsystem to match ACLs for (kafka, registry, or both)")
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd
 }
@@ -88,9 +122,10 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to match ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to match ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to match ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to grant ACLs for the schema registry")
+	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to grant ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "any", "Pattern to use when matching resource names (any, match, literal, or prefixed)")
-
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to match (repeatable)")
 
 	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Allowed principal ACLs to match (repeatable)")
@@ -102,36 +137,56 @@ func (a *acls) addListFlags(cmd *cobra.Command) {
 }
 
 func describeReqResp(
+	ctx context.Context,
 	adm *kadm.Client,
+	srClient *rpsr.Client,
 	printAllFilters bool,
 	printMatchesHeader bool,
 	b *kadm.ACLBuilder,
+	srACLs []rpsr.ACL,
 	f config.OutFormatter,
-) {
-	results, err := adm.DescribeACLs(context.Background(), b)
-	out.MaybeDie(err, "unable to list ACLs: %v", err)
-	types.Sort(results)
+) []rpsr.ACL {
+	var (
+		kResults  []kadm.DescribeACLsResult
+		srResults []rpsr.ACL
+		err       error
+		srErr     error
+	)
+	if b != nil {
+		kResults, err = adm.DescribeACLs(ctx, b)
+		out.MaybeDie(err, "unable to list kafka ACLs: %v", err)
+	}
+
+	if srACLs != nil {
+		srResults, err = srClient.ListACLsBatch(ctx, srACLs)
+		if err != nil {
+			// For backwards compatibility, we print the error instead of
+			// exiting.
+			srErr = fmt.Errorf("unable to list sr ACLs: %v", err)
+			zap.L().Sugar().Warnf("failed to list schema registry ACLs: %v", err)
+		}
+	}
 
 	// If any filters failed, or if all filters are
 	// requested, we print the filter section.
 	var printFailedFilters bool
-	for _, f := range results {
+	for _, f := range kResults {
 		if f.Err != nil {
 			printFailedFilters = true
 			break
 		}
 	}
-	output := aclListOutput{}
-	for _, f := range results {
+	var output aclListOutput
+	for _, f := range kResults {
 		if printAllFilters || printFailedFilters {
 			output.Filters = append(output.Filters, aclWithMessage{
 				unptr(f.Principal),
 				unptr(f.Host),
-				f.Type,
+				f.Type.String(),
 				unptr(f.Name),
-				f.Pattern,
-				f.Operation,
-				f.Permission,
+				f.Pattern.String(),
+				f.Operation.String(),
+				f.Permission.String(),
 				kafka.ErrMessage(f.Err),
 			})
 		}
@@ -139,18 +194,50 @@ func describeReqResp(
 			output.Matches = append(output.Matches, acl{
 				d.Principal,
 				d.Host,
-				d.Type,
+				d.Type.String(),
 				d.Name,
-				d.Pattern,
-				d.Operation,
-				d.Permission,
+				d.Pattern.String(),
+				d.Operation.String(),
+				d.Permission.String(),
 			})
 		}
 	}
+	if printAllFilters || printFailedFilters {
+		for _, f := range srACLs {
+			msg := ""
+			if srErr != nil {
+				msg = srErr.Error()
+			}
+			output.Filters = append(output.Filters, aclWithMessage{
+				Principal:           f.Principal,
+				Host:                f.Host,
+				ResourceType:        string(f.ResourceType),
+				ResourceName:        f.Resource,
+				ResourcePatternType: string(f.PatternType),
+				Operation:           string(f.Operation),
+				Permission:          string(f.Permission),
+				Message:             msg,
+			})
+		}
+	}
+	for _, f := range srResults {
+		output.Matches = append(output.Matches, acl{
+			Principal:           f.Principal,
+			Host:                f.Host,
+			ResourceType:        string(f.ResourceType),
+			ResourceName:        f.Resource,
+			ResourcePatternType: string(f.PatternType),
+			Operation:           string(f.Operation),
+			Permission:          string(f.Permission),
+		})
+	}
+
+	types.Sort(output)
+
 	if isText, _, t, err := f.Format(&output); !isText {
 		out.MaybeDie(err, "unable to print in the requested format %q: %v", f.Kind, err)
 		fmt.Printf("%s\n", t)
-		return
+		return srResults
 	}
 	if len(output.Filters) > 0 {
 		out.Section("filters")
@@ -162,6 +249,7 @@ func describeReqResp(
 		out.Section("matches")
 	}
 	printDescribedACLs(output)
+	return srResults
 }
 
 type aclListOutput struct {

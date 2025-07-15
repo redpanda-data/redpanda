@@ -224,8 +224,8 @@ github.com/redpanda-data/common-go/proto v0.0.0-20250422172326-6a3bcb14b829 h1:f
 github.com/redpanda-data/common-go/proto v0.0.0-20250422172326-6a3bcb14b829/go.mod h1:6WXvgZCZIkbQCNsvU5zTx/+ub5eXTuCcl90i5xkhMw0=
 github.com/redpanda-data/common-go/rpadmin v0.1.14 h1:G/rlh9cHsGhTsNpkwrISdpGA8fPZ7ul57rzxbPiJhs0=
 github.com/redpanda-data/common-go/rpadmin v0.1.14/go.mod h1:zgE/M2UihQZRdivHfbm4x9Rb3Vm/crO5kiX3GQrxhG4=
-github.com/redpanda-data/common-go/rpsr v0.1.0 h1:kFjUlMTP76r8qCcDKAgTJYk6GqTjpeJlL/8hQiHlLSg=
-github.com/redpanda-data/common-go/rpsr v0.1.0/go.mod h1:VdvwMZ0z+htjbgo1kvYyUK1IjN0Ihx8dlD8dmkRat1M=
+github.com/redpanda-data/common-go/rpsr v0.1.1 h1:3935qYNvAhbs8s3TrmXzXMs/Tc0+ukNjgsVxskh99kI=
+github.com/redpanda-data/common-go/rpsr v0.1.1/go.mod h1:2j2416onosg5FKaKz52NooRE+q/9EJqQn0kyTcTXWHc=
 github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525 h1:vskZrV6q8W8flL0Ud23AJUYAd8ZgTadO45+loFnG2G0=
 github.com/redpanda-data/go-avro/v2 v2.0.0-20240405204525-77b1144dc525/go.mod h1:3YqAM7pgS5vW/EH7naCjFqnAajSgi0f0CfMe1HGhLxQ=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
@@ -281,8 +281,8 @@ github.com/twmb/franz-go/pkg/kadm v1.16.0 h1:STMs1t5lYR5mR974PSiwNzE5TvsosByTp+r
 github.com/twmb/franz-go/pkg/kadm v1.16.0/go.mod h1:MUdcUtnf9ph4SFBLLA/XxE29rvLhWYLM9Ygb8dfSCvw=
 github.com/twmb/franz-go/pkg/kmsg v1.11.2 h1:hIw75FpwcAjgeyfIGFqivAvwC5uNIOWRGvQgZhH4mhg=
 github.com/twmb/franz-go/pkg/kmsg v1.11.2/go.mod h1:CFfkkLysDNmukPYhGzuUcDtf46gQSqCZHMW1T4Z+wDE=
-github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250620172413-c17130ef7765 h1:+l/P3ExNaY1T5Tft/+zK5r7hiEilgHWS5Cjjh2iZ4ME=
-github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250620172413-c17130ef7765/go.mod h1:O4o4mUMNfmyEt2HcuM+qZdc6KrcStvjgxWR6Cfvmukw=
+github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250711145744-a849b8be17b7 h1:9DDDjtNqzD3na5J8GPnHz//BGzMvpPEn57f32YeHEG0=
+github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250711145744-a849b8be17b7/go.mod h1:O4o4mUMNfmyEt2HcuM+qZdc6KrcStvjgxWR6Cfvmukw=
 github.com/twmb/franz-go/plugin/kzap v1.1.2 h1:0arX5xJ0soUPX1LlDay6ZZoxuWkWk1lggQ5M/IgRXAE=
 github.com/twmb/franz-go/plugin/kzap v1.1.2/go.mod h1:53Cl9Uz1pbdOPDvUISIxLrZIWSa2jCuY1bTMauRMBmo=
 github.com/twmb/tlscfg v1.2.1 h1:IU2efmP9utQEIV2fufpZjPq7xgcZK4qu25viD51BB44=
@@ -353,8 +353,8 @@ golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJ
 golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.15.0 h1:KWH3jNZsfyT6xfAfKiz6MRNmd46ByHDYaZ7KSkCtdW8=
-golang.org/x/sync v0.15.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
+golang.org/x/sync v0.16.0 h1:ycBJEhp9p4vXvUZNszeOq0kGTPghopOL8q0fq3vstxw=
+golang.org/x/sync v0.16.0/go.mod h1:1dzgHSNfp02xaA81J2MS99Qcpr2w7fw1gpm99rleRqA=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190222072716-a9d3bda3a223/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=

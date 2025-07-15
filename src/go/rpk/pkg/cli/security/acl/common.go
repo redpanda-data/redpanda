@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/redpanda-data/common-go/rpsr"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -36,6 +37,9 @@ const (
 	denyRoleFlag       = "deny-role"
 	denyHostFlag       = "deny-host"
 	operationFlag      = "operation"
+	registryFlag       = "registry-global"
+	subjectFlag        = "registry-subject"
+	subsystemFlag      = "subsystem"
 
 	kafkaCluster = "kafka-cluster"
 
@@ -61,23 +65,23 @@ type (
 	// Corresponding to the above, acl and aclWithMessage are the rows
 	// for PrintStructFields.
 	acl struct {
-		Principal           string                      `json:"principal"`
-		Host                string                      `json:"host"`
-		ResourceType        kmsg.ACLResourceType        `json:"resource_type"`
-		ResourceName        string                      `json:"resource_name"`
-		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type"`
-		Operation           kmsg.ACLOperation           `json:"operation"`
-		Permission          kmsg.ACLPermissionType      `json:"permission"`
+		Principal           string `json:"principal"`
+		Host                string `json:"host"`
+		ResourceType        string `json:"resource_type"`
+		ResourceName        string `json:"resource_name"`
+		ResourcePatternType string `json:"resource_pattern_type"`
+		Operation           string `json:"operation"`
+		Permission          string `json:"permission"`
 	}
 	aclWithMessage struct {
-		Principal           string                      `json:"principal"`
-		Host                string                      `json:"host"`
-		ResourceType        kmsg.ACLResourceType        `json:"resource_type"`
-		ResourceName        string                      `json:"resource_name"`
-		ResourcePatternType kmsg.ACLResourcePatternType `json:"resource_pattern_type"`
-		Operation           kmsg.ACLOperation           `json:"operation"`
-		Permission          kmsg.ACLPermissionType      `json:"permission"`
-		Message             string                      `json:"message"`
+		Principal           string `json:"principal"`
+		Host                string `json:"host"`
+		ResourceType        string `json:"resource_type"`
+		ResourceName        string `json:"resource_name"`
+		ResourcePatternType string `json:"resource_pattern_type"`
+		Operation           string `json:"operation"`
+		Permission          string `json:"permission"`
+		Message             string `json:"message"`
 	}
 )
 
@@ -122,17 +126,29 @@ type acls struct {
 	denyRoles       []string
 	denyHosts       []string
 
+	// schema registry flags
+	subjects []string
+	registry bool
+
 	// create & delete & list flags, to be parsed
 	resourcePatternType string
 	operations          []string
 
-	parsed parsed
+	kParsed  kafkaParsed
+	srParsed schemaRegistryParsed
 }
 
-// parsed contains the results of flags that need parsing.
-type parsed struct {
+// kafkaParsed contains the results of flags that need parsing for Kafka ACLs.
+type kafkaParsed struct {
 	operations []kmsg.ACLOperation
 	pattern    kmsg.ACLResourcePatternType
+}
+
+// schemaRegistryParsed contains the result of flags that need parsing for
+// SR ACLs.
+type schemaRegistryParsed struct {
+	operations []rpsr.Operation
+	pattern    rpsr.PatternType
 }
 
 func (a *acls) addDeprecatedFlags(cmd *cobra.Command) {
@@ -257,30 +273,64 @@ func (a *acls) backcompat(list bool) error {
 	return nil
 }
 
-func (a *acls) parseCommon() error {
+func (a *acls) parseKafkaCommons() error {
 	for _, op := range a.operations {
 		parsed, err := kmsg.ParseACLOperation(op)
 		if err != nil {
-			return fmt.Errorf("invalid operation %q", op)
+			return fmt.Errorf("invalid kafka operation %q", op)
 		}
-		a.parsed.operations = append(a.parsed.operations, parsed)
+		a.kParsed.operations = append(a.kParsed.operations, parsed)
 	}
 	if a.resourcePatternType == "" {
 		a.resourcePatternType = "literal"
 	}
 	pattern, err := kmsg.ParseACLResourcePatternType(a.resourcePatternType)
 	if err != nil {
-		return fmt.Errorf("invalid resource pattern type %q", a.resourcePatternType)
+		return fmt.Errorf("invalid kafka resource pattern type %q", a.resourcePatternType)
 	}
-	a.parsed.pattern = pattern
+	a.kParsed.pattern = pattern
 	return nil
 }
 
-func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
+func (a *acls) parseSRCommons() error {
+	for _, op := range a.operations {
+		parsed, err := rpsr.ParseOperation(op)
+		if err != nil {
+			return fmt.Errorf("invalid schema registry operation %q", op)
+		}
+		a.srParsed.operations = append(a.srParsed.operations, parsed)
+	}
+	if a.resourcePatternType == "" {
+		a.resourcePatternType = "literal"
+	}
+	pattern, err := rpsr.ParsePatternType(a.resourcePatternType)
+	if err != nil {
+		return fmt.Errorf("invalid schema registry resource pattern type %q", a.resourcePatternType)
+	}
+	a.srParsed.pattern = pattern
+	return nil
+}
+
+func (a *acls) createCreations() (*kadm.ACLBuilder, []rpsr.ACL, error) {
+	kC, err := a.createKafkaACLCreation()
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to create kafka ACLs: %v", err)
+	}
+	if a.hasSR() {
+		srC, err := a.createSRACLCreation()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create schema registry ACLs: %v", err)
+		}
+		return kC, srC, nil
+	}
+	return kC, nil, nil
+}
+
+func (a *acls) createKafkaACLCreation() (*kadm.ACLBuilder, error) {
 	if err := a.backcompat(false); err != nil {
 		return nil, err
 	}
-	if err := a.parseCommon(); err != nil {
+	if err := a.parseKafkaCommons(); err != nil {
 		return nil, err
 	}
 
@@ -293,8 +343,8 @@ func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
 	// Using empty lists / non-Maybe functions when building create ACLs is
 	// fine, since creation does not opt in to "any" when things are empty.
 	b := kadm.NewACLs().
-		ResourcePatternType(a.parsed.pattern).
-		MaybeOperations(a.parsed.operations...). // avoid defaulting to "any" if none are provided
+		ResourcePatternType(a.kParsed.pattern).
+		MaybeOperations(a.kParsed.operations...). // avoid defaulting to "any" if none are provided
 		Topics(a.topics...).
 		Groups(a.groups...).
 		MaybeClusters(a.cluster). // avoid opting in to all clusters by default
@@ -309,13 +359,68 @@ func (a *acls) createCreations() (*kadm.ACLBuilder, error) {
 	return b, b.ValidateCreate()
 }
 
-func (a *acls) createDeletionsAndDescribes(
-	list bool,
-) (*kadm.ACLBuilder, error) {
+func (a *acls) createSRACLCreation() ([]rpsr.ACL, error) {
+	if err := a.parseSRCommons(); err != nil {
+		return nil, err
+	}
+
+	PrefixRole(a.allowRoles)
+	PrefixRole(a.denyRoles)
+
+	a.allowPrincipals = append(a.allowPrincipals, a.allowRoles...)
+	a.denyPrincipals = append(a.denyPrincipals, a.denyRoles...)
+
+	b := rpsr.NewACLBuilder().
+		Pattern(a.srParsed.pattern).
+		Operations(a.srParsed.operations...).
+		Subjects(a.subjects...).
+		MaybeRegistry(a.registry).
+		AllowPrincipals(a.allowPrincipals...).
+		DenyPrincipals(a.denyPrincipals...)
+
+	// Kafka ACL creation currently defaults to any ('*') if we have a
+	// principal; we match the behavior.
+	if b.HasAllowedPrincipals() {
+		b.AllowHostsOrAll(a.allowHosts...)
+	} else {
+		b.AllowHosts(a.allowHosts...)
+	}
+	if b.HasDeniedPrincipals() {
+		b.DenyHostsOrAll(a.denyHosts...)
+	} else {
+		b.DenyHosts(a.denyHosts...)
+	}
+
+	b.PrefixUserExcept(rolePrefix)
+
+	return b.ValidateAndBuildCreate()
+}
+
+func (a *acls) createDeletionsAndDescribes(list, isKafka, isSR bool) (kBuilder *kadm.ACLBuilder, srACLs []rpsr.ACL, err error) {
+	// If is none, then is all (i.e: no flags specified, or just common flags).
+	if !isKafka && !isSR {
+		isKafka, isSR = true, true
+	}
+	if isKafka {
+		kBuilder, err = a.createKafkaDeletionsAndDescribes(list)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create kafka ACLs: %v", err)
+		}
+	}
+	if isSR {
+		srACLs, err = a.createSRDeletionsAndDescribes()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create schema registry ACLs: %v", err)
+		}
+	}
+	return kBuilder, srACLs, nil
+}
+
+func (a *acls) createKafkaDeletionsAndDescribes(list bool) (*kadm.ACLBuilder, error) {
 	if err := a.backcompat(list); err != nil {
 		return nil, err
 	}
-	if err := a.parseCommon(); err != nil {
+	if err := a.parseKafkaCommons(); err != nil {
 		return nil, err
 	}
 
@@ -330,8 +435,8 @@ func (a *acls) createDeletionsAndDescribes(
 	// is empty, but we can use the Maybe functions to avoid optin into all
 	// by default.
 	b := kadm.NewACLs().
-		ResourcePatternType(a.parsed.pattern).
-		Operations(a.parsed.operations...).
+		ResourcePatternType(a.kParsed.pattern).
+		Operations(a.kParsed.operations...).
 		MaybeTopics(a.topics...).
 		MaybeGroups(a.groups...).
 		MaybeClusters(a.cluster).
@@ -360,4 +465,118 @@ func (a *acls) createDeletionsAndDescribes(
 	b.PrefixUserExcept(rolePrefix) // add "User:" prefix to everything if needed
 
 	return b, b.ValidateFilter()
+}
+
+func (a *acls) createSRDeletionsAndDescribes() ([]rpsr.ACL, error) {
+	if err := a.parseSRCommons(); err != nil {
+		return nil, err
+	}
+
+	PrefixRole(a.allowRoles)
+	PrefixRole(a.denyRoles)
+
+	a.allowPrincipals = append(a.allowPrincipals, a.allowRoles...)
+	a.denyPrincipals = append(a.denyPrincipals, a.denyRoles...)
+
+	b := rpsr.NewACLBuilder().
+		PatternOrAny(a.srParsed.pattern).
+		OperationsOrAny(a.srParsed.operations...).
+		Subjects(a.subjects...).
+		MaybeRegistry(a.registry).
+		AllowPrincipals(a.allowPrincipals...).
+		DenyPrincipals(a.denyPrincipals...).
+		AllowHosts(a.allowHosts...).
+		DenyHosts(a.denyHosts...)
+
+	// User & Hosts: when unspecified, we default to everything.
+	if !b.HasPrincipals() {
+		b.AllowPrincipalsOrAny()
+		b.DenyPrincipalsOrAny()
+	}
+	if !b.HasHosts() {
+		b.AllowHostsOrAny()
+		b.DenyHostsOrAny()
+	}
+	// Resources: if no resources are specified, we use all resources.
+	if !b.HasResources() {
+		b.AnyResources()
+	}
+
+	b.PrefixUserExcept(rolePrefix)
+
+	return b.BuildFilter(), nil
+}
+
+func (a *acls) hasSR() bool {
+	if a.registry || len(a.subjects) > 0 {
+		return true
+	}
+	return false
+}
+
+// kafkaOrSRFilters returns whether Kafka or Schema Registry flags were set.
+// If checkSubsystem is true and --subsystem is set, it ensures only compatible
+// flags are used for the selected subsystem(s).
+func kafkaOrSRFilters(cmd *cobra.Command, checkSubsystem bool) (isKafka, isSR bool, err error) {
+	kFlags := []string{topicFlag, groupFlag, clusterFlag, txnIDFlag}
+	srFlags := []string{registryFlag, subjectFlag}
+
+	subsystemChanged := cmd.Flags().Changed(subsystemFlag)
+	var subsystems []string
+	if subsystemChanged {
+		subsystems, err = cmd.Flags().GetStringSlice(subsystemFlag)
+		if err != nil {
+			return false, false, err
+		}
+	}
+
+	// If we're checking the subsystem and it changed:
+	if checkSubsystem && subsystemChanged {
+		onlyKafka := false
+		onlyRegistry := false
+
+		for _, sub := range subsystems {
+			switch strings.ToLower(sub) {
+			case "kafka":
+				onlyKafka = true
+			case "registry":
+				onlyRegistry = true
+			default:
+				return false, false, fmt.Errorf("unsupported subsystem %q: only 'kafka' and 'registry' are supported", sub)
+			}
+		}
+
+		if onlyKafka && !onlyRegistry {
+			for _, flag := range srFlags {
+				if cmd.Flags().Changed(flag) {
+					return false, false, fmt.Errorf("specified kafka subsystem only, but the Schema Registry flag %q was specified", flag)
+				}
+			}
+			return true, false, nil
+		}
+
+		if onlyRegistry && !onlyKafka {
+			for _, flag := range kFlags {
+				if cmd.Flags().Changed(flag) {
+					return false, false, fmt.Errorf("specified Schema Registry subsystem only, but the Kafka flag %q was specified", flag)
+				}
+			}
+			return false, true, nil
+		}
+		// If both kafka and registry are included, fall through to flag-based detection.
+	}
+
+	for _, flag := range kFlags {
+		if cmd.Flags().Changed(flag) {
+			isKafka = true
+			break
+		}
+	}
+	for _, flag := range srFlags {
+		if cmd.Flags().Changed(flag) {
+			isSR = true
+			break
+		}
+	}
+	return isKafka, isSR, nil
 }
