@@ -1792,6 +1792,43 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             self.redpanda.set_cluster_config(valid_props, expect_restart=True)
 
 
+class ClusterConfigIcebergTest(RedpandaTest):
+    """Class to test configuration with Iceberg enabled as a prerequisite.
+       This also requires cloud storage configuration."""
+    def __init__(self, test_context):
+        super().__init__(test_context, si_settings=SISettings(test_context))
+
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=1)
+    def test_iceberg_rest_catalog_endpoint_validation(self):
+        """
+        Tests that the Iceberg REST catalog endpoint validation works correctly.
+        """
+        # Enabling iceberg alone should work.
+        self.redpanda.set_cluster_config({'iceberg_enabled': True},
+                                         expect_restart=True)
+
+        # Setting catalog type to rest without endpoint should be rejected.
+        with expect_exception(requests.exceptions.HTTPError,
+                              lambda e: e.response.status_code == 400):
+            self.redpanda.set_cluster_config(
+                {
+                    'iceberg_enabled': True,
+                    'iceberg_catalog_type': 'rest'
+                },
+                expect_restart=True)
+
+        # Setting catalog type to rest with endpoint should work.
+        self.redpanda.set_cluster_config(
+            {
+                'iceberg_enabled': True,
+                'iceberg_catalog_type': 'rest',
+                'iceberg_rest_catalog_endpoint': 'http://localhost:8181'
+            },
+            expect_restart=True)
+
+
 """
 PropertyAliasData:
     primary_name: str  # this is the primary name in the current version of redpanda
