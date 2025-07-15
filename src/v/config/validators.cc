@@ -345,6 +345,20 @@ validate_iceberg_rest_catalog_auth_mode(const config::configuration& config) {
 }
 
 std::optional<ss::sstring>
+validate_iceberg_rest_catalog_config(const config::configuration& config) {
+    auto catalog_type = config.iceberg_catalog_type();
+    if (catalog_type == datalake_catalog_type::rest) {
+        const auto& endpoint = config.iceberg_rest_catalog_endpoint;
+        if (!endpoint().has_value()) {
+            return fmt::format(
+              "Must set {} when iceberg_catalog_type is set to 'rest'",
+              endpoint.name());
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
 validate_consumer_group_metrics(const std::vector<ss::sstring>& metrics) {
     constexpr auto supported = std::to_array<std::string_view>(
       {"group", "partition", "consumer_lag"});
