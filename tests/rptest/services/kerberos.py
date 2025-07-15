@@ -19,6 +19,9 @@ KDC_CONF_TMPL = """
     {{ realm }} = {
         acl_file = {{ kadm5_acl_path }}
         max_renewable_life = 7d 0h 0m 0s
+        {% if allow_rc4 %}
+        allow_rc4 = true
+        {% endif %}
         supported_enctypes = {{ supported_encryption_types }}
         default_principal_flags = +preauth
 }
@@ -33,6 +36,9 @@ KRB5_CONF_TMPL = """
 [libdefaults]
     default_realm = {{ realm }}
     dns_canonicalize_hostname = false
+    {% if allow_rc4 %}
+    allow_rc4 = true
+    {% endif %}
     permitted_enctypes = {{ permitted_enctypes }}
 
 [realms]
@@ -107,17 +113,26 @@ class AuthenticationError(Exception):
         return repr(self.message)
 
 
-def render_krb5_config(kdc_node, realm: str, permitted_enctypes: str):
+def render_krb5_config(kdc_node,
+                       realm: str,
+                       permitted_enctypes: str,
+                       allow_rc4: bool = False):
     return Template(KRB5_CONF_TMPL).render(
-        node=kdc_node, realm=realm, permitted_enctypes=permitted_enctypes)
+        node=kdc_node,
+        realm=realm,
+        permitted_enctypes=permitted_enctypes,
+        allow_rc4=allow_rc4)
 
 
-def render_kdc_config(realm: str, kadm5_acl_path: str,
-                      supported_encryption_types: str):
+def render_kdc_config(realm: str,
+                      kadm5_acl_path: str,
+                      supported_encryption_types: str,
+                      allow_rc4: bool = False):
     return Template(KDC_CONF_TMPL).render(
         realm=realm,
         kadm5_acl_path=kadm5_acl_path,
-        supported_encryption_types=supported_encryption_types)
+        supported_encryption_types=supported_encryption_types,
+        allow_rc4=allow_rc4)
 
 
 def render_remote_kadmin_command(command,
