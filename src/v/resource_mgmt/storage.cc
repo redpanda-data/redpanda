@@ -624,8 +624,12 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * into the cloud.
      */
     if (adjusted_target_excess > usage.reclaim.retention) {
-        vlog(
-          rlog.info,
+        auto schedule = co_await _policy.create_new_schedule();
+
+        vlogl(
+          rlog,
+          schedule.sched_size > 0 ? seastar::log_level::info
+                                  : seastar::log_level::debug,
           "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
           "collection expected to remove {}. Space management of tiered "
           "storage topics to remove {}. Total estimated available to remove "
@@ -638,7 +642,6 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(adjusted_target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
 
-        auto schedule = co_await _policy.create_new_schedule();
         if (schedule.sched_size > 0) {
             auto estimate = _policy.evict_until_local_retention(
               schedule, adjusted_target_excess);
@@ -680,7 +683,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
             co_await _policy.install_schedule(std::move(schedule));
         } else {
             vlog(
-              rlog.info,
+              rlog.debug,
               "No tiered storage partitions were found, unable to reclaim");
         }
     } else {
