@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "metrics/metrics.h"
 #include "model/fundamental.h"
 
@@ -136,6 +137,7 @@ private:
     uint64_t _schema_id_validation_records_failed{0};
     int64_t _iceberg_translation_offset_lag{metric_default_initialized_state};
     int64_t _iceberg_commit_offset_lag{metric_default_initialized_state};
+    config::binding<bool> _enable_scrubbing_bind;
     metrics::internal_metric_groups _metrics;
     metrics::public_metric_groups _public_metrics;
 };
