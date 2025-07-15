@@ -73,7 +73,7 @@ ss::future<chunked_vector<model::record_batch>> materialize_placeholders(
       std::move(query), bucket, &api, &cache, &rtc);
     if (extents.has_error()) {
         vlog(
-          logger.error,
+          logger.warn,
           "Failed to materialize sorted run: {}",
           extents.error().message());
         throw std::system_error(extents.error());
