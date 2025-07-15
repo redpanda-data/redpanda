@@ -2,6 +2,7 @@ import json
 import os
 
 from collections import namedtuple
+from jinja2 import Template
 from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccount
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -15,12 +16,12 @@ KADM5_ACL_PATH = "/etc/krb5kdc/kadm5.acl"
 
 KDC_CONF_TMPL = """
 [realms]
-	{realm} = {{
-		acl_file = {kadm5_acl_path}
-		max_renewable_life = 7d 0h 0m 0s
-		supported_enctypes = {supported_encryption_types}
-		default_principal_flags = +preauth
-}}
+    {{ realm }} = {
+        acl_file = {{ kadm5_acl_path }}
+        max_renewable_life = 7d 0h 0m 0s
+        supported_enctypes = {{ supported_encryption_types }}
+        default_principal_flags = +preauth
+}
 [logging]
     kdc = FILE=/var/log/kdc.log
     admin_server = FILE=/var/log/kadmin.log
@@ -30,17 +31,17 @@ KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
 
 KRB5_CONF_TMPL = """
 [libdefaults]
-    default_realm = {realm}
+    default_realm = {{ realm }}
     dns_canonicalize_hostname = false
-    permitted_enctypes = {permitted_enctypes}
+    permitted_enctypes = {{ permitted_enctypes }}
 
 [realms]
-	{realm} = {{
-		kdc_ports = 88,750
-		kadmind_port = 749
-		kdc = {node.account.hostname}
-		admin_server = {node.account.hostname}
-	}}
+    {{ realm }} = {
+        kdc_ports = 88,750
+        kadmind_port = 749
+        kdc = {{ node.account.hostname }}
+        admin_server = {{ node.account.hostname }}
+    }
 """
 KRB5_CONF_PATH = "/etc/krb5.conf"
 DEFAULT_KEYTAB_FILE = "/etc/krb5.keytab"
@@ -107,9 +108,16 @@ class AuthenticationError(Exception):
 
 
 def render_krb5_config(kdc_node, realm: str, permitted_enctypes: str):
-    return KRB5_CONF_TMPL.format(node=kdc_node,
-                                 realm=realm,
-                                 permitted_enctypes=permitted_enctypes)
+    return Template(KRB5_CONF_TMPL).render(
+        node=kdc_node, realm=realm, permitted_enctypes=permitted_enctypes)
+
+
+def render_kdc_config(realm: str, kadm5_acl_path: str,
+                      supported_encryption_types: str):
+    return Template(KDC_CONF_TMPL).render(
+        realm=realm,
+        kadm5_acl_path=kadm5_acl_path,
+        supported_encryption_types=supported_encryption_types)
 
 
 def render_remote_kadmin_command(command,
@@ -174,14 +182,13 @@ class KrbKdc(Service):
         self.log_level = log_level
 
     def _render_cfg(self, node):
-        tmpl = KRB5_CONF_TMPL.format(
-            node=node,
-            realm=self.realm,
-            permitted_enctypes=self.permitted_enctypes)
+        tmpl = render_krb5_config(kdc_node=node,
+                                  realm=self.realm,
+                                  permitted_enctypes=self.permitted_enctypes)
         self.logger.info(f"{self.krb5_conf_path}: {tmpl}")
         node.account.create_file(self.krb5_conf_path, tmpl)
 
-        tmpl = KDC_CONF_TMPL.format(
+        tmpl = render_kdc_config(
             realm=self.realm,
             kadm5_acl_path=self.kadm5_acl_path,
             supported_encryption_types=self.supported_encryption_types)
