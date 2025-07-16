@@ -13,7 +13,7 @@
 #include "base/seastarx.h"
 #include "base/type_traits.h"
 #include "base/vassert.h"
-#include "utils/functional.h"
+#include "ssx/when_all.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
@@ -199,7 +199,10 @@ inline auto async_flat_transform(Rng& rng, Func&& func) {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
-template<typename Iterator, typename Func>
+template<
+  template<typename...> class Container = std::vector,
+  typename Iterator,
+  typename Func>
 requires requires(Func f, Iterator i) {
     *(++i);
     { i != i } -> std::convertible_to<bool>;
@@ -208,7 +211,7 @@ inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
     using value_type = typename std::iterator_traits<Iterator>::value_type;
     using future = decltype(seastar::futurize_invoke(
       std::move(func), std::move(*begin)));
-    std::vector<future> res;
+    Container<future> res;
     res.reserve(std::distance(begin, end));
     std::transform(
       begin,
@@ -217,11 +220,8 @@ inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
       [func{std::move(func)}](value_type val) mutable {
           return seastar::futurize_invoke(std::move(func), std::move(val));
       });
-    return seastar::do_with(std::move(res), [](std::vector<future>& res) {
-        return seastar::when_all_succeed(
-          std::make_move_iterator(res.begin()),
-          std::make_move_iterator(res.end()));
-    });
+    return ssx::when_all_succeed<Container<typename future::value_type>>(
+      std::move(res));
 }
 
 /// \brief Run tasks in parallel and wait for completion, capturing possible
@@ -241,7 +241,10 @@ inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
-template<typename Rng, typename Func>
+template<
+  template<typename...> class Container = std::vector,
+  typename Rng,
+  typename Func>
 requires requires(Func f, Rng r) {
     r.begin();
     r.end();
@@ -250,7 +253,7 @@ requires requires(Func f, Rng r) {
 inline auto parallel_transform(Rng rng, Func func) {
     return seastar::do_with(
       std::move(rng), [func{std::move(func)}](Rng& rng) mutable {
-          return parallel_transform(
+          return parallel_transform<Container>(
             std::make_move_iterator(rng.begin()),
             std::make_move_iterator(rng.end()),
             std::move(func));
