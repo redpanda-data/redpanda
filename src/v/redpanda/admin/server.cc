@@ -1741,6 +1741,14 @@ void config_multi_property_validation(
         errors[name] = invalid_cache.value();
     }
 
+    // Validate iceberg REST catalog configuration
+    auto catalog_err = config::validate_iceberg_rest_catalog_config(
+      updated_config);
+    if (catalog_err.has_value()) {
+        errors[ss::sstring{updated_config.iceberg_catalog_type.name()}]
+          = catalog_err.value();
+    }
+
     // Validate iceberg authentication mode properties
     auto opt_err = config::validate_iceberg_rest_catalog_auth_mode(
       updated_config);
