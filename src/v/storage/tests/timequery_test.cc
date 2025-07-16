@@ -298,7 +298,7 @@ TEST_F(log_builder_fixture, timequery_one_element_index) {
     b | stop();
 }
 
-TEST_F(log_builder_fixture, timequery_non_monotonic_log) {
+TEST_F(log_builder_fixture, timequery_non_monotonic_segment) {
     using namespace storage; // NOLINT
 
     b | start();
@@ -366,6 +366,233 @@ TEST_F(log_builder_fixture, timequery_non_monotonic_log) {
 
     EXPECT_TRUE(res);
     EXPECT_EQ(res->offset, model::offset(0));
+
+    b | stop();
+}
+
+TEST_F(log_builder_fixture, timequery_non_monotonic_log) {
+    using namespace storage; // NOLINT
+
+    b | start();
+
+    // seg0:
+    // timestamps = [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009]
+    // offsets =    [0,    1,    2,    3,    4,    5,    6,    7,    8,    9   ]
+    // seg1:
+    // timestamps = [0]
+    // offsets =    [10]
+    std::vector<std::pair<model::offset, model::timestamp>> batch_spec0 = {
+      {model::offset(0), model::timestamp(1000)},
+      {model::offset(1), model::timestamp(1001)},
+      {model::offset(2), model::timestamp(1002)},
+      {model::offset(3), model::timestamp(1003)},
+      {model::offset(4), model::timestamp(1004)},
+      {model::offset(5), model::timestamp(1005)},
+      {model::offset(6), model::timestamp(1006)},
+      {model::offset(7), model::timestamp(1007)},
+      {model::offset(8), model::timestamp(1008)},
+      {model::offset(9), model::timestamp(1009)},
+    };
+    b | add_segment(0);
+    for (const auto& [offset, ts] : batch_spec0) {
+        auto batch = make_random_batch(offset, ts);
+        b | add_batch(std::move(batch));
+    }
+
+    std::vector<std::pair<model::offset, model::timestamp>> batch_spec1 = {
+      {model::offset(10), model::timestamp(0)},
+    };
+    b | add_segment(10);
+    for (const auto& [offset, ts] : batch_spec1) {
+        auto batch = make_random_batch(offset, ts);
+        b | add_batch(std::move(batch));
+    }
+
+    const auto& segs = b.get_log_segments();
+    ASSERT_EQ(segs.size(), 2);
+    for (const auto& seg : segs) {
+        ASSERT_TRUE(seg->index().batch_timestamps_are_monotonic());
+    }
+
+    auto log = b.get_log();
+    for (const auto& [offset, ts] : batch_spec0) {
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(ts),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, ts);
+        ASSERT_EQ(res->offset, offset);
+    }
+
+    // From KIP-33:
+    // "When searching by timestamp, broker will start from the earliest log
+    // segment and check the last time index entry. If the timestamp of the last
+    // time index entry is greater than the target timestamp, the broker will do
+    // binary search on that time index to find the closest index entry and scan
+    // the log from there. Otherwise it will move on to the next log segment."
+    // https://cwiki.apache.org/confluence/display/KAFKA/KIP-33+-+Add+a+time+based+log+index
+    // Per those rules, a timequery for a timestamp {0} will return a result
+    // from the first segment, not the second.
+    for (const auto& [offset, ts] : batch_spec1) {
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(ts),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, model::timestamp{1000});
+        ASSERT_EQ(res->offset, model::offset{0});
+    }
+
+    // Query for a bogus, really small timestamp.
+    // We should return the first element in the log
+    storage::timequery_config config(
+      log->offsets().start_offset,
+      model::timestamp(-5000),
+      log->offsets().dirty_offset,
+      std::nullopt);
+
+    auto res = log->timequery(config).get();
+
+    ASSERT_TRUE(res);
+    ASSERT_EQ(res->offset, model::offset(0));
+
+    b | stop();
+}
+
+TEST_F(log_builder_fixture, timequery_non_monotonic_log_many_segments) {
+    using namespace storage; // NOLINT
+    b | start();
+
+    auto make_segment = [&](auto batch_spec) {
+        b | add_segment(batch_spec[0].first);
+        for (const auto& [offset, ts] : batch_spec) {
+            auto batch = make_random_batch(offset, ts);
+            b | add_batch(std::move(batch));
+        }
+    };
+
+    // seg0:
+    // timestamps = [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009]
+    // offsets =    [0,    1,    2,    3,    4,    5,    6,    7,    8,    9   ]
+    // seg1:
+    // timestamps = [0]
+    // offsets =    [10]
+    // seg2:
+    // timestamps = [1200]
+    // offsets =    [11]
+    // seg3:
+    // timestamps = [1500]
+    // offsets =    [12]
+    {
+        std::vector<std::pair<model::offset, model::timestamp>> batch_spec0 = {
+          {model::offset(0), model::timestamp(1000)},
+          {model::offset(1), model::timestamp(1001)},
+          {model::offset(2), model::timestamp(1002)},
+          {model::offset(3), model::timestamp(1003)},
+          {model::offset(4), model::timestamp(1004)},
+          {model::offset(5), model::timestamp(1005)},
+          {model::offset(6), model::timestamp(1006)},
+          {model::offset(7), model::timestamp(1007)},
+          {model::offset(8), model::timestamp(1008)},
+          {model::offset(9), model::timestamp(1009)},
+        };
+        make_segment(batch_spec0);
+        std::vector<std::pair<model::offset, model::timestamp>> batch_spec1 = {
+          {model::offset(10), model::timestamp(0)},
+        };
+        make_segment(batch_spec1);
+
+        std::vector<std::pair<model::offset, model::timestamp>> batch_spec2 = {
+          {model::offset(11), model::timestamp(1200)},
+        };
+        make_segment(batch_spec2);
+
+        std::vector<std::pair<model::offset, model::timestamp>> batch_spec3 = {
+          {model::offset(12), model::timestamp(1500)},
+        };
+        make_segment(batch_spec3);
+    }
+
+    const auto& segs = b.get_log_segments();
+    ASSERT_EQ(segs.size(), 4);
+    for (const auto& seg : segs) {
+        ASSERT_TRUE(seg->index().batch_timestamps_are_monotonic());
+    }
+
+    auto log = b.get_log();
+
+    // Some hardcoded expected cases given the above batch specs.
+    {
+        // Query should land in seg0.
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(500),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, model::timestamp{1000});
+        ASSERT_EQ(res->offset, model::offset{0});
+    }
+
+    {
+        // Query should land in seg2.
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(1010),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, model::timestamp{1200});
+        ASSERT_EQ(res->offset, model::offset{11});
+    }
+    {
+        // Query should land in seg3.
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(1201),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, model::timestamp{1500});
+        ASSERT_EQ(res->offset, model::offset{12});
+    }
+    {
+        // Query should land in seg3.
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(1499),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_TRUE(res);
+        ASSERT_EQ(res->time, model::timestamp{1500});
+        ASSERT_EQ(res->offset, model::offset{12});
+    }
+    {
+        // Query should land outside log.
+        storage::timequery_config config(
+          log->offsets().start_offset,
+          model::timestamp(1501),
+          log->offsets().dirty_offset,
+          std::nullopt);
+
+        auto res = log->timequery(config).get();
+        ASSERT_FALSE(res);
+    }
 
     b | stop();
 }
