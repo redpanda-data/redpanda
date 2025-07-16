@@ -935,8 +935,11 @@ class Admin:
                 and resp['license']['type'] == 'enterprise' \
                 and resp['license']['org'] == 'redpanda-testing'
 
-    def put_license(self, license):
-        return self._request("PUT", "features/license", data=license)
+    def put_license(self, license, node=None):
+        return self._request("PUT",
+                             "features/license",
+                             data=license,
+                             node=node)
 
     def get_enterprise_features(self):
         return self._request("GET", "features/enterprise")
