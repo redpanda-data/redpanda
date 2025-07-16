@@ -115,6 +115,14 @@ class DatabricksWorkspace(Service):
             assert principal_row, "Failed to get current user"
             principal = principal_row[0]
 
+            # TODO: Identify Minimal Privileges (Least access principle)
+            self.logger.debug(
+                f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
+            )
+            sql = f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
+            cursor.execute(sql)
+            self.logger.debug("Granted PRIVILEGES successfully")
+
             self.logger.debug(f"Creating grants for: {principal=}")
 
             cursor.execute(
@@ -126,8 +134,11 @@ class DatabricksWorkspace(Service):
         return DatabricksCatalogInfo(name=catalog_info.name)
 
     def _verify_credentials(self):
-        self.logger.debug(
-            f"Authenticated as: {self._client.current_user.me()}")
+        try:
+            user_info = self._client.current_user.me()
+            self.logger.debug(f"Authenticated as: {user_info}")
+        except Exception as e:
+            self.logger.error(f"Error fetching user info: {str(e)}")
 
     def _cleanup_catalogs(self):
         for catalog_name in self._catalog_names:
