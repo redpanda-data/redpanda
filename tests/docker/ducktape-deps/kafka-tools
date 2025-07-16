@@ -3,13 +3,18 @@ set -e
 
 source "$(dirname "${BASH_SOURCE[0]}")/download-utils" # import download-utils
 
-for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0" "3.7.0" "3.8.0" "3.9.0"; do
+for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0" "3.7.0" "3.8.0" "3.9.0" "4.0.0"; do
   odir=/opt/kafka-${ver}
   mkdir -p "$odir"
   chmod a+rw "$odir"
-  DL_STRIP=1 download_extract "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/kafka_2.12-${ver}.tgz" "$odir"
+  if [ "$ver" = "4.0.0" ]; then
+    archive_name="kafka_2.13-${ver}.tgz"
+  else
+    archive_name="kafka_2.12-${ver}.tgz"
+  fi
+  DL_STRIP=1 download_extract "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/${archive_name}" "$odir"
 done
-ln -s /opt/kafka-3.9.0/ /opt/kafka-dev
+ln -s /opt/kafka-4.0.0/ /opt/kafka-dev
 
 set -e
 git -C /opt clone --depth 1 --branch 0.14.0-example-producer-args https://github.com/redpanda-data/strimzi-kafka-oauth.git
