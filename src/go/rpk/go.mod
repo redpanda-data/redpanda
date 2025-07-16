@@ -55,7 +55,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/tklauser/go-sysconf v0.3.14
-	github.com/twmb/franz-go v1.19.4
+	github.com/twmb/franz-go v1.19.5
 	github.com/twmb/franz-go/pkg/kadm v1.16.0
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250620172413-c17130ef7765
