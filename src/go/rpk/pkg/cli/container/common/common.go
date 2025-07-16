@@ -36,7 +36,7 @@ import (
 var (
 	tag               = "latest"
 	redpandaImageBase = "redpandadata/redpanda:" + tag
-	consoleImageBase  = "redpandadata/console:v2.8.5"
+	consoleImageBase  = "redpandadata/console:v3.1.2"
 )
 
 const (
@@ -621,29 +621,29 @@ func parseConsoleConfigFile(kafkaAddr, srAddr, adminAddr []string) (string, erro
 		Urls    []string `yaml:"urls"`
 	}
 	type Kafka struct {
-		Brokers        []string `yaml:"brokers"`
-		SchemaRegistry Listener `yaml:"schemaRegistry"`
+		Brokers []string `yaml:"brokers"`
 	}
 	type Redpanda struct {
 		AdminAPI Listener `yaml:"adminApi"`
 	}
 	type ConsoleCfg struct {
-		Kafka    Kafka    `yaml:"kafka"`
-		Redpanda Redpanda `yaml:"redpanda"`
+		Kafka          Kafka    `yaml:"kafka"`
+		Redpanda       Redpanda `yaml:"redpanda"`
+		SchemaRegistry Listener `yaml:"schemaRegistry"`
 	}
 	cfg := ConsoleCfg{
 		Kafka: Kafka{
 			Brokers: kafkaAddr,
-			SchemaRegistry: Listener{
-				Enabled: true,
-				Urls:    srAddr,
-			},
 		},
 		Redpanda: Redpanda{
 			AdminAPI: Listener{
 				Enabled: true,
 				Urls:    adminAddr,
 			},
+		},
+		SchemaRegistry: Listener{
+			Enabled: true,
+			Urls:    srAddr,
 		},
 	}
 	b, err := yaml.Marshal(cfg)

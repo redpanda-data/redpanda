@@ -578,18 +578,13 @@ func checkConsole(node node) func() error {
 			httpapi.Host("http://"+node.addr),
 			httpapi.Retries(1),
 		)
-		var res map[string]bool
-		err := cl.Get(context.Background(), "/admin/startup", nil, &res)
+		// We use the /admin/startup  to check if the console is healthy, if we
+		// receive a 200 then we are good. httpapi errs on != 2xx.
+		err := cl.Get(context.Background(), "/admin/startup", nil, nil)
 		if err != nil {
-			return fmt.Errorf("error checking console status: %v", err)
+			return fmt.Errorf("console is not healthy; error while checking console status: %v", err)
 		}
-		if res["isHttpOk"] {
-			if res["isKafkaOk"] {
-				return nil
-			}
-			return errors.New("console is not healthy, Kafka API is not reachable from console")
-		}
-		return errors.New("console is not healthy")
+		return nil
 	}
 }
 
