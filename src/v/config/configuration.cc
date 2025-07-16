@@ -4115,7 +4115,7 @@ configuration::configuration()
       &validate_non_empty_string_opt)
   , iceberg_rest_catalog_aws_credentials_source(
       *this,
-      "iceberg_rest_catalog_aws_credentials_source",
+      "iceberg_rest_catalog_credentials_source",
       "Source of AWS credentials for Iceberg REST catalog SigV4 "
       "authentication. "
       "If not set, falls back to cloud_storage_credentials_source when using "
@@ -4124,7 +4124,9 @@ configuration::configuration()
       "azure_vm_instance_metadata, azure_aks_oidc_federation.",
       {.needs_restart = needs_restart::yes,
        .example = "config_file",
-       .visibility = visibility::user},
+       .visibility = visibility::user,
+       // Bad original name. The source may not always relate to AWS.
+       .aliases = {"iceberg_rest_catalog_aws_credentials_source"}},
       std::nullopt,
       {
         model::cloud_credentials_source::config_file,
