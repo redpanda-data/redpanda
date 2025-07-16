@@ -115,12 +115,13 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
             err = errc::shutting_down;
         } else {
             vlog(_logger.error, "Unexpected L0 upload error {}", e);
-            err = errc::unexpected_failure;
+            // Return early to prevent the double logging below
+            co_return errc::unexpected_failure;
         }
     }
 
     if (err != errc::success) {
-        vlog(_logger.error, "L0 upload error: {}", err);
+        vlog(_logger.warn, "L0 upload error: {}", err);
         co_return err;
     }
 
