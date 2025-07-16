@@ -74,8 +74,6 @@ public:
 
     iterator lower_bound(model::offset o);
     const_iterator lower_bound(model::offset o) const;
-    iterator lower_bound(model::timestamp o);
-    const_iterator lower_bound(model::timestamp o) const;
     iterator upper_bound(model::term_id o);
     const_iterator upper_bound(model::term_id o) const;
 
