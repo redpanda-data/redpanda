@@ -9,10 +9,7 @@
 
 #include "security/license.h"
 
-#include <boost/date_time/gregorian/parsers.hpp>
-#include <boost/filesystem/operations.hpp>
-#include <boost/filesystem/path.hpp>
-#include <boost/test/unit_test.hpp>
+#include <gtest/gtest.h>
 
 #include <chrono>
 
@@ -38,19 +35,19 @@ std::optional<security::license> make_license(const char* env_var) {
 
 namespace security {
 
-BOOST_AUTO_TEST_CASE(test_license_invalid_signature) {
+TEST(test_license, invalid_signature) {
     /// This license has been generated with a non matching signature, even
     /// though the contents section is valid
     static const auto license_contents_bad_signature
       = "eyJ2ZXJzaW9uIjogMCwgIm9yZyI6ICJyZWRwYW5kYS1jbG91ZCIsICJ0eXBlIjogMSwgIm"
         "V4cGlyeSI6IDE2NjA0OTg1MzZ9.dfadf/dfadfa+kkk/I/kk/"
         "934349asfkdw==";
-    BOOST_CHECK_THROW(
+    EXPECT_THROW(
       make_license(license_contents_bad_signature),
       license_verifcation_exception);
 }
 
-BOOST_AUTO_TEST_CASE(test_license_malformed_content) {
+TEST(test_license, malformed_content) {
     /// This license has been generated without the 'expiry' parameter, making
     /// it malformed
     static const auto license_contents_malformed_content
@@ -62,12 +59,12 @@ BOOST_AUTO_TEST_CASE(test_license_malformed_content) {
         "GDrco1f5iU9M3anIZo1F3rq4V0rnH/FJvwQW/"
         "7gwO+Ut06O3lWJoUZOTuwueyxopACRmWOm/"
         "DOYPZDkc8Xoui69EKVqRc4UOujbfOBYzhGq7wNlchJ0QOKUz9Bi/ZPoedOFAw==";
-    BOOST_CHECK_THROW(
+    EXPECT_THROW(
       make_license(license_contents_malformed_content),
       license_malformed_exception);
 }
 
-BOOST_AUTO_TEST_CASE(test_license_invalid_content) {
+TEST(test_license, invalid_content) {
     /// This license was generated with an expiration date set to a date in the
     /// past, making it invalid
     static const auto license_contents_invalid_content
@@ -79,66 +76,63 @@ BOOST_AUTO_TEST_CASE(test_license_invalid_content) {
         "6p9w0/"
         "LgRUeIoVru6frBAVHUCGl6x2npqoLTzMRT2d3YnFnI8ilBeQllq7bTAcNkQwXwKigfcBe2"
         "WSj/n77O/GNTlIhBVBtbBM2EcbZQMAhrSnTJJg5kcQMMg9oVjzg278cO+hw==";
-    BOOST_CHECK_THROW(
+    EXPECT_THROW(
       make_license(license_contents_invalid_content),
       license_invalid_exception);
 }
 
-BOOST_AUTO_TEST_CASE(test_license_valid_content) {
+TEST(test_license, valid_content) {
     auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE");
     if (!opt_license.has_value()) {
         return;
     }
     const license license = std::move(opt_license.value());
-    BOOST_CHECK_EQUAL(license.format_version, 0);
-    BOOST_CHECK_EQUAL(license.get_type(), "enterprise");
-    BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
-    BOOST_CHECK(!license.is_expired());
-    BOOST_CHECK_EQUAL(license.expiry.count(), 4813252273);
-    BOOST_CHECK(
-      license.expiration() == license::clock::time_point{4813252273s});
-    BOOST_CHECK_EQUAL(license.products, std::vector<ss::sstring>{});
-    BOOST_CHECK_EQUAL(
+    EXPECT_EQ(license.format_version, 0);
+    EXPECT_EQ(license.get_type(), "enterprise");
+    EXPECT_EQ(license.organization, "redpanda-testing");
+    EXPECT_FALSE(license.is_expired());
+    EXPECT_EQ(license.expiry.count(), 4813252273);
+    EXPECT_EQ(license.expiration(), license::clock::time_point{4813252273s});
+    EXPECT_EQ(license.products, std::vector<ss::sstring>{});
+    EXPECT_EQ(
       license.checksum,
       "2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf");
 }
 
-BOOST_AUTO_TEST_CASE(test_license_valid_content_v1) {
+TEST(test_license, valid_content_v1) {
     auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE_V1");
     if (!opt_license.has_value()) {
         return;
     }
     const license license = std::move(opt_license.value());
-    BOOST_CHECK_EQUAL(license.format_version, 1);
-    BOOST_CHECK_EQUAL(license.get_type(), "testing_license");
-    BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
-    BOOST_CHECK(!license.is_expired());
-    BOOST_CHECK_EQUAL(license.expiry.count(), 4344165449);
-    BOOST_CHECK(
-      license.expiration() == license::clock::time_point{4344165449s});
-    BOOST_CHECK_EQUAL(license.products, std::vector<ss::sstring>{});
-    BOOST_CHECK_EQUAL(
+    EXPECT_EQ(license.format_version, 1);
+    EXPECT_EQ(license.get_type(), "testing_license");
+    EXPECT_EQ(license.organization, "redpanda-testing");
+    EXPECT_FALSE(license.is_expired());
+    EXPECT_EQ(license.expiry.count(), 4344165449);
+    EXPECT_EQ(license.expiration(), license::clock::time_point{4344165449s});
+    EXPECT_EQ(license.products, std::vector<ss::sstring>{});
+    EXPECT_EQ(
       license.checksum,
       "baba05c0557197d210966555bda6abf3fb54435959dbb5c8e7fd7c5805b29069");
 }
 
-BOOST_AUTO_TEST_CASE(test_license_valid_content_v1_products) {
+TEST(test_license, valid_content_v1_products) {
     auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE_V1_PRODUCTS");
     if (!opt_license.has_value()) {
         return;
     }
     const license license = std::move(opt_license.value());
-    BOOST_CHECK_EQUAL(license.format_version, 1);
-    BOOST_CHECK_EQUAL(license.get_type(), "testing_license");
-    BOOST_CHECK_EQUAL(license.organization, "redpanda-testing");
-    BOOST_CHECK(!license.is_expired());
-    BOOST_CHECK_EQUAL(license.expiry.count(), 4344165449);
-    BOOST_CHECK(
-      license.expiration() == license::clock::time_point{4344165449s});
-    BOOST_CHECK_EQUAL(
+    EXPECT_EQ(license.format_version, 1);
+    EXPECT_EQ(license.get_type(), "testing_license");
+    EXPECT_EQ(license.organization, "redpanda-testing");
+    EXPECT_FALSE(license.is_expired());
+    EXPECT_EQ(license.expiry.count(), 4344165449);
+    EXPECT_EQ(license.expiration(), license::clock::time_point{4344165449s});
+    EXPECT_EQ(
       license.products,
       (std::vector<ss::sstring>{"some_prod", "some_other_prod"}));
-    BOOST_CHECK_EQUAL(
+    EXPECT_EQ(
       license.checksum,
       "0937a2d8e4437a63373c1c1cb0f5f62c5cae9366fea1b00467b4c4eaab8ca4cf");
 }

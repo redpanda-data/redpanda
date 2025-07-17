@@ -107,21 +107,6 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
-    name = "license_test",
-    timeout = "short",
-    srcs = [
-        "license_test.cc",
-    ],
-    deps = [
-        "//src/v/security:license",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:date_time",
-        "@boost//:filesystem",
-        "@boost//:test",
-    ],
-)
-
-redpanda_cc_btest(
     name = "gssapi_principal_mapper_test",
     timeout = "short",
     srcs = [
@@ -244,6 +229,19 @@ redpanda_cc_gtest(
         "//src/v/bytes:iobuf_parser",
         "//src/v/security",
         "//src/v/serde",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "license_test",
+    timeout = "short",
+    srcs = [
+        "license_test.cc",
+    ],
+    deps = [
+        "//src/v/security:license",
         "//src/v/test_utils:gtest",
         "@googletest//:gtest",
     ],
