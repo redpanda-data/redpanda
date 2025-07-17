@@ -1245,3 +1245,43 @@ FIXTURE_TEST(
           .get();
     }
 }
+
+FIXTURE_TEST(
+  test_async_manifest_view_get_term_last_offset_with_spillover_edge_case,
+  async_manifest_view_fixture) {
+    using t = model::term_id;
+    using o = model::offset;
+    int num_segments = 4;
+    std::vector<segment_meta> segs;
+    segs.reserve(num_segments);
+    int ts_step = 10;
+    int o_step = 10;
+    for (int i = 0; i < num_segments; ++i) {
+        segs.push_back(segment_meta{
+          .size_bytes = 4097,
+          .base_offset = o{i * o_step},
+          .committed_offset = o{(i + 1) * o_step - 1},
+          .base_timestamp = model::timestamp{i * ts_step},
+          .max_timestamp = model::timestamp{i * ts_step + 1},
+          .segment_term = t{i}});
+    }
+    auto target_term = model::term_id{1};
+    // Populate 2 spillover manifests in map. The desired term,
+    // model::term_id{1}, is going to be the last entry in the spillover
+    // manifests, i.e there will be no higher term entry in
+    // `get_segment_term_column`, and the main manifest contains no segments
+    // with a lower term than the desired term:
+    // Main manifest: [2, 3]
+    // Spillover map: [[0], [1]]
+    // We should expect that when we fail to find a result in the spillover map
+    // via `get_spillover_upper_bound_by_term()`, we still fall back to
+    // searching the main manifest for the term's last offset.
+    add_segments_to_stm_manifest(segs);
+    trigger_spillover(1);
+    trigger_spillover(1);
+
+    auto offset = view.get_term_last_offset(target_term).get();
+    BOOST_REQUIRE(offset.has_value());
+    BOOST_REQUIRE(offset.value().has_value());
+    BOOST_REQUIRE_EQUAL(offset.value().value(), kafka::offset{19});
+}
