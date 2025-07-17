@@ -48,6 +48,8 @@ class RedpandaKerberosTestBase(Test):
             sasl_mechanisms=["SCRAM", "GSSAPI"],
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
             krb5_conf_path=KRB5_CONF_PATH,
+            permitted_enctypes=None,
+            allow_rc4=False,
             kdc=None,
             realm=REALM,
             conn_max_reauth_ms=None,
@@ -70,6 +72,8 @@ class RedpandaKerberosTestBase(Test):
             realm=realm,
             keytab_file=keytab_file,
             krb5_conf_path=krb5_conf_path,
+            permitted_enctypes=permitted_enctypes or kdc.permitted_enctypes,
+            allow_rc4=allow_rc4,
             num_brokers=num_brokers,
             log_config=LOG_CONFIG,
             security=security,
@@ -132,6 +136,89 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
         wait_until(lambda: super_rpk.acl_list().count('\n') >= expected_acls,
                    5)
 
+        for metadata_fn in [self.client.metadata, self.client.metadata_java]:
+            try:
+                wait_until(
+                    lambda f=metadata_fn: self._have_expected_topics(
+                        f, req_principal, 3, set(topics)),
+                    timeout_sec=5,
+                    backoff_sec=0.5,
+                    err_msg=
+                    f"Did not receive expected set of topics with {metadata_fn.__name__}"
+                )
+                assert not fail
+            except AuthenticationError:
+                assert fail
+            except TimeoutError:
+                assert fail
+
+    def _have_expected_topics(self, metadata_fn, req_principal,
+                              expected_broker_count, topics_set):
+        metadata = metadata_fn(req_principal)
+        self.redpanda.logger.info(
+            f"{metadata_fn.__name__} (GSSAPI): {metadata}")
+        assert len(metadata['brokers']) == expected_broker_count
+        return {n['topic'] for n in metadata['topics']} == topics_set
+
+
+class RedpandaKerberosRC4Test(RedpandaKerberosTestBase):
+    def __init__(self, test_context, **kwargs):
+        try:
+            test_context.logger.debug(f"Create KDC with RC4 support")
+            kdc = KrbKdc(test_context,
+                         realm=REALM,
+                         supported_encryption_types="rc4-hmac:normal",
+                         permitted_enctypes="rc4-hmac",
+                         allow_rc4=True)
+        except Exception as e:
+            test_context.logger.error(
+                f"Failed to create KDC with RC4 support: {e}")
+            raise
+
+        try:
+            test_context.logger.debug(f"Start test nodes")
+            super(RedpandaKerberosRC4Test, self).__init__(
+                test_context,
+                permitted_enctypes="aes256-cts-hmac-sha384-192",
+                kdc=kdc,
+                **kwargs)
+        except Exception as e:
+            test_context.logger.error(f"Failed to start test nodes: {e}")
+            raise
+
+    @cluster(num_nodes=6)
+    @parametrize(req_principal="client",
+                 acl=False,
+                 topics=["always_visible"],
+                 fail=False)
+    def test_init(self, req_principal: str, acl: bool, topics: set[str],
+                  fail: bool):
+
+        self.logger.info("Starting test with RC4 enabled")
+        req_principal = "client"
+        topic = "always_visible"
+        fail = True
+
+        self.logger.info("Adding primary client")
+        self.client.add_primary(primary="client")
+
+        username, password, mechanism = self.redpanda.SUPERUSER_CREDENTIALS
+        super_rpk = RpkTool(self.redpanda,
+                            username=username,
+                            password=password,
+                            sasl_mechanism=mechanism)
+
+        self.logger.info(f"Creating topic {topic}")
+        super_rpk.create_topic(topic)
+        super_rpk.sasl_allow_principal("*", ["write", "read", "describe"],
+                                       "topic", topic, username, password,
+                                       mechanism)
+
+        expected_acls = 3
+        wait_until(lambda: super_rpk.acl_list().count('\n') >= expected_acls,
+                   timeout_sec=5)
+
+        self.logger.info(f"Looking for topic {topic}")
         for metadata_fn in [self.client.metadata, self.client.metadata_java]:
             try:
                 wait_until(
