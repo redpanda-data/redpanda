@@ -25,6 +25,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/memory_groups.h"
+#include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/disk_log_impl.h"
 #include "storage/log_housekeeping_meta.h"

@@ -627,6 +627,7 @@ redpanda_cc_gtest(
         "//src/v/random:generators",
         "//src/v/reflection:adl",
         "//src/v/resource_mgmt:memory_groups",
+        "//src/v/ssx:future_util",
         "//src/v/storage",
         "//src/v/storage:batch_cache",
         "//src/v/storage:record_batch_builder",
