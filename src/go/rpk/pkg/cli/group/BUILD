@@ -15,10 +15,13 @@ go_library(
         "//src/go/rpk/pkg/kafka",
         "//src/go/rpk/pkg/out",
         "//src/go/rpk/pkg/utils",
+        "@com_github_cespare_xxhash//:xxhash",
+        "@com_github_lithammer_go_jump_consistent_hash//:go-jump-consistent-hash",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_uber_go_zap//:zap",
     ],
 )
 

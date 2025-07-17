@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/cespare/xxhash"
+	jump "github.com/lithammer/go-jump-consistent-hash"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -21,17 +23,21 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"go.uber.org/zap"
 )
 
 func NewDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var summary, commitsOnly, lagPerTopic, re, useInstanceID bool
+	var partitionCount int
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
 		Short: "Describe group offset status & lag",
 		Long: `Describe group offset status & lag.
 
 This command describes group members, calculates their lag, and prints detailed
-information about the members.
+information about the members. COORDINATOR-PARTITION indicates the partition in
+the __consumer_offsets topic responsible for the group, if topic details are
+available; run with –verbose for more info if it is missing.
 
 The --regex flag (-r) parses arguments as regular expressions
 and describes groups that match any of the expressions.
@@ -66,6 +72,13 @@ Describe any one-character group:
 				out.Exit("did not match any groups, exiting.")
 			}
 
+			metadata, err := adm.Metadata(cmd.Context(), "__consumer_offsets")
+			if err != nil {
+				zap.L().Sugar().Warnf("unable to identify the number of partitions in __consumer_offsets.")
+			} else {
+				partitionCount = len(metadata.Topics["__consumer_offsets"].Partitions)
+			}
+
 			ctx, cancel := context.WithTimeout(cmd.Context(), p.Defaults().GetCommandTimeout())
 			defer cancel()
 
@@ -74,14 +87,14 @@ Describe any one-character group:
 				out.Die("unable to describe groups: %v", err)
 			}
 			if lagPerTopic {
-				printLagPerTopic(lags)
+				printLagPerTopic(lags, partitionCount)
 				return
 			}
 			if summary {
-				printDescribedSummary(lags)
+				printDescribedSummary(lags, partitionCount)
 				return
 			}
-			printDescribed(commitsOnly, lags, useInstanceID)
+			printDescribed(commitsOnly, lags, useInstanceID, partitionCount)
 		},
 	}
 	cmd.Flags().BoolVarP(&lagPerTopic, "print-lag-per-topic", "t", false, "Print the aggregated lag per topic")
@@ -114,7 +127,7 @@ type describeRow struct {
 	err            string
 }
 
-func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags, useInstanceID bool) {
+func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags, useInstanceID bool, partitionCount int) {
 	for i, group := range lags.Sorted() {
 		var rows []describeRow
 		var useErr bool
@@ -152,27 +165,35 @@ func printDescribed(commitsOnly bool, lags kadm.DescribedGroupLags, useInstanceI
 			rows = append(rows, row)
 		}
 
-		printDescribedGroup(commitsOnly, group, rows, useInstanceID, useErr)
+		printDescribedGroup(commitsOnly, group, rows, useInstanceID, partitionCount, useErr)
 		if i != len(lags)-1 {
 			fmt.Println()
 		}
 	}
 }
 
-func printDescribedSummary(groups kadm.DescribedGroupLags) {
+func printDescribedSummary(groups kadm.DescribedGroupLags, partitionCount int) {
 	for i, group := range groups.Sorted() {
-		printDescribedGroupSummary(group)
+		printDescribedGroupSummary(group, partitionCount)
 		if i != len(groups)-1 {
 			fmt.Println()
 		}
 	}
 }
 
-func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
+func printDescribedGroupSummary(group kadm.DescribedGroupLag, partitionCount int) {
 	tw := out.NewTabWriter()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
-	fmt.Fprintf(tw, "COORDINATOR\t%d\n", group.Coordinator.NodeID)
+	fmt.Fprintf(tw, "COORDINATOR-NODE\t%d\n", group.Coordinator.NodeID)
+	if partitionCount > 0 {
+		// We do calculate the partition ID for the group with the following
+		// hash-based algorithm, which is Redpanda specific at least at 25.1.x, https://github.com/redpanda-data/redpanda/blob/v25.1.1/src/v/kafka/server/coordinator_ntp_mapper.h#L50-L60
+		// Apache Kafka does use a different algorithm, https://github.com/apache/kafka/blob/4.0.0/core/src/main/scala/kafka/coordinator/group/GroupMetadataManager.scala#L192
+		hash := xxhash.Sum64String(group.Group)
+		partitionID := jump.Hash(hash, int32(partitionCount))
+		fmt.Fprintf(tw, "COORDINATOR-PARTITION\t__consumer_offsets/%d\n", partitionID)
+	}
 	fmt.Fprintf(tw, "STATE\t%s\n", group.State)
 	fmt.Fprintf(tw, "BALANCER\t%s\n", group.Protocol)
 	fmt.Fprintf(tw, "MEMBERS\t%d\n", len(group.Members))
@@ -187,10 +208,11 @@ func printDescribedGroup(
 	group kadm.DescribedGroupLag,
 	rows []describeRow,
 	useInstanceID bool,
+	partitionCount int,
 	useErr bool,
 ) {
 	if !commitsOnly {
-		printDescribedGroupSummary(group)
+		printDescribedGroupSummary(group, partitionCount)
 	}
 	if len(rows) == 0 {
 		return
@@ -254,8 +276,8 @@ func printDescribedGroup(
 	}
 }
 
-func printLagPerTopic(groups kadm.DescribedGroupLags) {
-	printDescribedSummary(groups)
+func printLagPerTopic(groups kadm.DescribedGroupLags, partitionCount int) {
+	printDescribedSummary(groups, partitionCount)
 	fmt.Println()
 	tw := out.NewTable("TOPIC", "LAG")
 	defer tw.Flush()
