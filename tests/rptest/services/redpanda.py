@@ -622,6 +622,9 @@ class SISettings:
         self.before_call_headers = before_call_headers
         self.addressing_style = addressing_style
 
+        self.cloud_storage_segment_upload_timeout_ms = None
+        self.cloud_storage_manifest_upload_timeout_ms = None
+
         # Allow disabling end of test scrubbing.
         # It takes a long time with lots of segments i.e. as created in scale
         # tests. Should figure out how to re-enable it, or consider using
@@ -631,6 +634,9 @@ class SISettings:
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
             self.cloud_storage_manifest_max_upload_interval_sec = 1
+            # with fast uploads enabled, it's better to fail a problematic
+            # segment upload or download quickly so we can try again
+            self.cloud_storage_segment_upload_timeout_ms = 15000
 
         self._expected_damage_types = set()
 
@@ -855,6 +861,14 @@ class SISettings:
         if self.cloud_storage_max_throughput_per_shard:
             conf[
                 'cloud_storage_max_throughput_per_shard'] = self.cloud_storage_max_throughput_per_shard
+
+        if self.cloud_storage_segment_upload_timeout_ms is not None:
+            conf[
+                'cloud_storage_segment_upload_timeout_ms'] = self.cloud_storage_segment_upload_timeout_ms
+
+        if self.cloud_storage_manifest_upload_timeout_ms is not None:
+            conf[
+                'cloud_storage_manifest_upload_timeout_ms'] = self.cloud_storage_manifest_upload_timeout_ms
 
         # Enable scrubbing in testing unless it was explicitly disabled.
         if 'cloud_storage_enable_scrubbing' not in conf:
