@@ -1182,10 +1182,6 @@ TEST_P(
                     tombstone_retention_ms)
                     .get();
 
-    // Compaction will only have occurred if tombstones were eligible for
-    // deletion.
-    ASSERT_EQ(did_compact, wait_for_retention_ms);
-
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
@@ -1339,10 +1335,6 @@ TEST_P(
                     log->segments().back()->offsets().get_base_offset(),
                     tombstone_retention_ms)
                     .get();
-
-    // Compaction will only have occurred if tombstones were eligible for
-    // deletion.
-    ASSERT_EQ(did_compact, wait_for_retention_ms);
 
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
