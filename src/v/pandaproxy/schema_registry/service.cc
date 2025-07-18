@@ -352,8 +352,11 @@ ss::future<> service::do_start() {
         co_await create_internal_topic();
         vlog(srlog.info, "Schema registry successfully initialized");
     } catch (...) {
-        vlog(
-          srlog.error,
+        vlogl(
+          srlog,
+          ssx::is_shutdown_exception(std::current_exception())
+            ? ss::log_level::debug
+            : ss::log_level::error,
           "Schema registry failed to initialize: {}",
           std::current_exception());
         throw;
