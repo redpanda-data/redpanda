@@ -71,6 +71,7 @@ redpanda_cc_library(
         "//src/v/security",
         "//src/v/security/audit",
         "//src/v/ssx:abort_source",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:thread_worker",
         "//src/v/ssx:watchdog",
         "//src/v/storage",

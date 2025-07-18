@@ -17,13 +17,14 @@
 #include "features/enterprise_features.h"
 #include "features/fwd.h"
 #include "http/client.h"
-#include "model/metadata.h"
+#include "model/fundamental.h"
 #include "security/fwd.h"
 #include "storage/fwd.h"
 #include "utils/prefix_logger.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>

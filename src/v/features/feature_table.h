@@ -16,6 +16,8 @@
 #include "storage/record_batch_builder.h"
 #include "utils/waiter_queue.h"
 
+#include <seastar/core/gate.hh>
+
 #include <array>
 #include <memory>
 #include <string_view>

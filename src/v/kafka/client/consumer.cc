@@ -9,18 +9,15 @@
 
 #include "kafka/client/consumer.h"
 
-#include "bytes/iobuf_parser.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
-#include "kafka/client/logger.h"
 #include "kafka/client/types.h"
 #include "kafka/client/utils.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"
@@ -28,7 +25,7 @@
 #include "kafka/protocol/sync_group.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record_utils.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>

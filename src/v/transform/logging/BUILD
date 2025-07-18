@@ -85,6 +85,7 @@ redpanda_cc_library(
         "//src/v/metrics",
         "//src/v/model",
         "//src/v/random:time_jitter",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/storage:record_batch_builder",
         "//src/v/strings:utf8",

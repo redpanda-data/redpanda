@@ -19,6 +19,7 @@
 #include "storage/segment_appender.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/exceptions.hh>
 #include <seastar/util/log.hh>
@@ -28,7 +29,6 @@
 #include <optional>
 #include <ostream>
 #include <random>
-#include <unordered_map>
 #include <utility>
 
 namespace bi = boost::intrusive;

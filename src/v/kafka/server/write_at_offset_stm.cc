@@ -13,6 +13,7 @@
 #include "cluster/snapshot.h"
 #include "kafka/server/logger.h"
 #include "model/batch_utils.h"
+#include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
 

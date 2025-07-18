@@ -11,7 +11,6 @@
 
 #pragma once
 #include "absl/container/node_hash_map.h"
-#include "absl/hash/hash.h"
 #include "bytes/bytes.h"
 #include "hashing/crc32c.h"
 #include "hashing/xx.h"
@@ -22,11 +21,11 @@
 #include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
-#include "storage/types.h"
 #include "utils/vint.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 namespace storage::internal {
 using namespace storage; // NOLINT
 class spill_key_index final : public compacted_index_writer {

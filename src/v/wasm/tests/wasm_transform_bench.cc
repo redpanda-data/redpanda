@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 
-#include "absl/strings/ascii.h"
 #include "base/units.h"
 #include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/transform.h"
 #include "schema/registry.h"
+#include "ssx/future-util.h"
 #include "test_utils/randoms.h"
 #include "test_utils/runfiles.h"
 #include "wasm/engine.h"

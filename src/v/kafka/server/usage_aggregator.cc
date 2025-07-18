@@ -15,6 +15,7 @@
 #include "serde/rw/iobuf.h"
 #include "serde/rw/rw.h"
 #include "serde/rw/vector.h"
+#include "ssx/future-util.h"
 
 using namespace std::chrono_literals;
 

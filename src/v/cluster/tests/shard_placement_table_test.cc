@@ -13,17 +13,16 @@
 #include "cluster/shard_placement_table.h"
 #include "container/chunked_hash_map.h"
 #include "features/feature_table.h"
+#include "random/generators.h"
 #include "ssx/event.h"
+#include "ssx/future-util.h"
 #include "storage/kvstore.h"
 #include "storage/storage_resources.h"
-#include "test_utils/randoms.h"
 #include "test_utils/test.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/util/file.hh>
-
-#include <chrono>
 
 using namespace std::chrono_literals;
 

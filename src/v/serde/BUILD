@@ -27,7 +27,6 @@ redpanda_cc_library(
         "//src/v/hashing:crc32c",
         "//src/v/reflection:arity",
         "//src/v/reflection:to_tuple",
-        "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
     ],
 )

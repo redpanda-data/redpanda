@@ -21,6 +21,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "utils/functional.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>

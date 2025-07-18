@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "base/seastarx.h"
+#include "container/fragmented_vector.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/sstring.hh>
@@ -111,6 +112,21 @@ SEASTAR_THREAD_TEST_CASE(parallel_transform_range_test) {
 
     std::vector<int> out_range
       = ssx::parallel_transform(std::move(input), plus(2)).get();
+    BOOST_TEST(std::equal(
+      out_range.begin(), out_range.end(), expected.begin(), expected.end()));
+}
+
+SEASTAR_THREAD_TEST_CASE(parallel_transform_chunked_range_test) {
+    std::vector<int> input(10);
+    std::iota(input.begin(), input.end(), 0);
+
+    std::vector<int> expected(10);
+    std::iota(expected.begin(), expected.end(), 2);
+
+    auto out_range = ssx::parallel_transform<chunked_vector>(
+                       std::move(input), plus(2))
+                       .get();
+    static_assert(std::is_same_v<decltype(out_range), chunked_vector<int>>);
     BOOST_TEST(std::equal(
       out_range.begin(), out_range.end(), expected.begin(), expected.end()));
 }

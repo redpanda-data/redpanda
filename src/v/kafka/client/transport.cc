@@ -12,12 +12,12 @@
 #include "kafka/client/transport.h"
 
 #include "bytes/iostream.h"
-#include "bytes/scattered_message.h"
 #include "kafka/client/logger.h"
-#include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/wire.h"
 #include "net/connection.h"
+#include "ssx/future-util.h"
+
 namespace kafka::client {
 namespace {
 ss::future<correlation_id> read_correlation_id(ss::input_stream<char>& in) {

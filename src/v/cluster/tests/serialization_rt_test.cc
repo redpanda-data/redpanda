@@ -1388,7 +1388,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_result> results;
+        chunked_vector<cluster::topic_result> results;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             results.push_back(cluster::topic_result{
               model::random_topic_namespace(),
@@ -1396,9 +1396,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             });
         }
         cluster::update_topic_properties_reply data{
-          .results = results,
+          .results = std::move(results),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         chunked_vector<model::ntp> ntps;

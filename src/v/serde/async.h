@@ -13,10 +13,8 @@
 #include "base/vlog.h"
 #include "bytes/iobuf_parser.h"
 #include "hashing/crc32c.h"
-#include "serde/logger.h"
 #include "serde/read_header.h"
 #include "serde/rw/rw.h"
-#include "ssx/future-util.h"
 #include "ssx/sformat.h"
 
 namespace serde {

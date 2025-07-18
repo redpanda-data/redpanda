@@ -12,7 +12,6 @@
 #pragma once
 
 #include "absl/container/btree_set.h"
-#include "absl/container/flat_hash_map.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/state_machine_registry.h"

@@ -13,7 +13,6 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/node_hash_map.h"
-#include "absl/hash/hash.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/cluster_link/errc.h"
 #include "cluster/errc.h"
@@ -21,19 +20,15 @@
 #include "cluster/fwd.h"
 #include "cluster/nt_revision.h"
 #include "cluster/partition_balancer_types.h"
-#include "cluster/remote_topic_properties.h"
-#include "cluster/snapshot.h"
 #include "cluster/topic_configuration.h"
-#include "cluster/topic_properties.h"
 #include "cluster/tx_errc.h"
-#include "cluster/tx_hash_ranges.h"
 #include "cluster/version.h"
 #include "cluster_link/model/types.h"
 #include "container/contiguous_range_map.h"
+#include "container/fragmented_vector.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
@@ -1197,7 +1192,7 @@ struct update_topic_properties_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    std::vector<topic_result> results;
+    chunked_vector<topic_result> results;
 
     friend std::ostream&
     operator<<(std::ostream&, const update_topic_properties_reply&);
@@ -1209,6 +1204,10 @@ struct update_topic_properties_reply
       = default;
 
     auto serde_fields() { return std::tie(results); }
+
+    update_topic_properties_reply copy() const {
+        return {.results = results.copy()};
+    }
 };
 
 struct configuration_invariants {

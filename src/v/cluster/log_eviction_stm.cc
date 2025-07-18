@@ -9,15 +9,13 @@
 
 #include "cluster/log_eviction_stm.h"
 
-#include "bytes/iostream.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/prefix_truncate_record.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
-#include "raft/fundamental.h"
-#include "serde/rw/envelope.h"
-#include "serde/rw/iobuf.h"
+#include "serde/envelope.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sleep.hh>

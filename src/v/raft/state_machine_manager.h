@@ -25,6 +25,7 @@
 #include "utils/absl_sstring_hash.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>

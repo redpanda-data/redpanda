@@ -32,6 +32,7 @@ redpanda_cc_library(
         "//src/v/cluster",
         "//src/v/config",
         "//src/v/model",
+        "//src/v/ssx:future_util",
         "//src/v/ssx:semaphore",
         "//src/v/ssx:sleep_abortable",
         "//src/v/utils:backoff_policy",

@@ -2,6 +2,7 @@
 
 #include "raft/consensus.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
@@ -10,8 +11,6 @@
 #include <seastar/util/variant_utils.hh>
 
 #include <exception>
-#include <variant>
-#include <vector>
 namespace raft {
 
 append_entries_buffer::append_entries_buffer(

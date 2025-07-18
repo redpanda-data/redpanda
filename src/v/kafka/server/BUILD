@@ -459,6 +459,7 @@ redpanda_cc_library(
         "//src/v/model:batch_utils",
         "//src/v/raft",
         "//src/v/raft:fundamental",
+        "//src/v/ssx:future_util",
         "@seastar",
     ],
 )

@@ -14,7 +14,7 @@
 #include "cluster/errc.h"
 #include "config/property.h"
 #include "logger.h"
-#include "ssx/semaphore.h"
+#include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
 #include "utils/backoff_policy.h"
 

@@ -17,6 +17,7 @@
 #include "ssx/semaphore.h"
 #include "storage/node.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cloud_storage {

@@ -169,7 +169,7 @@ public:
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 
-    ss::future<std::vector<topic_result>> update_topic_properties(
+    ss::future<chunked_vector<topic_result>> update_topic_properties(
       topic_properties_update_vector, model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_result>> create_partitions(
