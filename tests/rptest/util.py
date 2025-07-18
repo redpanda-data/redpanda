@@ -12,6 +12,7 @@ import pprint
 import threading
 from contextlib import contextmanager
 from typing import Callable, Optional, Any, ContextManager
+from logging import Logger
 
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
@@ -20,6 +21,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.errors import TimeoutError
 
 
 class Scale:
@@ -123,6 +125,61 @@ def wait_until_result(condition: Callable[[], Any], *args: Any,
 
     wait_until(wrapped_condition, *args, **kwargs)
     return res
+
+
+def wait_until_with_progress_check(check: Callable[[], Any],
+                                   condition: Callable[[Callable[[], Any]],
+                                                       Any],
+                                   timeout_sec: int,
+                                   progress_sec: int,
+                                   backoff_sec: int,
+                                   err_msg: str | None = None,
+                                   logger: Logger | None = None):
+    """
+    a wrapper around ducktape's wait_until that provides the ability to track
+    a crude approximation of progress
+
+    usage requires two timeouts:
+      - timeout_sec: the overall timeout, after which the function will throw a
+        TimeoutError no matter what
+      - progress_sec: an incremental timeout, after each expiry we check that the
+        value returned by a 'check' function has changed with respect to a cached
+        result. if not, immediately throw TimeoutError
+
+    params:
+      - check: the value we expect to change after each 'progress_sec'
+      - condition: the condition we are waiting for. should be written in terms
+        of the check function, e.g.
+        check:
+           def get_val():
+               return admin.stuff()['val']
+        condition:
+           def condition(check: Callable):
+               return check() > 10
+           # used like
+           condition(get_val)
+      - timeout_sec (see above)
+      - progress_sec (see above)
+      - err_msg: Passed down to wait_until
+      - logger: log progress after each progress_sec iteration
+    """
+    val = check()
+    while timeout_sec > 0:
+        try:
+            wait_until(lambda: condition(check),
+                       timeout_sec=progress_sec,
+                       backoff_sec=backoff_sec,
+                       err_msg=err_msg)
+        except TimeoutError as e:
+            next_v = check()
+            if next_v == val:
+                raise TimeoutError(f"Stopped making progress: {str(e)}")
+            if logger is not None:
+                logger.debug(f"Progress: prev: {val} curr: {next_v}...")
+            val = next_v
+            timeout_sec = timeout_sec - progress_sec
+        else:
+            break
 
 
 def segments_count(redpanda, topic, partition_idx):
