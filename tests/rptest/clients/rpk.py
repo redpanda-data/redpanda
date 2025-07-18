@@ -24,7 +24,7 @@ from rptest.util import wait_until_result
 from rptest.services import tls
 from rptest.clients.types import TopicSpec
 from ducktape.errors import TimeoutError
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DEFAULT_TIMEOUT = 30
 
@@ -207,6 +207,26 @@ class RpkColumnHeader:
 class RpkTable:
     columns: list[RpkColumnHeader]
     rows: list[list[str]]
+
+
+@dataclass
+class RPKACLInput:
+    # Can't use mutables in defaults of dataclass
+    # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
+    allow_principal: list[str] = field(default_factory=list)
+    deny_principal: list[str] = field(default_factory=list)
+    allow_role: list[str] = field(default_factory=list)
+    deny_role: list[str] = field(default_factory=list)
+    allow_host: list[str] = field(default_factory=list)
+    deny_host: list[str] = field(default_factory=list)
+    topic: list[str] = field(default_factory=list)
+    group: list[str] = field(default_factory=list)
+    operation: list[str] = field(default_factory=list)
+    txn_id: list[str] = field(default_factory=list)
+    cluster: bool = False
+    resource_pattern_type: str = ""
+    registry_subject: list[str] = field(default_factory=list)
+    registry_global: bool = False
 
 
 def parse_rpk_table(out):
@@ -1364,7 +1384,8 @@ class RpkTool:
 
     def acl_list(self,
                  flags: list[str] = [],
-                 node: Optional[ClusterNode] = None):
+                 node: Optional[ClusterNode] = None,
+                 format: str = "text"):
         """
         Run `rpk acl list` and return the results.
 
@@ -1377,11 +1398,17 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(),
+            "security",
             "acl",
             "list",
+            "--format",
+            format,
         ] + flags + self._kafka_conn_settings(node)
 
         output = self._execute(cmd)
+
+        if format == "json":
+            return json.loads(output)
 
         if "CLUSTER_AUTHORIZATION_FAILED" in output:
             raise ClusterAuthorizationError("acl list")
@@ -1397,6 +1424,7 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(),
+            "security",
             "acl",
             "create",
             "--allow-principal",
@@ -1425,6 +1453,80 @@ class RpkTool:
                 f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
 
         return output
+
+    def acl_create(self, acl: RPKACLInput):
+
+        cmd = [
+            self._rpk_binary(),
+            "security",
+            "acl",
+            "create",
+        ] + self._schema_registry_conn_settings() + self._kafka_conn_settings(
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
+
+    def acl_delete(self, acl: RPKACLInput):
+        cmd = [
+            self._rpk_binary(),
+            "security",
+            "acl",
+            "delete",
+            "--no-confirm",
+        ] + self._schema_registry_conn_settings() + self._kafka_conn_settings(
+        )
+
+        def append_flag(flag: str, values: list[str]):
+            if values:
+                cmd.extend([flag, ",".join(values)])
+
+        def append_bool_flag(flag: str, value: bool):
+            if value:
+                cmd.append(flag)
+
+        append_flag("--allow-principal", acl.allow_principal)
+        append_flag("--deny-principal", acl.deny_principal)
+        append_flag("--allow-role", acl.allow_role)
+        append_flag("--deny-role", acl.deny_role)
+        append_flag("--allow-host", acl.allow_host)
+        append_flag("--deny-host", acl.deny_host)
+        append_flag("--topic", acl.topic)
+        append_flag("--group", acl.group)
+        append_flag("--operation", acl.operation)
+        append_flag("--transactional-id", acl.txn_id)
+        append_bool_flag("--cluster", acl.cluster)
+        append_flag("--registry-subject", acl.registry_subject)
+        append_bool_flag("--registry-global", acl.registry_global)
+
+        if acl.resource_pattern_type:
+            cmd += ["--resource-pattern-type", acl.resource_pattern_type]
+
+        return self._execute(cmd)
 
     def cluster_metadata_id(self):
         """

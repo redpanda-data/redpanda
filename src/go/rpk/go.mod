@@ -44,7 +44,7 @@ require (
 	github.com/prometheus/common v0.62.0
 	github.com/redpanda-data/common-go/proto v0.0.0-20250422172326-6a3bcb14b829
 	github.com/redpanda-data/common-go/rpadmin v0.1.14
-	github.com/redpanda-data/common-go/rpsr v0.1.0
+	github.com/redpanda-data/common-go/rpsr v0.1.1
 	github.com/rs/xid v1.6.0
 	github.com/safchain/ethtool v0.5.10
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1
@@ -58,13 +58,13 @@ require (
 	github.com/twmb/franz-go v1.19.5
 	github.com/twmb/franz-go/pkg/kadm v1.16.0
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
-	github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250620172413-c17130ef7765
+	github.com/twmb/franz-go/pkg/sr v1.4.1-0.20250711145744-a849b8be17b7
 	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.2.1
 	github.com/twmb/types v1.1.6
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.32.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250409194420-de1ac958c67a

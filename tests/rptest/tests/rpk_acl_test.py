@@ -11,8 +11,8 @@ from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.admin_api_auth_test import create_user_and_wait
-from rptest.clients.rpk import RpkTool, RpkException
-from rptest.services.redpanda import SecurityConfig, SaslCredentials
+from rptest.clients.rpk import RpkTool, RpkException, RPKACLInput
+from rptest.services.redpanda import SecurityConfig, SchemaRegistryConfig
 from rptest.util import expect_exception
 from ducktape.utils.util import wait_until
 
@@ -22,7 +22,11 @@ class RpkACLTest(RedpandaTest):
     password = "panda"
     mechanism = "SCRAM-SHA-256"
 
-    def __init__(self, test_ctx, *args, **kwargs):
+    def __init__(self,
+                 test_ctx,
+                 schema_registry_config=SchemaRegistryConfig(),
+                 *args,
+                 **kwargs):
         self._ctx = test_ctx
         security = SecurityConfig()
         security.enable_sasl = True
@@ -31,6 +35,7 @@ class RpkACLTest(RedpandaTest):
               self).__init__(test_ctx,
                              security=security,
                              extra_rp_conf={'election_timeout_ms': 10000},
+                             schema_registry_config=schema_registry_config,
                              *args,
                              **kwargs)
         self._rpk = RpkTool(redpanda=self.redpanda,
@@ -38,6 +43,8 @@ class RpkACLTest(RedpandaTest):
                             password=self.password,
                             sasl_mechanism=self.mechanism)
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
+        self.schema_registry_config = SchemaRegistryConfig()
+        self.schema_registry_config.require_client_auth = True
 
     def _superclient(self):
         return RpkTool(self.redpanda,
@@ -291,3 +298,61 @@ class RpkACLTest(RedpandaTest):
         with expect_exception(RpkException,
                               lambda e: 'AUTHORIZATION_FAILED' in str(e)):
             self._rpk.produce(TOPIC_NAME, 'foo', 'bar')
+
+    @cluster(num_nodes=1)
+    def test_schema_registry_acl(self):
+        """
+        Simple test that only verifies if rpk is able to parse and create
+        Schema Registry ACLs along Redpanda ACLs
+        """
+
+        TOPIC_NAME = 'some-topic'
+        ROLE_NAME = 'admin'
+        superclient = self._superclient()
+
+        # Create ACL with only SR = 2 ACLs.
+        sr_only_acl = RPKACLInput(allow_principal=["panda"],
+                                  registry_subject=["aaa-value"],
+                                  operation=["read", "write"],
+                                  resource_pattern_type="literal")
+        superclient.acl_create(sr_only_acl)
+
+        acl_list_all = superclient.acl_list(format="json")
+        assert len(acl_list_all['matches']
+                   ) == 2, f"Expected to have 2 ACLs created: {acl_list_all}"
+
+        # Delete ALL, empty input means all.
+        superclient.acl_delete(RPKACLInput())
+        acl_list_all = superclient.acl_list(format="json")
+        assert acl_list_all['matches'] is None
+
+        # ACL with SR + Kafka = 4 in total.
+        sr_kafka_acl = RPKACLInput(allow_principal=["panda"],
+                                   topic=["foo"],
+                                   registry_subject=["foo-value"],
+                                   operation=["read", "write"],
+                                   resource_pattern_type="literal")
+        superclient.acl_create(sr_kafka_acl)
+
+        acl_list_all = superclient.acl_list(format="json")
+        assert len(acl_list_all['matches']
+                   ) == 4, f"Expected to have 4 ACLs created: {acl_list_all}"
+
+        # List with filter (read)
+        acl_list_filter = superclient.acl_list(format="json",
+                                               flags=["--operation", "read"])
+        assert len(acl_list_filter['matches']
+                   ) == 2, f"Expected to have 2 ACLs created: {acl_list_all}"
+
+        # Filter by subsystem
+        acl_list_filter = superclient.acl_list(format="json",
+                                               flags=["--subsystem", "kafka"])
+        assert len(acl_list_filter['matches']
+                   ) == 2, f"Expected to have 2 ACLs created: {acl_list_all}"
+
+        # Delete with filter should delete all that
+        # we have, both in SR and Kafka
+        superclient.acl_delete(sr_kafka_acl)
+
+        acl_list_all = superclient.acl_list(format="json")
+        assert acl_list_all['matches'] is None

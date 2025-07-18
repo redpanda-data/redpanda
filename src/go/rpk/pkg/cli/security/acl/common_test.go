@@ -12,6 +12,8 @@ package acl
 import (
 	"testing"
 
+	"github.com/redpanda-data/common-go/rpsr"
+
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -278,7 +280,7 @@ func TestParseCommon(t *testing.T) {
 			name: "nothing is fine",
 			exp: acls{
 				resourcePatternType: "literal",
-				parsed: parsed{
+				kParsed: kafkaParsed{
 					pattern: kadm.ACLPatternLiteral,
 				},
 			},
@@ -295,7 +297,7 @@ func TestParseCommon(t *testing.T) {
 				operations:          []string{"read", "write"},
 				cluster:             true,
 				resourcePatternType: "match",
-				parsed: parsed{
+				kParsed: kafkaParsed{
 					operations: []kmsg.ACLOperation{
 						kmsg.ACLOperationRead,
 						kmsg.ACLOperationWrite,
@@ -323,13 +325,74 @@ func TestParseCommon(t *testing.T) {
 		//
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.in.parseCommon()
+			err := test.in.parseKafkaCommons()
 			gotErr := err != nil
 			require.Equal(t, test.expErr, gotErr, "error mismatch, got: %v, exp? %v", err, test.expErr)
 			if test.expErr {
 				return
 			}
 			require.Equal(t, test.exp, test.in, "backcompat result mismatch!")
+		})
+	}
+}
+
+func TestParseSRCommons(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		in     acls
+		exp    acls
+		expErr bool
+	}{
+		{
+			name: "Default to literal",
+			exp: acls{
+				resourcePatternType: "literal",
+				srParsed: schemaRegistryParsed{
+					pattern: rpsr.PatternTypeLiteral,
+				},
+			},
+		},
+		{
+			name: "valid operations and pattern",
+			in: acls{
+				operations:          []string{"read", "write"},
+				resourcePatternType: "prefixed",
+			},
+			exp: acls{
+				operations:          []string{"read", "write"},
+				resourcePatternType: "prefixed",
+				srParsed: schemaRegistryParsed{
+					operations: []rpsr.Operation{
+						rpsr.OperationRead,
+						rpsr.OperationWrite,
+					},
+					pattern: rpsr.PatternTypePrefix,
+				},
+			},
+		},
+		{
+			name: "invalid operation fails",
+			in: acls{
+				operations: []string{"invalid"},
+			},
+			expErr: true,
+		},
+		{
+			name: "invalid pattern fails",
+			in: acls{
+				resourcePatternType: "unknown",
+			},
+			expErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.in.parseSRCommons()
+			gotErr := err != nil
+			require.Equal(t, test.expErr, gotErr, "error mismatch, got: %v, exp? %v", err, test.expErr)
+			if test.expErr {
+				return
+			}
+			require.Equal(t, test.exp, test.in, "parseSRCommons result mismatch!")
 		})
 	}
 }

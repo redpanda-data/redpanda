@@ -10,12 +10,12 @@
 package acl
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/types"
@@ -36,19 +36,25 @@ As mentioned in the 'rpk security acl' help text, if no host is specified, an
 allowed principal is allowed access from all hosts. The wildcard principal '*'
 allows all principals. At least one principal, one host, one resource, and one
 operation is required to create a single ACL.
-
-Allow all permissions to user bar on topic "foo" and group "g":
-    --allow-principal bar --operation all --topic foo --group g
-Allow all permissions to role bar on topic "foo" and group "g":
-    --allow-role bar --operation all --topic foo --group g
-Allow read permissions to all users on topics biz and baz:
-    --allow-principal '*' --operation read --topic biz,baz
-Allow write permissions to user buzz to transactional ID "txn":
-    --allow-principal User:buzz --operation write --transactional-id txn
 `,
+		Example: `
+Allow all permissions to user bar on topic "foo" and group "g":
+  rpk security acl create --allow-principal bar --operation all --topic foo --group g
 
-		Args: cobra.ExactArgs(0),
-		Run: func(_ *cobra.Command, _ []string) {
+Allow all permissions to role bar on topic "foo" and group "g":
+  rpk security acl create --allow-role bar --operation all --topic foo --group g
+
+Allow read permissions to all users on topics biz and baz:
+  rpk security acl create --allow-principal '*' --operation read --topic biz,baz
+
+Allow write permissions to user buzz to transactional ID "txn":
+  rpk security acl create  --allow-principal User:buzz --operation write --transactional-id txn
+
+Allow read permissions to user panda on topic "bar" and schema registry subject "bar-value":
+  rpk security acl create --allow-principal panda --operation read --topic bar --registry-subject bar-value
+`,
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -56,10 +62,53 @@ Allow write permissions to user buzz to transactional ID "txn":
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer adm.Close()
 
-			b, err := a.createCreations()
+			srClient, err := schemaregistry.NewClient(fs, p)
+			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
+
+			kCreations, srCreations, err := a.createCreations()
 			out.MaybeDieErr(err)
-			results, err := adm.CreateACLs(context.Background(), b)
-			out.MaybeDie(err, "unable to create ACLs: %v", err)
+
+			var results []aclWithMessage
+			if kCreations != nil {
+				kResults, err := adm.CreateACLs(cmd.Context(), kCreations)
+				out.MaybeDie(err, "unable to create ACLs: %v", err)
+				for _, c := range kResults {
+					errMsg := kafka.ErrMessage(c.Err)
+					if c.ErrMessage != "" {
+						errMsg = fmt.Sprintf("%v: %v", errMsg, c.ErrMessage)
+					}
+					results = append(results, aclWithMessage{
+						c.Principal,
+						c.Host,
+						c.Type.String(),
+						c.Name,
+						c.Pattern.String(),
+						c.Operation.String(),
+						c.Permission.String(),
+						errMsg,
+					})
+				}
+			}
+			if len(srCreations) > 0 {
+				err = srClient.CreateACLs(cmd.Context(), srCreations)
+				errMsg := ""
+				if err != nil {
+					errMsg = err.Error()
+				}
+				for _, c := range srCreations {
+					results = append(results, aclWithMessage{
+						c.Principal,
+						c.Host,
+						string(c.ResourceType),
+						c.Resource,
+						string(c.PatternType),
+						string(c.Operation),
+						string(c.Permission),
+						errMsg,
+					})
+				}
+			}
+
 			if len(results) == 0 {
 				fmt.Println("Specified flags created no ACLs.")
 				return
@@ -68,21 +117,8 @@ Allow write permissions to user buzz to transactional ID "txn":
 
 			tw := out.NewTable(headersWithError...)
 			defer tw.Flush()
-			for _, c := range results {
-				errMsg := kafka.ErrMessage(c.Err)
-				if c.ErrMessage != "" {
-					errMsg = fmt.Sprintf("%v: %v", errMsg, c.ErrMessage)
-				}
-				tw.PrintStructFields(aclWithMessage{
-					c.Principal,
-					c.Host,
-					c.Type,
-					c.Name,
-					c.Pattern,
-					c.Operation,
-					c.Permission,
-					errMsg,
-				})
+			for _, r := range results {
+				tw.PrintStructFields(r)
 			}
 		},
 	}
@@ -98,9 +134,10 @@ func (a *acls) addCreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&a.groups, groupFlag, nil, "Group to grant ACLs for (repeatable)")
 	cmd.Flags().BoolVar(&a.cluster, clusterFlag, false, "Whether to grant ACLs to the cluster")
 	cmd.Flags().StringSliceVar(&a.txnIDs, txnIDFlag, nil, "Transactional IDs to grant ACLs for (repeatable)")
+	cmd.Flags().BoolVar(&a.registry, registryFlag, false, "Whether to grant ACLs for the schema registry")
+	cmd.Flags().StringSliceVar(&a.subjects, subjectFlag, nil, "Schema Registry subjects to grant ACLs for (repeatable)")
 
 	cmd.Flags().StringVar(&a.resourcePatternType, patternFlag, "literal", "Pattern to use when matching resource names (literal or prefixed)")
-
 	cmd.Flags().StringSliceVar(&a.operations, operationFlag, nil, "Operation to grant (repeatable)")
 
 	cmd.Flags().StringSliceVar(&a.allowPrincipals, allowPrincipalFlag, nil, "Principals for which these permissions will be granted (repeatable)")
