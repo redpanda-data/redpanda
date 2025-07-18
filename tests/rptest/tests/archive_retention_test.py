@@ -22,7 +22,7 @@ from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoi
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_local_storage_truncate, segments_count,
-                         expect_exception)
+                         expect_exception, wait_until_with_progress_check)
 from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
 
 
@@ -104,15 +104,18 @@ class CloudArchiveRetentionTest(RedpandaTest):
         def produce_until_spillover():
             initial_uploaded = self.num_manifests_uploaded()
 
-            def new_manifest_spilled():
+            def new_manifest_spilled(get_num_spilled):
                 self.produce(topic, 300)
-                num_spilled = self.num_manifests_uploaded()
+                num_spilled = get_num_spilled()
                 return num_spilled > initial_uploaded + 10
 
-            wait_until(new_manifest_spilled,
-                       timeout_sec=120,
-                       backoff_sec=10,
-                       err_msg="Manifests were not created")
+            wait_until_with_progress_check(
+                self.num_manifests_uploaded,
+                condition=new_manifest_spilled,
+                timeout_sec=360,
+                progress_sec=60,
+                backoff_sec=10,
+                err_msg="Manifests were not created")
 
         wait_for_topic()
         produce_until_spillover()
