@@ -58,26 +58,32 @@ public:
 
 enum class license_type : uint8_t { free_trial = 0, enterprise = 1 };
 
-ss::sstring license_type_to_string(license_type type);
-
-inline std::ostream& operator<<(std::ostream& os, license_type lt) {
-    os << license_type_to_string(lt);
-    return os;
-}
-
 struct license
-  : serde::envelope<license, serde::version<1>, serde::compat_version<0>> {
+  : serde::envelope<license, serde::version<2>, serde::compat_version<0>> {
     using clock = std::chrono::system_clock;
 
     /// Expected encoded contents
     uint8_t format_version;
-    license_type type;
+    // This variable should not be used directly. Use get_type accessor, instead
+    license_type _type;
     ss::sstring organization;
     std::chrono::seconds expiry;
     ss::sstring checksum;
+    // This variable should not be used directly. Use get_type accessor, instead
+    ss::sstring _type_str;
+    std::vector<ss::sstring> products;
+
+    ss::sstring get_type() const;
 
     auto serde_fields() {
-        return std::tie(format_version, type, organization, expiry, checksum);
+        return std::tie(
+          format_version,
+          _type,
+          organization,
+          expiry,
+          checksum,
+          _type_str,
+          products);
     }
 
     /// true if todays date is greater then \ref expiry

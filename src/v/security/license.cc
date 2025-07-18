@@ -27,7 +27,8 @@ namespace security {
 
 namespace crypto {
 
-static const ::crypto::key public_key = []() {
+namespace {
+const ::crypto::key public_key = []() {
     static const ss::sstring public_key_material
       = "-----BEGIN PUBLIC KEY-----\n"
         "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt0Y2jGOLI70xkF4rmpNM\n"
@@ -47,14 +48,15 @@ static const ::crypto::key public_key = []() {
 /// The redpanda license is comprised of 2 sections seperated by a delimiter.
 /// The first section is the data section (base64 encoded), the second being the
 /// signature, which is a PCKS1.5 sigature of the contents of the data section.
-static bool
-verify_license(const ss::sstring& data, const ss::sstring& signature) {
+bool verify_license(const ss::sstring& data, const ss::sstring& signature) {
     return ::crypto::verify_signature(
       ::crypto::digest_type::SHA256, public_key, data, signature);
 }
+} // namespace
 
 } // namespace crypto
 
+namespace {
 ss::sstring license_type_to_string(license_type type) {
     switch (type) {
     case license_type::free_trial:
@@ -65,7 +67,7 @@ ss::sstring license_type_to_string(license_type type) {
     __builtin_unreachable();
 }
 
-static license_type integer_to_license_type(int type) {
+license_type integer_to_license_type(int type) {
     switch (type) {
     case 0:
         return license_type::free_trial;
@@ -73,13 +75,8 @@ static license_type integer_to_license_type(int type) {
         return license_type::enterprise;
     default:
         throw license_invalid_exception(
-          fmt::format("Unknown license_type: {}", type));
+          ss::format("Unknown license_type: {}", type));
     }
-}
-
-std::ostream& operator<<(std::ostream& os, const license& lic) {
-    fmt::print(os, "{}", lic);
-    return os;
 }
 
 struct license_components {
@@ -87,7 +84,7 @@ struct license_components {
     ss::sstring signature;
 };
 
-static license_components parse_license(std::string_view license) {
+license_components parse_license(std::string_view license) {
     static constexpr auto signature_delimiter = ".";
     const auto itr = license.find(signature_delimiter);
     if (itr == ss::sstring::npos) {
@@ -102,7 +99,7 @@ static license_components parse_license(std::string_view license) {
         license.substr(itr + strlen(signature_delimiter)))};
 }
 
-static const std::string license_data_validator_schema = R"(
+const char* const license_data_validator_schema_v0 = R"(
 {
     "type": "object",
     "properties": {
@@ -129,29 +126,118 @@ static const std::string license_data_validator_schema = R"(
 }
 )";
 
-static void parse_data_section(license& lc, const json::Document& doc) {
-    json::validator license_data_validator(license_data_validator_schema);
-    if (!doc.Accept(license_data_validator.schema_validator)) {
-        throw license_malformed_exception(
-          "License data section failed to match schema");
-    }
+const char* const license_data_validator_schema_v1 = R"(
+{
+    "type": "object",
+    "properties": {
+        "version": {
+            "type": "number"
+        },
+        "org": {
+            "type": "string"
+        },
+        "type": {
+            "type": "string"
+        },
+        "expiry": {
+            "type": "number"
+        },
+        "products": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    },
+    "required": [
+        "version",
+        "org",
+        "type",
+        "expiry"
+    ],
+    "additionalProperties": true
+}
+)";
+
+struct license_data_parser {
+    using data_parser = void (*)(license& lc, const json::Document& doc);
+
+    const char* schema;
+    data_parser parser;
+};
+
+// parse_data_section_v* functions are responsible for parsing all values of the
+// license relevant to each version, apart from 'format_version' and 'checksum'
+void parse_data_section_v0(license& lc, const json::Document& doc) {
     lc.expiry = std::chrono::seconds(
       doc.FindMember("expiry")->value.GetInt64());
     if (lc.is_expired()) {
         throw license_invalid_exception("Expiry date behind todays date");
     }
-    lc.format_version = doc.FindMember("version")->value.GetInt();
-    if (lc.format_version < 0) {
-        throw license_invalid_exception("Invalid format_version, is < 0");
+    lc.organization = doc.FindMember("org")->value.GetString();
+    if (lc.organization == "") {
+        throw license_invalid_exception("Cannot have empty string for org");
+    }
+    lc._type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+}
+
+void parse_data_section_v1(license& lc, const json::Document& doc) {
+    lc.expiry = std::chrono::seconds(
+      doc.FindMember("expiry")->value.GetInt64());
+    if (lc.is_expired()) {
+        throw license_invalid_exception("Expiry date behind todays date");
     }
     lc.organization = doc.FindMember("org")->value.GetString();
     if (lc.organization == "") {
         throw license_invalid_exception("Cannot have empty string for org");
     }
-    lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
+    lc._type_str = doc.FindMember("type")->value.GetString();
+
+    const auto it_products = doc.FindMember("products");
+    if (it_products != doc.MemberEnd()) {
+        lc.products = it_products->value.GetArray()
+                      | std::views::transform(&json::Value::GetString)
+                      | std::ranges::to<decltype(lc.products)>();
+    }
 }
 
-static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
+license_data_parser get_parser(const uint8_t version) {
+    switch (version) {
+    case 0:
+        return license_data_parser{
+          .schema = license_data_validator_schema_v0,
+          .parser = parse_data_section_v0};
+    case 1:
+        return license_data_parser{
+          .schema = license_data_validator_schema_v1,
+          .parser = parse_data_section_v1};
+    default:
+        throw license_invalid_exception(
+          ss::format("Unsupported version {}", version));
+    }
+}
+
+void parse_data_section(license& lc, const json::Document& doc) {
+    const auto it_version = doc.FindMember("version");
+    if (it_version == doc.MemberEnd()) {
+        throw license_invalid_exception("Missing required parameter 'version'");
+    }
+    lc.format_version = it_version->value.GetInt();
+    const auto ldf = get_parser(lc.format_version);
+
+    json::validator license_data_validator(ldf.schema);
+    if (!doc.Accept(license_data_validator.schema_validator)) {
+        json::StringBuffer sb;
+        json::Writer<json::StringBuffer> writer(sb);
+        license_data_validator.schema_validator.GetError().Accept(writer);
+        throw license_malformed_exception(ss::format(
+          "License data section failed to match schema with error: {}",
+          sb.GetString()));
+    }
+    ldf.parser(lc, doc);
+}
+
+ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
     bytes checksum;
     hash_sha256 h;
     h.update(raw_license);
@@ -161,9 +247,16 @@ static ss::sstring calculate_sha256_checksum(std::string_view raw_license) {
     return to_hex(checksum);
 }
 
+} // namespace
+
+std::ostream& operator<<(std::ostream& os, const license& lic) {
+    fmt::print(os, "{}", lic);
+    return os;
+}
+
 license make_license(std::string_view raw_license) {
     try {
-        license lc;
+        license lc{};
         auto components = parse_license(raw_license);
         if (!crypto::verify_license(components.data, components.signature)) {
             throw license_verifcation_exception("RSA signature invalid");
@@ -179,6 +272,15 @@ license make_license(std::string_view raw_license) {
         return lc;
     } catch (const base64_decoder_exception&) {
         throw license_malformed_exception("Failed to decode data section");
+    }
+}
+
+ss::sstring license::get_type() const {
+    switch (format_version) {
+    case 0:
+        return license_type_to_string(_type);
+    default:
+        return _type_str;
     }
 }
 
@@ -201,11 +303,14 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     return fmt::format_to(
       ctx.out(),
-      "[Version: {0}, Organization: {1}, Type: {2} Expiry(epoch): {3}]",
+      "[Version: {0}, Organization: {1}, Type: {2}, Expiry(epoch): {3}{4}]",
       r.format_version,
       r.organization,
-      license_type_to_string(r.type),
-      r.expiry.count());
+      r.get_type(),
+      r.expiry.count(),
+      r.products.empty()
+        ? ""
+        : fmt::format(", Products: {}", fmt::join(r.products, ",")));
 }
 
 } // namespace fmt

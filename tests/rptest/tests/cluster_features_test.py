@@ -10,7 +10,7 @@
 import time
 import json
 
-from rptest.utils.rpenv import sample_license
+from rptest.utils.rpenv import sample_license, sample_license_v1
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
@@ -227,6 +227,53 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf'
         }
 
+        assert self.admin.put_license(license).status_code == 200
+
+        def obtain_configured_license():
+            lic = self.admin.get_license()
+            return (self.admin.is_sample_license(lic), lic)
+
+        resp = wait_until_result(obtain_configured_license,
+                                 timeout_sec=5,
+                                 backoff_sec=1)
+        assert resp['license'] is not None
+        assert expected_license_contents == resp['license'], resp['license']
+
+        license_v1 = sample_license_v1()
+        if license_v1 is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE_V1_PRODUCTS env var not found"
+            )
+            return
+        expected_license_contents_v1 = {
+            'format_version':
+            1,
+            'org':
+            'redpanda-testing',
+            'type':
+            'testing_license',
+            'products': ['some_prod', 'some_other_prod'],
+            'expires':
+            4344165449,
+            'sha256':
+            '0937a2d8e4437a63373c1c1cb0f5f62c5cae9366fea1b00467b4c4eaab8ca4cf'
+        }
+
+        assert self.admin.put_license(license_v1).status_code == 200
+
+        def obtain_configured_license_v1():
+            lic = self.admin.get_license()
+            if lic is None or 'license' not in lic:
+                return False
+            return (lic['license']['format_version'] == 1, lic)
+
+        resp = wait_until_result(obtain_configured_license_v1,
+                                 timeout_sec=5,
+                                 backoff_sec=1)
+        assert resp['license'] is not None
+        assert expected_license_contents_v1 == resp['license'], resp['license']
+
+        # Set back to v0 for sanity check
         assert self.admin.put_license(license).status_code == 200
 
         def obtain_configured_license():

@@ -306,7 +306,7 @@ make_builtin_trial_license(security::license::clock::time_point start_time) {
 
     return security::license{
       .format_version = 0,
-      .type = security::license_type::free_trial,
+      ._type = security::license_type::free_trial,
       .organization = "Redpanda Built-In Evaluation Period",
       .expiry = expiry,
       .checksum = "",
