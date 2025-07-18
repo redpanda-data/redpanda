@@ -40,11 +40,14 @@ struct group_manager_fixture
         co_await app.group_initializer.local().assure_topic_exists();
         co_await wait_for_leader(offsets_ntp);
         // Wait until the partitions are registered.
-        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [this] {
-            auto& gm = app._group_manager;
-            auto [ec, _] = gm.local().list_groups();
-            return ec == kafka::error_code::none
-                   && gm.local().attached_partitions_count() == 1;
+        auto& gm = app._group_manager;
+        RPTEST_REQUIRE_EVENTUALLY_CORO(10s, [&gm] {
+            return gm.local().list_groups().then([&gm](auto res) {
+                auto& ec = res.first;
+                return ss::make_ready_future<bool>(
+                  ec == kafka::error_code::none
+                  && gm.local().attached_partitions_count() == 1);
+            });
         });
         co_await wait_for_version_fence();
     }

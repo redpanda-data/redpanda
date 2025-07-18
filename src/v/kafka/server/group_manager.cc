@@ -1698,7 +1698,7 @@ group_manager::offset_delete(offset_delete_request&& r) {
     co_return response;
 }
 
-std::pair<error_code, chunked_vector<listed_group>>
+ss::future<std::pair<error_code, chunked_vector<listed_group>>>
 group_manager::list_groups(const list_groups_filter_data& filter_data) const {
     auto loading = std::any_of(
       _partitions.cbegin(),
@@ -1721,12 +1721,13 @@ group_manager::list_groups(const list_groups_filter_data& filter_data) const {
                g->protocol_type().value_or(protocol_type()),
                group_state_to_kafka_name(g->state())});
         }
+        co_await ss::maybe_yield();
     }
 
     auto error = loading ? error_code::coordinator_load_in_progress
                          : error_code::none;
 
-    return std::make_pair(error, std::move(groups));
+    co_return std::make_pair(error, std::move(groups));
 }
 
 described_group
