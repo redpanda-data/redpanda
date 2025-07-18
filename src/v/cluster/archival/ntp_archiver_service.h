@@ -353,7 +353,7 @@ public:
     /// \param scanner is a user provided function used to find upload candidate
     /// \return {nullopt, nullopt} or the archiver lock and upload candidate
     ss::future<find_reupload_candidate_result>
-    find_reupload_candidate(manifest_scanner_t scanner);
+    find_reupload_candidate(manifest_scanner_t scanner, ss::abort_source& as);
 
     /**
      * Upload segment provided from the outside of the ntp_archiver.

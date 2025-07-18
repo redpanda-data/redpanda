@@ -222,7 +222,8 @@ adjacent_segment_merger::run(run_quota_t quota) {
                          const cloud_storage::partition_manifest& manifest) {
             return scan_manifest(local_start_offset, manifest);
         };
-        auto find_res = co_await _archiver.find_reupload_candidate(scanner);
+        auto find_res = co_await _archiver.find_reupload_candidate(
+          scanner, _as);
         if (!find_res.upload_stream.has_value()) {
             vlog(_ctxlog.debug, "No more upload candidates");
             co_return result;
