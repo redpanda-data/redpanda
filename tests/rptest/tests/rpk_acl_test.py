@@ -324,7 +324,7 @@ class RpkACLTest(RedpandaTest):
         # Delete ALL, empty input means all.
         superclient.acl_delete(RPKACLInput())
         acl_list_all = superclient.acl_list(format="json")
-        assert acl_list_all['matches'] is None
+        assert len(acl_list_all['matches']) == 0
 
         # ACL with SR + Kafka = 4 in total.
         sr_kafka_acl = RPKACLInput(allow_principal=["panda"],
@@ -355,4 +355,4 @@ class RpkACLTest(RedpandaTest):
         superclient.acl_delete(sr_kafka_acl)
 
         acl_list_all = superclient.acl_list(format="json")
-        assert acl_list_all['matches'] is None
+        assert len(acl_list_all['matches']) == 0
