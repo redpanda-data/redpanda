@@ -1451,9 +1451,19 @@ remote_segment_batch_reader::remote_segment_batch_reader(
 
 ss::future<result<chunked_circular_buffer<model::record_batch>>>
 remote_segment_batch_reader::read_some(
-  model::timeout_clock::time_point,
+  model::timeout_clock::time_point timeout,
   storage::offset_translator_state& ot_state) {
     ss::gate::holder h(_gate);
+    return _seg
+      ->with_scheduling_group(
+        [this, timeout, &ot_state] { return do_read_some(timeout, ot_state); })
+      .finally([h = std::move(h)] {});
+}
+
+ss::future<result<chunked_circular_buffer<model::record_batch>>>
+remote_segment_batch_reader::do_read_some(
+  model::timeout_clock::time_point,
+  storage::offset_translator_state& ot_state) {
     if (_ringbuf.empty()) {
         if (!_parser) {
             // remote_segment_batch_reader shouldn't be used concurrently
