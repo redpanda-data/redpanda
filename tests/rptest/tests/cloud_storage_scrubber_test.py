@@ -657,3 +657,42 @@ class CloudStorageScrubberTest(RedpandaTest):
 
     def match_missing_segment(self, log_entry: str) -> bool:
         return any(expr.search(log_entry) for expr in self.expected_error_logs)
+
+    def _metrics_present(self, pattern: str,
+                         endpoint: MetricsEndpoint) -> bool:
+        return self.redpanda.metrics_sample(
+            pattern, metrics_endpoint=endpoint) is not None
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=SCRUBBER_LOG_ALLOW_LIST +
+        [AllowLogsOnPredicate(method="match_missing_segment")],
+    )
+    def test_no_metrics_if_scrubber_disabled(self):
+        self.logger.debug(
+            "We shouldn't publish anomaly metrics when scrubbing is turned off"
+        )
+
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enable_scrubbing": False})
+
+        assert not self._metrics_present('anomalies', MetricsEndpoint.PUBLIC_METRICS), \
+            "Unexpectedly found 'anomalies' on public metrics with scrubbing off"
+
+        assert not self._metrics_present('anomalies', MetricsEndpoint.METRICS), \
+            "Unexpectedly found 'anomalies' on internal metrics"
+
+        self.logger.debug(
+            "Now turn scrubbing back on and verify that public metrics appear")
+
+        self.redpanda.set_cluster_config(
+            {"cloud_storage_enable_scrubbing": True})
+
+        wait_until(lambda: self._metrics_present(
+            'anomalies', MetricsEndpoint.PUBLIC_METRICS),
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="'anomalies' never appeared on public metrics")
+
+        assert not self._metrics_present('anomalies', MetricsEndpoint.METRICS), \
+            "Unexpectedly found 'anomalies' on internal metrics"

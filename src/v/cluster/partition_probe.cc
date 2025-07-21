@@ -28,9 +28,13 @@ static constexpr int64_t follower_iceberg_lag_metric = 0;
 
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
-  : _partition(p) {
+  : _partition(p)
+  , _enable_scrubbing_bind(
+      config::shard_local_cfg().cloud_storage_enable_scrubbing.bind()) {
     config::shard_local_cfg().enable_schema_id_validation.bind().watch(
       [this]() { reconfigure_metrics(); });
+
+    _enable_scrubbing_bind.watch([this]() { reconfigure_metrics(); });
 }
 
 void replicated_partition_probe::reconfigure_metrics() {
@@ -373,8 +377,8 @@ void replicated_partition_probe::setup_public_scrubber_metric(
     namespace sm = ss::metrics;
 
     // No point in setting up the scrubber metrics if there's no
-    // archival metadata STM to pull values from.
-    if (!_partition.archival_meta_stm()) {
+    // archival metadata STM to pull values from or if scrubbing is not enabled
+    if (!_partition.archival_meta_stm() || !_enable_scrubbing_bind()) {
         return;
     }
 
