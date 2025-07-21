@@ -35,7 +35,7 @@ requires std::predicate<Pred>
 void wait_for(model::timeout_clock::duration timeout, Pred&& p) {
     with_timeout(
       model::timeout_clock::now() + timeout,
-      do_until(
+      ss::do_until(
         [p = std::forward<Pred>(p)] { return p(); },
         [] { return ss::sleep(std::chrono::milliseconds(400)); }))
       .get();
