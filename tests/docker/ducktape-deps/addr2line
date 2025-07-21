@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -e
+
+# Pulls down the addr2line python code for use in DT tests. This doesn't necessarily
+# need to point into our fork, in the case we need upstream improvements we haven't
+# downstreamed yet.
+
+SEASTAR_REPO=redpanda-data/seastar
+SEASTAR_HASH=0aed36eee620e95c0c8289801824ca52091a0e66
+
 mkdir -p /opt/scripts
-curl https://raw.githubusercontent.com/scylladb/seastar/0af88fa21226394ecbfe109b428774f96b73dcb2/scripts/addr2line.py -o /opt/scripts/addr2line.py
-curl https://raw.githubusercontent.com/scylladb/seastar/0af88fa21226394ecbfe109b428774f96b73dcb2/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line
+for filename in addr2line.py seastar-addr2line; do
+  curl https://raw.githubusercontent.com/$SEASTAR_REPO/$SEASTAR_HASH/scripts/$filename -o /opt/scripts/$filename
+done
+
 chmod +x /opt/scripts/seastar-addr2line
