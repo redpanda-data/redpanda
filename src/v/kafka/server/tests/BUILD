@@ -739,7 +739,7 @@ redpanda_cc_gtest(
     ],
 )
 
-redpanda_cc_gtest(
+redpanda_cc_btest(
     name = "fetch_test",
     timeout = "short",
     srcs = [
@@ -751,7 +751,6 @@ redpanda_cc_gtest(
         "//src/v/kafka/server",
         "//src/v/model",
         "//src/v/redpanda/tests:fixture",
-        "//src/v/test_utils:gtest",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",
         "@fmt",
