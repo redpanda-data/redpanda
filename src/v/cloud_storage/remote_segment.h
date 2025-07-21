@@ -179,6 +179,12 @@ public:
 
     size_t concurrency() { return _api.concurrency(); }
 
+    template<class Fn>
+    auto with_scheduling_group(Fn&& fn) {
+        return ss::with_scheduling_group(
+          _api.resources().get_scheduling_group(), std::forward<Fn>(fn));
+    }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
@@ -427,6 +433,10 @@ public:
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+
+    ss::future<result<chunked_circular_buffer<model::record_batch>>>
+    do_read_some(
+      model::timeout_clock::time_point, storage::offset_translator_state&);
 
     size_t produce(model::record_batch batch);
 
