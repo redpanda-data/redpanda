@@ -549,7 +549,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.redpanda,
                 self.logger,
                 max_suspend_duration_seconds=4,
-                lock=lock)
+                lock=lock,
+                min_inter_failure_time=45,
+                max_inter_failure_time=90)
             fi.start()
 
         # main workload loop
