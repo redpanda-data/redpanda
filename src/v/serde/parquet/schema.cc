@@ -77,21 +77,19 @@ void index_schema(schema_element& root) {
 
 } // namespace serde::parquet
 
-auto fmt::formatter<serde::parquet::schema_element>::format(
-  const serde::parquet::schema_element& e, fmt::format_context& ctx) const
-  -> decltype(ctx.out()) {
+VFMT_IMPL(serde::parquet::schema_element) {
     return fmt::format_to(
       ctx.out(),
       "{{ position: {}, type: {}, repetition_type: {}, max_def_level: {}, "
       "max_rep_level: {}, path: {}, logical_type: {}, field_id: {}, "
       "children: [{}]}}",
-      e.position,
-      e.type.index(),
-      static_cast<uint8_t>(e.repetition_type),
-      e.max_definition_level(),
-      e.max_repetition_level(),
-      fmt::join(e.path, "/"),
-      e.logical_type.index(),
-      e.field_id.value_or(-1),
-      fmt::join(e.children, ", "));
+      v.position,
+      v.type.index(),
+      static_cast<uint8_t>(v.repetition_type),
+      v.max_definition_level(),
+      v.max_repetition_level(),
+      fmt::join(v.path, "/"),
+      v.logical_type.index(),
+      v.field_id.value_or(-1),
+      fmt::join(v.children, ", "));
 }

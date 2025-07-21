@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/vfmt.h"
 #include "container/fragmented_vector.h"
 #include "utils/named_type.h"
 
@@ -348,9 +349,4 @@ void index_schema(schema_element& root);
 
 } // namespace serde::parquet
 
-template<>
-struct fmt::formatter<serde::parquet::schema_element>
-  : fmt::formatter<std::string_view> {
-    auto format(const serde::parquet::schema_element&, fmt::format_context& ctx)
-      const -> decltype(ctx.out());
-};
+VFMT_DECL(serde::parquet::schema_element);
