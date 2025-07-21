@@ -64,7 +64,7 @@ run_gofumpt:
 	$(GOFUMPT_OS_CMD)
 
 install_golangci_lint:
-	@which $(GOLANGCILINTCMD) || (if [ $$? -eq 1 ]; then  echo "golangci-lint not found, installing..."; curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin v1.62.0; fi)
+	@which $(GOLANGCILINTCMD) || (if [ $$? -eq 1 ]; then  echo "golangci-lint not found, installing..."; curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOPATH)/bin v1.64.8; fi)
 
 run_linter:
 	$(GOLANGCILINTCMD) run
