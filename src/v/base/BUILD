@@ -17,6 +17,7 @@ redpanda_cc_library(
         "unreachable.h",
         "vassert.h",
         "vassert-register.h",
+        "vfmt.h",
         "vlog.h",
     ],
     include_prefix = "base",
