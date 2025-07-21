@@ -26,7 +26,8 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "mcp",
+		Use:   "mcp",
+		Short: "Manage Redpanda Cloud MCP server",
 	}
 
 	cmd.AddCommand(
