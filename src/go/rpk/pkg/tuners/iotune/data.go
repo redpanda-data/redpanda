@@ -51,7 +51,7 @@ func DataForProvider(
 ) (*IoProperties, error) {
 	vmType, err := v.VMType()
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't get the current VM type for provider '%s'", v.Name())
+		return nil, fmt.Errorf("couldn't get the current VM type for provider '%s'", v.Name())
 	}
 	fmt.Printf("Detected provider '%s' and VM type '%s'\n", v.Name(), vmType)
 	return DataFor(mountpoint, v.Name(), vmType, "default")

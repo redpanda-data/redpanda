@@ -77,7 +77,7 @@ func (b *blockDevices) GetDirectoriesDevices(
 	dirDevices := make(map[string][]string)
 	for _, directory := range directories {
 		if exists, _ := afero.Exists(b.fs, directory); !exists {
-			return nil, fmt.Errorf("Directory '%s' does not exists", directory)
+			return nil, fmt.Errorf("directory '%s' does not exists", directory)
 		}
 		devices, err := b.GetDirectoryDevices(directory)
 		if err != nil {

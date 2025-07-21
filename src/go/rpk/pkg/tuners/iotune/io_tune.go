@@ -65,7 +65,7 @@ func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {
 
 func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
 	if len(args.Dirs) == 0 {
-		return nil, errors.New("At least one directory is required for iotune")
+		return nil, errors.New("at least one directory is required for iotune")
 	}
 	var cmdArgs []string
 	cmdArgs = append(cmdArgs, "--evaluation-directory")

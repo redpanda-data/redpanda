@@ -135,7 +135,7 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 		return uint(cState), nil
 	}
 	// Only stop tune execution (i.e return error) if max_cstate file length is unsupported.
-	return 0, fmt.Errorf("Unsupported length of 'max_cstate' file")
+	return 0, fmt.Errorf("unsupported length of 'max_cstate' file")
 }
 
 func (tuner *tuner) disableCStates() error {
@@ -156,7 +156,7 @@ func (tuner *tuner) checkIfPStateIsEnabled() (bool, error) {
 	}
 
 	if len(lines) == 0 {
-		return false, fmt.Errorf("Unable to read P-State status")
+		return false, fmt.Errorf("unable to read P-State status")
 	}
 	return lines[0] == "intel_pstate", nil
 }

@@ -84,7 +84,7 @@ func (masks *cpuMasks) CPUMaskForComputations(
 		// all available cores
 		computationsMask = cpuMask
 	} else {
-		err = fmt.Errorf("Unsupported mode: '%s'", mode)
+		err = fmt.Errorf("unsupported mode: '%s'", mode)
 	}
 
 	if masks.hwloc.CheckIfMaskIsEmpty(computationsMask) {

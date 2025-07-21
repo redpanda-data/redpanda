@@ -38,7 +38,7 @@ linters:
     - noctx
     - nolintlint
     - revive
-    - tenv
+    - usetesting
     - unconvert
     - wastedassign
     - whitespace
@@ -59,7 +59,7 @@ linters-settings:
   revive:
     ignore-generated-header: true
     severity: warning
-    confidence: 0.8
+    confidence: 0.6
     rules:
       - name: atomic
       - name: blank-imports
@@ -76,7 +76,11 @@ linters-settings:
       - name: error-naming
       - name: error-return
       - name: error-strings
-      - name: errorf
+        arguments:
+          - out.Die
+          - out.MaybeDie
+          - out.DieString
+          - out.MaybeDieString
       - name: get-return
       - name: identical-branches
       - name: if-return

@@ -43,7 +43,7 @@ func TestTHPTunerSupported(t *testing.T) {
 		{
 			name:           "should return false if no dir exists",
 			expected:       false,
-			expectedReason: "None of /sys/kernel/mm/transparent_hugepage, /sys/kernel/mm/redhat_transparent_hugepage was found",
+			expectedReason: "none of /sys/kernel/mm/transparent_hugepage, /sys/kernel/mm/redhat_transparent_hugepage was found",
 		},
 	}
 
