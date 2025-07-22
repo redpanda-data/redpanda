@@ -175,9 +175,10 @@ metadata_response::topic make_topic_response_from_topic_metadata(
     return tp;
 }
 
-static ss::future<metadata_response::topic> create_topic(
+namespace {
+ss::future<metadata_response::topic> create_topic(
   request_context& ctx,
-  model::topic&& topic,
+  model::topic topic,
   const is_node_isolated_or_decommissioned is_node_isolated) {
     if (is_node_isolated) {
         vlog(
@@ -188,7 +189,7 @@ static ss::future<metadata_response::topic> create_topic(
         metadata_response::topic t;
         t.name = std::move(topic);
         t.error_code = error_code::broker_not_available;
-        return ss::make_ready_future<metadata_response::topic>(std::move(t));
+        co_return t;
     }
     // default topic configuration
     cluster::topic_configuration cfg{
@@ -197,52 +198,47 @@ static ss::future<metadata_response::topic> create_topic(
       config::shard_local_cfg().default_topic_partitions(),
       config::shard_local_cfg().default_topic_replication()};
     auto tout = config::shard_local_cfg().create_topic_timeout_ms();
-    return ctx.topics_frontend()
-      .autocreate_topics({std::move(cfg)}, tout)
-      .then([&ctx, &md_cache = ctx.metadata_cache(), tout](
-              std::vector<cluster::topic_result> res) {
-          vassert(res.size() == 1, "expected single result");
+    try {
+        auto res = co_await ctx.topics_frontend().autocreate_topics(
+          {std::move(cfg)}, tout);
+        vassert(res.size() == 1, "expected single result");
+        // error, neither success nor topic exists
+        if (!(res[0].ec == cluster::errc::success
+              || res[0].ec == cluster::errc::topic_already_exists)) {
+            metadata_response::topic t;
+            t.name = std::move(res[0].tp_ns.tp);
+            t.error_code = map_topic_error_code(res[0].ec);
+            co_return t;
+        }
 
-          // error, neither success nor topic exists
-          if (!(res[0].ec == cluster::errc::success
-                || res[0].ec == cluster::errc::topic_already_exists)) {
-              metadata_response::topic t;
-              t.name = std::move(res[0].tp_ns.tp);
-              t.error_code = map_topic_error_code(res[0].ec);
-              return ss::make_ready_future<metadata_response::topic>(
-                std::move(t));
-          }
-          auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
+        auto tp_md = ctx.metadata_cache().get_topic_metadata(res[0].tp_ns);
+        if (!tp_md) {
+            metadata_response::topic t;
+            t.name = std::move(res[0].tp_ns.tp);
+            t.error_code = error_code::invalid_topic_exception;
+            co_return t;
+        }
 
-          if (!tp_md) {
-              metadata_response::topic t;
-              t.name = std::move(res[0].tp_ns.tp);
-              t.error_code = error_code::invalid_topic_exception;
-              return ss::make_ready_future<metadata_response::topic>(
-                std::move(t));
-          }
+        co_await wait_for_topics(
+          ctx.metadata_cache(),
+          res,
+          ctx.controller_api(),
+          tout + model::timeout_clock::now());
 
-          return wait_for_topics(
-                   md_cache,
-                   res,
-                   ctx.controller_api(),
-                   tout + model::timeout_clock::now())
-            .then([&ctx, tp_md = std::move(tp_md)]() mutable {
-                return make_topic_response_from_topic_metadata(
-                  ctx.metadata_cache(),
-                  tp_md.value(),
-                  is_node_isolated_or_decommissioned::no,
-                  ctx.recovery_mode_enabled());
-            });
-      })
-      .handle_exception([topic = std::move(topic)](
-                          [[maybe_unused]] std::exception_ptr e) mutable {
-          metadata_response::topic t;
-          t.name = std::move(topic);
-          t.error_code = error_code::request_timed_out;
-          return t;
-      });
+        co_return make_topic_response_from_topic_metadata(
+          ctx.metadata_cache(),
+          tp_md.value(),
+          is_node_isolated_or_decommissioned::no,
+          ctx.recovery_mode_enabled());
+    } catch (const std::exception& e) {
+        metadata_response::topic t;
+        t.name = std::move(topic);
+        t.error_code = error_code::request_timed_out;
+        vlog(klog.warn, "Failed to autocreate topic({}): {}", t.name, e.what());
+        co_return t;
+    }
 }
+} // namespace
 
 metadata_response::topic
 make_error_topic_response(model::topic tp, error_code ec) {
