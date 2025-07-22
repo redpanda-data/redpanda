@@ -8,14 +8,14 @@ zero-drift: &zero-drift
   zero-drift:
     mode:
       dynamic_reliability:
-        compare_with_branch: dev
+        compare_with_branch: v25.2.x
         time_window: 2w
         allowed_drift: 0 # upstream_reliability - current_ci_reliability <= allowed_drift
         fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
   fifty-drift:
     mode:
       dynamic_reliability:
-        compare_with_branch: dev
+        compare_with_branch: v25.2.x
         time_window: 2w
         allowed_drift: 50 # upstream_reliability - current_ci_reliability <= allowed_drift
         fallback_reliability: 90.0 # when reliability cannot be fetched from branch (e.g. new test)
