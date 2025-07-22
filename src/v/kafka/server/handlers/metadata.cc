@@ -211,6 +211,12 @@ ss::future<metadata_response::topic> create_topic(
             co_return t;
         }
 
+        co_await wait_for_topics(
+          ctx.metadata_cache(),
+          res,
+          ctx.controller_api(),
+          tout + model::timeout_clock::now());
+
         auto tp_md = ctx.metadata_cache().get_topic_metadata(res[0].tp_ns);
         if (!tp_md) {
             metadata_response::topic t;
@@ -218,12 +224,6 @@ ss::future<metadata_response::topic> create_topic(
             t.error_code = error_code::invalid_topic_exception;
             co_return t;
         }
-
-        co_await wait_for_topics(
-          ctx.metadata_cache(),
-          res,
-          ctx.controller_api(),
-          tout + model::timeout_clock::now());
 
         co_return make_topic_response_from_topic_metadata(
           ctx.metadata_cache(),
