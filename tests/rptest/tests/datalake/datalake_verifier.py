@@ -77,7 +77,7 @@ class DatalakeVerifier():
         # thread can perform verification. Larger batches results
         # in fewer SQL queries and hence faster verification
         self._msgs_batched = threading.Condition()
-        self._query_batch_size = 7777
+        self._query_batch_size = 777
         self._query_batch_wait_timeout_s = 3
         self._executor = ThreadPoolExecutor(max_workers=2)
         self._rpk = RpkTool(self.redpanda)
