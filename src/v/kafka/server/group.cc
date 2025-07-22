@@ -2497,7 +2497,7 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
     if (!r.data.topics) {
         absl::flat_hash_map<
           model::topic,
-          small_fragment_vector<offset_fetch_response_partition>>
+          chunked_vector<offset_fetch_response_partition>>
           tmp;
         for (const auto& e : _offsets) {
             offset_fetch_response_partition p = {
