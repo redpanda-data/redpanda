@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 #pragma once
 
+#include "base/vfmt.h"
 #include "model/fundamental.h"
 #include "serde/rw/envelope.h"
 #include "serde/rw/uuid.h"
@@ -28,12 +29,10 @@ struct remote_label
     // The cluster UUID of a given cluster. This is critical in avoiding
     // collisions when multiple clusters use the same bucket.
     model::cluster_uuid cluster_uuid{};
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const remote_label& label) {
-        fmt::print(os, "{{cluster_uuid: {}}}", label.cluster_uuid);
-        return os;
-    }
 };
 
 } // namespace cloud_storage
+
+VFMT_INLINE(cloud_storage::remote_label) {
+    return fmt::format_to(ctx.out(), "{{cluster_uuid: {}}}", v.cluster_uuid);
+}
