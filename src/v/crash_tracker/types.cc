@@ -11,6 +11,7 @@
 
 #include "crash_tracker/types.h"
 
+#include "base/vfmt.h"
 #include "version/version.h"
 
 namespace crash_tracker {
@@ -34,23 +35,6 @@ std::ostream& operator<<(std::ostream& os, crash_type ct) {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, const crash_description& cd) {
-    fmt::print(
-      os,
-      "Redpanda version: {}. Arch: {}. {}",
-      cd.app_version,
-      cd.arch,
-      cd.crash_message.c_str());
-
-    const auto opt_stacktrace = cd.stacktrace.c_str();
-    const auto has_stacktrace = strlen(opt_stacktrace) > 0;
-    if (has_stacktrace) {
-        fmt::print(os, " Backtrace: {}.", opt_stacktrace);
-    }
-
-    return os;
-}
-
 bool is_crash_loop_limit_reached(std::exception_ptr eptr) {
     try {
         std::rethrow_exception(eptr);
@@ -62,3 +46,20 @@ bool is_crash_loop_limit_reached(std::exception_ptr eptr) {
 }
 
 } // namespace crash_tracker
+
+VFMT_IMPL(crash_tracker::crash_description) {
+    auto it = fmt::format_to(
+      ctx.out(),
+      "Redpanda version: {}. Arch: {}. {}",
+      v.app_version,
+      v.arch,
+      v.crash_message.c_str());
+
+    const auto opt_stacktrace = v.stacktrace.c_str();
+    const auto has_stacktrace = strlen(opt_stacktrace) > 0;
+    if (has_stacktrace) {
+        it = fmt::format_to(it, " Backtrace: {}.", opt_stacktrace);
+    }
+
+    return it;
+}

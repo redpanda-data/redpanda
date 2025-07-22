@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/seastarx.h"
+#include "base/vfmt.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 #include "serde/rw/enum.h"
@@ -136,8 +137,6 @@ struct crash_description
         return std::tie(
           type, crash_time, crash_message, stacktrace, app_version, arch);
     }
-
-    friend std::ostream& operator<<(std::ostream&, const crash_description&);
 };
 
 struct crash_tracker_metadata
@@ -163,3 +162,5 @@ public:
 bool is_crash_loop_limit_reached(std::exception_ptr);
 
 } // namespace crash_tracker
+
+VFMT_DECL(crash_tracker::crash_description);
