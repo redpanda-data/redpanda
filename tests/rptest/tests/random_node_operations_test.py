@@ -74,6 +74,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 "raft_io_timeout_ms": 20000,
                 "compacted_log_segment_size": 1024 * 1024,
                 "log_segment_size": 2 * 1024 * 1024,
+                # to speed up th test we set the retention trim interval to 5 seconds,
+                # this way the disk size information will be updated more frequently
+                "retention_local_trim_interval": 5000,
             },
             # 2 nodes for kgo producer/consumer workloads
             node_prealloc_count=3,
@@ -549,7 +552,9 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.redpanda,
                 self.logger,
                 max_suspend_duration_seconds=4,
-                lock=lock)
+                lock=lock,
+                min_inter_failure_time=45,
+                max_inter_failure_time=90)
             fi.start()
 
         # main workload loop
