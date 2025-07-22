@@ -24,6 +24,7 @@ go_library(
     deps = [
         "//src/go/rpk/pkg/adminapi",
         "//src/go/rpk/pkg/cli/container/common",
+        "//src/go/rpk/pkg/cobraext",
         "//src/go/rpk/pkg/config",
         "//src/go/rpk/pkg/oauth",
         "//src/go/rpk/pkg/oauth/providers/auth0",

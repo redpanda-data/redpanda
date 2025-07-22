@@ -20,6 +20,7 @@ import (
 	controlplanev1 "buf.build/gen/go/redpandadata/cloud/protocolbuffers/go/redpanda/api/controlplane/v1"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	container "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
@@ -31,16 +32,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	fromCloudFlag     = "from-cloud"
+	fromContainerFlag = "from-rpk-container"
+)
+
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		set               []string
-		fromRedpanda      string
-		fromProfile       string
-		fromCloud         string
-		fromContainer     bool
-		description       string
-		fromCloudFlag     = "from-cloud"
-		fromContainerFlag = "from-rpk-container"
+		set           []string
+		fromRedpanda  string
+		fromProfile   string
+		fromCloud     string
+		fromContainer bool
+		description   string
 	)
 
 	cmd := &cobra.Command{
@@ -86,8 +90,18 @@ printed in the output of 'rpk profile list'.
 
 rpk always switches to the newly created profile.
 `,
-		Args: cobra.MaximumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		DisableFlagParsing: true, // Manually parse for the custom --from-cloud flag.
+		Run: func(cmd *cobra.Command, rawArgs []string) {
+			args, err := parseCreateFlags(cmd, rawArgs)
+			out.MaybeDieErr(err)
+			if cmd.Flags().Changed("help") {
+				cmd.Help()
+				return
+			}
+			if len(args) > 1 {
+				out.Die("too many arguments, expected at most one profile name, got %d", len(args))
+			}
+
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
 
@@ -132,13 +146,65 @@ Or:
 	cmd.Flags().BoolVar(&fromContainer, fromContainerFlag, false, "Create and switch to a new profile generated from a running cluster created with rpk container")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
 
-	cmd.Flags().Lookup("from-cloud").NoOptDefVal = "prompt"
+	cmd.Flags().Lookup(fromCloudFlag).NoOptDefVal = "prompt"
 
 	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
 
 	cmd.MarkFlagsMutuallyExclusive("from-redpanda", "from-cloud", "from-profile")
 
 	return cmd
+}
+
+// parseCreateFlags parses the flags for the create command. Fixing the
+// `--from-cloud` flag if it is set, and returns the remaining arguments for
+// the command execution.
+func parseCreateFlags(cmd *cobra.Command, args []string) ([]string, error) {
+	args = fixFromCloudArgs(args)
+	f := cmd.Flags()
+	err := f.Parse(args)
+	if err != nil {
+		return nil, err
+	}
+	argsLeft, _ := cobraext.StripFlagset(args, f)
+	return argsLeft, nil
+}
+
+// fixFromCloudArgs is a hack to 'fix' the `--from-cloud` when is set.
+// We want to ensure that:
+//  1. If the user provided a value, use it (--from-cloud value)
+//     or (--from-cloud=value).
+//  2. If the user set `--from-cloud` without a value, we want to leave it
+//     as is, so that flag parsing uses the NoOptDefVal.
+//
+// We have to do this manually as cobra does not support NoOptDefVale with
+// positional arguments, see: https://github.com/spf13/cobra/issues/866
+func fixFromCloudArgs(args []string) []string {
+	// In flag parsing, we check for the last instance of `--from-cloud` in
+	// the argument list.
+	idx := -1
+	for i, arg := range args {
+		// We only care about the `--from-cloud` flag. `--from-cloud=value` is
+		// already parsed correctly.
+		if arg == "--"+fromCloudFlag {
+			idx = i
+		}
+	}
+	if idx >= 0 {
+		// If it's at the end, there is no value to add. Return the args as is.
+		if idx == len(args)-1 {
+			return args
+		}
+		// A cluster ID does not start with a dash, so if the next argument
+		// is not a flag, we "fix" the args.
+		if !strings.HasPrefix(args[idx+1], "-") {
+			newFlag := fmt.Sprintf("--%s=%s", fromCloudFlag, args[idx+1])
+			// We remove the value from the args and add it together.
+			rest := args[idx+2:]
+			args = append(args[:idx], newFlag)
+			args = append(args, rest...)
+		}
+	}
+	return args
 }
 
 // CreateFlow runs the profile creation flow and prints what was done.
@@ -156,7 +222,7 @@ func CreateFlow(
 	name string,
 	description string,
 ) error {
-	if p := yAct.Profile(name); p != nil {
+	if p := yAct.Profile(name); name != "" && p != nil {
 		return &ProfileExistsError{name}
 	}
 
