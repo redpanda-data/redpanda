@@ -1300,6 +1300,98 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
             assert api_readback == expect_default
 
     @cluster(num_nodes=3)
+    def test_rpk_list(self):
+        """
+        Test RPK's list helpers
+        """
+        class Example(NamedTuple):
+            key: str
+            strval: str
+            result: Any
+
+        valid_examples = [
+            Example("append_chunk_size", "32768", 32768),
+            Example("superusers", "['bob','alice']", ["bob", "alice"]),
+            Example("storage_min_free_bytes", "1234567890", 1234567890),
+            Example("kafka_memory_share_for_fetch", "1", 1.0)
+        ]
+
+        # Set some values to validate that `rpk cluster config list` gets last changes
+        for example in valid_examples:
+            self.rpk.cluster_config_set(example.key, example.strval)
+
+        # Check that valid changes are accepted, and the change is reflected in json format
+        json_value = self.rpk.cluster_config_list("json")
+        try:
+            parsed_json = json.loads(json_value)
+            # json_value is an array of objects, each with a key and value
+            for example in valid_examples:
+                v = parsed_json[example.key]
+                if v is None:
+                    raise AssertionError(
+                        f"Failed to find {example.key} in config list json")
+                if v != example.result:
+                    raise AssertionError(
+                        f"Value mismatch for {example.key}: expected {example.result}, got {v}"
+                    )
+        except (json.JSONDecodeError, AttributeError) as e:
+            raise AssertionError(f"JSON parsing failed: {e}")
+
+        # Check that valid changes are accepted, and the change is reflected in yaml format
+        yaml_value = self.rpk.cluster_config_list("yaml")
+        try:
+            parsed_yaml = yaml.safe_load(yaml_value)
+            for example in valid_examples:
+                v = parsed_yaml[example.key]
+                if v is None:
+                    raise AssertionError(
+                        f"Failed to find {example.key} in config list json")
+                if v != example.result:
+                    raise AssertionError(
+                        f"Value mismatch for {example.key}: expected {example.result}, got {v}"
+                    )
+        except (yaml.YAMLError, AttributeError) as e:
+            self.logger.error(f"Failed to parse yaml: {yaml_value}")
+            raise AssertionError(f"YAML parsing failed: {e}")
+
+        # Check table format parsing
+        table_value = self.rpk.cluster_config_list("text")
+        header_pattern = r'PROPERTY.*VALUE'
+
+        if not re.match(header_pattern, table_value):
+            self.logger.error(f"Failed to parse table header: {table_value}")
+            raise AssertionError("Failed to parse table header")
+
+        for example in valid_examples:
+            if not re.search(rf'{example.key}.*{example.strval}', table_value):
+                self.logger.error(
+                    f"Failed to find {example.key} item in table: {table_value}"
+                )
+                raise AssertionError(
+                    f"Failed to find {example.key} in table format")
+
+        # Check that filtering works in json format
+        json_value = self.rpk.cluster_config_list("json", ".*qdc_enable.*")
+        try:
+            parsed_json = json.loads(json_value)
+            if isinstance(parsed_json, dict) and len(parsed_json) > 1:
+                self.logger.error(
+                    f"Expected single property in filtered json: {json_value}")
+                raise AssertionError(
+                    "Filtered JSON should contain only one property")
+            if isinstance(parsed_json,
+                          dict) and "kafka_qdc_enable" not in parsed_json:
+                self.logger.error(
+                    f"Expected 'kafka_qdc_enable' in filtered json: {json_value}"
+                )
+                raise AssertionError(
+                    "Filtered JSON should contain 'kafka_qdc_enable'")
+
+        except (json.JSONDecodeError, AttributeError) as e:
+            self.logger.error(f"Failed to parse filtered json: {json_value}")
+            raise AssertionError(f"Filtered JSON parsing failed: {e}")
+
+    @cluster(num_nodes=3)
     def test_secret_redaction(self):
         def set_and_search(key, value, expect_log):
             patch_result = self.admin.patch_cluster_config(upsert={key: value})
