@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "base/vfmt.h"
 #include "container/fragmented_vector.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -70,7 +71,6 @@ struct disk
     // to represent a disk not only for marshalling data to disk/network.
     unsigned long int fsid;
 
-    friend std::ostream& operator<<(std::ostream&, const disk&);
     friend bool operator==(const disk&, const disk&) = default;
 };
 
@@ -756,3 +756,5 @@ struct reclaimable_offsets {
 };
 
 } // namespace storage
+
+VFMT_DECL(storage::disk);

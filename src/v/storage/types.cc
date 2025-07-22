@@ -9,6 +9,7 @@
 
 #include "storage/types.h"
 
+#include "base/vfmt.h"
 #include "base/vlog.h"
 #include "storage/compacted_index.h"
 #include "storage/logger.h"
@@ -43,18 +44,6 @@ std::optional<kafka::offset> stm_manager::lowest_pinned_data_offset() const {
         }
     }
     return result;
-}
-
-std::ostream& operator<<(std::ostream& o, const disk& d) {
-    fmt::print(
-      o,
-      "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
-      d.path,
-      human::bytes(d.free),
-      human::bytes(d.total),
-      d.alert,
-      d.fsid);
-    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
@@ -269,3 +258,14 @@ operator<<(std::ostream& o, compacted_index::recovery_state state) {
 }
 
 } // namespace storage
+
+VFMT_IMPL(storage::disk) {
+    return fmt::format_to(
+      ctx.out(),
+      "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
+      v.path,
+      human::bytes(v.free),
+      human::bytes(v.total),
+      v.alert,
+      v.fsid);
+}
