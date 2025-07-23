@@ -55,17 +55,13 @@ public:
       : _node_id(node_id)
       , _client(std::move(client))
       , _gated_mutex{} {}
+
     template<typename T, typename Ret = typename T::api_type::response_type>
     requires(KafkaApi<typename T::api_type>)
     ss::future<Ret> dispatch(T r) {
-        return dispatch(std::move(r), api_version_for(r));
-    }
-    template<typename T, typename Ret = typename T::api_type::response_type>
-    requires(KafkaApi<typename T::api_type>)
-    ss::future<Ret> dispatch(T r, api_version version) {
         using api_t = typename T::api_type;
         return _gated_mutex
-          .with([this, r{std::move(r)}, version]() mutable {
+          .with([this, r{std::move(r)}]() mutable {
               vlog(
                 kcwire.debug,
                 "{} - Dispatch to node {}: {} req: {}",
@@ -73,17 +69,16 @@ public:
                 _node_id,
                 api_t::name,
                 r);
-              return _client->dispatch(std::move(r), version)
-                .then([this](Ret res) {
-                    vlog(
-                      kcwire.debug,
-                      "{} - Response from node {}: {} res: {}",
-                      *this,
-                      _node_id,
-                      api_t::name,
-                      res);
-                    return res;
-                });
+              return _client->dispatch(std::move(r)).then([this](Ret res) {
+                  vlog(
+                    kcwire.debug,
+                    "{} - Response from node {}: {} res: {}",
+                    *this,
+                    _node_id,
+                    api_t::name,
+                    res);
+                  return res;
+              });
           })
           .handle_exception_type(
             [this](const kafka_request_disconnected_exception&) {
@@ -110,13 +105,6 @@ public:
     const net::unresolved_address& get_address() const {
         return _client->server_address();
     }
-    template<typename ReqT>
-    requires(KafkaApi<typename ReqT::api_type>)
-    api_version api_version_for() const {
-        return api_version_for(ReqT::api_type::key);
-    }
-
-    api_version api_version_for(api_key key) const;
 
 private:
     /// \brief Log the client ID if it exists, otherwise don't log

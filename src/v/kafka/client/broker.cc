@@ -39,51 +39,6 @@ bool is_dns_failure_error(const std::system_error& e) {
 } // namespace
 
 namespace kafka::client {
-api_version broker::api_version_for(api_key key) const {
-    switch (key) {
-    case offset_fetch_api::key:
-        return api_version(4);
-    case fetch_api::key:
-        return api_version(10);
-    case list_offsets_api::key:
-        return api_version(3);
-    case produce_api::key:
-        return api_version(7);
-    case offset_commit_api::key:
-        return api_version(7);
-    case describe_groups_api::key:
-        return api_version(2);
-    case heartbeat_api::key:
-        return api_version(3);
-    case join_group_api::key:
-        return api_version(4);
-    case sync_group_api::key:
-        return api_version(3);
-    case leave_group_api::key:
-        return api_version(2);
-    case metadata_api::key:
-        return api_version(8);
-    case find_coordinator_api::key:
-        return api_version(2);
-    case list_groups_api::key:
-        return api_version(2);
-    case create_topics_api::key:
-        return api_version(6);
-    case sasl_handshake_api::key:
-        return api_version(1);
-    case delete_records_api::key:
-        return api_version(2);
-    case offset_for_leader_epoch_api::key:
-        return api_version(2);
-    case sasl_authenticate_api::key:
-        return api_version(1);
-    case describe_configs_api::key:
-        return api_version(4);
-    default:
-        throw std::runtime_error(
-          fmt::format("Unsupported API key: {}", to_string(key)));
-    }
-}
 
 broker_factory::broker_factory(
   const connection_configuration& config, prefix_logger& logger)
