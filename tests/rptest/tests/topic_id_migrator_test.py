@@ -52,7 +52,9 @@ class TopicIDUpgradeTest(RedpandaTest):
         self.redpanda.logger.info(f"Response: {res}")
         assert len(res) == n_topics, f"Unexpected response length: {len(res)}"
         for t in res:
-            assert t['ErrorCode'] == 0, f"Failed to create topic: {t}"
+            # The request to kcl may timeout within a non-configurable 5s limit, and may be retried.
+            # Allow the ErrorCode "The topic has already been created" (36)
+            assert t['ErrorCode'] in {0, 36}, f"Failed to create topic: {t}"
 
         # Update all nodes to newest version
         # TODO: replace HEAD with (25, 2) once available
