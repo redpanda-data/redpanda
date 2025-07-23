@@ -375,6 +375,7 @@ redpanda_cc_library(
         ":topic_cache",
         ":transport",
         ":types",
+        ":utils",
         "//src/v/base",
         "//src/v/random:generators",
         "//src/v/ssx:future_util",
