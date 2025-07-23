@@ -22,17 +22,7 @@ cluster::cluster(connection_configuration config)
   : _config(std::move(config))
   , _logger(
       kclog, fmt::format("{}", _config.client_id.value_or("kafka-client")))
-  , _brokers(_logger, std::make_unique<remote_broker_factory>(_config, _logger))
-  , _next_seed(random_generators::get_int<size_t>(
-      0, _config.initial_brokers.size() - 1)) {}
-
-cluster::cluster(
-  connection_configuration config,
-  std::unique_ptr<broker_factory> broker_factory)
-  : _config(std::move(config))
-  , _logger(
-      kclog, fmt::format("{}", _config.client_id.value_or("kafka-client")))
-  , _brokers(_logger, std::move(broker_factory))
+  , _brokers(_config, _logger)
   , _next_seed(random_generators::get_int<size_t>(
       0, _config.initial_brokers.size() - 1)) {}
 
@@ -107,8 +97,7 @@ ss::future<> cluster::initialize_metadata_with_seed() {
          */
         co_await broker->stop();
         if (!reply_f.failed()) {
-            co_await apply_metadata(
-              std::get<metadata_response>(std::move(reply_f.get())));
+            co_await apply_metadata(std::move(reply_f.get()));
             co_return;
         }
         auto ex = reply_f.get_exception();
@@ -139,9 +128,11 @@ ss::future<> cluster::dispatch_metadata_request() {
         co_await initialize_metadata_with_seed();
     }
 
+    broker = _brokers.any();
+
     try {
         // TODO: support topic subscription
-        auto reply = co_await dispatch_to_any(
+        auto reply = co_await broker->dispatch(
           metadata_request{.list_all_topics = true});
 
         co_await apply_metadata(std::move(reply));

@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "kafka/client/api_types.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
@@ -25,55 +24,50 @@
 #include <seastar/core/shared_ptr.hh>
 
 namespace kafka::client {
-/**
- * Broker interface that defines the methods required for a Kafka broker
- * implementation. This interface is used to abstract the communication with
- * a Kafka broker, allowing for different implementations (e.g., remote brokers,
- * mock brokers for testing, etc.) to be used interchangeably.
- */
-class broker {
+
+class broker : public ss::enable_lw_shared_from_this<broker> {
 public:
-    virtual ~broker() = default;
-    virtual ss::future<response_t> dispatch(
-      request_t,
-      std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt)
-      = 0;
-
-    virtual model::node_id id() const = 0;
-
-    virtual ss::future<> stop() = 0;
-
-    virtual api_version api_version_for(api_key key) const = 0;
-
-    virtual const net::unresolved_address& get_address() const = 0;
-};
-/**
- * Default implementation of a broker.
- */
-class remote_broker
-  : public broker
-  , public ss::enable_shared_from_this<remote_broker> {
-public:
-    remote_broker(
+    broker(
       model::node_id node_id,
       const connection_configuration& config,
       std::unique_ptr<transport> transport);
 
-    ss::future<response_t> dispatch(
-      request_t r,
+    template<
+      typename ReqT,
+      typename Ret = typename ReqT::api_type::response_type>
+    requires(KafkaApi<typename ReqT::api_type>)
+    ss::future<Ret> dispatch(
+      ReqT r,
       std::optional<std::reference_wrapper<ss::abort_source>> as
-      = std::nullopt) final;
+      = std::nullopt) {
+        auto holder = _gate.hold();
+        try {
+            co_await maybe_initialize_connection(as);
+            co_return co_await do_dispatch(std::move(r));
+        } catch (const kafka_request_disconnected_exception&) {
+            vlog(
+              _logger.warn,
+              "request dispatch error - {}",
+              std::current_exception());
+            throw broker_error(_node_id, error_code::broker_not_available);
+        } catch (const std::system_error& e) {
+            if (net::is_reconnect_error(e)) {
+                throw broker_error(_node_id, error_code::broker_not_available);
+            }
+            throw;
+        }
+    }
 
-    model::node_id id() const final { return _node_id; }
+    model::node_id id() const { return _node_id; }
 
-    ss::future<> stop() final {
+    ss::future<> stop() {
         _reconnect_as.request_abort();
         _reconnect_mutex.broken();
         co_await _gate.close();
         co_await _transport->stop();
     }
 
-    const net::unresolved_address& get_address() const final {
+    const net::unresolved_address& get_address() const {
         return _transport->server_address();
     }
 
@@ -83,7 +77,7 @@ public:
         return api_version_for(ReqT::api_type::key);
     }
 
-    api_version api_version_for(api_key key) const final;
+    api_version api_version_for(api_key key) const;
 
 private:
     enum class auth_state : int8_t {
@@ -181,33 +175,47 @@ private:
     ss::abort_source _reconnect_as;
 };
 
-using shared_broker_t = ss::shared_ptr<broker>;
+using shared_broker_t = ss::lw_shared_ptr<broker>;
 
 /**
  * Simple class used to create broker objects. Created broker objects use
  * configuration provided when creating the factory.
  */
 struct broker_factory {
-    virtual ss::future<shared_broker_t>
-    create_broker(model::node_id, net::unresolved_address addr) = 0;
-    virtual ~broker_factory() = default;
-};
-
-/**
- * Simple class used to create broker objects. Created broker objects use
- * configuration provided when creating the factory.
- */
-struct remote_broker_factory : public broker_factory {
-    remote_broker_factory(
+    broker_factory(
       const connection_configuration& config, prefix_logger& logger);
 
     ss::future<shared_broker_t>
-    create_broker(model::node_id, net::unresolved_address addr) final;
+    create_broker(model::node_id, net::unresolved_address addr);
 
 private:
     const connection_configuration& _config;
     prefix_logger* _logger;
     ss::sstring _client_id;
+};
+
+struct broker_hash {
+    using is_transparent = void;
+    size_t operator()(const shared_broker_t& b) const {
+        return absl::Hash<model::node_id>{}(b->id());
+    }
+    size_t operator()(model::node_id n_id) const {
+        return absl::Hash<model::node_id>{}(n_id);
+    }
+};
+
+struct broker_eq {
+    using is_transparent = void;
+    bool
+    operator()(const shared_broker_t& lhs, const shared_broker_t& rhs) const {
+        return lhs->id() == rhs->id();
+    }
+    bool operator()(model::node_id node_id, const shared_broker_t& b) const {
+        return node_id == b->id();
+    }
+    bool operator()(const shared_broker_t& b, model::node_id node_id) const {
+        return b->id() == node_id;
+    }
 };
 
 } // namespace kafka::client

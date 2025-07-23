@@ -45,7 +45,7 @@ bool is_dns_failure_error(const std::system_error& e) {
 
 namespace kafka::client {
 
-remote_broker::remote_broker(
+broker::broker(
   model::node_id node_id,
   const connection_configuration& config,
   std::unique_ptr<transport> transport)
@@ -61,7 +61,7 @@ remote_broker::remote_broker(
         _transport->server_address().host(),
         _transport->server_address().port())) {}
 
-ss::future<> remote_broker::connect(model::timeout_clock::time_point deadline) {
+ss::future<> broker::connect(model::timeout_clock::time_point deadline) {
     try {
         vlog(_logger.debug, "Connecting");
         co_await _transport->connect(deadline);
@@ -74,7 +74,7 @@ ss::future<> remote_broker::connect(model::timeout_clock::time_point deadline) {
     }
 }
 
-ss::future<> remote_broker::maybe_initialize_connection(
+ss::future<> broker::maybe_initialize_connection(
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (_transport->is_valid() && !needs_authentication()) {
         co_return;
@@ -93,7 +93,7 @@ ss::future<> remote_broker::maybe_initialize_connection(
     co_await maybe_authenticate();
 }
 
-ss::future<> remote_broker::connect_with_retries(
+ss::future<> broker::connect_with_retries(
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (_transport->is_valid()) {
         co_return;
@@ -143,7 +143,7 @@ ss::future<> remote_broker::connect_with_retries(
     }
 }
 
-ss::future<> remote_broker::maybe_authenticate() {
+ss::future<> broker::maybe_authenticate() {
     if (!needs_authentication()) {
         co_return;
     }
@@ -158,32 +158,8 @@ ss::future<> remote_broker::maybe_authenticate() {
         throw;
     }
 }
-ss::future<response_t> remote_broker::dispatch(
-  request_t r, std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto holder = _gate.hold();
-    try {
-        co_await maybe_initialize_connection(as);
-        auto response = co_await ss::visit(std::move(r), [this](auto req) {
-            return do_dispatch<>(std::move(req)).then([](auto resp) {
-                return response_t(std::move(resp));
-            });
-        });
-        co_return response;
-    } catch (const kafka_request_disconnected_exception&) {
-        vlog(
-          _logger.warn,
-          "request dispatch error - {}",
-          std::current_exception());
-        throw broker_error(_node_id, error_code::broker_not_available);
-    } catch (const std::system_error& e) {
-        if (net::is_reconnect_error(e)) {
-            throw broker_error(_node_id, error_code::broker_not_available);
-        }
-        throw;
-    }
-}
 
-api_version remote_broker::api_version_for(api_key key) const {
+api_version broker::api_version_for(api_key key) const {
     switch (key) {
     case offset_fetch_api::key:
         return api_version(4);
@@ -229,13 +205,13 @@ api_version remote_broker::api_version_for(api_key key) const {
     }
 }
 
-remote_broker_factory::remote_broker_factory(
+broker_factory::broker_factory(
   const connection_configuration& config, prefix_logger& logger)
   : _config(config)
   , _logger(&logger)
-  , _client_id(config.client_id.value_or("redpanda-client")) {}
+  , _client_id(_config.client_id.value_or("redpanda-client")) {}
 
-ss::future<shared_broker_t> remote_broker_factory::create_broker(
+ss::future<shared_broker_t> broker_factory::create_broker(
   model::node_id node_id, net::unresolved_address addr) {
     net::base_transport::configuration transport_cfg{
       .server_addr = addr,
@@ -253,11 +229,11 @@ ss::future<shared_broker_t> remote_broker_factory::create_broker(
     auto broker_transport = std::make_unique<transport>(
       std::move(transport_cfg), _config.client_id);
 
-    co_return ss::make_shared<remote_broker>(
+    co_return ss::make_lw_shared<broker>(
       node_id, _config, std::move(broker_transport));
 }
 
-ss::future<> remote_broker::do_authenticate() {
+ss::future<> broker::do_authenticate() {
     if (!_config->sasl_cfg.has_value()) {
         co_return;
     }
@@ -302,7 +278,7 @@ ss::future<> remote_broker::do_authenticate() {
     }
 }
 
-ss::future<> remote_broker::do_sasl_handshake(ss::sstring mechanism) {
+ss::future<> broker::do_sasl_handshake(ss::sstring mechanism) {
     sasl_handshake_request req;
     req.data.mechanism = std::move(mechanism);
 
@@ -312,8 +288,7 @@ ss::future<> remote_broker::do_sasl_handshake(ss::sstring mechanism) {
     }
 }
 
-ss::future<security::server_first_message>
-remote_broker::send_scram_client_first(
+ss::future<security::server_first_message> broker::send_scram_client_first(
   const security::client_first_message& client_first) {
     sasl_authenticate_request client_first_req;
     {
@@ -330,8 +305,7 @@ remote_broker::send_scram_client_first(
     co_return security::server_first_message(client_first_resp.data.auth_bytes);
 }
 
-ss::future<security::server_final_message>
-remote_broker::send_scram_client_final(
+ss::future<security::server_final_message> broker::send_scram_client_final(
   const security::client_final_message& client_final) {
     sasl_authenticate_request client_last_req;
     {
@@ -353,8 +327,8 @@ remote_broker::send_scram_client_final(
 }
 
 template<typename ScramAlgo>
-ss::future<> remote_broker::do_authenticate_scram(
-  ss::sstring username, ss::sstring password) {
+ss::future<>
+broker::do_authenticate_scram(ss::sstring username, ss::sstring password) {
     /*
      * send client first message
      */
@@ -424,19 +398,19 @@ ss::future<> remote_broker::do_authenticate_scram(
     }
 }
 
-ss::future<> remote_broker::do_authenticate_scram256(
-  ss::sstring username, ss::sstring password) {
+ss::future<>
+broker::do_authenticate_scram256(ss::sstring username, ss::sstring password) {
     return do_authenticate_scram<security::scram_sha256>(
       std::move(username), std::move(password));
 }
 
-ss::future<> remote_broker::do_authenticate_scram512(
-  ss::sstring username, ss::sstring password) {
+ss::future<>
+broker::do_authenticate_scram512(ss::sstring username, ss::sstring password) {
     return do_authenticate_scram<security::scram_sha512>(
       std::move(username), std::move(password));
 }
 
-ss::future<> remote_broker::do_authenticate_oauthbearer(ss::sstring token) {
+ss::future<> broker::do_authenticate_oauthbearer(ss::sstring token) {
     sasl_authenticate_request req;
     req.data.auth_bytes = bytes::from_string(
       fmt::format("n,,\1auth={}\1\1", token));

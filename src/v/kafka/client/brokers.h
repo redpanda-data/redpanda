@@ -25,17 +25,15 @@
 namespace kafka::client {
 
 class brokers {
-    using brokers_t = absl::flat_hash_map<model::node_id, shared_broker_t>;
+    using brokers_t
+      = absl::flat_hash_set<shared_broker_t, broker_hash, broker_eq>;
 
 public:
     explicit brokers(
       const connection_configuration& config, prefix_logger& logger)
-      : brokers(
-          logger, std::make_unique<remote_broker_factory>(config, logger)) {};
-
-    brokers(prefix_logger& logger, std::unique_ptr<broker_factory> factory)
-      : _logger(&logger)
-      , _factory(std::move(factory)) {};
+      : _config(config)
+      , _logger(&logger)
+      , _factory(_config, *_logger) {};
 
     brokers(const brokers&) = delete;
     brokers(brokers&&) = default;
@@ -69,15 +67,14 @@ public:
     ss::future<shared_broker_t>
     create_broker(model::node_id node_id, net::unresolved_address addr);
 
-    size_t size() const { return _brokers.size(); }
-
 private:
+    const connection_configuration& _config;
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
     size_t _next_broker{0};
     prefix_logger* _logger;
-    std::unique_ptr<broker_factory> _factory;
+    broker_factory _factory;
 };
 
 } // namespace kafka::client

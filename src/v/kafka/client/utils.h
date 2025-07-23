@@ -125,10 +125,6 @@ ss::future<shared_broker_t> find_coordinator_with_retry_and_mitigation(
              [group_id, name, &cluster_brokers]() {
                  return cluster_brokers.any()
                    ->dispatch(find_coordinator_request(group_id))
-                   .then([](response_t resp) {
-                       return std::get<find_coordinator_response>(
-                         std::move(resp));
-                   })
                    .then([group_id, name](find_coordinator_response res) {
                        if (res.data.error_code != error_code::none) {
                            return ss::make_exception_future<

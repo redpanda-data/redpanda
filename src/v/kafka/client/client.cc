@@ -435,10 +435,10 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
 
 namespace {
 ss::future<fetch_response> maybe_throw_exception(
-  model::node_id broker_id, model::topic_partition tp, fetch_response res) {
+  shared_broker_t b, model::topic_partition tp, fetch_response res) {
     if (res.data.error_code != error_code::none) {
         return ss::make_exception_future<fetch_response>(
-          broker_error(broker_id, res.data.error_code));
+          broker_error(b->id(), res.data.error_code));
     }
 
     const auto& topics = res.data.responses;
@@ -476,11 +476,12 @@ ss::future<fetch_response> client::fetch_partition(
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     auto leader_id = _cluster.get_topics().leader(tp);
-                     return _cluster.dispatch_to(leader_id, build_request(tp))
-                       .then([leader_id, &tp](fetch_response res) {
+                     auto leader = _cluster.get_topics().leader(tp);
+                     auto broker = _cluster.get_brokers().find(leader);
+                     return broker->dispatch(build_request(tp))
+                       .then([broker, &tp](fetch_response res) {
                            return maybe_throw_exception(
-                             leader_id, tp, std::move(res));
+                             broker, tp, std::move(res));
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {

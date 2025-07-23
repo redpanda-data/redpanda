@@ -22,9 +22,6 @@ namespace kafka::client {
 class cluster {
 public:
     explicit cluster(connection_configuration config);
-    cluster(
-      connection_configuration config,
-      std::unique_ptr<broker_factory> broker_factory);
 
     ss::future<> start();
     ss::future<> stop();
@@ -57,10 +54,7 @@ public:
             throw broker_error(
               broker_id, error_code::broker_not_available, "Broker not found");
         }
-        return broker->dispatch(std::move(request))
-          .then([](response_t response) {
-              return std::get<Ret>(std::move(response));
-          });
+        return broker->dispatch(std::move(request));
     }
     /**
      * Dispatches a request to a randomly selected broker from the connected
@@ -78,11 +72,7 @@ public:
         if (_brokers.empty()) {
             co_await request_metadata_update();
         }
-        co_return co_await _brokers.any()
-          ->dispatch(std::move(request))
-          .then([](response_t response) {
-              return std::get<Ret>(std::move(response));
-          });
+        co_return co_await _brokers.any()->dispatch(std::move(request));
     }
     /**
      * Requests metadata update from the remote cluster. If any other request is

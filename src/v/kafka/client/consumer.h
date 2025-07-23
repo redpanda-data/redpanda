@@ -108,7 +108,7 @@ private:
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
     req_res(RequestFactory req) {
         using api_t = typename std::invoke_result_t<RequestFactory>::api_type;
-        using resp_t = typename api_t::response_type;
+        using response_t = typename api_t::response_type;
         return ss::try_with_gate(_gate, [this, req{std::move(req)}]() mutable {
             auto r = req();
             kclog.debug(
@@ -118,10 +118,7 @@ private:
               r,
               _coordinator->id());
             return _coordinator->dispatch(std::move(r), _as)
-              .then([](response_t resp) {
-                  return std::get<resp_t>(std::move(resp));
-              })
-              .then([this, req{std::move(req)}](resp_t res) mutable {
+              .then([this, req{std::move(req)}](response_t res) mutable {
                   kclog.debug(
                     "Consumer: {}: {} res: {}, coordinator {}",
                     *this,
