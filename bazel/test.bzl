@@ -85,7 +85,8 @@ def _redpanda_cc_test(
         env = {},
         target_compatible_with = [],
         data = [],
-        local_defines = []):
+        local_defines = [],
+        flaky = False):
     """
     Helper to define a Redpanda C++ test.
 
@@ -105,6 +106,7 @@ def _redpanda_cc_test(
       target_compatible_with: constraints
       data: data file dependencies
       local_defines: list of defines
+      flaky: whether the test is flaky (value passed to bazel attribute of the same name)
     """
     common_args = [
         "--blocked-reactor-notify-ms 2000000",
@@ -148,6 +150,7 @@ def _redpanda_cc_test(
         target_compatible_with = target_compatible_with,
         data = data + test_data,
         local_defines = local_defines,
+        flaky = flaky,
     )
 
 def _redpanda_cc_fuzz_test(
@@ -225,7 +228,8 @@ def redpanda_cc_gtest(
         memory = None,
         target_compatible_with = [],
         data = [],
-        tags = []):
+        tags = [],
+        flaky = False):
     _redpanda_cc_unit_test(
         dash_dash_protocol = False,
         name = name,
@@ -241,6 +245,7 @@ def redpanda_cc_gtest(
         data = data,
         local_defines = ["IS_GTEST"],
         tags = tags,
+        flaky = flaky,
     )
 
 def redpanda_cc_btest(
@@ -255,7 +260,8 @@ def redpanda_cc_btest(
         memory = None,
         target_compatible_with = [],
         data = [],
-        tags = []):
+        tags = [],
+        flaky = False):
     _redpanda_cc_unit_test(
         dash_dash_protocol = True,
         name = name,
@@ -271,6 +277,7 @@ def redpanda_cc_btest(
         data = data,
         local_defines = ["IS_BTEST"],
         tags = tags,
+        flaky = flaky,
     )
 
 def redpanda_cc_fuzz_test(
