@@ -72,7 +72,7 @@ public:
           .emplace(
             other_node,
             tcfg,
-            ::make_exponential_backoff_policy<ss::lowres_clock>(1s, 3s))
+            ::rpc::make_exponential_backoff_policy<ss::lowres_clock>(1s, 3s))
           .get();
     }
 

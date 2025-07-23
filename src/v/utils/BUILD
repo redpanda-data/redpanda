@@ -708,15 +708,3 @@ redpanda_cc_library(
     ],
     include_prefix = "utils",
 )
-
-redpanda_cc_library(
-    name = "backoff_policy",
-    hdrs = [
-        "backoff_policy.h",
-    ],
-    include_prefix = "utils",
-    deps = [
-        "//src/v/base",
-        "@seastar",
-    ],
-)

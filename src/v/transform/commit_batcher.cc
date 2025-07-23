@@ -14,9 +14,10 @@
 #include "cluster/errc.h"
 #include "config/property.h"
 #include "logger.h"
+#include "rpc/backoff_policy.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "ssx/sleep_abortable.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
@@ -49,7 +50,7 @@ ss::future<> commit_batcher<ClockType>::find_coordinator_loop() {
     using namespace std::chrono;
     constexpr static auto base_backoff = 100ms;
     constexpr static auto max_backoff = 5000ms;
-    auto backoff = ::make_exponential_backoff_policy<ClockType>(
+    auto backoff = ::rpc::make_exponential_backoff_policy<ClockType>(
       base_backoff, max_backoff);
     while (!_gate.is_closed()) {
         co_await _unbatched_cond_var.wait(

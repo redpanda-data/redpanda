@@ -18,6 +18,7 @@
 #include "model/fips_config.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "rpc/backoff_policy.h"
 #include "storage/disk_log_impl.h"
 
 #include <seastar/core/future.hh>

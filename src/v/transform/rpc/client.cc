@@ -28,12 +28,12 @@
 #include "model/timeout_clock.h"
 #include "model/transform.h"
 #include "raft/errc.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
 #include "transform/rpc/deps.h"
 #include "transform/rpc/rpc_service.h"
 #include "transform/rpc/serde.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/chunked_fifo.hh>
@@ -121,7 +121,7 @@ std::invoke_result_t<Func> retry_with_backoff(Func func, ss::abort_source* as) {
     constexpr auto base_backoff_duration = 100ms;
     constexpr auto max_backoff_duration = base_backoff_duration
                                           * max_client_retries;
-    auto backoff = ::make_exponential_backoff_policy<ss::lowres_clock>(
+    auto backoff = ::rpc::make_exponential_backoff_policy<ss::lowres_clock>(
       base_backoff_duration, max_backoff_duration);
     int attempts = 0;
     while (true) {

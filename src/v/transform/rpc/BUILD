@@ -41,7 +41,6 @@ redpanda_cc_library(
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
         "//src/v/transform/stm",
-        "//src/v/utils:backoff_policy",
         "//src/v/utils:to_string",
         "//src/v/utils:uuid",
         "@abseil-cpp//absl/container:btree",

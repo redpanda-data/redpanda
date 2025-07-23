@@ -14,11 +14,11 @@
 #include "absl/container/flat_hash_set.h"
 #include "base/outcome_future_utils.h"
 #include "model/metadata.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/connection_set.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
-#include "utils/backoff_policy.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
@@ -190,7 +190,7 @@ public:
       model::node_id node,
       net::unresolved_address addr,
       config::tls_config tls_config,
-      backoff_policy backoff = connection_set::default_backoff_policy());
+      rpc::backoff_policy backoff = connection_set::default_backoff_policy());
 
     std::optional<ss::shard_id> shard_for(
       model::node_id self,
@@ -222,7 +222,7 @@ private:
         model::node_id dest_node;
         net::unresolved_address addr;
         config::tls_config tls_config;
-        backoff_policy backoff;
+        rpc::backoff_policy backoff;
     };
 
     ss::future<> update_broker_client_coordinator(connection_config);

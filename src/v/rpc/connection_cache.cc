@@ -9,9 +9,9 @@
 
 #include "rpc/connection_cache.h"
 
+#include "rpc/backoff_policy.h"
 #include "rpc/logger.h"
 #include "ssx/semaphore.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
@@ -311,7 +311,7 @@ ss::future<> connection_cache::update_broker_client(
   model::node_id node,
   net::unresolved_address addr,
   config::tls_config tls_config,
-  backoff_policy backoff) {
+  rpc::backoff_policy backoff) {
     if (is_shutting_down()) {
         co_return;
     }
