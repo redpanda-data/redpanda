@@ -344,7 +344,7 @@ ss::future<std::error_code> frontend::insert_barrier() {
                                   + model::timeout_clock::now();
     /**
      * Inject linearizable barrier before creating a new migration. This is not
-     * required for correctness but allows the fronted to do more accurate
+     * required for correctness but allows the frontend to do more accurate
      * preliminary validation.
      */
     static_assert(controller_stm_shard == data_migrations_shard);
