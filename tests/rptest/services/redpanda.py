@@ -144,15 +144,6 @@ DEFAULT_LOG_ALLOW_LIST = [
     # the catalog that have "Assert" in them. These are typically benign and
     # just indicate a race in committing to Iceberg.
     re.compile(r"UpdateRequirement.*Assert"),
-
-    # Temporary: https://redpandadata.atlassian.net/browse/CORE-9897
-    # there is an ongoing investigation into s3_client receiving 400 Bad Request. For now, stop the CI bleed
-    re.compile(
-        r"S3 PUT request failed with error for key .*: code: _unknown_error_code_, message: http status: Bad Request, error body: 400 Bad Request, request_id: , resource:"
-    ),
-    re.compile(
-        r"Accessing .*, unexpected REST API error \"http status: Bad Request, error body: 400 Bad Request\" detected, code: _unknown_error_code_, request_id: , resource:"
-    )
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
