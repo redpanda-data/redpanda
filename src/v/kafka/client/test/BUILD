@@ -413,18 +413,3 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
-
-redpanda_cc_gtest(
-    name = "cluster_test_with_mock",
-    timeout = "short",
-    srcs = [
-        "cluster_test_with_mock.cc",
-    ],
-    deps = [
-        ":cluster_mock",
-        "//src/v/kafka/client:brokers",
-        "//src/v/kafka/client:cluster",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
-    ],
-)
