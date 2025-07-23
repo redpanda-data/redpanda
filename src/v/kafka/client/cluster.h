@@ -12,7 +12,6 @@
 #include "base/seastarx.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/topic_cache.h"
-#include "utils/notification_list.h"
 #include "utils/prefix_logger.h"
 namespace kafka::client {
 /**
@@ -22,10 +21,6 @@ namespace kafka::client {
  */
 class cluster {
 public:
-    using callback_id = named_type<int16_t, struct callback_id_tag>;
-    using metadata_callback
-      = ss::noncopyable_function<void(const metadata_response_data&)>;
-
     explicit cluster(connection_configuration config);
     cluster(
       connection_configuration config,
@@ -114,20 +109,6 @@ public:
     const std::optional<sasl_configuration>& get_sasl_configuration() const {
         return _config.sasl_cfg;
     }
-    /**
-     * Callbacks for receiving metadata updates.
-     * The callback will be called with the metadata response data.
-     *
-     * NOTE: the callback is called every time the metadata is updated, even it
-     * it didn't change
-     */
-    callback_id register_metadata_cb(metadata_callback cb) {
-        return _notifications.register_cb(std::move(cb));
-    }
-
-    void unregister_metadata_cb(callback_id id) {
-        _notifications.unregister_cb(id);
-    }
 
 private:
     ss::future<> update_metadata();
@@ -149,7 +130,7 @@ private:
     mutex _update_lock{"kc/metadata_update_lock"};
     ss::lowres_clock::time_point _last_update_time
       = ss::lowres_clock::time_point::min();
-    notification_list<metadata_callback, callback_id> _notifications;
+
     ss::gate _gate;
     ss::abort_source _as;
 };

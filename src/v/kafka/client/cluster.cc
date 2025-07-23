@@ -181,8 +181,6 @@ ss::future<> cluster::apply_metadata(metadata_response reply) {
     _topic_cache.apply(reply.data.topics);
     co_await _brokers.apply(reply.data.brokers);
     _last_update_time = ss::lowres_clock::now();
-    // trigger notification last, after the metadata is applied
-    _notifications.notify(reply.data);
 }
 
 } // namespace kafka::client

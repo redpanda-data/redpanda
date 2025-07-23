@@ -378,7 +378,6 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/random:generators",
         "//src/v/ssx:future_util",
-        "//src/v/utils:notification_list",
         "//src/v/utils:prefix_logger",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@fmt",

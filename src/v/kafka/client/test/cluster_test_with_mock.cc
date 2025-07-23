@@ -58,17 +58,3 @@ TEST_F(cluster_mock_fixture, TestBrokerDiscovery) {
     RPTEST_REQUIRE_EVENTUALLY(
       5s, [&cluster]() { return cluster.get_brokers().size() == 1; });
 }
-
-TEST_F(cluster_mock_fixture, TestMetadataCallback) {
-    cluster_mock.register_default_handlers();
-    auto cluster = create_client_cluster();
-    int callback_invocations = 0;
-
-    cluster_mock.add_broker(
-      model::node_id(1), net::unresolved_address{"localhost", 9092});
-    cluster.start().get();
-    auto cid = cluster.register_metadata_cb(
-      [&](const kafka::metadata_response_data&) { callback_invocations++; });
-    RPTEST_REQUIRE_EVENTUALLY(30s, [&]() { return callback_invocations >= 5; });
-    cluster.unregister_metadata_cb(cid);
-}
