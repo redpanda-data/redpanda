@@ -437,11 +437,7 @@ ss::future<fetch_response> consumer::fetch(
         for (const auto& p : ps) {
             auto tp = model::topic_partition{t, p};
             auto leader = _topic_cache.leader(tp);
-            if (!leader) {
-                throw partition_error(
-                  tp, error_code::unknown_topic_or_partition);
-            }
-            auto broker = _brokers.find(*leader);
+            auto broker = _brokers.find(leader);
             auto& session = _fetch_sessions[broker];
 
             auto& req = broker_reqs

@@ -389,12 +389,9 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
         for (const auto& partition : topic.partitions) {
             model::topic_partition tp{topic.name, partition.partition_index};
             auto node_id = _cluster.get_topics().leader(tp);
-            if (!node_id) {
-                throw partition_error(
-                  tp, error_code::unknown_topic_or_partition);
-            }
+
             auto& topics
-              = reqs.try_emplace(*node_id, kafka::list_offsets_request{})
+              = reqs.try_emplace(node_id, kafka::list_offsets_request{})
                   .first->second.data.topics;
             auto topic_it = std::ranges::find(
               topics, tp.topic, &list_offset_topic::name);
@@ -487,15 +484,10 @@ ss::future<fetch_response> client::fetch_partition(
       [this](auto& build_request, model::topic_partition& tp) {
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
                      auto leader_id = _cluster.get_topics().leader(tp);
-                     if (!leader_id) {
-                         return ss::make_exception_future<fetch_response>(
-                           partition_error(
-                             tp, error_code::unknown_topic_or_partition));
-                     }
-                     return _cluster.dispatch_to(*leader_id, build_request(tp))
+                     return _cluster.dispatch_to(leader_id, build_request(tp))
                        .then([leader_id, &tp](fetch_response res) {
                            return maybe_throw_exception(
-                             *leader_id, tp, std::move(res));
+                             leader_id, tp, std::move(res));
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {
