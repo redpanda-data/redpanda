@@ -71,31 +71,14 @@ public:
     create_broker(model::node_id node_id, net::unresolved_address addr);
 
     size_t size() const { return _brokers.size(); }
-    /**
-     * Returns the range of versions that is supported by all the brokers in the
-     * cluster. It connects to the brokers if necessary.
-     */
-    ss::future<std::optional<api_version_range>> supported_api_versions(
-      api_key key, std::optional<std::reference_wrapper<ss::abort_source>>);
-
-    /**
-     * Returns the range of versions that is supported the requested broker.
-     * Connection to the broker is established if necessary.
-     */
-    ss::future<std::optional<api_version_range>> supported_api_versions(
-      model::node_id id,
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>>);
 
 private:
-    ss::future<> do_erase(model::node_id id);
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
     size_t _next_broker{0};
     prefix_logger* _logger;
     std::unique_ptr<broker_factory> _factory;
-    mutex _state_mutex{"brokers::mutex"};
 };
 
 } // namespace kafka::client

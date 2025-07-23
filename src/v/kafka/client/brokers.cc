@@ -16,7 +16,6 @@
 namespace kafka::client {
 
 ss::future<> brokers::stop() {
-    _state_mutex.broken();
     return ss::parallel_for_each(
       std::move(_brokers), [](const auto& p) { return p.second->stop(); });
 }
@@ -38,11 +37,6 @@ shared_broker_t brokers::find(model::node_id id) {
 }
 
 ss::future<> brokers::erase(model::node_id node_id) {
-    auto u = co_await _state_mutex.get_units();
-    co_await do_erase(node_id);
-}
-
-ss::future<> brokers::do_erase(model::node_id node_id) {
     if (auto b_it = _brokers.find(node_id); b_it != _brokers.end()) {
         auto broker = b_it->second;
         _brokers.erase(b_it);
@@ -59,7 +53,6 @@ ss::future<> brokers::do_erase(model::node_id node_id) {
 
 ss::future<> brokers::apply(
   const chunked_vector<metadata_response::broker>& brokers_metadata) {
-    auto u = co_await _state_mutex.get_units();
     chunked_vector<metadata_response::broker> brokers_to_add;
     chunked_vector<model::node_id> brokers_to_remove;
 
@@ -92,7 +85,7 @@ ss::future<> brokers::apply(
     co_await ss::parallel_for_each(
       brokers_to_remove.begin(),
       brokers_to_remove.end(),
-      [this](model::node_id id) { return do_erase(id); });
+      [this](model::node_id id) { return erase(id); });
 
     for (auto& b : brokers_to_add) {
         auto id = b.node_id;
@@ -109,36 +102,4 @@ brokers::create_broker(model::node_id node_id, net::unresolved_address addr) {
 
 bool brokers::empty() const { return _brokers.empty(); }
 
-ss::future<std::optional<api_version_range>> brokers::supported_api_versions(
-  api_key key, std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto u = co_await _state_mutex.get_units();
-    if (_brokers.empty()) {
-        co_return std::nullopt;
-    }
-    api_version_range range{
-      .min = api_version{std::numeric_limits<int16_t>::min()},
-      .max = api_version{std::numeric_limits<int16_t>::max()}};
-    for (auto& [id, broker] : _brokers) {
-        auto v = co_await broker->get_supported_versions(key, as);
-
-        if (!v) {
-            co_return std::nullopt;
-        }
-        range.min = std::max(range.min, v->min);
-        range.max = std::min(range.max, v->max);
-    }
-    co_return range;
-}
-
-ss::future<std::optional<api_version_range>> brokers::supported_api_versions(
-  model::node_id id,
-  api_key key,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto u = co_await _state_mutex.get_units();
-    auto it = _brokers.find(id);
-    if (it == _brokers.end()) {
-        co_return std::nullopt;
-    }
-    co_return co_await it->second->get_supported_versions(key, as);
-}
 } // namespace kafka::client

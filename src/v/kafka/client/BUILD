@@ -205,7 +205,6 @@ redpanda_cc_library(
         "//src/v/utils:mutex",
         "//src/v/utils:prefix_logger",
         "//src/v/utils:unresolved_address",
-        "//src/v/version",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
         "@fmt",

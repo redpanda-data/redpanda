@@ -128,22 +128,6 @@ public:
     void unregister_metadata_cb(callback_id id) {
         _notifications.unregister_cb(id);
     }
-    /**
-     * Returns the range of versions that is supported by all the brokers in the
-     * cluster. It connects to the brokers if necessary.
-     */
-    ss::future<std::optional<api_version_range>> supported_api_versions(
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
-
-    /**
-     * Returns the range of versions that is supported the requested broker.
-     * Connection to the broker is established if necessary.
-     */
-    ss::future<std::optional<api_version_range>> supported_api_versions(
-      model::node_id id,
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
 private:
     ss::future<> update_metadata();

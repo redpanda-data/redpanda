@@ -15,7 +15,6 @@
 #include "kafka/client/logger.h"
 namespace kafka::client {
 class cluster_mock;
-using supported_versions = absl::flat_hash_map<api_key, api_version_range>;
 
 struct broker_mock : public kafka::client::broker {
     explicit broker_mock(
@@ -30,10 +29,7 @@ struct broker_mock : public kafka::client::broker {
 
     ss::future<> stop() override { return ss::now(); }
 
-    ss::future<std::optional<api_version_range>> get_supported_versions(
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>>
-      = std::nullopt) override;
+    api_version api_version_for(api_key key) const override;
 
     const net::unresolved_address& get_address() const override {
         return _addr;
@@ -41,7 +37,6 @@ struct broker_mock : public kafka::client::broker {
 
 private:
     cluster_mock* _cluster_mock;
-    supported_versions _supported_versions;
     model::node_id _id;
     net::unresolved_address _addr;
 };
@@ -84,19 +79,8 @@ public:
     ss::future<response_t>
     handle_metadata_request(model::node_id node_id, request_t req);
 
-    ss::future<response_t> handle_api_versions_request(
-      model::node_id node_id, request_t req, api_version version);
-
-    void set_supported_versions(
-      model::node_id id, api_key key, api_version_range range) {
-        _broker_api_versions[id].insert_or_assign(key, range);
-    }
-
-    supported_versions default_supported_versions;
-
 private:
     friend broker_mock;
-    friend broker_mock_factory;
 
     ss::future<response_t> handle(
       model::node_id,
@@ -125,9 +109,6 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
     absl::flat_hash_map<model::node_id, broker_info> _brokers;
-    absl::flat_hash_map<model::node_id, supported_versions>
-      _broker_api_versions;
-
     prefix_logger _logger;
 };
 

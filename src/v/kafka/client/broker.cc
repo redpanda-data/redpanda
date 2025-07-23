@@ -19,7 +19,6 @@
 #include "thirdparty/c-ares/ares.h"
 #include "utils/backoff_policy.h"
 #include "utils/unresolved_address.h"
-#include "version/version.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
@@ -80,12 +79,6 @@ ss::future<> remote_broker::maybe_initialize_connection(
     if (_transport->is_valid() && !needs_authentication()) {
         co_return;
     }
-    co_await maybe_reconnect(as);
-    co_await maybe_authenticate();
-}
-
-ss::future<> remote_broker::maybe_reconnect(
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
     /**
      * We protect the connection initialization with a mutex to ensure
      * that only one connection attempt is made at a time.
@@ -97,6 +90,7 @@ ss::future<> remote_broker::maybe_reconnect(
                             : co_await _reconnect_mutex.get_units();
 
     co_await connect_with_retries(as);
+    co_await maybe_authenticate();
 }
 
 ss::future<> remote_broker::connect_with_retries(
@@ -132,7 +126,6 @@ ss::future<> remote_broker::connect_with_retries(
         }
         try {
             co_await connect(model::timeout_clock::now() + retry_interval);
-            co_await initialize_versions();
             vlog(_logger.debug, "Broker connection established");
             co_return;
         } catch (...) {
@@ -165,73 +158,6 @@ ss::future<> remote_broker::maybe_authenticate() {
         throw;
     }
 }
-namespace {
-api_versions_request make_api_versions_request(api_version version) {
-    api_versions_request req;
-    if (version >= api_version(3)) {
-        req.data.client_software_name = "redpanda-client";
-        req.data.client_software_version = ss::sstring(redpanda_version());
-    }
-    return req;
-}
-
-api_version find_api_versions_request_version(
-  const chunked_vector<api_versions_response_key>& api_keys) {
-    for (auto& api : api_keys) {
-        if (api.api_key == api_versions_api::key) {
-            return api_version(api.max_version);
-        }
-    }
-    // if not found, return the minimum valid version
-    return api_versions_api::min_valid;
-}
-
-} // namespace
-ss::future<> remote_broker::initialize_versions() {
-    vlog(_logger.trace, "Requesting API versions");
-    api_versions_request request;
-    request.data.client_software_name = "redpanda-client";
-    request.data.client_software_version = ss::sstring(redpanda_version());
-    auto response = co_await _transport->dispatch(
-      make_api_versions_request(api_versions_api::max_valid),
-      api_versions_api::max_valid);
-
-    // TODO: handle the returned supported version here
-    if (response.data.error_code == error_code::unsupported_version) {
-        auto fallback_version = find_api_versions_request_version(
-          response.data.api_keys);
-        vlog(
-          _logger.info,
-          "Broker does not support API version request version {}, falling "
-          "back to version {}",
-          api_versions_api::max_valid,
-          fallback_version);
-        response = co_await _transport->dispatch(
-          make_api_versions_request(fallback_version), fallback_version);
-    }
-
-    if (response.data.error_code != error_code::none) {
-        vlog(
-          _logger.warn,
-          "Unable to initialize the API versions - {}",
-          std::current_exception());
-        throw broker_error(
-          _node_id,
-          response.data.error_code,
-          "Failed to initialize API versions");
-    }
-
-    for (auto& api : response.data.api_keys) {
-        _supported_versions.insert_or_assign(
-          api_key(api.api_key),
-          api_version_range{
-            .min = api_version(api.min_version),
-            .max = api_version(api.max_version),
-          });
-    }
-    vlog(_logger.trace, "Supported API versions: {}", _supported_versions);
-}
-
 ss::future<response_t> remote_broker::dispatch(
   request_t r, std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto holder = _gate.hold();
@@ -386,20 +312,6 @@ ss::future<> remote_broker::do_sasl_handshake(ss::sstring mechanism) {
     }
 }
 
-ss::future<std::optional<api_version_range>>
-remote_broker::get_supported_versions(
-  api_key key, std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    if (_supported_versions.empty()) {
-        co_await maybe_reconnect(as);
-    }
-
-    auto it = _supported_versions.find(key);
-    if (it == _supported_versions.end()) {
-        co_return std::nullopt;
-    }
-    co_return it->second;
-}
-
 ss::future<security::server_first_message>
 remote_broker::send_scram_client_first(
   const security::client_first_message& client_first) {
@@ -535,11 +447,6 @@ ss::future<> remote_broker::do_authenticate_oauthbearer(ss::sstring token) {
           res.data.error_code,
           res.data.error_message.value_or("<no error message>")};
     }
-}
-
-std::ostream& operator<<(std::ostream& os, const api_version_range& r) {
-    fmt::print(os, "{{min: {}, max: {}}}", r.min, r.max);
-    return os;
 }
 
 } // namespace kafka::client
