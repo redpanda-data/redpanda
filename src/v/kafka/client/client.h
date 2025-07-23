@@ -11,14 +11,19 @@
 
 #pragma once
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
 #include "container/fragmented_vector.h"
 #include "kafka/client/assignment_plans.h"
-#include "kafka/client/cluster.h"
+#include "kafka/client/broker.h"
+#include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
+#include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
+#include "kafka/client/topic_cache.h"
+#include "kafka/client/transport.h"
 #include "kafka/client/types.h"
 #include "kafka/client/utils.h"
 #include "kafka/protocol/create_topics.h"
@@ -28,6 +33,7 @@
 #include "kafka/protocol/metadata.h"
 #include "ssx/semaphore.h"
 #include "utils/prefix_logger.h"
+#include "utils/retry.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -68,9 +74,6 @@ public:
       const YAML::Node& cfg,
       std::optional<external_mitigate> mitigater = std::nullopt);
 
-    explicit client(
-      const client_configuration& config, std::optional<external_mitigate>);
-
     /// \brief Connect to all brokers.
     ss::future<> connect();
     /// \brief Disconnect from all brokers.
@@ -81,8 +84,8 @@ public:
     std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
         return gated_retry_with_mitigation_impl(
           _gate,
-          _retries_config.max_retries,
-          _retries_config.retry_base_backoff,
+          _config.retries_cfg.max_retries,
+          _config.retries_cfg.retry_base_backoff,
           std::move(func),
           [this](std::exception_ptr ex) { return mitigate_error(ex); },
           _as);
@@ -96,7 +99,7 @@ public:
     ss::future<typename std::invoke_result_t<Func>::api_type::response_type>
     dispatch(Func func) {
         return gated_retry_with_mitigation([this, func{std::move(func)}]() {
-            return _cluster.dispatch_to_any(func());
+            return _brokers.any()->dispatch(func());
         });
     }
 
@@ -171,18 +174,18 @@ public:
           std::move(configuration_keys));
     }
 
-    ss::future<> update_metadata();
+    ss::future<> update_metadata() { return _wait_or_start_update_metadata(); }
 
-    bool is_connected() const { return !_cluster.is_connected(); }
+    bool is_connected() const { return !_brokers.empty(); }
 
     void set_credentials(std::optional<sasl_configuration> creds);
 
     void set_max_retries(size_t max_retries) {
-        _retries_config.max_retries = max_retries;
+        _config.retries_cfg.max_retries = max_retries;
     }
 
     void set_retry_base_backoff(std::chrono::milliseconds retry_base_backoff) {
-        _retries_config.retry_base_backoff = retry_base_backoff;
+        _config.retries_cfg.retry_base_backoff = retry_base_backoff;
     }
 
     void set_batch_record_count(int32_t count) {
@@ -198,7 +201,7 @@ public:
     }
 
     const std::optional<sasl_configuration>& get_credentials() const {
-        return _cluster.get_sasl_configuration();
+        return _config.connection_cfg.sasl_cfg;
     }
 
 private:
@@ -234,12 +237,18 @@ private:
 
     prefix_logger& logger() { return _logger; }
     /// \brief Client holds a copy of its configuration
-    retries_configuration _retries_config;
-    producer_configuration _producer_config;
-    consumer_configuration _consumer_config;
+    client_configuration _config;
+    /// \brief Seeds are used when no brokers are connected.
+    std::vector<net::unresolved_address> _seeds;
     prefix_logger _logger;
-    std::optional<external_mitigate> _external_mitigate;
-    cluster _cluster;
+    /// \brief Cache of topic information.
+    topic_cache _topic_cache;
+    /// \brief Broker lookup from topic_partition.
+    brokers _brokers;
+    /// \brief The node id of the controller.
+    model::node_id _controller{unknown_node_id};
+    /// \brief Update metadata, or wait for an existing one.
+    wait_or_start _wait_or_start_update_metadata;
     /// \brief Batching producer.
     producer _producer;
     /// \brief Consumers
@@ -253,11 +262,7 @@ private:
     /// \brief Wait for retries.
     ss::gate _gate;
 
-    bool _is_started{false};
-    // we must keep track of the retry count to avoid infinite retries to adhere
-    // to previous behavior where the client would gave up after a certain
-    // number of retries.
-    size_t _current_reconnect_retry{0};
+    std::optional<external_mitigate> _external_mitigate;
     ss::abort_source _as;
 };
 

@@ -117,7 +117,7 @@ private:
               api_t::name,
               r,
               _coordinator->id());
-            return _coordinator->dispatch(std::move(r), _as)
+            return _coordinator->dispatch(std::move(r))
               .then([this, req{std::move(req)}](response_t res) mutable {
                   kclog.debug(
                     "Consumer: {}: {} res: {}, coordinator {}",

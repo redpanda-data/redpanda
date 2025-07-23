@@ -24,7 +24,7 @@ namespace kafka::client {
 
 ss::future<std::optional<kafka::client::sasl_configuration>>
 create_client_credentials(
-  ::cluster::controller& controller,
+  cluster::controller& controller,
   const config::configuration& cluster_cfg,
   const kafka::client::configuration& client_cfg,
   security::acl_principal principal);

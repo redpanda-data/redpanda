@@ -132,10 +132,7 @@ class CertificateRevocationTest(RedpandaTest):
                 lambda e: "connection initialization failed" in str(e)):
             self.rpk.list_topics()
 
-    @cluster(
-        num_nodes=3,
-        log_allow_list=VERIFICATION_ERROR_LOG +
-        ["alert certificate revoked", "Schema registry failed to initialize"])
+    @cluster(num_nodes=3, log_allow_list=VERIFICATION_ERROR_LOG)
     def test_sr_client(self):
         def create_schema(subject, schema):
             with tempfile.NamedTemporaryFile(suffix='.avro') as tf:
