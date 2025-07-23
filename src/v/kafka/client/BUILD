@@ -62,16 +62,14 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "transport",
-    srcs = ["transport.cc"],
+    srcs = [],
     hdrs = ["transport.h"],
     include_prefix = "kafka/client",
     visibility = ["//visibility:public"],
     deps = [
         ":logger",
         "//src/v/base",
-        "//src/v/bytes:iostream",
         "//src/v/bytes:scattered_message",
-        "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:api_versions",
         "//src/v/kafka/protocol:create_topics",
         "//src/v/kafka/protocol:delete_records",
@@ -93,9 +91,6 @@ redpanda_cc_library(
         "//src/v/kafka/protocol:sasl_handshake",
         "//src/v/kafka/protocol:sync_group",
         "//src/v/net",
-        "//src/v/ssx:future_util",
-        "//src/v/utils:mutex",
-        "//src/v/utils:prefix_logger",
         "//src/v/utils:unresolved_address",
         "@fmt",
         "@seastar",
