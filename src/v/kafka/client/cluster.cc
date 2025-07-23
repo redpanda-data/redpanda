@@ -178,8 +178,8 @@ ss::future<> cluster::apply_metadata(metadata_response reply) {
     } else {
         _controller_id = reply.data.controller_id;
     }
-    _topic_cache.apply(reply.data.topics);
-    co_await _brokers.apply(reply.data.brokers);
+    _topic_cache.apply(std::move(reply.data.topics));
+    co_await _brokers.apply(std::move(reply.data.brokers));
     _last_update_time = ss::lowres_clock::now();
 }
 

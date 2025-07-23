@@ -61,8 +61,7 @@ public:
      * Applies the metadata response to the brokers. This method will throw if
      * any of the brokers can not be connected to.
      */
-    ss::future<>
-    apply(const chunked_vector<metadata_response::broker>& brokers);
+    ss::future<> apply(chunked_vector<metadata_response::broker> brokers);
 
     /// \brief Returns true if there are no connected brokers
     bool empty() const;

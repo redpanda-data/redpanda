@@ -51,8 +51,8 @@ ss::future<> brokers::erase(model::node_id node_id) {
     return ss::now();
 }
 
-ss::future<> brokers::apply(
-  const chunked_vector<metadata_response::broker>& brokers_metadata) {
+ss::future<>
+brokers::apply(chunked_vector<metadata_response::broker> brokers_metadata) {
     chunked_vector<metadata_response::broker> brokers_to_add;
     chunked_vector<model::node_id> brokers_to_remove;
 
