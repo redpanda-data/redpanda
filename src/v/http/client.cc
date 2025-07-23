@@ -515,11 +515,13 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
     boost::beast::error_code error_code = {};
     iobuf outbuf;
     parser_visitor visitor{outbuf, _serializer};
-    _serializer.next(error_code, visitor);
-    if (error_code) {
-        vlog(_ctxlog.error, "serialization error {}", error_code);
-        boost::system::system_error except(error_code);
-        return ss::make_exception_future<>(except);
+    while (!_serializer.is_header_done()) {
+        _serializer.next(error_code, visitor);
+        if (error_code) {
+            vlog(_ctxlog.error, "serialization error {}", error_code);
+            boost::system::system_error except(error_code);
+            return ss::make_exception_future<>(except);
+        }
     }
     auto scattered = iobuf_as_scattered(std::move(outbuf));
     return ss::with_gate(
