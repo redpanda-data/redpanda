@@ -11,8 +11,10 @@
 
 #include "container/fragmented_vector.h"
 #include "kafka/client/exceptions.h"
+#include "kafka/client/partitioners.h"
 #include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
+#include "random/generators.h"
 
 #include <seastar/core/future.hh>
 
@@ -23,7 +25,13 @@ void topic_cache::apply(
     topics_t cache;
     cache.reserve(topics.size());
     for (const auto& t : topics) {
-        auto& cache_t = cache.emplace(t.name, topic_data{}).first->second;
+        const auto initial_partition_id = model::partition_id{
+          random_generators::get_int<model::partition_id::type>(
+            t.partitions.size())};
+        topic_data topic_data{
+          .partitioner_func = default_partitioner(initial_partition_id)};
+        auto& cache_t
+          = cache.emplace(t.name, std::move(topic_data)).first->second;
         cache_t.partitions.reserve(t.partitions.size());
         for (const auto& p : t.partitions) {
             cache_t.partitions.emplace(
@@ -48,6 +56,15 @@ model::node_id topic_cache::leader(model::topic_partition tp) const {
     }
     throw partition_error(
       std::move(tp), error_code::unknown_topic_or_partition);
+}
+
+model::partition_id
+topic_cache::partition_for(model::topic_view tv, const record_essence& rec) {
+    if (auto topic_it = _topics.find(tv); topic_it != _topics.end()) {
+        auto& pd = topic_it->second;
+        return *pd.partitioner_func(rec, pd.partitions.size());
+    }
+    throw topic_error(tv, error_code::unknown_topic_or_partition);
 }
 
 } // namespace kafka::client

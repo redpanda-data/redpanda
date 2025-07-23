@@ -11,7 +11,6 @@
 
 #include "kafka/client/cluster.h"
 
-#include "kafka/client/types.h"
 #include "random/generators.h"
 #include "ssx/future-util.h"
 

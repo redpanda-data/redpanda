@@ -18,7 +18,6 @@
 #include "kafka/client/cluster.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
-#include "kafka/client/partitioners.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/types.h"
 #include "kafka/client/utils.h"
@@ -211,8 +210,6 @@ private:
       chunked_vector<model::topic> topics,
       std::optional<chunked_vector<ss::sstring>> configuration_keys);
 
-    void on_metadata_update(const metadata_response_data& res);
-
     /// \brief Connect and update metdata.
     ss::future<> do_connect(net::unresolved_address addr);
 
@@ -253,9 +250,6 @@ private:
         detail::consumer_hash,
         detail::consumer_eq>>
       _consumers;
-
-    partitioners_cache _partitioners;
-    cluster::callback_id _metadata_callback_id;
     /// \brief Wait for retries.
     ss::gate _gate;
 
