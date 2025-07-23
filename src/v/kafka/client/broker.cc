@@ -13,7 +13,6 @@
 #include "kafka/client/sasl_client.h"
 #include "net/connection.h"
 #include "thirdparty/c-ares/ares.h"
-#include "utils/backoff_policy.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/coroutine.hh>
@@ -99,19 +98,11 @@ ss::future<> broker::connect_with_retries(
     // Every time broker is reconnected its authentication state is reset
     // to `none` so that it can be re-authenticated if needed.
     _authentication_state = auth_state::none;
-    // todo: add configuration for backoff policy
-    auto backoff_policy = ::make_exponential_backoff_policy<ss::lowres_clock>(
-      _config->connection_timeout / 20, _config->connection_timeout);
-    /**
-     * Use a fraction of the connection timeout to make sure that the connection
-     * attempt can be retried before the deadline.
-     */
-    const auto retry_interval = _config->connection_timeout / 5;
+
     while (!_gate.is_closed()) {
         if (as) {
             as->get().check();
         }
-        _reconnect_as.check();
         if (model::timeout_clock::now() >= deadline) {
             vlog(
               _logger.warn,
@@ -121,21 +112,15 @@ ss::future<> broker::connect_with_retries(
             throw broker_error(_node_id, error_code::broker_not_available);
         }
         try {
-            co_await connect(model::timeout_clock::now() + retry_interval);
+            co_await connect(deadline);
             vlog(_logger.debug, "Broker connection established");
             co_return;
         } catch (...) {
             vlog(
-              _logger.warn,
-              "Connection error, next retry in {}ms - {}",
-              backoff_policy.current_backoff_duration() / 1ms,
-              std::current_exception());
+              _logger.warn, "Connection error - {}", std::current_exception());
         }
-
-        co_await ss::sleep_abortable(
-          backoff_policy.current_backoff_duration(),
-          as.has_value() ? as->get() : _reconnect_as);
-        backoff_policy.next_backoff();
+        // todo: use more sophisticated retry policy
+        co_await ss::sleep(100ms);
     }
 }
 

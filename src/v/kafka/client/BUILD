@@ -141,7 +141,6 @@ redpanda_cc_library(
         "//src/v/security",
         "//src/v/ssx:future_util",
         "//src/v/thirdparty/c-ares",
-        "//src/v/utils:backoff_policy",
         "//src/v/utils:mutex",
         "//src/v/utils:prefix_logger",
         "//src/v/utils:unresolved_address",
