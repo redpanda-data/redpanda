@@ -16,7 +16,6 @@
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
 #include "net/connection.h"
-#include "security/scram_algorithm.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -43,7 +42,13 @@ public:
         auto holder = _gate.hold();
         try {
             co_await maybe_initialize_connection(as);
-            co_return co_await do_dispatch(std::move(r));
+            log_request(r);
+            auto response = co_await _transport->dispatch(
+              std::move(r), api_version_for<ReqT>());
+            log_response(r);
+
+            co_return response;
+
         } catch (const kafka_request_disconnected_exception&) {
             vlog(
               _logger.warn,
@@ -115,18 +120,6 @@ private:
           api_t::name,
           resp);
     }
-
-    template<
-      typename ReqT,
-      typename RespT = typename ReqT::api_type::response_type>
-    requires(KafkaApi<typename ReqT::api_type>)
-    ss::future<RespT> do_dispatch(ReqT r) {
-        log_request(r);
-        auto response = co_await _transport->dispatch(
-          std::move(r), api_version_for<ReqT>());
-        log_response(r);
-        co_return response;
-    }
     /**
      * Connects to the broker and handles authentication if needed.
      */
@@ -144,26 +137,6 @@ private:
         return _config->sasl_cfg.has_value()
                && _authentication_state == auth_state::none;
     }
-
-    ss::future<> do_authenticate();
-    /*
-     * SASL handshake negotiates mechanism. In this case that process is simple:
-     * if the server doesn't support the requested mechanism there is no
-     * fallback.
-     */
-    ss::future<> do_sasl_handshake(ss::sstring mechanism);
-    template<typename ScramAlgo>
-    ss::future<>
-    do_authenticate_scram(ss::sstring username, ss::sstring password);
-    ss::future<>
-    do_authenticate_scram256(ss::sstring username, ss::sstring password);
-    ss::future<>
-    do_authenticate_scram512(ss::sstring username, ss::sstring password);
-    ss::future<> do_authenticate_oauthbearer(ss::sstring token);
-    ss::future<security::server_first_message>
-    send_scram_client_first(const security::client_first_message& client_first);
-    ss::future<security::server_final_message>
-    send_scram_client_final(const security::client_final_message& client_final);
 
     model::node_id _node_id;
     std::unique_ptr<transport> _transport;
