@@ -45,7 +45,6 @@ ss::future<> cluster::start() {
     _metadata_update_timer.set_callback([this]() { update_timer_callback(); });
 
     co_await update_metadata();
-    _metadata_update_timer.arm(_config.max_metadata_age);
 }
 void cluster::update_timer_callback() {
     ssx::spawn_with_gate(_gate, [this] {
