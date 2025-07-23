@@ -53,11 +53,6 @@ void read_nested(
 
 void write(iobuf& out, timestamp ts) { serde::write(out, ts._v); }
 
-std::ostream& operator<<(std::ostream& os, const topic_partition_view& tp) {
-    fmt::print(os, "{{{}/{}}}", tp.topic(), tp.partition());
-    return os;
-}
-
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
     fmt::print(os, "{{{}/{}}}", tp.topic(), tp.partition());
     return os;
