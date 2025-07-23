@@ -173,7 +173,7 @@ ss::future<> cluster::apply_metadata(metadata_response reply) {
       reply.data.brokers,
       reply.data.topics.size());
 
-    _cluster_id = reply.data.cluster_id;
+    reply.data.cluster_id = reply.data.cluster_id;
     if (reply.data.controller_id == unknown_node_id) {
         _controller_id.reset();
     } else {
