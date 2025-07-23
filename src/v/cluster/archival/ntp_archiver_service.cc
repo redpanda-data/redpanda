@@ -1491,8 +1491,7 @@ ss::future<> ntp_archiver::upload_index(
   ss::sstring path, cloud_storage::offset_index index) {
     retry_chain_node rtc{
       _conf->segment_upload_timeout(),
-      100ms,
-      retry_strategy::disallow,
+      _conf->upload_loop_initial_backoff(),
       &_rtcnode};
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     auto fut = co_await ss::coroutine::as_future(_remote.upload_index(
