@@ -1112,8 +1112,12 @@ audit_log_manager::should_enqueue_audit_event(
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type, const security::audit::user& user) const {
+    auto principal_type = user.type_id == audit::user::type::system
+                            ? security::principal_type::ephemeral_user
+                            : security::principal_type::user;
+
     return should_enqueue_audit_event(
-      type, security::acl_principal{security::principal_type::user, user.name});
+      type, security::acl_principal{principal_type, user.name});
 }
 
 std::optional<audit_log_manager::audit_event_passthrough>
