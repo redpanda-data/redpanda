@@ -20,7 +20,6 @@
 #include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/topic_cache.h"
-#include "kafka/client/utils.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
@@ -118,8 +117,7 @@ private:
               api_t::name,
               r,
               _coordinator->id());
-            return _coordinator
-              ->dispatch(std::move(r), api_version_for(api_t::key), _as)
+            return _coordinator->dispatch(std::move(r), _as)
               .then([](response_t resp) {
                   return std::get<resp_t>(std::move(resp));
               })

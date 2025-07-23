@@ -292,8 +292,7 @@ ss::future<produce_response> client::produce_records(
 ss::future<metadata_response> client::fetch_metadata(metadata_request req) {
     co_return co_await gated_retry_with_mitigation(
       [this, req = std::move(req)]() {
-          return _cluster.dispatch_to_any(
-            req.copy(), api_version_for(metadata_api::key));
+          return _cluster.dispatch_to_any(req.copy());
       });
 }
 
@@ -307,7 +306,7 @@ client::create_topic(kafka::creatable_topic req) {
         return _cluster.dispatch_to(controller, kafka::create_topics_request{
                 .data = {
                   .topics = std::move(cv),
-                }}, api_version_for(create_topics_api::key))
+                }})
           .then([controller](auto res) {
               auto ec = res.data.topics[0].error_code;
               switch (ec) {
@@ -408,10 +407,7 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
 
     auto mapper = [this](auto kv) {
         auto node_id = kv.first;
-        return _cluster.dispatch_to(
-          node_id,
-          std::move(kv.second),
-          api_version_for(list_offsets_api::key));
+        return _cluster.dispatch_to(node_id, std::move(kv.second));
     };
 
     auto reducer = [](list_offsets_response result, list_offsets_response val) {
@@ -496,11 +492,7 @@ ss::future<fetch_response> client::fetch_partition(
                            partition_error(
                              tp, error_code::unknown_topic_or_partition));
                      }
-                     return _cluster
-                       .dispatch_to(
-                         *leader_id,
-                         build_request(tp),
-                         api_version_for(fetch_api::key))
+                     return _cluster.dispatch_to(*leader_id, build_request(tp))
                        .then([leader_id, &tp](fetch_response res) {
                            return maybe_throw_exception(
                              *leader_id, tp, std::move(res));
@@ -687,8 +679,7 @@ ss::future<kafka::describe_configs_response> client::do_describe_topics(
     }
 
     co_return co_await _cluster.dispatch_to_any(
-      describe_configs_request{.data = {.resources = std::move(dcr)}},
-      api_version_for(describe_configs_request::api_type::key));
+      describe_configs_request{.data = {.resources = std::move(dcr)}});
 }
 
 } // namespace kafka::client

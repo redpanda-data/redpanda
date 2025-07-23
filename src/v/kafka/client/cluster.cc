@@ -87,27 +87,6 @@ ss::future<> cluster::request_metadata_update() {
     co_await update_metadata();
 }
 
-namespace {
-ss::future<api_version> get_metadata_request_version(
-  const shared_broker_t& broker,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto supported_version = co_await broker->get_supported_versions(
-      metadata_api::key, as);
-    // Currently we require at least version 1 of the metadata API. (The api
-    // where NULL topic list represents request to list all topics)
-    if (!supported_version || supported_version->max < api_version(1)) {
-        throw broker_error(
-          broker->id(),
-          error_code::unsupported_version,
-          fmt::format(
-            "Broker {} at {}:{} does not support metadata API",
-            broker->id(),
-            broker->get_address().host(),
-            broker->get_address().port()));
-    }
-    co_return std::min(supported_version->max, kafka::metadata_api::max_valid);
-}
-} // namespace
 ss::future<> cluster::initialize_metadata_with_seed() {
     vlog(
       _logger.debug,
@@ -119,26 +98,9 @@ ss::future<> cluster::initialize_metadata_with_seed() {
         _next_seed = (_next_seed + 1) % _config.initial_brokers.size();
         const auto& address = _config.initial_brokers[_next_seed];
         auto broker = co_await _brokers.create_broker(unknown_node_id, address);
-        // explicitly connect to the broker to initialize connection before
-        // requesting metadata
 
-        auto request_version_f = co_await ss::coroutine::as_future(
-          get_metadata_request_version(broker, _as));
-        if (request_version_f.failed()) {
-            auto ex = request_version_f.get_exception();
-            vlog(
-              _logger.warn,
-              "Failed to get supported metadata version {}:{} - {}",
-              address.host(),
-              address.port(),
-              ex);
-            error = ex;
-            co_await broker->stop();
-            continue;
-        }
-
-        auto reply_f = co_await ss::coroutine::as_future(broker->dispatch(
-          metadata_request{.list_all_topics = false}, request_version_f.get()));
+        auto reply_f = co_await ss::coroutine::as_future(
+          broker->dispatch(metadata_request{.list_all_topics = false}));
         /**
          * stop the broker after the request is done to ensure that
          * the broker is not left in a connected state. This is important
@@ -180,22 +142,11 @@ ss::future<> cluster::dispatch_metadata_request() {
     }
 
     try {
-        auto broker = _brokers.any();
-        // Initialize the broker if it is not connected, this is required to
-        // make sure the broker has up to date API version information.
-
-        auto request_version = co_await get_metadata_request_version(
-          broker, _as);
         // TODO: support topic subscription
-        auto reply = co_await broker->dispatch(
-          metadata_request{.list_all_topics = false}, request_version);
-        vassert(
-          std::holds_alternative<kafka::metadata_response>(reply),
-          "Metadata response is required to be returned as a result of "
-          "metadata request");
+        auto reply = co_await dispatch_to_any(
+          metadata_request{.list_all_topics = true});
 
-        co_await apply_metadata(
-          std::get<kafka::metadata_response>(std::move(reply)));
+        co_await apply_metadata(std::move(reply));
     } catch (const broker_error& e) {
         vlog(
           _logger.warn, "Failed to dispatch metadata request - {}", e.what());
@@ -233,18 +184,6 @@ ss::future<> cluster::apply_metadata(metadata_response reply) {
     _last_update_time = ss::lowres_clock::now();
     // trigger notification last, after the metadata is applied
     _notifications.notify(reply.data);
-}
-
-ss::future<std::optional<api_version_range>> cluster::supported_api_versions(
-  api_key key, std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    return _brokers.supported_api_versions(key, as.has_value() ? as : _as);
-}
-
-ss::future<std::optional<api_version_range>> cluster::supported_api_versions(
-  model::node_id id,
-  api_key key,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    return _brokers.supported_api_versions(id, key, as.has_value() ? as : _as);
 }
 
 } // namespace kafka::client

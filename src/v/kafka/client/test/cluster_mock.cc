@@ -20,15 +20,15 @@ broker_mock::broker_mock(
 
 ss::future<response_t> broker_mock::dispatch(
   request_t request,
-  api_version version,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     return _cluster_mock->handle(
       _id,
       std::move(request),
-      version,
       as); // Assuming handle is a method in cluster_mock
 }
-
+api_version broker_mock::api_version_for(api_key) const {
+    return api_version{0};
+}
 ss::future<std::optional<api_version_range>>
 broker_mock::get_supported_versions(
   api_key key, std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -56,9 +56,8 @@ broker_mock::get_supported_versions(
 
 void cluster_mock::register_default_handlers() {
     register_handler(
-      metadata_api::key,
-      [this](model::node_id id, request_t req, api_version version) {
-          return handle_metadata_request(id, std::move(req), version);
+      metadata_api::key, [this](model::node_id id, request_t req) {
+          return handle_metadata_request(id, std::move(req));
       });
 
     register_handler(
@@ -78,8 +77,8 @@ void cluster_mock::register_broker_handler(
     h.per_node_handlers[id] = std::move(handler);
 }
 
-ss::future<response_t> cluster_mock::handle_metadata_request(
-  model::node_id, request_t req, api_version) {
+ss::future<response_t>
+cluster_mock::handle_metadata_request(model::node_id, request_t req) {
     auto md_req = std::get<metadata_request>(std::move(req));
     metadata_response_data r_data;
     for (auto& b : _brokers) {
@@ -119,7 +118,6 @@ requires(KafkaApi<typename ReqT::api_type>)
 ss::future<Ret> cluster_mock::do_handle(
   model::node_id node_id,
   request_t req,
-  api_version version,
   std::optional<std::reference_wrapper<ss::abort_source>>) {
     using api_t = typename ReqT::api_type;
     _logger.info(
@@ -136,20 +134,19 @@ ss::future<Ret> cluster_mock::do_handle(
     auto node_handler_it = it->second.per_node_handlers.find(node_id);
     if (node_handler_it != it->second.per_node_handlers.end()) {
         // If a specific handler for the node is registered, use it
-        return node_handler_it->second(node_id, std::move(req), version)
+        return node_handler_it->second(node_id, std::move(req))
           .then([](response_t resp) { return std::get<Ret>(std::move(resp)); });
     }
-    return it->second.default_handler(node_id, std::move(req), version)
+    return it->second.default_handler(node_id, std::move(req))
       .then([](response_t resp) { return std::get<Ret>(std::move(resp)); });
 }
 
 ss::future<response_t> cluster_mock::handle(
   model::node_id node_id,
   request_t req,
-  api_version version,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    return ss::visit(std::move(req), [this, node_id, version, &as](auto r) {
-        return do_handle<decltype(r)>(node_id, std::move(r), version, as)
+    return ss::visit(std::move(req), [this, node_id, &as](auto r) {
+        return do_handle<decltype(r)>(node_id, std::move(r), as)
           .then([](auto resp) { return response_t{std::move(resp)}; });
     });
 }

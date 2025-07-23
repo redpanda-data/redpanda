@@ -56,14 +56,13 @@ public:
      */
     template<typename Req, typename Ret = typename Req::api_type::response_type>
     requires(KafkaApi<typename Req::api_type>)
-    ss::future<Ret>
-    dispatch_to(model::node_id broker_id, Req request, api_version version) {
+    ss::future<Ret> dispatch_to(model::node_id broker_id, Req request) {
         auto broker = _brokers.find(broker_id);
         if (!broker) {
             throw broker_error(
               broker_id, error_code::broker_not_available, "Broker not found");
         }
-        return broker->dispatch(std::move(request), version)
+        return broker->dispatch(std::move(request))
           .then([](response_t response) {
               return std::get<Ret>(std::move(response));
           });
@@ -80,12 +79,12 @@ public:
 
     template<typename Req, typename Ret = typename Req::api_type::response_type>
     requires(KafkaApi<typename Req::api_type>)
-    ss::future<Ret> dispatch_to_any(Req request, api_version version) {
+    ss::future<Ret> dispatch_to_any(Req request) {
         if (_brokers.empty()) {
             co_await request_metadata_update();
         }
         co_return co_await _brokers.any()
-          ->dispatch(std::move(request), version)
+          ->dispatch(std::move(request))
           .then([](response_t response) {
               return std::get<Ret>(std::move(response));
           });
