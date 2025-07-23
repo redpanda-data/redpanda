@@ -24,7 +24,6 @@ namespace kafka::client {
 class topic_cache {
     struct partition_data {
         model::node_id leader;
-        kafka::leader_epoch leader_epoch{invalid_leader_epoch};
     };
 
     struct topic_data {
@@ -46,8 +45,6 @@ public:
 
     /// \brief Obtain the leader for the given topic-partition
     std::optional<model::node_id> leader(model::topic_partition_view) const;
-    std::optional<kafka::leader_epoch>
-      leader_epoch(model::topic_partition_view) const;
 
 private:
     /// \brief Cache of topic information.

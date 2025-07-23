@@ -27,9 +27,7 @@ void topic_cache::apply(
         cache_t.partitions.reserve(t.partitions.size());
         for (const auto& p : t.partitions) {
             cache_t.partitions.emplace(
-              p.partition_index,
-              partition_data{
-                .leader = p.leader_id, .leader_epoch = p.leader_epoch});
+              p.partition_index, partition_data{.leader = p.leader_id});
         }
     }
 
@@ -54,26 +52,6 @@ topic_cache::leader(model::topic_partition_view tp) const {
     }
 
     return p_data.leader;
-}
-
-std::optional<kafka::leader_epoch>
-topic_cache::leader_epoch(model::topic_partition_view tp) const {
-    auto topic_it = _topics.find(tp.topic);
-    if (topic_it == _topics.end()) {
-        return std::nullopt;
-    }
-
-    const auto& topic_partitions = topic_it->second.partitions;
-    auto part_it = topic_partitions.find(tp.partition);
-    if (part_it == topic_partitions.end()) {
-        return std::nullopt;
-    }
-    const auto& p_data = part_it->second;
-    if (p_data.leader == unknown_node_id) {
-        return std::nullopt;
-    }
-
-    return p_data.leader_epoch;
 }
 
 } // namespace kafka::client
