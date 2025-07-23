@@ -1,255 +1,56 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
-package(default_visibility = ["//src/v/kafka/client:__subpackages__"])
-
-redpanda_cc_library(
-    name = "logger",
-    hdrs = ["logger.h"],
-    include_prefix = "kafka/client",
-    deps = [
-        "//src/v/base",
-        "//src/v/utils:truncating_logger",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "configuration",
-    srcs = ["configuration.cc"],
-    hdrs = ["configuration.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":logger",
-        "//src/v/base",
-        "//src/v/config",
-        "//src/v/security",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "exceptions",
-    srcs = [],
-    hdrs = ["exceptions.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":logger",
-        "//src/v/base",
-        "//src/v/kafka/protocol",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "config_utils",
-    srcs = ["config_utils.cc"],
-    hdrs = ["config_utils.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":configuration",
-        "//src/v/base",
-        "//src/v/cluster",
-        "//src/v/config",
-        "//src/v/security",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "transport",
-    srcs = [],
-    hdrs = ["transport.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":logger",
-        "//src/v/base",
-        "//src/v/bytes:scattered_message",
-        "//src/v/kafka/protocol:api_versions",
-        "//src/v/kafka/protocol:create_topics",
-        "//src/v/kafka/protocol:delete_records",
-        "//src/v/kafka/protocol:describe_configs",
-        "//src/v/kafka/protocol:describe_groups",
-        "//src/v/kafka/protocol:fetch",
-        "//src/v/kafka/protocol:find_coordinator",
-        "//src/v/kafka/protocol:flex_versions",
-        "//src/v/kafka/protocol:heartbeat",
-        "//src/v/kafka/protocol:join_group",
-        "//src/v/kafka/protocol:leave_group",
-        "//src/v/kafka/protocol:list_offset",
-        "//src/v/kafka/protocol:metadata",
-        "//src/v/kafka/protocol:offset_commit",
-        "//src/v/kafka/protocol:offset_fetch",
-        "//src/v/kafka/protocol:offset_for_leader_epoch",
-        "//src/v/kafka/protocol:produce",
-        "//src/v/kafka/protocol:sasl_authenticate",
-        "//src/v/kafka/protocol:sasl_handshake",
-        "//src/v/kafka/protocol:sync_group",
-        "//src/v/net",
-        "//src/v/utils:unresolved_address",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "types",
-    srcs = [],
-    hdrs = ["types.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src/v/base",
-        "//src/v/bytes:iobuf",
-        "//src/v/model",
-    ],
-)
-
-redpanda_cc_library(
-    name = "brokers",
-    srcs = [
-        "broker.cc",
-        "brokers.cc",
-        "sasl_client.cc",
-    ],
-    hdrs = [
-        "broker.h",
-        "brokers.h",
-        "sasl_client.h",
-    ],
-    include_prefix = "kafka/client",
-    deps = [
-        ":configuration",
-        ":exceptions",
-        ":logger",
-        ":transport",
-        ":types",
-        "//src/v/base",
-        "//src/v/container:fragmented_vector",
-        "//src/v/kafka/protocol:metadata",
-        "//src/v/kafka/protocol:sasl_authenticate",
-        "//src/v/kafka/protocol:sasl_handshake",
-        "//src/v/model",
-        "//src/v/net",
-        "//src/v/random:generators",
-        "//src/v/security",
-        "//src/v/ssx:future_util",
-        "//src/v/thirdparty/c-ares",
-        "//src/v/utils:mutex",
-        "//src/v/utils:prefix_logger",
-        "//src/v/utils:unresolved_address",
-        "@abseil-cpp//absl/container:flat_hash_map",
-        "@abseil-cpp//absl/container:flat_hash_set",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "partitioners",
-    srcs = [
-        "partitioners.cc",
-    ],
-    hdrs = [
-        "partitioners.h",
-    ],
-    include_prefix = "kafka/client",
-    deps = [
-        ":types",
-        "//src/v/base",
-        "//src/v/hashing:murmur",
-        "//src/v/kafka/protocol:metadata",
-        "//src/v/model",
-        "@fmt",
-    ],
-)
-
-redpanda_cc_library(
-    name = "topic_cache",
-    srcs = [
-        "topic_cache.cc",
-    ],
-    hdrs = [
-        "topic_cache.h",
-    ],
-    include_prefix = "kafka/client",
-    deps = [
-        ":exceptions",
-        ":partitioners",
-        ":types",
-        "//src/v/base",
-        "//src/v/container:fragmented_vector",
-        "//src/v/kafka/protocol:metadata",
-        "//src/v/model",
-        "//src/v/random:generators",
-        "@abseil-cpp//absl/container:flat_hash_map",
-        "@abseil-cpp//absl/container:node_hash_map",
-        "@fmt",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "utils",
-    srcs = [],
-    hdrs = ["utils.h"],
-    include_prefix = "kafka/client",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":brokers",
-        ":exceptions",
-        ":logger",
-        ":types",
-        "//src/v/base",
-        "//src/v/utils:retry",
-    ],
-)
-
 redpanda_cc_library(
     name = "client",
     srcs = [
         "assignment_plans.cc",
+        "broker.cc",
+        "brokers.cc",
         "client.cc",
         "client_fetch_batch_reader.cc",
+        "config_utils.cc",
+        "configuration.cc",
         "consumer.cc",
         "fetch_session.cc",
         "fetcher.cc",
+        "partitioners.cc",
         "producer.cc",
+        "sasl_client.cc",
+        "topic_cache.cc",
     ],
     hdrs = [
         "assignment_plans.h",
+        "broker.h",
+        "brokers.h",
         "client.h",
         "client_fetch_batch_reader.h",
+        "config_utils.h",
+        "configuration.h",
         "consumer.h",
+        "exceptions.h",
         "fetch_session.h",
         "fetcher.h",
         "fwd.h",
+        "logger.h",
+        "partitioners.h",
         "produce_batcher.h",
         "produce_partition.h",
         "producer.h",
+        "sasl_client.h",
+        "topic_cache.h",
+        "transport.h",
+        "types.h",
+        "utils.h",
     ],
     include_prefix = "kafka/client",
     visibility = ["//visibility:public"],
     deps = [
-        ":brokers",
-        ":configuration",
-        ":exceptions",
-        ":logger",
-        ":partitioners",
-        ":topic_cache",
-        ":transport",
-        ":types",
-        ":utils",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
         "//src/v/bytes:iostream",
         "//src/v/bytes:scattered_message",
+        "//src/v/cluster",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",

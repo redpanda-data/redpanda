@@ -70,7 +70,6 @@ redpanda_cc_btest(
     deps = [
         "//src/v/config",
         "//src/v/kafka/client",
-        "//src/v/kafka/client:configuration",
         "//src/v/pandaproxy:core",
         "//src/v/security",
         "//src/v/ssx:future_util",

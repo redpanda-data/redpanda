@@ -13,6 +13,7 @@
 
 #include "kafka/client/broker.h"
 #include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/offset_commit.h"

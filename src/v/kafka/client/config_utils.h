@@ -14,11 +14,14 @@
 #include "base/seastarx.h"
 #include "cluster/fwd.h"
 #include "config/fwd.h"
-#include "kafka/client/configuration.h"
+#include "kafka/client/fwd.h"
+#include "model/compression.h"
 #include "security/acl.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
+
+#include <vector>
 
 namespace kafka::client {
 

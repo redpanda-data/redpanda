@@ -15,11 +15,15 @@
 #include "cluster/controller.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "config/configuration.h"
+#include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "security/acl.h"
+#include "strings/string_switch.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/coroutine/exception.hh>
+
+#include <exception>
 
 namespace kafka::client {
 namespace {

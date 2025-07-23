@@ -50,7 +50,7 @@ redpanda_test_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/container:fragmented_vector",
-        "//src/v/kafka/client:transport",
+        "//src/v/kafka/client",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:delete_records",
         "//src/v/kafka/protocol:list_offset",
@@ -608,7 +608,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/cluster",
-        "//src/v/kafka/client:transport",
+        "//src/v/kafka/client",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
         "//src/v/kafka/protocol:metadata",
@@ -702,7 +702,7 @@ redpanda_cc_btest(
     deps = [
         ":kafka_test_utils",
         "//src/v/container:fragmented_vector",
-        "//src/v/kafka/client:transport",
+        "//src/v/kafka/client",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:fetch",
         "//src/v/kafka/protocol:produce",
@@ -828,7 +828,7 @@ redpanda_cc_bench(
     runs = 1,
     deps = [
         "//src/v/base",
-        "//src/v/kafka/client:types",
+        "//src/v/kafka/client",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:fetch",
         "//src/v/kafka/protocol/schemata:fetch_request",

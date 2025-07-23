@@ -14,6 +14,7 @@
 #include "cluster/members_table.h"
 #include "cluster/security_frontend.h"
 #include "config/configuration.h"
+#include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
 #include "kafka/client/config_utils.h"
 #include "kafka/client/exceptions.h"

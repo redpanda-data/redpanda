@@ -11,6 +11,9 @@
 #pragma once
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
+#include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/protocol/sasl_handshake.h"
+#include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
 

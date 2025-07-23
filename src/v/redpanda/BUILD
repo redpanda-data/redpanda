@@ -46,7 +46,6 @@ redpanda_cc_library(
         "//src/v/features",
         "//src/v/finjector",
         "//src/v/kafka/client",
-        "//src/v/kafka/client:configuration",
         "//src/v/kafka/data/rpc",
         "//src/v/kafka/server",
         "//src/v/kafka/server:app",

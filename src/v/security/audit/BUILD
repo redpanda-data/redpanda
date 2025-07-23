@@ -49,8 +49,6 @@ redpanda_cc_library(
         "//src/v/hashing:combine",
         "//src/v/json",
         "//src/v/kafka/client",
-        "//src/v/kafka/client:config_utils",
-        "//src/v/kafka/client:types",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:produce",
         "//src/v/kafka/protocol/schemata:add_offsets_to_txn_request",

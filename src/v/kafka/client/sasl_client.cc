@@ -10,9 +10,7 @@
  */
 #include "kafka/client/sasl_client.h"
 
-#include "kafka/protocol/sasl_authenticate.h"
-#include "kafka/protocol/sasl_handshake.h"
-#include "random/generators.h"
+#include "kafka/client/logger.h"
 #include "security/oidc_authenticator.h"
 #include "security/scram_authenticator.h"
 
