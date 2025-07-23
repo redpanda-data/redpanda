@@ -1081,12 +1081,21 @@ audit_log_manager::should_enqueue_audit_event(
     return should_enqueue_audit_event();
 }
 
+namespace {
+bool is_ignored_ephemeral_user(const security::acl_principal& principal) {
+    return principal == security::audit_principal
+           || principal == security::schema_registry_principal;
+}
+} // namespace
+
 std::optional<audit_log_manager::audit_event_passthrough>
 audit_log_manager::should_enqueue_audit_event(
   event_type type,
   const security::acl_principal& principal,
   ignore_enabled_events ignore_events) const {
-    if (_audit_excluded_principals.contains(principal)) {
+    if (
+      _audit_excluded_principals.contains(principal)
+      || is_ignored_ephemeral_user(principal)) {
         return std::make_optional(audit_event_passthrough::yes);
     }
 
