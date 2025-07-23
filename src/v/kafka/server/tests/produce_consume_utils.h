@@ -79,7 +79,6 @@ public:
       : _transport(std::move(t)) {}
 
     ss::future<> start() { return _transport.connect(); }
-    ss::future<> stop() { return _transport.stop(); }
 
     // Produces the given records per partition to the given topic.
     ss::future<pid_to_offset_map_t> produce(
@@ -116,7 +115,7 @@ public:
       : _transport(std::move(t)) {}
 
     ss::future<> start() { return _transport.connect(); }
-    ss::future<> stop() { return _transport.stop(); }
+
     ss::future<pid_to_kvs_map_t> consume(
       model::topic topic_name,
       std::vector<model::partition_id> pids,

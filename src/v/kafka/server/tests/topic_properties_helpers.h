@@ -50,11 +50,10 @@ public:
                 std::move(client),
                 [f = std::forward<Func>(f)](
                   kafka::client::transport& client) mutable {
-                    return client.connect()
-                      .then([&client, f = std::forward<Func>(f)]() mutable {
+                    return client.connect().then(
+                      [&client, f = std::forward<Func>(f)]() mutable {
                           return f(client);
-                      })
-                      .finally([&client] { return client.stop(); });
+                      });
                 });
           });
     }

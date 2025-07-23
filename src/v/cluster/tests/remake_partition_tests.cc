@@ -66,28 +66,20 @@ public:
       size_t records_per_batch = 1,
       size_t starting_value = 0) {
         tests::kafka_produce_transport producer(co_await make_kafka_client());
-        std::exception_ptr eptr;
         co_await producer.start();
-        try {
-            // Generate some segments.
-            size_t val_count = starting_value;
-            for (size_t i = 0; i < num_segments; i++) {
-                for (size_t r = 0; r < batches_per_segment; r++) {
-                    auto kvs = tests::kv_t::sequence(
-                      val_count, records_per_batch, val_count, cardinality);
-                    co_await producer.produce_to_partition(
-                      topic_name, model::partition_id(0), std::move(kvs));
-                    val_count += records_per_batch;
-                }
-                co_await log->flush();
-                co_await log->force_roll();
+
+        // Generate some segments.
+        size_t val_count = starting_value;
+        for (size_t i = 0; i < num_segments; i++) {
+            for (size_t r = 0; r < batches_per_segment; r++) {
+                auto kvs = tests::kv_t::sequence(
+                  val_count, records_per_batch, val_count, cardinality);
+                co_await producer.produce_to_partition(
+                  topic_name, model::partition_id(0), std::move(kvs));
+                val_count += records_per_batch;
             }
-        } catch (...) {
-            eptr = std::current_exception();
-        }
-        co_await producer.stop();
-        if (eptr) {
-            std::rethrow_exception(eptr);
+            co_await log->flush();
+            co_await log->force_roll();
         }
     }
 
@@ -96,7 +88,6 @@ public:
         co_await consumer.start();
         auto consumed_kvs = co_await consumer.consume_from_partition(
           test_ntp.tp.topic, test_ntp.tp.partition, model::offset(0));
-        co_await consumer.stop();
         co_return consumed_kvs;
     }
 

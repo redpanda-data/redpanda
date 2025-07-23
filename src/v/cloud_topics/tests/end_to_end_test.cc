@@ -79,7 +79,6 @@ TEST_F(e2e_fixture, test_l0_path) {
     // Produce data to the partition
     kafka_produce_transport producer(make_kafka_client().get());
     producer.start().get();
-    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     size_t total_records = 100;
     size_t records_per_batch = 1;
@@ -97,7 +96,6 @@ TEST_F(e2e_fixture, test_l0_path) {
 
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    auto deferred_c_close = ss::defer([&consumer] { consumer.stop().get(); });
     auto consumed_records = consumer
                               .consume_from_partition(
                                 topic_name,

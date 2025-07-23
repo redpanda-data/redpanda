@@ -52,7 +52,6 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
 
     kafka_produce_transport producer(rp->make_kafka_client().get());
     producer.start().get();
-    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     // []: batch
     // {}: segment
@@ -114,8 +113,6 @@ FIXTURE_TEST(replicate_after_compaction, compaction_multinode_test) {
     // {[0 1 2 3]} {[4 5]} {[0 1 2 3 4 5]}
     kafka_produce_transport new_producer(new_rp->make_kafka_client().get());
     new_producer.start().get();
-    auto new_deferred_close = ss::defer(
-      [&new_producer] { new_producer.stop().get(); });
     new_producer.produce_to_partition(topic, pid, kv_t::sequence(0, 5)).get();
     auto new_log = new_partition->log();
     new_log->flush().get();

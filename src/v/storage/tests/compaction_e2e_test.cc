@@ -135,6 +135,7 @@ public:
       size_t base = 0) {
         tests::kafka_produce_transport producer(co_await make_kafka_client());
         co_await producer.start();
+
         // Generate some segments.
         size_t val_count = starting_value;
         for (size_t i = 0; i < num_segments; i++) {
@@ -158,7 +159,6 @@ public:
             co_await log->flush();
             co_await log->force_roll();
         }
-        co_await producer.stop();
     }
 
     ss::future<> generate_tombstones(
@@ -221,7 +221,6 @@ public:
             co_await log->flush();
             co_await log->force_roll();
         }
-        co_await producer.stop();
     }
 
     ss::future<std::vector<tests::kv_t>>
@@ -233,7 +232,6 @@ public:
         EXPECT_GE(consumed_kvs.size(), cardinality);
         auto num_duplicates = consumed_kvs.size() - cardinality;
         EXPECT_LE(num_duplicates, max_duplicates);
-        co_await consumer.stop();
         co_return consumed_kvs;
     }
 
@@ -348,8 +346,6 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
     auto restart_summary = dir_summary().get();
 
     tests::kafka_consume_transport second_consumer(make_kafka_client().get());
-    auto deferred_c_close = ss::defer(
-      [&second_consumer] { second_consumer.stop().get(); });
     second_consumer.start().get();
     auto consumed_kvs_restarted = second_consumer
                                     .consume_from_partition(
@@ -438,8 +434,6 @@ TEST_F(CompactionFixtureTest, TestChunkedCompaction) {
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -956,8 +950,6 @@ TEST_F(CompactionFixtureTest, TestTombstones) {
 
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         consumer.start().get();
         auto consumed_kvs = consumer
                               .consume_from_partition(
@@ -1022,8 +1014,6 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1057,8 +1047,6 @@ TEST_P(CompactionFixtureTombstonesParamTest, TestTombstonesCompletelyEmptyLog) {
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1145,8 +1133,6 @@ TEST_P(
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1185,8 +1171,6 @@ TEST_P(
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1300,8 +1284,6 @@ TEST_P(
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1339,8 +1321,6 @@ TEST_P(
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1738,8 +1718,6 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompaction) {
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1827,8 +1805,6 @@ TEST_F(CompactionFixtureTest, TestAdjacentCompactionMultipleRanges) {
     {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto consumed_kvs = consumer
                               .consume_from_partition(
                                 topic_name,
@@ -1959,8 +1935,6 @@ TEST_F(
     auto make_kafka_consumer = [&]() {
         tests::kafka_consume_transport consumer(make_kafka_client().get());
         consumer.start().get();
-        auto deferred_c_close = ss::defer(
-          [&consumer] { consumer.stop().get(); });
         auto kvs = consumer
                      .consume_from_partition(
                        topic_name, model::partition_id(0), model::offset(0))

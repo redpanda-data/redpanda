@@ -23,26 +23,17 @@ struct storage_e2e_fixture : public redpanda_thread_fixture {
     ss::future<> produce_to_fixture(model::topic topic_name, int* incomplete) {
         tests::kafka_produce_transport producer(co_await make_kafka_client());
         co_await producer.start();
-        std::exception_ptr eptr;
-        try {
-            const int cardinality = 10;
-            auto now = ss::lowres_clock::now();
-            while (ss::lowres_clock::now() < now + 5s) {
-                for (int i = 0; i < cardinality; i++) {
-                    co_await producer.produce_to_partition(
-                      topic_name,
-                      model::partition_id(0),
-                      tests::kv_t::sequence(i, 1));
-                }
+        const int cardinality = 10;
+        auto now = ss::lowres_clock::now();
+        while (ss::lowres_clock::now() < now + 5s) {
+            for (int i = 0; i < cardinality; i++) {
+                co_await producer.produce_to_partition(
+                  topic_name,
+                  model::partition_id(0),
+                  tests::kv_t::sequence(i, 1));
             }
-            *incomplete -= 1;
-        } catch (...) {
-            eptr = std::current_exception();
         }
-        co_await producer.stop();
-        if (eptr) {
-            std::rethrow_exception(eptr);
-        }
+        *incomplete -= 1;
     }
 
     ss::future<> remove_segment_permanently(
