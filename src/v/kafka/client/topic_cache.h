@@ -44,7 +44,7 @@ public:
     void apply(const small_fragment_vector<metadata_response::topic>& topics);
 
     /// \brief Obtain the leader for the given topic-partition
-    std::optional<model::node_id> leader(model::topic_partition_view) const;
+    std::optional<model::node_id> leader(const model::topic_partition&) const;
 
 private:
     /// \brief Cache of topic information.

@@ -35,7 +35,7 @@ void topic_cache::apply(
 }
 
 std::optional<model::node_id>
-topic_cache::leader(model::topic_partition_view tp) const {
+topic_cache::leader(const model::topic_partition& tp) const {
     auto topic_it = _topics.find(tp.topic);
     if (topic_it == _topics.end()) {
         return std::nullopt;
