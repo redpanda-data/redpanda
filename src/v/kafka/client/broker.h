@@ -51,7 +51,7 @@ struct gated_mutex {
 
 class broker : public ss::enable_lw_shared_from_this<broker> {
 public:
-    broker(model::node_id node_id, std::unique_ptr<transport> client)
+    broker(model::node_id node_id, transport&& client)
       : _node_id(node_id)
       , _client(std::move(client))
       , _gated_mutex{} {}
@@ -64,15 +64,15 @@ public:
           .with([this, r{std::move(r)}]() mutable {
               vlog(
                 kcwire.debug,
-                "{} - Dispatch to node {}: {} req: {}",
+                "{}Dispatch to node {}: {} req: {}",
                 *this,
                 _node_id,
                 api_t::name,
                 r);
-              return _client->dispatch(std::move(r)).then([this](Ret res) {
+              return _client.dispatch(std::move(r)).then([this](Ret res) {
                   vlog(
                     kcwire.debug,
-                    "{} - Response from node {}: {} res: {}",
+                    "{}Dispatch from node {}: {} res: {}",
                     *this,
                     _node_id,
                     api_t::name,
@@ -99,24 +99,21 @@ public:
     model::node_id id() const { return _node_id; }
     ss::future<> stop() {
         return _gated_mutex.close()
-          .then([this]() { return _client->stop(); })
+          .then([this]() { return _client.stop(); })
           .finally([b = shared_from_this()]() {});
-    }
-    const net::unresolved_address& get_address() const {
-        return _client->server_address();
     }
 
 private:
     /// \brief Log the client ID if it exists, otherwise don't log
     friend std::ostream& operator<<(std::ostream& os, const broker& b) {
-        if (b._client->client_id().has_value()) {
-            fmt::print(os, "{}: ", b._client->client_id().value());
+        if (b._client.client_id().has_value()) {
+            fmt::print(os, "{}: ", b._client.client_id().value());
         }
         return os;
     }
 
     model::node_id _node_id;
-    std::unique_ptr<transport> _client;
+    transport _client;
     // TODO(Ben): allow overlapped requests
     gated_mutex _gated_mutex;
 };

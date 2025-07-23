@@ -41,61 +41,51 @@ ss::future<> brokers::erase(model::node_id node_id) {
     if (auto b_it = _brokers.find(node_id); b_it != _brokers.end()) {
         auto broker = *b_it;
         _brokers.erase(b_it);
-        vlog(
-          _logger->debug,
-          "Erasing broker {} - {}:{}",
-          broker->id(),
-          broker->get_address().host(),
-          broker->get_address().port());
         return broker->stop().finally([broker]() {});
     }
     return ss::now();
 }
 
-ss::future<>
-brokers::apply(chunked_vector<metadata_response::broker> brokers_metadata) {
-    chunked_vector<metadata_response::broker> brokers_to_add;
-    chunked_vector<model::node_id> brokers_to_remove;
+ss::future<> brokers::apply(chunked_vector<metadata_response::broker>&& res) {
+    using new_brokers_t = chunked_vector<metadata_response::broker>;
+    return ss::do_with(std::move(res), [this](new_brokers_t& new_brokers) {
+        auto new_brokers_begin = std::partition(
+          new_brokers.begin(),
+          new_brokers.end(),
+          [this](const metadata_response::broker& broker) {
+              return _brokers.count(broker.node_id);
+          });
 
-    for (auto& broker : brokers_metadata) {
-        auto it = _brokers.find(broker.node_id);
-        // not found broker, we need to add it
-        if (it == _brokers.end()) {
-            brokers_to_add.push_back(std::move(broker));
-            continue;
-        }
-        auto& existing_broker = *it;
-        if (
-          existing_broker->get_address()
-          != net::unresolved_address(broker.host, broker.port)) {
-            // recreate broker with the new address
-            brokers_to_remove.push_back(broker.node_id);
-            brokers_to_add.push_back(std::move(broker));
-        }
-    }
-    for (auto& b : _brokers) {
-        auto m_it = std::ranges::find_if(
-          brokers_metadata,
-          [id = b->id()](const auto& m) { return m.node_id == id; });
+        return ssx::parallel_transform(
+                 new_brokers_begin,
+                 new_brokers.end(),
+                 [this](const metadata_response::broker& b) {
+                     return _factory.create_broker(
+                       b.node_id, net::unresolved_address(b.host, b.port));
+                 })
+          .then([this, &new_brokers, new_brokers_begin](
+                  std::vector<shared_broker_t> broker_endpoints) mutable {
+              brokers_t brokers;
+              brokers.reserve(
+                broker_endpoints.size()
+                + std::distance(new_brokers.begin(), new_brokers_begin));
+              // Insert new brokers
+              for (auto& b : broker_endpoints) {
+                  brokers.emplace(std::move(b));
+              }
+              // Insert existing brokers
+              for (auto it = new_brokers.begin(); it != new_brokers_begin;
+                   ++it) {
+                  auto b = _brokers.find(it->node_id);
+                  if (b != _brokers.end()) {
+                      brokers.emplace(*b);
+                  }
+              }
 
-        if (m_it == brokers_metadata.end()) {
-            // broker not found in the metadata, we need to remove it
-            brokers_to_remove.push_back(b->id());
-        }
-    }
-
-    co_await ss::parallel_for_each(
-      brokers_to_remove.begin(),
-      brokers_to_remove.end(),
-      [this](model::node_id id) { return erase(id); });
-    std::exception_ptr exception = nullptr;
-    for (auto& b : brokers_to_add) {
-        auto broker = co_await _factory.create_broker(
-          b.node_id, net::unresolved_address(b.host, b.port));
-        _brokers.insert(broker);
-    }
+              std::swap(brokers, _brokers);
+          });
+    });
 }
-
 ss::future<shared_broker_t>
 brokers::create_broker(model::node_id node_id, net::unresolved_address addr) {
     return _factory.create_broker(node_id, std::move(addr));

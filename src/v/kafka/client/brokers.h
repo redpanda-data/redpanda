@@ -55,11 +55,8 @@ public:
     /// \brief Remove a broker.
     ss::future<> erase(model::node_id id);
 
-    /**
-     * Applies the metadata response to the brokers. This method will throw if
-     * any of the brokers can not be connected to.
-     */
-    ss::future<> apply(chunked_vector<metadata_response::broker> brokers);
+    /// \brief Apply the given metadata response.
+    ss::future<> apply(chunked_vector<metadata_response::broker>&& brokers);
 
     /// \brief Returns true if there are no connected brokers
     bool empty() const;

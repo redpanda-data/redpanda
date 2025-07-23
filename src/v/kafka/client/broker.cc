@@ -61,7 +61,7 @@ ss::future<shared_broker_t> broker_factory::create_broker(
         transport_cfg.credentials
           = co_await _config.broker_tls->build_credentials();
     }
-    auto broker_transport = std::make_unique<transport>(
+    auto broker_transport = ss::make_lw_shared<transport>(
       std::move(transport_cfg), _config.client_id);
     try {
         vlog(
@@ -85,7 +85,7 @@ ss::future<shared_broker_t> broker_factory::create_broker(
       addr.host(),
       addr.port());
     auto connected_broker = ss::make_lw_shared<broker>(
-      node_id, std::move(broker_transport));
+      node_id, std::move(*broker_transport));
     if (!_config.sasl_cfg) {
         vlog(
           _logger->debug,
