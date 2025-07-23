@@ -1326,17 +1326,6 @@ topics_frontend::partitions_with_lost_majority(
                     continue;
                 }
                 model::ntp ntp(tn.ns, tn.tp, assignment.id);
-                if (topics.updates_in_progress().contains(ntp)) {
-                    // force reconfiguration does not support in progress
-                    // moves. this check can be relaxed once the limitation
-                    // is fixed.
-                    vlog(
-                      clusterlog.debug,
-                      "{} lost majority but skipping as an update is in "
-                      "progress.",
-                      ntp);
-                    continue;
-                }
                 result.emplace_back(
                   std::move(ntp),
                   topic_revision,
@@ -1379,17 +1368,16 @@ topics_frontend::force_recover_partitions_from_nodes(
     for (const auto& entry : user_approved_force_recovery_partitions) {
         // check if there is an in progress movemement, reject if so.
         // this is a conservative check and can be relaxed.
-        auto in_progress_move = topics.is_update_in_progress(entry.ntp);
         auto current_assignment = topics.get_partition_assignment(entry.ntp);
         auto assignment_match = current_assignment
                                 && are_replica_sets_equal(
                                   current_assignment->replicas,
                                   entry.assignment);
-        if (in_progress_move || !assignment_match) {
+        if (!assignment_match) {
             vlog(
               clusterlog.info,
               "rejecting force recovery of partitions from brokers {}, ntp: "
-              "{}, move in progress: {}, expected replica set: {}, current "
+              "{}, expected replica set: {}, current "
               "assignment: {}, the state may have changed since the original "
               "request was made, try again.",
               nodes,

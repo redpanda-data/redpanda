@@ -176,10 +176,15 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self._wait_until_no_leader()
         return (killed, alive)
 
-    def _do_force_reconfiguration(self, replicas):
+    def _do_reconfigure(self, replicas, force: bool):
         try:
-            self.redpanda._admin.force_set_partition_replicas(
-                topic=self.topic, partition=0, replicas=replicas)
+            if force:
+                self.redpanda._admin.force_set_partition_replicas(
+                    topic=self.topic, partition=0, replicas=replicas)
+            else:
+                self.redpanda._admin.set_partition_replicas(topic=self.topic,
+                                                            partition=0,
+                                                            replicas=replicas)
             return True
         except requests.exceptions.RetryError:
             return False
@@ -188,17 +193,60 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         except requests.exceptions.HTTPError:
             return False
 
-    def _force_reconfiguration(self, new_replicas):
+    def reconfigure(self, new_replicas, force: bool):
         replicas = [
             dict(node_id=replica.node_id, core=replica.core)
             for replica in new_replicas
         ]
         self.redpanda.logger.info(f"Force reconfiguring to: {replicas}")
         self.redpanda.wait_until(
-            lambda: self._do_force_reconfiguration(replicas=replicas),
+            lambda: self._do_reconfigure(replicas=replicas, force=force),
             timeout_sec=60,
             backoff_sec=2,
             err_msg=f"Unable to force reconfigure {self.topic}/0 to {replicas}"
+        )
+
+    def _force_reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=True)
+
+    def _reconfiguration(self, replicas):
+        self.reconfigure(new_replicas=replicas, force=False)
+
+    def _cancel_reconfiguration(self):
+        def do_cancel():
+            try:
+                self.redpanda._admin.cancel_partition_move(
+                    topic=self.topic,
+                    partition=0,
+                    node=random.choice(self.redpanda.started_nodes()))
+                return True
+            except requests.exceptions.RetryError:
+                return False
+            except requests.exceptions.ConnectionError:
+                return False
+            except requests.exceptions.HTTPError:
+                return False
+
+        self.redpanda.wait_until(
+            do_cancel,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Unable to cancel reconfiguration for {self.topic}/0")
+
+    def _wait_for_reconfigurations(self):
+        def has_reconfigurations():
+            try:
+                return len(
+                    self.redpanda._admin.list_reconfigurations(
+                        node=random.choice(self.redpanda.started_nodes()))) > 0
+            except:
+                return False
+
+        self.redpanda.wait_until(
+            has_reconfigurations,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Timed out waiting for reconfigurations for {self.topic}/0"
         )
 
     def _start_consumer(self):
@@ -301,6 +349,74 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                                                  hosts=self._alive_nodes(),
                                                  timeout_s=self.WAIT_TIMEOUT_S)
 
+    @cluster(num_nodes=5)
+    # If cancellation is True, cancels the in progress stuck move and then force reconfigures
+    @matrix(cancellation=[True, False])
+    def test_reconfiguring_in_progress_move(self, cancellation):
+        """
+        Tests that a partition move stuck in progress can be reconfigured. Additionally also checks that a stuck cancellation can be reconfigured."""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        assert alive, "At least one replica should be alive"
+
+        # Issue a regular partition move while the partition is leaderless.
+        # this should be stuck
+        self._reconfiguration(alive)
+        self._wait_for_reconfigurations()
+        if cancellation:
+            # Cancel the stuck move
+            self._cancel_reconfiguration()
+
+        # Randomness here may choose existing replicas or a totally new set of replicas.
+        # Both are interesting cases to test.
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica), core=0))
+            for replica in random.sample(self.redpanda.started_nodes(), 3)
+        ]
+
+        self._force_reconfiguration(new_replicas)
+
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=3,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
+    @cluster(num_nodes=5)
+    def test_reconfiguring_force_reconfiguration(self):
+        """
+        Test ensures that a stuck force reconfiguration can be force reconfigured"""
+        self.start_redpanda(num_nodes=5)
+        assert self.redpanda
+
+        self.topic = "topic"
+        self.client().create_topic(
+            TopicSpec(name=self.topic, replication_factor=3))
+
+        (killed, alive) = self._stop_majority_nodes(replication=3)
+
+        # This would never finish
+        self._force_reconfiguration([killed[0]])
+        self._wait_for_reconfigurations()
+
+        new_replica_count = random.choice([1, 3])
+        new_replicas = [
+            Replica(dict(node_id=self.redpanda.node_id(replica),
+                         core=0)) for replica in random.sample(
+                             self.redpanda.started_nodes(), new_replica_count)
+        ]
+        self._force_reconfiguration(new_replicas)
+        self.redpanda._admin.await_stable_leader(topic=self.topic,
+                                                 replication=new_replica_count,
+                                                 hosts=self._alive_nodes(),
+                                                 timeout_s=self.WAIT_TIMEOUT_S)
+
     @cluster(num_nodes=7)
     @matrix(target_replica_set_size=[1, 3])
     def test_reconfiguring_all_replicas_lost(self, target_replica_set_size):
@@ -354,7 +470,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
             Replica(dict(node_id=self.redpanda.node_id(replica), core=0)) for
             replica in self.redpanda.started_nodes()[:target_replica_set_size]
         ]
-        self._force_reconfiguration(new_replicas=new_replicas)
+        self._force_reconfiguration(new_replicas)
 
         self.redpanda._admin.await_stable_leader(
             topic=self.topic,

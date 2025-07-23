@@ -140,10 +140,10 @@ public:
             }
         }
 
-        in_progress_update(const in_progress_update&) = delete;
+        in_progress_update(const in_progress_update&) = default;
         in_progress_update(in_progress_update&&) = default;
-        in_progress_update& operator=(const in_progress_update&) = delete;
-        in_progress_update& operator=(in_progress_update&&) = delete;
+        in_progress_update& operator=(const in_progress_update&) = default;
+        in_progress_update& operator=(in_progress_update&&) = default;
 
         const reconfiguration_state& get_state() const { return _state; }
 
@@ -156,6 +156,26 @@ public:
             }
             _state = state;
             _last_cmd_revision = rev;
+        }
+
+        void force_set_state(
+          const replicas_t& new_replicas,
+          model::revision_id rev,
+          reconfiguration_policy policy) {
+            /**
+             * a move from (A (prev) -> B (target)) -> C (force, new_replicas)
+             * is redefined to
+             * A -> C irrespective of whether the current move is a
+             * cancellation.
+             *
+             * This is logically equivalent to this in progress move never
+             * happening, and this makes it easy to account for allocation
+             * changes.
+             */
+            _target_replicas = new_replicas;
+            _last_cmd_revision = _update_revision = rev;
+            _policy = policy;
+            _state = reconfiguration_state::force_update;
         }
 
         const replicas_t& get_previous_replicas() const {
@@ -551,6 +571,12 @@ public:
     chunked_vector<model::ntp> all_ntps_moving_per_node(model::node_id) const;
 
     chunked_vector<model::ntp> all_updates_in_progress() const;
+
+    /**
+     * Returns the in-progress update for the given ntp, if it exists.
+     */
+    std::optional<in_progress_update>
+    update_in_progress(const model::ntp&) const;
 
     model::revision_id last_applied_revision() const {
         return _last_applied_revision_id;

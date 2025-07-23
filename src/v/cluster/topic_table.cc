@@ -720,23 +720,41 @@ topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
         co_return errc::partition_disabled;
     }
 
-    if (auto it = _updates_in_progress.find(cmd.key);
-        it != _updates_in_progress.end()) {
-        co_return errc::update_in_progress;
+    const auto& new_replicas = cmd.value.replicas;
+    auto update_revision = model::revision_id{o};
+    auto& current_assignment = current_assignment_it->second;
+
+    auto it = _updates_in_progress.find(cmd.key);
+    if (it != _updates_in_progress.end()) {
+        // update in progress, amend it to update target replicas.
+        it->second.force_set_state(
+          new_replicas,
+          model::revision_id{o},
+          reconfiguration_policy::full_local_retention);
+    } else {
+        _updates_in_progress.emplace(
+          cmd.key,
+          in_progress_update(
+            current_assignment.replicas,
+            new_replicas,
+            reconfiguration_state::force_update,
+            update_revision,
+            /**
+             * For now use default full local retention policy when force
+             * reconfiguring partition.
+             */
+            reconfiguration_policy::full_local_retention,
+            &_probe));
     }
+    _topics_map_revision++;
 
-    change_partition_replicas(
-      cmd.key,
-      cmd.value.replicas,
-      current_assignment_it->second,
-      o,
-      true,
-      /**
-       * For now use default full local retention policy when force
-       * reconfiguring partition.
-       */
-      reconfiguration_policy::full_local_retention);
+    current_assignment.replicas = cmd.value.replicas;
 
+    _pending_ntp_deltas.emplace_back(
+      std::move(cmd.key),
+      current_assignment.group,
+      update_revision,
+      topic_table_ntp_delta_type::replicas_updated);
     co_await notify_waiters();
 
     co_return errc::success;
@@ -835,9 +853,6 @@ std::error_code topic_table::validate_force_reconfigurable_partition(
     const auto& topic_md = get_topic_metadata_ref({ntp.ns, ntp.tp.topic});
     if (!topic_md || topic_md->get().get_revision() != entry.topic_revision) {
         return errc::topic_not_exists;
-    }
-    if (is_update_in_progress(ntp)) {
-        return errc::update_in_progress;
     }
     const auto& current_assignment = get_partition_assignment(ntp);
     if (!current_assignment) {
@@ -1958,6 +1973,15 @@ chunked_vector<model::ntp> topic_table::all_updates_in_progress() const {
     return ret;
 }
 
+std::optional<topic_table::in_progress_update>
+topic_table::update_in_progress(const model::ntp& ntp) const {
+    auto it = _updates_in_progress.find(ntp);
+    if (it == _updates_in_progress.end()) {
+        return std::nullopt;
+    }
+    return std::make_optional<in_progress_update>(it->second);
+}
+
 void topic_table::change_partition_replicas(
   model::ntp ntp,
   const replicas_t& new_assignment,
@@ -1981,7 +2005,6 @@ void topic_table::change_partition_replicas(
         update_revision,
         policy,
         &_probe));
-    auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
     _topics_map_revision++;
