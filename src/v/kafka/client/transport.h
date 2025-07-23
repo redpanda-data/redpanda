@@ -20,7 +20,6 @@
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/wire.h"
 #include "net/transport.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -142,17 +141,14 @@ public:
                     request_version)));
             }
         }
-        return _dispatch_mutex
-          .with([this, r = std::move(r), request_version]() mutable {
-              return send_recv(
-                T::api_type::key,
-                request_version,
-                [this, request_version, r = std::move(r)](
-                  protocol::encoder& wr) mutable {
-                    write_header(wr, T::api_type::key, request_version);
-                    r.encode(wr, request_version);
-                });
-          })
+        return send_recv(
+                 T::api_type::key,
+                 request_version,
+                 [this, request_version, r = std::move(r)](
+                   protocol::encoder& wr) mutable {
+                     write_header(wr, T::api_type::key, request_version);
+                     r.encode(wr, request_version);
+                 })
           .then([response_version](iobuf buf) {
               response_type r;
               r.decode(std::move(buf), response_version);
@@ -186,7 +182,7 @@ private:
         }
         _correlation = _correlation + correlation_id(1);
     }
-    mutex _dispatch_mutex{"kafka::client::transport::dispatch_mutex"};
+
     correlation_id _correlation{0};
     std::optional<ss::sstring> _client_id;
 };

@@ -374,22 +374,3 @@ redpanda_cc_btest(
         "@seastar//:testing",
     ],
 )
-
-redpanda_cc_gtest(
-    name = "cluster_test",
-    timeout = "short",
-    srcs = [
-        "cluster_test.cc",
-    ],
-    deps = [
-        "//src/v/kafka/client:brokers",
-        "//src/v/kafka/client:cluster",
-        "//src/v/kafka/client:utils",
-        "//src/v/kafka/protocol",
-        "//src/v/kafka/protocol:offset_commit",
-        "//src/v/model",
-        "//src/v/redpanda/tests:fixture",
-        "//src/v/test_utils:gtest",
-        "@googletest//:gtest",
-    ],
-)
