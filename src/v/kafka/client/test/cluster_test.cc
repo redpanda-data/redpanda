@@ -210,9 +210,11 @@ TEST_F(ClusterFixture, TestDispatchingMultipleRequests) {
                          test_batch(i),
                          acks_all);
                    })
-                 | std::views::transform([&](kafka::produce_request req) {
-                       return cluster.dispatch_to(*leader_id, std::move(req))
-                         .discard_result();
+                 | std::views::transform([&](auto&& req) {
+                       return cluster
+                         .dispatch_to(
+                           leader_id, std::forward<decltype(req)>(req))
+                         .then([](auto&&) { return; });
                    });
     ss::when_all_succeed(std::ranges::to<std::vector<ss::future<>>>(range))
       .get();
