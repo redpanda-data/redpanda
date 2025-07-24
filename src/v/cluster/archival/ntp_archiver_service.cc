@@ -1477,7 +1477,6 @@ ntp_archiver::maybe_upload_aborted_tx(
   cloud_storage::remote_segment_path path,
   std::optional<fragmented_vector<model::tx_range>> tx,
   retry_chain_node& parent_rtc) {
-    // We're not doing any retries here so initial backoff could be any
     retry_chain_node fib(&parent_rtc);
     if (tx.has_value() && !tx.value().empty()) {
         cloud_storage::tx_range_manifest manifest(path, std::move(tx).value());
@@ -1492,8 +1491,7 @@ ss::future<> ntp_archiver::upload_index(
   ss::sstring path, cloud_storage::offset_index index) {
     retry_chain_node rtc{
       _conf->segment_upload_timeout(),
-      100ms,
-      retry_strategy::disallow,
+      _conf->upload_loop_initial_backoff(),
       &_rtcnode};
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     auto fut = co_await ss::coroutine::as_future(_remote.upload_index(
@@ -1508,11 +1506,9 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
   segment_collector_stream strm,
   const cloud_storage::segment_meta& meta,
   std::optional<fragmented_vector<model::tx_range>> tx_ranges) {
-    // We're not doing any retries here so initial backoff could be any
     retry_chain_node rtc(
       _conf->segment_upload_timeout(),
-      100ms,
-      retry_strategy::disallow,
+      _conf->upload_loop_initial_backoff(),
       &_rtcnode);
     retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
     auto h = _gate.hold();
