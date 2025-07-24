@@ -91,7 +91,6 @@ public:
       kafka::create_topics_request req,
       kafka::api_version version = kafka::api_version(2)) {
         auto client = make_kafka_client().get();
-        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
         auto topics = req.data.topics
                         .copy(); // save a copy because we will move out of req
@@ -125,6 +124,8 @@ public:
             // that the topic creation is correctly propogated to the
             // non-controller broker.
         }
+
+        client.stop().then([&client] { client.shutdown(); }).get();
     }
 
     void verify_response(
@@ -305,7 +306,6 @@ FIXTURE_TEST(read_replica_and_remote_write, create_topic_fixture) {
         {"redpanda.remote.write", "true"}});
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(2)).get();
 
@@ -352,7 +352,6 @@ FIXTURE_TEST(create_multiple_topics_mixed_invalid, create_topic_fixture) {
         {"retention.bytes", "this_should_be_an_integer"}});
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp = client
                   .dispatch(make_req({topic_a, topic_b}), kafka::api_version(5))
@@ -390,7 +389,6 @@ FIXTURE_TEST(create_multiple_topics_all_invalid, create_topic_fixture) {
       std::map<ss::sstring, ss::sstring>{{"segment.ms", "0x2A"}});
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp = client
                   .dispatch(
@@ -427,7 +425,6 @@ FIXTURE_TEST(create_multiple_topics_all_invalid_name, create_topic_fixture) {
     auto topic_invalid = make_topic("$nope");
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp
       = client
@@ -470,7 +467,6 @@ FIXTURE_TEST(invalid_boolean_property, create_topic_fixture) {
         {"redpanda.remote.write", "affirmative"}});
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
 
@@ -491,7 +487,6 @@ FIXTURE_TEST(case_insensitive_boolean_property, create_topic_fixture) {
         {"redpanda.remote.write", "tRuE"}, {"redpanda.remote.read", "FALSE"}});
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     auto resp = client.dispatch(make_req({topic}), kafka::api_version(5)).get();
 
@@ -523,7 +518,6 @@ FIXTURE_TEST(unlicensed_permit_if_config_disabled, create_topic_fixture) {
         kafka::topic_property_record_value_schema_id_validation_compat, true)};
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     for (const auto& [name, props] : enterprise_props) {
@@ -578,7 +572,6 @@ FIXTURE_TEST(unlicensed_rejected, create_topic_fixture) {
           .racks = {model::rack_id{"A"}}})};
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     for (const auto& [name, props] : enterprise_props) {
@@ -611,7 +604,6 @@ FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
       lconf().cloud_storage_enable_remote_write.name()};
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     for (const auto& config : si_configs) {
@@ -631,7 +623,6 @@ FIXTURE_TEST(unlicensed_reject_defaults, create_topic_fixture) {
 
 FIXTURE_TEST(create_dry_run_rejects_existing, create_topic_fixture) {
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     auto topic = make_topic(ssx::sformat("topic_foo"));
@@ -666,7 +657,6 @@ FIXTURE_TEST(create_dry_run_rejects_existing, create_topic_fixture) {
 
 FIXTURE_TEST(create_topic_assigns_topic_id, create_topic_fixture) {
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     auto topic = make_topic(ssx::sformat("topic_foo"));

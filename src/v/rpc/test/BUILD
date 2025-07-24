@@ -83,6 +83,22 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "exponential_backoff",
+    timeout = "short",
+    srcs = [
+        "exponential_backoff.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/rpc",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
+redpanda_cc_btest(
     name = "connection_cache_test",
     timeout = "short",
     srcs = [
@@ -126,7 +142,6 @@ redpanda_cc_btest(
         "//src/v/test_utils:fixture",
         "//src/v/test_utils:random_bytes",
         "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:backoff_policy",
         "@boost//:test",
         "@seastar",
         "@seastar//:testing",

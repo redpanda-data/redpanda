@@ -34,8 +34,7 @@ kafka_offset_for_epoch_transport::offsets_for_leaders(
         });
     }
     req.data.topics.emplace_back(std::move(t));
-    auto resp = co_await _transport.dispatch(
-      std::move(req), kafka::api_version(2));
+    auto resp = co_await _transport.dispatch(std::move(req));
     if (resp.data.topics.size() != 1) {
         throw std::runtime_error(
           fmt::format("Expected 1 topic, got {}", resp.data.topics.size()));

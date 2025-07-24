@@ -22,7 +22,6 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:random",
         "//src/v/transform/rpc",
-        "//src/v/utils:backoff_policy",
         "//src/v/utils:unresolved_address",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@googletest//:gtest",

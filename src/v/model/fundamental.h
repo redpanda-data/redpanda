@@ -292,7 +292,6 @@ struct topic_partition_view {
 
     model::topic_view topic;
     model::partition_id partition;
-    friend std::ostream& operator<<(std::ostream&, const topic_partition_view&);
     template<typename H>
     friend H AbslHashValue(H h, const topic_partition_view& tp) {
         return H::combine(std::move(h), tp.topic, tp.partition);

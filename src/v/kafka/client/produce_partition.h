@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include "kafka/client/config_utils.h"
 #include "kafka/client/configuration.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/produce_batcher.h"
 #include "ssx/future-util.h"
 

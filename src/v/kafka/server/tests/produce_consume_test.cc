@@ -11,7 +11,6 @@
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/snc_quota_manager.h"
@@ -108,7 +107,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
-        return producer.dispatch(std::move(req), kafka::api_version(7));
+        return producer.dispatch(std::move(req));
     }
 
     ss::future<kafka::produce_response> produce_raw(
@@ -175,15 +174,6 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
     uint64_t bytes_by_compression(model::compression compression_type) {
         return kafka_probe()._bytes_by_compression.at((size_t)compression_type);
-    }
-
-    ~prod_consume_fixture() {
-        ss::parallel_for_each(consumers, [](kafka::client::transport& t) {
-            return t.stop();
-        }).get();
-        ss::parallel_for_each(producers, [](kafka::client::transport& t) {
-            return t.stop();
-        }).get();
     }
 
     std::vector<model::offset> fetch_offsets;
@@ -697,6 +687,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     };
     req.data.topics.emplace_back(std::move(t));
     auto resp = client.dispatch(std::move(req), kafka::api_version(2)).get();
+    client.stop().then([&client] { client.shutdown(); }).get();
     BOOST_REQUIRE_EQUAL(1, resp.data.topics.size());
     const auto& topic_resp = resp.data.topics[0];
     BOOST_REQUIRE_EQUAL(1, topic_resp.partitions.size());
@@ -728,7 +719,6 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
     auto log = partition->log();
 
     tests::kafka_produce_transport producer(make_kafka_client().get());
-    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
     producer.start().get();
     producer
       .produce_to_partition(
@@ -764,9 +754,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
 
     tests::kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    auto deferred_c_close = ss::defer([&consumer] { consumer.stop().get(); });
     tests::kafka_delete_records_transport deleter(make_kafka_client().get());
-    auto deferred_d_close = ss::defer([&deleter] { deleter.stop().get(); });
     deleter.start().get();
 
     // At this point, we have three batches:
@@ -865,7 +853,6 @@ FIXTURE_TEST(test_produce_bad_timestamps, prod_consume_fixture) {
 
     auto producer = tests::kafka_produce_transport(make_kafka_client().get());
     producer.start().get();
-    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     // helper to produce a bunch of messages with some drift applied to the
     // timestamps. the drift is the same for all the messages, but a more
@@ -931,7 +918,6 @@ FIXTURE_TEST(test_compression_metrics, prod_consume_fixture) {
 
     auto producer = tests::kafka_produce_transport(make_kafka_client().get());
     producer.start().get();
-    auto deferred_close = ss::defer([&producer] { producer.stop().get(); });
 
     auto produce_messages = [&](ctype compression) {
         producer

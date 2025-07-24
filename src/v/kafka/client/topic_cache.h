@@ -11,11 +11,15 @@
 
 #pragma once
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
-#include "container/chunked_hash_map.h"
 #include "container/fragmented_vector.h"
+#include "kafka/client/partitioners.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 
 #include <seastar/core/future.hh>
 
@@ -24,14 +28,14 @@ namespace kafka::client {
 class topic_cache {
     struct partition_data {
         model::node_id leader;
-        kafka::leader_epoch leader_epoch{invalid_leader_epoch};
     };
 
     struct topic_data {
-        chunked_hash_map<model::partition_id, partition_data> partitions;
+        partitioner partitioner_func;
+        absl::flat_hash_map<model::partition_id, partition_data> partitions;
     };
 
-    using topics_t = chunked_hash_map<model::topic, topic_data>;
+    using topics_t = absl::node_hash_map<model::topic, topic_data>;
 
 public:
     topic_cache() = default;
@@ -42,12 +46,14 @@ public:
     ~topic_cache() noexcept = default;
 
     /// \brief Apply the given metadata response.
-    void apply(const small_fragment_vector<metadata_response::topic>& topics);
+    void apply(small_fragment_vector<metadata_response::topic>&& topics);
 
     /// \brief Obtain the leader for the given topic-partition
-    std::optional<model::node_id> leader(model::topic_partition_view) const;
-    std::optional<kafka::leader_epoch>
-      leader_epoch(model::topic_partition_view) const;
+    model::node_id leader(model::topic_partition tp) const;
+
+    /// \brief Obtain the partition_id for the given record
+    model::partition_id
+    partition_for(model::topic_view tv, const record_essence& rec);
 
 private:
     /// \brief Cache of topic information.

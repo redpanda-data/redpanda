@@ -13,60 +13,14 @@
 
 #include "kafka/client/broker.h"
 #include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/offset_commit.h"
 #include "utils/retry.h"
 
 namespace kafka::client {
-/**
- * Default API versions for Kafka APIs used by the client.
- */
-inline api_version api_version_for(api_key key) {
-    switch (key) {
-    case offset_fetch_api::key:
-        return api_version(4);
-    case fetch_api::key:
-        return api_version(10);
-    case list_offsets_api::key:
-        return api_version(3);
-    case produce_api::key:
-        return api_version(7);
-    case offset_commit_api::key:
-        return api_version(7);
-    case describe_groups_api::key:
-        return api_version(2);
-    case heartbeat_api::key:
-        return api_version(3);
-    case join_group_api::key:
-        return api_version(4);
-    case sync_group_api::key:
-        return api_version(3);
-    case leave_group_api::key:
-        return api_version(2);
-    case metadata_api::key:
-        return api_version(8);
-    case find_coordinator_api::key:
-        return api_version(2);
-    case list_groups_api::key:
-        return api_version(2);
-    case create_topics_api::key:
-        return api_version(6);
-    case sasl_handshake_api::key:
-        return api_version(1);
-    case delete_records_api::key:
-        return api_version(2);
-    case offset_for_leader_epoch_api::key:
-        return api_version(2);
-    case sasl_authenticate_api::key:
-        return api_version(1);
-    case describe_configs_api::key:
-        return api_version(4);
-    default:
-        throw std::runtime_error(
-          fmt::format("Unsupported API key: {}", to_string(key)));
-    }
-}
+
 /// \brief Perform an action with retry on failure.
 ///
 /// If the action returns an error, it is retried with a backoff.
@@ -171,13 +125,7 @@ ss::future<shared_broker_t> find_coordinator_with_retry_and_mitigation(
              retry_base_backoff,
              [group_id, name, &cluster_brokers]() {
                  return cluster_brokers.any()
-                   ->dispatch(
-                     find_coordinator_request(group_id),
-                     api_version_for(find_coordinator_request::api_type::key))
-                   .then([](response_t resp) {
-                       return std::get<find_coordinator_response>(
-                         std::move(resp));
-                   })
+                   ->dispatch(find_coordinator_request(group_id))
                    .then([group_id, name](find_coordinator_response res) {
                        if (res.data.error_code != error_code::none) {
                            return ss::make_exception_future<

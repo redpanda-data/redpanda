@@ -926,8 +926,7 @@ public:
             auto msg = client_first.message();
             client_first_req.data.auth_bytes = bytes(msg.cbegin(), msg.cend());
         }
-        auto client_first_resp
-          = client.dispatch(client_first_req, kafka::api_version{1}).get();
+        auto client_first_resp = client.dispatch(client_first_req).get();
         BOOST_REQUIRE_EQUAL(
           client_first_resp.data.error_code, kafka::error_code::none);
         return security::server_first_message(
@@ -942,8 +941,7 @@ public:
             auto msg = client_final.message();
             client_last_req.data.auth_bytes = bytes(msg.cbegin(), msg.cend());
         }
-        auto client_last_resp
-          = client.dispatch(client_last_req, kafka::api_version{1}).get();
+        auto client_last_resp = client.dispatch(client_last_req).get();
 
         BOOST_REQUIRE_EQUAL(
           client_last_resp.data.error_code, kafka::error_code::none);
@@ -956,7 +954,7 @@ public:
         kafka::sasl_handshake_request req;
         req.data.mechanism = Authenticator::name;
 
-        auto resp = client.dispatch(req, kafka::api_version{1}).get();
+        auto resp = client.dispatch(req).get();
         BOOST_REQUIRE_EQUAL(resp.data.error_code, kafka::error_code::none);
     }
 

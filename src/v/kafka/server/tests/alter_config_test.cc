@@ -618,7 +618,7 @@ FIXTURE_TEST(
     auto client = make_kafka_client().get();
     client.connect().get();
     auto resp = client.dispatch(std::move(req), kafka::api_version(1)).get();
-    client.stop().get();
+    client.stop().then([&client] { client.shutdown(); }).get();
     auto broker_id = std::to_string(resp.data.brokers[0].node_id());
 
     std::vector<ss::sstring> all_properties = {

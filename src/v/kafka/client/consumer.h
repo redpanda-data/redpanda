@@ -20,7 +20,6 @@
 #include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/topic_cache.h"
-#include "kafka/client/utils.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
@@ -109,7 +108,7 @@ private:
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
     req_res(RequestFactory req) {
         using api_t = typename std::invoke_result_t<RequestFactory>::api_type;
-        using resp_t = typename api_t::response_type;
+        using response_t = typename api_t::response_type;
         return ss::try_with_gate(_gate, [this, req{std::move(req)}]() mutable {
             auto r = req();
             kclog.debug(
@@ -118,12 +117,8 @@ private:
               api_t::name,
               r,
               _coordinator->id());
-            return _coordinator
-              ->dispatch(std::move(r), api_version_for(api_t::key), _as)
-              .then([](response_t resp) {
-                  return std::get<resp_t>(std::move(resp));
-              })
-              .then([this, req{std::move(req)}](resp_t res) mutable {
+            return _coordinator->dispatch(std::move(r))
+              .then([this, req{std::move(req)}](response_t res) mutable {
                   kclog.debug(
                     "Consumer: {}: {} res: {}, coordinator {}",
                     *this,

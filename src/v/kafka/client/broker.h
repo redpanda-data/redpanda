@@ -11,13 +11,13 @@
 
 #pragma once
 
-#include "kafka/client/api_types.h"
+#include "absl/container/flat_hash_set.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
+#include "model/metadata.h"
 #include "net/connection.h"
-#include "security/scram_algorithm.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -25,217 +25,140 @@
 #include <seastar/core/shared_ptr.hh>
 
 namespace kafka::client {
-struct api_version_range {
-    api_version min{0};
-    api_version max{0};
 
-    bool is_supported(api_version v) const { return v >= min && v <= max; }
+struct gated_mutex {
+    gated_mutex()
+      : _mutex{"gated_mutex"}
+      , _gate{} {}
 
-    friend std::ostream&
-    operator<<(std::ostream& os, const api_version_range& r);
-
-    friend bool
-    operator==(const api_version_range& lhs, const api_version_range& rhs)
-      = default;
-};
-/**
- * Broker interface that defines the methods required for a Kafka broker
- * implementation. This interface is used to abstract the communication with
- * a Kafka broker, allowing for different implementations (e.g., remote brokers,
- * mock brokers for testing, etc.) to be used interchangeably.
- */
-class broker {
-public:
-    virtual ~broker() = default;
-    virtual ss::future<response_t> dispatch(
-      request_t,
-      api_version version,
-      std::optional<std::reference_wrapper<ss::abort_source>> as = std::nullopt)
-      = 0;
-
-    virtual model::node_id id() const = 0;
-
-    virtual ss::future<> stop() = 0;
-
-    /**
-     * Returns the supported versions for the given API key. May connect to the
-     * broker if necessary.
-     */
-    virtual ss::future<std::optional<api_version_range>> get_supported_versions(
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt)
-      = 0;
-
-    virtual const net::unresolved_address& get_address() const = 0;
-};
-/**
- * Default implementation of a broker.
- */
-class remote_broker
-  : public broker
-  , public ss::enable_shared_from_this<remote_broker> {
-public:
-    remote_broker(
-      model::node_id node_id,
-      const connection_configuration& config,
-      std::unique_ptr<transport> transport);
-
-    ss::future<response_t> dispatch(
-      request_t r,
-      api_version version,
-      std::optional<std::reference_wrapper<ss::abort_source>> as
-      = std::nullopt) final;
-
-    model::node_id id() const final { return _node_id; }
-
-    ss::future<> stop() final {
-        _reconnect_as.request_abort();
-        _reconnect_mutex.broken();
-        co_await _gate.close();
-        co_await _transport->stop();
+    template<typename Func>
+    auto with(Func&& func) noexcept {
+        return ss::try_with_gate(
+          _gate, [this, func{std::forward<Func>(func)}]() mutable {
+              return _mutex.with(
+                [this, func{std::forward<Func>(func)}]() mutable {
+                    _gate.check();
+                    return func();
+                });
+          });
     }
 
-    const net::unresolved_address& get_address() const final {
-        return _transport->server_address();
+    ss::future<> close() { return _gate.close(); }
+
+    mutex _mutex{"gated_mutex"};
+    ss::gate _gate;
+};
+
+class broker : public ss::enable_lw_shared_from_this<broker> {
+public:
+    broker(model::node_id node_id, transport&& client)
+      : _node_id(node_id)
+      , _client(std::move(client))
+      , _gated_mutex{} {}
+
+    template<typename T, typename Ret = typename T::api_type::response_type>
+    requires(KafkaApi<typename T::api_type>)
+    ss::future<Ret> dispatch(T r) {
+        using api_t = typename T::api_type;
+        return _gated_mutex
+          .with([this, r{std::move(r)}]() mutable {
+              vlog(
+                kcwire.debug,
+                "{}Dispatch to node {}: {} req: {}",
+                *this,
+                _node_id,
+                api_t::name,
+                r);
+              return _client.dispatch(std::move(r)).then([this](Ret res) {
+                  vlog(
+                    kcwire.debug,
+                    "{}Dispatch from node {}: {} res: {}",
+                    *this,
+                    _node_id,
+                    api_t::name,
+                    res);
+                  return res;
+              });
+          })
+          .handle_exception_type(
+            [this](const kafka_request_disconnected_exception&) {
+                // Short read
+                return ss::make_exception_future<Ret>(
+                  broker_error(_node_id, error_code::broker_not_available));
+            })
+          .handle_exception_type([this](const std::system_error& e) {
+              if (net::is_reconnect_error(e)) {
+                  return ss::make_exception_future<Ret>(
+                    broker_error(_node_id, error_code::broker_not_available));
+              }
+              return ss::make_exception_future<Ret>(e);
+          })
+          .finally([b = shared_from_this()]() {});
     }
 
-    ss::future<std::optional<api_version_range>> get_supported_versions(
-      api_key key,
-      std::optional<std::reference_wrapper<ss::abort_source>>
-      = std::nullopt) final;
+    model::node_id id() const { return _node_id; }
+    ss::future<> stop() {
+        return _gated_mutex.close()
+          .then([this]() { return _client.stop(); })
+          .finally([b = shared_from_this()]() {});
+    }
 
 private:
-    enum class auth_state : int8_t {
-        none,
-        in_progress,
-        authenticated,
-    };
-
-    template<typename ReqT>
-    void log_request(const ReqT& request, api_version version) {
-        using api_t = typename ReqT::api_type;
-        vlog(
-          kcwire.trace,
-          "{} - node_id: {} @ {}:{} Sending request {{ api_type: {}, version: "
-          "{}, request: {} }}",
-          _config->get_client_id(),
-          _node_id,
-          _transport->server_address().host(),
-          _transport->server_address().port(),
-          api_t::name,
-          version,
-          request);
+    /// \brief Log the client ID if it exists, otherwise don't log
+    friend std::ostream& operator<<(std::ostream& os, const broker& b) {
+        if (b._client.client_id().has_value()) {
+            fmt::print(os, "{}: ", b._client.client_id().value());
+        }
+        return os;
     }
-
-    template<typename RespT>
-    void log_response(const RespT& resp) {
-        using api_t = typename RespT::api_type;
-        vlog(
-          kcwire.trace,
-          "{} - node_id: {} @ {}:{} Received response {{ api_type: {}, "
-          "response: {} }}",
-          _config->get_client_id(),
-          _node_id,
-          _transport->server_address().host(),
-          _transport->server_address().port(),
-          api_t::name,
-          resp);
-    }
-
-    template<
-      typename ReqT,
-      typename RespT = typename ReqT::api_type::response_type>
-    requires(KafkaApi<typename ReqT::api_type>)
-    ss::future<RespT> do_dispatch(ReqT r, api_version version) {
-        log_request(r, version);
-        auto response = co_await _transport->dispatch(std::move(r), version);
-        log_response(r);
-        co_return response;
-    }
-    /**
-     * Connects to the broker and handles authentication if needed.
-     */
-    ss::future<> maybe_initialize_connection(
-      std::optional<std::reference_wrapper<ss::abort_source>> as);
-    ss::future<>
-    maybe_reconnect(std::optional<std::reference_wrapper<ss::abort_source>> as);
-
-    ss::future<> connect(model::timeout_clock::time_point);
-
-    ss::future<> maybe_authenticate();
-    ss::future<> initialize_versions();
-
-    ss::future<> connect_with_retries(
-      std::optional<std::reference_wrapper<ss::abort_source>>);
-
-    bool needs_authentication() const {
-        return _config->sasl_cfg.has_value()
-               && _authentication_state == auth_state::none;
-    }
-
-    api_version get_sasl_authenticate_request_version() const;
-    api_version get_sasl_handshake_request_version() const;
-
-    ss::future<> do_authenticate();
-    /*
-     * SASL handshake negotiates mechanism. In this case that process is simple:
-     * if the server doesn't support the requested mechanism there is no
-     * fallback.
-     */
-    ss::future<> do_sasl_handshake(ss::sstring mechanism);
-    template<typename ScramAlgo>
-    ss::future<>
-    do_authenticate_scram(ss::sstring username, ss::sstring password);
-    ss::future<>
-    do_authenticate_scram256(ss::sstring username, ss::sstring password);
-    ss::future<>
-    do_authenticate_scram512(ss::sstring username, ss::sstring password);
-    ss::future<> do_authenticate_oauthbearer(ss::sstring token);
-    ss::future<security::server_first_message>
-    send_scram_client_first(const security::client_first_message& client_first);
-    ss::future<security::server_final_message>
-    send_scram_client_final(const security::client_final_message& client_final);
 
     model::node_id _node_id;
-    std::unique_ptr<transport> _transport;
-    const connection_configuration* _config;
-    mutex _reconnect_mutex{"broker::reconnect_mutex"};
-    ss::gate _gate;
-    prefix_logger _logger;
-    auth_state _authentication_state = auth_state::none;
-    // We store the versions in flat has map as the number of supported
-    // versions is expected to be small.
-    absl::flat_hash_map<kafka::api_key, api_version_range> _supported_versions;
-    ss::abort_source _reconnect_as;
+    transport _client;
+    // TODO(Ben): allow overlapped requests
+    gated_mutex _gated_mutex;
 };
 
-using shared_broker_t = ss::shared_ptr<broker>;
+using shared_broker_t = ss::lw_shared_ptr<broker>;
 
 /**
  * Simple class used to create broker objects. Created broker objects use
  * configuration provided when creating the factory.
  */
 struct broker_factory {
-    virtual ss::future<shared_broker_t>
-    create_broker(model::node_id, net::unresolved_address addr) = 0;
-    virtual ~broker_factory() = default;
-};
-
-/**
- * Simple class used to create broker objects. Created broker objects use
- * configuration provided when creating the factory.
- */
-struct remote_broker_factory : public broker_factory {
-    remote_broker_factory(
+    broker_factory(
       const connection_configuration& config, prefix_logger& logger);
 
     ss::future<shared_broker_t>
-    create_broker(model::node_id, net::unresolved_address addr) final;
+    create_broker(model::node_id, net::unresolved_address addr);
 
 private:
     const connection_configuration& _config;
     prefix_logger* _logger;
     ss::sstring _client_id;
+};
+
+struct broker_hash {
+    using is_transparent = void;
+    size_t operator()(const shared_broker_t& b) const {
+        return absl::Hash<model::node_id>{}(b->id());
+    }
+    size_t operator()(model::node_id n_id) const {
+        return absl::Hash<model::node_id>{}(n_id);
+    }
+};
+
+struct broker_eq {
+    using is_transparent = void;
+    bool
+    operator()(const shared_broker_t& lhs, const shared_broker_t& rhs) const {
+        return lhs->id() == rhs->id();
+    }
+    bool operator()(model::node_id node_id, const shared_broker_t& b) const {
+        return node_id == b->id();
+    }
+    bool operator()(const shared_broker_t& b, model::node_id node_id) const {
+        return b->id() == node_id;
+    }
 };
 
 } // namespace kafka::client

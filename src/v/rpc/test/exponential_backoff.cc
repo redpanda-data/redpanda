@@ -11,15 +11,16 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <chrono>
 #define BOOST_TEST_MODULE bytes
-#include "utils/backoff_policy.h"
+#include "rpc/backoff_policy.h"
 
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(exponential_backoff_policy_test) {
     using namespace std::chrono_literals;
-    backoff_policy p = make_exponential_backoff_policy<ss::lowres_clock>(
-      1s, 120s);
+    rpc::backoff_policy p
+      = rpc::make_exponential_backoff_policy<ss::lowres_clock>(1s, 120s);
 
     BOOST_CHECK(p.current_backoff_duration() == 0s);
     p.next_backoff();

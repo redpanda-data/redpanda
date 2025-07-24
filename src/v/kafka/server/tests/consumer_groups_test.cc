@@ -125,8 +125,7 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
         auto req = offset_commit_request{
           .data{.group_id = kafka::group_id{"foo-topics"}, .topics = {}}};
         req.data.group_instance_id = gr;
-        auto resp
-          = client.dispatch(std::move(req), kafka::api_version(7)).get();
+        auto resp = client.dispatch(std::move(req)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
     {
@@ -138,8 +137,7 @@ FIXTURE_TEST(empty_offset_commit_request, consumer_offsets_fixture) {
               .name = model::topic{"foo"}, .partitions = {}})};
 
         req.data.group_instance_id = gr;
-        auto resp
-          = client.dispatch(std::move(req), kafka::api_version(7)).get();
+        auto resp = client.dispatch(std::move(req)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
 }
@@ -155,13 +153,12 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
     add_topic(model::topic_namespace_view{model::kafka_namespace, t}).get();
     wait_for_consumer_offsets_topic(gi);
 
-    auto client = std::make_unique<kafka::client::transport>(
-      make_kafka_client().get());
+    auto client = make_kafka_client().get();
     auto client_stop = [&client] {
-        client->stop().then([&client] { client->shutdown(); }).get();
+        client.stop().then([&client] { client.shutdown(); }).get();
     };
     auto deferred = ss::defer(decltype(client_stop)(client_stop));
-    client->connect().get();
+    client.connect().get();
 
     auto gntp = app.coordinator_ntp_mapper.local().ntp_for(g);
     BOOST_REQUIRE(gntp);
@@ -179,8 +176,7 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
                     offset_commit_request_partition{
                       .partition_index = model::partition_id{0},
                       .committed_offset = model::offset{0}})})}};
-            auto res
-              = client->dispatch(std::move(req), kafka::api_version(7)).get();
+            auto res = client.dispatch(std::move(req)).get();
             if (!res.data.errored()) {
                 return true;
             }
@@ -205,9 +201,8 @@ FIXTURE_TEST(block_test, consumer_offsets_fixture) {
         consumer_offsets_fixture::restart(should_wipe::no);
         wait_for_consumer_offsets_topic(gi);
         wait_for_leader(*gntp).get();
-        client = std::make_unique<kafka::client::transport>(
-          make_kafka_client().get());
-        client->connect().get();
+        client = make_kafka_client().get();
+        client.connect().get();
     };
 
     BOOST_REQUIRE(can_commit_offset());
@@ -262,8 +257,7 @@ FIXTURE_TEST(conditional_retention_test, consumer_offsets_fixture) {
     for (int i = 0; i < 10; i++) {
         auto req = rand_offset_commit();
         req.data.group_instance_id = gr;
-        auto resp
-          = client.dispatch(std::move(req), kafka::api_version(7)).get();
+        auto resp = client.dispatch(std::move(req)).get();
         BOOST_REQUIRE(!resp.data.errored());
     }
     auto part = app.partition_manager.local().get(model::ntp{

@@ -48,7 +48,6 @@ public:
         }};
 
         auto client = make_kafka_client().get();
-        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
         auto resp
           = client.dispatch(std::move(req), kafka::api_version(2)).get();
@@ -57,7 +56,6 @@ public:
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
         auto client = make_kafka_client().get();
-        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
 
         return client.dispatch(std::move(req), kafka::api_version(2)).get();
@@ -79,7 +77,6 @@ public:
 
     kafka::metadata_response get_topic_metadata(const model::topic& tp) {
         auto client = make_kafka_client().get();
-        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
         chunked_vector<kafka::metadata_request_topic> topics;
         topics.push_back(kafka::metadata_request_topic{.name{tp}});
@@ -87,7 +84,7 @@ public:
           .data
           = {.topics = std::move(topics), .allow_auto_topic_creation = false},
           .list_all_topics = false};
-        return client.dispatch(std::move(md_req), kafka::api_version(7)).get();
+        return client.dispatch(std::move(md_req)).get();
     }
 
     ss::future<kafka::metadata_response> get_all_metadata() {

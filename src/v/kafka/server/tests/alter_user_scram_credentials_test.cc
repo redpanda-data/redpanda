@@ -56,7 +56,6 @@ FIXTURE_TEST(
     auto disable_sasl_defer = ss::defer([this] { disable_sasl(); });
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
     authn_kafka_client(client, user_name_256, password_256);
 
@@ -87,7 +86,6 @@ FIXTURE_TEST(
         password_256, security::scram_sha256::min_iterations);
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -158,9 +156,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(!errors_in_acl_results(acl_result));
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
-
     authn_kafka_client<security::scram_sha256_authenticator>(
       client, user_name_256, password_256);
 
@@ -188,7 +184,6 @@ FIXTURE_TEST(
 
     // now create a new client and authenticate with the created user
     auto client2 = make_kafka_client().get();
-    auto deferred_close_2 = ss::defer([&client2] { client2.stop().get(); });
     client2.connect().get();
     authn_kafka_client<security::scram_sha512_authenticator>(
       client2, user_name_512, password_512);
@@ -204,7 +199,6 @@ FIXTURE_TEST(
     create_user(user_name_256, creds_256);
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -228,8 +222,8 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
+
     kafka::alter_user_scram_credentials_request req;
     req.data.deletions.emplace_back(kafka::scram_credential_deletion{
       .name = kafka::scram_user_name{"nonexistant_user"},
@@ -253,7 +247,6 @@ FIXTURE_TEST(
     create_user(user_name_256, creds_256);
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -281,7 +274,6 @@ FIXTURE_TEST(
         password_512, security::scram_sha512::min_iterations);
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -313,7 +305,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -339,7 +330,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -365,7 +355,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -391,7 +380,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -434,7 +422,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -478,7 +465,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;
@@ -543,7 +529,6 @@ FIXTURE_TEST(
     wait_for_controller_leadership().get();
 
     auto client = make_kafka_client().get();
-    auto deferred_close = ss::defer([&client] { client.stop().get(); });
     client.connect().get();
 
     kafka::alter_user_scram_credentials_request req;

@@ -9,6 +9,7 @@
 
 #include "model/timeout_clock.h"
 #include "random/generators.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/exceptions.h"
 #include "rpc/logger.h"
@@ -21,7 +22,6 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/random_bytes.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/metrics_api.hh>
@@ -318,7 +318,7 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
           .emplace(
             node_id,
             ccfg,
-            make_exponential_backoff_policy<rpc::clock_type>(
+            rpc::make_exponential_backoff_policy<rpc::clock_type>(
               std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
           .get();
         auto reconnect_transport = cache.get(node_id);
@@ -354,7 +354,7 @@ FIXTURE_TEST(rpc_abort_from_cache, rpc_integration_fixture) {
       .emplace(
         node_id,
         client_config(),
-        make_exponential_backoff_policy<rpc::clock_type>(
+        rpc::make_exponential_backoff_policy<rpc::clock_type>(
           std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
       .get();
     auto reconnect_transport = cache.get(node_id);

@@ -16,10 +16,10 @@
 #include "base/outcome_future_utils.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -37,8 +37,8 @@ public:
       std::optional<connection_cache_label> label = std::nullopt)
       : _label(std::move(label)) {}
 
-    static backoff_policy default_backoff_policy() {
-        return make_exponential_backoff_policy<rpc::clock_type>(
+    static rpc::backoff_policy default_backoff_policy() {
+        return rpc::make_exponential_backoff_policy<rpc::clock_type>(
           std::chrono::seconds(1), std::chrono::seconds(15));
     }
 
@@ -47,7 +47,7 @@ public:
       model::node_id node,
       net::unresolved_address rpc_address,
       config::tls_config tls_config,
-      backoff_policy backoff = default_backoff_policy());
+      rpc::backoff_policy backoff = default_backoff_policy());
 
     /// \brief removes the node *and* closes the connection
     ss::future<> remove(model::node_id n);

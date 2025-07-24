@@ -9,16 +9,15 @@
 
 #include "kafka/client/brokers.h"
 
-#include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "ssx/future-util.h"
 
 namespace kafka::client {
 
 ss::future<> brokers::stop() {
-    _state_mutex.broken();
     return ss::parallel_for_each(
-      std::move(_brokers), [](const auto& p) { return p.second->stop(); });
+      std::move(_brokers),
+      [](const shared_broker_t& broker) { return broker->stop(); });
 }
 
 shared_broker_t brokers::any() {
@@ -26,7 +25,7 @@ shared_broker_t brokers::any() {
         throw broker_error(unknown_node_id, error_code::broker_not_available);
     }
     _next_broker = ++_next_broker % _brokers.size();
-    return std::next(_brokers.begin(), _next_broker)->second;
+    return *std::next(_brokers.begin(), _next_broker);
 }
 
 shared_broker_t brokers::find(model::node_id id) {
@@ -34,111 +33,63 @@ shared_broker_t brokers::find(model::node_id id) {
     if (b_it == _brokers.end()) {
         throw broker_error(id, error_code::broker_not_available);
     }
-    return b_it->second;
+    return *b_it;
 }
 
 ss::future<> brokers::erase(model::node_id node_id) {
-    auto u = co_await _state_mutex.get_units();
-    co_await do_erase(node_id);
-}
-
-ss::future<> brokers::do_erase(model::node_id node_id) {
     if (auto b_it = _brokers.find(node_id); b_it != _brokers.end()) {
-        auto broker = b_it->second;
+        auto broker = *b_it;
         _brokers.erase(b_it);
-        vlog(
-          _logger->debug,
-          "Erasing broker {} - {}:{}",
-          broker->id(),
-          broker->get_address().host(),
-          broker->get_address().port());
         return broker->stop().finally([broker]() {});
     }
     return ss::now();
 }
 
-ss::future<> brokers::apply(
-  const chunked_vector<metadata_response::broker>& brokers_metadata) {
-    auto u = co_await _state_mutex.get_units();
-    chunked_vector<metadata_response::broker> brokers_to_add;
-    chunked_vector<model::node_id> brokers_to_remove;
+ss::future<> brokers::apply(chunked_vector<metadata_response::broker>&& res) {
+    using new_brokers_t = chunked_vector<metadata_response::broker>;
+    return ss::do_with(std::move(res), [this](new_brokers_t& new_brokers) {
+        auto new_brokers_begin = std::partition(
+          new_brokers.begin(),
+          new_brokers.end(),
+          [this](const metadata_response::broker& broker) {
+              return _brokers.count(broker.node_id);
+          });
 
-    for (auto& broker : brokers_metadata) {
-        auto it = _brokers.find(broker.node_id);
-        // not found broker, we need to add it
-        if (it == _brokers.end()) {
-            brokers_to_add.push_back(std::move(broker));
-            continue;
-        }
-        auto& existing_broker = it->second;
-        if (
-          existing_broker->get_address()
-          != net::unresolved_address(broker.host, broker.port)) {
-            // recreate broker with the new address
-            brokers_to_remove.push_back(broker.node_id);
-            brokers_to_add.push_back(std::move(broker));
-        }
-    }
-    for (auto& [id, b] : _brokers) {
-        auto m_it = std::ranges::find_if(
-          brokers_metadata, [id](const auto& m) { return m.node_id == id; });
+        return ssx::parallel_transform(
+                 new_brokers_begin,
+                 new_brokers.end(),
+                 [this](const metadata_response::broker& b) {
+                     return _factory.create_broker(
+                       b.node_id, net::unresolved_address(b.host, b.port));
+                 })
+          .then([this, &new_brokers, new_brokers_begin](
+                  std::vector<shared_broker_t> broker_endpoints) mutable {
+              brokers_t brokers;
+              brokers.reserve(
+                broker_endpoints.size()
+                + std::distance(new_brokers.begin(), new_brokers_begin));
+              // Insert new brokers
+              for (auto& b : broker_endpoints) {
+                  brokers.emplace(std::move(b));
+              }
+              // Insert existing brokers
+              for (auto it = new_brokers.begin(); it != new_brokers_begin;
+                   ++it) {
+                  auto b = _brokers.find(it->node_id);
+                  if (b != _brokers.end()) {
+                      brokers.emplace(*b);
+                  }
+              }
 
-        if (m_it == brokers_metadata.end()) {
-            // broker not found in the metadata, we need to remove it
-            brokers_to_remove.push_back(b->id());
-        }
-    }
-
-    co_await ss::parallel_for_each(
-      brokers_to_remove.begin(),
-      brokers_to_remove.end(),
-      [this](model::node_id id) { return do_erase(id); });
-
-    for (auto& b : brokers_to_add) {
-        auto id = b.node_id;
-        auto broker = co_await _factory->create_broker(
-          id, net::unresolved_address(b.host, b.port));
-        _brokers.emplace(id, std::move(broker));
-    }
+              std::swap(brokers, _brokers);
+          });
+    });
 }
-
 ss::future<shared_broker_t>
 brokers::create_broker(model::node_id node_id, net::unresolved_address addr) {
-    return _factory->create_broker(node_id, std::move(addr));
+    return _factory.create_broker(node_id, std::move(addr));
 }
 
 bool brokers::empty() const { return _brokers.empty(); }
 
-ss::future<std::optional<api_version_range>> brokers::supported_api_versions(
-  api_key key, std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto u = co_await _state_mutex.get_units();
-    if (_brokers.empty()) {
-        co_return std::nullopt;
-    }
-    api_version_range range{
-      .min = api_version{std::numeric_limits<int16_t>::min()},
-      .max = api_version{std::numeric_limits<int16_t>::max()}};
-    for (auto& [id, broker] : _brokers) {
-        auto v = co_await broker->get_supported_versions(key, as);
-
-        if (!v) {
-            co_return std::nullopt;
-        }
-        range.min = std::max(range.min, v->min);
-        range.max = std::min(range.max, v->max);
-    }
-    co_return range;
-}
-
-ss::future<std::optional<api_version_range>> brokers::supported_api_versions(
-  model::node_id id,
-  api_key key,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto u = co_await _state_mutex.get_units();
-    auto it = _brokers.find(id);
-    if (it == _brokers.end()) {
-        co_return std::nullopt;
-    }
-    co_return co_await it->second->get_supported_versions(key, as);
-}
 } // namespace kafka::client

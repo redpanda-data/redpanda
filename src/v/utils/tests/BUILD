@@ -560,19 +560,3 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
-
-redpanda_cc_btest(
-    name = "exponential_backoff",
-    timeout = "short",
-    srcs = [
-        "exponential_backoff.cc",
-    ],
-    cpu = 1,
-    deps = [
-        "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:backoff_policy",
-        "@boost//:test",
-        "@seastar",
-        "@seastar//:testing",
-    ],
-)

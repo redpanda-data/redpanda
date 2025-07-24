@@ -34,6 +34,7 @@
 #include "net/server.h"
 #include "net/types.h"
 #include "random/generators.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
 #include "test_utils/async.h"
@@ -43,7 +44,6 @@
 #include "transform/rpc/deps.h"
 #include "transform/rpc/serde.h"
 #include "transform/rpc/service.h"
-#include "utils/backoff_policy.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
@@ -442,7 +442,7 @@ public:
           .emplace(
             other_node,
             tcfg,
-            ::make_exponential_backoff_policy<ss::lowres_clock>(1s, 3s))
+            ::rpc::make_exponential_backoff_policy<ss::lowres_clock>(1s, 3s))
           .get();
 
         auto fplc = std::make_unique<delegating_fake_partition_leader_cache>(

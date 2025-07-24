@@ -13,10 +13,10 @@
 
 #include "base/outcome.h"
 #include "model/metadata.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "ssx/semaphore.h"
-#include "utils/backoff_policy.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>

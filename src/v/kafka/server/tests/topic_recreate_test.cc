@@ -54,9 +54,7 @@ public:
             }};
 
             auto client = make_kafka_client().get();
-            auto deferred_close = ss::defer([&client] { client.stop().get(); });
             client.connect().get();
-
             auto resp
               = client.dispatch(std::move(req), kafka::api_version(2)).get();
             if (
@@ -87,7 +85,6 @@ public:
     kafka::delete_topics_response
     send_delete_topics_request(kafka::delete_topics_request req) {
         auto client = make_kafka_client().get();
-        auto deferred_close = ss::defer([&client] { client.stop().get(); });
         client.connect().get();
 
         return client.dispatch(std::move(req), kafka::api_version(2)).get();
@@ -100,11 +97,10 @@ public:
                 std::move(client),
                 [f = std::forward<Func>(f)](
                   kafka::client::transport& client) mutable {
-                    return client.connect()
-                      .then([&client, f = std::forward<Func>(f)]() mutable {
+                    return client.connect().then(
+                      [&client, f = std::forward<Func>(f)]() mutable {
                           return f(client);
-                      })
-                      .finally([&client] { return client.stop(); });
+                      });
                 });
           });
     }
@@ -118,7 +114,7 @@ public:
               .data
               = {.topics = std::make_optional(std::move(topics)), .allow_auto_topic_creation = false},
               .list_all_topics = false};
-            return client.dispatch(std::move(md_req), kafka::api_version(8));
+            return client.dispatch(std::move(md_req));
         });
     }
 
