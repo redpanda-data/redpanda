@@ -457,13 +457,13 @@ auto client_pool::acquire_with_timeout(
            ctx = std::move(ctx)]() mutable {
               if (ctx.has_value()) {
                   vlog(
-                    pool_log.debug,
+                    pool_log.warn,
                     "{} - Lease expired after {}ms. Shutting down client...",
                     ctx.value(),
                     to / 1ms);
               } else {
                   vlog(
-                    pool_log.debug,
+                    pool_log.warn,
                     "Lease expired after {}ms. Shutting down client...",
                     to / 1ms);
               }
