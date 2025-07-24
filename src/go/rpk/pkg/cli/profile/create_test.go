@@ -87,3 +87,89 @@ func TestCombineClusterNames(t *testing.T) {
 		})
 	}
 }
+
+func TestFixFromCloudArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		exp  []string
+	}{
+		{
+			name: "no from-cloud flag",
+			args: []string{"create", "profile-name", "--from-rpk-container"},
+			exp:  []string{"create", "profile-name", "--from-rpk-container"},
+		},
+		{
+			name: "from-cloud with equals syntax",
+			args: []string{"--from-cloud=cluster-123", "profile-name"},
+			exp:  []string{"--from-cloud=cluster-123", "profile-name"},
+		},
+		{
+			name: "from-cloud with value as separate arg",
+			args: []string{"create", "--from-cloud", "cluster-123", "profile-name"},
+			exp:  []string{"create", "--from-cloud=cluster-123", "profile-name"},
+		},
+		{
+			name: "from-cloud not at index 0",
+			args: []string{"--from-cloud", "cluster-123"},
+			exp:  []string{"--from-cloud=cluster-123"},
+		},
+		{
+			name: "from-cloud at end without value",
+			args: []string{"extra-arg", "profile-name", "--from-cloud"},
+			exp:  []string{"extra-arg", "profile-name", "--from-cloud"},
+		},
+		{
+			name: "from-cloud as only arg",
+			args: []string{"--from-cloud"},
+			exp:  []string{"--from-cloud"},
+		},
+		{
+			name: "from-cloud with value as separate arg - 2nd arg",
+			args: []string{"create", "profile-name", "--from-cloud", "cluster-123"},
+			exp:  []string{"create", "profile-name", "--from-cloud=cluster-123"},
+		},
+		{
+			name: "from-cloud with cluster ID followed by another flag",
+			args: []string{"create", "--from-cloud", "cluster-123", "--verbose", "profile-name"},
+			exp:  []string{"create", "--from-cloud=cluster-123", "--verbose", "profile-name"},
+		},
+		{
+			name: "from-cloud followed by another flag (no cluster ID)",
+			args: []string{"create", "--from-cloud", "--verbose", "profile-name"},
+			exp:  []string{"create", "--from-cloud", "--verbose", "profile-name"},
+		},
+		{
+			name: "multiple from-cloud flags - last one wins",
+			args: []string{"create", "--from-cloud", "cluster-111", "--from-cloud", "cluster-222", "profile-name"},
+			exp:  []string{"create", "--from-cloud", "cluster-111", "--from-cloud=cluster-222", "profile-name"},
+		},
+		{
+			name: "from-cloud as first arg with value",
+			args: []string{"--from-cloud", "cluster-123", "create", "profile-name"},
+			exp:  []string{"--from-cloud=cluster-123", "create", "profile-name"},
+		},
+		{
+			name: "from-cloud with hyphenated cluster ID",
+			args: []string{"create", "--from-cloud", "cluster-abc-123", "profile-name"},
+			exp:  []string{"create", "--from-cloud=cluster-abc-123", "profile-name"},
+		},
+		{
+			name: "empty args slice",
+			args: []string{},
+			exp:  []string{},
+		},
+		{
+			name: "from-cloud with value containing spaces (edge case, not possible in practice rn)",
+			args: []string{"create", "--from-cloud", "cluster with spaces", "profile-name"},
+			exp:  []string{"create", "--from-cloud=cluster with spaces", "profile-name"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := fixFromCloudArgs(tt.args)
+			require.Equal(t, tt.exp, result)
+		})
+	}
+}

@@ -64,7 +64,7 @@ func (g *grub) CheckVersion() error {
 	zap.L().Sugar().Debug("Checking if GRUB is present")
 	_, err := g.commands.Which("grub2-mkconfig", g.timeout)
 	if err != nil {
-		return fmt.Errorf("Only GRUB 2 is currently supported")
+		return fmt.Errorf("only GRUB 2 is currently supported")
 	}
 	return nil
 }
@@ -145,7 +145,7 @@ func (g *grub) MakeConfig() error {
 			return err
 		}
 	}
-	return fmt.Errorf("Unable to find grub.cfg")
+	return fmt.Errorf("unable to find grub.cfg")
 }
 
 func matchAndSplitCmdOptions(optLine string) []string {

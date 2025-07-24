@@ -66,5 +66,5 @@ func TestUnvailableProvider(t *testing.T) {
 	provider[name3] = &mockProvider{false, name3, ""}
 
 	_, err := availableProviderFrom(provider)
-	require.EqualError(t, err, "The cloud provider couldn't be detected")
+	require.EqualError(t, err, "the cloud provider could not be detected")
 }

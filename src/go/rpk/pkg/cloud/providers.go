@@ -69,7 +69,7 @@ func availableProviderFrom(
 		wg.Done()
 	}
 	if v == nil {
-		return nil, errors.New("The cloud provider couldn't be detected")
+		return nil, errors.New("the cloud provider could not be detected")
 	}
 	return v, nil
 }

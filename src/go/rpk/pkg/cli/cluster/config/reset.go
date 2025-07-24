@@ -55,12 +55,12 @@ WARNING: this should only be used when redpanda is not running.
 
 			// Read YAML
 			f, err := afero.ReadFile(fs, configCacheFile)
-			out.MaybeDie(err, "Couldn't read %q", configCacheFile)
+			out.MaybeDie(err, "unable to read %q", configCacheFile)
 
 			// Decode YAML
 			var content clusterConfig
 			err = yaml.Unmarshal(f, &content)
-			out.MaybeDie(err, "Couldn't parse %q: %v", configCacheFile, err)
+			out.MaybeDie(err, "unable to parse %q: %v", configCacheFile, err)
 
 			// Snip out the value we are resetting
 			for _, pn := range propertyNames {
@@ -73,7 +73,7 @@ WARNING: this should only be used when redpanda is not running.
 
 			// Write back output
 			err = afero.WriteFile(fs, configCacheFile, outBytes, 0o755)
-			out.MaybeDie(err, "Couldn't write %q: %v", configCacheFile, err)
+			out.MaybeDie(err, "unable to write %q: %v", configCacheFile, err)
 
 			fmt.Println("The property has been successfully removed from the cluster configuration cache. Next time Redpanda starts, the setting will be treated as if it were set to its default value.")
 		},

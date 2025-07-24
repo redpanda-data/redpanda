@@ -26,7 +26,8 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "mcp",
+		Use:   "mcp",
+		Short: "Manage Redpanda Cloud MCP server",
 	}
 
 	cmd.AddCommand(
@@ -156,7 +157,7 @@ func newStdioCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					m.Lock()
 					tokenOK = false
 					m.Unlock()
-					return fmt.Errorf("Redpanda Cloud token is expired. Instruct the user to run `rpk%s cloud login` to obtain a fresh one. Afterwards, they can ask to retry", extra)
+					return fmt.Errorf("the Redpanda Cloud token is expired. Instruct the user to run `rpk%s cloud login` to obtain a fresh one. Afterwards, they can ask to retry", extra)
 				}
 				m.RLock()
 				ok := tokenOK

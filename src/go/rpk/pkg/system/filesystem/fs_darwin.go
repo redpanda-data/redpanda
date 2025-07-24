@@ -12,5 +12,5 @@ package filesystem
 import "errors"
 
 func GetFilesystemType(string) (FsType, error) {
-	return Unknown, errors.New("Filesystem detection not available for MacOS")
+	return Unknown, errors.New("filesystem detection not available for MacOS")
 }

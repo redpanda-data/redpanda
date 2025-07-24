@@ -50,7 +50,7 @@ func getTHPDir(fs afero.Fs) (string, error) {
 		}
 	}
 	return "", fmt.Errorf(
-		"None of %s was found",
+		"none of %s was found",
 		strings.Join(locations(), ", "),
 	)
 }

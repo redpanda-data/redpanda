@@ -38,7 +38,7 @@ func FindInstallDir(fs afero.Fs) (string, error) {
 		installDirPath := filepath.Join(installDirCandidate, path)
 		zap.L().Sugar().Debugf("Checking if path '%s' exists", installDirPath)
 		if exists, _ := afero.Exists(fs, installDirPath); !exists {
-			return "", fmt.Errorf("Directory '%s' does not contain '%s'",
+			return "", fmt.Errorf("directory '%s' does not contain '%s'",
 				installDirCandidate, path)
 		}
 	}

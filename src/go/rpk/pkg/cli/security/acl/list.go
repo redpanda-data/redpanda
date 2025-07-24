@@ -176,7 +176,11 @@ func describeReqResp(
 			break
 		}
 	}
-	var output aclListOutput
+	// Intentionally starting 'Matches' with an empty slice to avoid printing
+	// null when marshalling to JSON.
+	output := aclListOutput{
+		Matches: []acl{},
+	}
 	for _, f := range kResults {
 		if printAllFilters || printFailedFilters {
 			output.Filters = append(output.Filters, aclWithMessage{

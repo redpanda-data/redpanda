@@ -593,7 +593,7 @@ func resolveWellKnownIo(
 	fmt.Println("Detecting the current cloud provider and VM")
 	provider, err := cloud.AvailableProviders()
 	if err != nil {
-		return nil, errors.New("Could not detect the current cloud provider")
+		return nil, errors.New("could not detect the current cloud provider")
 	}
 	ioProps, err = iotune.DataForProvider(y.Redpanda.Directory, provider)
 	if err != nil {
@@ -745,14 +745,14 @@ func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 		addr, err := parseAddress(s, defaultPort)
 		if err != nil {
 			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': %v",
+				"unable to parse seed '%s': %v",
 				s,
 				err,
 			)
 		}
 		if addr == nil {
 			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': empty address",
+				"unable to parse seed '%s': empty address",
 				s,
 			)
 		}

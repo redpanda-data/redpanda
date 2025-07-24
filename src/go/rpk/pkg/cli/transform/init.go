@@ -338,5 +338,5 @@ func installDeps(ctx context.Context, fs afero.Fs, p transformProject) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("Unknown language %q", p.Lang)
+	return fmt.Errorf("unknown language %q", p.Lang)
 }
