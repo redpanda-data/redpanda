@@ -43,8 +43,10 @@ from rptest.util import inject_remote_script
 BIG_FETCH = 104857600
 
 # How much memory to assign to redpanda per partition. Redpanda will be started
-# with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory
-DEFAULT_MIB_PER_PARTITION = 4
+# with MIB_PER_PARTITION * PARTITIONS_PER_SHARD * CORE_COUNT memory. We set
+# MIB_PER_PARTITION such that we can reach PARTITIONS_PER_SHARD on 4GB per core
+# instance types.
+DEFAULT_MIB_PER_PARTITION = 3.3
 
 # How many partitions we will create per shard: this is the primary scaling
 # factor that controls how many partitions a given cluster will get.
@@ -762,6 +764,14 @@ class ManyPartitionsTest(PreallocNodesTest):
             replication_factor=3,
             mib_per_partition=DEFAULT_MIB_PER_PARTITION,
             topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD)
+
+        self.redpanda.add_extra_rp_conf({
+            'topic_partitions_per_shard':
+            DEFAULT_PARTITIONS_PER_SHARD,
+            'topic_memory_per_partition':
+            int(DEFAULT_MIB_PER_PARTITION * 1024 * 1024),
+        })
+
         self.redpanda.start()
 
         # We have other OMB benchmark tests, but this one runs at the
@@ -845,7 +855,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             'topic_partitions_per_shard':
             topic_partitions_per_shard,
             'topic_memory_per_partition':
-            mib_per_partition * 1024 * 1024,
+            int(mib_per_partition * 1024 * 1024),
         })
 
         self.redpanda.start()
