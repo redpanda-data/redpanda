@@ -320,7 +320,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     // Upload two non compacted segments, no segment is compacted yet.
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -342,7 +342,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     verify_segment_request("0-1-v1.log", part->archival_meta_stm()->manifest());
 
@@ -363,7 +363,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     verify_segment_request(
       "1000-4-v1.log", part->archival_meta_stm()->manifest());
@@ -395,7 +395,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
 
     // Two segments, two indices, one manifest
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -416,7 +416,7 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
@@ -456,7 +456,7 @@ FIXTURE_TEST(
 
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     std::stringstream st;
     stm_manifest.serialize_json(st);
@@ -494,7 +494,7 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
     archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     verify_segment_request("0-1-v1.log", stm_manifest);
 
@@ -522,7 +522,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -561,7 +561,7 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
 
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {1, 0, 0}};
     upload_and_verify(archiver.value(), expected, model::offset::max());
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     verify_segment_request("0-1-v1.log", part->archival_meta_stm()->manifest());
     verify_segment_request(
@@ -592,7 +592,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     archival::ntp_archiver::batch_result expected{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -645,7 +645,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     upload_and_verify(archiver.value(), expected, model::offset::max());
 
     log_requests();
-    requests_size_eventually(4);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
 
     verify_segment_request(
       "30-5-v1.log", part->archival_meta_stm()->manifest());
@@ -673,7 +673,7 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
 
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -692,7 +692,7 @@ FIXTURE_TEST(test_upload_when_compaction_disabled, reupload_fixture) {
     reset_http_call_state();
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(0);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 0);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
@@ -716,7 +716,7 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
 
     auto expected = archival::ntp_archiver::batch_result{{2, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -742,7 +742,7 @@ FIXTURE_TEST(test_upload_when_reupload_disabled, reupload_fixture) {
       .get("cloud_storage_enable_compacted_topic_reupload")
       .set_value(false);
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(0);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 0);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
@@ -775,7 +775,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     archival::ntp_archiver::batch_result expected{{4, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected);
 
-    requests_size_eventually(9);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 9);
 
     auto manifest = load_manifest(
       get_targets().find(manifest_url)->second.content);
@@ -816,7 +816,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
 
     expected = archival::ntp_archiver::batch_result{{4, 0, 0}, {0, 0, 0}};
     upload_and_verify(archiver.value(), expected, model::offset::max());
-    requests_size_eventually(9);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 9);
 
     verify_segment_request(
       "40-1-v1.log", part->archival_meta_stm()->manifest());
@@ -837,7 +837,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {1, 0, 0}};
 
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
@@ -865,7 +865,7 @@ FIXTURE_TEST(test_upload_compacted_segments_cross_term, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
 
     // Two segments, two indices, one manifest
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     auto manifest = verify_manifest_request(*part);
     verify_segment_request("0-1-v1.log", manifest);
@@ -889,7 +889,7 @@ FIXTURE_TEST(test_upload_compacted_segments_cross_term, reupload_fixture) {
 
     expected = archival::ntp_archiver::batch_result{{0, 0, 0}, {2, 0, 0}};
     upload_and_verify(archiver.value(), expected);
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),

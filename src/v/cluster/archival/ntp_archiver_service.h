@@ -558,8 +558,6 @@ private:
       archival_stm_fence fence,
       std::vector<wait_uploads_complete_result> finished_uploads);
 
-    ss::future<> upload_index(ss::sstring path, cloud_storage::offset_index);
-
     ss::future<ntp_archiver_upload_result> upload_segment(
       segment_collector_stream strm,
       const cloud_storage::segment_meta& meta,

@@ -168,7 +168,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -295,7 +295,7 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
 
     BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
-    requests_size_eventually(4);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -388,7 +388,7 @@ FIXTURE_TEST(
     auto&& [non_compacted_result, compacted_result] = res;
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
     BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 1);
-    requests_size_eventually(1);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
 }
 
 // NOLINTNEXTLINE
@@ -900,8 +900,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-
-    requests_size_eventually(5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -1125,8 +1124,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    // index uploads happen in the background, so give a little slack here
-    test.requests_size_eventually(3);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
 
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
@@ -1166,7 +1164,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    test.requests_size_eventually(6);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 6);
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);

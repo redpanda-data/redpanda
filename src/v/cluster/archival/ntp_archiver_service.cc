@@ -1487,21 +1487,6 @@ ntp_archiver::maybe_upload_aborted_tx(
     co_return std::nullopt;
 }
 
-ss::future<> ntp_archiver::upload_index(
-  ss::sstring path, cloud_storage::offset_index index) {
-    retry_chain_node rtc{
-      _conf->segment_upload_timeout(),
-      _conf->upload_loop_initial_backoff(),
-      &_rtcnode};
-    retry_chain_logger ctxlog(archival_log, rtc, _ntp.path());
-    auto fut = co_await ss::coroutine::as_future(_remote.upload_index(
-      _conf->bucket_name, cloud_storage_clients::object_key{path}, index, rtc));
-
-    if (fut.failed()) {
-        vlog(ctxlog.warn, "Index upload failed: {}", fut.get_exception());
-    }
-}
-
 ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
   segment_collector_stream strm,
   const cloud_storage::segment_meta& meta,
@@ -1657,11 +1642,16 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // segment, so it is okay to ignore the index upload failure, we still
     // want to advance the offsets because the segment did get uploaded.
 
-    ssx::spawn_with_gate(
-      _gate,
-      [this, path = std::move(index_path), index = std::move(index)]() mutable {
-          return upload_index(std::move(path), std::move(index));
-      });
+    // Note: this operation can be started in the background.
+    // In order to do this the context should be associated with the
+    // background operation. We can't background it as is because the
+    // 'upload_index' call is taking 'rtc' as a reference. So there should be
+    // some wrapper for this call.
+    std::ignore = co_await _remote.upload_index(
+      _conf->bucket_name,
+      cloud_storage_clients::object_key{index_path},
+      index,
+      rtc);
 
     co_return ntp_archiver_upload_result(index_stats);
 
