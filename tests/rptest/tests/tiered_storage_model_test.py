@@ -259,6 +259,8 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                         return
             except:
                 self.logger.error("Failed to grep logs", exc_info=True)
+            finally:
+                self.logger.info("tail -f on {node.name} stopping")
 
         for n in self.redpanda.nodes:
             node = n
@@ -266,8 +268,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             self.thread_pool.submit(lambda: tail_minus_f(node))
 
     def tearDown(self):
-        self.stop_flag = True
-        self.thread_pool.shutdown()
+        self.shutdown_bg_tasks("tearDown")
 
     def apply_config_overrides(self):
         """Apply configuration overrides to the redpanda cluster."""
@@ -542,10 +543,12 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
         self.current_stage = stage
         self.run_stage_inputs(stage, test_case)
 
-    def shutdown_bg_tasks(self):
-        self.logger.info(f"Shutting down background tasks")
+    def shutdown_bg_tasks(self, why: str):
+        self.logger.info(f"Shutting down background tasks ({why})")
         self.stop_flag = True
+        self.logger.info(f"Before threadpool shutdown ({why})")
         self.thread_pool.shutdown()
+        self.logger.info(f"After threadpool shutdown ({why})")
 
     # fips on S3 is not compatible with path-style urls. TODO remove this once get_cloud_storage_type_and_url_style is fips aware
     @skip_fips_mode
@@ -568,32 +571,35 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             test_case_name = json.loads(test_case)["name"]
             test_case = get_test_case_from_name(test_case_name)
             assert test_case is not None, f"no test case found with name {test_case_name}"
-        # Configuration phase
-        self.start_inputs(test_case)
-        self.start_validators(test_case)
-        self.run_bg_validators(test_case)
 
-        # Setup stage
-        self.prepare_stage(TestRunStage.Startup, test_case)
-        self.run_stage_validators(TestRunStage.Startup, test_case)
+        try:
+            # Configuration phase
+            self.start_inputs(test_case)
+            self.start_validators(test_case)
+            self.run_bg_validators(test_case)
 
-        # Producing the data
-        self.prepare_stage(TestRunStage.Produce, test_case)
-        self.produce_until_validated(test_case)
+            # Setup stage
+            self.prepare_stage(TestRunStage.Startup, test_case)
+            self.run_stage_validators(TestRunStage.Startup, test_case)
 
-        # Intermediate step
-        self.prepare_stage(TestRunStage.Intermediate, test_case)
-        self.run_stage_validators(TestRunStage.Intermediate, test_case)
+            # Producing the data
+            self.prepare_stage(TestRunStage.Produce, test_case)
+            self.produce_until_validated(test_case)
 
-        # Consuming the data
-        self.prepare_stage(TestRunStage.Consume, test_case)
-        self.consume_until_validated(test_case)
+            # Intermediate step
+            self.prepare_stage(TestRunStage.Intermediate, test_case)
+            self.run_stage_validators(TestRunStage.Intermediate, test_case)
 
-        # Shutting down
-        self.prepare_stage(TestRunStage.Shutdown, test_case)
-        self.run_stage_validators(TestRunStage.Shutdown, test_case)
+            # Consuming the data
+            self.prepare_stage(TestRunStage.Consume, test_case)
+            self.consume_until_validated(test_case)
 
-        self.shutdown_bg_tasks()
+            # Shutting down
+            self.prepare_stage(TestRunStage.Shutdown, test_case)
+            self.run_stage_validators(TestRunStage.Shutdown, test_case)
+
+        finally:
+            self.shutdown_bg_tasks("test ending")
 
         # Check that all validators are done and raise error if
         # some of them failed.
