@@ -44,7 +44,7 @@ setup(
         'z3-solver==4.12.2',
         'hypothesis==6.82',
         'jsonschema==4.10.0',
-        'polaris.management@git+https://github.com/apache/polaris.git@1a6b3eb3963355f78c5ca916cc1d66ecd1493092#&subdirectory=regtests/client/python',
+        'polaris.management@git+https://github.com/apache/polaris.git@e59281acc98a2fb9bfb4a056a624b0c769bb7c18#&subdirectory=client/python',
         "pyiceberg==0.9.1",
         "adlfs==2024.7.0",
         "pyarrow",
