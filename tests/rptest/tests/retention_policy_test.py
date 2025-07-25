@@ -276,9 +276,13 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
             # the target segments limit is one higher than expected because
             # retention policy won't violate the target max size. that is: it
             # won't reclaim the last segment if it puts it over the edge.
+            timeout_sec = 15
+            # TODO: Remove temporary value to get around general slowness with Azurite.
+            if cloud_storage_type == CloudStorageType.ABS:
+                timeout_sec = 120
             wait_until(lambda: self.segments_removed(
                 self.default_retention_segments + 1),
-                       timeout_sec=15,
+                       timeout_sec=timeout_sec,
                        backoff_sec=1,
                        err_msg=f"Segments were not removed")
         else:
@@ -319,8 +323,12 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
         # the target segments limit is one higher than expected because
         # retention policy won't violate the target max size. that is: it
         # won't reclaim the last segment if it puts it over the edge.
+        timeout_sec = 15
+        # TODO: Remove temporary value to get around general slowness with Azurite.
+        if cloud_storage_type == CloudStorageType.ABS:
+            timeout_sec = 120
         wait_until(lambda: self.segments_removed(self.retention_segments + 1),
-                   timeout_sec=15,
+                   timeout_sec=timeout_sec,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed")
 
