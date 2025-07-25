@@ -78,6 +78,15 @@ public:
         kafka::offset next_offset;
     };
 
+    // A domain is a set of topic partitions that may colocate data into the
+    // same objects together. A domain_id uniquely identifies a domain, making
+    // it useful as a map key when grouping together data.
+    using domain_id = named_type<int64_t, struct domain_id_tag>;
+
+    // Returns the domain_id for the given partition.
+    virtual ss::future<std::expected<domain_id, errc>>
+    get_domain_id(const model::topic_id_partition&) const = 0;
+
     // Returns offsets (e.g. start, next) for the given partition.
     virtual ss::future<std::expected<offsets_response, errc>>
     get_offsets(const model::topic_id_partition&) = 0;
@@ -86,7 +95,7 @@ public:
     // because they break an invariant of a partition's offset ranges, all
     // objects are rejected.
     virtual ss::future<std::expected<void, errc>>
-    add_objects(const chunked_vector<object_metadata>&) = 0;
+    add_objects(domain_id, const chunked_vector<object_metadata>&) = 0;
 
     // Adds the given objects to the metastore, expecting that the new extents
     // replace an extent or set of extents covering the same range.
@@ -97,7 +106,7 @@ public:
     // correctness, these simplify accounting and makes it easier to validate
     // that we haven't lost data.
     virtual ss::future<std::expected<void, errc>>
-    replace_objects(const chunked_vector<object_metadata>&) = 0;
+    replace_objects(domain_id, const chunked_vector<object_metadata>&) = 0;
 
     // Finds the first object of a given partition with data greater than or
     // equal to the given offset. If no such offset exists, returns

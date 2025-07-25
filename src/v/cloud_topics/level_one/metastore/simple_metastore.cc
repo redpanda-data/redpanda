@@ -47,8 +47,8 @@ simple_metastore::get_offsets(const model::topic_id_partition& tpr) {
     };
 }
 
-ss::future<std::expected<void, metastore::errc>>
-simple_metastore::add_objects(const chunked_vector<object_metadata>& objects) {
+ss::future<std::expected<void, metastore::errc>> simple_metastore::add_objects(
+  domain_id, const chunked_vector<object_metadata>& objects) {
     chunked_vector<new_object> new_objects;
     for (const auto& o : objects) {
         new_objects.emplace_back(make_new_object(o));
@@ -65,7 +65,7 @@ simple_metastore::add_objects(const chunked_vector<object_metadata>& objects) {
 
 ss::future<std::expected<void, metastore::errc>>
 simple_metastore::replace_objects(
-  const chunked_vector<object_metadata>& objects) {
+  domain_id, const chunked_vector<object_metadata>& objects) {
     chunked_vector<new_object> new_objects;
     for (const auto& o : objects) {
         new_objects.emplace_back(make_new_object(o));

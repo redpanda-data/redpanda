@@ -21,14 +21,21 @@ namespace experimental::cloud_topics::l1 {
 // Not replicated or persisted, used for tests only.
 class simple_metastore : public metastore {
 public:
+    static constexpr auto simple_domain_id = metastore::domain_id{0};
+    ss::future<std::expected<metastore::domain_id, errc>>
+    get_domain_id(const model::topic_id_partition&) const override {
+        // In the name of simplicity, make all data belong to the same domain.
+        co_return simple_domain_id;
+    }
+
     ss::future<std::expected<offsets_response, errc>>
     get_offsets(const model::topic_id_partition&) override;
 
     ss::future<std::expected<void, errc>>
-    add_objects(const chunked_vector<object_metadata>&) override;
+    add_objects(domain_id, const chunked_vector<object_metadata>&) override;
 
     ss::future<std::expected<void, errc>>
-    replace_objects(const chunked_vector<object_metadata>&) override;
+    replace_objects(domain_id, const chunked_vector<object_metadata>&) override;
 
     ss::future<std::expected<object_response, errc>>
     get_first_ge(const model::topic_id_partition&, kafka::offset) override;
