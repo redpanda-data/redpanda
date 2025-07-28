@@ -1511,10 +1511,11 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
     auto staging_to_clean = scoped_file_tracker{
       cfg.files_to_cleanup, {tmpname, cmp_idx_tmpname}};
 
+    const auto size_before = seg->size_bytes();
     auto appender = co_await internal::make_segment_appender(
       tmpname,
       segment_appender::write_behind_memory / internal::chunks().chunk_size(),
-      std::nullopt,
+      size_before,
       cfg.iopc,
       resources(),
       cfg.sanitizer_config);
@@ -1572,7 +1573,6 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
     if (seg->is_closed()) {
         throw segment_closed_exception();
     }
-    const auto size_before = seg->size_bytes();
     const auto size_after = appender->file_byte_offset();
 
     // Clear our indexes before swapping the data files (note, the new
