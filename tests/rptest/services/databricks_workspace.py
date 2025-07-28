@@ -16,6 +16,7 @@ import databricks.sdk
 import databricks.sdk.errors
 import databricks.sql
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import DatabricksError
 from databricks.sdk.service.catalog import (
     CatalogInfo,
     CatalogType,
@@ -61,6 +62,10 @@ class DatabricksWorkspace(Service):
         """
 
         self._location_names.add(bucket)
+
+        # Clean up any previous resources if reusing bucket name
+        self._cleanup_catalogs()
+        self._cleanup_dbx_locations()
 
         try:
             location: ExternalLocationInfo = self._client.external_locations.create(
@@ -115,19 +120,22 @@ class DatabricksWorkspace(Service):
             assert principal_row, "Failed to get current user"
             principal = principal_row[0]
 
-            # TODO: Identify Minimal Privileges (Least access principle)
-            self.logger.debug(
-                f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
-            )
-            sql = f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{principal}`"
-            cursor.execute(sql)
-            self.logger.debug("Granted PRIVILEGES successfully")
+            # List of principals to grant permissions to (adding users for debugging)
+            principals = [principal, "marat.pekker@redpanda.com"]
 
-            self.logger.debug(f"Creating grants for: {principal=}")
+            for p in principals:
+                # TODO: Identify Minimal Privileges (Least access principle)
+                self.logger.debug(
+                    f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{p}`"
+                )
+                sql = f"GRANT ALL PRIVILEGES ON CATALOG `{catalog_info.name}` TO `{p}`"
+                cursor.execute(sql)
+                self.logger.debug("Granted PRIVILEGES successfully")
 
-            cursor.execute(
-                f"GRANT EXTERNAL USE SCHEMA ON SCHEMA `redpanda` TO `{principal}`"
-            )
+                self.logger.debug(f"Creating grants for: {p}")
+
+                cursor.execute(
+                    f"GRANT EXTERNAL USE SCHEMA ON SCHEMA `redpanda` TO `{p}`")
 
             self.logger.debug("Grants created successfully")
 
@@ -193,7 +201,8 @@ class DatabricksWorkspace(Service):
             self.logger.debug(f"Cleaning up location {location_name}")
 
             try:
-                self._client.external_locations.delete(location_name)
+                self._client.external_locations.delete(location_name,
+                                                       force=True)
             except databricks.sdk.errors.platform.NotFound:
                 self.logger.warning(
                     f"Location {location_name} not found for deletion")

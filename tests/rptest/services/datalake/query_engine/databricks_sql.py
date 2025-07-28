@@ -14,6 +14,7 @@ from ducktape.tests.test import TestContext
 from rptest.context.databricks import DatabricksContext as DatabricksContext
 from rptest.services.catalog_service import CatalogType
 from rptest.tests.datalake.query_engine_base import QueryEngineBase, QueryEngineType
+from rptest.services.datalake.util.table_verifier import verify_rows
 
 
 class DatabricksSQL(Service, QueryEngineBase):
@@ -57,3 +58,37 @@ class DatabricksSQL(Service, QueryEngineBase):
     def optimize_parquet_files(self, namespace: str, table: str) -> None:
         raise NotImplementedError(
             "DatabricksSQL optimize_parquet_files is not implemented yet")
+
+    def verify_table_contents(
+            self, namespace: str, table: str,
+            expected_records: list[tuple[str, str | dict, dict]]) -> bool:
+        self.logger.debug("Starting verify_table_contents")
+        client = self.make_client()
+        cursor = client.cursor()
+        query = (f"SELECT redpanda.key, value, redpanda.headers\n"
+                 f"FROM `{self._catalog_name}`.`{namespace}`.`{table}`\n"
+                 f"WHERE value IS NOT NULL\n"
+                 f"ORDER BY redpanda.offset DESC\n"
+                 f"LIMIT 100")
+
+        self.logger.debug(f"Running verification query:\n{query}")
+        cursor.execute(query)
+
+        try:
+            rows = cursor.fetchall()
+            self.logger.debug(f"Fetched {len(rows)} rows")
+        except Exception as e:
+            self.logger.error("Failed to fetch rows from cursor",
+                              exc_info=True)
+            raise
+
+        self.logger.debug("Calling verify_rows with fetched rows...")
+
+        success, errors = verify_rows(rows, expected_records, self.logger)
+        if not success:
+            for err in errors:
+                self.logger.error(err)
+            raise AssertionError("Verification failed for table contents.")
+
+        self.logger.info("All expected records found and verified.")
+        return True

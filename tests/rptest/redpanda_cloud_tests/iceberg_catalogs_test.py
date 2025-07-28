@@ -29,6 +29,7 @@ from rptest.services.redpanda import RedpandaServiceCloud
 from rptest.services.databricks_workspace import DatabricksWorkspace
 from rptest.context.databricks import DatabricksContext, OauthCredentials
 from rptest.services.catalog_service import CatalogType
+from rptest.services.datalake.query_engine.databricks_sql import DatabricksSQL
 
 
 def supported_catalog_types():
@@ -116,7 +117,7 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
             "iceberg_rest_catalog_oauth2_scope":
             "all-apis",
             "iceberg_rest_catalog_oauth2_server_uri":
-            "https://dbc-0f5177e3-6aa4.cloud.databricks.com/oidc/v1/token"
+            "https://fake.cloud.databricks.com/oidc/v1/token"
         }
 
         self.logger.debug(f"Properties to be sent: {properties}")
@@ -164,7 +165,7 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
 
         databricks_client = DatabricksWorkspace(context=self._ctx)
         bucket = f"redpanda-cloud-storage-{self._clusterId}"
-        catalog_info = databricks_client.create_catalog(bucket=bucket)
+        self.catalog_info = databricks_client.create_catalog(bucket=bucket)
 
         # Parameters for creating Redpanda secret
         secret_id = f"UNITY_CLIENT_SECRET_{random.randint(10000, 99999)}"
@@ -188,6 +189,7 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
         self.logger.debug(f"Create secret response: {create_resp}")
 
         iceberg_rest_catalog_endpoint = dbx_ctx.iceberg_rest_url
+        iceberg_rest_catalog_oauth2_server_uri = dbx_ctx.iceberg_rest_catalog_oauth2_server_uri
 
         # Construct the payload for the request
         properties = {
@@ -203,7 +205,7 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
             "iceberg_rest_catalog_client_secret":
             f"${{secrets.{secret_id}}}",
             "iceberg_rest_catalog_warehouse":
-            catalog_info.name,
+            self.catalog_info.name,
             "iceberg_catalog_type":
             "rest",
             "iceberg_disable_snapshot_tagging":
@@ -211,7 +213,7 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
             "iceberg_rest_catalog_oauth2_scope":
             "all-apis",
             "iceberg_rest_catalog_oauth2_server_uri":
-            "https://dbc-0f5177e3-6aa4.cloud.databricks.com/oidc/v1/token"
+            iceberg_rest_catalog_oauth2_server_uri
         }
 
         # Log the constructed payload for debugging
@@ -249,20 +251,91 @@ class IcebergCloudCatalogsTest(RedpandaCloudTest):
             self.logger.error(
                 f"Operation {operation_id} did not complete successfully.")
 
-        # Create topic(s) and produce data
-        self.rpk = RpkTool(self.redpanda)
-        test_topic = 'test_topic'
-        self.rpk.create_topic(test_topic)
-        self.rpk.alter_topic_config(test_topic,
-                                    TopicSpec.PROPERTY_ICEBERG_MODE,
-                                    'key_value')
+        try:
+            # Create topic(s) and produce data
+            self.rpk = RpkTool(self.redpanda)
+            self.test_topic = f"test_topic_{random.randint(10000, 99999)}"
+            self.logger.debug(f"Creating Iceberg topic: self.test_topic")
+            self.rpk.create_topic(self.test_topic)
+            self.rpk.alter_topic_config(self.test_topic,
+                                        TopicSpec.PROPERTY_ICEBERG_MODE,
+                                        'key_value')
 
-        MESSAGE_COUNT = 10
-        for i in range(MESSAGE_COUNT):
-            self.rpk.produce(test_topic, f"foo {i} ", f"bar {i}")
+            self.logger.info("Producing data to the topic")
+            MESSAGE_COUNT = 10
+            for i in range(MESSAGE_COUNT):
+                self.rpk.produce(self.test_topic, f"foo {i} ", f"bar {i}")
 
-        self.logger.debug("Waiting 10 minute...")
-        time.sleep(600)
-        # TODO Marat add verification, more tests and options (separate PR)
+            # Produce simple key-value
+            self.logger.debug("Producing simple key-value data")
+            self.rpk.produce(self.test_topic, "test_key", "test_value")
+
+            # Produce JSON payload without headers
+            self.logger.debug("Producing json without headers")
+            json_payload_1 = {
+                "sensor_id": "temp-001",
+                "type": "temperature",
+                "value": 74.6,
+                "unit": "F",
+                "timestamp": "2025-07-17T23:30:00Z",
+                "location": {
+                    "zone": "A1",
+                    "machine_id": "MX-22"
+                },
+                "status": "ok",
+            }
+            self.rpk.produce(self.test_topic, "sensor_test_1",
+                             json.dumps(json_payload_1))
+
+            self.logger.debug("Producing json with headers")
+            json_payload_2 = {
+                "sensor_id": "temp-001",
+                "type": "temperature",
+                "value": 74.6,
+                "unit": "F",
+                "timestamp": "2025-07-17T23:30:00Z",
+                "location": {
+                    "zone": "A1",
+                    "machine_id": "MX-22"
+                },
+                "status": "ok",
+            }
+            self.rpk.produce(self.test_topic, "sensor_test_2",
+                             json.dumps(json_payload_2))
+
+        except Exception as e:
+            self.logger.exception(
+                f"Failed during topic creation or data production: {e}")
+            raise
+
+        self.logger.info("Waiting for produced data and tables to be created")
+        for i in range(200, 0, -1):
+            if i % 10 == 0 or i <= 10:  # Log every 10 seconds, and every second for the last 10s
+                self.logger.info(f"...waiting {i} seconds remaining")
+            time.sleep(1)
+
+        expected_records = [
+            ("test_key", "test_value", {}),
+            ("sensor_test_1", json_payload_1, {}),
+            ("sensor_test_2", json_payload_2, {}),
+        ]
+
+        # Perform verification via Databricks SQL
+        self.logger.debug("Verifying data in Databricks Iceberg table...")
+        success = DatabricksSQL(
+            ctx=self._ctx,
+            iceberg_catalog_uri="unused",
+            default_warehouse_dir="unused",
+            catalog_type=CatalogType.DATABRICKS_UNITY,
+            catalog_name=self.catalog_info.name).verify_table_contents(
+                namespace="redpanda",
+                table=self.test_topic,
+                expected_records=expected_records)
+
+        # Assert and log result
+        if not success:
+            self.logger.error(
+                "Verification failed. Some expected records not found.")
+            raise AssertionError("Verification failed for table contents.")
 
         databricks_client.stop()

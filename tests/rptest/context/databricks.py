@@ -82,6 +82,10 @@ class DatabricksContext:
         return f"{self.workspace_url}/api/2.1/unity-catalog/iceberg-rest"
 
     @property
+    def iceberg_rest_catalog_oauth2_server_uri(self) -> str:
+        return f"{self.workspace_url}/oidc/v1/token"
+
+    @property
     def server_hostname(self) -> str:
         parsed_url = urlparse(self.workspace_url)
 
