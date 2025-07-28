@@ -2997,7 +2997,7 @@ class RedpandaService(RedpandaServiceBase):
             self._start_duration_seconds = time.time() - self._start_time
 
         if not self._skip_create_superuser:
-            self._admin.create_user(*self._superuser)
+            self._admin.create_user(*self._superuser, await_exists=True)
 
         self.wait_for_membership(first_start=first_start)
 
