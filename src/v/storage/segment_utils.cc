@@ -393,10 +393,11 @@ ss::future<storage::index_state> do_copy_segment_data(
     // prepare a new segment with only the compacted_offsets
     auto tmpname = seg->reader().path().to_staging();
 
+    auto size_before = seg->size_bytes();
     auto appender = co_await make_segment_appender(
       tmpname,
       segment_appender::write_behind_memory / internal::chunks().chunk_size(),
-      std::nullopt,
+      size_before,
       resources,
       cfg.sanitizer_config);
 
