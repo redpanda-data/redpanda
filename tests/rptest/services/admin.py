@@ -19,6 +19,7 @@ from typing import Any, Optional, Callable, NamedTuple, Protocol, cast
 from json.decoder import JSONDecodeError
 from uuid import UUID
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.utils.util import wait_until
 import requests
 from requests import Response
 from requests.adapters import HTTPAdapter
@@ -1264,7 +1265,8 @@ class Admin:
     def create_user(self,
                     username,
                     password="12345678",
-                    algorithm="SCRAM-SHA-256"):
+                    algorithm="SCRAM-SHA-256",
+                    await_exists=False):
         self.redpanda.logger.debug(
             f"Creating user {username}:{password}:{algorithm}")
 
@@ -1277,6 +1279,24 @@ class Admin:
                           password=password,
                           algorithm=algorithm,
                       ))
+
+        if await_exists:
+            self.await_user_exists(username)
+
+    def await_user_exists(self,
+                          username: str,
+                          timeout_sec: int = 15,
+                          backoff_sec: int = 1):
+        def user_exists():
+            for node in self.redpanda.started_nodes():
+                users = self.list_users(node=node)
+                if username not in users:
+                    return False
+            return True
+
+        wait_until(user_exists,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec)
 
     def delete_user(self, username):
         self.redpanda.logger.info(f"Deleting user {username}")
