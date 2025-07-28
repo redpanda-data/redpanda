@@ -612,6 +612,20 @@ ss::future<response_ptr> describe_cluster_handler::handle(
     co_return co_await ctx.respond(std::move(reply));
 }
 
+namespace {
+// Safety margin to account for overallocations by the chunked_vector.
+// This is meant to represent either the table-doubling before filling
+// the first fragment or the allocation for an extra fragment.
+template<typename T>
+size_t chunked_vector_overalloc(size_t n_elems) {
+    if (std::cmp_less(n_elems, chunked_vector<T>::elements_per_fragment())) {
+        return sizeof(T) * n_elems;
+    } else {
+        return chunked_vector<T>::max_frag_bytes();
+    }
+}
+} // namespace
+
 size_t
 metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // We cannot make a precise estimate of the size of a metadata response by
@@ -674,6 +688,8 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
 
         size_estimate += pcount
                          * (bytes_per_partition + bytes_per_replica * rcount);
+
+        size_estimate += chunked_vector_overalloc<partition>(pcount);
     }
 
     // Finally, we double the estimate, because the highwater mark for memory
@@ -686,9 +702,7 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
 
     // We still add on the default_estimate to handle the size of the request
     // itself and miscellaneous other procesing (this is a small adjustment,
-    // generally ~8000 bytes). Finally, we add max_frag_bytes to account for the
-    // worse-cast overshoot during vector re-allocation.
-    return default_memory_estimate(request_size) + size_estimate
-           + chunked_vector<metadata_response_partition>::max_frag_bytes();
+    // generally ~8000 bytes).
+    return default_memory_estimate(request_size) + size_estimate;
 }
 } // namespace kafka
