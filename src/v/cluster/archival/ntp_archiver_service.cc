@@ -2118,6 +2118,17 @@ ntp_archiver::wait_uploads_complete(
 
         result.meta.push_back(*upload.meta);
     }
+    if (result.num_succeeded > result.meta.size()) {
+        vlog(
+          _rtclog.info,
+          "Some segments were discarded due to metadata consistency violation: "
+          "{} uploaded vs {} accepted",
+          result.num_succeeded,
+          result.meta.size());
+        auto num_discarded = result.num_succeeded - result.meta.size();
+        result.num_succeeded -= num_discarded;
+        result.num_failed += num_discarded;
+    }
     co_return result;
 }
 
