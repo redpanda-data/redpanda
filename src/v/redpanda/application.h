@@ -61,6 +61,7 @@
 #include "rpc/fwd.h"
 #include "rpc/rpc_server.h"
 #include "security/fwd.h"
+#include "ssx/watchdog.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "transform/fwd.h"
@@ -213,6 +214,11 @@ public:
     }
 
 private:
+    // First warning timeout
+    static constexpr auto short_shutdown_warning_timeout = 15s;
+    // Time after which we will print the warning about the service shutdown
+    // taking too long.
+    static constexpr auto long_shutdown_warning_timeout = 120s;
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;
 
@@ -257,6 +263,51 @@ private:
 
     bool datalake_enabled();
 
+    // Stop the service.
+    // The method should be invoked in the ss::thread context.
+    template<class Service>
+    void stop_service(
+      Service& s,
+      ss::sstring name,
+      std::optional<ss::sstring> next_to_stop = std::nullopt) {
+        // This watchdog is triggered after short period of time (30s). It
+        // adds message to the log that service is taking a long time to
+        // shutdown on INFO level.
+        ssx::watchdog short_wd(short_shutdown_warning_timeout, [this, name] {
+            vlog(
+              _log.info,
+              "Service {} is taking more than {} seconds to shut down.",
+              name,
+              std::chrono::duration_cast<std::chrono::seconds>(
+                short_shutdown_warning_timeout)
+                .count());
+        });
+        // This watchdog is triggered after long period of time. This indicates
+        // a bug (most likely).
+        ssx::watchdog long_wd(long_shutdown_warning_timeout, [this, name] {
+            vlog(
+              _log.info,
+              "Service {} is taking more than {} seconds to shut down!",
+              name,
+              std::chrono::duration_cast<std::chrono::seconds>(
+                long_shutdown_warning_timeout)
+                .count());
+        });
+        if (next_to_stop.has_value()) {
+            vlog(
+              _log.info,
+              "Stopping {}, ..next to shutdown is {}",
+              name,
+              *next_to_stop);
+        } else {
+            vlog(_log.info, "Stopping {}", name);
+        }
+        s.stop().get();
+        if (!next_to_stop.has_value()) {
+            vlog(_log.info, "Stopped {}", name);
+        }
+    }
+
     /**
      * @brief Construct service boilerplate.
      *
@@ -270,24 +321,37 @@ private:
      */
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
-        _deferred.emplace_back([&s] { s.stop().get(); });
+        auto name = ss::pretty_type_name(typeid(Service));
+        _deferred.emplace_back(
+          [this, &s, name, next_to_stop = _last_constructed_service_name] {
+              stop_service(s, name, next_to_stop);
+          });
+        _last_constructed_service_name = ss::sstring(name);
         return s.start(std::forward<Args>(args)...);
     }
 
     template<typename Service, typename... Args>
     void construct_single_service(std::unique_ptr<Service>& s, Args&&... args) {
+        auto name = ss::pretty_type_name(typeid(Service));
         s = std::make_unique<Service>(std::forward<Args>(args)...);
-        _deferred.emplace_back([&s] {
-            s->stop().get();
-            s.reset();
-        });
+        _deferred.emplace_back(
+          [this, &s, name, next_to_stop = _last_constructed_service_name] {
+              stop_service(*s, name, next_to_stop);
+              s.reset();
+          });
+        _last_constructed_service_name = name;
     }
 
     template<typename Service, typename... Args>
     ss::future<>
     construct_single_service_sharded(ss::sharded<Service>& s, Args&&... args) {
+        auto name = ss::pretty_type_name(typeid(Service));
         auto f = s.start_single(std::forward<Args>(args)...);
-        _deferred.emplace_back([&s] { s.stop().get(); });
+        _deferred.emplace_back(
+          [this, &s, name, next_to_stop = _last_constructed_service_name] {
+              stop_service(s, name, next_to_stop);
+          });
+        _last_constructed_service_name = name;
         return f;
     }
 
@@ -355,6 +419,7 @@ private:
 
     // run these first on destruction
     deferred_actions _deferred;
+    std::optional<ss::sstring> _last_constructed_service_name;
 
     ss::sharded<aggregate_metrics_watcher> _aggregate_metrics_watcher;
 
