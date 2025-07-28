@@ -81,6 +81,13 @@ build:sanitizer --@seastar//:system_allocator=True
 build:sanitizer --@krb5//:sanitizers=address,undefined,vptr,function,alignment
 
 # =================================
+# Debug
+# =================================
+# alias to match our legacy cmake debug BUILD_TYPE so we don't have to do any
+# mapping in taskfiles
+build:debug --config=sanitizer
+
+# =================================
 # ODR Finder
 # =================================
 build:odr-finder --cxxopt -stdlib=libc++
