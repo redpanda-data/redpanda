@@ -336,6 +336,94 @@ class NoDataCase(BaseCase):
         return False
 
 
+class TruncatedPartitionCase(BaseCase):
+    """
+    Similar to NoDataCase but this time the start offsets and
+    high watermarks are not zero.
+    """
+
+    topics = (TopicSpec(name='panda-topic',
+                        partition_count=1,
+                        replication_factor=3), )
+
+    message_count = 1000
+
+    leader_epoch: int | None = None
+
+    def generate_baseline(self):
+        for topic in self.topics:
+            # Transfer leadership to increment leader epoch so that we can
+            # test its recovery.
+            for _ in range(3):
+                admin = Admin(self._redpanda)
+
+                rpk_partition = next(self._rpk.describe_topic(topic.name))
+                target_node_id = next(
+                    filter(lambda r: r != rpk_partition.leader,
+                           rpk_partition.replicas))
+                leader = admin.get_partitions(topic, 0)['leader_id']
+                admin.partition_transfer_leadership("kafka", topic, 0,
+                                                    target_node_id)
+
+                def leader_changed():
+                    p = list(self._rpk.describe_topic(topic.name))[0]
+                    self.leader_epoch = p.leader_epoch
+                    return p.leader and p.leader != leader
+
+                wait_until(
+                    leader_changed,
+                    timeout_sec=30,
+                    backoff_sec=1,
+                    err_msg=
+                    f"Leader for topic {topic.name} didn't change after transfer leadership"
+                )
+
+            self.logger.info(
+                f"Leader epoch after transfer leadership: {self.leader_epoch}")
+
+            assert self.leader_epoch and self.leader_epoch >= 3, \
+                f"Leader epoch should be at least 3 after transfer leadership but is {self.leader_epoch}"
+
+            producer = self._rpk_producer_maker(topic=topic.name,
+                                                msg_count=self.message_count,
+                                                msg_size=1024)
+            producer.start()
+            producer.wait()
+            producer.free()
+
+        quiesce_uploads(self._redpanda, [topic.name for topic in self.topics],
+                        timeout_sec=60)
+
+        for topic in self.topics:
+            response = self._rpk.trim_prefix(topic.name, self.message_count)
+            assert len(response) == topic.partition_count
+
+        def segments_removed():
+            b = BucketView(self._redpanda)
+            m = b.get_partition_manifest(NTP('kafka', self.topics[0].name, 0))
+            self.logger.debug(f"Manifest after trim: {m}")
+            return not m["segments"]
+
+        wait_until(segments_removed,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg='Segments were not removed')
+
+        p = list(self._rpk.describe_topic(self.topics[0].name))[0]
+
+        assert p.high_watermark == self.message_count, \
+            f"High watermark should be {self.message_count} after trim_prefix but is {p.high_watermark}"
+
+    def validate_cluster(self, baseline, restored):
+        p = list(self._rpk.describe_topic(self.topics[0].name))[0]
+
+        assert p.high_watermark == self.message_count, \
+            f"High watermark should be {self.message_count} after partition recovery but is {p.high_watermark}"
+
+        assert p.leader_epoch == self.leader_epoch, \
+            f"Leader epoch should be {self.leader_epoch} after partition recovery but is {p.leader_epoch}"
+
+
 class EmptySegmentsCase(BaseCase):
     """Restore topic that has segments in S3, but segments have only non-data
     batches (raft configuration, raft configuration).
@@ -1661,6 +1749,27 @@ class TopicRecoveryTest(RedpandaTest):
                                      self.kafka_tools, self.rpk,
                                      self.s3_bucket, self.logger,
                                      self.rpk_producer_maker)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=4,
+             log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_truncated_partition(self, cloud_storage_type):
+        """
+        Test an edge case where the partition manifest is present
+        but the partition is empty.
+        """
+
+        self.redpanda.set_cluster_config({
+            "cloud_storage_housekeeping_interval_ms":
+            5000,
+        })
+
+        test_case = TruncatedPartitionCase(self.redpanda,
+                                           self.cloud_storage_client,
+                                           self.kafka_tools, self.rpk,
+                                           self.s3_bucket, self.logger,
+                                           self.rpk_producer_maker)
         self.do_run(test_case)
 
     @cluster(num_nodes=4,
