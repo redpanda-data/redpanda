@@ -988,7 +988,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     auto log = b.get_log();
 
     // Must initialize translator state.
-    log->start(std::nullopt).get();
+    log->start(std::nullopt, never_abort).get();
 
     // first offset that is not yet uploaded
     auto start_offset = model::offset{0};

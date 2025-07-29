@@ -33,8 +33,9 @@ public:
     failure_injectable_log& operator=(const failure_injectable_log&) = delete;
     ~failure_injectable_log() noexcept final = default;
 
-    ss::future<>
-    start(std::optional<storage::truncate_prefix_config> cfg) final;
+    ss::future<> start(
+      std::optional<storage::truncate_prefix_config> cfg,
+      ss::abort_source& as) final;
     ss::future<> housekeeping(storage::housekeeping_config cfg) final;
 
     ss::future<> truncate(storage::truncate_config) final;

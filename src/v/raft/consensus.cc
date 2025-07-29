@@ -1522,7 +1522,7 @@ consensus::do_start(std::optional<xshard_transfer_state> xst_state) {
             }
             _snapshot_size = co_await _snapshot_mgr.get_snapshot_size();
         }
-        co_await _log->start(start_truncate_cfg);
+        co_await _log->start(start_truncate_cfg, _as);
         snapshot_units.return_all();
 
         vlog(

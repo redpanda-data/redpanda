@@ -150,7 +150,8 @@ ss::future<ot_state> arrange_and_compact(
     co_await b1.start(log_ntp);
 
     // Must initialize translator state.
-    co_await b1.get_disk_log_impl().start(std::nullopt);
+    ss::abort_source as;
+    co_await b1.get_disk_log_impl().start(std::nullopt, as);
 
     try {
         for (const auto& b : batches) {
@@ -162,7 +163,6 @@ ss::future<ot_state> arrange_and_compact(
                   ss::default_priority_class());
             }
         }
-        ss::abort_source as;
         auto compact_cfg = storage::compaction_config(
           batches.back().last_offset(),
           std::nullopt,
