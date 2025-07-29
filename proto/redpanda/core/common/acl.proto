@@ -1,0 +1,63 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.common;
+
+import "proto/redpanda/pbgen/options.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+
+/// The ACL resource types
+enum ACLResource {
+    ACL_RESOURCE_UNSPECIFIED = 0;
+    ACL_RESOURCE_ANY = 1;
+    ACL_RESOURCE_CLUSTER = 2;
+    ACL_RESOURCE_GROUP = 3;
+    ACL_RESOURCE_TOPIC = 4;
+    ACL_RESOURCE_TXN_ID = 5;
+}
+/// The ACL pattern type
+enum ACLPattern {
+    ACL_PATTERN_UNSPECIFIED = 0;
+    ACL_PATTERN_ANY = 1;
+    ACL_PATTERN_LITERAL = 2;
+    ACL_PATTERN_PREFIXED = 3;
+    /// Match serves as a catch-all for all the names of a topic
+    /// the principal is authorized to access
+    ACL_PATTERN_MATCH = 4;
+}
+/// The ACL operation to match
+enum ACLOperation {
+    ACL_OPERATION_UNSPECIFIED = 0;
+    ACL_OPERATION_ANY = 1;
+    ACL_OPERATION_READ = 2;
+    ACL_OPERATION_WRITE = 3;
+    ACL_OPERATION_CREATE = 4;
+    ACL_OPERATION_REMOVE = 5;
+    ACL_OPERATION_ALTER = 6;
+    ACL_OPERATION_DESCRIBE = 7;
+    ACL_OPERATION_CLUSTER_ACTION = 8;
+    ACL_OPERATION_DESCRIBE_CONFIGS = 9;
+    ACL_OPERATION_ALTER_CONFIGS = 10;
+    ACL_OPERATION_IDEMPOTENT_WRITE = 11;
+}
+/// ACL permission types
+enum ACLPermissionType {
+    ACL_PERMISSION_UNSPECIFIED = 0;
+    ACL_PERMISSION_ANY = 1;
+    ACL_PERMISSION_ALLOW = 2;
+    ACL_PERMISSION_DENY = 3;
+}
