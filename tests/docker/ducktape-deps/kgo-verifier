@@ -2,6 +2,6 @@
 set -e
 git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
 cd /opt/kgo-verifier
-git reset --hard 319c69da3d7690e26d390261c4b331703b99260c
+git reset --hard 175dac29ccfeffe56fb87bc0cb1c606c7eea82a1
 go mod tidy
 make
