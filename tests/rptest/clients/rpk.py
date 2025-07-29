@@ -1413,7 +1413,8 @@ class RpkTool:
             "list",
             "--format",
             format,
-        ] + flags + self._kafka_conn_settings(node)
+        ] + flags + self._schema_registry_conn_settings(
+        ) + self._kafka_conn_settings(node)
 
         output = self._execute(cmd)
 
