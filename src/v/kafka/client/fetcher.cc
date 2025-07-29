@@ -75,7 +75,7 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
       .aborted_transactions{},
       .records{}};
 
-    small_fragment_vector<fetch_response::partition_response> responses;
+    chunked_vector<fetch_response::partition_response> responses;
     responses.push_back(std::move(pr));
     auto response = fetch_response::partition{.topic = tp.topic};
     response.partitions = std::move(responses);

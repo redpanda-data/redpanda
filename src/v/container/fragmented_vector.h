@@ -583,19 +583,6 @@ private:
 };
 
 /**
- * An alias for a fragmented_vector using a larger fragment size, close
- * to the limit of the maximum contiguous allocation size.
- */
-template<typename T>
-using large_fragment_vector = fragmented_vector<T, 32 * 1024>;
-
-/**
- * An alias for a fragmented_vector using a smaller fragment size.
- */
-template<typename T>
-using small_fragment_vector = fragmented_vector<T, 1024>;
-
-/**
  * A vector that does not allocate large contiguous chunks. Instead the
  * allocations are broken up across many different individual vectors, but the
  * exposed view is of a single container.

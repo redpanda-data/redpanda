@@ -20,8 +20,7 @@
 
 namespace kafka::client {
 
-void topic_cache::apply(
-  small_fragment_vector<metadata_response::topic>&& topics) {
+void topic_cache::apply(chunked_vector<metadata_response::topic>&& topics) {
     topics_t cache;
     cache.reserve(topics.size());
     for (const auto& t : topics) {
