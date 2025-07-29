@@ -17,8 +17,8 @@ failure_injectable_log::failure_injectable_log(
   , _underlying_log(std::move(underlying_log)) {}
 
 ss::future<> failure_injectable_log::start(
-  std::optional<storage::truncate_prefix_config> cfg) {
-    return _underlying_log->start(cfg);
+  std::optional<storage::truncate_prefix_config> cfg, ss::abort_source& as) {
+    return _underlying_log->start(cfg, as);
 }
 
 ss::future<>
