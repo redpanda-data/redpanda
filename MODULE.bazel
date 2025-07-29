@@ -46,6 +46,7 @@ bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
 bazel_dep(name = "zstd", version = "1.5.7")
 bazel_dep(name = "patchelf", version = "0.18.0")
 bazel_dep(name = "bzip2", version = "1.0.8.bcr.2")
+bazel_dep(name = "googleapis", version = "0.0.0-20250703-f9d6fe4a")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2", dev_dependency = True)
 bazel_dep(name = "rules_python", version = "1.5.1", dev_dependency = True)
