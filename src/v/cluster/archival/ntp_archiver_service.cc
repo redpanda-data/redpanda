@@ -1554,13 +1554,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
     // index in the background.
     auto upload_segment_ready = co_await ss::coroutine::as_future(
       _remote.upload_segment(
-        get_bucket_name(),
-        path,
-        meta.size_bytes,
-        get_stream,
-        rtc,
-        lazy_abort,
-        1));
+        get_bucket_name(), path, meta.size_bytes, get_stream, rtc, lazy_abort));
 
     // As noted above, check whether 'get_stream' was called. If not, close the
     // upload stream.
