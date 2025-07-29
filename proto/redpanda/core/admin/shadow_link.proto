@@ -1,0 +1,427 @@
+// Copyright 2025 Redpanda Data, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package redpanda.core.admin;
+
+import "proto/redpanda/pbgen/options.proto";
+import "proto/redpanda/pbgen/rpc.proto";
+import "proto/redpanda/core/common/acl.proto";
+import "google/api/field_behavior.proto";
+import "google/api/field_info.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+
+option (redpanda.pbgen.cpp_namespace) = "proto::admin";
+
+service ShadowLinkService {
+    rpc CreateShadowLink(CreateShadowLinkRequest) returns (ShadowLink) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    rpc DeleteShadowLink(DeleteShadowLinkRequest)
+        returns (DeleteShadowLinkResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    rpc GetShadowLink(GetShadowLinkRequest) returns (ShadowLink) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    rpc ListShadowLinks(ListShadowLinksRequest)
+        returns (ListShadowLinksResponse) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    rpc UpdateShadowLink(UpdateShadowLinkRequest) returns (ShadowLink) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+    // Fails over a shadow link or a single shadow topic
+    rpc FailOver(FailOverRequest) returns (ShadowLink) {
+        option (redpanda.pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+}
+
+/* Resources */
+// A ShadowLink resource
+message ShadowLink {
+    // The name of the shadow link
+    string name = 1 [(google.api.field_behavior) = REQUIRED];
+    // The UUID of the shadow link
+    string uid = 2 [
+        (google.api.field_behavior) = OUTPUT_ONLY,
+        (google.api.field_info).format = UUID4
+    ];
+    // Shadow link configuration
+    ShadowLinkConfigurations configurations = 3;
+    // Status of the shadow link
+    ShadowLinkStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+/* RPC Requests and Responses */
+// Create a new shadow link
+message CreateShadowLinkRequest {
+    // The shadow link to create
+    ShadowLink cluster_link = 1;
+}
+// Request to delete a shadow link
+message DeleteShadowLinkRequest {
+    // The name of the link to delete
+    string name = 1 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.resource_reference) = {
+            type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
+        }
+    ];
+}
+// Response to deleting a shadow link
+message DeleteShadowLinkResponse {}
+// Request to get the information about a shadow link
+message GetShadowLinkRequest {
+    // The name of the shadow link to get
+    string name = 1 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.resource_reference) = {
+            type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
+        }
+    ];
+}
+// Request to list all shadow links
+message ListShadowLinksRequest {}
+// All shadow links on the cluster
+message ListShadowLinksResponse {
+    // The shadow links
+    repeated ShadowLink cluster_links = 1;
+}
+// Updates a shadow link
+message UpdateShadowLinkRequest {
+    // The shadow link to update
+    ShadowLink cluster_link = 1;
+
+    // The list of fields to update
+    // See [AIP-134](https://google.aip.dev/134) for how to use `field_mask`
+    google.protobuf.FieldMask update_mask = 2;
+}
+// Request to fail over a shadow link or a single shadow topic
+message FailOverRequest {
+    // The name of the shadow link to fail over
+    string name = 1 [
+        (google.api.field_behavior) = REQUIRED,
+        (google.api.resource_reference) = {
+            type: "redpanda.core.admin.ShadowLinkService/ShadowLink"
+        }
+    ];
+    // The name of the shadow topic to fail over, if not set will fail over
+    // the entire shadow link
+    string shadow_topic_name = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+/* Other Messages */
+// ShadowLink options
+message ShadowLinkConfigurations {
+    // Configuration for the internal kafka client
+    ShadowLinkClientOptions client_options = 1;
+    // Topic metadata sync options
+    TopicMetadataSyncOptions topic_metadata_sync_options = 2;
+    // Consumer offset sync options
+    ConsumerOffsetSyncOptions consumer_offset_sync_options = 3;
+    // Security settings sync options
+    SecuritySettingsSyncOptions security_sync_options = 4;
+}
+// Options for the client link
+message ShadowLinkClientOptions {
+    // The bootstrap servers to use
+    repeated string bootstrap_servers = 1
+        [(google.api.field_behavior) = REQUIRED];
+    // The Client ID for the Kafka RPC requests setn by this cluster to the
+    // source cluster
+    string client_id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+    // If provided, this is the expected ID of the source cluster.  If it does
+    // not match then the connection will be rejected.  If provided, this value
+    // must match the `ClusterId` field returned in the Kafka Metadata response
+    // message
+    string source_cluster_id = 3;
+    // TLS settings
+    optional TLSSettings tls_settings = 4;
+    // Authentication settings
+    optional AuthenticationConfig authentication_configuration = 5;
+    // Max metadata age
+    // If 0 is provided, defaults to 10 seconds
+    int32 metadata_max_age_ms = 6;
+    // Connection timeout
+    // If 0 is provided, defaults to 1 second
+    int32 connection_timeout_ms = 7;
+    // Retry base backoff
+    // If 0 is provided, defaults to 100ms
+    int32 retry_backoff_ms = 8;
+    // Fetch request timeout
+    // If 0 is provided, defaults to 100ms
+    int32 fetch_wait_max_ms = 9;
+    // Fetch min bytes
+    // If 0 is provided, defaults to 1 byte
+    int32 fetch_min_bytes = 10;
+    // Fetch max bytes
+    // If 0 is provided, defaults to 1MiB
+    int32 fetch_max_bytes = 11;
+}
+// Options for syncing topic metadata
+message TopicMetadataSyncOptions {
+    // How often to sync metadata
+    // If 0 provided, defaults to 30 seconds
+    google.protobuf.Duration interval = 1;
+    // The topic filters to use
+    repeated NameFilter topic_filters = 2;
+    // Additional topic properties to shadow
+    // Partition count, `max.message.bytes`, `cleanup.policy` and
+    // `timestamp.type` will always be replicated
+    repeated string shadowed_topic_properties = 3;
+}
+// Options for syncing consumer offsets
+message ConsumerOffsetSyncOptions {
+    // Sync interval
+    // If 0 provided, defaults to 30 seconds
+    google.protobuf.Duration interval = 1;
+    // Whether it's enabled
+    bool enabled = 2;
+    // The filters
+    repeated NameFilter group_filters = 3;
+}
+// Options for syncing security settings
+message SecuritySettingsSyncOptions {
+    // Sync interval
+    // If 0 provided, defaults to 30 seconds
+    google.protobuf.Duration interval = 1;
+    // Whether or not it's enabled
+    bool enabled = 2;
+    // Role filters
+    repeated NameFilter role_filters = 3;
+    // SCRAM credential filters
+    repeated NameFilter scram_cred_filters = 4;
+    // ACL filters
+    repeated ACLFilter acl_filters = 5;
+}
+// TLS settings
+message TLSSettings {
+    // May provide TLS as a set of files or PEM values
+    oneof tls_settings {
+        // Certificates and keys are provided as files
+        TLSFileSettings tls_file_settings = 1;
+        // Certificates and keys are provided in PEM format
+        TLSPEMSettings tls_pem_settings = 2;
+    }
+}
+// Authentication config.  Currently only supporting SASL/SCRAM,
+// however made as a oneof for expansion
+message AuthenticationConfig {
+    oneof authentication {
+        // SASL/SCRAM configuration
+        ScramConfig scram_configuration = 1;
+    }
+}
+// TLS file settings
+message TLSFileSettings {
+    // Path to the CA
+    string ca_path = 1;
+    // Key and Cert are optional but if one is provided, then both must be
+    // Path to the key
+    string key_path = 2;
+    // Path to the cert
+    string cert_path = 3;
+}
+// Used when providing the TLS information in PEM format
+message TLSPEMSettings {
+    // The CA
+    string ca = 1;
+    // Key and Cert are optional but if one is provided, then both must be
+    // The key
+    string key = 2 [(google.api.field_behavior) = INPUT_ONLY];
+    // The SHA-256 of the key, in base64 format
+    string key_fingerprint = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+    // The cert
+    string cert = 4;
+}
+// SCRAM settings
+message ScramConfig {
+    // SCRAM username
+    string username = 1;
+    // Password
+    string password = 2 [(google.api.field_behavior) = INPUT_ONLY];
+    // Indicates that the password has been set
+    bool password_set = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+    // Timestamp of when the password was last set - only valid if password_set
+    // is true
+    google.protobuf.Timestamp password_set_at = 4
+        [(google.api.field_behavior) = OUTPUT_ONLY];
+    // The SCRAM mechanism to use
+    ScramMechanism scram_mechanism = 5;
+}
+// A filter based on the name of a resource
+message NameFilter {
+    // Literal or prefix
+    PatternType pattern_type = 1;
+    // Include or exclude
+    FilterType filter_type = 2;
+    // The resource name, or "*"
+    // Note if "*", must be the _only_ character
+    // and `pattern_type` must be `PATTERN_TYPE_LITERAL`
+    string name = 3;
+}
+// A filter for ACLs
+message ACLFilter {
+    // The resource filter
+    ACLResourceFilter resource_filter = 1;
+    // The access filter
+    ACLAccessFilter access_filter = 2;
+}
+// A filter to match ACLs for resources
+message ACLResourceFilter {
+    // The ACL resource type to match
+    common.ACLResource resource_type = 1;
+    // The pattern to apply to name
+    common.ACLPattern pattern_type = 2;
+    // Name, if not given will default to match all items in `resource_type`.
+    // Note that asterisk `*` is literal and matches resource ACLs
+    // that are named `*`
+    string name = 3;
+}
+// Filter an ACL based on its access
+message ACLAccessFilter {
+    // The name of the principal, if not set will default to match
+    // all principals with the specified `operation` and `permission_type`
+    string principal = 1;
+    // The ACL operation to match
+    common.ACLOperation operation = 2;
+    // The permission type
+    common.ACLPermissionType permission_type = 3;
+    // The host to match.  If not set, will default to match all hosts
+    // with the specified `operation` and `permission_type`. Note that
+    // the asterisk `*` is literal and matches hosts that are set to `*`
+    string host = 4;
+}
+// Status of the shadow link
+message ShadowLinkStatus {
+    ShadowLinkState state = 1;
+    // Statuses of the running tasks
+    repeated ShadowLinkTaskStatus task_statuses = 2;
+    // Status of shadow topics
+    repeated ShadowTopicStatus shadow_topic_statuses = 3;
+}
+// Status of a task
+message ShadowLinkTaskStatus {
+    // Name of the task
+    string name = 1;
+    // State of the task
+    TaskState state = 2;
+    // Reason for task being in state
+    string reason = 3;
+    // The broker the task is running on
+    int32 broker_id = 4;
+}
+// Status of a ShadowTopic
+message ShadowTopicStatus {
+    // Name of the shadow topic
+    string name = 1;
+    // Topic ID of the shadow topic
+    string topic_id = 2;
+    // State of the shadow topic
+    ShadowTopicState state = 3;
+    // List of partition information for the shadow topic
+    repeated TopicPartitionInformation partition_information = 4;
+}
+// Topic partition information
+message TopicPartitionInformation {
+    // Partition ID
+    int64 partition_id = 1;
+    // Source partition's LSO
+    int64 source_last_stable_offset = 2;
+    // Source partition's HWM
+    int64 source_high_watermark = 3;
+    // Shadowed partition's HWM
+    int64 high_watermark = 4;
+}
+
+/* Enums */
+// State of the shadow link
+enum ShadowLinkState {
+    // Unspecified
+    SHADOW_LINK_STATE_UNSPECIFIED = 0;
+    // Shadow link is active
+    SHADOW_LINK_STATE_ACTIVE = 1;
+    // Shadow link was paused
+    SHADOW_LINK_STATE_PAUSED = 2;
+    // Shadow link is in the process of failing over
+    SHADOW_LINK_STATE_FAILING_OVER = 3;
+    // Shadow link was failed over
+    SHADOW_LINK_STATE_FAILED_OVER = 4;
+}
+// Valid SCRAM mechanisms
+enum ScramMechanism {
+    SCRAM_MECHANISM_UNSPECIFIED = 0;
+    // SCRAM-SHA-256
+    SCRAM_MECHANISM_SCRAM_SHA_256 = 1;
+    // SCRAM-SHA-512
+    SCRAM_MECHANISM_SCRAM_SHA_512 = 2;
+}
+// The matching pattern type
+enum PatternType {
+    PATTERN_TYPE_UNSPECIFIED = 0;
+    // Must match the filter exactly
+    PATTERN_TYPE_LITERAL = 1;
+    // Will match anything that starts with filter
+    PATTERN_TYPE_PREFIX = 2;
+}
+// What type of filter this is, include or exclude
+enum FilterType {
+    FILTER_TYPE_UNSPECIFIED = 0;
+    // Include the items that match the filter
+    FILTER_TYPE_INCLUDE = 1;
+    // Exclude the items that match the filter
+    FILTER_TYPE_EXCLUDE = 2;
+}
+
+// Task states
+enum TaskState {
+    TASK_STATE_UNSPECIFIED = 0;
+    // Task is active
+    TASK_STATE_ACTIVE = 1;
+    // Task was paused
+    TASK_STATE_PAUSED = 2;
+    // Task is unable to communicate with source cluster
+    TASK_STATE_LINK_UNAVAILABLE = 3;
+    // Task is not running
+    TASK_STATE_NOT_RUNNING = 4;
+    // Task is faulted
+    TASK_STATE_FAULTED = 5;
+}
+// State of a shadow topic
+enum ShadowTopicState {
+    SHADOW_TOPIC_STATE_UNSPECIFIED = 0;
+    // Shadow topic is active
+    SHADOW_TOPIC_STATE_ACTIVE = 1;
+    // Shadow topic has been promoted
+    SHADOW_TOPIC_STATE_PROMOTED = 2;
+    // Shadow topic has faulted
+    SHADOW_TOPIC_STATE_FAULTED = 3;
+}
