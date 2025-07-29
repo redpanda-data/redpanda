@@ -4161,16 +4161,8 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         admin = Admin(self.redpanda)
         admin.create_user(username=self.user.username,
                           password=self.user.password,
-                          algorithm=self.user.mechanism)
-
-        def user_exists():
-            for node in self.redpanda.nodes:
-                users = admin.list_users(node=node)
-                if self.user.username not in users:
-                    return False
-            return True
-
-        wait_until(user_exists, timeout_sec=10, backoff_sec=1)
+                          algorithm=self.user.mechanism,
+                          await_exists=True)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
@@ -4951,30 +4943,10 @@ class SchemaRegistryMTLSBase(SchemaRegistryEndpoints):
         admin = Admin(self.redpanda)
 
         # Create the users
-        admin.create_user(self.admin_user.username, self.admin_user.password,
-                          self.admin_user.algorithm)
-
-        # Hack: create a user, so that we can watch for this user in order to
-        # confirm that all preceding controller log writes landed: this is
-        # an indirect way to check that ACLs (and users) have propagated
-        # to all nodes before we proceed.
-        checkpoint_user = "_test_checkpoint"
-        admin.create_user(checkpoint_user, "_password",
-                          self.admin_user.algorithm)
-
-        # wait for users to propagate to nodes
-        def auth_metadata_propagated():
-            for node in self.redpanda.nodes:
-                users = admin.list_users(node=node)
-                if checkpoint_user not in users:
-                    return False
-                elif self.security.sasl_enabled(
-                ) or self.security.kafka_enable_authorization:
-                    assert self.admin_user.username in users
-                    assert self.admin_user.username in users
-            return True
-
-        wait_until(auth_metadata_propagated, timeout_sec=10, backoff_sec=1)
+        admin.create_user(self.admin_user.username,
+                          self.admin_user.password,
+                          self.admin_user.algorithm,
+                          await_exists=True)
 
         # Create topic with rpk instead of KafkaCLITool because rpk is configured to use TLS certs
         self.super_client(basic_auth_enabled).create_topic(self.topic)
@@ -6785,7 +6757,8 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         admin = Admin(self.redpanda)
         admin.create_user(username=self.user.username,
                           password=self.user.password,
-                          algorithm=self.user.mechanism)
+                          algorithm=self.user.mechanism,
+                          await_exists=True)
 
     def _create_acl(self,
                     resource,

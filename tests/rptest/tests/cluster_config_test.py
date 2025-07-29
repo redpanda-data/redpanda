@@ -2147,12 +2147,10 @@ class ClusterConfigNoKafkaTest(RedpandaTest):
 
         user = "alice"
         password = "sekrit"
-        admin.create_user(user, password, algorithm="SCRAM-SHA-256")
-
-        # It takes a moment for the user creation to propagate, we
-        # need it to have reached whichever node we next user to set
-        # configuration
-        time.sleep(5)
+        admin.create_user(user,
+                          password,
+                          algorithm="SCRAM-SHA-256",
+                          await_exists=True)
 
         alice_admin = Admin(self.redpanda, auth=(user, password))
         self.redpanda.set_cluster_config(
