@@ -62,6 +62,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy/rest:server",
         "//src/v/raft",
         "//src/v/redpanda/admin",
+        "//src/v/redpanda/admin/services/shadow_link",
         "//src/v/redpanda/admin/services/internal:debug",
         "//src/v/resource_mgmt:cpu_profiler",
         "//src/v/resource_mgmt:cpu_scheduling",

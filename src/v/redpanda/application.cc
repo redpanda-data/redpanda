@@ -135,6 +135,7 @@
 #include "raft/service.h"
 #include "redpanda/admin/server.h"
 #include "redpanda/admin/services/internal/debug.h"
+#include "redpanda/admin/services/shadow_link/shadow_link.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
@@ -1145,6 +1146,7 @@ void application::configure_admin_server() {
           // Add RPC services
           s.add_service(
             std::make_unique<admin::debug_service_impl>(stress_fiber_manager));
+          s.add_service(std::make_unique<admin::shadow_link_service_impl>());
       })
       .get();
 }
