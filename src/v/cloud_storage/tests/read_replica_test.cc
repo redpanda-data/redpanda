@@ -306,4 +306,38 @@ FIXTURE_TEST(
       = rr_lister.start_offset_for_partition(topic_name, model::partition_id(0))
           .get();
     BOOST_REQUIRE_EQUAL(rr_lwm, rr_hwm);
+
+    // Clean up segments.
+    archiver.apply_retention().get();
+    archiver.garbage_collect().get();
+    BOOST_REQUIRE_EQUAL(0, archiver.manifest().size());
+
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver.upload_manifest("test").get());
+    archiver.flush_manifest_clean_offset().get();
+
+    // Once synced on the read replica, it should fail to be read.
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::download_result::success,
+      rr_archiver.sync_manifest().get());
+
+    auto rr_lwm2 = rr_lister
+                     .high_watermark_for_partition(
+                       topic_name, model::partition_id(0))
+                     .get();
+
+    BOOST_TEST_CONTEXT("Checking that LWM didn't change after cleanup") {
+        BOOST_CHECK_EQUAL(rr_lwm2, rr_lwm);
+    }
+
+    auto rr_hwm2 = rr_lister
+                     .high_watermark_for_partition(
+                       topic_name, model::partition_id(0))
+                     .get();
+
+    BOOST_TEST_CONTEXT("Checking that HWM didn't change after cleanup") {
+        BOOST_CHECK_EQUAL(rr_hwm2, rr_hwm);
+    }
 }
