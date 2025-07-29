@@ -692,6 +692,10 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
         size_estimate += chunked_vector_overalloc<partition>(pcount);
     }
 
+    const auto n_topics = md_cache.all_topics_metadata().size();
+    size_estimate += chunked_vector_overalloc<kafka::metadata_response_topic>(
+      n_topics);
+
     // Finally, we double the estimate, because the highwater mark for memory
     // use comes when the in-memory structures (metadata_response_data and
     // subobjects) exist on the heap and they are encoded into the reponse,
