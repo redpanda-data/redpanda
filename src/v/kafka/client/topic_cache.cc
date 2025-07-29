@@ -21,7 +21,7 @@
 namespace kafka::client {
 
 ss::future<>
-topic_cache::apply(small_fragment_vector<metadata_response::topic>&& topics) {
+topic_cache::apply(chunked_vector<metadata_response::topic>&& topics) {
     topics_t cache;
     cache.reserve(topics.size());
     for (const auto& t : topics) {

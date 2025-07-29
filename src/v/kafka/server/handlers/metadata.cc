@@ -262,12 +262,11 @@ static metadata_response::topic make_topic_response(
     return res;
 }
 
-static ss::future<small_fragment_vector<metadata_response::topic>>
-get_topic_metadata(
+static ss::future<chunked_vector<metadata_response::topic>> get_topic_metadata(
   request_context& ctx,
   metadata_request& request,
   const is_node_isolated_or_decommissioned is_node_isolated) {
-    small_fragment_vector<metadata_response::topic> res;
+    chunked_vector<metadata_response::topic> res;
 
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
@@ -291,8 +290,8 @@ get_topic_metadata(
               make_topic_response(ctx, request, md.metadata, is_node_isolated));
         }
 
-        return ss::make_ready_future<
-          small_fragment_vector<metadata_response::topic>>(std::move(res));
+        return ss::make_ready_future<chunked_vector<metadata_response::topic>>(
+          std::move(res));
     }
 
     std::vector<model::topic> topics_to_be_created;
@@ -351,8 +350,8 @@ get_topic_metadata(
                 .name = std::move(t)};
           });
 
-        return ss::make_ready_future<
-          small_fragment_vector<metadata_response::topic>>(std::move(res));
+        return ss::make_ready_future<chunked_vector<metadata_response::topic>>(
+          std::move(res));
     }
 
     std::for_each(
@@ -619,7 +618,6 @@ metadata_memory_estimator(size_t request_size, connection_context& conn_ctx) {
     // generally ~8000 bytes). Finally, we add max_frag_bytes to account for the
     // worse-cast overshoot during vector re-allocation.
     return default_memory_estimate(request_size) + size_estimate
-           + large_fragment_vector<
-             metadata_response_partition>::max_frag_bytes();
+           + chunked_vector<metadata_response_partition>::max_frag_bytes();
 }
 } // namespace kafka

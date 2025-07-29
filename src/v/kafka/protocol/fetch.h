@@ -214,7 +214,7 @@ struct fetch_response final {
     public:
         using partition_iterator = chunked_vector<partition>::iterator;
         using partition_response_iterator
-          = small_fragment_vector<partition_response>::iterator;
+          = chunked_vector<partition_response>::iterator;
 
         struct value_type {
             partition_iterator partition;
