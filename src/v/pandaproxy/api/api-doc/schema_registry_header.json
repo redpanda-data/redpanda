@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "Pandaproxy Schema Registry",
+    "title": "Redpanda Schema Registry API",
     "version": "1.1.0"
   },
   "host": "{{Host}}",

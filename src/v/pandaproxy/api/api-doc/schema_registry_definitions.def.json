@@ -114,7 +114,7 @@
           "items": {
             "type": "string"
           }
-        },
+        }
       }
     },
     "security_acl": {
@@ -131,11 +131,11 @@
       "properties": {
         "principal": {
           "type": "string",
-          "description": "The name of the principal (e.g., User:alice or RedpandaRole:admin). Use \"*\" to represent wildcard."
+          "description": "The name of the principal, for example, User:alice or RedpandaRole:admin. Use \"*\" to represent a wildcard."
         },
         "resource": {
           "type": "string",
-          "description": "The name of the resource. Use \"*\" to represent wildcard."
+          "description": "The name of the resource. Use \"*\" to represent a wildcard."
         },
         "resource_type": {
           "type": "string",
@@ -143,7 +143,7 @@
             "REGISTRY",
             "SUBJECT"
           ],
-          "description": "Type of the resource being secured."
+          "description": "The type of resource being secured."
         },
         "pattern_type": {
           "type": "string",
@@ -151,11 +151,11 @@
             "LITERAL",
             "PREFIXED"
           ],
-          "description": "Pattern match type for the resource. Only applies when resource_type is SUBJECT."
+          "description": "Pattern match type for the resource. Only applies when `resource_type` is SUBJECT."
         },
         "host": {
           "type": "string",
-          "description": "Originating host for which this rule applies. Use \"*\" to represent wildcard."
+          "description": "Originating host for which this rule applies. Use \"*\" to represent a wildcard."
         },
         "operation": {
           "type": "string",
