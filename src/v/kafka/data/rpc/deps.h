@@ -108,6 +108,17 @@ public:
       = 0;
 
     /**
+     * Create new partitions on a topic
+     *
+     * @param new_partition_count The new partition count for the topic
+     */
+    virtual ss::future<cluster::errc> create_partitions(
+      model::topic_namespace_view,
+      int32_t new_partition_count,
+      model::timeout_clock::time_point)
+      = 0;
+
+    /**
      * Update a topic.
      */
     virtual ss::future<cluster::errc>

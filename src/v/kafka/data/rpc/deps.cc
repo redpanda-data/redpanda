@@ -145,6 +145,31 @@ public:
         }
     }
 
+    ss::future<cluster::errc> create_partitions(
+      model::topic_namespace_view tp_ns,
+      int32_t new_partition_count,
+      model::timeout_clock::time_point timeout) override {
+        try {
+            auto res = co_await _controller->get_topics_frontend()
+                         .local()
+                         .create_partitions(
+                           {cluster::create_partitions_configuration(
+                             model::topic_namespace{tp_ns},
+                             new_partition_count)},
+                           timeout);
+            vassert(res.size() == 1, "expected a single result");
+            co_return res[0].ec;
+        } catch (const std::exception& ex) {
+            vlog(
+              log.warn,
+              "unable to add set partition count to {} for {}: {}",
+              new_partition_count,
+              tp_ns,
+              ex);
+            co_return cluster::errc::topic_operation_error;
+        }
+    }
+
     ss::future<cluster::errc>
     update_topic(cluster::topic_properties_update update) final {
         try {
