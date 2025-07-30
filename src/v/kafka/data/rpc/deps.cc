@@ -121,12 +121,14 @@ public:
     ss::future<cluster::errc> create_topic(
       model::topic_namespace_view tp_ns,
       int32_t partition_count,
-      cluster::topic_properties properties) final {
+      cluster::topic_properties properties,
+      std::optional<int16_t> replication_factor = std::nullopt) final {
         cluster::topic_configuration topic_cfg(
           tp_ns.ns,
           tp_ns.tp,
           partition_count,
-          _controller->internal_topic_replication());
+          replication_factor.value_or(
+            _controller->internal_topic_replication()));
         topic_cfg.properties = properties;
 
         try {
