@@ -116,7 +116,6 @@ public:
     const cloud_storage_clients::bucket_name bucket_name
       = random_test_bucket_name();
 
-protected:
     cloud_storage_clients::s3_url_style url_style;
     cloud_storage_clients::s3_configuration conf;
 
