@@ -257,8 +257,8 @@ ss::future<> disk_log_impl::remove() {
       .finally([this] { _probe->clear_metrics(); });
 }
 
-ss::future<>
-disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
+ss::future<> disk_log_impl::start(
+  std::optional<truncate_prefix_config> truncate_cfg, ss::abort_source& as) {
     auto is_new = is_new_log();
     co_await offset_translator().start(
       storage::offset_translator::must_reset{is_new});
@@ -268,7 +268,7 @@ disk_log_impl::start(std::optional<truncate_prefix_config> truncate_cfg) {
     // Reset or load the offset translator state, depending on whether this is
     // a brand new log.
     if (!is_new) {
-        co_await offset_translator().sync_with_log(*this, _compaction_as);
+        co_await offset_translator().sync_with_log(*this, as);
     }
 }
 
