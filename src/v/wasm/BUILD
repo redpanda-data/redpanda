@@ -140,6 +140,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/model",
+        "//src/v/model:compression",
         "@seastar",
     ],
 )

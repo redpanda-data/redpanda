@@ -32,7 +32,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",
-        "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/utils:object_pool",
         "//src/v/utils:static_deleter_fn",
         "@fmt",

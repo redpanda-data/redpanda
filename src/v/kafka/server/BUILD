@@ -305,6 +305,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol/schemata:produce_request",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/net",
         "//src/v/pandaproxy/schema_registry:config",
         "//src/v/pandaproxy/schema_registry:server",

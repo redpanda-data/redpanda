@@ -161,6 +161,7 @@ redpanda_cc_library(
     deps = [
         "//src/v/cloud_storage:remote_label",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/pandaproxy/schema_registry:subject_name_strategy",
         "//src/v/reflection:adl",
         "//src/v/serde",
@@ -694,6 +695,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/model:fips_config",
         "//src/v/net",
         "//src/v/pandaproxy/schema_registry:config",

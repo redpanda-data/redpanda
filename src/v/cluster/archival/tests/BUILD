@@ -211,6 +211,7 @@ redpanda_cc_btest(
         "//src/v/kafka/client",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/random:generators",
         "//src/v/redpanda/tests:fixture",
         "//src/v/storage",

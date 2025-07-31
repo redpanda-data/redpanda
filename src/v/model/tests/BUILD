@@ -52,6 +52,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:move_canary",
         "@boost//:lexical_cast",

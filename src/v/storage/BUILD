@@ -34,6 +34,7 @@ redpanda_cc_library(
         "//src/v/bytes:iobuf_parser",
         "//src/v/compression",
         "//src/v/model",
+        "//src/v/model:compression",
         "@seastar",
     ],
 )

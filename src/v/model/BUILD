@@ -14,6 +14,22 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "compression",
+    srcs = [
+        "compression.cc",
+    ],
+    hdrs = [
+        "compression.h",
+    ],
+    include_prefix = "model",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/strings:string_switch",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "model",
     srcs = [
         "adl_serde.cc",
@@ -28,7 +44,6 @@ redpanda_cc_library(
     hdrs = [
         "adl_serde.h",
         "async_adl_serde.h",
-        "compression.h",
         "errc.h",
         "fundamental.h",
         "ktp.h",
@@ -48,6 +63,7 @@ redpanda_cc_library(
     include_prefix = "model",
     visibility = ["//visibility:public"],
     deps = [
+        ":compression",
         "//src/v/base",
         "//src/v/bytes",
         "//src/v/bytes:iobuf",

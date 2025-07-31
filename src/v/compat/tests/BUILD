@@ -12,6 +12,7 @@ redpanda_cc_btest(
         "//src/v/compat:run",
         "//src/v/json",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/test_utils:seastar_boost",
         "//src/v/utils:directory_walker",
         "//src/v/utils:file_io",

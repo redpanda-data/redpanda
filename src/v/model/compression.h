@@ -60,34 +60,7 @@ constexpr auto all_batch_compression_types = [] {
     return types;
 }();
 
-/// operators needed for boost::lexical_cast<compression>
-/// inline to prevent library depdency with the v::compression module
-inline std::ostream& operator<<(std::ostream& os, const compression& c) {
-    switch (c) {
-    case compression::none:
-        os << "none";
-        break;
-    case compression::gzip:
-        os << "gzip";
-        break;
-    case compression::snappy:
-        os << "snappy";
-        break;
-    case compression::lz4:
-        os << "lz4";
-        break;
-    case compression::zstd:
-        os << "zstd";
-        break;
-    case compression::producer:
-        os << "producer";
-        break;
-    default:
-        os << "ERROR";
-        break;
-    }
-    return os;
-}
+std::ostream& operator<<(std::ostream& os, compression c);
 std::istream& operator>>(std::istream&, compression&);
 
 } // namespace model

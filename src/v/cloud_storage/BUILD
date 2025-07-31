@@ -166,6 +166,7 @@ redpanda_cc_library(
         "//src/v/hashing:xx",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:compression",
         "//src/v/net",
         "//src/v/raft",
         "//src/v/random:time_jitter",
