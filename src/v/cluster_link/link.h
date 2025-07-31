@@ -90,6 +90,8 @@ public:
     const kafka::data::rpc::partition_manager&
     partition_manager() const noexcept;
 
+    kafka::data::rpc::topic_creator* topic_creator() const noexcept;
+
     kafka::client::cluster& get_cluster_connection() noexcept;
 
     std::optional<
