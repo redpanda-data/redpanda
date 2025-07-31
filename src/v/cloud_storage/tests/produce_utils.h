@@ -10,12 +10,11 @@
  */
 #pragma once
 
-#include "cloud_storage/remote_segment.h"
 #include "cluster/archival/ntp_archiver_service.h"
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
-#include "storage/disk_log_impl.h"
+#include "test_utils/async.h"
 
 namespace tests {
 
@@ -48,6 +47,10 @@ public:
     }
     remote_segment_generator& base_timestamp(model::timestamp ts) {
         _base_timestamp = ts;
+        return *this;
+    }
+    remote_segment_generator& increment_term_each_segment(bool value = true) {
+        _increment_term_each_segment = value;
         return *this;
     }
     kafka_produce_transport& producer() { return _producer; }
@@ -83,8 +86,7 @@ public:
                       (*cur_timestamp)() + _batch_time_delta_ms);
                 }
             }
-            co_await log->flush();
-            co_await log->force_roll();
+            co_await _seal_segment();
             if (
               config::shard_local_cfg()
                 .cloud_storage_disable_upload_loop_for_tests.value()
@@ -126,10 +128,25 @@ public:
                       (*cur_timestamp)() + _batch_time_delta_ms);
                 }
             }
-            co_await log->flush();
-            co_await log->force_roll();
+            co_await _seal_segment();
         }
         co_return total_records;
+    }
+
+private:
+    ss::future<> _seal_segment() {
+        co_await _partition.log()->flush();
+        if (_increment_term_each_segment) {
+            co_await _partition.raft()->step_down(
+              "stepping down to get new term");
+
+            co_await tests::cooperative_spin_wait_with_timeout(10s, [this] {
+                return _partition.raft()->term() != model::term_id{}
+                       && _partition.raft()->is_leader();
+            });
+        } else {
+            co_await _partition.log()->force_roll();
+        }
     }
 
 private:
@@ -143,6 +160,7 @@ private:
     size_t _batches_per_seg{1};
     std::optional<model::timestamp> _base_timestamp{std::nullopt};
     int _batch_time_delta_ms{1};
+    bool _increment_term_each_segment{false};
 };
 
 } // namespace tests
