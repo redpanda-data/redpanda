@@ -13,6 +13,7 @@
 #include "cloud_storage/types.h"
 #include "kafka/data/partition_proxy.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/replicate.h"
@@ -97,6 +98,12 @@ public:
      * the leader election starts.
      */
     kafka::leader_epoch leader_epoch() const final;
+
+    /// Get the leader epoch for a specific offset.
+    /// If the offset is outside of the range of the partition an exception is
+    /// thrown. Caller must ensure that the offset is within the partition
+    /// range.
+    ss::future<kafka::leader_epoch> leader_epoch(kafka::offset) const final;
 
     ss::future<error_code> validate_fetch_offset(
       model::offset, bool, model::timeout_clock::time_point) final;

@@ -3,6 +3,7 @@
 #include "kafka/data/rpc/client.h"
 #include "kafka/data/rpc/deps.h"
 #include "kafka/data/rpc/service.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
 
@@ -97,6 +98,9 @@ public:
         throw std::runtime_error("unimplemented");
     }
     kafka::leader_epoch leader_epoch() const final {
+        throw std::runtime_error("unimplemented");
+    }
+    ss::future<kafka::leader_epoch> leader_epoch(kafka::offset) const final {
         throw std::runtime_error("unimplemented");
     }
     ss::future<std::optional<model::offset>>

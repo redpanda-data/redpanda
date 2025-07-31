@@ -89,6 +89,7 @@ public:
       get_leader_epoch_last_offset(kafka::leader_epoch) const final;
 
     kafka::leader_epoch leader_epoch() const final;
+    ss::future<kafka::leader_epoch> leader_epoch(kafka::offset) const final;
 
     ss::future<error_code> validate_fetch_offset(
       model::offset, bool, model::timeout_clock::time_point) final;

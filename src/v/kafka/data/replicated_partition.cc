@@ -163,6 +163,13 @@ kafka::leader_epoch replicated_partition::leader_epoch() const {
     return leader_epoch_from_term(_partition->raft()->confirmed_term());
 }
 
+ss::future<kafka::leader_epoch>
+replicated_partition::leader_epoch(kafka::offset offset) const {
+    co_return kafka::leader_epoch(
+      boost::numeric_cast<kafka::leader_epoch::type>(
+        (co_await _partition->term(offset))()));
+}
+
 // TODO: use previous translation speed up lookup
 ss::future<storage::translating_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,

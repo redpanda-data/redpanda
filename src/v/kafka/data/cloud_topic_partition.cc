@@ -120,6 +120,12 @@ kafka::leader_epoch cloud_topic_partition::leader_epoch() const {
     return kafka::leader_epoch(static_cast<int32_t>(term()));
 }
 
+ss::future<kafka::leader_epoch>
+cloud_topic_partition::leader_epoch(kafka::offset) const {
+    throw std::runtime_error(
+      "cloud_topic_partition::leader_epoch(kafka::offset) is not implemented");
+}
+
 ss::future<storage::translating_reader> cloud_topic_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {

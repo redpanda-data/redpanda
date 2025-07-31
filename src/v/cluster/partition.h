@@ -146,6 +146,10 @@ public:
 
     model::term_id term() const;
 
+    /// Return the term for a given Kafka offset. If the offset is outside of
+    /// the log's range, an exception is thrown.
+    ss::future<model::term_id> term(kafka::offset) const;
+
     model::offset dirty_offset() const;
 
     /// Return the offset up to which the storage layer would like to

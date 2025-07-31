@@ -1637,6 +1637,11 @@ ss::future<model::record_batch_reader> partition::make_reader(
 
 model::term_id partition::term() const { return _raft->term(); }
 
+ss::future<model::term_id> partition::term(kafka::offset) const {
+    throw std::runtime_error(
+      "partition::term(kafka::offset) is not implemented");
+}
+
 bool partition::is_read_replica_mode_enabled() const {
     const auto& cfg = _raft->log_config();
     return cfg.is_read_replica_mode_enabled();

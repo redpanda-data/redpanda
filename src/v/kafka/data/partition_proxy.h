@@ -57,6 +57,8 @@ public:
         virtual checked<model::offset, error_code>
         last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
+        virtual ss::future<kafka::leader_epoch>
+          leader_epoch(kafka::offset) const = 0;
         virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
 
