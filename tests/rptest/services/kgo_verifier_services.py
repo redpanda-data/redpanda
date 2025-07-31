@@ -15,11 +15,13 @@ import signal
 import threading
 import requests
 from typing import Any, Dict, Optional
+from requests.adapters import HTTPAdapter
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.remoteaccount import RemoteCommandError
+from urllib3 import Retry
 
 from rptest.services.redpanda import RedpandaService
 
@@ -442,11 +444,20 @@ class StatusThread(threading.Thread):
         self._parent._status = reduced
 
     def poll_status(self):
+        retry_strategy = Retry(total=5,
+                               connect=5,
+                               read=5,
+                               backoff_factor=0.3,
+                               status=5,
+                               allowed_methods=['GET'],
+                               status_forcelist=[503, 504])
+        session = requests.Session()
+        session.mount("http://", HTTPAdapter(max_retries=retry_strategy))
+
         while not self._stop_requested.is_set():
             drop_out = self._shutdown_requested.is_set()
-
-            r = requests.get(self._parent._remote_url(self._node, "status"),
-                             timeout=5)
+            r = session.get(url=self._parent._remote_url(self._node, "status"),
+                            timeout=5)
             r.raise_for_status()
             worker_statuses = r.json()
             self._ingest_status(worker_statuses)
