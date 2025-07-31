@@ -1417,7 +1417,7 @@ ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
     // failed to index (the "unindexed" segment)
     auto seg = segs.back();
     vlog(
-      gclog.debug,
+      gclog.info,
       "Unable to fully index segment with max allowed keys {}. Performing "
       "chunked sliding window compaction for segment {}",
       map.capacity(),
