@@ -11,6 +11,7 @@
 #include "cluster_link/tests/deps.h"
 
 #include "cluster/cluster_link/tests/utils.h"
+#include "cluster/types.h"
 #include "cluster_link/types.h"
 
 using namespace std::chrono_literals;
@@ -30,6 +31,24 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
     _fpmp = std::make_unique<fake_partition_manager_proxy>();
     auto fplc = std::make_unique<fake_partition_leader_cache_impl>();
     _fplci = fplc.get();
+
+    auto ftpc = std::make_unique<fake_topic_creator>(
+      [this](const cluster::topic_configuration& tp_cfg) {
+          _tmc->set_topic_config(tp_cfg);
+      },
+      [this](const cluster::topic_properties_update& update) {
+          _tmc->update_topic_config(update);
+      },
+      [this](const ::model::ntp& ntp, ::model::node_id leader) {
+          elect_leader(ntp, leader, std::nullopt);
+      },
+      [this](
+        ::model::topic_namespace_view tp_ns,
+        int32_t partition_count,
+        ::model::node_id leader) {
+          update_partition_count(tp_ns, partition_count, leader);
+      });
+    _ftpc = ftpc.get();
 
     _lf = lf.get();
     co_await _manager.start_single(
@@ -87,6 +106,21 @@ void cluster_link_manager_test_fixture::elect_leader(
     } else {
         partition_manager()->remove_shard_owner(ntp);
         _manager.local().handle_partition_state_change(ntp, ntp_leader::no);
+    }
+}
+
+void cluster_link_manager_test_fixture::update_partition_count(
+  ::model::topic_namespace_view tp_ns,
+  int32_t new_partition_count,
+  ::model::node_id node_id) {
+    auto partition_count = partition_leader_cache()->partition_count(tp_ns);
+    if (partition_count.has_value()) {
+        for (int32_t i = partition_count.value(); i < new_partition_count;
+             ++i) {
+            auto ntp = ::model::ntp(
+              tp_ns.ns, tp_ns.tp, ::model::partition_id(i));
+            elect_leader(ntp, node_id, std::nullopt);
+        }
     }
 }
 

@@ -249,6 +249,19 @@ public:
         _leader_map.insert_or_assign(ntp, node_id);
     }
 
+    std::optional<int32_t>
+    partition_count(::model::topic_namespace_view tp_ns) const {
+        int32_t count = 0;
+        bool found_ntp = false;
+        for (const auto& [ntp, _] : _leader_map) {
+            if (ntp.ns == tp_ns.ns && ntp.tp.topic == tp_ns.tp) {
+                found_ntp = true;
+                count++;
+            }
+        }
+        return found_ntp ? std::make_optional(count) : std::nullopt;
+    }
+
 private:
     chunked_hash_map<::model::ntp, ::model::node_id> _leader_map;
 };
@@ -330,6 +343,75 @@ private:
       _topic_cfgs;
 };
 
+class fake_topic_creator : public kafka::data::rpc::topic_creator {
+public:
+    using new_topic_cb_type
+      = ss::noncopyable_function<void(const cluster::topic_configuration&)>;
+    using update_topic_cb_type
+      = ss::noncopyable_function<void(const cluster::topic_properties_update&)>;
+    using new_ntp_cb_type
+      = ss::noncopyable_function<void(const ::model::ntp&, ::model::node_id)>;
+    using new_partition_count_cb_type = ss::noncopyable_function<void(
+      ::model::topic_namespace_view, int32_t, ::model::node_id)>;
+    fake_topic_creator(
+      new_topic_cb_type new_topic_cb,
+      update_topic_cb_type update_topic_cb,
+      new_ntp_cb_type new_ntp_cb,
+      new_partition_count_cb_type new_partition_count_cb)
+      : _new_topic_cb(std::move(new_topic_cb))
+      , _update_topic_cb(std::move(update_topic_cb))
+      , _new_ntp_cb(std::move(new_ntp_cb))
+      , _new_partition_count_cb(std::move(new_partition_count_cb)) {};
+
+    ss::future<cluster::errc> create_topic(
+      ::model::topic_namespace_view tp_ns,
+      int32_t partition_count,
+      cluster::topic_properties properties,
+      std::optional<int16_t> replication_factor = std::nullopt) final {
+        cluster::topic_configuration tcfg{
+          tp_ns.ns,
+          tp_ns.tp,
+          partition_count,
+          replication_factor.value_or(1),
+        };
+        tcfg.properties = properties;
+        _new_topic_cb(tcfg);
+        for (int32_t i = 0; i < partition_count; ++i) {
+            _new_ntp_cb(
+              ::model::ntp(tp_ns.ns, tp_ns.tp, ::model::partition_id(i)),
+              _default_new_topic_leader);
+        }
+        co_return cluster::errc::success;
+    }
+
+    ss::future<cluster::errc> create_partitions(
+      ::model::topic_namespace_view tp_ns,
+      int32_t new_partition_count,
+      ::model::timeout_clock::time_point) override {
+        _new_partition_count_cb(
+          tp_ns, new_partition_count, _default_new_topic_leader);
+        co_return cluster::errc::success;
+    }
+
+    ss::future<cluster::errc>
+    update_topic(cluster::topic_properties_update update) override {
+        _update_topic_cb(update);
+        co_return cluster::errc::success;
+    }
+
+    void set_default_new_topic_leader(::model::node_id node_id) {
+        _default_new_topic_leader = node_id;
+    }
+
+private:
+    ::model::node_id _default_new_topic_leader;
+
+    new_topic_cb_type _new_topic_cb;
+    update_topic_cb_type _update_topic_cb;
+    new_ntp_cb_type _new_ntp_cb;
+    new_partition_count_cb_type _new_partition_count_cb;
+};
+
 class cluster_link_manager_test_fixture {
 public:
     explicit cluster_link_manager_test_fixture(::model::node_id self);
@@ -360,6 +442,11 @@ public:
       const ::model::ntp& ntp,
       ::model::node_id node_id,
       std::optional<ss::shard_id> shard_id);
+
+    void update_partition_count(
+      ::model::topic_namespace_view tp_ns,
+      int32_t partition_count,
+      ::model::node_id node_id);
 
     fake_partition_leader_cache_impl* partition_leader_cache() {
         return _fplci;
@@ -402,6 +489,7 @@ private:
     fake_partition_manager* _fpm{nullptr};
     fake_partition_leader_cache_impl* _fplci{nullptr};
     fake_topic_metadata_cache* _tmc{nullptr};
+    fake_topic_creator* _ftpc{nullptr};
     link_factory* _lf{nullptr};
     ss::sharded<manager> _manager;
 
