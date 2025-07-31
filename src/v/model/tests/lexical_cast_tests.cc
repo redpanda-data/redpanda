@@ -18,14 +18,14 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/test/unit_test.hpp>
 
-// sanity checks on all_batch_compression_types array
+// sanity checks on all_batch_compression_types() array
 static_assert(
-  model::all_batch_compression_types.front() == model::compression::none);
+  model::all_batch_compression_types().front() == model::compression::none);
 static_assert(
-  model::all_batch_compression_types.back() == model::compression::zstd);
+  model::all_batch_compression_types().back() == model::compression::zstd);
 static_assert(
-  (size_t)model::all_batch_compression_types.back()
-    - (size_t)model::all_batch_compression_types.front() + 1
+  (size_t)model::all_batch_compression_types().back()
+    - (size_t)model::all_batch_compression_types().front() + 1
   == (size_t)model::compression::count);
 
 BOOST_AUTO_TEST_CASE(test_cast_from_string) {
@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(test_cast_from_string) {
 };
 
 BOOST_AUTO_TEST_CASE(lexical_cast_roundtrip_fmt) {
-    for (auto compress_type : model::all_batch_compression_types) {
+    for (auto compress_type : model::all_batch_compression_types()) {
         auto stringy = fmt::format("{}", compress_type);
         BOOST_CHECK_EQUAL(
           compress_type, boost::lexical_cast<model::compression>(stringy));

@@ -52,13 +52,13 @@ enum class compression : uint8_t {
     producer = std::numeric_limits<std::underlying_type_t<compression>>::max()
 };
 
-constexpr auto all_batch_compression_types = [] {
-    std::array<compression, static_cast<size_t>(compression::count)> types{};
-    for (int c = 0; c < static_cast<int>(compression::count); ++c) {
-        types[c] = static_cast<compression>(c);
+consteval auto all_batch_compression_types() {
+    std::array<compression, std::to_underlying(compression::count)> types{};
+    for (int c = 0; c < types.size(); ++c) {
+        types.at(c) = static_cast<compression>(c);
     }
     return types;
-}();
+}
 
 std::ostream& operator<<(std::ostream& os, compression c);
 std::istream& operator>>(std::istream&, compression&);

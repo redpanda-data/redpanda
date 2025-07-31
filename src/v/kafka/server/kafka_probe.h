@@ -63,7 +63,7 @@ public:
           {},
           {sm::shard_label});
 
-        for (auto compress_type : model::all_batch_compression_types) {
+        for (auto compress_type : model::all_batch_compression_types()) {
             auto compress_type_name = fmt::format("{}", compress_type);
             auto compression_label = sm::label("compression_type")(
               compress_type_name);

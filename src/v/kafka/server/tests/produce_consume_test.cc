@@ -944,16 +944,16 @@ FIXTURE_TEST(test_compression_metrics, prod_consume_fixture) {
           .get();
     };
 
-    for (auto c : model::all_batch_compression_types) {
+    for (auto c : model::all_batch_compression_types()) {
         BOOST_TEST_INFO("initially all bytes zero for " << c);
         BOOST_CHECK_EQUAL(0, bytes_by_compression(c));
     }
 
     // this compression type and those greater are expected to have zero bytes
     // produced, but lower ones should have non-zero bytes produced
-    for (ctype last_nonzero : model::all_batch_compression_types) {
+    for (ctype last_nonzero : model::all_batch_compression_types()) {
         produce_messages(last_nonzero);
-        for (auto ctype : model::all_batch_compression_types) {
+        for (auto ctype : model::all_batch_compression_types()) {
             if (ctype <= last_nonzero) {
                 BOOST_TEST_INFO(
                   "testing non-zero bytes in metric for " << ctype);
