@@ -9,21 +9,16 @@
  * by the Apache License, Version 2.0
  */
 
-#include "cloud_io/tests/s3_imposter.h"
-#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/read_replica_e2e_fixture.h"
 #include "cloud_storage/types.h"
-#include "cluster/archival/archival_metadata_stm.h"
 #include "cluster/archival/ntp_archiver_service.h"
-#include "config/configuration.h"
+#include "kafka/data/replicated_partition.h"
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
-#include "storage/disk_log_impl.h"
-#include "test_utils/scoped_config.h"
 
 using tests::kafka_consume_transport;
 
@@ -306,4 +301,114 @@ FIXTURE_TEST(
       = rr_lister.start_offset_for_partition(topic_name, model::partition_id(0))
           .get();
     BOOST_REQUIRE_EQUAL(rr_lwm, rr_hwm);
+}
+
+FIXTURE_TEST(test_read_replica_leader_epoch, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp).get();
+    auto& archiver = partition->archiver()->get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+
+    constexpr auto num_remote_segments = 3;
+    constexpr auto num_local_only_segments = 1;
+    constexpr auto batches_per_segment = 10;
+
+    BOOST_TEST_CONTEXT("Seeding partition data") {
+        tests::remote_segment_generator gen(
+          make_kafka_client().get(), *partition);
+        auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+
+        auto total_records = gen.num_segments(num_remote_segments)
+                               .additional_local_segments(
+                                 num_local_only_segments)
+                               .increment_term_each_segment()
+                               .batches_per_segment(batches_per_segment)
+                               .produce()
+                               .get();
+
+        BOOST_REQUIRE_EQUAL(
+          total_records,
+          (num_remote_segments + num_local_only_segments)
+            * batches_per_segment);
+
+        archiver.upload_topic_manifest().get();
+
+        BOOST_REQUIRE_EQUAL(
+          cloud_storage::upload_result::success,
+          archiver.upload_manifest("test").get());
+    }
+
+    auto rr_f = start_read_replica_fixture();
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_f->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_f->wait_for_leader(ntp).get();
+    auto rr_partition = rr_f->app.partition_manager.local().get(ntp).get();
+    auto& rr_archiver = rr_partition->archiver()->get();
+    rr_archiver.sync_manifest().get();
+
+    auto rr_rp = kafka::replicated_partition(rr_partition->shared_from_this());
+
+    for (auto segment_ix : boost::irange(num_remote_segments)) {
+        BOOST_TEST_MESSAGE("Testing leader epoch for segment " << segment_ix);
+        auto expected_epoch = kafka::leader_epoch{segment_ix + 1};
+
+        // Query leader epoch for first offset in the segment, middle of the
+        // segment, and last offset in the segment and expect the same term.
+        const auto first_offset = kafka::offset(
+          static_cast<long>(segment_ix * batches_per_segment));
+        const auto middle_offset = kafka::offset(static_cast<long>(
+          segment_ix * batches_per_segment + batches_per_segment / 2));
+        const auto last_offset = kafka::offset(
+          static_cast<long>((segment_ix + 1) * batches_per_segment - 1));
+
+        BOOST_TEST_CHECK(
+          rr_rp.leader_epoch(first_offset).get() == expected_epoch,
+          "offset: " << first_offset);
+
+        BOOST_TEST_CHECK(
+          rr_rp.leader_epoch(middle_offset).get() == expected_epoch,
+          "offset: " << middle_offset);
+
+        BOOST_TEST_CHECK(
+          rr_rp.leader_epoch(last_offset).get() == expected_epoch,
+          "offset: " << last_offset);
+    }
+
+    {
+        BOOST_TEST_MESSAGE(
+          "Testing leader epoch for offset before log start and after log end");
+
+        const auto before_log_start = kafka::offset{-1};
+        BOOST_CHECK_EXCEPTION(
+          rr_rp.leader_epoch(before_log_start).get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              BOOST_TEST_MESSAGE("Checking exception message " << e.what());
+              return std::string_view(e.what()).contains(
+                "offset(k)=-1 is not available in cloud, remote start "
+                "offset(k)=0");
+          });
+
+        const auto first_local_offset = kafka::offset(
+          static_cast<long>(num_remote_segments * batches_per_segment));
+        BOOST_CHECK_EXCEPTION(
+          rr_rp.leader_epoch(first_local_offset).get(),
+          std::runtime_error,
+          [](const std::runtime_error& e) {
+              BOOST_TEST_MESSAGE("Checking exception message " << e.what());
+              return std::string_view(e.what()).contains(
+                "cloud storage out of range");
+          });
+    }
 }

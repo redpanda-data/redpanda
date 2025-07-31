@@ -119,6 +119,8 @@ public:
     ss::future<std::optional<kafka::offset>>
       get_term_last_offset(model::term_id) const;
 
+    ss::future<model::term_id> term(kafka::offset) const;
+
     // Get list of aborted transactions that overlap with the offset range
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);

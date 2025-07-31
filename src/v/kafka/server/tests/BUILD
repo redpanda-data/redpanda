@@ -589,6 +589,7 @@ redpanda_cc_btest(
         "replicated_partition_test.cc",
     ],
     deps = [
+        ":kafka_test_utils",
         "//src/v/cluster",
         "//src/v/kafka/data:partition_proxy",
         "//src/v/model",

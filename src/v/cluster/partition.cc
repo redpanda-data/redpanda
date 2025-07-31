@@ -42,6 +42,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <stdexcept>
 
 namespace cluster {
 
@@ -1637,9 +1638,165 @@ ss::future<model::record_batch_reader> partition::make_reader(
 
 model::term_id partition::term() const { return _raft->term(); }
 
-ss::future<model::term_id> partition::term(kafka::offset) const {
-    throw std::runtime_error(
-      "partition::term(kafka::offset) is not implemented");
+ss::future<model::term_id> partition::term(kafka::offset offset) const {
+    // todo: who is responsible for remote partition manifest sync? caller?
+
+    // todo: implement leader epoch for offset == high watermark
+    //   in list offsets response when we return high watermark we need to
+    //   return the term for the high watermark offset. It is the current term
+    //   of the partition.
+    //
+    //   on the read replica we don't have this information available.
+
+    vlog(
+      clusterlog.debug,
+      "[{}] retrieving term for offset(k)={}",
+      _raft->ntp(),
+      offset);
+
+    if (is_read_replica_mode_enabled()) {
+        if (!cloud_data_available()) {
+            // TODO: this likely needs to be handled differently.
+            // Leader epoch i.e. in the list offsets calls should always return
+            // something even for empty log!
+            throw std::runtime_error(fmt::format(
+              "offset(k)={} is not available in read replica mode", offset));
+        }
+
+        if (offset < _cloud_storage_partition->first_uploaded_offset()) {
+            vlog(
+              clusterlog.debug,
+              "[{}] offset(k)={} is not available in cloud storage, "
+              "first_uploaded_offset(k)={}",
+              _raft->ntp(),
+              offset,
+              _cloud_storage_partition->first_uploaded_offset());
+
+            throw std::runtime_error(fmt::format(
+              "offset(k)={} is not available in cloud, remote start "
+              "offset(k)={}",
+              offset,
+              _cloud_storage_partition->first_uploaded_offset()));
+        }
+
+        co_return co_await _cloud_storage_partition->term(offset);
+    }
+
+    const kafka::offset kafka_hwm = model::offset_cast(
+      _raft->log()->from_log_offset(high_watermark()));
+    if (offset >= kafka_hwm) {
+        throw std::runtime_error(fmt::format(
+          "can not get term for offset(k)={} >= hwm(k)={}, hwm(r)={} for "
+          "partition {}",
+          offset,
+          kafka_hwm,
+          high_watermark(),
+          _raft->ntp()));
+    }
+
+    // If the offset is not available locally an empty optional is returned.
+    // Otherwise, the term for the offset is returned.
+    //
+    // Note that lambda has no suspension points to avoid GC running between
+    // checking the offset availability and fetching the term.
+    auto get_local_term_if_available =
+      [this](kafka::offset offset) -> std::optional<model::term_id> {
+        const bool available_locally
+          = offset
+            >= model::offset_cast(log()->from_log_offset(raft_start_offset()));
+
+        if (!available_locally) {
+            vlog(
+              clusterlog.trace,
+              "[{}] offset {} is not available locally",
+              _raft->ntp(),
+              offset);
+            return std::nullopt;
+        }
+
+        auto term_from_log = log()->get_term(
+          log()->to_log_offset(kafka::offset_cast(offset)));
+        if (!term_from_log) {
+            // We did the bound check above, so this should never happen.
+            throw std::runtime_error(fmt::format(
+              "unexpected empty term for offset {} in partition {} after "
+              "bound check",
+              offset,
+              _raft->ntp()));
+        }
+
+        return term_from_log;
+    };
+
+    auto local_term = get_local_term_if_available(offset);
+    if (local_term) {
+        vlog(
+          clusterlog.debug,
+          "[{}] found local term {} for offset(k)={}",
+          _raft->ntp(),
+          *local_term,
+          offset);
+        co_return *local_term;
+    } else if (cloud_data_available()) {
+        if (offset < _cloud_storage_partition->first_uploaded_offset()) {
+            vlog(
+              clusterlog.debug,
+              "[{}] offset(k)={} is not available in cloud storage, "
+              "first_uploaded_offset(k)={}",
+              _raft->ntp(),
+              offset,
+              _cloud_storage_partition->first_uploaded_offset());
+
+            throw std::runtime_error(fmt::format(
+              "offset(k)={} is not available in cloud, remote start "
+              "offset(k)={}",
+              offset,
+              _cloud_storage_partition->first_uploaded_offset()));
+        } else if (offset >= _cloud_storage_partition->next_kafka_offset()) {
+            // We have a gap between the local and cloud storage (bug).
+            vlog(
+              clusterlog.warn,
+              "[{}] offset(k)={} is not available locally neither in the "
+              "cloud. Falling back to returning the term of next available "
+              "offset.",
+              _raft->ntp(),
+              offset,
+              _cloud_storage_partition->next_kafka_offset());
+
+            auto term_from_log = log()->get_term(raft_start_offset());
+            if (!term_from_log) {
+                throw std::runtime_error(fmt::format(
+                  "unexpected empty term for raft_start_offset {} in "
+                  "partition {}",
+                  raft_start_offset(),
+                  _raft->ntp()));
+            }
+
+            auto first_local_kafka_offset = log()->from_log_offset(
+              raft_start_offset());
+
+            vlog(
+              clusterlog.debug,
+              "[{}] returning term {} for offset(k)={} which is between last "
+              "uploaded offset(k)={} and first local offset(k)={}/offset(r)={}",
+              _raft->ntp(),
+              *term_from_log,
+              offset,
+              _cloud_storage_partition->next_kafka_offset(),
+              first_local_kafka_offset,
+              raft_start_offset());
+        }
+
+        auto cloud_term = co_await _cloud_storage_partition->term(offset);
+        co_return cloud_term;
+    } else {
+        throw std::runtime_error(fmt::format(
+          "offset(k)={} is not available, start offset(k)={}, start "
+          "offset(r)={}",
+          offset,
+          log()->from_log_offset(raft_start_offset()),
+          raft_start_offset()));
+    }
 }
 
 bool partition::is_read_replica_mode_enabled() const {

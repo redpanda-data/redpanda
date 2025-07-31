@@ -139,6 +139,9 @@ public:
     ss::future<result<std::optional<kafka::offset>, error_outcome>>
     get_term_last_offset(model::term_id term) noexcept;
 
+    ss::future<result<model::term_id, error_outcome>>
+    get_term(kafka::offset offset) noexcept;
+
     bool is_empty() const noexcept;
 
     const model::ntp& get_ntp() const { return _stm_manifest.get_ntp(); }

@@ -12,6 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/read_path_probes.h"
@@ -853,6 +854,128 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
         }
     }
     co_return std::nullopt;
+}
+
+ss::future<result<model::term_id, error_outcome>>
+async_manifest_view::get_term(kafka::offset offset) noexcept {
+    const auto& stmm = stm_manifest();
+    vassert(
+      stmm.size() > 0,
+      "The manifest for {} is not expected to be empty",
+      get_ntp());
+
+    const auto stm_start_offset = stmm.begin()->base_kafka_offset();
+    const auto archive_start_offset = stmm.get_archive_start_kafka_offset();
+
+    if (archive_start_offset == kafka::offset{}) {
+        if (offset < stm_start_offset) {
+            vlog(
+              _ctxlog.debug,
+              "Offset(k)={} is before the STM manifest start offset(k)={}",
+              offset,
+              stm_start_offset);
+            co_return error_outcome::out_of_range;
+        }
+    } else if (offset < archive_start_offset) {
+        vlog(
+          _ctxlog.debug,
+          "Offset(k)={} is before the archive start offset(k)={}",
+          offset,
+          archive_start_offset);
+        co_return error_outcome::out_of_range;
+    }
+
+    if (offset > stmm.get_last_kafka_offset().value()) {
+        vlog(
+          _ctxlog.debug,
+          "Offset(k)={} is after the last STM offset(k)={}",
+          offset,
+          stmm.get_last_kafka_offset().value());
+        co_return error_outcome::out_of_range;
+    }
+
+    vlog(
+      _ctxlog.trace,
+      "Getting term for offset(k)={}, first STM offset(k)={}, first "
+      "archive "
+      "offset(k)={}",
+      offset,
+      stm_start_offset,
+      archive_start_offset);
+
+    if (stm_start_offset <= offset) {
+        // The STM manifest bounds the offset we are looking for so find the
+        // last segment which has a base offset less than or equal to the
+        // requested offset. This way we also handle the case when there are
+        // gaps (bugs) in the STM manifest.
+        auto term = stmm.begin()->segment_term;
+        for (const auto& m : stmm) {
+            if (m.base_kafka_offset() > offset) {
+                break;
+            }
+            term = m.segment_term;
+        }
+        vlog(_ctxlog.debug, "Found term {} for offset(k)={}", term, offset);
+        co_return term;
+    } else if (
+      archive_start_offset != kafka::offset{}
+      && archive_start_offset <= offset) {
+        vlog(
+          _ctxlog.trace,
+          "Looking for term in spillover manifests, offset(k)={}",
+          offset);
+
+        auto spillover_res = co_await get_materialized_manifest(
+          async_view_search_query_t{offset});
+        if (spillover_res.has_failure()) {
+            vlog(
+              _ctxlog.debug,
+              "Failed to get spillover manifest for offset(k)={}: {}",
+              offset,
+              spillover_res.error());
+            co_return spillover_res.as_failure();
+        }
+
+        if (
+          auto mm = std::get_if<ss::shared_ptr<materialized_manifest>>(
+            &spillover_res.value())) {
+            vlog(
+              _ctxlog.trace,
+              "Found spillover manifest for offset(k)={} with {} segments",
+              offset,
+              (*mm)->manifest.size());
+
+            const auto& m = (*mm)->manifest;
+            model::term_id term = m.begin()->segment_term;
+            for (const auto& meta : m) {
+                if (meta.base_kafka_offset() > offset) {
+                    break;
+                }
+                term = meta.segment_term;
+            }
+            vlog(
+              _ctxlog.debug,
+              "Found term {} for offset(k)={} in spillover manifest",
+              term,
+              offset);
+            co_return term;
+        } else {
+            vlog(
+              _ctxlog.error,
+              "Unexpected type in spillover manifest result for offset(k)={}: "
+              "{}",
+              offset,
+              spillover_res.value().index());
+            co_return error_outcome::failure;
+        }
+    } else {
+        // We've done all the bounds check already, never should reach this one.
+        vlog(
+          _ctxlog.error,
+          "Unreachable branch in get_term for offset(k)={}",
+          offset);
+        co_return error_outcome::failure;
+    }
 }
 
 bool async_manifest_view::is_empty() const noexcept {

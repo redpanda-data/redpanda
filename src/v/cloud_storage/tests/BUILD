@@ -690,6 +690,7 @@ redpanda_cc_btest(
         "//src/v/cloud_storage",
         "//src/v/cluster",
         "//src/v/config",
+        "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/server/tests:kafka_test_utils",
         "//src/v/model",
         "//src/v/redpanda/tests:fixture",

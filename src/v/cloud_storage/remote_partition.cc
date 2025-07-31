@@ -1048,6 +1048,15 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     }
 }
 
+ss::future<model::term_id> remote_partition::term(kafka::offset offset) const {
+    const auto res = co_await _manifest_view->get_term(offset);
+    if (res.has_error()) {
+        throw std::system_error(res.error());
+    } else {
+        co_return res.value();
+    }
+}
+
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
     auto guard = _gate.hold();

@@ -32,9 +32,13 @@
 
 #include <seastar/coroutine/as_future.hh>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <iterator>
+
+using namespace testing;
 
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
@@ -1367,6 +1371,56 @@ TEST_P(CloudStorageEndToEndManualTest, TestLeaderEpoch) {
         ASSERT_TRUE(archiver->sync_for_tests().get());
         archiver->apply_spillover().get();
         ASSERT_EQ(archiver->manifest().get_spillover_map().size(), 2);
+    }
+
+    auto rp = kafka::replicated_partition{partition->shared_from_this()};
+
+    for (auto segment_ix :
+         boost::irange(num_remote_segments + num_local_only_segments)) {
+        vlog(
+          e2e_test_log.info, "Testing leader epoch for segment {}", segment_ix);
+
+        auto expected_epoch = kafka::leader_epoch{segment_ix + 1};
+
+        // Query leader epoch for first offset in the segment, middle of the
+        // segment, and last offset in the segment and expect the same term.
+        const auto first_offset = kafka::offset(
+          static_cast<long>(segment_ix * batches_per_segment));
+        const auto middle_offset = kafka::offset(static_cast<long>(
+          segment_ix * batches_per_segment + batches_per_segment / 2));
+        const auto last_offset = kafka::offset(
+          static_cast<long>((segment_ix + 1) * batches_per_segment - 1));
+
+        EXPECT_EQ(rp.leader_epoch(first_offset).get(), expected_epoch)
+          << "offset: " << first_offset;
+
+        EXPECT_EQ(rp.leader_epoch(middle_offset).get(), expected_epoch)
+          << "offset: " << middle_offset;
+
+        EXPECT_EQ(rp.leader_epoch(last_offset).get(), expected_epoch)
+          << "offset: " << last_offset;
+    }
+
+    {
+        vlog(
+          e2e_test_log.info,
+          "Testing leader epoch for out-of-bounds "
+          "offsets before and after the log");
+
+        const auto before_log_start = kafka::offset{-1};
+        EXPECT_THAT(
+          [&]() { rp.leader_epoch(before_log_start).get(); },
+          ThrowsMessage<std::runtime_error>(
+            StrEq("offset(k)=-1 is not available in cloud, remote start "
+                  "offset(k)=0")));
+
+        const auto after_log_end = kafka::offset(static_cast<long>(
+          (num_remote_segments + num_local_only_segments)
+          * batches_per_segment));
+        EXPECT_THAT(
+          [&]() { rp.leader_epoch(after_log_end).get(); },
+          ThrowsMessage<std::runtime_error>(
+            HasSubstr("can not get term for offset(k)=90 >= hwm(k)=90")));
     }
 }
 
