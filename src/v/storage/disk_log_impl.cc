@@ -682,7 +682,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         co_return has_self_compacted;
     }
     vlog(
-      gclog.debug,
+      gclog.info,
       "[{}] window compacting {} segments in interval [{}, {}]",
       config().ntp(),
       segs.size(),
@@ -1331,7 +1331,7 @@ ss::future<> disk_log_impl::do_compact(
     }
     bool compacted = did_compact_fut.get();
     vlog(
-      gclog.debug,
+      gclog.info,
       "Sliding compaction of {} did {}compact data, proceeding to adjacent "
       "segment compaction",
       config().ntp(),
