@@ -65,6 +65,7 @@ ss::future<> cluster_link_manager_test_fixture::wire_up_and_start(
           _tmc = tmc.get();
           return tmc;
       }),
+      ss::sharded_parameter([&ftpc]() { return std::move(ftpc); }),
       ss::sharded_parameter([this]() {
           return std::make_unique<test_link_registry>(&_table.local());
       }),

@@ -24,6 +24,7 @@ namespace cluster_link {
 using ::cluster::cluster_link::frontend;
 using kafka::data::rpc::partition_leader_cache;
 using kafka::data::rpc::partition_manager;
+using kafka::data::rpc::topic_creator;
 using kafka::data::rpc::topic_metadata_cache;
 
 class link_registry_adapter : public link_registry {
@@ -105,6 +106,7 @@ service::service(
   ss::sharded<cluster::partition_leaders_table>* partition_leaders_table,
   ss::sharded<cluster::shard_table>* shard_table,
   ss::sharded<cluster::metadata_cache>* metadata_cache,
+  cluster::controller* controller,
   ss::smp_service_group smp_group)
   : _self(self)
   , _plf(plf)
@@ -113,6 +115,7 @@ service::service(
   , _partition_leaders_table(partition_leaders_table)
   , _shard_table(shard_table)
   , _metadata_cache(metadata_cache)
+  , _controller(controller)
   , _smp_group(smp_group) {}
 
 service::~service() = default;
@@ -125,6 +128,7 @@ ss::future<> service::start() {
       partition_manager::make_default(
         _shard_table, _partition_manager, _smp_group),
       topic_metadata_cache::make_default(_metadata_cache),
+      topic_creator::make_default(_controller),
       std::make_unique<link_registry_adapter>(&_plf->local()),
       std::make_unique<default_link_factory>(),
       std::make_unique<cluster_factory>(),

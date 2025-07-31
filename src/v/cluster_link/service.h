@@ -37,6 +37,7 @@ public:
       ss::sharded<cluster::partition_leaders_table>* partition_leaders_table,
       ss::sharded<cluster::shard_table>* shard_table,
       ss::sharded<cluster::metadata_cache>* metadata_cache,
+      cluster::controller* controller,
       ss::smp_service_group smp_group);
 
     service(const service&) = delete;
@@ -61,6 +62,7 @@ private:
     ss::sharded<cluster::partition_leaders_table>* _partition_leaders_table;
     ss::sharded<cluster::shard_table>* _shard_table;
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
+    cluster::controller* _controller;
     ss::smp_service_group _smp_group;
     std::unique_ptr<manager> _manager;
     std::vector<ss::deferred_action<ss::noncopyable_function<void()>>>

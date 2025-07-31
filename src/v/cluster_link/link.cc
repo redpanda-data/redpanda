@@ -48,6 +48,7 @@ ss::future<result<void>> stop_task(task* t) {
 
 using kafka::data::rpc::partition_leader_cache;
 using kafka::data::rpc::partition_manager;
+using kafka::data::rpc::topic_creator;
 using kafka::data::rpc::topic_metadata_cache;
 
 link::link(
@@ -222,6 +223,10 @@ partition_manager& link::partition_manager() noexcept {
 
 const partition_manager& link::partition_manager() const noexcept {
     return _manager->partition_manager();
+}
+
+topic_creator* link::topic_creator() const noexcept {
+    return _manager->topic_creator();
 }
 
 kafka::client::cluster& link::get_cluster_connection() noexcept {
