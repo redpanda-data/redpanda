@@ -282,6 +282,8 @@ public:
 
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
 
+    /// Get raft term for a given offset. If the offset is outside of the log's
+    /// range, model::term_id{} is returned. Only local storage is queried.
     model::term_id get_term(model::offset o) const;
     ss::future<std::optional<model::offset>>
     get_cloud_term_last_offset(model::term_id term) const;
