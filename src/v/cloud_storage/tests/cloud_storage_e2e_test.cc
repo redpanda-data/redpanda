@@ -1299,6 +1299,77 @@ TEST_P(EndToEndFixture, TestConsumerOffsetsNoTieredStorage) {
     ASSERT_FALSE(partition->cloud_data_available());
 }
 
+TEST_P(CloudStorageEndToEndManualTest, TestLeaderEpoch) {
+    test_local_cfg.get("cloud_storage_spillover_manifest_max_segments")
+      .set_value(std::make_optional<size_t>(2));
+    test_local_cfg.get("cloud_storage_spillover_manifest_size")
+      .set_value(std::optional<size_t>{});
+
+    constexpr auto num_remote_segments = 6;
+    constexpr auto num_local_only_segments = 3;
+    constexpr auto num_overlap_segments = 1;
+    constexpr auto num_local_segments = num_local_only_segments
+                                        + num_overlap_segments;
+    constexpr auto batches_per_segment = 10;
+
+    {
+        SCOPED_TRACE("Seeding partition data");
+
+        tests::remote_segment_generator gen(
+          make_kafka_client().get(), *partition);
+        auto deferred_g_close = ss::defer([&gen] { gen.stop().get(); });
+
+        auto total_records = gen.num_segments(num_remote_segments)
+                               .additional_local_segments(
+                                 num_local_only_segments)
+                               .increment_term_each_segment()
+                               .batches_per_segment(batches_per_segment)
+                               .produce()
+                               .get();
+
+        ASSERT_EQ(
+          total_records,
+          (num_remote_segments + num_local_only_segments)
+            * batches_per_segment);
+
+        auto desired_start_kafka_offset = kafka::offset{
+          total_records - (num_local_segments * batches_per_segment)};
+
+        auto desired_start_log_offset = partition->log()->to_log_offset(
+          model::offset(desired_start_kafka_offset));
+
+        vlog(
+          e2e_test_log.info,
+          "Desired start log offset: {}, desired start kafka offset: {}",
+          desired_start_log_offset,
+          desired_start_kafka_offset);
+
+        partition->log()->set_cloud_gc_offset(
+          model::prev_offset(desired_start_log_offset));
+        ss::abort_source as;
+        storage::housekeeping_config housekeeping_conf(
+          model::timestamp::min(),
+          1,
+          log->stm_manager()->max_removable_local_log_offset(),
+          std::nullopt,
+          std::nullopt,
+          std::chrono::milliseconds{0},
+          as);
+        partition->log()->housekeeping(housekeeping_conf).get();
+
+        RPTEST_REQUIRE_EVENTUALLY(5s, [&] {
+            vlog(
+              e2e_test_log.info, "Log has {} segments", log->segment_count());
+            // Extra segment for active but empty segment.
+            return log->segment_count() == num_local_segments + 1;
+        });
+
+        ASSERT_TRUE(archiver->sync_for_tests().get());
+        archiver->apply_spillover().get();
+        ASSERT_EQ(archiver->manifest().get_spillover_map().size(), 2);
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(WithOverride, EndToEndFixture, ::testing::Bool());
 
 INSTANTIATE_TEST_SUITE_P(
