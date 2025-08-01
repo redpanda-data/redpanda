@@ -168,8 +168,8 @@ is_last_segment(segment* s, std::optional<ss::sstring> last_clean_segment) {
                 == std::string(last_clean_segment.value());
 }
 
-ss::future<std::optional<segment_set>>
-maybe_create_contiguous_segment_set(segment_set::underlying_t segs) {
+ss::future<std::optional<segment_set>> maybe_create_contiguous_segment_set(
+  segment_set::underlying_t segs, ss::abort_source& as) {
     if (segs.size() < 2) {
         co_return segment_set(std::move(segs));
     }
@@ -198,6 +198,7 @@ maybe_create_contiguous_segment_set(segment_set::underlying_t segs) {
                         .get_dirty_offset();
     segment_set::underlying_t ignored_segs;
     for (auto it = std::next(segs.begin()); it != segs.end();) {
+        as.check();
         auto& s = *it;
         auto& prev = *std::prev(it);
         if (
@@ -420,7 +421,7 @@ static ss::future<segment_set> unsafe_do_recover(
         // Pass `good` by value on purpose, we need to preserve segments for
         // sad return path below in case we are unable to produce a
         // contiguous segment set here.
-        auto seg_set_opt = maybe_create_contiguous_segment_set(good).get();
+        auto seg_set_opt = maybe_create_contiguous_segment_set(good, as).get();
         if (seg_set_opt.has_value()) {
             return std::move(seg_set_opt).value();
         }

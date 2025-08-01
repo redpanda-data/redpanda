@@ -121,7 +121,7 @@ ss::future<segment_set> recover_segments(
 // on disk by an adjacent merge compaction (i.e were scheduled for removal, but
 // were not removed due to e.g. a broker crash) will not be included in the
 // `log` post reboot.
-ss::future<std::optional<segment_set>>
-maybe_create_contiguous_segment_set(segment_set::underlying_t segs);
+ss::future<std::optional<segment_set>> maybe_create_contiguous_segment_set(
+  segment_set::underlying_t segs, ss::abort_source& as);
 
 } // namespace storage

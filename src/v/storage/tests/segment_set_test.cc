@@ -102,8 +102,9 @@ public:
         for (const auto& spec : test.segments) {
             segs.push_back(co_await make_segment(idx, spec));
         }
+        ss::abort_source never_abort;
         auto set_opt = co_await maybe_create_contiguous_segment_set(
-          std::move(segs));
+          std::move(segs), never_abort);
         if (!set_opt.has_value()) {
             RPTEST_REQUIRE_CORO(!test.expected_result.has_value());
         } else {
