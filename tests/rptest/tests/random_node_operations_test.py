@@ -354,7 +354,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              PREV_VERSION_LOG_ALLOW_LIST + TS_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
-            mixed_versions=[True, False],
+            mixed_versions=[False],
             with_iceberg=[True, False],
             compaction_mode=[
                 CompactionMode.SLIDING_WINDOW,

@@ -220,12 +220,13 @@ public:
         if (r.data.errored()) {
             vlog(
               kwire.debug,
-              "[{}:{}] sending {}:{} for {}, response {}",
+              "[{}:{}] sending {}:{} for {}, correlation: {}, response {}",
               _conn->client_host(),
               _conn->client_port(),
               ResponseType::api_type::key,
               ResponseType::api_type::name,
               _header.client_id,
+              _header.correlation,
               r);
         } else {
             vlog(

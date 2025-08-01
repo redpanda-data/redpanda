@@ -83,13 +83,15 @@ process_result_stages process_generic(
   const session_resources& sres) {
     vlog(
       kwire.trace,
-      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}, "
+      "[{}:{}] processing name:{}, key:{}, version:{}, correlation: {}, for "
+      "{}, mem_units: {}, "
       "ctx_size: {}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
       handler->name(),
       ctx.header().key,
       ctx.header().version,
+      ctx.header().correlation,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")),
       sres.memlocks.count(),
       ctx.reader().bytes_left());

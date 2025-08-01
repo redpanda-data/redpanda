@@ -221,6 +221,14 @@ ss::future<response_ptr> create_topics_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     kafka::create_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    vlog(
+      klog.info,
+      "[client_id: {}] handling {} v{}, cor: {} request {}",
+      ctx.header().client_id,
+      "create_topics",
+      ctx.header().version,
+      ctx.header().correlation,
+      request);
     log_request(ctx.header(), request);
 
     create_topics_response response;
@@ -432,6 +440,13 @@ ss::future<response_ptr> create_topics_handler::handle(
 
     log_topic_status(c_res);
     sort_topic_response(request, response);
+    vlog(
+      klog.info,
+      "[client_id: {}] done handling {} v{}, cor: {}",
+      ctx.header().client_id,
+      "create_topics",
+      ctx.header().version,
+      ctx.header().correlation);
     co_return co_await ctx.respond(std::move(response));
 }
 

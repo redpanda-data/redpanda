@@ -203,6 +203,17 @@ ss::future<> connection_context::start() {
     if (_hook) {
         _hook.value().get().push_back(*this);
     }
+    _timer.set_callback([this] {
+        for (auto& t : _requests_in_flight) {
+            vlog(
+              klog.info,
+              ">>> timer<<< [{}][key: {}] request in flight: {}",
+              _client_addr,
+              t.request_key,
+              t.description);
+        }
+    });
+    _timer.arm_periodic(3s);
 }
 
 ss::future<> connection_context::stop() {
@@ -210,13 +221,25 @@ ss::future<> connection_context::stop() {
         _hook.value().get().erase(_hook.value().get().iterator_to(*this));
     }
     if (conn) {
-        vlog(klog.trace, "stopping connection context for {}", conn->addr);
+        vlog(
+          klog.info,
+          "stopping connection context for {} requests in flight: {}",
+          conn->addr,
+          _requests_in_flight.size());
         conn->shutdown_input();
+    }
+    for (auto& t : _requests_in_flight) {
+        vlog(
+          klog.info,
+          "[key: {}] request in flight: {}",
+          t.request_key,
+          t.description);
     }
     co_await _wait_input_shutdown.get_future();
     co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
     co_await _gate.close();
     co_await _as.stop();
+    _timer.cancel();
 
     if (conn) {
         vlog(klog.trace, "stopped connection context for {}", conn->addr);
@@ -702,7 +725,12 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                      ? std::make_optional<ss::sstring>(*hdr.client_id)
                      : std::nullopt,
     };
-
+    request_details_tracker tracker{
+      .request_key = hdr.key,
+      .client_id = r_data.client_id,
+      .description = ssx::sformat(
+        "request with key: {} from: {}", hdr.key, _client_addr)};
+    _requests_in_flight.push_back(tracker);
     auto sg_override = get_scheduling_group_override(hdr.key);
     // If handler provides an override, swith scheduling group
     if (sg_override) {

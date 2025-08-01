@@ -500,6 +500,22 @@ private:
     std::unique_ptr<snc_quota_context> _snc_quota_context;
     ss::promise<> _wait_input_shutdown;
 
+    struct request_details_tracker {
+        kafka::api_key request_key;
+        std::optional<ss::sstring> client_id;
+        ss::sstring description;
+        intrusive_list_hook _hook;
+
+        ~request_details_tracker() noexcept {
+            if (_hook.is_linked()) {
+                _hook.unlink();
+            }
+        }
+    };
+
+    intrusive_list<request_details_tracker, &request_details_tracker::_hook>
+      _requests_in_flight;
+    ss::timer<> _timer;
     bool _is_virtualized_connection = false;
 
     /// What time the client on this conection should be throttled until

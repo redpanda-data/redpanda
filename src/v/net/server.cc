@@ -308,8 +308,12 @@ ss::future<> server::wait_for_shutdown() {
     if (_connection_rates.has_value()) {
         _connection_rates->stop();
     }
-
+    vlog(
+      _log.info,
+      "Waiting for gate to close. Holders count: {}",
+      _conn_gate.get_count());
     co_return co_await _conn_gate.close().then([this] {
+        vlog(_log.info, "Closing {} connections", _connections.size());
         return seastar::do_for_each(
           _connections, [](net::connection& c) { return c.shutdown(); });
     });
