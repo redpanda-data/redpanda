@@ -639,14 +639,15 @@ public:
     explicit schema_id_validation_config_parser(Props& props)
       : props(props) {}
 
-    ///\brief Parse a topic property from the supplied cfg.
-    template<typename C>
-    bool operator()(const C& cfg, kafka::config_resource_operation op) {
+    ///\brief Parse a topic property from the supplied name and value
+    template<typename T, typename S>
+    bool operator()(
+      const T& name, const S& value, kafka::config_resource_operation op) {
         using property_t = std::variant<
           decltype(&props.record_key_schema_id_validation),
           decltype(&props.record_key_subject_name_strategy)>;
 
-        auto matcher = string_switch<std::optional<property_t>>(cfg.name);
+        auto matcher = string_switch<std::optional<property_t>>(name);
         switch (config::shard_local_cfg().enable_schema_id_validation()) {
         case pandaproxy::schema_registry::schema_id_validation_mode::compat:
             matcher
@@ -684,9 +685,15 @@ public:
         auto prop = matcher.default_match(std::nullopt);
         if (prop.has_value()) {
             ss::visit(
-              prop.value(), [&cfg, op](auto& p) { apply(*p, cfg.value, op); });
+              prop.value(), [&value, op](auto& p) { apply(*p, value, op); });
         }
         return prop.has_value();
+    }
+
+    ///\brief Parse a topic property from the supplied cfg.
+    template<typename C>
+    bool operator()(const C& cfg, kafka::config_resource_operation op) {
+        return (*this)(cfg.name, cfg.value, op);
     }
 
 private:
