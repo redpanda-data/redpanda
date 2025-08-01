@@ -11,6 +11,7 @@ redpanda_cc_btest(
         "//src/v/features",
         "//src/v/model",
         "//src/v/security:license",
+        "//src/v/security/tests:utils",
         "//src/v/test_utils:seastar_boost",
         "@seastar",
         "@seastar//:testing",

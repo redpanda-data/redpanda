@@ -8,30 +8,13 @@
 // by the Apache License, Version 2.0
 
 #include "security/license.h"
+#include "security/tests/license_utils.h"
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 
 using namespace std::chrono_literals;
-
-namespace {
-
-std::optional<security::license> make_license(const char* env_var) {
-    const char* sample_valid_license = std::getenv(env_var);
-    if (sample_valid_license == nullptr) {
-        const char* is_on_ci = std::getenv("CI");
-        if (is_on_ci) {
-            throw std::runtime_error{fmt::format(
-              "Expecting the {} env var in the CI enviornment", env_var)};
-        }
-        return std::nullopt;
-    }
-    const ss::sstring license_str{sample_valid_license};
-    return security::make_license(license_str);
-}
-
-} // namespace
 
 namespace security {
 
@@ -82,7 +65,7 @@ TEST(test_license, invalid_content) {
 }
 
 TEST(test_license, valid_content) {
-    auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE");
+    auto opt_license = testing::get_test_license("REDPANDA_SAMPLE_LICENSE");
     if (!opt_license.has_value()) {
         return;
     }
@@ -100,7 +83,7 @@ TEST(test_license, valid_content) {
 }
 
 TEST(test_license, valid_content_v1) {
-    auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE_V1");
+    auto opt_license = testing::get_test_license("REDPANDA_SAMPLE_LICENSE_V1");
     if (!opt_license.has_value()) {
         return;
     }
@@ -118,7 +101,8 @@ TEST(test_license, valid_content_v1) {
 }
 
 TEST(test_license, valid_content_v1_products) {
-    auto opt_license = ::make_license("REDPANDA_SAMPLE_LICENSE_V1_PRODUCTS");
+    auto opt_license = testing::get_test_license(
+      "REDPANDA_SAMPLE_LICENSE_V1_PRODUCTS");
     if (!opt_license.has_value()) {
         return;
     }

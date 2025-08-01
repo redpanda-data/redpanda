@@ -14,6 +14,7 @@
 #include "features/feature_table_snapshot.h"
 #include "model/timestamp.h"
 #include "security/license.h"
+#include "security/tests/license_utils.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/sleep.hh>
@@ -369,17 +370,11 @@ FIXTURE_TEST(feature_table_new_snapshot_missing, feature_table_fixture) {
 }
 
 FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
-    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
-    if (sample_valid_license == nullptr) {
-        const char* is_on_ci = std::getenv("CI");
-        BOOST_TEST_REQUIRE(
-          !is_on_ci,
-          "Expecting the REDPANDA_SAMPLE_LICENSE env var in the CI "
-          "enviornment");
+    const auto opt_license = security::testing::get_test_license();
+    if (!opt_license) {
         return;
     }
-    const ss::sstring license_str{sample_valid_license};
-    const auto license = security::make_license(license_str);
+    auto& license = *opt_license;
 
     auto expired_license = license;
     expired_license.expiry = 0s;
@@ -409,17 +404,12 @@ FIXTURE_TEST(feature_table_trial_license_test, feature_table_fixture) {
 
 SEASTAR_THREAD_TEST_CASE(feature_table_probe_expiry_metric_test) {
     using ft = features::feature_table;
-    const char* sample_valid_license = std::getenv("REDPANDA_SAMPLE_LICENSE");
-    if (sample_valid_license == nullptr) {
-        const char* is_on_ci = std::getenv("CI");
-        BOOST_TEST_REQUIRE(
-          !is_on_ci,
-          "Expecting the REDPANDA_SAMPLE_LICENSE env var in the CI "
-          "enviornment");
+
+    const auto opt_license = security::testing::get_test_license();
+    if (!opt_license) {
         return;
     }
-    const ss::sstring license_str{sample_valid_license};
-    const auto license = security::make_license(license_str);
+    auto& license = *opt_license;
 
     auto expiry = security::license::clock::time_point{4813252273s};
 
