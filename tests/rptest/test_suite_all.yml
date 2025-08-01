@@ -11,4 +11,3 @@ all:
     included:
         - tests/
         - transactions/
-        - direct_consumer_tests/
