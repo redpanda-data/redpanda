@@ -173,6 +173,13 @@ config_map_t config_map(const std::vector<creatable_topic_configs>& config);
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t);
 
+cluster::topic_configuration to_topic_config(
+  model::ns ns,
+  model::topic topic,
+  int32_t partition_count,
+  int16_t replication_factor,
+  const config_map_t& config_map);
+
 std::vector<kafka::creatable_topic_configs> report_topic_configs(
   const cluster::metadata_cache& metadata_cache,
   const cluster::topic_properties& topic_properties);

@@ -194,10 +194,46 @@ get_delete_retention_ms(const config_map_t& config) {
 
 cluster::custom_assignable_topic_configuration
 to_cluster_type(const creatable_topic& t) {
-    auto cfg = cluster::topic_configuration(
-      model::kafka_namespace, t.name, t.num_partitions, t.replication_factor);
+    auto cfg = to_topic_config(
+      model::kafka_namespace,
+      t.name,
+      t.num_partitions,
+      t.replication_factor,
+      config_map(t.configs));
 
-    auto config_entries = config_map(t.configs);
+    /// Final topic_property not decoded here is \ref remote_topic_properties,
+    /// is more of an implementation detail no need to ever show user
+
+    auto ret = cluster::custom_assignable_topic_configuration(cfg);
+    /**
+     * handle custom assignments
+     */
+    if (!t.assignments.empty()) {
+        /**
+         * custom assigned partitions must have the same replication factor
+         */
+        ret.cfg.partition_count = t.assignments.size();
+        ret.cfg.replication_factor = t.assignments.front().broker_ids.size();
+        for (auto& assignment : t.assignments) {
+            ret.custom_assignments.push_back(
+              cluster::custom_partition_assignment{
+                .id = assignment.partition_index,
+                .replicas = std::vector<model::node_id>{
+                  assignment.broker_ids.begin(), assignment.broker_ids.end()}});
+        }
+    }
+    return ret;
+}
+
+cluster::topic_configuration to_topic_config(
+  model::ns ns,
+  model::topic topic,
+  int32_t partition_count,
+  int16_t replication_factor,
+  const config_map_t& config_entries) {
+    auto cfg = cluster::topic_configuration(
+      std::move(ns), std::move(topic), partition_count, replication_factor);
+
     // Parse topic configuration
     cfg.properties.compression = get_config_value<model::compression>(
       config_entries, topic_property_compression);
@@ -305,9 +341,9 @@ to_cluster_type(const creatable_topic& t) {
     schema_id_validation_config_parser schema_id_validation_config_parser{
       cfg.properties};
 
-    for (auto& p : t.configs) {
+    for (const auto& [name, value] : config_entries) {
         schema_id_validation_config_parser(
-          p, kafka::config_resource_operation::set);
+          name, value, kafka::config_resource_operation::set);
     }
 
     if (config::shard_local_cfg().development_enable_cloud_topics()) {
@@ -316,28 +352,7 @@ to_cluster_type(const creatable_topic& t) {
               .value_or(storage::ntp_config::default_cloud_topic_enabled);
     }
 
-    /// Final topic_property not decoded here is \ref remote_topic_properties,
-    /// is more of an implementation detail no need to ever show user
-
-    auto ret = cluster::custom_assignable_topic_configuration(cfg);
-    /**
-     * handle custom assignments
-     */
-    if (!t.assignments.empty()) {
-        /**
-         * custom assigned partitions must have the same replication factor
-         */
-        ret.cfg.partition_count = t.assignments.size();
-        ret.cfg.replication_factor = t.assignments.front().broker_ids.size();
-        for (auto& assignment : t.assignments) {
-            ret.custom_assignments.push_back(
-              cluster::custom_partition_assignment{
-                .id = assignment.partition_index,
-                .replicas = std::vector<model::node_id>{
-                  assignment.broker_ids.begin(), assignment.broker_ids.end()}});
-        }
-    }
-    return ret;
+    return cfg;
 }
 
 static std::vector<kafka::creatable_topic_configs>
