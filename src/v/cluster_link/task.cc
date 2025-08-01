@@ -51,6 +51,12 @@ public:
     void set_task_interval(ss::lowres_clock::duration interval) {
         vlog(
           _task->logger().trace, "set_task_interval called with {}", interval);
+        if (!_timer.armed()) {
+            // can only happen when a task is currently running;
+            // its continuation will rearm the timer
+            return;
+        }
+
         auto cur_timeout = _timer.get_timeout();
 
         // Re-arm the timer to run with the new interval, calculate the new
