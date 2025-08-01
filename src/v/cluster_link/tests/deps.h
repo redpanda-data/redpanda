@@ -349,6 +349,15 @@ public:
         }
     }
 
+    void
+    set_partition_count(::model::topic_namespace_view tp_ns, int32_t count) {
+        auto it = _topic_cfgs.find(::model::topic_namespace(tp_ns));
+        if (it == _topic_cfgs.end()) {
+            throw std::runtime_error(ss::format("unknown topic: {}", tp_ns));
+        }
+        it->second.partition_count = count;
+    }
+
     uint32_t get_default_batch_max_bytes() const final { return 1_MiB; };
 
 private:

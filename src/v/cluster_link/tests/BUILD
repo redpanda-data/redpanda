@@ -114,3 +114,17 @@ redpanda_cc_gtest(
         "@googletest//:gtest",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "topic_reconciler_test",
+    timeout = "short",
+    srcs = [
+        "topic_reconciler_test.cc",
+    ],
+    deps = [
+        ":test_deps",
+        "//src/v/cluster_link:impl",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)

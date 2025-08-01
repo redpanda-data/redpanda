@@ -54,13 +54,18 @@ redpanda_cc_library(
         "link.cc",
         "manager.cc",
         "task.cc",
+        "topic_reconciler.cc",
     ],
     hdrs = [
         "deps.h",
         "link.h",
         "manager.h",
         "task.h",
+        "topic_reconciler.h",
         "types.h",
+    ],
+    implementation_deps = [
+        "//src/v/cluster_link/utils:topic_properties_utils",
     ],
     include_prefix = "cluster_link",
     visibility = ["//src/v/cluster_link:__subpackages__"],
