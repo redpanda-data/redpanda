@@ -269,9 +269,10 @@ static ss::future<segment_set> unsafe_do_recover(
     return ss::async([segments = std::move(segments),
                       last_clean_segment = std::move(last_clean_segment),
                       &as]() mutable {
-        if (segments.empty() || as.abort_requested()) {
+        if (segments.empty()) {
             return std::move(segments);
         }
+        as.check();
         segment_set::underlying_t good = std::move(segments).release();
         absl::btree_set<segment*> to_recover_set;
         for (auto it = good.begin(); it != good.end(); ++it) {
@@ -382,9 +383,7 @@ static ss::future<segment_set> unsafe_do_recover(
 
         for (auto& s : to_recover) {
             // check for abort
-            if (unlikely(as.abort_requested())) {
-                return segment_set(std::move(good));
-            }
+            as.check();
 
             if (is_last_segment(s.get(), last_clean_segment)) {
                 vlog(
