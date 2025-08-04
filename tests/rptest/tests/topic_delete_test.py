@@ -25,7 +25,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
@@ -928,15 +928,19 @@ class TopicDeleteStressTest(RedpandaTest):
             producer.start()
 
             metrics = [
-                MetricCheck(self.logger, self.redpanda, n,
-                            'vectorized_storage_log_compacted_segment_total',
-                            {}, sum) for n in self.redpanda.nodes
+                MetricCheck(self.logger,
+                            self.redpanda,
+                            n,
+                            'redpanda_storage_log_compacted_segment_total', {},
+                            sum,
+                            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+                for n in self.redpanda.nodes
             ]
 
             def check_compaction():
                 return all([
                     m.evaluate([
-                        ('vectorized_storage_log_compacted_segment_total',
+                        ('redpanda_storage_log_compacted_segment_total',
                          lambda a, b: b > 3)
                     ]) for m in metrics
                 ])

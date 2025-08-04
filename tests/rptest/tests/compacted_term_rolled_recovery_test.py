@@ -13,6 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.services.redpanda import MetricsEndpoint
 
 
 class CompactionTermRollRecoveryTest(RedpandaTest):
@@ -94,10 +95,11 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         """
         def fetch(node):
             count = 0
-            metrics = self.redpanda.metrics(node)
+            metrics = self.redpanda.metrics(
+                node, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
             for family in metrics:
                 for sample in family.samples:
-                    if sample.name == "vectorized_storage_log_compacted_segment_total" and \
+                    if sample.name == "redpanda_storage_log_compacted_segment_total" and \
                             sample.labels["namespace"] == "kafka" and \
                             sample.labels["topic"] == topic:
                         count += int(sample.value)

@@ -18,7 +18,7 @@ from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.utils.mode_checks import skip_debug_mode
 from time import sleep
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, MetricsEndpoint
 
 from rptest.transactions.verifiers.compacted_verifier import CompactedVerifier, Workload
 from rptest.tests.partition_movement import PartitionMovementMixin
@@ -217,7 +217,8 @@ class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
                             'topic': self.topic,
                             'partition': '0',
                         },
-                        reduce=sum)
+                        reduce=sum,
+                        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
 
         workload = CompactedVerifier(self.test_context, self.redpanda,
                                      Workload.TX)

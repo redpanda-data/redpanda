@@ -173,11 +173,6 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of times we had to re-construct the "
                           ".compaction index on a segment"),
           labels),
-        sm::make_counter(
-          "compacted_segment",
-          [this] { return _segment_compacted; },
-          sm::description("Number of compacted segments"),
-          labels),
         sm::make_gauge(
           "partition_size",
           [this] { return _partition_bytes; },
@@ -265,6 +260,28 @@ void probe::setup_public_metrics(const model::ntp& ntp) {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
+
+    namespace sm = ss::metrics;
+    auto labels = {
+      metrics::namespace_label(ntp.ns()),
+      metrics::topic_label(ntp.tp.topic()),
+      metrics::partition_label(ntp.tp.partition()),
+    };
+
+    auto aggregate_labels = {sm::shard_label, metrics::partition_label};
+
+    auto group_name = prometheus_sanitize::metrics_name("storage:log");
+
+    _public_metrics.add_group(
+      group_name,
+      {
+        sm::make_counter(
+          "compacted_segment",
+          [this] { return _segment_compacted; },
+          sm::description("Number of compacted segments"),
+          labels)
+          .aggregate(aggregate_labels),
+      });
 }
 
 void probe::add_initial_segment(const segment& s) {

@@ -86,8 +86,8 @@ class JavaCompressionTest(EndToEndTest):
 
     def get_compacted_segments(self):
         num_compacted_segments = self.redpanda.metric_sum(
-            metric_name="vectorized_storage_log_compacted_segment_total",
-            metrics_endpoint=MetricsEndpoint.METRICS,
+            metric_name="redpanda_storage_log_compacted_segment_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
             topic=self.topic_spec.name)
         self.redpanda.logger.debug(
             f"Saw {num_compacted_segments} compacted segments")

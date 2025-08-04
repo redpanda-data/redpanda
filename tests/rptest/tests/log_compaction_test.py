@@ -568,9 +568,8 @@ class LogCompactionEnableSlidingWindow(RedpandaTest):
 
             def seen_compacted_segments():
                 num_compacted_segments = self.redpanda.metric_sum(
-                    metric_name=
-                    "vectorized_storage_log_compacted_segment_total",
-                    metrics_endpoint=MetricsEndpoint.METRICS,
+                    metric_name="redpanda_storage_log_compacted_segment_total",
+                    metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS,
                     topic=topic_spec.name,
                     expect_metric=True)
                 ret = num_compacted_segments > self.prev_num_compacted_segments

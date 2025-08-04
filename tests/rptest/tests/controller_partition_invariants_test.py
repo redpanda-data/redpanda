@@ -14,6 +14,7 @@ from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
 
 from ducktape.mark import matrix
+from rptest.services.redpanda import MetricsEndpoint
 from rptest.services.metrics_check import MetricCheck
 
 import time
@@ -33,11 +34,22 @@ class ControllerLogInvariantsTest(RedpandaTest):
     def test_controller_is_not_compacted_nor_deleted(self,
                                                      cluster_cleanup_policy):
 
-        metrics = [
+        internal_metrics = [
             MetricCheck(self.logger, self.redpanda, n,
                         re.compile("vectorized_storage_log.*"),
                         {'topic': 'controller'}) for n in self.redpanda.nodes
         ]
+        public_metrics = [
+            MetricCheck(self.logger,
+                        self.redpanda,
+                        n,
+                        re.compile("redpanda_storage_log.*"),
+                        {'topic': 'controller'},
+                        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            for n in self.redpanda.nodes
+        ]
+
+        metrics = internal_metrics + public_metrics
 
         rpk = RpkTool(self.redpanda)
         for _ in range(10):
@@ -58,7 +70,7 @@ class ControllerLogInvariantsTest(RedpandaTest):
 
         time.sleep(30)
         for m in metrics:
-            m.expect([("vectorized_storage_log_compacted_segment_total",
+            m.expect([("redpanda_storage_log_compacted_segment_total",
                        lambda a, b: b == a == 0),
                       ("vectorized_storage_log_log_segments_removed_total",
                        lambda a, b: b == a == 0)])
