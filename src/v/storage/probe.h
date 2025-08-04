@@ -118,6 +118,7 @@ public:
     void batch_parse_error() { ++_batch_parse_errors; }
 
     void setup_metrics(const model::ntp&);
+    void setup_public_metrics(const model::ntp&);
 
     void delete_segment(const segment&);
 
@@ -130,7 +131,10 @@ public:
     /**
      * Clears all probe related metrics
      */
-    void clear_metrics() { _metrics.clear(); }
+    void clear_metrics() {
+        _metrics.clear();
+        _public_metrics.clear();
+    }
 
     void add_bytes_prefix_truncated(size_t bytes) {
         _bytes_prefix_truncated += bytes;
@@ -177,5 +181,6 @@ private:
     ssize_t _compaction_removed_bytes = 0;
 
     metrics::internal_metric_groups _metrics;
+    metrics::public_metric_groups _public_metrics;
 };
 } // namespace storage

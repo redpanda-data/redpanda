@@ -261,6 +261,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
       });
 }
 
+void probe::setup_public_metrics(const model::ntp& ntp) {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+}
+
 void probe::add_initial_segment(const segment& s) {
     _partition_bytes += s.file_size();
 }

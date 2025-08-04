@@ -209,6 +209,7 @@ disk_log_impl::disk_log_impl(
     }
     _probe->initial_segments_count(_segs.size());
     _probe->setup_metrics(this->config().ntp());
+    _probe->setup_public_metrics(this->config().ntp());
 }
 disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting:{}", *this);
