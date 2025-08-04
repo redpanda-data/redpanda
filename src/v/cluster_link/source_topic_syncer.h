@@ -49,7 +49,39 @@ private:
         int32_t partition_count;
         int16_t rf;
     };
-    chunked_hash_map<::model::topic, topic_metadata> find_candidate_topics();
+
+    using reconciler_commands = std::variant<
+      model::add_mirror_topic_cmd,
+      model::update_mirror_topic_properties_cmd,
+      model::update_mirror_topic_state_cmd>;
+    using reconciler_commands_vector = chunked_vector<reconciler_commands>;
+    // Map of topics who are candidates for mirror topic creation
+    using candidate_create_map
+      = chunked_hash_map<::model::topic, topic_metadata>;
+    // Map of topics who are candidates for updates, include the current
+    // mirror_topic_metadata for cached properties
+    using candidate_update_map = chunked_hash_map<
+      ::model::topic,
+      std::pair<topic_metadata, model::mirror_topic_metadata>>;
+    // Builds a list of topics that are candidates for creation
+    candidate_create_map
+    find_candidate_topics_for_creation(kafka::client::cluster& cluster);
+    // Builds a list of topics that are candidates for update
+    candidate_update_map
+    find_candidate_topics_for_update(kafka::client::cluster& cluster);
+    // Enqueue the add mirror topic commands into the list of commands
+    void enqueue_create_mirror_topic_commands(
+      reconciler_commands_vector& commands,
+      const candidate_create_map& candidates,
+      const chunked_vector<kafka::describe_configs_result>& describe_results);
+    // Enqueue the update mirror topic properties or update mirror topic state
+    // commands
+    void enqueue_update_mirror_topic_commands(
+      reconciler_commands_vector& commands,
+      const candidate_update_map& candidates,
+      const chunked_vector<kafka::describe_configs_result>& describe_results);
+    // Execute the commands
+    ss::future<> submit_commands(reconciler_commands_vector commands);
     ss::future<kafka::describe_configs_response> describe_topics(
       kafka::client::cluster& cluster,
       ::model::node_id controller_id,

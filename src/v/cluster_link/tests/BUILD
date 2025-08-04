@@ -105,6 +105,7 @@ redpanda_cc_gtest(
     timeout = "short",
     srcs = [
         "source_topic_syncer_test.cc",
+        "topic_properties_syncer_test.cc",
     ],
     deps = [
         ":test_deps",
