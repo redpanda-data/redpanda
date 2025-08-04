@@ -14,6 +14,9 @@
 
 namespace security::testing {
 
+constexpr std::string_view skip_no_license_msg
+  = "Skipping the test without a valid license";
+
 /// Retrieves and constructs a license from an environment variable. If the
 /// environment variable is missing, std::nullopt is returned outside of CI
 /// (which is typically used as a signal to skip the test) and an exception is

@@ -67,6 +67,7 @@ TEST(test_license, invalid_content) {
 TEST(test_license, valid_content) {
     auto opt_license = testing::get_test_license("REDPANDA_SAMPLE_LICENSE");
     if (!opt_license.has_value()) {
+        GTEST_SKIP() << testing::skip_no_license_msg;
         return;
     }
     const license license = std::move(opt_license.value());
@@ -85,6 +86,7 @@ TEST(test_license, valid_content) {
 TEST(test_license, valid_content_v1) {
     auto opt_license = testing::get_test_license("REDPANDA_SAMPLE_LICENSE_V1");
     if (!opt_license.has_value()) {
+        GTEST_SKIP() << testing::skip_no_license_msg;
         return;
     }
     const license license = std::move(opt_license.value());
@@ -104,6 +106,7 @@ TEST(test_license, valid_content_v1_products) {
     auto opt_license = testing::get_test_license(
       "REDPANDA_SAMPLE_LICENSE_V1_PRODUCTS");
     if (!opt_license.has_value()) {
+        GTEST_SKIP() << testing::skip_no_license_msg;
         return;
     }
     const license license = std::move(opt_license.value());

@@ -376,6 +376,7 @@ TEST_F(feature_table_fixture, feature_table_new_snapshot_missing) {
 TEST_F(feature_table_fixture, feature_table_trial_license_test) {
     const auto opt_license = security::testing::get_test_license();
     if (!opt_license) {
+        GTEST_SKIP() << security::testing::skip_no_license_msg;
         return;
     }
     auto& license = *opt_license;
@@ -411,6 +412,7 @@ TEST_F(FeatureTableTest, feature_table_probe_expiry_metric_test) {
 
     const auto opt_license = security::testing::get_test_license();
     if (!opt_license) {
+        GTEST_SKIP() << security::testing::skip_no_license_msg;
         return;
     }
     auto& license = *opt_license;
