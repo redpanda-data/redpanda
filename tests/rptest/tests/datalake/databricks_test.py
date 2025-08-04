@@ -363,8 +363,19 @@ class DatabricksTest(RedpandaTest):
 
     @databricks_only_test
     @cluster(num_nodes=2)
-    @matrix(cloud_storage_type=supported_storage_types())
-    def test_upload_after_external_maintenance(self, cloud_storage_type):
+    @matrix(
+        cloud_storage_type=supported_storage_types(),
+        # Partitioning used to break optimization so we have two tests to
+        # monitor the behavior.
+        # See https://redpandadata.atlassian.net/browse/CORE-12335
+        partition_spec_override=[
+            None,  # Use default partition spec
+            "()",  # No partitioning
+        ],
+    )
+    def test_upload_after_external_maintenance(
+        self, cloud_storage_type, partition_spec_override
+    ):
         """
         Goals of this test:
             a) Test that redpanda continues to work after an external maintenance operation
@@ -383,6 +394,10 @@ class DatabricksTest(RedpandaTest):
         ) as dl:
             num_partitions = 2
             num_produced = 0
+
+            config = {}
+            if partition_spec_override is not None:
+                config["redpanda.iceberg.partition.spec"] = partition_spec_override
             dl.create_iceberg_enabled_topic(
                 self.topic_name,
                 partitions=num_partitions,
