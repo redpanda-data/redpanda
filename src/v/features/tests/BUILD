@@ -1,6 +1,6 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_gtest")
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "feature_table_test",
     timeout = "short",
     srcs = [
@@ -12,9 +12,9 @@ redpanda_cc_btest(
         "//src/v/model",
         "//src/v/security:license",
         "//src/v/security/tests:utils",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
-        "@seastar//:testing",
     ],
 )
 
