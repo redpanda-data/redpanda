@@ -10,12 +10,18 @@
 
 #pragma once
 
+#include "absl/strings/match.h"
 #include "security/license.h"
 
 namespace security::testing {
 
 constexpr std::string_view skip_no_license_msg
   = "Skipping the test without a valid license";
+
+inline bool is_on_ci() {
+    const char* ci_env = std::getenv("CI");
+    return ci_env && absl::EqualsIgnoreCase(ci_env, "true");
+}
 
 /// Retrieves and constructs a license from an environment variable. If the
 /// environment variable is missing, std::nullopt is returned outside of CI
@@ -25,8 +31,7 @@ inline std::optional<security::license>
 get_test_license(const char* env_var = "REDPANDA_SAMPLE_LICENSE") {
     const char* sample_valid_license = std::getenv(env_var);
     if (sample_valid_license == nullptr) {
-        const char* is_on_ci = std::getenv("CI");
-        if (is_on_ci) {
+        if (is_on_ci()) {
             throw std::runtime_error{fmt::format(
               "Expecting the {} env var in the CI environment", env_var)};
         }

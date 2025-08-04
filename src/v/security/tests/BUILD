@@ -13,6 +13,7 @@ redpanda_test_cc_library(
         "//src/v/security:license",
         "//src/v/test_utils:random",
         "//src/v/test_utils:random_bytes",
+        "@abseil-cpp//absl/strings",
     ],
 )
 
