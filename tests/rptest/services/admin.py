@@ -486,7 +486,7 @@ class Admin:
             backoff_factor=1,
             status_forcelist=retry_codes,
             respect_retry_after_header=True,
-            method_whitelist=None,
+            allowed_methods=None,  # Retry all methods
             remove_headers_on_redirect=[],
         )
 
