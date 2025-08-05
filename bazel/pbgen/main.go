@@ -525,7 +525,7 @@ func (g *headerGenerator) generateMessage(msg protoreflect.MessageDescriptor, w 
 				if !oneof.IsSynthetic() {
 					// Deducing this for the win!
 					w.Println("template<typename Self, typename... Args>")
-					w.Printf("auto&& visit_%s(this Self&& self, Args&&... args) { seastar::visit(std::forward<Self>(self).%s_, std::forward<Args>(args)...); }\n", oneof.Name(), oneof.Name())
+					w.Printf("auto visit_%s(this Self&& self, Args&&... args) { return seastar::visit(std::forward<Self>(self).%s_, std::forward<Args>(args)...); }\n", oneof.Name(), oneof.Name())
 				}
 			}
 			g.leadingComments(field, w)

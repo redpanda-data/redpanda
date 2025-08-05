@@ -440,7 +440,7 @@ public:
   const chunked_hash_map<ss::sstring, foreign_enum_edition2023>& get_map_string_foreign_enum() const;
   void set_map_string_foreign_enum(chunked_hash_map<ss::sstring, foreign_enum_edition2023>&& v);
   template<typename Self, typename... Args>
-  auto&& visit_oneof_field(this Self&& self, Args&&... args) { seastar::visit(std::forward<Self>(self).oneof_field_, std::forward<Args>(args)...); }
+  auto visit_oneof_field(this Self&& self, Args&&... args) { return seastar::visit(std::forward<Self>(self).oneof_field_, std::forward<Args>(args)...); }
   bool has_oneof_uint32() const;
   uint32_t get_oneof_uint32() const;
   void set_oneof_uint32(uint32_t v);
