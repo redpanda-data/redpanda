@@ -55,7 +55,7 @@ private:
 
 private:
     ss::gate _gate;
-    model::node_id _self;
+    ::model::node_id _self;
     ss::sharded<::cluster::cluster_link::frontend>* _plf;
     std::unique_ptr<cluster::partition_change_notifier> _notifications;
     ss::sharded<cluster::partition_manager>* _partition_manager;
