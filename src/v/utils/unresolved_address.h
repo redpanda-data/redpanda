@@ -53,6 +53,11 @@ public:
 
     auto serde_fields() { return std::tie(_host, _port, _family); }
 
+    /// \brief Parses a string in the format of "host:port"
+    /// \throws std::invalid_argument if the string is not in the expected
+    /// format
+    static unresolved_address parse_address(std::string_view maybe_address);
+
 private:
     friend std::ostream&
     operator<<(std::ostream& o, const unresolved_address& s) {
