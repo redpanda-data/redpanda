@@ -320,19 +320,32 @@ public:
               ss::format("unknown topic: {}", update.tp_ns));
         }
         auto& config = it->second;
-        // NOTE: We just support batch_max_bytes because that's all we use in
-        // tests.
-        const auto& prop_update = update.properties.batch_max_bytes;
-        switch (prop_update.op) {
-        case cluster::incremental_update_operation::none:
-            return;
-        case cluster::incremental_update_operation::set:
+        const auto& prop_update = update.properties;
+        if (
+          prop_update.batch_max_bytes.op
+          == cluster::incremental_update_operation::set) {
             config.properties.batch_max_bytes
-              = update.properties.batch_max_bytes.value;
-            break;
-        case cluster::incremental_update_operation::remove:
-            config.properties.batch_max_bytes.reset();
-            break;
+              = prop_update.batch_max_bytes.value;
+        }
+
+        if (
+          prop_update.cleanup_policy_bitflags.op
+          == cluster::incremental_update_operation::set) {
+            config.properties.cleanup_policy_bitflags
+              = prop_update.cleanup_policy_bitflags.value;
+        }
+
+        if (
+          prop_update.timestamp_type.op
+          == cluster::incremental_update_operation::set) {
+            config.properties.timestamp_type = prop_update.timestamp_type.value;
+        }
+
+        if (
+          update.custom_properties.replication_factor.op
+          == cluster::incremental_update_operation::set) {
+            config.replication_factor
+              = update.custom_properties.replication_factor.value.value()();
         }
     }
 
