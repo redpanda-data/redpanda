@@ -26,6 +26,7 @@
 #include "cluster/self_test_backend.h"
 #include "cluster/self_test_frontend.h"
 #include "cluster/tx_coordinator_mapper.h"
+#include "cluster_link/fwd.h"
 #include "config/node_config.h"
 #include "crash_tracker/service.h"
 #include "crypto/ossl_context_service.h"
@@ -203,6 +204,8 @@ public:
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     std::unique_ptr<experimental::cloud_topics::app> cloud_topics_app;
+
+    ss::sharded<cluster_link::service> _cluster_link_service;
 
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;

@@ -205,6 +205,8 @@ async def post_start_configure(rpk):
     while True:
         if await run_command(
                 f"{rpk} cluster config set development_enable_cloud_topics true"
+        ) and await run_command(
+                f"{rpk} cluster config set development_enable_cluster_link true"
         ):
             return
         await asyncio.sleep(1)

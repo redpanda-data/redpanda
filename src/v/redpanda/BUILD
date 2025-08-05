@@ -11,6 +11,9 @@ redpanda_cc_library(
         "application.h",
         "monitor_unsafe.h",
     ],
+    implementation_deps = [
+        "//src/v/cluster_link",
+    ],
     include_prefix = "redpanda",
     visibility = ["//visibility:public"],
     deps = [
@@ -30,6 +33,7 @@ redpanda_cc_library(
         "//src/v/cluster:cloud_metadata_offsets_recovery_service",
         "//src/v/cluster:cloud_metadata_offsets_upload_router",
         "//src/v/cluster:offsets_lookup",
+        "//src/v/cluster_link:fwd",
         "//src/v/compression",
         "//src/v/config",
         "//src/v/crypto",
