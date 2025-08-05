@@ -17,6 +17,7 @@
 #include "cluster_link/logger.h"
 #include "cluster_link/model/types.h"
 #include "cluster_link/task.h"
+#include "cluster_link/topic_reconciler.h"
 #include "cluster_link/types.h"
 #include "container/chunked_vector.h"
 #include "kafka/data/rpc/deps.h"
@@ -116,6 +117,8 @@ public:
 private:
     /// Called periodically to reconcile registered tasks on created links
     ss::future<> link_task_reconciler();
+    ss::future<> start_topic_reconciler();
+    ss::future<> stop_topic_reconciler();
 
 private:
     ::model::node_id _self;
@@ -128,6 +131,7 @@ private:
     std::unique_ptr<link_registry> _registry;
     std::unique_ptr<link_factory> _link_factory;
     std::unique_ptr<cluster_factory> _cluster_factory;
+    std::unique_ptr<topic_reconciler> _topic_reconciler;
     ssx::work_queue _queue;
 
     chunked_vector<std::unique_ptr<task_factory>> _task_factories;
@@ -139,5 +143,6 @@ private:
     ss::timer<ss::lowres_clock> _link_task_reconciler_timer;
     ss::abort_source _as;
     ss::gate _g;
+    ntp_leader _is_controller_leader{ntp_leader::no};
 };
 } // namespace cluster_link
