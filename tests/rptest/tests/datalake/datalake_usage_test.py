@@ -42,12 +42,15 @@ class IcebergUsageTest(RedpandaTest):
                              usage_num_windows=30,
                              usage_window_width_interval_sec=1)
         self.test_ctx = test_ctx
-        super(IcebergUsageTest,
-              self).__init__(test_context=test_ctx,
-                             si_settings=SISettings(test_context=test_ctx),
-                             extra_rp_conf=extra_rp_conf,
-                             *args,
-                             **kwargs)
+        si_settings = SISettings(test_context=test_ctx)
+        # Topics getting deleted and recreated during the test
+        si_settings.set_expected_damage(
+            {"ntr_no_topic_manifest", "ntpr_no_manifest"})
+        super(IcebergUsageTest, self).__init__(test_context=test_ctx,
+                                               si_settings=si_settings,
+                                               extra_rp_conf=extra_rp_conf,
+                                               *args,
+                                               **kwargs)
 
     def setUp(self):
         pass
