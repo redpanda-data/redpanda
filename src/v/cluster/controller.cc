@@ -260,7 +260,7 @@ ss::future<> controller::start(
       config::node().data_directory().as_sstring(),
       seed_nodes);
 
-    co_await _partition_leaders.start(std::ref(_tp_state));
+    co_await _partition_leaders.start(std::ref(_tp_state), std::ref(_as));
     co_await _drain_manager.start(std::ref(_partition_manager));
     co_await _members_manager.start_single(
       _raft0,

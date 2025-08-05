@@ -36,31 +36,35 @@
 
 namespace cluster {
 struct test_fixture : public seastar_test {
-    test_fixture()
-      : leaders(topics) {}
+    test_fixture() {}
 
     ss::future<> SetUpAsync() {
+        co_await as.start();
         co_await migrated_resources.start();
         co_await topics.start(ss::sharded_parameter(
           [this] { return std::ref(migrated_resources.local()); }));
+        leaders = std::make_unique<partition_leaders_table>(topics, as);
     }
     ss::future<> TearDownAsync() {
-        co_await leaders.stop();
+        as.local().request_abort();
+        co_await leaders->stop();
         co_await topics.stop();
         co_await migrated_resources.stop();
+        co_await as.stop();
     }
 
     ss::future<size_t> count_leaderless_partitions() {
         size_t leaderless_cnt = 0;
-        co_await leaders.for_each_leader([&leaderless_cnt](
-                                           model::topic_namespace_view,
-                                           model::partition_id,
-                                           std::optional<model::node_id> leader,
-                                           model::term_id) {
-            if (!leader) {
-                leaderless_cnt++;
-            }
-        });
+        co_await leaders->for_each_leader(
+          [&leaderless_cnt](
+            model::topic_namespace_view,
+            model::partition_id,
+            std::optional<model::node_id> leader,
+            model::term_id) {
+              if (!leader) {
+                  leaderless_cnt++;
+              }
+          });
         co_return leaderless_cnt;
     }
 
@@ -84,7 +88,8 @@ struct test_fixture : public seastar_test {
     }
     raft::group_id _group_id{0};
     ss::sharded<topic_table> topics;
-    partition_leaders_table leaders;
+    std::unique_ptr<partition_leaders_table> leaders;
+    ss::sharded<ss::abort_source> as;
     ss::sharded<data_migrations::migrated_resources> migrated_resources;
 };
 
@@ -110,16 +115,16 @@ TEST_F_CORO(test_fixture, test_counting_leaderless_partitions) {
             random_generators::get_int(partitions_per_topic)));
 
         if (tests::random_bool()) {
-            leaders.update_partition_leader(
+            leaders->update_partition_leader(
               ntp, model::term_id(i), tests::random_optional([] {
                   return model::node_id(0);
               }));
         } else {
-            leaders.remove_leader(ntp, model::revision_id{0});
+            leaders->remove_leader(ntp, model::revision_id{0});
         }
 
         auto expected = co_await count_leaderless_partitions();
-        ASSERT_EQ_CORO(expected, leaders.leaderless_partition_count());
+        ASSERT_EQ_CORO(expected, leaders->leaderless_partition_count());
     }
 }
 
@@ -136,30 +141,31 @@ TEST_F_CORO(test_fixture, test_waiting_for_leader) {
       model::kafka_namespace,
       model::topic_partition(tp, model::partition_id(2)));
 
-    auto f_1 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+    auto f_1 = leaders->wait_for_leader(p_0, default_deadline(), std::nullopt);
 
     /**
      * Wait for the same partition leader to see if we can have multiple
      * notifications
      */
-    auto f_2 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+    auto f_2 = leaders->wait_for_leader(p_0, default_deadline(), std::nullopt);
 
     ss::abort_source as;
-    auto f_3 = leaders.wait_for_leader(p_1, default_deadline(), as);
+    auto f_3 = leaders->wait_for_leader(p_1, default_deadline(), as);
 
     // no leader information is available yet;
     ASSERT_FALSE_CORO(f_1.available());
     ASSERT_FALSE_CORO(f_2.available());
     ASSERT_FALSE_CORO(f_3.available());
 
-    leaders.update_partition_leader(p_0, model::term_id(0), model::node_id(20));
+    leaders->update_partition_leader(
+      p_0, model::term_id(0), model::node_id(20));
     // after leadership was set futures should be available
     // ASSERT_TRUE_CORO(f_1.available());
     // ASSERT_TRUE_CORO(f_2.available());
     // as f_3 points to different partition it should still be unavailable
     ASSERT_FALSE_CORO(f_3.available());
 
-    auto f_4 = leaders.wait_for_leader(p_0, default_deadline(), std::nullopt);
+    auto f_4 = leaders->wait_for_leader(p_0, default_deadline(), std::nullopt);
     ASSERT_TRUE_CORO(f_4.available());
 
     ASSERT_EQ_CORO(co_await std::move(f_1), model::node_id(20));
@@ -188,24 +194,24 @@ TEST_F_CORO(test_fixture, test_leadership_notification) {
 
     absl::flat_hash_map<model::ntp, int> notifies{{p_0, 0}, {p_1, 0}, {p_2, 0}};
 
-    leaders.register_leadership_change_notification(
+    leaders->register_leadership_change_notification(
       [&](const model::ntp& ntp, model::term_id, model::node_id) {
           notifies[ntp] += 1;
       });
 
     // notification should not be triggered when leader_id is set to nullopt
-    leaders.update_partition_leader(p_0, model::term_id{1}, std::nullopt);
+    leaders->update_partition_leader(p_0, model::term_id{1}, std::nullopt);
 
     EXPECT_THAT(notifies, Each(Pair(An<model::ntp>(), Eq(0))));
 
     // notification should be triggered as we have new leader
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_0, model::revision_id{10}, model::term_id{1}, model::node_id(10));
     EXPECT_EQ(notifies[p_0], 1);
     EXPECT_EQ(notifies[p_1], 0);
     EXPECT_EQ(notifies[p_2], 0);
     // notifications for each partition should be independent
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_1, model::revision_id{10}, model::term_id{1}, model::node_id(10));
     EXPECT_EQ(notifies[p_0], 1);
     EXPECT_EQ(notifies[p_1], 1);
@@ -213,26 +219,26 @@ TEST_F_CORO(test_fixture, test_leadership_notification) {
 
     // notifications should not be triggered if update was ignored due to
     // out of date revision revision change
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_1, model::revision_id{8}, model::term_id{2}, model::node_id(2));
     EXPECT_EQ(notifies[p_0], 1);
     EXPECT_EQ(notifies[p_1], 1);
     EXPECT_EQ(notifies[p_2], 0);
 
     // notifications should be triggered when leadership changes 10 -> 5
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_0, model::revision_id{10}, model::term_id{2}, model::node_id(5));
     EXPECT_EQ(notifies[p_0], 2);
 
     // notifications should be triggered when leader does not change but
     // term does
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_0, model::revision_id{10}, model::term_id{3}, model::node_id(5));
     EXPECT_EQ(notifies[p_0], 3);
 
     // notifications should be triggered when leader and term does not change
     // but revision does
-    leaders.update_partition_leader(
+    leaders->update_partition_leader(
       p_0, model::revision_id{11}, model::term_id{3}, model::node_id(5));
     EXPECT_EQ(notifies[p_0], 4);
     EXPECT_EQ(notifies[p_1], 1);
