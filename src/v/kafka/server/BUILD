@@ -189,6 +189,7 @@ redpanda_cc_library(
     deps = [
         ":consumer_group_lag_metrics_rpc",
         ":datalake_throttle_manager",
+        ":datalake_usage_api",
         ":logger",
         ":qdc_monitor_config",
         "//src/v/base",
@@ -349,6 +350,24 @@ redpanda_cc_library(
         "@boost//:range",
         "@boost//:uuid",
         "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "datalake_usage_api",
+    srcs = [
+        "datalake_usage_api.cc",
+    ],
+    hdrs = [
+        "datalake_usage_api.h",
+    ],
+    include_prefix = "kafka/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/container:fragmented_vector",
+        "//src/v/model",
+        "//src/v/utils:to_string",
         "@seastar",
     ],
 )

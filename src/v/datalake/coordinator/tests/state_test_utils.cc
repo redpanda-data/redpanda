@@ -9,6 +9,8 @@
  */
 #include "datalake/coordinator/tests/state_test_utils.h"
 
+#include "random/generators.h"
+
 namespace datalake::coordinator {
 
 chunked_vector<translated_offset_range> make_pending_files(
@@ -29,11 +31,15 @@ chunked_vector<translated_offset_range> make_pending_files(
                 std::nullopt),
             });
         }
+        auto total_bytes = (end - begin + 1)
+                           * random_generators::get_int<uint64_t>(
+                             100, 1000); // Simulate some bytes processed.
         if (dlq) {
             files.emplace_back(translated_offset_range{
               .start_offset = kafka::offset{begin},
               .last_offset = kafka::offset{end},
               .dlq_files = std::move(fs),
+              .kafka_bytes_processed = total_bytes,
               // Other args irrelevant.
             });
         } else {
@@ -41,6 +47,7 @@ chunked_vector<translated_offset_range> make_pending_files(
               .start_offset = kafka::offset{begin},
               .last_offset = kafka::offset{end},
               .files = std::move(fs),
+              .kafka_bytes_processed = total_bytes,
               // Other args irrelevant.
             });
         }

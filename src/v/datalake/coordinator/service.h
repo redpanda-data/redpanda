@@ -33,6 +33,9 @@ public:
       fetch_latest_translated_offset_request,
       ::rpc::streaming_context&) override;
 
+    ss::future<usage_stats_reply>
+    get_usage_stats(usage_stats_request, ::rpc::streaming_context&) override;
+
 private:
     ss::sharded<frontend>* _frontend;
 };

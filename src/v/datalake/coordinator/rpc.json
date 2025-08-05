@@ -24,6 +24,11 @@
             "name": "fetch_latest_translated_offset",
             "input_type": "fetch_latest_translated_offset_request",
             "output_type": "fetch_latest_translated_offset_reply"
+        },
+        {
+            "name": "get_usage_stats",
+            "input_type": "usage_stats_request",
+            "output_type": "usage_stats_reply"
         }
     ]
 }

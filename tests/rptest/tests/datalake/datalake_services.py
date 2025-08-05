@@ -289,7 +289,8 @@ class DatalakeServices():
             translation_done,
             timeout_sec=timeout,
             backoff_sec=backoff_sec,
-            err_msg=f"Timed out waiting for events to appear in datalake")
+            err_msg=
+            f"Timed out waiting for events from {topic} to appear in datalake")
 
     def produce_to_topic(self,
                          topic,

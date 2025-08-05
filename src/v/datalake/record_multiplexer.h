@@ -61,6 +61,8 @@ public:
         chunked_vector<partitioning_writer::partitioned_file> data_files;
         // files with invalid records
         chunked_vector<partitioning_writer::partitioned_file> dlq_files;
+        // Total number of kafka bytes processed by the multiplexer
+        uint64_t kafka_bytes_processed{0};
     };
     explicit record_multiplexer(
       const model::ntp& ntp,
@@ -146,6 +148,8 @@ private:
 
     std::optional<writer_error> _error;
     std::optional<write_result> _result;
+    // Total number of kafka bytes processed by the multiplexer
+    uint64_t _reader_bytes_processed = 0;
 };
 
 } // namespace datalake

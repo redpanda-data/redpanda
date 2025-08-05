@@ -96,4 +96,29 @@ std::ostream& operator<<(
       request.topic_revision);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const per_topic_usage_stats& stats) {
+    fmt::print(
+      o,
+      "{{topic: {}, revision: {}, total_kafka_bytes_processed: {}}}",
+      stats.topic,
+      stats.revision,
+      stats.total_kafka_bytes_processed);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const datalake_usage_stats& stats) {
+    fmt::print(o, "{{topic_usages: {} }}", stats.topic_usages);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const usage_stats_reply& resp) {
+    fmt::print(o, "{{errc: {}, stats: {}}}", resp.errc, resp.stats);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const usage_stats_request& req) {
+    fmt::print(o, "{{coordinator_partition: {}}}", req.coordinator_partition);
+    return o;
+}
 } // namespace datalake::coordinator

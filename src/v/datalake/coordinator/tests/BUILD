@@ -16,6 +16,7 @@ redpanda_test_cc_library(
         "//src/v/datalake/coordinator:translated_offset_range",
         "//src/v/iceberg:table_identifier",
         "//src/v/model",
+        "//src/v/random:generators",
         "@googletest//:gtest",
     ],
 )

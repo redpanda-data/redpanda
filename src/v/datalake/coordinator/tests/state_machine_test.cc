@@ -30,7 +30,7 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
     }
 
     config::binding<std::chrono::milliseconds> commit_interval() const {
-        return config::mock_binding(500ms);
+        return config::mock_binding(1ms);
     }
 
     config::binding<std::chrono::seconds> snapshot_interval() const {
@@ -91,7 +91,8 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
           model::timeout_clock::now() + 5s,
           [this, func = std::forward<Func>(func)](
             raft_node_instance& leader) mutable {
-              return func(coordinators[leader.get_vnode()]);
+              return func(
+                coordinators[leader.get_vnode()], leader.get_vnode().id());
           });
     }
 
@@ -104,6 +105,10 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
         return result;
     }
 
+    /**
+     * Returns the last committed offset for a given topic partition
+     * from each coordinator replica (stm).
+     */
     std::vector<std::optional<kafka::offset>>
     last_committed_offsets(model::topic_partition tp) {
         std::vector<std::optional<kafka::offset>> result;
@@ -127,6 +132,26 @@ struct coordinator_stm_fixture : stm_raft_fixture<stm> {
             } else {
                 result.push_back(p_it->second.last_committed);
             }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the  kafka bytes processed for a given topic
+     * from each coordinator replica (stm).
+     */
+    std::vector<std::optional<uint64_t>>
+    total_bytes_processed(model::topic topic) {
+        std::vector<std::optional<uint64_t>> result;
+        result.reserve(node_stms.size());
+        for (auto& [_, stms] : node_stms) {
+            const auto& topic_state = std::get<0>(stms)->state();
+            auto it = topic_state.topic_to_state.find(topic);
+            if (it == topic_state.topic_to_state.end()) {
+                result.emplace_back(std::nullopt);
+                continue;
+            }
+            result.emplace_back(it->second.total_kafka_bytes_processed);
         }
         return result;
     }
@@ -179,8 +204,12 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
     while (completed_snapshots != max_snapshots) {
         // mock a translator
         auto add_files_result = co_await retry_with_leader_coordinator(
-          [&, this](coordinator& coordinator) mutable {
+          [&, this](coordinator& coordinator, model::node_id node_id) mutable {
               auto tp = random_tp();
+              // manually notify leadership to ensure coordinator processing
+              // loop starts. Here the test runs without a coordinator manager
+              // that is supposed to notify leadership.
+              coordinator->notify_leadership(node_id);
               return coordinator->sync_get_last_added_offsets(tp, rev).then(
                 [&, tp](auto result) {
                     if (!result) {
@@ -256,4 +285,13 @@ TEST_F_CORO(coordinator_stm_fixture, test_snapshots) {
           << "Topic state mismatch across replicas for partition: " << pid
           << ", offsets: " << committed_offsets;
     }
+
+    auto bytes_processed = total_bytes_processed(tp_ns.tp);
+    vlog(logger().info, "bytes processed: {}", bytes_processed);
+    ASSERT_TRUE_CORO(std::equal(
+      bytes_processed.begin() + 1,
+      bytes_processed.end(),
+      bytes_processed.begin()))
+      << "Topic state mismatch across replicas for partition: " << tp_ns.tp
+      << ", bytes processed: " << bytes_processed;
 }

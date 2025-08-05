@@ -131,11 +131,13 @@ mark_files_committed_update::build(
   const topics_state& state,
   const model::topic_partition& tp,
   model::revision_id topic_revision,
-  kafka::offset o) {
+  kafka::offset o,
+  uint64_t kafka_bytes_processed) {
     mark_files_committed_update update{
       .tp = tp,
       .topic_revision = topic_revision,
       .new_committed = o,
+      .kafka_bytes_processed = kafka_bytes_processed,
     };
     auto allowed = update.can_apply(state);
     if (allowed.has_error()) {
@@ -197,14 +199,17 @@ mark_files_committed_update::apply(topics_state& state) {
     const auto& topic = tp.topic;
     const auto& pid = tp.partition;
 
+    auto& tp_state = state.topic_to_state[topic];
+
     // Mark all files that fall entirely below `new_committed` as committed.
-    auto& files_state = state.topic_to_state[topic].pid_to_pending_files[pid];
+    auto& files_state = tp_state.pid_to_pending_files[pid];
     while (!files_state.pending_entries.empty()
            && files_state.pending_entries.front().data.last_offset
                 <= new_committed) {
         files_state.pending_entries.pop_front();
     }
     files_state.last_committed = new_committed;
+    tp_state.add_kafka_bytes_processed(kafka_bytes_processed);
     return std::nullopt;
 }
 
@@ -304,10 +309,11 @@ std::ostream&
 operator<<(std::ostream& o, const mark_files_committed_update& u) {
     fmt::print(
       o,
-      "{{tp: {}, revision: {}, new_committed: {}}}",
+      "{{tp: {}, revision: {}, new_committed: {}, kafka_bytes_processed: {}}}",
       u.tp,
       u.topic_revision,
-      u.new_committed);
+      u.new_committed,
+      u.kafka_bytes_processed);
     return o;
 }
 

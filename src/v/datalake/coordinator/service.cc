@@ -46,4 +46,10 @@ service::fetch_latest_translated_offset(
       std::move(request), frontend::local_only::yes);
 }
 
+ss::future<usage_stats_reply> service::get_usage_stats(
+  usage_stats_request request, ::rpc::streaming_context&) {
+    return _frontend->local().get_usage_stats(
+      std::move(request), frontend::local_only::yes);
+}
+
 }; // namespace datalake::coordinator::rpc

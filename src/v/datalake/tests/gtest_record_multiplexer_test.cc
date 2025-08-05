@@ -72,6 +72,11 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     ss::circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get();
 
+    uint64_t total_bytes = 0;
+    for (const auto& batch : batches) {
+        total_bytes += batch.size_bytes();
+    }
+
     auto reader = model::make_generating_record_batch_reader(
       [batches = std::move(batches)]() mutable {
           return ss::make_ready_future<model::record_batch_reader::data_t>(
@@ -94,7 +99,9 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     EXPECT_EQ(
       result.value().last_offset(),
       start_offset + record_count * batch_count - 1);
+    EXPECT_EQ(result.value().kafka_bytes_processed, total_bytes);
 }
+
 TEST(DatalakeMultiplexerTest, TestMultiplexerWriteError) {
     int record_count = 10;
     int batch_count = 10;
@@ -249,6 +256,7 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
     const size_t records_per_batch = 4;
     auto start_ts = model::timestamp::now();
     constexpr auto ms_per_hr = 1000 * 3600;
+    uint64_t total_bytes = 0;
     for (size_t h = 0; h < num_hrs; ++h) {
         // Split batches across the hours.
         auto h_ts = model::timestamp{
@@ -267,7 +275,9 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
                 ASSERT_FALSE(add_res.has_error());
                 ++o;
             }
-            batches.emplace_back(std::move(batch_builder).build());
+            auto batch = std::move(batch_builder).build();
+            total_bytes += batch.size_bytes();
+            batches.emplace_back(std::move(batch));
         }
     }
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
@@ -301,4 +311,5 @@ TEST_F(RecordMultiplexerParquetTest, TestSimple) {
 
     const auto num_records = num_hrs * batches_per_hr * records_per_batch;
     EXPECT_EQ(res.value().last_offset(), start_offset() + num_records - 1);
+    EXPECT_EQ(res.value().kafka_bytes_processed, total_bytes);
 }

@@ -47,7 +47,8 @@ public:
               state,
               tp,
               t_state.revision,
-              files.pending_entries.back().data.last_offset);
+              files.pending_entries.back().data.last_offset,
+              files.pending_entries.back().data.kafka_bytes_processed);
             EXPECT_FALSE(build_res.has_error());
             ret.emplace_back(std::move(build_res.value()));
         }

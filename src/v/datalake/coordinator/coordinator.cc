@@ -542,11 +542,13 @@ coordinator::sync_add_files(
     }
     vlog(
       datalake_log.debug,
-      "Sync add files requested {} (topic rev: {}): [{}, {}], {} files",
+      "Sync add files requested {} (topic rev: {}): [{}, {}], kafka_bytes: {} "
+      "files: {}",
       tp,
       topic_revision,
       entries.begin()->start_offset,
       entries.back().last_offset,
+      entries.back().kafka_bytes_processed,
       entries.size());
     auto sync_res = co_await stm_->sync(10s);
     if (sync_res.has_error()) {
@@ -849,5 +851,24 @@ ss::sstring coordinator::get_effective_default_partition_spec(
     }
 
     return current_spec;
+}
+
+ss::future<checked<datalake_usage_stats, coordinator::errc>>
+coordinator::sync_get_usage_stats() {
+    auto gate = maybe_gate();
+    if (gate.has_error()) {
+        co_return gate.error();
+    }
+    auto sync_res = co_await stm_->sync(10s);
+    if (sync_res.has_error()) {
+        co_return convert_stm_errc(sync_res.error());
+    }
+
+    datalake_usage_stats result;
+    for (const auto& [topic, state] : stm_->state().topic_to_state) {
+        result.topic_usages.emplace_back(
+          topic, state.revision, state.total_kafka_bytes_processed);
+    }
+    co_return result;
 }
 } // namespace datalake::coordinator

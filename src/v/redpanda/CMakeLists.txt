@@ -68,6 +68,7 @@ v_cc_library(
     v::cluster
     v::datalake_coordinator
     v::datalake_manager
+    v::datalake_usage_aggregator
     v::debug_bundle
     v::kafka_recovery
     v::finjector

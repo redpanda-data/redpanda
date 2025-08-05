@@ -43,6 +43,7 @@ topic_state topic_state::copy() const {
         result.pid_to_pending_files[id] = state.copy();
     }
     result.lifecycle_state = lifecycle_state;
+    result.total_kafka_bytes_processed = total_kafka_bytes_processed;
     return result;
 }
 

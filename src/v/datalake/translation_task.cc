@@ -313,6 +313,7 @@ translation_task::finish(
     coordinator::translated_offset_range ret{
       .start_offset = write_result.start_offset,
       .last_offset = write_result.last_offset,
+      .kafka_bytes_processed = write_result.kafka_bytes_processed,
     };
 
     lazy_abort_source lazy_as{[&as]() {

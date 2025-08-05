@@ -13,6 +13,7 @@
 #include "base/oncore.h"
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "kafka/server/datalake_usage_api.h"
 #include "kafka/server/usage_aggregator.h"
 #include "model/namespace.h"
 #include "storage/fwd.h"
@@ -42,6 +43,8 @@ public:
           ss::sharded<usage_manager>& um,
           ss::sharded<cluster::health_monitor_frontend>& health_monitor,
           ss::sharded<storage::api>& storage,
+          ss::shared_ptr<datalake_usage_api> datalake_usage_api,
+          ss::abort_source& as,
           size_t usage_num_windows,
           std::chrono::seconds usage_window_width_interval,
           std::chrono::seconds usage_disk_persistance_interval);
@@ -56,6 +59,8 @@ public:
         cluster::controller* _controller;
         cluster::health_monitor_frontend& _health_monitor;
         ss::sharded<usage_manager>& _um;
+        ss::shared_ptr<datalake_usage_api> _datalake_usage_api;
+        ss::abort_source& _as;
     };
 
     /// Class constructor
@@ -65,7 +70,8 @@ public:
     explicit usage_manager(
       cluster::controller* controller,
       ss::sharded<cluster::health_monitor_frontend>& health_monitor,
-      ss::sharded<storage::api>& storage);
+      ss::sharded<storage::api>& storage,
+      ss::shared_ptr<datalake_usage_api> datalake_usage_api);
 
     /// Allocates and starts the accounting fiber
     ss::future<> start();
@@ -115,11 +121,13 @@ private:
     cluster::controller* _controller;
     ss::sharded<cluster::health_monitor_frontend>& _health_monitor;
     ss::sharded<storage::api>& _storage;
+    ss::shared_ptr<datalake_usage_api> _datalake_usage_api;
 
     /// Per-core metric, shard-0 aggregates these values across shards
     usage _current_bucket;
     mutex _background_mutex{"usage_monitor::_background_mutex"};
     ss::gate _background_gate;
+    ss::abort_source _as;
 
     /// Valid on core-0 when usage_enabled() == true
     std::unique_ptr<usage_aggregator<>> _accounting_fiber;

@@ -80,9 +80,13 @@ struct partition_state
 // worker.
 struct topic_state
   : public serde::
-      envelope<topic_state, serde::version<0>, serde::compat_version<0>> {
+      envelope<topic_state, serde::version<1>, serde::compat_version<0>> {
     auto serde_fields() {
-        return std::tie(revision, pid_to_pending_files, lifecycle_state);
+        return std::tie(
+          revision,
+          pid_to_pending_files,
+          lifecycle_state,
+          total_kafka_bytes_processed);
     }
 
     enum class lifecycle_state_t {
@@ -102,12 +106,19 @@ struct topic_state
     bool has_pending_entries() const;
     bool has_pending_main_entries() const;
     bool has_pending_dlq_entries() const;
+    void add_kafka_bytes_processed(uint64_t bytes) {
+        total_kafka_bytes_processed += bytes;
+    }
 
     // Topic revision
     model::revision_id revision;
     // Map from Redpanda partition id to the files pending per partition.
     chunked_hash_map<model::partition_id, partition_state> pid_to_pending_files;
     lifecycle_state_t lifecycle_state = lifecycle_state_t::live;
+
+    // Total number of kafka bytes processed so far that have been successfully
+    // committed to iceberg. Includes bytes from DLQ table as well.
+    uint64_t total_kafka_bytes_processed{0};
 
     topic_state copy() const;
 

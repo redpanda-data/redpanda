@@ -308,6 +308,8 @@ private:
         }
     }
 
+    ss::shared_ptr<kafka::datalake_usage_api> make_datalake_usage_aggregator();
+
     /**
      * @brief Construct service boilerplate.
      *
