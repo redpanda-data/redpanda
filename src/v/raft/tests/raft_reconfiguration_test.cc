@@ -339,6 +339,8 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
         break;
     }
 
+    // lets us await any cleanup operation needed at the end
+    ss::future<> cleanup_operation = ss::now();
     if (!isolated_nodes->empty()) {
         vlog(test_log.info, "isolating nodes: {}", *isolated_nodes);
 
@@ -353,8 +355,8 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
             });
         }
 
-        // heal the partition 5s later
-        (void)ss::sleep(5s).then([isolated_nodes] {
+        // heal the partition 20s later
+        cleanup_operation = ss::sleep(20s).then([isolated_nodes] {
             vlog(test_log.info, "healing the network partition");
             isolated_nodes->clear();
         });
@@ -401,6 +403,8 @@ TEST_P_CORO(reconfiguration_test, configuration_replace_test) {
         current_node_ptrs.push_back(&node(id));
     }
     assert_offset_translator_state_is_consistent(current_node_ptrs);
+
+    co_await std::move(cleanup_operation);
 }
 
 INSTANTIATE_TEST_SUITE_P(
