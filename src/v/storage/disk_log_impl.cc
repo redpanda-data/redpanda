@@ -721,7 +721,7 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
         co_return has_self_compacted;
     }
     vlog(
-      gclog.debug,
+      gclog.info,
       "[{}] window compacting {} segments in interval [{}, {}]",
       config().ntp(),
       segs.size(),
@@ -1382,7 +1382,7 @@ ss::future<> disk_log_impl::do_compact(
         compact_fut = sliding_window_compact(compact_cfg, new_start_offset)
                         .then([&](bool compacted) {
                             vlog(
-                              gclog.debug,
+                              gclog.info,
                               "Sliding compaction of {} did {}compact "
                               "data, proceeding to adjacent "
                               "segment compaction",
@@ -1417,7 +1417,7 @@ ss::future<bool> disk_log_impl::chunked_sliding_window_compact(
     // failed to index (the "unindexed" segment)
     auto seg = segs.back();
     vlog(
-      gclog.debug,
+      gclog.info,
       "Unable to fully index segment with max allowed keys {}. Performing "
       "chunked sliding window compaction for segment {}",
       map.capacity(),
