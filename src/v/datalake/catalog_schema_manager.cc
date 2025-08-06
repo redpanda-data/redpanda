@@ -214,7 +214,6 @@ catalog_schema_manager::ensure_table_schema(
         // schema. Add the schema to the table.
         auto update_res = co_await txn.set_schema(iceberg::schema{
           .schema_struct = std::move(type_copy),
-          .schema_id = iceberg::schema::unassigned_id,
           .identifier_field_ids = {},
         });
         if (update_res.has_error()) {
