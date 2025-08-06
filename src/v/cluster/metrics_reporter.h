@@ -87,8 +87,6 @@ public:
     };
 
     struct metrics_snapshot {
-        static constexpr int16_t version = 1;
-
         ss::sstring cluster_uuid;
         ss::sstring storage_uuid;
         uint64_t cluster_creation_epoch{0};
@@ -96,8 +94,8 @@ public:
         uint32_t partition_count{0};
 
         uint32_t topics_with_iceberg_kv{0};
-        uint32_t topics_with_iceberg_sr{0};
-        uint32_t topics_with_iceberg_pb{0};
+        uint32_t topics_with_iceberg_schema_id{0};
+        uint32_t topics_with_iceberg_schema_latest{0};
 
         cluster_version active_logical_version{invalid_version};
         cluster_version original_logical_version{invalid_version};

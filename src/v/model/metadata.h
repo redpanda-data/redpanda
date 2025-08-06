@@ -624,7 +624,7 @@ public:
     // protobuf full name.
     static iceberg_mode value_schema_latest(
       std::string_view protobuf_full_name, std::string_view subject_name) {
-        return {latest_protobuf_value_t{}, protobuf_full_name, subject_name};
+        return {value_schema_latest_t{}, protobuf_full_name, subject_name};
     }
 
     // Returns the kind of iceberg mode is being used.
@@ -634,10 +634,10 @@ public:
 
     // Returns the protobuf message's full name if specified.
     //
-    // Throws is variant() != variant::latest_protobuf_value
+    // Throws is variant() != variant::value_schema_latest
     std::optional<ss::sstring> protobuf_full_name() const {
         const auto& name
-          = std::get<latest_protobuf_value_impl>(_impl).message_full_name;
+          = std::get<value_schema_latest_impl>(_impl).message_full_name;
         if (name.empty()) {
             return std::nullopt;
         }
@@ -646,10 +646,10 @@ public:
 
     // Returns the subject name if specified.
     //
-    // Throws is variant() != variant::latest_protobuf_value
+    // Throws is variant() != variant::value_schema_latest
     std::optional<ss::sstring> subject_name() const {
         const auto& subject
-          = std::get<latest_protobuf_value_impl>(_impl).subject_name;
+          = std::get<value_schema_latest_impl>(_impl).subject_name;
         if (subject.empty()) {
             return std::nullopt;
         }
@@ -672,13 +672,13 @@ private:
         return m;
     }
 
-    struct latest_protobuf_value_t {};
+    struct value_schema_latest_t {};
     iceberg_mode(
-      latest_protobuf_value_t,
+      value_schema_latest_t,
       std::string_view protobuf_full_name,
       std::string_view subject_name)
       : _impl(
-          std::in_place_type<latest_protobuf_value_impl>,
+          std::in_place_type<value_schema_latest_impl>,
           ss::sstring(protobuf_full_name),
           ss::sstring(subject_name)) {}
 
@@ -691,17 +691,17 @@ private:
     struct value_schema_id_prefix_impl {
         bool operator==(const value_schema_id_prefix_impl&) const = default;
     };
-    struct latest_protobuf_value_impl {
+    struct value_schema_latest_impl {
         ss::sstring message_full_name;
         ss::sstring subject_name;
-        bool operator==(const latest_protobuf_value_impl&) const = default;
+        bool operator==(const value_schema_latest_impl&) const = default;
     };
 
     std::variant<
       disabled_impl,
       key_value_impl,
       value_schema_id_prefix_impl,
-      latest_protobuf_value_impl>
+      value_schema_latest_impl>
       _impl;
 };
 
