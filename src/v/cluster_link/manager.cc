@@ -29,7 +29,43 @@ using kafka::data::rpc::topic_metadata_cache;
 namespace cluster_link {
 namespace {
 constexpr auto topic_reconciler_interval = 30s;
+
+errc map_cluster_errc(::cluster::cluster_link::errc ec) {
+    switch (ec) {
+    case cluster::cluster_link::errc::success:
+        return errc::success;
+    case cluster::cluster_link::errc::does_not_exist:
+        return errc::link_id_not_found;
+    case cluster::cluster_link::errc::invalid_create:
+    case cluster::cluster_link::errc::invalid_update:
+    case cluster::cluster_link::errc::bootstrap_servers_empty:
+    case cluster::cluster_link::errc::tls_configuration_invalid:
+    case cluster::cluster_link::errc::link_name_invalid:
+    case cluster::cluster_link::errc::topic_filter_invalid:
+    case cluster::cluster_link::errc::topic_property_excluded_from_mirroring:
+    case cluster::cluster_link::errc::mirror_topic_name_invalid:
+    case cluster::cluster_link::errc::uuid_conflict:
+        return errc::invalid_configuration;
+    case cluster::cluster_link::errc::limit_exceeded:
+    case cluster::cluster_link::errc::service_error:
+    case cluster::cluster_link::errc::timeout:
+    case cluster::cluster_link::errc::not_leader_controller:
+    case cluster::cluster_link::errc::replication_error:
+    case cluster::cluster_link::errc::rpc_error:
+    case cluster::cluster_link::errc::throttling_quota_exceeded:
+        return errc::rpc_error;
+    case cluster::cluster_link::errc::feature_disabled:
+        return errc::cluster_link_disabled;
+    case cluster::cluster_link::errc::topic_already_being_mirrored:
+        return errc::topic_already_mirrored;
+    case cluster::cluster_link::errc::topic_being_mirrored_by_other_link:
+        return errc::topic_mirrored_by_other_link;
+    case cluster::cluster_link::errc::topic_not_being_mirrored:
+        return errc::topic_not_being_mirrored;
+    }
+    __builtin_unreachable();
 }
+} // namespace
 manager::manager(
   ::model::node_id self,
   std::unique_ptr<kafka::data::rpc::partition_leader_cache>
