@@ -87,8 +87,6 @@ public:
     };
 
     struct metrics_snapshot {
-        static constexpr int16_t version = 1;
-
         ss::sstring cluster_uuid;
         ss::sstring storage_uuid;
         uint64_t cluster_creation_epoch{0};
