@@ -13,7 +13,6 @@ import (
 	"context"
 	"io"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -59,12 +58,12 @@ type MockClient struct {
 	MockContainerList func(
 		ctx context.Context,
 		options container.ListOptions,
-	) ([]types.Container, error)
+	) ([]container.Summary, error)
 
 	MockContainerInspect func(
 		ctx context.Context,
 		containerID string,
-	) (types.ContainerJSON, error)
+	) (container.InspectResponse, error)
 
 	MockContainerRemove func(
 		ctx context.Context,
@@ -167,16 +166,16 @@ func (c *MockClient) ContainerStop(
 
 func (c *MockClient) ContainerList(
 	ctx context.Context, options container.ListOptions,
-) ([]types.Container, error) {
+) ([]container.Summary, error) {
 	if c.MockContainerList != nil {
 		return c.MockContainerList(ctx, options)
 	}
-	return []types.Container{}, nil
+	return []container.Summary{}, nil
 }
 
 func (c *MockClient) ContainerInspect(
 	ctx context.Context, containerID string,
-) (types.ContainerJSON, error) {
+) (container.InspectResponse, error) {
 	if c.MockContainerInspect != nil {
 		return c.MockContainerInspect(ctx, containerID)
 	}
@@ -242,18 +241,18 @@ func (c *MockClient) IsErrConnectionFailed(err error) bool {
 
 func MockContainerInspect(
 	_ context.Context, _ string,
-) (types.ContainerJSON, error) {
+) (container.InspectResponse, error) {
 	kafkaNatPort := nat.Port("9093/tcp")
 	rpcNatPort := nat.Port("33145/tcp")
-	return types.ContainerJSON{
-		ContainerJSONBase: &types.ContainerJSONBase{
-			State: &types.ContainerState{
+	return container.InspectResponse{
+		ContainerJSONBase: &container.ContainerJSONBase{
+			State: &container.State{
 				Running: true,
 				Status:  "Up, I guess?",
 			},
 		},
-		NetworkSettings: &types.NetworkSettings{
-			NetworkSettingsBase: types.NetworkSettingsBase{
+		NetworkSettings: &container.NetworkSettings{
+			NetworkSettingsBase: container.NetworkSettingsBase{
 				Ports: map[nat.Port][]nat.PortBinding{
 					kafkaNatPort: {{
 						HostIP: "192.168.78.9", HostPort: "89080",

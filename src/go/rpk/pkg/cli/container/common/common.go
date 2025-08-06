@@ -19,18 +19,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/image"
-	"gopkg.in/yaml.v3"
-
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -507,7 +505,7 @@ func CheckIfImgPresent(c Client, img string) (bool, error) {
 }
 
 func getHostPort(
-	containerPort int, containerJSON types.ContainerJSON,
+	containerPort int, containerJSON container.InspectResponse,
 ) (uint, error) {
 	natContianerPort, err := nat.NewPort("tcp", fmt.Sprint(containerPort))
 	if err != nil {
