@@ -89,6 +89,10 @@ class RpkGroupCommandsTest(RedpandaTest):
         pr_groups = self.rpk.group_list(states=["PreparingRebalance"])
         self._assert_eq(len(pr_groups), 0)
 
+    def co_topic_is_ready(self):
+        return len(
+            self.client().describe_topic('__consumer_offsets').partitions) > 0
+
     @cluster(num_nodes=5)
     def test_group_describe(self):
         """
@@ -100,6 +104,8 @@ class RpkGroupCommandsTest(RedpandaTest):
         group_1 = "test-g1"
         consumer = RpkConsumer(self._ctx, self.redpanda, topic, group=group_1)
         consumer.start()
+
+        wait_until(self.co_topic_is_ready, 10, 1)
 
         rpk = RpkTool(self.redpanda)
 

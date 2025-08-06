@@ -114,6 +114,8 @@ class ConsumerGroupTest(RedpandaTest):
 
         for c in consumers:
             c.start()
+        wait_until(self.co_topic_is_ready, 10, 1)
+
         rpk = RpkTool(self.redpanda)
 
         def group_is_ready():
@@ -122,6 +124,10 @@ class ConsumerGroupTest(RedpandaTest):
 
         wait_until(group_is_ready, 60, 1, err_msg)
         return consumers
+
+    def co_topic_is_ready(self):
+        return len(
+            self.client().describe_topic('__consumer_offsets').partitions) > 0
 
     def consumed_at_least(consumers, count):
         return all([c._message_cnt > count for c in consumers])
@@ -274,6 +280,8 @@ class ConsumerGroupTest(RedpandaTest):
 
     def wait_for_members(self, group, members_count):
         rpk = RpkTool(self.redpanda)
+
+        wait_until(self.co_topic_is_ready, 10, 1)
 
         def group_stable():
             rpk_group = rpk.group_describe(group)
@@ -606,6 +614,7 @@ class ConsumerGroupTest(RedpandaTest):
             consumer_properties={"client.id": "my-client-1"})
 
         consumer1.start()
+        wait_until(self.co_topic_is_ready, 10, 1)
 
         self.wait_for_members(group, 1)
 

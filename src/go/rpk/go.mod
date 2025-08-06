@@ -20,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/beevik/ntp v1.4.3
 	github.com/bufbuild/protocompile v0.14.1
+	github.com/cespare/xxhash v1.1.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/docker/go-connections v0.5.0
@@ -32,6 +33,7 @@ require (
 	github.com/kr/text v0.2.0
 	github.com/lestrrat-go/jwx/v2 v2.1.5-0.20250226052408-de7d95fda31a
 	github.com/linkedin/goavro/v2 v2.13.1
+	github.com/lithammer/go-jump-consistent-hash v1.0.2
 	github.com/lorenzosaino/go-sysctl v0.3.1
 	github.com/mark3labs/mcp-go v0.20.0
 	github.com/mattn/go-isatty v0.0.20
