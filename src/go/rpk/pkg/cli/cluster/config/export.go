@@ -128,9 +128,9 @@ func exportConfig(
 	return nil
 }
 
-func newExportCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
+func newExportCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var filename string
-
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export cluster configuration",
@@ -171,7 +171,7 @@ to include all properties including these low level tunables.
 			}
 
 			out.MaybeDie(err, "unable to create file %q: %v", filename, err)
-			err = exportConfig(file, schema, currentConfig, *all)
+			err = exportConfig(file, schema, currentConfig, all)
 			out.MaybeDie(err, "failed to write out config %q: %v", file.Name(), err)
 			err = file.Close()
 			fmt.Printf("Wrote configuration to file %q.\n", file.Name())
@@ -179,13 +179,8 @@ to include all properties including these low level tunables.
 		},
 	}
 
-	cmd.Flags().StringVarP(
-		&filename,
-		"filename",
-		"f",
-		"",
-		"path to file to export to, e.g. './config.yml'",
-	)
+	cmd.Flags().StringVarP(&filename, "filename", "f", "", "path to file to export to, e.g. './config.yml'")
+	cmd.Flags().BoolVar(&all, "all", false, "Include all properties, including tunables")
 
 	return cmd
 }

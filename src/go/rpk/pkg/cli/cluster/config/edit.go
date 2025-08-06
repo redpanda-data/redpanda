@@ -24,7 +24,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newEditCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
+func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var all bool
 	cmd := &cobra.Command{
 		Use:   "edit",
 		Short: "Edit cluster configuration properties",
@@ -61,10 +62,11 @@ to edit all properties including these tunables.
 			currentConfig, err := client.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to get current config: %v", err)
 
-			err = executeEdit(cmd.Context(), client, schema, currentConfig, all)
+			err = executeEdit(cmd.Context(), client, schema, currentConfig, &all)
 			out.MaybeDie(err, "unable to edit: %v", err)
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "Include all properties, including tunables")
 	return cmd
 }
 

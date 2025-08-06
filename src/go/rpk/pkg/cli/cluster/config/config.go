@@ -16,7 +16,6 @@ import (
 )
 
 func NewConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var all bool
 	cmd := &cobra.Command{
 		Use:   "config",
 		Args:  cobra.ExactArgs(0),
@@ -41,19 +40,13 @@ subcommand can be used to verify that all nodes are up to date, and identify
 any settings which were rejected by a node, for example if a node is running a
 different redpanda version that does not recognize certain properties.`,
 	}
-	cmd.PersistentFlags().BoolVar(
-		&all,
-		"all",
-		false,
-		"Include all properties, including tunables",
-	)
 	p.InstallAdminFlags(cmd)
 	p.InstallSASLFlags(cmd)
 
 	cmd.AddCommand(
-		newImportCommand(fs, p, &all),
-		newExportCommand(fs, p, &all),
-		newEditCommand(fs, p, &all),
+		newImportCommand(fs, p),
+		newExportCommand(fs, p),
+		newEditCommand(fs, p),
 		newStatusCommand(fs, p),
 		newForceResetCommand(fs, p),
 		newLintCommand(fs, p),
