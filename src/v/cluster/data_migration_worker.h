@@ -97,7 +97,7 @@ private:
     void abort_all() noexcept;
     void handle_leadership_update(const model::ntp& ntp, bool is_leader);
     void unmanage_ntp(const model::ntp& ntp);
-    void unmanage_ntp(managed_ntp_cit it);
+    managed_ntp_it unmanage_ntp(managed_ntp_cit it);
     void spawn_work_fiber_if_needed(managed_ntp_it it);
     ss::future<> work_fiber(model::ntp ntp, ntp_state_t& ntp_state);
 

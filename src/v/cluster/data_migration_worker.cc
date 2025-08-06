@@ -63,11 +63,8 @@ ss::future<> worker::stop() {
 
 void worker::abort_all() noexcept {
     auto it = _managed_ntps.begin();
-    auto end = _managed_ntps.end();
-    while (it != end) {
-        auto cur = it;
-        ++it;
-        auto& ntp_state = *cur->second;
+    while (it != _managed_ntps.end()) {
+        auto& ntp_state = *it->second;
         if (ntp_state.running) {
             ntp_state.running->as.request_abort();
         }
@@ -75,9 +72,11 @@ void worker::abort_all() noexcept {
             ntp_state.report_back(errc::shutting_down);
             if (!ntp_state.running) {
                 // no requested and no running work, entry should go
-                unmanage_ntp(cur);
+                it = unmanage_ntp(it);
+                continue;
             }
         }
+        ++it;
     }
 }
 
@@ -197,14 +196,14 @@ void worker::unmanage_ntp(const model::ntp& ntp) {
     unmanage_ntp(_managed_ntps.find(ntp));
 }
 
-void worker::unmanage_ntp(managed_ntp_cit it) {
+worker::managed_ntp_it worker::unmanage_ntp(managed_ntp_cit it) {
     vassert(
       !it->second->running,
       "cannot unmanage NTP {} with running work",
       it->first);
     _leaders_table.unregister_leadership_change_notification(
       it->second->leadership_subscription);
-    _managed_ntps.erase(it);
+    return _managed_ntps.erase(it);
 }
 
 ss::future<errc> worker::do_work(
