@@ -48,7 +48,7 @@ struct update_applying_visitor {
     }
     outcome operator()(const set_current_schema& update) {
         auto sid = update.schema_id;
-        if (sid() == schema::unassigned_id) {
+        if (sid() == set_current_schema::last_added) {
             // -1 indicates that we should set the schema to the latest one.
             if (meta.schemas.empty()) {
                 vlog(log.error, "Can't set -1 when there are no schemas");

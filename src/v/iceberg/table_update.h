@@ -33,6 +33,8 @@ struct add_schema {
 };
 
 struct set_current_schema {
+    static inline constexpr schema::id_t last_added{-1};
+
     schema::id_t schema_id;
     set_current_schema copy() const {
         return {

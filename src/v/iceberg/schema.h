@@ -25,7 +25,6 @@ struct schema {
     using schema_outcome = checked<std::nullopt_t, errc>;
     using id_t = named_type<int32_t, struct schema_id_tag>;
     static constexpr id_t default_id{0};
-    static constexpr id_t unassigned_id{-1};
     using ids_types_map_t
       = chunked_hash_map<nested_field::id_t, const field_type*>;
 

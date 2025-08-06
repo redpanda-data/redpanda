@@ -79,11 +79,10 @@ public:
         auto schema_it = std::ranges::find(
           table.schemas, table.current_schema_id, &schema::schema_id);
         if (schema_it == table.schemas.end()) {
-            throw std::runtime_error(
-              fmt::format(
-                "Schema {} not found in table {}",
-                table.current_schema_id,
-                table_ident));
+            throw std::runtime_error(fmt::format(
+              "Schema {} not found in table {}",
+              table.current_schema_id,
+              table_ident));
         }
         co_return std::move(*schema_it);
     }
