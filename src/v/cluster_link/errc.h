@@ -28,6 +28,12 @@ enum class errc : int {
     link_id_not_found,
     link_connection_failed,
     task_creation_failed,
+    invalid_configuration,
+    rpc_error,
+    cluster_link_disabled,
+    topic_already_mirrored,
+    topic_mirrored_by_other_link,
+    topic_not_being_mirrored,
 };
 
 std::error_code make_error_code(errc) noexcept;

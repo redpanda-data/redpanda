@@ -40,6 +40,18 @@ struct error_category final : public std::error_category {
             return "link connection failed";
         case errc::task_creation_failed:
             return "task creation failed";
+        case errc::invalid_configuration:
+            return "invalid configuration";
+        case errc::rpc_error:
+            return "Internal RPC error";
+        case errc::cluster_link_disabled:
+            return "Cluster link feature is disabled";
+        case errc::topic_already_mirrored:
+            return "Topic is already being mirrored";
+        case errc::topic_mirrored_by_other_link:
+            return "Topic is being mirrored by another link";
+        case errc::topic_not_being_mirrored:
+            return "Topic is not being mirrored";
         }
 
         return "(unknown error code)";
