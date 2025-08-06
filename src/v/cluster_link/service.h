@@ -15,7 +15,9 @@
 #include "cluster/cluster_link/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/utils/partition_change_notifier.h"
+#include "cluster_link/errc.h"
 #include "cluster_link/fwd.h"
+#include "cluster_link/model/types.h"
 #include "model/fundamental.h"
 #include "raft/fundamental.h"
 
@@ -48,6 +50,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<result<model::metadata>> create_cluster_link(model::metadata md);
 
 private:
     void register_notifications();

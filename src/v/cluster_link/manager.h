@@ -56,6 +56,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    ss::future<result<model::metadata>> create_cluster_link(model::metadata md);
+
     /// Used to notify that a cluster link has been updated
     void on_link_change(model::id_t id);
     /// Used to notify manager in a change of NTP leadership
