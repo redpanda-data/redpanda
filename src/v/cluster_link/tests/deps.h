@@ -63,6 +63,14 @@ public:
     explicit test_link_registry(cluster::cluster_link::table* table)
       : _table(table) {}
 
+    ss::future<::cluster::cluster_link::errc> upsert_link(
+      model::metadata md, ::model::timeout_clock::time_point) override {
+        auto batch = ::cluster::cluster_link::testing::create_upsert_command(
+          _last_offset++, std::move(md));
+        auto ec = co_await _table->apply_update(std::move(batch));
+        co_return ec.value();
+    }
+
     std::optional<std::reference_wrapper<const model::metadata>>
     find_link_by_id(model::id_t id) const override {
         return _table->find_link_by_id(id);
@@ -143,6 +151,7 @@ public:
 
 private:
     cluster::cluster_link::table* _table;
+    ::model::offset _last_offset{0};
 };
 class fake_partition_manager_proxy {
 public:

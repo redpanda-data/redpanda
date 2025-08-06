@@ -33,6 +33,9 @@ public:
     link_registry& operator=(link_registry&&) = delete;
     virtual ~link_registry() = default;
 
+    virtual ss::future<::cluster::cluster_link::errc>
+    upsert_link(model::metadata md, ::model::timeout_clock::time_point) = 0;
+
     virtual std::optional<std::reference_wrapper<const model::metadata>>
       find_link_by_id(model::id_t) const = 0;
 

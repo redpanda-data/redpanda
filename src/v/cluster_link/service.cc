@@ -32,6 +32,11 @@ public:
     explicit link_registry_adapter(frontend* plf)
       : _plf(plf) {}
 
+    ss::future<::cluster::cluster_link::errc> upsert_link(
+      model::metadata md, ::model::timeout_clock::time_point timeout) override {
+        return _plf->upsert_cluster_link(std::move(md), timeout);
+    }
+
     std::optional<std::reference_wrapper<const model::metadata>>
     find_link_by_id(model::id_t id) const override {
         return _plf->find_link_by_id(id);
