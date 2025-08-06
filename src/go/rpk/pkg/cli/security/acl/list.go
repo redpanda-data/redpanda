@@ -64,7 +64,7 @@ List all ACLs:
   rpk security acl list
 
 List all Schema Registry ACLs:
-  rpk security acl list --subsytem registry
+  rpk security acl list --subsystem registry
 
 List all ACLs for topic "foo":
   rpk security acl list --topic foo
