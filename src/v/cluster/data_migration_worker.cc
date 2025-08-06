@@ -116,9 +116,10 @@ worker::perform_partition_work(model::ntp&& ntp, partition_work&& work) {
         ntp_state.last_requested.emplace(std::move(work));
     }
 
+    auto f = it->second->last_requested->promise.get_future();
     spawn_work_fiber_if_needed(it);
 
-    return it->second->last_requested->promise.get_future();
+    return f;
 }
 
 void worker::abort_partition_work(
