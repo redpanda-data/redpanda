@@ -3905,7 +3905,7 @@ configuration::configuration()
       *this,
       "iceberg_latest_schema_cache_ttl_ms",
       "The TTL for the cache in translation that stores the latest schema when "
-      "using the `latest_protobuf_value` iceberg mode.",
+      "using the `value_schema_latest` iceberg mode.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::chrono::milliseconds(5min),
       {.min = std::chrono::milliseconds{1ms}})
