@@ -7,8 +7,8 @@
 Redpanda is a high-performance, Apache Kafka®-compatible streaming data platform. It is written primarily in C++ for the core, with Go for CLI tooling (`rpk`), and some Python for auxiliary scripts and tests. Redpanda is designed to be lightweight, fast, and simple to operate, omitting ZooKeeper and the JVM.
 
 **Repository Characteristics:**
-- **Large multi-language codebase:** C++ (core), Go (CLI/tools), Python (testing/scripts), Bash and CMake/Bazel for builds.
-- **Build System:** Bazel (with Bazelisk) for core; CMake for SDKs and specific libraries.
+- **Large multi-language codebase:** C++ (core), Go (CLI/tools), Python (testing/scripts), Bash and Bazel for builds.
+- **Build System:** Bazel (with Bazelisk) for core.
 - **Target Platforms:** Linux (primary), some support for macOS and Windows.
 - **Key Directories:**
   - `src/v/`: Core C++ source code
@@ -55,7 +55,7 @@ Redpanda is a high-performance, Apache Kafka®-compatible streaming data platfor
 
 - **Go CLI (`rpk`) Build:**
   ```bash
-  ./src/go/rpk/build.sh
+  bazel build //:rpk
   ```
   _Requires Go toolchain._
 
@@ -100,7 +100,7 @@ Redpanda is a high-performance, Apache Kafka®-compatible streaming data platfor
 
 - **Primary C++ code lives in `src/v/`.**
 - **C++ build is managed by Bazel.** All dependencies and toolchains are configured via Bazel rules and the `MODULE.bazel` file. Do not manually install C++ dependencies unless explicitly instructed in documentation.
-- **Compiler Standard:** C++23 is required. Some SDK components (e.g., `src/transform-sdk/cpp/`) use `CMakeLists.txt` and explicitly set `CMAKE_CXX_STANDARD 23` with flags like `-Wall`, `-fno-exceptions`, and for some targets, `-stdlib=libc++`.
+- **Compiler Standard:** C++23 is required. Some SDK components (e.g., `src/transform-sdk/cpp/`) use C++23 and specific flags like `-Wall`, `-fno-exceptions`, and for some targets, `-stdlib=libc++`.
 - **Sanitizers:** Some components and test builds use sanitizers (address, leak, undefined) via `-fsanitize=address,leak,undefined` for both compile and link.
 - **Suppression Files:** Leak, undefined, and other sanitizer suppressions can be found in the root as `lsan_suppressions.txt`, `ubsan_suppressions.txt`.
 - **C++ Linting:** `.clang-format` and `.clang-tidy` in the root directory are enforced. Always run formatting tools before submitting a PR:
@@ -108,18 +108,16 @@ Redpanda is a high-performance, Apache Kafka®-compatible streaming data platfor
   bazel run //tools:clang_format
   ```
 - **C++ Libraries:** Bazel dependencies are managed in `MODULE.bazel` (e.g., Boost, Abseil, fmt, protobuf, googletest, yaml-cpp, etc.).
-- **SDK C++ Example:** For the C++ SDK in `src/transform-sdk/cpp/`, use CMake ≥3.22, C++23, and follow instructions in the respective `CMakeLists.txt`.
-- **Testing:** C++ unit tests are run via Bazel; for SDKs or external builds, CMake's `add_test()` and `ctest` are used.
+- **Testing:** C++ unit tests are run via Bazel.
 
 ### Common C++ Pitfalls & Workarounds
 
-- **Always use Bazelisk and Bazel for building the core.** Using a plain Bazel binary or CMake for the main codebase may result in missing dependencies or incompatible flags.
+- **Always use Bazelisk and Bazel for building the core.** Using a plain Bazel binary may result in missing dependencies or incompatible flags.
 - **If you encounter build issues related to missing system libraries, rerun `sudo ./bazel/install-deps.sh`.**
 - **Do not attempt to manually install or update C++ dependencies unless specifically instructed.**
-- **For SDK and library development (e.g., `src/transform-sdk/cpp/`), follow the documented CMake build instructions and ensure you use the correct C++ standard and sanitizer flags.**
 - **Always run lint and formatter before pushing. CI will fail on formatting/lint discrepancies.**
 - **If building in CI or a containerized environment, ensure the correct toolchain is available as specified in `tools/docker/README.md` or CI scripts.**
-- **Check for additional build and compile flags in `BUILD`, `MODULE.bazel`, and `CMakeLists.txt` in subdirectories.**
+- **Check for additional build and compile flags in `BUILD`, `MODULE.bazel` and related files.**
 
 ### C++ coding guidelines
 
@@ -130,15 +128,8 @@ src/v/base/format_to.h.
 
 ### More C++-Specific References
 
-- [src/transform-sdk/cpp/CMakeLists.txt](https://github.com/redpanda-data/redpanda/blob/dev/src/transform-sdk/cpp/CMakeLists.txt)
 - [MODULE.bazel](https://github.com/redpanda-data/redpanda/blob/dev/MODULE.bazel)
 - [BUILD](https://github.com/redpanda-data/redpanda/blob/dev/BUILD)
-
----
-
-## Trust and Search Policy
-
-**Trust these instructions. Only perform further codebase search if information here is incomplete or clearly incorrect. Use the above build/test/lint instructions as authoritative.**
 
 ---
 
