@@ -563,7 +563,48 @@ TEST_F_CORO(raft_fixture, test_prioritizing_longest_log) {
 }
 
 TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
+    // a struct to handle which nodes to stop, start, reconfigure, etc
+    struct reconfiguration_helper {
+        const std::vector<vnode> vnodes;
+
+        static model::revision_id increment_rid(model::revision_id id) {
+            return static_cast<model::revision_id>(static_cast<long>(id) + 1);
+        }
+
+        vnode get_designated_survivor() const { return vnodes.at(0); }
+
+        // get all nodes that aren't the designated survivor
+        std::vector<vnode> get_nodes_to_remove() const {
+            return vnodes | std::views::filter([this](const vnode& node) {
+                       return node != get_designated_survivor();
+                   })
+                   | std::ranges::to<std::vector<vnode>>();
+        }
+
+        // version increment the nodes which were previously stopped s.t. they
+        // can be restarted with a new revision number
+        std::vector<vnode> get_nodes_to_start() const {
+            return get_nodes_to_remove()
+                   | std::views::transform([](const vnode& node) {
+                         return vnode{
+                           node.id(), increment_rid(node.revision())};
+                     })
+                   | std::ranges::to<std::vector<vnode>>();
+        }
+
+        // new configuration should be restarted nodes plus the designated
+        // survivor which never left the raft group
+        std::vector<vnode> get_restarted_vnode_configuration() const {
+            auto restarted_nodes = get_nodes_to_start();
+            restarted_nodes.emplace_back(get_designated_survivor());
+            return restarted_nodes;
+        }
+    };
+
+    // setup
     co_await create_simple_group(3);
+    reconfiguration_helper reconfiguration_helper{.vnodes = all_vnodes()};
+
     auto replicate_some_data = [&] {
         return retry_with_leader(
                  10s + model::timeout_clock::now(),
@@ -589,12 +630,20 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
 
     co_await replicate_some_data();
 
+    // the reconfiguration process looks like
+    // 1. reconfigure from 3 nodes to 1 node
+    // 2. wait for reconfiguration
+    // 3. stop the dropped nodes
+
+    // pick one node to remain in the group
     co_await retry_with_leader(
       10s + model::timeout_clock::now(),
-      [this](raft_node_instance& leader_node) {
+      [&reconfiguration_helper](raft_node_instance& leader_node) {
           return leader_node.raft()->replace_configuration(
-            {all_vnodes()[0]}, model::revision_id{1});
+            {reconfiguration_helper.get_designated_survivor()},
+            model::revision_id{1});
       });
+
     // wait for reconfiguration
     auto wait_for_reconfiguration = [&](size_t expected_nodes) {
         return tests::cooperative_spin_wait_with_timeout(
@@ -610,8 +659,13 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
                 });
           });
     };
-
     co_await wait_for_reconfiguration(1);
+
+    // stop the nodes removed from the group
+    for (const auto node_to_stop :
+         reconfiguration_helper.get_nodes_to_remove()) {
+        co_await stop_node(node_to_stop.id());
+    }
 
     auto leader_node_id = get_leader();
     ASSERT_TRUE_CORO(leader_node_id.has_value());
@@ -620,11 +674,24 @@ TEST_F_CORO(raft_fixture, test_delayed_snapshot_request) {
 
     co_await replicate_some_data();
 
+    // the reconfiguration process back to 3 looks like
+    // 1. add & start new nodes
+    // 2. reconfigure to attatch the new nodes
+    // 3. wait for reconfiguration
+
+    // build new nodes s.t. the cluster can reconfigure back to 3 nodes
+    for (const vnode node : reconfiguration_helper.get_nodes_to_start()) {
+        auto& added_node = add_node(node.id(), node.revision());
+        co_await added_node.init_and_start(/*no initial nodes*/ {});
+    }
+
+    // dispatch the reconfiguration to join new nodes to the raft group
     co_await retry_with_leader(
       10s + model::timeout_clock::now(),
-      [this](raft_node_instance& leader_node) {
+      [&reconfiguration_helper](raft_node_instance& leader_node) {
           return leader_node.raft()->replace_configuration(
-            {all_vnodes()}, model::revision_id{2});
+            reconfiguration_helper.get_restarted_vnode_configuration(),
+            model::revision_id{2});
       });
 
     // wait for reconfiguration
