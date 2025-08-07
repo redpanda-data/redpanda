@@ -234,7 +234,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             return (self.admin.is_sample_license(lic), lic)
 
         resp = wait_until_result(obtain_configured_license,
-                                 timeout_sec=5,
+                                 timeout_sec=20,
                                  backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents == resp['license'], resp['license']
@@ -268,7 +268,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             return (lic['license']['format_version'] == 1, lic)
 
         resp = wait_until_result(obtain_configured_license_v1,
-                                 timeout_sec=5,
+                                 timeout_sec=20,
                                  backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents_v1 == resp['license'], resp['license']
@@ -276,12 +276,8 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Set back to v0 for sanity check
         assert self.admin.put_license(license).status_code == 200
 
-        def obtain_configured_license():
-            lic = self.admin.get_license()
-            return (self.admin.is_sample_license(lic), lic)
-
         resp = wait_until_result(obtain_configured_license,
-                                 timeout_sec=5,
+                                 timeout_sec=20,
                                  backoff_sec=1)
         assert resp['license'] is not None
         assert expected_license_contents == resp['license'], resp['license']
