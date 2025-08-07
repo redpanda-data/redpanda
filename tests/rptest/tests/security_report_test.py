@@ -16,11 +16,13 @@ from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.scram_test import SaslPlainTLSProvider
 from rptest.tests.pandaproxy_test import PandaProxyMTLSBase
+from rptest.tests.schema_registry_test import SchemaRegistryMTLSBase
 from rptest.services.redpanda import (
     SecurityConfig,
     RedpandaService,
     SaslCredentials,
     PandaproxyConfig,
+    SchemaRegistryConfig,
 )
 from rptest.services.tls import TLSCertManager
 
@@ -166,6 +168,66 @@ class PandaproxyInterface:
         )
 
 
+SCHEMA_REGISTRY_INTERFACE_KEYS = [
+    "name",
+    "host",
+    "port",
+    "tls_enabled",
+    "mutual_tls_enabled",
+    "authentication_methods",
+    "authorization_enabled",
+]
+
+
+@dataclass
+class SchemaRegistryInterface:
+    tls_enabled: bool
+    mutual_tls_enabled: bool
+    authorization_enabled: bool
+    authentication_methods: list[str]
+
+    @staticmethod
+    def expected_keys() -> list[str]:
+        return SCHEMA_REGISTRY_INTERFACE_KEYS
+
+    @staticmethod
+    def default():
+        return SchemaRegistryInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_methods=[],
+        )
+
+
+KAFKA_CLIENT_INTERFACE_KEYS = [
+    "kafka_listener_name",
+    "brokers",
+    "tls_enabled",
+    "mutual_tls_enabled",
+    "configured_authentication_method",
+]
+
+
+@dataclass
+class KafkaClientInterface:
+    tls_enabled: bool
+    mutual_tls_enabled: bool
+    configured_authentication_method: str
+
+    @staticmethod
+    def expected_keys() -> list[str]:
+        return KAFKA_CLIENT_INTERFACE_KEYS
+
+    @staticmethod
+    def default():
+        return KafkaClientInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            configured_authentication_method="None",
+        )
+
+
 @dataclass
 class SecurityAlert:
     affected_interface: str | None
@@ -180,6 +242,8 @@ def validate_report(
     rpc_expected=RpcInterface.default(),
     admin_expected={},
     pandaproxy_expected=None,
+    schema_registry_expected=None,
+    schema_registry_client_expected=KafkaClientInterface.default(),
     expected_alerts=[],
 ):
     assert response.status_code == 200, (
@@ -229,6 +293,19 @@ def validate_report(
                 name, PandaproxyInterface.default()
             )
             assert_interface(pp_json, expected_interface, PandaproxyInterface)
+
+    if schema_registry_expected is not None:
+        for sr_json in get_key("schema_registry", interfaces):
+            name = sr_json.get("name", "")
+            expected_interface = schema_registry_expected.get(
+                name, SchemaRegistryInterface.default()
+            )
+            assert_interface(sr_json, expected_interface, SchemaRegistryInterface)
+
+        src_json = get_key("schema_registry_client", interfaces)
+        assert_interface(
+            src_json, schema_registry_client_expected, KafkaClientInterface
+        )
 
     alerts_json = get_key("alerts", report_json)
     alerts = [make_from_dict(SecurityAlert, a) for a in alerts_json]
@@ -711,3 +788,186 @@ class PandaproxyAuthSecurityReportTest(RedpandaTest):
             pandaproxy_expected={"": pp_interface},
             expected_alerts=expected_alerts,
         )
+
+
+class SchemaRegistryNoSecurityReportTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, schema_registry_config=SchemaRegistryConfig(), **kwargs)
+
+    def setUp(self):
+        super().setUp()
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        expected_alerts = [
+            SecurityAlert(
+                affected_interface="schema_registry",
+                listener_name="{{unnamed}}",
+                issue="NO_TLS",
+                description='"schema_registry" interface "{{unnamed}}" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="schema_registry",
+                listener_name="{{unnamed}}",
+                issue="NO_AUTHN",
+                description='"schema_registry" interface "{{unnamed}}" is not using authentication.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="schema_registry",
+                listener_name="{{unnamed}}",
+                issue="NO_AUTHZ",
+                description='"schema_registry" interface "{{unnamed}}" is not using authorization.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="schema_registry_client",
+                listener_name="schema_registry_client",
+                issue="NO_TLS",
+                description='"schema_registry_client" interface "schema_registry_client" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="schema_registry_client",
+                listener_name="schema_registry_client",
+                issue="NO_AUTHN",
+                description='"schema_registry_client" interface "schema_registry_client" is not using authentication.'
+                " This is insecure and not recommended.",
+            ),
+        ]
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report, schema_registry_expected={}, expected_alerts=expected_alerts
+        )
+
+
+class SchemaRegistryMTLSSecurityReportTest(SchemaRegistryMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster()
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        kafka_tls_interface = KafkaInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_method="mTLS",
+            supported_sasl_mechanisms=None,
+        )
+
+        kafka_no_tls_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        sr_interface = SchemaRegistryInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_methods=[],
+        )
+
+        src_interface = KafkaClientInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            configured_authentication_method="None",
+        )
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_tls_interface,
+                "iplistener": kafka_tls_interface,
+                "kerberoslistener": kafka_no_tls_interface,
+            },
+            schema_registry_expected={"": sr_interface},
+            schema_registry_client_expected=src_interface,
+        )
+
+
+class SchemaRegistryAuthSecurityReportTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args,
+            extra_rp_conf={
+                "schema_registry_enable_authorization": True,
+            },
+            **kwargs,
+        )
+
+    def setUp(self):
+        pass
+
+    def _cluster_setup(self, auto_auth):
+        security = SecurityConfig()
+        security.http_authentication = ["BASIC", "OIDC"]
+        security.enable_sasl = True
+        security.auto_auth = auto_auth
+        schema_registry_config = SchemaRegistryConfig()
+        schema_registry_config.authn_method = "http_basic"
+
+        self.redpanda.set_security_settings(security)
+        self.redpanda.set_schema_registry_settings(schema_registry_config)
+        super().setUp()
+
+    @cluster(num_nodes=3)
+    @matrix(auto_auth=[True, False])
+    def test_security_report(self, auto_auth):
+        self._cluster_setup(auto_auth)
+
+        kafka_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=True,
+            authentication_method="SASL",
+            supported_sasl_mechanisms=sasl_default_mechs,
+        )
+
+        sr_interface = SchemaRegistryInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=True,
+            authentication_methods=["BASIC", "OIDC"],
+        )
+
+        src_interface = KafkaClientInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            configured_authentication_method="SCRAM_Ephemeral"
+            if auto_auth
+            else "SCRAM_Configured",
+        )
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_interface,
+                "iplistener": kafka_interface,
+                "kerberoslistener": kafka_interface,
+            },
+            schema_registry_expected={"": sr_interface},
+            schema_registry_client_expected=src_interface,
+        )
+
+
+class SchemaRegistryClientSecurityReportTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, schema_registry_config=SchemaRegistryConfig(), **kwargs)
+
+    def setUp(self):
+        super().setUp()
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        report = Admin(self.redpanda).security_report()
+        validate_report(report, schema_registry_expected={})

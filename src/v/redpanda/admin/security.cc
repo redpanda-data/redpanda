@@ -21,6 +21,8 @@
 #include "kafka/server/server.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/rest/configuration.h"
+#include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
 #include "security/credential_store.h"
@@ -47,12 +49,16 @@ struct interfaces_report : public json::json_base {
     json::json_list<kafka_interface_security_report> kafka;
     json::json_element<rpc_interface_security_report> rpc;
     json::json_list<admin_interface_security_report> admin;
+    json::json_list<schema_registry_interface_security_report> schema_registry;
+    json::json_element<client_security_report> schema_registry_client;
     json::json_list<pandaproxy_interface_security_report> pandaproxy;
 
     void register_params() {
         add(&kafka, "kafka");
         add(&rpc, "rpc");
         add(&admin, "admin");
+        add(&schema_registry, "schema_registry");
+        add(&schema_registry_client, "schema_registry_client");
         add(&pandaproxy, "pandaproxy");
     }
 
@@ -63,6 +69,8 @@ struct interfaces_report : public json::json_base {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
     }
     template<class T>
@@ -70,6 +78,8 @@ struct interfaces_report : public json::json_base {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
         return *this;
     }
@@ -77,6 +87,8 @@ struct interfaces_report : public json::json_base {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        schema_registry = e.schema_registry;
+        schema_registry_client = e.schema_registry_client;
         pandaproxy = e.pandaproxy;
         return *this;
     }
@@ -85,6 +97,8 @@ struct interfaces_report : public json::json_base {
         e.kafka = kafka;
         e.rpc = rpc;
         e.admin = admin;
+        e.schema_registry = schema_registry;
+        e.schema_registry_client = schema_registry_client;
         e.pandaproxy = pandaproxy;
         return *this;
     }
@@ -1002,6 +1016,9 @@ using pp_authn_method
   = ss::httpd::security_json::pandaproxy_interface_security_report::
     pandaproxy_interface_security_report_configured_authentication_method;
 
+using client_authn_method = ss::httpd::security_json::client_security_report::
+  client_security_report_configured_authentication_method;
+
 kafka_authn_method to_report_type(config::broker_authn_method m) {
     switch (m) {
     case config::broker_authn_method::none:
@@ -1277,7 +1294,7 @@ generate_pandaproxy_interface_report(
         const auto authn = iface.authn_method.value_or(
           config::rest_authn_method::none);
         // If rest_authn_method is not none, then the actual authentication
-        // method is being red from http_authentication cluster config
+        // method is being read from http_authentication cluster config
         const bool is_authn_enabled = authn
                                       == config::rest_authn_method::http_basic;
 
@@ -1326,6 +1343,122 @@ generate_pandaproxy_interface_report(
     return reports;
 }
 
+std::vector<ss::httpd::security_json::schema_registry_interface_security_report>
+generate_schema_registry_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const pandaproxy::schema_registry::configuration& config) {
+    std::vector<
+      ss::httpd::security_json::schema_registry_interface_security_report>
+      reports;
+    const auto& sr_interfaces = config.schema_registry_api();
+
+    reports.reserve(sr_interfaces.size());
+
+    for (const auto& iface : sr_interfaces) {
+        ss::httpd::security_json::schema_registry_interface_security_report
+          report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_tls(report, iface.name, config.schema_registry_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_TLS,
+              iface.name));
+        }
+
+        const auto authn = iface.authn_method.value_or(
+          config::rest_authn_method::none);
+        // If rest_authn_method is not none, then the actual authentication
+        // method is being red from http_authentication cluster config
+        const bool is_authn_enabled = authn
+                                      == config::rest_authn_method::http_basic;
+
+        report.authorization_enabled
+          = config::shard_local_cfg().schema_registry_enable_authorization()
+            && is_authn_enabled;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_AUTHZ,
+              iface.name));
+        }
+
+        set_report_http_authentication(report, is_authn_enabled);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::schema_registry,
+              alert_issue::NO_AUTHN,
+              iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
+using ephemeral_credentials = ss::bool_class<struct ephemeral_credentials_tag>;
+
+client_authn_method get_kclient_auth(
+  const kafka::client::configuration& config, ephemeral_credentials ephemeral) {
+    if (ephemeral) {
+        return client_authn_method::SCRAM_Ephemeral;
+    }
+    if (is_scram_configured(config)) {
+        return client_authn_method::SCRAM_Configured;
+    }
+    return client_authn_method::None;
+}
+
+ss::httpd::security_json::client_security_report
+generate_kafka_client_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const affected_interface interface,
+  const kafka::client::configuration& config,
+  ephemeral_credentials ephemeral = ephemeral_credentials::no) {
+    ss::httpd::security_json::client_security_report report;
+
+    const ss::sstring name = config.client_identifier().value_or("");
+    report.kafka_listener_name = name;
+
+    const auto& brokers = config.brokers();
+
+    std::vector<ss::httpd::security_json::host_port> json_brokers;
+    json_brokers.reserve(brokers.size());
+    for (const auto& broker : brokers) {
+        ss::httpd::security_json::host_port hp;
+        hp.host = broker.host();
+        hp.port = broker.port();
+        json_brokers.push_back(std::move(hp));
+    }
+    report.brokers = json_brokers;
+
+    const auto& broker_tls = config.broker_tls();
+    report.tls_enabled = broker_tls.is_enabled();
+    report.mutual_tls_enabled = broker_tls.get_require_client_auth();
+
+    if (!report.tls_enabled()) {
+        alerts.push_back(
+          make_interface_alert(interface, alert_issue::NO_TLS, name));
+    }
+
+    report.configured_authentication_method = get_kclient_auth(
+      config, ephemeral);
+
+    if (
+      report.configured_authentication_method().v
+      == ss::httpd::security_json::client_security_report::
+        client_security_report_configured_authentication_method::None) {
+        alerts.push_back(
+          make_interface_alert(interface, alert_issue::NO_AUTHN, name));
+    }
+
+    return report;
+}
+
 } // namespace
 
 ss::future<ss::json::json_return_type>
@@ -1340,6 +1473,18 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
     if (_http_proxy) {
         interfaces_report.pandaproxy = generate_pandaproxy_interface_report(
           alerts, _http_proxy->get_config(), _http_proxy->get_client_config());
+    }
+    if (_schema_registry) {
+        interfaces_report.schema_registry
+          = generate_schema_registry_interface_report(
+            alerts, _schema_registry->get_config());
+        interfaces_report.schema_registry_client
+          = generate_kafka_client_interface_report(
+            alerts,
+            affected_interface::schema_registry_client,
+            _schema_registry->get_client_config(),
+            ephemeral_credentials{
+              _schema_registry->has_ephemeral_credentials()});
     }
     report.interfaces = std::move(interfaces_report);
 

@@ -437,6 +437,15 @@
                                         "$ref": "#/definitions/admin_interface_security_report"
                                     }
                                 },
+                                "schema_registry": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/schema_registry_interface_security_report"
+                                    }
+                                },
+                                "schema_registry_client": {
+                                    "$ref": "#/definitions/client_security_report"
+                                },
                                 "pandaproxy": {
                                     "type": "array",
                                     "items": {

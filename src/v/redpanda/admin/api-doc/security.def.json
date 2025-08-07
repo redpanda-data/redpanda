@@ -132,6 +132,8 @@
             "kafka",
             "rpc",
             "admin",
+            "schema_registry",
+            "schema_registry_client",
             "pandaproxy"
           ]
         },
@@ -259,6 +261,40 @@
         }
     }
 },
+"schema_registry_interface_security_report": {
+    "description": "Security report for schema registry interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        }
+    }
+},
 "pandaproxy_interface_security_report": {
     "description": "Security report for pandaproxy interfaces",
     "type": "object",
@@ -303,6 +339,46 @@
                 "None",
                 "SCRAM_Configured",
                 "SCRAM_Proxied"
+            ]
+        }
+    }
+},
+"host_port": {
+    "type": "object",
+    "properties": {
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        }
+    }
+},
+"client_security_report": {
+    "description": "Security report for kafka client interfaces",
+    "type": "object",
+    "properties": {
+        "kafka_listener_name": {
+            "type": "string"
+        },
+        "brokers": {
+            "type": "array",
+            "items": {
+                "$ref": "host_port"
+            }
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "configured_authentication_method": {
+            "type": "string",
+            "enum": [
+                "None",
+                "SCRAM_Configured",
+                "SCRAM_Ephemeral"
             ]
         }
     }
