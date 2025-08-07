@@ -87,8 +87,13 @@ shadow_link_service_impl::delete_shadow_link(
 }
 
 ss::future<proto::admin::shadow_link> shadow_link_service_impl::get_shadow_link(
-  proto::admin::get_shadow_link_request) {
-    throw serde::pb::rpc::unimplemented_exception();
+  proto::admin::get_shadow_link_request req) {
+    auto json_str = co_await request_to_json_string(req);
+    vlog(sllog.info, "get_shadow_link: {}", json_str);
+
+    auto resp = handle_error(_service->local().get_cluster_link(
+      cluster_link::model::name_t{req.get_name()}));
+    co_return metadata_to_shadow_link(std::move(resp));
 }
 
 ss::future<proto::admin::list_shadow_links_response>

@@ -159,6 +159,10 @@ service::create_cluster_link(model::metadata md) {
     return _manager->create_cluster_link(std::move(md));
 }
 
+result<model::metadata> service::get_cluster_link(model::name_t name) {
+    return _manager->get_cluster_link(std::move(name));
+}
+
 void service::register_notifications() {
     auto pl_notif_id = _plf->local().register_for_updates(
       [this](model::id_t id) { _manager->on_link_change(id); });

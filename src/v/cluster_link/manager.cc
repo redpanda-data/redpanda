@@ -162,6 +162,16 @@ manager::create_cluster_link(model::metadata md) {
     co_return metadata_resp->get().copy();
 }
 
+result<model::metadata> manager::get_cluster_link(model::name_t name) {
+    auto metadata_resp = _registry->find_link_by_name(name);
+    if (!metadata_resp) {
+        return err_info(
+          errc::link_id_not_found,
+          fmt::format("Failed to find cluster link with name '{}'", name));
+    }
+    return metadata_resp->get().copy();
+}
+
 void manager::on_link_change(model::id_t id) {
     vlog(cllog.trace, "Cluster link with id={} has changed", id);
     if (_topic_reconciler && _is_controller_leader) {
