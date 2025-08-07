@@ -17,7 +17,7 @@ use_repo(
     "boost",
 )
 
-bazel_dep(name = "gazelle", version = "0.42.0")
+bazel_dep(name = "gazelle", version = "0.45.0")
 bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "crc32c", version = "1.1.0")
@@ -275,7 +275,6 @@ use_repo(
     "com_github_docker_go_units",
     "com_github_fatih_color",
     "com_github_google_uuid",
-    "com_github_hamba_avro",
     "com_github_hamba_avro_v2",
     "com_github_hashicorp_go_multierror",
     "com_github_kballard_go_shellquote",
@@ -309,8 +308,6 @@ use_repo(
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",
     "com_github_stretchr_testify",
-    "com_github_testcontainers_testcontainers_go",
-    "com_github_testcontainers_testcontainers_go_modules_redpanda",
     "com_github_tidwall_sjson",
     "com_github_tklauser_go_sysconf",
     "com_github_twmb_franz_go",
@@ -366,6 +363,7 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "crates")
+
 crate.annotation(
     additive_build_file = "//bazel/thirdparty:wasmtime.BUILD",
     crate = "wasmtime-c-api-impl",
