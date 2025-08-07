@@ -129,7 +129,8 @@
         "affected_interface": {
           "type": "string",
           "enum": [
-            "kafka"
+            "kafka",
+            "rpc"
           ]
         },
         "listener_name": {
@@ -194,6 +195,30 @@
             "items": {
                 "type": "string"
             }
+        }
+    }
+},
+"rpc_interface_security_report": {
+    "description": "Security report for rpc interface",
+    "type": "object",
+    "properties": {
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
         }
     }
 }

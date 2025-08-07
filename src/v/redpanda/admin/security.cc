@@ -41,26 +41,35 @@
 namespace seastar::httpd::security_json {
 struct interfaces_report : public json::json_base {
     json::json_list<kafka_interface_security_report> kafka;
+    json::json_element<rpc_interface_security_report> rpc;
 
-    void register_params() { add(&kafka, "kafka"); }
+    void register_params() {
+        add(&kafka, "kafka");
+        add(&rpc, "rpc");
+    }
+
     interfaces_report() { register_params(); }
 
     interfaces_report(const interfaces_report& e) {
         register_params();
         kafka = e.kafka;
+        rpc = e.rpc;
     }
     template<class T>
     interfaces_report& operator=(const T& e) {
         kafka = e.kafka;
+        rpc = e.rpc;
         return *this;
     }
     interfaces_report& operator=(const interfaces_report& e) {
         kafka = e.kafka;
+        rpc = e.rpc;
         return *this;
     }
     template<class T>
     interfaces_report& update(T& e) {
         e.kafka = kafka;
+        e.rpc = rpc;
         return *this;
     }
 };
@@ -1124,6 +1133,31 @@ generate_kafka_interface_report(
 
     return reports;
 }
+
+ss::httpd::security_json::rpc_interface_security_report
+generate_rpc_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    ss::httpd::security_json::rpc_interface_security_report report;
+
+    const auto& rpc_server = config::node().rpc_server();
+    const auto& rpc_advertised = config::node().advertised_rpc_api();
+
+    report.host = rpc_server.host();
+    report.port = rpc_server.port();
+    report.advertised_host = rpc_advertised.host();
+    report.advertised_port = rpc_advertised.port();
+
+    report.tls_enabled = config::node().rpc_server_tls().is_enabled();
+    report.mutual_tls_enabled
+      = config::node().rpc_server_tls().get_require_client_auth();
+
+    if (!report.tls_enabled()) {
+        alerts.push_back(
+          make_interface_alert(affected_interface::rpc, alert_issue::NO_TLS));
+    }
+
+    return report;
+}
 } // namespace
 
 ss::future<ss::json::json_return_type>
@@ -1133,6 +1167,7 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
     std::vector<ss::httpd::security_json::security_report_alert> alerts;
 
     interfaces_report.kafka = generate_kafka_interface_report(alerts);
+    interfaces_report.rpc = generate_rpc_interface_report(alerts);
     report.interfaces = std::move(interfaces_report);
 
     report.alerts = std::move(alerts);

@@ -15,7 +15,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.scram_test import SaslPlainTLSProvider
-from rptest.services.redpanda import SecurityConfig
+from rptest.services.redpanda import SecurityConfig, RedpandaService
 from rptest.services.tls import TLSCertManager
 
 
@@ -67,6 +67,30 @@ class KafkaInterface:
         )
 
 
+RPC_INTERFACE_KEYS = [
+    "host",
+    "port",
+    "advertised_host",
+    "advertised_port",
+    "tls_enabled",
+    "mutual_tls_enabled",
+]
+
+
+@dataclass
+class RpcInterface:
+    tls_enabled: bool
+    mutual_tls_enabled: bool
+
+    @staticmethod
+    def expected_keys() -> list[str]:
+        return RPC_INTERFACE_KEYS
+
+    @staticmethod
+    def default():
+        return RpcInterface(tls_enabled=False, mutual_tls_enabled=False)
+
+
 @dataclass
 class SecurityAlert:
     affected_interface: str | None
@@ -75,7 +99,9 @@ class SecurityAlert:
     description: str
 
 
-def validate_report(response, kafka_expected={}, expected_alerts=[]):
+def validate_report(
+    response, kafka_expected={}, rpc_expected=RpcInterface.default(), expected_alerts=[]
+):
     assert response.status_code == 200, (
         f"Expected status code {200} but got {response.status_code}, instead.\n"
         f"Content: {response.content}"
@@ -107,6 +133,9 @@ def validate_report(response, kafka_expected={}, expected_alerts=[]):
         name = kafka_json.get("name", "")
         expected_interface = kafka_expected.get(name, KafkaInterface.default())
         assert_interface(kafka_json, expected_interface, KafkaInterface)
+
+    rpc_json = get_key("rpc", interfaces)
+    assert_interface(rpc_json, rpc_expected, RpcInterface)
 
     alerts_json = get_key("alerts", report_json)
     alerts = [make_from_dict(SecurityAlert, a) for a in alerts_json]
@@ -149,6 +178,13 @@ class NoSecurityReportTest(RedpandaTest):
                 listener_name="dnslistener",
                 issue="NO_AUTHZ",
                 description='"kafka" interface "dnslistener" is not using authorization.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="rpc",
+                listener_name=None,
+                issue="NO_TLS",
+                description='"rpc" interface is not using TLS.'
                 " This is insecure and not recommended.",
             ),
         ]
@@ -244,4 +280,65 @@ class KafkaSecurityReportTest(RedpandaTest):
                 "kerberoslistener": no_tls_interface,
             },
             expected_alerts=expected_alerts,
+        )
+
+
+RPC_TLS_CONFIG = dict(
+    enabled=True,
+    require_client_auth=True,
+    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+    truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+    crl_file=RedpandaService.TLS_CA_CRL_FILE,
+)
+
+
+class RpcTLSSecurityReportTest(RedpandaTest):
+    def __init__(self, test_context):
+        super().__init__(test_context)
+        self.tls = TLSCertManager(self.logger)
+        self.security = SecurityConfig()
+        self.security.tls_provider = SaslPlainTLSProvider(tls=self.tls)
+        self.redpanda.set_security_settings(self.security)
+
+    def setUp(self):
+        # Set up TLS for RPC
+        cfg_overrides = {}
+
+        def set_cfg(node):
+            cfg_overrides[node] = dict(rpc_server_tls=RPC_TLS_CONFIG)
+
+        self.redpanda.for_nodes(self.redpanda.nodes, set_cfg)
+
+        self.redpanda.start(node_config_overrides=cfg_overrides)
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        kafka_tls_interface = KafkaInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        kafka_no_tls_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        rpc_inteface = RpcInterface(tls_enabled=True, mutual_tls_enabled=True)
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_tls_interface,
+                "iplistener": kafka_tls_interface,
+                "kerberoslistener": kafka_no_tls_interface,
+            },
+            rpc_expected=rpc_inteface,
         )

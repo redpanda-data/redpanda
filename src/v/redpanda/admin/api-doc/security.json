@@ -426,6 +426,10 @@
                                     "items": {
                                         "$ref": "#/definitions/kafka_interface_security_report"
                                     }
+                                },
+                                "rpc": {
+                                    "type": "object",
+                                    "$ref": "#/definitions/rpc_interface_security_report"
                                 }
                             }
                         },
