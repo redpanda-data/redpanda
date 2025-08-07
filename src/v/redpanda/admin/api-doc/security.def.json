@@ -150,7 +150,9 @@
             "NO_AUTHN",
             "NO_AUTHZ",
             "SASL_PLAIN",
-            "PP_CONFIGURED_CLIENT"
+            "PP_CONFIGURED_CLIENT",
+            "INSECURE_MIN_TLS_VERSION",
+            "TLS_RENEGOTIATION"
           ]
         },
         "description": {

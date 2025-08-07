@@ -327,7 +327,14 @@ def validate_report(
 
 class NoSecurityReportTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            *args,
+            extra_rp_conf={
+                "tls_min_version": "v1.0",
+                "tls_enable_renegotiation": "true",
+            },
+            **kwargs,
+        )
 
     def setUp(self):
         super().setUp()
@@ -391,6 +398,20 @@ class NoSecurityReportTest(RedpandaTest):
                 listener_name="audit_log_client",
                 issue="NO_TLS",
                 description='"audit_log_client" interface "audit_log_client" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface=None,
+                listener_name=None,
+                issue="INSECURE_MIN_TLS_VERSION",
+                description="TLS minimum version is set to v1.0 which is less than v1.2."
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface=None,
+                listener_name=None,
+                issue="TLS_RENEGOTIATION",
+                description="TLS renegotiation is enabled."
                 " This is insecure and not recommended.",
             ),
         ]
