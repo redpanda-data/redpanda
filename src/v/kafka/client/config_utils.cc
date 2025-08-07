@@ -29,10 +29,7 @@ namespace kafka::client {
 namespace {
 std::optional<sasl_configuration> create_sasl_configuration_from_client_cfg(
   const kafka::client::configuration& client_cfg) {
-    if (
-      client_cfg.scram_password.is_overriden()
-      || client_cfg.scram_username.is_overriden()
-      || client_cfg.sasl_mechanism.is_overriden()) {
+    if (is_scram_configured(client_cfg)) {
         return sasl_configuration{
           .mechanism = client_cfg.sasl_mechanism(),
           .username = client_cfg.scram_username(),
@@ -42,6 +39,13 @@ std::optional<sasl_configuration> create_sasl_configuration_from_client_cfg(
     return std::nullopt;
 }
 } // namespace
+
+bool is_scram_configured(const configuration& client_cfg) {
+    return client_cfg.scram_password.is_overriden()
+           || client_cfg.scram_username.is_overriden()
+           || client_cfg.sasl_mechanism.is_overriden();
+}
+
 ss::future<std::optional<kafka::client::sasl_configuration>>
 create_client_credentials(
   cluster::controller& controller,
@@ -54,10 +58,7 @@ create_client_credentials(
     }
 
     // If the configuration is overriden, use it.
-    if (
-      client_cfg.scram_password.is_overriden()
-      || client_cfg.scram_username.is_overriden()
-      || client_cfg.sasl_mechanism.is_overriden()) {
+    if (is_scram_configured(client_cfg)) {
         co_return sasl_cfg;
     }
 
