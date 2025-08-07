@@ -97,6 +97,13 @@ class IdempotencySnapshotDelivery(PreallocNodesTest):
 
         producer.start(clean=False)
 
+        # Wait until the producer connection has been established by ensuring
+        # that at least one message has been acked.
+        # Otherwise producer initialization may hit a dead broker (from test induced pkills)
+        # and franz-go only retries once (hardcoded) before giving up.
+
+        wait_until(lambda: producer.produce_status.acked >= 1, 30, 1)
+
         pkill_config = ActionConfig(cluster_start_lead_time_sec=10,
                                     min_time_between_actions_sec=10,
                                     max_time_between_actions_sec=20)
