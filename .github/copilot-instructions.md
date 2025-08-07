@@ -6,6 +6,8 @@
 
 Redpanda is a high-performance, Apache Kafka®-compatible streaming data platform. It is written primarily in C++ for the core, with Go for CLI tooling (`rpk`), and some Python for auxiliary scripts and tests. Redpanda is designed to be lightweight, fast, and simple to operate, omitting ZooKeeper and the JVM.
 
+It uses extensively the thread-per-core model and asynchronous (coroutines, futures) programming model.
+
 **Repository Characteristics:**
 - **Large multi-language codebase:** C++ (core), Go (CLI/tools), Python (testing/scripts), Bash and Bazel for builds.
 - **Build System:** Bazel (with Bazelisk) for core.
@@ -125,6 +127,24 @@ Check that these guidelines are followed for new code.
 
 - Do not declare new `operator<<(ostream& os, type)` overloads, instead prefer to use a `format_to` member function inside `type` as described in
 src/v/base/format_to.h.
+- Prefer using latest C++ features (C++23).
+- Use `ss` namespace as a prefix for Seastar types (e.g. `ss::future`, `ss::promise`).
+- Use `vassert(cond, msg, msg_args...)` macro for assertions. It is
+  similar to `assert(cond)` but it is always enabled and it prints the message
+  to the log. Use `dassert` for assertions that are only enabled in debug mode.
+- Use `vlog(method, fmt, args...)` for logging. `method` is the method reference
+  for the logger to use. I.e. `vlog(stlog.info, "Hello world");`. Where `stlog`
+  is defined as `ss::logger stlog("storage");`.
+- Do not use `std::vector` for containers that may grow very large, instead use `chunked_vector`.
+- Do not use `std::unordered_map` for containers that may grow very large, instead use `chunked_hash_map`.
+- Instead of long if-else chains for mapping string to values, use
+  `string_switch` mechanism defined in
+  [string_switch.h](./src/v/strings/string_switch.h).
+
+### C++ coding style
+
+- Use snake_case for identifiers. Use CamelCase for concepts.
+- Use Doxygen comments with 3-slashes (///) for public APIs
 
 ### More C++-Specific References
 
