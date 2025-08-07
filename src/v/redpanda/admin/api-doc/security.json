@@ -436,6 +436,12 @@
                                     "items": {
                                         "$ref": "#/definitions/admin_interface_security_report"
                                     }
+                                },
+                                "pandaproxy": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/pandaproxy_interface_security_report"
+                                    }
                                 }
                             }
                         },

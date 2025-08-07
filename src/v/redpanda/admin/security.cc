@@ -16,7 +16,11 @@
 #include "json/document.h"
 #include "json/json.h"
 #include "json/stringbuffer.h"
+#include "kafka/client/config_utils.h"
+#include "kafka/client/configuration.h"
 #include "kafka/server/server.h"
+#include "pandaproxy/rest/api.h"
+#include "pandaproxy/rest/configuration.h"
 #include "redpanda/admin/api-doc/security.json.hh"
 #include "redpanda/admin/server.h"
 #include "security/credential_store.h"
@@ -43,11 +47,13 @@ struct interfaces_report : public json::json_base {
     json::json_list<kafka_interface_security_report> kafka;
     json::json_element<rpc_interface_security_report> rpc;
     json::json_list<admin_interface_security_report> admin;
+    json::json_list<pandaproxy_interface_security_report> pandaproxy;
 
     void register_params() {
         add(&kafka, "kafka");
         add(&rpc, "rpc");
         add(&admin, "admin");
+        add(&pandaproxy, "pandaproxy");
     }
 
     interfaces_report() { register_params(); }
@@ -57,18 +63,21 @@ struct interfaces_report : public json::json_base {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        pandaproxy = e.pandaproxy;
     }
     template<class T>
     interfaces_report& operator=(const T& e) {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        pandaproxy = e.pandaproxy;
         return *this;
     }
     interfaces_report& operator=(const interfaces_report& e) {
         kafka = e.kafka;
         rpc = e.rpc;
         admin = e.admin;
+        pandaproxy = e.pandaproxy;
         return *this;
     }
     template<class T>
@@ -76,6 +85,7 @@ struct interfaces_report : public json::json_base {
         e.kafka = kafka;
         e.rpc = rpc;
         e.admin = admin;
+        e.pandaproxy = pandaproxy;
         return *this;
     }
 };
@@ -987,6 +997,11 @@ using affected_interface = ss::httpd::security_json::security_report_alert::
 
 using alert_issue = ss::httpd::security_json::security_report_alert::
   security_report_alert_issue;
+
+using pp_authn_method
+  = ss::httpd::security_json::pandaproxy_interface_security_report::
+    pandaproxy_interface_security_report_configured_authentication_method;
+
 kafka_authn_method to_report_type(config::broker_authn_method m) {
     switch (m) {
     case config::broker_authn_method::none:
@@ -1044,6 +1059,11 @@ ss::httpd::security_json::security_report_alert make_interface_alert(
         break;
     case alert_issue::SASL_PLAIN:
         alert.description = make_description(" is using SASL/PLAIN");
+        break;
+    case alert_issue::PP_CONFIGURED_CLIENT:
+        alert.description = make_description(
+          ", authorization is not enabled and the pandaproxy client has scram "
+          "credentials");
         break;
     default:
         vassert(
@@ -1227,6 +1247,85 @@ generate_admin_interface_report(
 
     return reports;
 }
+
+std::vector<ss::httpd::security_json::pandaproxy_interface_security_report>
+generate_pandaproxy_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts,
+  const pandaproxy::rest::configuration& config,
+  const kafka::client::configuration& client_config) {
+    std::vector<ss::httpd::security_json::pandaproxy_interface_security_report>
+      reports;
+    const auto& pp_interfaces = config.pandaproxy_api();
+
+    reports.reserve(pp_interfaces.size());
+
+    for (const auto& iface : pp_interfaces) {
+        ss::httpd::security_json::pandaproxy_interface_security_report report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_advertised(
+          report, iface.name, config.advertised_pandaproxy_api());
+
+        set_report_tls(report, iface.name, config.pandaproxy_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy, alert_issue::NO_TLS, iface.name));
+        }
+
+        const auto authn = iface.authn_method.value_or(
+          config::rest_authn_method::none);
+        // If rest_authn_method is not none, then the actual authentication
+        // method is being red from http_authentication cluster config
+        const bool is_authn_enabled = authn
+                                      == config::rest_authn_method::http_basic;
+
+        const auto get_pp_auth_method = [is_authn_enabled, &client_config]() {
+            if (is_authn_enabled) {
+                return pp_authn_method::SCRAM_Proxied;
+            }
+
+            const auto kclient_configured = is_scram_configured(client_config);
+            if (kclient_configured) {
+                return pp_authn_method::SCRAM_Configured;
+            }
+
+            return pp_authn_method::None;
+        };
+        const auto config_authn_method = get_pp_auth_method();
+        report.configured_authentication_method = config_authn_method;
+
+        // For pp, authn kinda implies authz as well.
+        report.authorization_enabled = is_authn_enabled;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::NO_AUTHZ,
+              iface.name));
+        }
+
+        if (config_authn_method == pp_authn_method::SCRAM_Configured) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::PP_CONFIGURED_CLIENT,
+              iface.name));
+        }
+
+        set_report_http_authentication(report, is_authn_enabled);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::pandaproxy,
+              alert_issue::NO_AUTHN,
+              iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
+
 } // namespace
 
 ss::future<ss::json::json_return_type>
@@ -1238,6 +1337,10 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
     interfaces_report.kafka = generate_kafka_interface_report(alerts);
     interfaces_report.rpc = generate_rpc_interface_report(alerts);
     interfaces_report.admin = generate_admin_interface_report(alerts);
+    if (_http_proxy) {
+        interfaces_report.pandaproxy = generate_pandaproxy_interface_report(
+          alerts, _http_proxy->get_config(), _http_proxy->get_client_config());
+    }
     report.interfaces = std::move(interfaces_report);
 
     report.alerts = std::move(alerts);

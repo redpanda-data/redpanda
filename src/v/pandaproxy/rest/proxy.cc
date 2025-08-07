@@ -145,6 +145,7 @@ ss::future<> proxy::stop() {
 }
 
 configuration& proxy::config() { return _config; }
+const configuration& proxy::config() const { return _config; }
 
 ss::future<> proxy::do_start() {
     if (_is_started) {

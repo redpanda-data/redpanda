@@ -78,6 +78,11 @@ ss::future<> api::set_config(ss::sstring name, std::any val) {
       });
 }
 
+const configuration& api::get_config() const { return _proxy.local().config(); }
+const kafka::client::configuration& api::get_client_config() const {
+    return _client_cfg;
+}
+
 ss::future<> api::set_client_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
       [name{std::move(name)}, val{std::move(val)}](pandaproxy::rest::proxy& p) {

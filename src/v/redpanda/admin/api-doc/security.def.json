@@ -131,7 +131,8 @@
           "enum": [
             "kafka",
             "rpc",
-            "admin"
+            "admin",
+            "pandaproxy"
           ]
         },
         "listener_name": {
@@ -145,7 +146,8 @@
             "NO_TLS",
             "NO_AUTHN",
             "NO_AUTHZ",
-            "SASL_PLAIN"
+            "SASL_PLAIN",
+            "PP_CONFIGURED_CLIENT"
           ]
         },
         "description": {
@@ -254,6 +256,54 @@
         },
         "authorization_enabled": {
             "type": "boolean"
+        }
+    }
+},
+"pandaproxy_interface_security_report": {
+    "description": "Security report for pandaproxy interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "advertised_host": {
+            "type": "string"
+        },
+        "advertised_port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
+            "type": "boolean"
+        },
+        "configured_authentication_method": {
+            "type": "string",
+            "enum": [
+                "None",
+                "SCRAM_Configured",
+                "SCRAM_Proxied"
+            ]
         }
     }
 }

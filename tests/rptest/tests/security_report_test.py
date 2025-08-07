@@ -9,13 +9,19 @@
 
 from dataclasses import dataclass, fields
 
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, matrix
 
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.scram_test import SaslPlainTLSProvider
-from rptest.services.redpanda import SecurityConfig, RedpandaService, SaslCredentials
+from rptest.tests.pandaproxy_test import PandaProxyMTLSBase
+from rptest.services.redpanda import (
+    SecurityConfig,
+    RedpandaService,
+    SaslCredentials,
+    PandaproxyConfig,
+)
 from rptest.services.tls import TLSCertManager
 
 
@@ -123,6 +129,43 @@ class AdminInterface:
         )
 
 
+PANDAPROXY_INTERFACE_KEYS = [
+    "name",
+    "host",
+    "port",
+    "advertised_host",
+    "advertised_port",
+    "tls_enabled",
+    "mutual_tls_enabled",
+    "authentication_methods",
+    "authorization_enabled",
+    "configured_authentication_method",
+]
+
+
+@dataclass
+class PandaproxyInterface:
+    tls_enabled: bool
+    mutual_tls_enabled: bool
+    authorization_enabled: bool
+    authentication_methods: list[str]
+    configured_authentication_method: str
+
+    @staticmethod
+    def expected_keys() -> list[str]:
+        return PANDAPROXY_INTERFACE_KEYS
+
+    @staticmethod
+    def default():
+        return PandaproxyInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_methods=[],
+            configured_authentication_method="None",
+        )
+
+
 @dataclass
 class SecurityAlert:
     affected_interface: str | None
@@ -136,6 +179,7 @@ def validate_report(
     kafka_expected={},
     rpc_expected=RpcInterface.default(),
     admin_expected={},
+    pandaproxy_expected=None,
     expected_alerts=[],
 ):
     assert response.status_code == 200, (
@@ -177,6 +221,14 @@ def validate_report(
         name = admin_json.get("name", "")
         expected_interface = admin_expected.get(name, AdminInterface.default())
         assert_interface(admin_json, expected_interface, AdminInterface)
+
+    if pandaproxy_expected is not None:
+        for pp_json in get_key("pandaproxy", interfaces):
+            name = pp_json.get("name", "")
+            expected_interface = pandaproxy_expected.get(
+                name, PandaproxyInterface.default()
+            )
+            assert_interface(pp_json, expected_interface, PandaproxyInterface)
 
     alerts_json = get_key("alerts", report_json)
     alerts = [make_from_dict(SecurityAlert, a) for a in alerts_json]
@@ -504,4 +556,158 @@ class AdminSecurityReportTest(RedpandaTest):
                 "": no_tls_interface,
                 "iplistener": with_tls_inteface,
             },
+        )
+
+
+class PandaproxyNoSecurityReportTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, pandaproxy_config=PandaproxyConfig(), **kwargs)
+
+    def setUp(self):
+        super().setUp()
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        expected_alerts = [
+            SecurityAlert(
+                affected_interface="pandaproxy",
+                listener_name="{{unnamed}}",
+                issue="NO_TLS",
+                description='"pandaproxy" interface "{{unnamed}}" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="pandaproxy",
+                listener_name="{{unnamed}}",
+                issue="NO_AUTHN",
+                description='"pandaproxy" interface "{{unnamed}}" is not using authentication.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="pandaproxy",
+                listener_name="{{unnamed}}",
+                issue="NO_AUTHZ",
+                description='"pandaproxy" interface "{{unnamed}}" is not using authorization.'
+                " This is insecure and not recommended.",
+            ),
+        ]
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(report, pandaproxy_expected={}, expected_alerts=expected_alerts)
+
+
+class PandaproxyMTLSSecurityReportTest(PandaProxyMTLSBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def setUp(self):
+        self.setup_cluster()
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        kafka_tls_interface = KafkaInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_method="mTLS",
+            supported_sasl_mechanisms=None,
+        )
+
+        kafka_no_tls_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        pp_interface = PandaproxyInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_methods=[],
+            configured_authentication_method="None",
+        )
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_tls_interface,
+                "iplistener": kafka_tls_interface,
+                "kerberoslistener": kafka_no_tls_interface,
+            },
+            pandaproxy_expected={"": pp_interface},
+        )
+
+
+class PandaproxyAuthSecurityReportTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def setUp(self):
+        pass
+
+    def _cluster_setup(self, auto_auth, enable_auth):
+        security = SecurityConfig()
+        security.http_authentication = ["BASIC", "OIDC"]
+        security.enable_sasl = True
+        security.auto_auth = auto_auth
+        pandaproxy_config = PandaproxyConfig()
+        pandaproxy_config.authn_method = "http_basic" if enable_auth else "none"
+
+        self.redpanda.set_security_settings(security)
+        self.redpanda.set_pandaproxy_settings(pandaproxy_config)
+        super().setUp()
+
+    @cluster(num_nodes=3)
+    @matrix(auto_auth=[True, False], enable_auth=[True, False])
+    def test_security_report(self, auto_auth, enable_auth):
+        self._cluster_setup(auto_auth, enable_auth)
+
+        kafka_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=True,
+            authentication_method="SASL",
+            supported_sasl_mechanisms=sasl_default_mechs,
+        )
+
+        if enable_auth:
+            config_authn_method = "SCRAM_Proxied"
+        elif not auto_auth:
+            config_authn_method = "SCRAM_Configured"
+        else:
+            config_authn_method = "None"
+
+        pp_interface = PandaproxyInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=enable_auth,
+            authentication_methods=["BASIC", "OIDC"] if enable_auth else [],
+            configured_authentication_method=config_authn_method,
+        )
+
+        expected_alerts = []
+        if config_authn_method == "SCRAM_Configured":
+            expected_alerts.append(
+                SecurityAlert(
+                    affected_interface="pandaproxy",
+                    listener_name="{{unnamed}}",
+                    issue="PP_CONFIGURED_CLIENT",
+                    description='"pandaproxy" interface "{{unnamed}}", authorization is not enabled and the pandaproxy client has scram credentials.'
+                    " This is insecure and not recommended.",
+                )
+            )
+
+        report = Admin(self.redpanda).security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_interface,
+                "iplistener": kafka_interface,
+                "kerberoslistener": kafka_interface,
+            },
+            pandaproxy_expected={"": pp_interface},
+            expected_alerts=expected_alerts,
         )
