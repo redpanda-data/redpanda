@@ -15,7 +15,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.scram_test import SaslPlainTLSProvider
-from rptest.services.redpanda import SecurityConfig, RedpandaService
+from rptest.services.redpanda import SecurityConfig, RedpandaService, SaslCredentials
 from rptest.services.tls import TLSCertManager
 
 
@@ -91,6 +91,38 @@ class RpcInterface:
         return RpcInterface(tls_enabled=False, mutual_tls_enabled=False)
 
 
+ADMIN_INTERFACE_KEYS = [
+    "name",
+    "host",
+    "port",
+    "tls_enabled",
+    "mutual_tls_enabled",
+    "authentication_methods",
+    "authorization_enabled",
+]
+
+
+@dataclass
+class AdminInterface:
+    tls_enabled: bool
+    mutual_tls_enabled: bool
+    authorization_enabled: bool
+    authentication_methods: list[str]
+
+    @staticmethod
+    def expected_keys() -> list[str]:
+        return ADMIN_INTERFACE_KEYS
+
+    @staticmethod
+    def default():
+        return AdminInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_methods=[],
+        )
+
+
 @dataclass
 class SecurityAlert:
     affected_interface: str | None
@@ -100,7 +132,11 @@ class SecurityAlert:
 
 
 def validate_report(
-    response, kafka_expected={}, rpc_expected=RpcInterface.default(), expected_alerts=[]
+    response,
+    kafka_expected={},
+    rpc_expected=RpcInterface.default(),
+    admin_expected={},
+    expected_alerts=[],
 ):
     assert response.status_code == 200, (
         f"Expected status code {200} but got {response.status_code}, instead.\n"
@@ -136,6 +172,11 @@ def validate_report(
 
     rpc_json = get_key("rpc", interfaces)
     assert_interface(rpc_json, rpc_expected, RpcInterface)
+
+    for admin_json in get_key("admin", interfaces):
+        name = admin_json.get("name", "")
+        expected_interface = admin_expected.get(name, AdminInterface.default())
+        assert_interface(admin_json, expected_interface, AdminInterface)
 
     alerts_json = get_key("alerts", report_json)
     alerts = [make_from_dict(SecurityAlert, a) for a in alerts_json]
@@ -185,6 +226,27 @@ class NoSecurityReportTest(RedpandaTest):
                 listener_name=None,
                 issue="NO_TLS",
                 description='"rpc" interface is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="admin",
+                listener_name="iplistener",
+                issue="NO_TLS",
+                description='"admin" interface "iplistener" is not using TLS.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="admin",
+                listener_name="iplistener",
+                issue="NO_AUTHN",
+                description='"admin" interface "iplistener" is not using authentication.'
+                " This is insecure and not recommended.",
+            ),
+            SecurityAlert(
+                affected_interface="admin",
+                listener_name="iplistener",
+                issue="NO_AUTHZ",
+                description='"admin" interface "iplistener" is not using authorization.'
                 " This is insecure and not recommended.",
             ),
         ]
@@ -341,4 +403,105 @@ class RpcTLSSecurityReportTest(RedpandaTest):
                 "kerberoslistener": kafka_no_tls_interface,
             },
             rpc_expected=rpc_inteface,
+        )
+
+
+ADMIN_TLS_CONFIG = dict(
+    name="iplistener",
+    enabled=True,
+    require_client_auth=True,
+    key_file=RedpandaService.TLS_SERVER_KEY_FILE,
+    cert_file=RedpandaService.TLS_SERVER_CRT_FILE,
+    truststore_file=RedpandaService.TLS_CA_CRT_FILE,
+    crl_file=RedpandaService.TLS_CA_CRL_FILE,
+)
+
+
+class AdminSecurityReportTest(RedpandaTest):
+    BOOTSTRAP_USERNAME = "bob"
+    BOOTSTRAP_PASSWORD = "sekrit"
+    BOOTSTRAP_MECHANISM = "SCRAM-SHA-512"
+
+    def __init__(self, test_context, *args, **kwargs):
+        # Configure the cluster as a user might configure it for secure
+        # bootstrap: i.e. all auth turned on from moment of creation.
+
+        super().__init__(
+            test_context,
+            *args,
+            environment={
+                "RP_BOOTSTRAP_USER": f"{self.BOOTSTRAP_USERNAME}:{self.BOOTSTRAP_PASSWORD}:{self.BOOTSTRAP_MECHANISM}"
+            },
+            extra_rp_conf={"admin_api_require_auth": True, "superusers": ["bob"]},
+            superuser=SaslCredentials(
+                self.BOOTSTRAP_USERNAME,
+                self.BOOTSTRAP_PASSWORD,
+                self.BOOTSTRAP_MECHANISM,
+            ),
+            **kwargs,
+        )
+        self.tls = TLSCertManager(self.logger)
+        self.security = SecurityConfig()
+        self.security.http_authentication = ["BASIC", "OIDC"]
+        self.security.tls_provider = SaslPlainTLSProvider(tls=self.tls)
+        self.redpanda.set_security_settings(self.security)
+
+    def setUp(self):
+        # Set up TLS for Admin
+        cfg_overrides = {}
+
+        def set_cfg(node):
+            cfg_overrides[node] = dict(admin_api_tls=ADMIN_TLS_CONFIG)
+
+        self.redpanda.for_nodes(self.redpanda.nodes, set_cfg)
+
+        self.redpanda.start(node_config_overrides=cfg_overrides)
+
+    @cluster(num_nodes=3)
+    def test_security_report(self):
+        kafka_tls_interface = KafkaInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        kafka_no_tls_interface = KafkaInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=False,
+            authentication_method="None",
+            supported_sasl_mechanisms=None,
+        )
+
+        with_tls_inteface = AdminInterface(
+            tls_enabled=True,
+            mutual_tls_enabled=True,
+            authorization_enabled=True,
+            authentication_methods=["BASIC", "OIDC"],
+        )
+
+        no_tls_interface = AdminInterface(
+            tls_enabled=False,
+            mutual_tls_enabled=False,
+            authorization_enabled=True,
+            authentication_methods=["BASIC", "OIDC"],
+        )
+
+        admin = Admin(
+            self.redpanda, auth=(self.BOOTSTRAP_USERNAME, self.BOOTSTRAP_PASSWORD)
+        )
+        report = admin.security_report()
+        validate_report(
+            report,
+            kafka_expected={
+                "dnslistener": kafka_tls_interface,
+                "iplistener": kafka_tls_interface,
+                "kerberoslistener": kafka_no_tls_interface,
+            },
+            admin_expected={
+                "": no_tls_interface,
+                "iplistener": with_tls_inteface,
+            },
         )

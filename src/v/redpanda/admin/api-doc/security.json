@@ -430,6 +430,12 @@
                                 "rpc": {
                                     "type": "object",
                                     "$ref": "#/definitions/rpc_interface_security_report"
+                                },
+                                "admin": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/admin_interface_security_report"
+                                    }
                                 }
                             }
                         },

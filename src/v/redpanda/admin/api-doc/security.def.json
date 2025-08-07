@@ -130,7 +130,8 @@
           "type": "string",
           "enum": [
             "kafka",
-            "rpc"
+            "rpc",
+            "admin"
           ]
         },
         "listener_name": {
@@ -218,6 +219,40 @@
             "type": "boolean"
         },
         "mutual_tls_enabled": {
+            "type": "boolean"
+        }
+    }
+},
+"admin_interface_security_report": {
+    "description": "Security report for admin interfaces",
+    "type": "object",
+    "properties": {
+        "name": {
+            "type": "string"
+        },
+        "host": {
+            "type": "string"
+        },
+        "port": {
+            "type": "int"
+        },
+        "tls_enabled": {
+            "type": "boolean"
+        },
+        "mutual_tls_enabled": {
+            "type": "boolean"
+        },
+        "authentication_methods": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "BASIC",
+                    "OIDC"
+                ]
+            }
+        },
+        "authorization_enabled": {
             "type": "boolean"
         }
     }

@@ -42,10 +42,12 @@ namespace seastar::httpd::security_json {
 struct interfaces_report : public json::json_base {
     json::json_list<kafka_interface_security_report> kafka;
     json::json_element<rpc_interface_security_report> rpc;
+    json::json_list<admin_interface_security_report> admin;
 
     void register_params() {
         add(&kafka, "kafka");
         add(&rpc, "rpc");
+        add(&admin, "admin");
     }
 
     interfaces_report() { register_params(); }
@@ -54,22 +56,26 @@ struct interfaces_report : public json::json_base {
         register_params();
         kafka = e.kafka;
         rpc = e.rpc;
+        admin = e.admin;
     }
     template<class T>
     interfaces_report& operator=(const T& e) {
         kafka = e.kafka;
         rpc = e.rpc;
+        admin = e.admin;
         return *this;
     }
     interfaces_report& operator=(const interfaces_report& e) {
         kafka = e.kafka;
         rpc = e.rpc;
+        admin = e.admin;
         return *this;
     }
     template<class T>
     interfaces_report& update(T& e) {
         e.kafka = kafka;
         e.rpc = rpc;
+        e.admin = admin;
         return *this;
     }
 };
@@ -1047,6 +1053,13 @@ ss::httpd::security_json::security_report_alert make_interface_alert(
     return alert;
 }
 
+// Empty lists are normally ignored by ss::json. By setting the _set variable
+// they will be serialized even if empty.
+template<typename T>
+void force_list(seastar::json::json_list<T>& jlist) {
+    jlist._set = true;
+}
+
 template<typename Report, typename Endpoint>
 void set_report_advertised(
   Report& report,
@@ -1074,6 +1087,20 @@ void set_report_tls(
     } else {
         report.tls_enabled = false;
         report.mutual_tls_enabled = false;
+    }
+}
+
+template<typename Report>
+void set_report_http_authentication(
+  Report& report, const bool& is_authn_enabled) {
+    force_list(report.authentication_methods);
+
+    if (!is_authn_enabled) {
+        return;
+    }
+
+    for (auto& meth : config::shard_local_cfg().http_authentication()) {
+        report.authentication_methods.push(meth);
     }
 }
 
@@ -1158,6 +1185,48 @@ generate_rpc_interface_report(
 
     return report;
 }
+
+std::vector<ss::httpd::security_json::admin_interface_security_report>
+generate_admin_interface_report(
+  std::vector<ss::httpd::security_json::security_report_alert>& alerts) {
+    std::vector<ss::httpd::security_json::admin_interface_security_report>
+      reports;
+    const auto& admin_interfaces = config::node().admin();
+
+    reports.reserve(admin_interfaces.size());
+
+    for (const auto& iface : admin_interfaces) {
+        ss::httpd::security_json::admin_interface_security_report report;
+        report.name = iface.name;
+        report.host = iface.address.host();
+        report.port = iface.address.port();
+
+        set_report_tls(report, iface.name, config::node().admin_api_tls());
+        if (!report.tls_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_TLS, iface.name));
+        }
+
+        const auto require_auth
+          = config::shard_local_cfg().admin_api_require_auth();
+
+        report.authorization_enabled = require_auth;
+        if (!report.authorization_enabled()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_AUTHZ, iface.name));
+        }
+
+        set_report_http_authentication(report, require_auth);
+        if (report.authentication_methods._elements.empty()) {
+            alerts.push_back(make_interface_alert(
+              affected_interface::admin, alert_issue::NO_AUTHN, iface.name));
+        }
+
+        reports.emplace_back(std::move(report));
+    }
+
+    return reports;
+}
 } // namespace
 
 ss::future<ss::json::json_return_type>
@@ -1168,6 +1237,7 @@ admin_server::get_security_report(std::unique_ptr<ss::http::request>) {
 
     interfaces_report.kafka = generate_kafka_interface_report(alerts);
     interfaces_report.rpc = generate_rpc_interface_report(alerts);
+    interfaces_report.admin = generate_admin_interface_report(alerts);
     report.interfaces = std::move(interfaces_report);
 
     report.alerts = std::move(alerts);
